@@ -7,6 +7,7 @@ import {
   acceptanceOptions,
   acceptanceProjectName,
   acceptanceStage,
+  completedHostAcceptanceReply,
   hot1Scenarios,
   hot1Titles,
   assertWithin,
@@ -62,6 +63,17 @@ test("HOT1 selects only the seven hotfix checks without native recovery or deliv
   assert.throws(() => acceptanceOptions(["--suite", "unknown"]));
   assert.equal(options.model, undefined, "Acceptance must use explicitly supplied account choices");
   assert.equal(options.switchModel, undefined);
+});
+
+test("contextual acceptance requires an idle successful Host reply rather than a saved request or partial reply", () => {
+  const source = { status: "idle", session: { blocks: [{ role: "user", text: "Request" }] } };
+  assert.equal(completedHostAcceptanceReply(source), false);
+  source.session.blocks.push({ role: "assistant", text: "READY" });
+  assert.equal(completedHostAcceptanceReply({ ...source, status: "running" }), false);
+  assert.equal(completedHostAcceptanceReply(source), source);
+  assert.throws(() => completedHostAcceptanceReply({ ...source, status: "interrupted" }));
+  source.session.blocks.push({ role: "system", text: "Provider failed", notice: "error" });
+  assert.throws(() => completedHostAcceptanceReply(source));
 });
 
 test("rejects lexical parent and sibling-prefix escapes", () => {

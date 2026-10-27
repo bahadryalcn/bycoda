@@ -1991,6 +1991,12 @@ async function scenario7(context) {
         .getByRole("button", { name: "Execution mode: Separate worktree", exact: true })
         .waitFor();
     }
+    const checkout = form.getByRole("button", { name: "Worktree: Project checkout", exact: true });
+    await waitUntil(
+      async () => (await checkout.isVisible()) && (await checkout.isEnabled()),
+      "Task workspace inventory did not resolve to the default project checkout",
+      45000,
+    );
     screenshots.push(
       ...(await context.capture(`07-task-${explicit ? "explicit-worktree" : "automatic-current"}`)),
     );
@@ -2201,13 +2207,78 @@ async function isolatedHostRequest(context, method, params) {
   return body.result;
 }
 
+export function completedHostAcceptanceReply(value) {
+  if (
+    value.status === "interrupted" ||
+    value.session.blocks.some((block) => block.error || block.notice === "error")
+  )
+    throw new Error("The real Host Codex turn failed during contextual acceptance");
+  return value.status === "idle" &&
+    value.session.blocks.some((block) => block.role === "assistant" && block.text.trim())
+    ? value
+    : false;
+}
+
 async function hot1Contextual(context) {
-  await newSession(context, null);
-  const source = await sendPrompt(
-    context,
-    "This is an isolated second-opinion test. Reply READY without editing files.",
+  await prepareProject(context);
+  const configuration = await context.page.evaluate(
+    async ({ cwd, model, switchModel }) => {
+      const { resolveWorkspaceContext } =
+        await import("/src/features/workspaces/model/workspaceClient.ts");
+      const models = await import("/src/features/sessions/model/models.ts");
+      const resolve = (name) => {
+        const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const target = models.catalogModelsFor("codex").find((entry) =>
+          [entry.id, entry.name, entry.nativeId].some((value) =>
+            value
+              ?.toLowerCase()
+              .replace(/[^a-z0-9]/g, "")
+              .includes(normalized),
+          ),
+        );
+        if (!target) throw new Error("Explicit contextual model unavailable");
+        return target.id;
+      };
+      return {
+        projectId: (await resolveWorkspaceContext(cwd)).projectId,
+        model: resolve(model),
+        switchModel: resolve(switchModel),
+      };
+    },
+    {
+      cwd: context.state.project,
+      model: context.options.model,
+      switchModel: context.options.switchModel,
+    },
   );
-  const host = await isolatedHostRequest(context, "sessions.get", { sessionId: source.id });
+  const created = await isolatedHostRequest(context, "commands.dispatch", {
+    type: "create",
+    commandId: randomUUID(),
+    projectId: configuration.projectId,
+    harness: "codex",
+    model: configuration.model,
+    modelSettings: {},
+    runtimeMode: "full-access",
+  });
+  await isolatedHostRequest(context, "commands.dispatch", {
+    type: "send",
+    commandId: randomUUID(),
+    sessionId: created.sessionId,
+    text: "This is an isolated second-opinion test. Reply READY without editing files.",
+  });
+  const host = await waitUntil(
+    async () => {
+      const value = await isolatedHostRequest(context, "sessions.get", {
+        sessionId: created.sessionId,
+      });
+      return completedHostAcceptanceReply(value);
+    },
+    "The real Host Codex source turn did not complete",
+    context.options.timeout,
+  );
+  const source = host.session;
+  assert.equal(source.workspaceMode, "current", "Host source did not inherit Current policy");
+  assert(!source.workspaceId, "Host source unexpectedly acquired a managed workspace");
   const input = {
     sessionId: source.id,
     sourceBlockId: source.blocks.findLast(
@@ -2216,20 +2287,7 @@ async function hot1Contextual(context) {
     expectedRevision: host.revision,
     mode: "secondOpinion",
     harness: "codex",
-    model: await context.page.evaluate(async (name) => {
-      const models = await import("/src/features/sessions/model/models.ts");
-      const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const target = models.catalogModelsFor("codex").find((entry) =>
-        [entry.id, entry.name, entry.nativeId].some((value) =>
-          value
-            ?.toLowerCase()
-            .replace(/[^a-z0-9]/g, "")
-            .includes(normalized),
-        ),
-      );
-      if (!target) throw new Error("Explicit contextual target model unavailable");
-      return target.id;
-    }, context.options.switchModel),
+    model: configuration.switchModel,
     modelSettings: {},
   };
   const preview = await isolatedHostRequest(context, "sessions.contextual.preview", input);
@@ -2244,10 +2302,7 @@ async function hot1Contextual(context) {
       const value = await isolatedHostRequest(context, "sessions.get", {
         sessionId: receipt.sessionId,
       });
-      return value.status === "idle" &&
-        value.session.blocks.some((block) => block.role === "assistant" && block.text.trim())
-        ? value
-        : false;
+      return completedHostAcceptanceReply(value);
     },
     "Contextual real Codex second opinion did not complete",
     context.options.timeout,
@@ -2276,6 +2331,11 @@ async function hot1Contextual(context) {
   context.state.sessionId = destination.session.id;
   await selectAcceptanceSession(context, destination.session.id);
   return {
+    source: {
+      sessionId: source.id,
+      providerSessionId: source.providerSessionId,
+      workspaceMode: source.workspaceMode,
+    },
     sessionId: destination.session.id,
     workspaceMode: destination.session.workspaceMode,
     screenshots: await context.capture("hot1-contextual-current"),
@@ -2285,50 +2345,38 @@ async function hot1Contextual(context) {
 async function hot1Retry(context) {
   await newSession(context, null);
   const { sessionId } = await assertCodexComposer(context);
-  await context.page.evaluate(async (sessionId) => {
-    const store = await import("/src/features/sessions/model/sessionsStore.ts");
-    const api = window.__TAURI_INTERNALS__;
-    const original = api.invoke;
-    window.__hot1PreparationFailure = {
-      injected: false,
-      restore: () => {
-        api.invoke = original;
-      },
-    };
-    api.invoke = function (command, args, ...rest) {
-      if (
-        command === "remote_request" &&
-        args?.method === "projects.workspacePolicy.get" &&
-        store.sessionsRef.current
-          .find((entry) => entry.id === sessionId)
-          ?.blocks.some((block) => block.role === "user" && block.workspacePreparationPending) &&
-        !window.__hot1PreparationFailure.injected
-      ) {
-        window.__hot1PreparationFailure.injected = true;
-        api.invoke = original;
-        return Promise.reject(
-          new Error("HOT1 injected transient workspace policy transport failure"),
-        );
-      }
-      return original.call(this, command, args, ...rest);
-    };
-  }, sessionId);
+  const before = await session(context, sessionId);
+  assert(
+    !before.blocks.some((block) => block.role === "user"),
+    "Retry fixture must start with a fresh unsent session",
+  );
+  assert.equal(
+    before.workspaceMode,
+    undefined,
+    "Retry fixture is explicit Current/Worktree instead of unresolved Automatic",
+  );
+  assert(
+    !before.workspaceId && !before.worktreeCwd,
+    "Retry fixture already has an execution workspace",
+  );
+  const prompt = "Isolated transient preparation retry test. Reply RETRIED without editing.";
+  await context.page.locator("textarea:visible").first().fill(prompt);
+  await controlNative(context, "stop-host");
   let failed;
   try {
-    failed = await sendPrompt(
-      context,
-      "Isolated transient preparation retry test. Reply RETRIED without editing.",
-      { allowFailure: true },
+    failed = await sendPrompt(context, prompt, {
+      allowFailure: true,
+      expectedSessionId: sessionId,
+    });
+    assert.equal(
+      failed.workspaceMode,
+      undefined,
+      "Failed Automatic preparation became an explicit workspace choice",
     );
-    assert(
-      await context.page.evaluate(() => window.__hot1PreparationFailure.injected),
-      "First-send preparation did not reach the injected transport boundary",
-    );
-    assert(
-      failed.blocks.some((block) =>
-        /HOT1 injected transient workspace policy transport failure/.test(block.text),
-      ),
-      "Saved first-send error did not identify the injected preparation failure",
+    assert.equal(
+      failed.blocks.findLast((block) => block.role === "user")?.workspacePreparationPending,
+      true,
+      "The outage did not fail the saved first-send preparation; this is not the retry regression boundary",
     );
     assert(!failed.workspaceId, "Failed Automatic send created a managed workspace");
     assert.notEqual(
@@ -2338,9 +2386,26 @@ async function hot1Retry(context) {
     );
     await context.capture("hot1-transient-first-send-failure");
   } finally {
-    await context.page.evaluate(() => window.__hot1PreparationFailure?.restore());
+    await controlNative(context, "start-host");
   }
-  await context.page.getByRole("button", { name: "Retry", exact: true }).first().click();
+  await waitUntil(
+    async () => {
+      const available = await context.page.evaluate(
+        async (cwd) =>
+          (
+            await import("/src/features/workspaces/model/workspaceClient.ts")
+          ).getWorkspaceCapabilities({ cwd }),
+        context.state.project,
+      );
+      return available.includes("workspaces.policy.v1");
+    },
+    "The run-owned Host did not recover its policy capability after restart",
+    60000,
+  );
+  const pane = context.page.locator(
+    `[data-session-drop=${JSON.stringify(sessionId)}][data-session-visible="true"]`,
+  );
+  await pane.getByRole("button", { name: "Retry", exact: true }).click();
   const completed = await waitUntil(
     async () => {
       const current = await session(context, failed.id);
@@ -2360,7 +2425,7 @@ async function hot1Retry(context) {
     failureMode: failed.workspaceMode ?? "automatic",
     resolvedMode: completed.workspaceMode,
     injection:
-      "One failed native policy RPC at the first-send preparation boundary; restored before real Codex Retry",
+      "Stopped only this isolated run-owned Host after filling the fresh Automatic draft; verified saved pending preparation, then restarted Host before real Codex Retry",
     screenshots: await context.capture("hot1-retry-current"),
   };
 }
