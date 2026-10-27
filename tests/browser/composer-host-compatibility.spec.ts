@@ -11,6 +11,34 @@ test.beforeEach(async ({ page }) => {
 });
 
 for (const theme of ["light", "dark"] as const) {
+  test(`compact composer offers current checkout while the Host update waits (${theme})`, async ({
+    page,
+  }) => {
+    await page.goto(`${fixture}?compact`);
+    await page.waitForLoadState("networkidle");
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      theme === "light",
+    );
+    const status = page.locator("[data-workspace-creation-status]");
+    await expect(status).toContainText(waiting);
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Use current checkout", exact: true }),
+    ).toBeInViewport();
+    await page.screenshot({ path: `temp/verification/c1/compact-deferred-${theme}.png` });
+    await page.getByRole("button", { name: "Use current checkout", exact: true }).click();
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(
+      "Keep this draft while the Host updates",
+    );
+    const send = page.getByRole("button", { name: "Send", exact: true });
+    await expect(send).toBeEnabled();
+    await send.click();
+    await expect(page.getByTestId("submitted")).toHaveText(
+      "Keep this draft while the Host updates",
+    );
+  });
+
   test(`old Host accepts an explicit current checkout draft (${theme})`, async ({ page }) => {
     await page.goto(`${fixture}?mode=current`);
     await page.waitForLoadState("networkidle");

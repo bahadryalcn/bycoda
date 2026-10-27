@@ -68,6 +68,7 @@ function Fixture() {
           workspaceMode={mode}
           worktreeBase={base}
           hideProjectPicker
+          hideTopBar={new URLSearchParams(location.search).has("compact")}
           onWorkspaceModeChange={setMode}
           onWorktreeBaseChange={setBase}
           onFocus={() => {}}
