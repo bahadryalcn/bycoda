@@ -17,11 +17,22 @@ impl Activity {
         kind: &str,
         session_id: Option<&str>,
     ) -> Result<Option<Self>, String> {
+        Self::start_for_client(app, cwd, kind, session_id, None)
+    }
+
+    pub(crate) fn start_for_client(
+        app: &AppHandle,
+        cwd: &Path,
+        kind: &str,
+        session_id: Option<&str>,
+        client_id: Option<&str>,
+    ) -> Result<Option<Self>, String> {
         if !managed_path(app, cwd)? {
             return Ok(None);
         }
         let host =
-            crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
+            crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?
+                .with_client_id(client_id.map(str::to_owned))?;
         let id = uuid::Uuid::new_v4().to_string();
         let lease = host.call("native.activity.start", json!({"activityId":id,"cwd":crate::fs::path_to_js(cwd),"kind":kind,"sessionId":session_id}))?;
         if lease["activityId"] != id

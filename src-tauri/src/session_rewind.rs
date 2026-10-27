@@ -802,13 +802,15 @@ pub fn managed_turn_begin(
     session_id: String,
     user_block_id: String,
     run_id: String,
+    client_id: Option<String>,
 ) -> Result<(), String> {
     validate_id(&user_block_id, "user block")?;
     validate_id(&run_id, "turn run")?;
     reconcile_pending_native(&app, &store, Some(&session_id))?;
     let record = stored_managed_session(&store, &session_id)?;
     let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?
+            .with_client_id(client_id)?;
     let request = if let Some((raw, _)) = pending_turn(&store, &session_id)? {
         let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
         if request.user_block_id != user_block_id
@@ -856,6 +858,7 @@ pub fn managed_turn_recover(
     app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
+    client_id: Option<String>,
 ) -> Result<ManagedTurnRecovery, String> {
     validate_id(&session_id, "session")?;
     let Some((raw, phase)) = pending_turn(&store, &session_id)? else {
@@ -872,7 +875,8 @@ pub fn managed_turn_recover(
         return Err("Managed turn recovery identity does not match this session".into());
     }
     let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?
+            .with_client_id(client_id)?;
     if phase == "starting" {
         app.state::<crate::harness::HarnessHost>()
             .retire_managed_session(&session_id)?;
@@ -887,6 +891,7 @@ pub fn managed_turn_end(
     session_id: String,
     user_block_id: String,
     run_id: String,
+    client_id: Option<String>,
 ) -> Result<(), String> {
     let record = stored_managed_session(&store, &session_id)?;
     let Some((raw, _)) = pending_turn(&store, &session_id)? else {
@@ -905,7 +910,8 @@ pub fn managed_turn_end(
     app.state::<crate::harness::HarnessHost>()
         .retire_managed_session(&request.session_id)?;
     let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?;
+        crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?
+            .with_client_id(client_id)?;
     finish_managed_turn(&store, &host, &request)
 }
 
@@ -1610,6 +1616,16 @@ mod tests {
         crate::remote::NativeWorkspaceTransport,
         std::thread::JoinHandle<Vec<String>>,
     ) {
+        fake_native_host_for_client(replies, None)
+    }
+
+    fn fake_native_host_for_client(
+        replies: Vec<(&'static str, Option<Value>)>,
+        expected_client: Option<&'static str>,
+    ) -> (
+        crate::remote::NativeWorkspaceTransport,
+        std::thread::JoinHandle<Vec<String>>,
+    ) {
         use std::io::{BufRead, Read, Write};
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let transport = crate::remote::NativeWorkspaceTransport::for_test(format!(
@@ -1651,6 +1667,18 @@ mod tests {
                 let body: Value = serde_json::from_slice(&body).unwrap();
                 assert_eq!(body["environmentId"], "fixture-env");
                 assert_eq!(body["method"], expected);
+                let scoped = matches!(
+                    expected,
+                    "native.turn.begin"
+                        | "native.turn.end"
+                        | "native.turn.recover"
+                        | "native.activity.start"
+                        | "native.activity.end"
+                );
+                assert_eq!(
+                    body["params"]["clientId"].as_str(),
+                    expected_client.filter(|_| scoped)
+                );
                 methods.push(expected.to_string());
                 if let Some(response) = response {
                     let raw = if let Some(error) = response.get("fixtureRpcError") {
@@ -1793,6 +1821,66 @@ mod tests {
         assert_eq!(server.join().unwrap().len(), 2);
         drop(store);
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn checkpoint_native_desktop_client_context_is_current_and_not_part_of_legacy_turn_identity() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let request = native_turn_request(seed(&store), "current");
+        let legacy = native_turn_request(request.conversation_revision, "legacy");
+        let (host, server) = fake_native_host_for_client(
+            vec![
+                ("native.turn.begin", Some(turn_reply(&request, false))),
+                ("native.turn.end", Some(turn_reply(&request, false))),
+                ("native.turn.recover", Some(turn_reply(&legacy, true))),
+                (
+                    "native.activity.start",
+                    Some(json!({"activityId":"provider","workspaceId":"managed"})),
+                ),
+                ("native.activity.end", Some(json!({"acknowledged":true}))),
+                ("native.buffers.update", Some(json!({"acknowledged":true}))),
+            ],
+            Some("current-window"),
+        );
+        let host = host.with_client_id(Some("current-window".into())).unwrap();
+        begin_managed_turn(&store, &host, &request).unwrap();
+        let (raw, _) = pending_turn(&store, "native").unwrap().unwrap();
+        assert!(serde_json::from_str::<Value>(&raw)
+            .unwrap()
+            .get("clientId")
+            .is_none());
+        finish_managed_turn(&store, &host, &request).unwrap();
+        let legacy_raw = serde_json::to_string(&legacy).unwrap();
+        store.lock_conn().unwrap().execute("UPDATE native_managed_turns SET request_json=?1,phase='starting' WHERE session_id='native'", [&legacy_raw]).unwrap();
+        assert!(
+            recover_managed_turn(&store, &host, "native")
+                .unwrap()
+                .released
+        );
+        let retained: String = store
+            .lock_conn()
+            .unwrap()
+            .query_row(
+                "SELECT request_json FROM native_managed_turns WHERE session_id='native'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(retained, legacy_raw);
+        host.call(
+            "native.activity.start",
+            json!({"activityId":"provider","sessionId":"native","kind":"provider","cwd":"/fake"}),
+        )
+        .unwrap();
+        host.call("native.activity.end", json!({"activityId":"provider"}))
+            .unwrap();
+        host.call("native.buffers.update", json!({})).unwrap();
+        assert_eq!(server.join().unwrap().len(), 6);
+        assert!(
+            crate::remote::NativeWorkspaceTransport::for_test("http://127.0.0.1:1".into())
+                .with_client_id(Some("invalid client".into()))
+                .is_err()
+        );
     }
 
     fn managed_seed(store: &SessionStore) -> (i64, Value) {

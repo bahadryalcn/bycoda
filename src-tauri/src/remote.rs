@@ -1134,6 +1134,7 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
 /// Reconnects and retries are explicit; an uncertain mutation is not replayed here.
 pub(crate) struct NativeWorkspaceTransport {
     machine: StoredMachine,
+    client_id: Option<String>,
 }
 
 impl NativeWorkspaceTransport {
@@ -1149,6 +1150,7 @@ impl NativeWorkspaceTransport {
                 ssh: None,
                 local_host: true,
             },
+            client_id: None,
         }
     }
     pub(crate) fn connect(app: &AppHandle, capability: &str) -> Result<Self, String> {
@@ -1184,10 +1186,23 @@ impl NativeWorkspaceTransport {
         {
             return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
         }
-        Ok(Self { machine })
+        Ok(Self {
+            machine,
+            client_id: None,
+        })
     }
 
-    pub(crate) fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    /// Current authenticated desktop caller context is separate from persisted
+    /// turn identity, including when recovering a binding from an older app.
+    pub(crate) fn with_client_id(mut self, client_id: Option<String>) -> Result<Self, String> {
+        if let Some(client_id) = client_id.as_deref() {
+            crate::session_store::validate_id(client_id, "desktop client")?;
+        }
+        self.client_id = client_id;
+        Ok(self)
+    }
+
+    pub(crate) fn call(&self, method: &str, mut params: Value) -> Result<Value, String> {
         if !matches!(
             method,
             "native.turn.begin"
@@ -1210,6 +1225,18 @@ impl NativeWorkspaceTransport {
                 | "workspaces.cleanup.status"
         ) {
             return Err("Unsupported native workspace bridge operation".into());
+        }
+        if matches!(
+            method,
+            "native.turn.begin"
+                | "native.turn.end"
+                | "native.turn.recover"
+                | "native.activity.start"
+                | "native.activity.end"
+        ) {
+            if let Some(client_id) = self.client_id.as_deref() {
+                params["clientId"] = json!(client_id);
+            }
         }
         rpc(
             &self.machine.endpoint,
