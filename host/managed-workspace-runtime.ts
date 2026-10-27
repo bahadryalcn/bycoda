@@ -31,6 +31,7 @@ import { WorkspaceBootstrapService } from "./workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
+import { createExactGitRewindPolicy } from "./exact-git-rewind";
 
 export { workspacePathKey } from "./workspace-paths";
 export const inManagedWorkspace = (path: string, root: string) =>
@@ -49,6 +50,7 @@ export function createManagedWorkspaceRuntime(
   } = {},
 ) {
   const root = join(dirname(store.attachmentDir), "managed-workspaces");
+  const exactGitRewind = createExactGitRewindPolicy(root);
   const policy = createWorkspacePolicyResolver(store);
   let started = false;
   const startupRecovery = new AsyncLocalStorage<boolean>();
@@ -198,6 +200,7 @@ export function createManagedWorkspaceRuntime(
   };
   const history = new GitTurnHistory({ root, workspace });
   const nativeActivity = createManagedNativeActivity({
+    exactGitRewindEnabled: exactGitRewind.enabled,
     root,
     workspace,
     listWorkspaces: list,
@@ -206,6 +209,7 @@ export function createManagedWorkspaceRuntime(
     authorize: async (owner) => authorized(owner),
   });
   const nativeTurns = createManagedNativeTurns({
+    exactGitRewindEnabled: exactGitRewind.enabled,
     workspace,
     history,
     activity,
@@ -270,6 +274,7 @@ export function createManagedWorkspaceRuntime(
     },
   });
   engine.setManagedTurnHistoryAdapter({
+    exactGitRewindEnabled: exactGitRewind.enabled,
     history,
     assertWritable,
     workspaceForSession: async (value) => {
@@ -320,7 +325,7 @@ export function createManagedWorkspaceRuntime(
       return { workspaceId: prepared.workspace.id };
     },
     workspaceForCreate: async (request) => {
-      await assertWritable(request.workspaceId);
+      if (await exactGitRewind.enabled()) await assertWritable(request.workspaceId);
       const value = await workspace(request.workspaceId);
       if (value.owner.kind === "session" && (await nativeRewind.isNativeSession(value.owner.id)))
         throw new Error("This workspace already belongs to a native transcript");
@@ -357,7 +362,7 @@ export function createManagedWorkspaceRuntime(
       const source = request.source.session.workspaceId
         ? await workspace(request.source.session.workspaceId)
         : undefined;
-      if (source) await assertWritable(source.id);
+      if (source && (await exactGitRewind.enabled())) await assertWritable(source.id);
       const baseRef =
         source?.branchRef ??
         (
@@ -379,7 +384,7 @@ export function createManagedWorkspaceRuntime(
     },
     startActivity: async (value, kind) => {
       const id = value.session.workspaceId;
-      if (!id) return async () => {};
+      if (!id || !(await exactGitRewind.enabled())) return async () => {};
       await assertWritable(id);
       const hasNativeWriter = async () =>
         (await activity.list(id)).some(
@@ -399,6 +404,7 @@ export function createManagedWorkspaceRuntime(
     },
   });
   return {
+    exactGitRewind,
     registry,
     policy,
     activity,
@@ -462,7 +468,7 @@ export function createManagedWorkspaceRuntime(
             operationId: operation.id,
           });
       await activity.reconcilePreviousActivities();
-      const results = await rewind.recoverPending();
+      const results = (await exactGitRewind.enabled()) ? await rewind.recoverPending() : [];
       for (const operation of await registry.listOperations()) {
         if (operation.kind === "rewind") continue;
         try {

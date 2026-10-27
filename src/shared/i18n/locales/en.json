@@ -1,4 +1,8 @@
 {
+  "Exact Git rewind (experimental)": "Exact Git rewind (experimental)",
+  "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
+  "The local Host is unavailable. Reconnect and retry.": "The local Host is unavailable. Reconnect and retry.",
+  "The local Host returned an invalid setting. Reconnect and retry.": "The local Host returned an invalid setting. Reconnect and retry.",
   "Tools": "Tools",
   "Projects and groups": "Projects and groups",
   "Pending sprint assignments": "Pending sprint assignments",

@@ -60,6 +60,7 @@ import {
 import { isRemoteProjectPath } from "../../../../features/projects/model/recents";
 import { beginNativeManagedTurn } from "../../../../features/workspaces/model/nativeManagedTurn";
 import { t } from "../../../../shared/i18n";
+import { getExactGitRewindEnabled } from "../../../../features/settings/model/exactGitRewind";
 
 export async function runSubmitDispatch(
   ctx: SubmitDeps,
@@ -100,12 +101,18 @@ export async function runSubmitDispatch(
     const latest = sessionsRef.current.find((session) => session.id === sessionId) ?? current;
     if (latest.workspaceId && editedResend)
       throw new Error(t("Rewind conversation and files before resending an edited turn."));
-    if (latest.workspaceId && !isRemoteProjectPath(latest.cwd))
+    if (
+      latest.workspaceId &&
+      !isRemoteProjectPath(latest.cwd) &&
+      (await getExactGitRewindEnabled())
+    )
       finishManagedTurn = await beginNativeManagedTurn(latest, checkpointTurnId);
     const preparation = await prepareLocalTurn({
       traceId,
       checkpoint: async () => {
-        if (finishManagedTurn) return;
+        // Managed worktrees are ordinary folders unless exact rewind is opted in.
+        // Do not fall back to the legacy whole-tree checkpoint capture here.
+        if (latest.workspaceId) return;
         return !current.inboxAsk && !orchestrator.forSession(sessionId)
           ? ((turn.checkpointStarted = true),
             beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {

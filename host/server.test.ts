@@ -50,6 +50,9 @@ configureChildBackend(new HostChildBackend(binaries));
 const cleanups: Array<() => Promise<void>> = [];
 
 async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
+  expect(
+    (await s.call("workspaces.exactGitRewind.set", { enabled: true })).value.error,
+  ).toBeUndefined();
   const git = (...args: string[]) =>
     execFileSync("git", args, { cwd: s.directory, windowsHide: true, stdio: "pipe" });
   git("init", "-q", "-b", "main");
@@ -80,6 +83,63 @@ async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
   expect(configured.value.error).toBeUndefined();
 }
 
+it("keeps exact Git rewind disabled by default and advertises it only after owner opt-in", async () => {
+  const s = await setup();
+  expect((await s.call("workspaces.exactGitRewind.get")).value.result).toEqual({ enabled: false });
+  const capabilities = async () =>
+    (await s.call("environment.describe")).value.result.capabilities as string[];
+  expect(
+    (await capabilities()).filter((capability) => capability.startsWith("sessions.git-rewind")),
+  ).toEqual([]);
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: true }, "invalid")).status).toBe(
+    401,
+  );
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: "true" })).value.error).toMatch(
+    /boolean/,
+  );
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: true })).value.result).toEqual({
+    enabled: true,
+  });
+  expect(await capabilities()).toEqual(
+    expect.arrayContaining([
+      "sessions.git-rewind.experimental.v1",
+      "sessions.git-rewind.v1",
+      "sessions.git-rewind-undo.v1",
+    ]),
+  );
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: false })).value.result).toEqual({
+    enabled: false,
+  });
+  expect((await s.call("sessions.rewind.plan", {})).value.error).toMatch(/disabled/);
+  expect((await s.call("native.turn.begin", {})).value.error).toMatch(/disabled/);
+  const created = await s.engine.command({
+    type: "create",
+    commandId: "policy-active",
+    projectId: s.project.id,
+    workspaceMode: "current",
+    harness: "codex",
+    model: "codex:test",
+    runtimeMode: "supervised",
+  });
+  const session = await s.store.session(created.sessionId);
+  // A mirrored native turn is authoritative busy state even without a Host provider.
+  await s.store.save(
+    {
+      ...session,
+      status: "running",
+      revision: session.revision + 1,
+      session: { ...session.session, workspaceId: "native-worktree" },
+    },
+    { type: "fixture.native-turn" },
+  );
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: true })).value.error).toMatch(
+    /Wait for running worktree turns/,
+  );
+  expect((await s.call("workspaces.exactGitRewind.set", { enabled: false })).value.result).toEqual({
+    enabled: false,
+  });
+});
+
 describe("managed workspace owner RPCs", () => {
   it("requires an updated host instead of silently selecting the project checkout", () => {
     expect(() => requireWorkspaceCapability(undefined)).toThrow(/Update the execution Host/);
@@ -109,6 +169,9 @@ describe("managed workspace owner RPCs", () => {
     );
     const base = git("rev-parse", "HEAD");
     writeFileSync(join(s.directory, "source.txt"), "unrelated dirty source\n");
+    expect(
+      (await s.call("workspaces.exactGitRewind.set", { enabled: true })).value.error,
+    ).toBeUndefined();
     const capabilities = (await s.call("environment.describe")).value.result.capabilities;
     expect(capabilities).toEqual(
       expect.arrayContaining(["workspaces.managed.v1", "workspaces.policy.v1"]),

@@ -52,6 +52,8 @@ async function fixture(
   });
   const project = await engine.openProject(root);
   const runtime = createManagedWorkspaceRuntime(store, engine, options);
+  // These fixtures exercise the retained experimental path unless a test disables it.
+  await runtime.exactGitRewind.save(true);
   cleanups.push(async () => {
     runtime.retention.stop();
     await engine.close();
@@ -675,6 +677,56 @@ it("accepts only transport-issued owner proof and fences every start while a wor
     }),
   ).rejects.toThrow("use");
   await f.runtime.activity.stop(editor.id);
+});
+
+it("ignores old native turn bindings for three lightweight worktree sends", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const { workspace } = await f.runtime.registry.prepare(f.request);
+  const created = await f.engine.command({
+    type: "create",
+    commandId: "create",
+    projectId: f.project.id,
+    workspaceId: workspace.id,
+    harness: "codex",
+    model: "fixture",
+    modelSettings: {},
+    runtimeMode: "supervised",
+  });
+  const boundary = {
+    workspaceId: workspace.id,
+    sessionId: created.sessionId,
+    runId: "stuck-run",
+    userBlockId: "stuck-user",
+    conversationRevision: 0,
+  };
+  await f.runtime.withOwner("native-device", (owner) =>
+    f.runtime.nativeTurns.begin(boundary, owner),
+  );
+  await f.runtime.exactGitRewind.save(false);
+  const begin = vi.spyOn(f.runtime.history, "begin");
+  const end = vi.spyOn(f.runtime.history, "end");
+  const activity = vi.spyOn(f.runtime.activity, "start");
+  for (let turn = 0; turn < 3; turn++) {
+    await f.engine.command({
+      type: "send",
+      commandId: `send-${turn}`,
+      sessionId: created.sessionId,
+      text: `turn ${turn}`,
+    });
+    await vi.waitFor(
+      async () => expect((await f.store.session(created.sessionId)).status).toBe("idle"),
+      { timeout: 10_000 },
+    );
+  }
+  expect(f.send).toHaveBeenCalledTimes(3);
+  expect(f.send.mock.calls.every(([input]) => input.cwd === workspace.path)).toBe(true);
+  expect(begin).not.toHaveBeenCalled();
+  expect(end).not.toHaveBeenCalled();
+  expect(activity).not.toHaveBeenCalled();
+  // The old binding remains available for explicit experimental recovery.
+  await f.runtime.exactGitRewind.save(true);
+  await f.runtime.withOwner("native-device", (owner) => f.runtime.nativeTurns.end(boundary, owner));
 });
 
 it("prevents a host provider from starting while the same managed session has a native turn in flight", async () => {

@@ -479,6 +479,8 @@ export function parseCommand(input: unknown): HostCommand {
  * The resolver must reject unknown/broken managed ownership rather than return legacy.
  */
 export interface ManagedTurnHistoryAdapter {
+  /** Exact snapshots and writer admission are experimental and opt-in per Host. */
+  exactGitRewindEnabled?(): boolean | Promise<boolean>;
   history: TurnGitHistory;
   workspaceForSession(value: HostSession): Promise<{ workspaceId: string; path?: string } | null>;
   assertWritable(workspaceId: string): Promise<void>;
@@ -549,6 +551,8 @@ export class HostEngine {
   >();
   private retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private recoveryWork = new Map<string, Promise<void>>();
+  /** Warm lightweight providers still belong to this engine and drain at shutdown. */
+  private retainedProviders = new Map<string, Set<HostProvider>>();
   private closing = false;
   private closePromise?: Promise<void>;
   /** A turn ended and the session is idle again, and how it ended (the host drains its queue). */
@@ -606,10 +610,15 @@ export class HostEngine {
     await this.initialize(true);
   }
 
+  private async exactGitRewindEnabled(): Promise<boolean> {
+    return (await this.managedTurns?.exactGitRewindEnabled?.()) === true;
+  }
+
   private async executionActivity(value: HostSession, kind: "provider" | "shell") {
     if (isTaskWorktreeRemoving(value.session.worktreeCwd ?? value.session.cwd))
       throw new Error("The task checkout is being removed; wait before starting work");
     await this.managedWorkspace(value);
+    if (!(await this.exactGitRewindEnabled())) return undefined;
     return this.managedTurns?.startActivity?.(value, kind);
   }
 
@@ -624,11 +633,13 @@ export class HostEngine {
       throw new Error(
         "Managed workspace execution requires its authoritative turn-history adapter",
       );
-    if (workspace) await this.managedTurns!.assertWritable(workspace.workspaceId);
+    if (workspace && (await this.exactGitRewindEnabled()))
+      await this.managedTurns!.assertWritable(workspace.workspaceId);
     return workspace;
   }
 
   private async beginManagedTurn(value: HostSession, userBlockId: string) {
+    if (!(await this.exactGitRewindEnabled())) return undefined;
     const workspace = await this.managedWorkspace(value);
     if (!workspace) return undefined;
     const boundary = {
@@ -837,6 +848,7 @@ export class HostEngine {
   private async initialize(managedOnly = false): Promise<void> {
     await this.store.ready;
     const store = this.store;
+    const exactGitRewind = await this.exactGitRewindEnabled();
     // Provider dispatch is not transactional with SQLite. Never replay a send
     // automatically after a crash; its external effects may already exist.
     // Only sessions that need rewriting are parsed; the rest are bound from
@@ -866,7 +878,7 @@ export class HostEngine {
         continue;
       }
       if (managedOnly && !managed) continue;
-      if (managed) {
+      if (managed && exactGitRewind) {
         try {
           await this.managedTurns!.assertWritable(managed.workspaceId);
         } catch {
@@ -914,7 +926,7 @@ export class HostEngine {
           void this.checkpoints
             .recover(value.session.id, value.session.cwd)
             .catch((error) => console.warn("Checkpoint recovery failed", error));
-        } else {
+        } else if (exactGitRewind) {
           for (const record of await this.managedTurns!.history.list(
             managed.workspaceId,
             value.session.id,
@@ -1418,9 +1430,10 @@ export class HostEngine {
             await provider.stop(id);
             const before = await this.store.session(id);
             if (this.running.get(id)?.runId !== runId || before.runId !== runId) return;
-            await this.checkpoints
-              .finish(id, before.session.cwd, runId)
-              .catch((error) => console.warn("Workspace checkpoint failed", error));
+            if (!this.running.get(id)?.managed)
+              await this.checkpoints
+                .finish(id, before.session.cwd, runId)
+                .catch((error) => console.warn("Workspace checkpoint failed", error));
             await this.store.db.scope(() =>
               this.operations.run(id, async () => {
                 if (this.running.get(id)?.runId !== runId) return;
@@ -1582,7 +1595,8 @@ export class HostEngine {
                 throw new Error(
                   "Managed session creation requires authoritative workspace ownership",
                 );
-              if (managed) await this.managedTurns!.assertWritable(managed.workspaceId);
+              if (managed && (await this.exactGitRewindEnabled()))
+                await this.managedTurns!.assertWritable(managed.workspaceId);
               if (
                 command.sessionId &&
                 managed?.sessionId &&
@@ -2396,7 +2410,8 @@ export class HostEngine {
     try {
       await this.flush(command.sessionId);
       const initial = await this.store.session(command.sessionId);
-      if (await this.managedWorkspace(initial))
+      const workspace = await this.managedWorkspace(initial);
+      if (workspace && (await this.exactGitRewindEnabled()))
         throw new Error(
           "Managed workspaces require sessions.rewind.plan/apply; preview the Git rewind first",
         );
@@ -2412,7 +2427,11 @@ export class HostEngine {
       const strategy = conversationRewindStrategy(
         initial.session,
         command.blockId,
-        !!provider.rewind && !!initial.session.providerSessionId,
+        // Provider rewind APIs may restore files (for example OpenCode revert).
+        // Lightweight managed rewind is explicitly transcript-only, even if a
+        // persisted snapshot is missing its managed-workspace metadata.
+        !workspace && !!provider.rewind && !!initial.session.providerSessionId,
+        !!workspace,
       );
       let nativeProviderSessionId: string | undefined;
       // The removed turns may have carried the runtime hint; resend it next turn.
@@ -2782,7 +2801,8 @@ export class HostEngine {
               await provider.stop(session.id);
             }
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
-            if (!managedBoundary)
+            // Lightweight worktrees do not fall back to the legacy whole-tree capture.
+            if (!active.managed)
               await this.checkpoints.begin(session.id, session.cwd, runId!).catch((error) => {
                 if (String(error).includes("checkpoint-coordination:")) throw error;
                 console.warn("Workspace checkpoint failed", error);
@@ -2891,9 +2911,23 @@ export class HostEngine {
         }
         active.ending = true;
         ready();
-        // Keep the session running until the old process has stopped. Otherwise
-        // a follow-up can race cleanup and have its newly spawned child killed.
-        await provider.stop(session.id);
+        // Exact after-capture needs process retirement. Lightweight worktrees retain
+        // the provider's warm binding after success. Failed/cancelled turns still
+        // settle their writer before a follow-up can start.
+        if (
+          !active.managed ||
+          active.managedTurns.length ||
+          this.closing ||
+          active.cancelled ||
+          error
+        ) {
+          await provider.stop(session.id);
+          this.retainedProviders.get(session.id)?.delete(provider);
+        } else {
+          const retained = this.retainedProviders.get(session.id) ?? new Set<HostProvider>();
+          retained.add(provider);
+          this.retainedProviders.set(session.id, retained);
+        }
         // Retire outstanding delivery work before exposing an idle session.
         await active.steers;
         if (active.managed) {
@@ -3115,6 +3149,12 @@ export class HostEngine {
         this.provider((await this.store.session(id)).session.harness).stop(id),
       ),
     );
+    await join(
+      [...this.retainedProviders].flatMap(([id, providers]) =>
+        [...providers].map((provider) => provider.stop(id)),
+      ),
+    );
+    this.retainedProviders.clear();
     await join([...this.running.values()].map((active) => active.done));
     await join(this.recoveryWork.values());
     await join([this.operations.drain()]);

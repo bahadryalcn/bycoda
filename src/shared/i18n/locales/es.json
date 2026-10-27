@@ -1,4 +1,8 @@
 {
+  "Exact Git rewind (experimental)": "Rebobinado exacto de Git (experimental)",
+  "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Desactivado de forma predeterminada. Captura árboles Git completos para un rebobinado exacto. Se aplica a los nuevos turnos en el Host de este equipo.",
+  "The local Host is unavailable. Reconnect and retry.": "El Host local no está disponible. Vuelve a conectarte e inténtalo de nuevo.",
+  "The local Host returned an invalid setting. Reconnect and retry.": "El Host local devolvió un ajuste no válido. Vuelve a conectarte e inténtalo de nuevo.",
   "Tools": "Herramientas",
   "Projects and groups": "Proyectos y grupos",
   "Pending sprint assignments": "Asignaciones de sprint pendientes",

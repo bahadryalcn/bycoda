@@ -72,6 +72,7 @@ async function fixture() {
     const history = new GitTurnHistory({ root: join(root, "private-history"), workspace });
     let writable = true;
     const native = createManagedNativeTurns({
+      exactGitRewindEnabled: async () => true,
       workspace,
       history,
       activity,
@@ -101,6 +102,7 @@ async function fixture() {
     owner: { kind: "session", id: "native-session" },
     slug: "Native session",
     idempotencyKey: "native-workspace",
+    choice: { defaultMode: "worktree" },
   });
   return {
     ...graph,

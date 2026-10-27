@@ -1076,6 +1076,19 @@ pub fn harness_free_port() -> Result<u16, String> {
         .map_err(|e| format!("Failed to reserve a local port: {e}"))
 }
 
+fn exact_workspace_activity_enabled(app: &AppHandle, cwd: &Path) -> bool {
+    // Plain checkouts/folders never needed the execution Host for process
+    // admission. Only persisted managed directories need this policy lookup.
+    app.try_state::<crate::session_store::SessionStore>()
+        .and_then(|store| store.managed_workspace_paths().ok())
+        .is_some_and(|paths| {
+            paths
+                .iter()
+                .any(|path| crate::worktrees::contains_working_dir(Path::new(path), cwd))
+        })
+        && crate::session_store::rewind::exact_git_rewind_enabled(app)
+}
+
 /// Off the main thread: fork/exec, and `apply_gui_env` can wait on the first
 /// login-shell read. Callers await this before writing to the child. Kill can
 /// still race the fork, so a cancelled spawn must not reinsert the child.
@@ -1116,8 +1129,11 @@ pub fn harness_spawn(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
-    let mut workspace_activity =
-        crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?;
+    let mut workspace_activity = if exact_workspace_activity_enabled(&app, &workdir) {
+        crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?
+    } else {
+        None
+    };
     let _reservation = crate::worktree_lifecycle::reserve_spawn(&workdir)?;
     let (epoch, kill_all, prev) = host.begin_spawn(&session_id);
     let mut tool_spawn =
@@ -2363,8 +2379,11 @@ pub async fn run_shell_command(
         return Err("Enter a command to run".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
-        let mut activity =
-            crate::native_workspace::Activity::start(&app, &expand_home(&cwd), "shell", None)?;
+        let mut activity = if exact_workspace_activity_enabled(&app, &expand_home(&cwd)) {
+            crate::native_workspace::Activity::start(&app, &expand_home(&cwd), "shell", None)?
+        } else {
+            None
+        };
         if let Some(activity) = activity.as_mut() {
             activity.started();
         }
