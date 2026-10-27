@@ -76,6 +76,7 @@ async function fixture() {
     title: id,
     prompt: "Implement scoped work",
     projectId: project.id,
+    isolate: true,
     harness: "claude",
     model: "test",
     modelSettings: {},
