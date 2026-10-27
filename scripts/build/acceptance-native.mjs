@@ -324,11 +324,20 @@ async function dismissVisibleOverlays(context) {
   for (let remaining = 3; remaining > 0; remaining--) {
     const overlay = context.page.locator('[role="dialog"]:visible,[role="menu"]:visible').last();
     if (!(await overlay.count())) return;
-    const target = overlay.locator("button,input,textarea,[tabindex]").first();
-    if (await target.count()) await target.focus();
-    else return;
-    await context.page.keyboard.press("Escape");
+    const close = overlay.getByRole("button", { name: "Close", exact: true }).last();
+    const cancel = overlay.getByRole("button", { name: "Cancel", exact: true }).last();
+    if ((await close.isVisible()) && (await close.isEnabled())) await close.click();
+    else if ((await cancel.isVisible()) && (await cancel.isEnabled())) await cancel.click();
+    else {
+      const target = overlay.locator("button,input,textarea,[tabindex]").first();
+      if (await target.count()) await target.focus();
+      else throw new Error("Existing development overlay has no safe dismissal target");
+      await context.page.keyboard.press("Escape");
+    }
+    await overlay.waitFor({ state: "hidden", timeout: 5000 });
   }
+  if (await context.page.locator('[role="dialog"]:visible,[role="menu"]:visible').count())
+    throw new Error("Existing development overlays did not close during setup");
 }
 async function closeSettings(context) {
   const settings = context.page.getByRole("region", { name: "Settings", exact: true });
@@ -379,6 +388,8 @@ export async function prepareProject(context) {
     recents.notifyProjectPathsChanged();
   }, project);
   await closeRecoveredSessions(context);
+  await dismissVisibleOverlays(context);
+  await closeSettings(context);
   const projectButton = context.page
     .getByRole("button", { name: basename(project), exact: true })
     .first();
