@@ -2186,6 +2186,35 @@ export async function createHostServer(
                     await managedWorkspaces.touchActivity(value.id);
                   break;
                 }
+                case "sessions.files.revertPlan":
+                case "sessions.files.revert": {
+                  const sessionId = String(params.sessionId ?? "");
+                  const userBlockId = String(params.userBlockId ?? "");
+                  if (!(await inHost(sessionId)))
+                    throw new Error("File revert requires a host-executed session");
+                  const value = await engine.store.session(sessionId);
+                  if (value.status === "running")
+                    throw new Error("Stop the session before reverting files");
+                  if (
+                    !value.session.blocks.some(
+                      (block) => block.id === userBlockId && block.role === "user",
+                    )
+                  )
+                    throw new Error("User message not found in this session");
+                  if (params.planToken !== undefined && typeof params.planToken !== "string")
+                    throw new Error("Invalid file revert plan token");
+                  const cwd = sessionWorkCwd(value.session);
+                  result =
+                    input.method === "sessions.files.revertPlan"
+                      ? await engine.checkpoints.filesRevertPlan(sessionId, cwd, userBlockId)
+                      : await engine.checkpoints.filesRevert(
+                          sessionId,
+                          cwd,
+                          userBlockId,
+                          params.planToken as string | undefined,
+                        );
+                  break;
+                }
                 case "sessions.rewind.status": {
                   const value = await workspaceForOwnerRpc(params.workspaceId);
                   if (
@@ -2813,6 +2842,7 @@ export async function createHostServer(
                       "sessions.executionOwner",
                       "sessions.rewind",
                       "sessions.checkpoint-review",
+                      "sessions.edit-from-here.v1",
                       "sessions.plan.review",
                       "sessions.contextual",
                       ...(providers.includes("claude") && engine.supportsItemStop("claude")
