@@ -191,6 +191,33 @@ This frozen checkout has no mobile source directory. Mobile screen enumeration a
 
 ## Committed handoff references
 
+### H1 provider/model handoff capacity (2026-10-27)
+
+Owner decision, H1 stream brief in this session: "Never block a send because of
+the handoff budget" and "The provider still reports a genuine \"request too
+large\" error itself."
+
+- `1b9ec43a`: Codex and Claude discovery retain finite positive context capacity.
+- `a1a75b67`: `handoffBudget.ts` drops history, recap, then the saved-history
+  reference as capacity shrinks. Empty handoffs yield a persistent `info` notice
+  with the archive path. The request stays intact. Capacity uses discovered
+  identity, bundled identity, then a budget fallback of 128,000 for Codex/Claude
+  or 32,000 for other harnesses. These defaults are estimates, not provider limits.
+- `1836c4c8`: desktop budgets the prepared request after runtime/skill policy
+  guidance, including separate Codex runtime instructions. The newly submitted
+  user block is excluded from earlier history to prevent replaying it twice.
+- `9192d03e`: Host budgets prepared skills/runtime/replay context once and resets
+  the outgoing provider thread even when optional handoff text is empty.
+- Focused checks: 337 client/catalog/persistence cases and all 130 Host engine
+  cases passed; fast web/Host TypeScript checks passed. Evidence stays in
+  `temp/verification/h1/`. No existing browser fixture covers handoff notices;
+  this is a text-only change using the existing transcript notice row. Native,
+  installed-app and provider acceptance are unverified; no installer was built.
+- User guidance: `docs/guides/chat-artifacts-and-connected-files.md` describes
+  saved history and the non-blocking notice. Live claim APIs were unavailable;
+  the owner assigned this stream `fix/handoff-budget` / `wtm-handoff`, excluding
+  the parallel native managed-turn files.
+
 Contracts baseline: `f26ac112404e326478adb687c23ca9cc032acfef`; contracts: `docs/reference/managed-workspaces.md`. On behavior changes, add the implementation commit, focused checks, screenshot paths and build identity. Scratch plans are not shipped behavior.
 
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
