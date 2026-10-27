@@ -1285,7 +1285,11 @@ async function openWorkspaceSettings(context) {
 
 async function scenario6(context) {
   await newSession(context, "worktree");
-  await commitTurn(context, 1, "lifecycle");
+  const targetCounter = Number(
+    (await readFile(join(context.state.project, "counter.txt"), "utf8")).trim(),
+  );
+  assert(Number.isSafeInteger(targetCounter), "Fake target counter is invalid");
+  await commitTurn(context, targetCounter + 1, "lifecycle");
   context.state.worktreeSessionId = context.state.sessionId;
   const current = await session(context, context.state.worktreeSessionId);
   const workspace = await context.rpc("workspaces.get", { workspaceId: current.workspaceId });
@@ -1312,8 +1316,11 @@ async function scenario6(context) {
   );
   const finishedShots = await context.capture("06-mark-finished");
   await click(context, "Review changes");
+  const reviewDialog = context.page.getByRole("dialog", { name: "Review changes", exact: true });
+  await reviewDialog.waitFor();
+  const merge = reviewDialog.getByRole("button", { name: /^(Merge into|Birleştir)/ }).last();
+  await waitUntil(() => merge.isEnabled(), "Owner merge review was not ready", 45000);
   const screenshots = [...finishedShots, ...(await context.capture("06-owner-review"))];
-  const merge = context.page.getByRole("button", { name: /^(Merge into|Birleştir)/ }).last();
   await merge.click();
   await waitUntil(
     async () =>
@@ -1329,10 +1336,21 @@ async function scenario6(context) {
   await context.page
     .getByRole("dialog")
     .getByRole("button", { name: "Close", exact: true })
+    .last()
     .click();
   const merged = await context.rpc("workspaces.get", { workspaceId: workspace.id });
   assert.equal(merged.state, "merged", "Merged workspace was not finalized");
   await click(context, "Delete directory");
+  const removalDialog = context.page.getByRole("dialog", {
+    name: "Delete worktree directory",
+    exact: true,
+  });
+  await removalDialog.waitFor();
+  await waitUntil(
+    () => removalDialog.getByRole("button", { name: "Delete directory", exact: true }).isEnabled(),
+    "Directory removal preview was not ready",
+    45000,
+  );
   screenshots.push(...(await context.capture("06-directory-removal-preview")));
   await context.page
     .getByRole("dialog")
