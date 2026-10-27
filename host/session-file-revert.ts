@@ -292,13 +292,14 @@ export class SessionFileRevert {
     if (this.active.has(session))
       await this.finish(session, cwd, this.active.get(session)!.turn.id, true);
     const history = await this.load(session, cwd);
+    if (history.turns.some((previous) => previous.id === turnId))
+      throw new Error("File history turn was already recorded; a new turn ID is required");
     const turn: Turn = {
       id: turnId,
       userBlockId,
       files: Object.create(null),
       unavailable: "Turn file capture was interrupted",
     };
-    history.turns = history.turns.filter((previous) => previous.id !== turnId);
     history.turns.push(turn);
     await this.save(session, history);
     const active: Active = {
@@ -407,6 +408,7 @@ export class SessionFileRevert {
       if (active.complete) delete turn.unavailable;
       else turn.unavailable = "The turn exceeded file capture limits or contains unsupported files";
       await this.save(session, history);
+      return turn.unavailable ? undefined : { files: turn.files, shared };
     } finally {
       this.active.delete(session);
     }
@@ -482,7 +484,13 @@ export class SessionFileRevert {
     history.turns.splice(index);
     await this.save(session, history);
   }
-  async revert(session: string, cwd: string, userBlockId: string, _planToken?: string) {
+  async revert(
+    session: string,
+    cwd: string,
+    userBlockId: string,
+    _planToken?: string,
+    onReverted?: (path: string, restored: Image) => void,
+  ) {
     validId(userBlockId);
     cwd = await realpath(cwd);
     if (this.active.has(session)) throw new Error("Session is still running");
@@ -537,6 +545,7 @@ export class SessionFileRevert {
           rescue = undefined;
         }
         result.reverted.push(path);
+        onReverted?.(path, revision.before);
       } catch (error) {
         let reason = message(error);
         if (rescue) {

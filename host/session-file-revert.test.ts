@@ -53,6 +53,43 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it("retires committed aggregate review entries while retaining message history", async () => {
+    const f = await fixture();
+    await f.turn("one", () => f.write("a.txt", "committed\n"));
+    await f.git("add", ".");
+    await f.git("commit", "-qm", "accepted changes");
+    await f.turn("two", () => f.write("new.txt", "new own\n"));
+    const review = await f.checkpoints.status("s", f.cwd);
+    expect(review.files.map((file) => file.path)).toEqual([join(f.cwd, "new.txt")]);
+    expect(
+      (await f.checkpoints.filesRevertPlan("s", f.cwd, "one")).files.map((file) => file.path),
+    ).toContain("a.txt");
+  });
+  it("preserves existing checkpoint review and per-file Undo after a lightweight turn", async () => {
+    const f = await fixture();
+    await f.turn("one", () => f.write("a.txt", "mine\n"));
+    const status = await f.checkpoints.status("s", f.cwd);
+    expect(status.files).toHaveLength(1);
+    expect(status.files[0].undoable).toBe(true);
+    await f.checkpoints.change("s", f.cwd, "a.txt", true, status.expectedCheckpoint);
+    expect(await f.read("a.txt")).toBe("base\n");
+  });
+  it("does not let stale legacy metadata block safe new files or authorize ambiguous old files", async () => {
+    const f = await fixture();
+    await f.turn("one", () => f.write("a.txt", "ambiguous old\n"));
+    const manifest = join(f.root, "checkpoints", "s", "manifest.json");
+    const record = JSON.parse(await readFile(manifest, "utf8"));
+    record.shared = true;
+    record.error = "old interrupted capture";
+    await writeFile(manifest, JSON.stringify(record));
+    await f.turn("two", () => f.write("new.txt", "new own\n"));
+    const status = await f.checkpoints.status("s", f.cwd);
+    expect(status.files.find((file) => file.path.endsWith("a.txt"))?.undoable).toBe(false);
+    expect(status.files.find((file) => file.path.endsWith("new.txt"))?.undoable).toBe(true);
+    await f.checkpoints.change("s", f.cwd, "new.txt", true, status.expectedCheckpoint);
+    await expect(f.read("new.txt")).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await f.read("a.txt")).toBe("ambiguous old\n");
+  });
   it("retains Unicode and object-prototype-like filenames as ordinary files", async () => {
     const f = await fixture();
     await f.write("__proto__", "before\n");
@@ -129,6 +166,9 @@ describe("session message file revert", () => {
       skipped: [],
     });
     expect(await f.read("a.txt")).toBe("one\n");
+    const review = await restarted.status("s", f.cwd);
+    expect(review.files).toHaveLength(1);
+    expect(review.files[0].undoable).toBe(true);
     await expect(f.read("created.txt")).rejects.toMatchObject({ code: "ENOENT" });
     expect(await f.git("for-each-ref", "refs/bycoda/checkpoints")).toBe("");
     expect(await readdir(f.cwd)).not.toContainEqual(expect.stringContaining(".bycoda-"));
@@ -339,6 +379,8 @@ describe("session message file revert", () => {
     expect((await restarted.filesRevertPlan("s", f.cwd, "one")).unavailable).toMatch(/interrupted/);
     await expect(restarted.filesRevert("s", f.cwd, "one")).rejects.toThrow(/interrupted/);
     expect(await f.read("a.txt")).toBe("partial\n");
+    await expect(restarted.beginFilesTurn("s", f.cwd, "one")).rejects.toThrow(/already recorded/);
+    expect((await restarted.filesRevertPlan("s", f.cwd, "one")).unavailable).toMatch(/interrupted/);
   });
   it("rejects linked parents introduced after capture without changing their target", async () => {
     const f = await fixture();
