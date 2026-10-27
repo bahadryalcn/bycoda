@@ -1311,6 +1311,7 @@ async function scenario3(context) {
   await controlNative(context, "start-host");
   await context.page.reload({ waitUntil: "domcontentloaded" });
   await closeRecoveredSessions(context);
+  await selectAcceptanceSession(context, current.id);
   await waitUntil(async () => {
     const check = new DatabaseSync(databasePath);
     try {
