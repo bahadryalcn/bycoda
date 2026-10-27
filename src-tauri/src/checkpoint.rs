@@ -2096,6 +2096,69 @@ mod tests {
     }
 
     #[test]
+    fn undo_accepts_a_linked_ancestor_and_refuses_a_link_inside_the_checkout() {
+        let temp = tmp("undo-ancestor");
+        let repo = temp.0.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        assert!(init_git_commit(&repo, &[("sub/file.txt", "before\n")]));
+        let link = |path: &Path, target: &Path| {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(target, path).unwrap();
+            #[cfg(windows)]
+            {
+                let mut command = Command::new("cmd");
+                crate::hide_window_console(&mut command);
+                let output = command
+                    .args(["/c", "mklink", "/J"])
+                    .arg(path.to_string_lossy().replace('/', "\\"))
+                    .arg(target.to_string_lossy().replace('/', "\\"))
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+        };
+        let unlink = |path: &Path| {
+            #[cfg(windows)]
+            std::fs::remove_dir(path).unwrap();
+            #[cfg(unix)]
+            std::fs::remove_file(path).unwrap();
+        };
+        let alias = temp.0.join("ancestor");
+        link(&alias, &temp.0);
+        let cwd = alias.join("repo").to_string_lossy().into_owned();
+        let canonical = crate::fs::path_to_js(&repo.canonicalize().unwrap());
+        let (_root, store) = store();
+        store.ensure("safe", &cwd).unwrap();
+        std::fs::write(repo.join("sub/file.txt"), "changed\n").unwrap();
+        record(&store, "safe", &cwd, &["sub/file.txt"]);
+        store.undo("safe", &canonical, None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(repo.join("sub/file.txt")).unwrap(),
+            "before\n"
+        );
+
+        store.ensure("linked", &cwd).unwrap();
+        std::fs::write(repo.join("sub/file.txt"), "changed again\n").unwrap();
+        record(&store, "linked", &cwd, &["sub/file.txt"]);
+        std::fs::remove_dir_all(repo.join("sub")).unwrap();
+        let outside = temp.0.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("file.txt"), "must survive\n").unwrap();
+        link(&repo.join("sub"), &outside);
+        assert!(store.undo("linked", &canonical, None).is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("file.txt")).unwrap(),
+            "must survive\n"
+        );
+        unlink(&repo.join("sub"));
+        unlink(&alias);
+    }
+
+    #[test]
     fn undo_reverts_only_session_files_and_keeps_user_dirty() {
         let repo = tmp("keep-user");
         if !init_git_commit(&repo.0, &[("user.txt", "mine\n"), ("clean.txt", "head\n")]) {

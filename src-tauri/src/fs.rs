@@ -7464,10 +7464,30 @@ pub(crate) fn expand_home(path: &str) -> PathBuf {
 pub(crate) fn path_to_js(path: &Path) -> String {
     let text = path.to_string_lossy();
     if cfg!(windows) {
-        text.replace('\\', "/")
+        let text = text.replace('\\', "/");
+        text.strip_prefix("//?/UNC/")
+            .map(|unc| format!("//{unc}"))
+            .unwrap_or_else(|| text.strip_prefix("//?/").unwrap_or(&text).to_owned())
     } else {
         text.into_owned()
     }
+}
+
+#[cfg(all(test, windows))]
+#[test]
+fn canonical_windows_paths_do_not_leak_verbatim_prefixes_to_git_or_ui() {
+    assert_eq!(
+        path_to_js(Path::new(r"\\?\C:\workspaces\project")),
+        "C:/workspaces/project"
+    );
+    assert_eq!(
+        path_to_js(Path::new(r"\\?\UNC\server\share\project")),
+        "//server/share/project"
+    );
+    assert_eq!(
+        path_to_js(Path::new(r"\\server\share\project")),
+        "//server/share/project"
+    );
 }
 
 #[cfg(all(test, unix))]

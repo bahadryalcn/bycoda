@@ -36,7 +36,7 @@ fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let output = crate::fs::git_cmd_output(
         command
             .arg("-C")
-            .arg(root)
+            .arg(path_to_js(root))
             .args(args)
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("GIT_OPTIONAL_LOCKS", "0"),
@@ -80,19 +80,22 @@ fn list(root: &Path) -> Result<Vec<Worktree>, String> {
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
-    let a = a.canonicalize().unwrap_or_else(|_| a.to_path_buf());
-    let b = b.canonicalize().unwrap_or_else(|_| b.to_path_buf());
+    let a =
+        crate::worktree_lifecycle::canonical_workspace_path(a).unwrap_or_else(|_| a.to_path_buf());
+    let b =
+        crate::worktree_lifecycle::canonical_workspace_path(b).unwrap_or_else(|_| b.to_path_buf());
     if cfg!(windows) {
-        a.to_string_lossy()
-            .eq_ignore_ascii_case(&b.to_string_lossy())
+        path_to_js(&a).eq_ignore_ascii_case(&path_to_js(&b))
     } else {
         a == b
     }
 }
 
 pub(crate) fn contains_working_dir(root: &Path, cwd: &Path) -> bool {
-    let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-    let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
+    let root = crate::worktree_lifecycle::canonical_workspace_path(root)
+        .unwrap_or_else(|_| root.to_path_buf());
+    let cwd = crate::worktree_lifecycle::canonical_workspace_path(cwd)
+        .unwrap_or_else(|_| cwd.to_path_buf());
     if cfg!(windows) {
         let root = path_to_js(&root).to_lowercase();
         let cwd = path_to_js(&cwd).to_lowercase();
@@ -634,9 +637,11 @@ pub fn git_worktree_removal_review(
 }
 
 fn remove(root: &Path, path: &Path, force: bool) -> Result<(), String> {
-    let result = remove_inner(root, path, force);
+    let root = crate::worktree_lifecycle::canonical_workspace_path(root)?;
+    let path = crate::worktree_lifecycle::canonical_removal_path(path)?;
+    let result = remove_inner(&root, &path, force);
     if result.is_ok() {
-        crate::worktree_lifecycle::finish_removal_recovery(path);
+        crate::worktree_lifecycle::finish_removal_recovery(&path);
     }
     result
 }
@@ -671,7 +676,7 @@ fn remove_inner(root: &Path, path: &Path, force: bool) -> Result<(), String> {
         persist_native_removal(root, &tree)?;
         crate::worktree_lifecycle::block_removal_recovery(path);
         for link in &links {
-            detach_removal_link(link)?;
+            detach_removal_link(path, link)?;
         }
         preserve_removal_evidence(root, path)?;
         // A tracked symlink is now absent, but its committed state is retained on
@@ -741,13 +746,15 @@ fn native_removal_manifest(
 ) -> Result<std::collections::BTreeMap<String, String>, String> {
     use sha2::{Digest, Sha256};
     use std::io::Read;
+    let root = crate::worktree_lifecycle::canonical_removal_path(root)?;
+    let root = root.as_path();
     let mut manifest = std::collections::BTreeMap::new();
     if !root.try_exists().map_err(|e| e.to_string())? {
         return Ok(manifest);
     }
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
-        crate::worktree_lifecycle::validate_removal_path(&directory)?;
+        crate::worktree_lifecycle::validate_removal_descendant(root, &directory)?;
         for entry in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
             let path = entry.map_err(|e| e.to_string())?.path();
             let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
@@ -810,8 +817,9 @@ fn removal_journal_directory(root: &Path) -> Result<PathBuf, String> {
         root,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )?;
-    let directory = Path::new(common.trim()).join("bycoda-worktree-removals");
-    crate::worktree_lifecycle::validate_removal_path(&directory)?;
+    let common = crate::worktree_lifecycle::canonical_removal_path(Path::new(common.trim()))?;
+    let directory = common.join("bycoda-worktree-removals");
+    crate::worktree_lifecycle::validate_removal_descendant(&common, &directory)?;
     Ok(directory)
 }
 
@@ -825,11 +833,11 @@ fn native_removal_receipts(root: &Path, path: &Path) -> Result<Vec<PathBuf>, Str
     let mut receipts = Vec::new();
     for entry in entries {
         let receipt = entry.map_err(|e| e.to_string())?.path();
-        crate::worktree_lifecycle::validate_removal_path(&receipt)?;
+        crate::worktree_lifecycle::validate_removal_descendant(&directory, &receipt)?;
         let saved: NativeRemovalJournal =
             serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-        if path_to_js(path) == saved.path {
+        if same_path(path, Path::new(&saved.path)) {
             receipts.push(receipt);
         }
     }
@@ -849,11 +857,11 @@ fn recover_remnants(root: &Path, path: &Path) -> Result<(), String> {
         .map_err(|_| "This path is not a registered worktree of this repository".to_string())?;
     for entry in entries {
         let receipt = entry.map_err(|e| e.to_string())?.path();
-        crate::worktree_lifecycle::validate_removal_path(&receipt)?;
+        crate::worktree_lifecycle::validate_removal_descendant(&directory, &receipt)?;
         let saved: NativeRemovalJournal =
             serde_json::from_slice(&std::fs::read(&receipt).map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
-        if path_to_js(path) != saved.path {
+        if !same_path(path, Path::new(&saved.path)) {
             continue;
         }
         let branch = format!("refs/heads/{}", saved.branch);
@@ -886,7 +894,7 @@ fn removal_links(path: &Path) -> Result<Vec<PathBuf>, String> {
     let mut links = Vec::new();
     let mut pending = vec![path.to_path_buf()];
     while let Some(directory) = pending.pop() {
-        crate::worktree_lifecycle::validate_removal_path(&directory)?;
+        crate::worktree_lifecycle::validate_removal_descendant(path, &directory)?;
         for entry in std::fs::read_dir(&directory).map_err(|e| e.to_string())? {
             let path = entry.map_err(|e| e.to_string())?.path();
             let metadata = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
@@ -961,8 +969,11 @@ fn validate_removal_link(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn detach_removal_link(path: &Path) -> Result<(), String> {
-    crate::worktree_lifecycle::validate_removal_path(path.parent().ok_or("Link has no parent")?)?;
+fn detach_removal_link(root: &Path, path: &Path) -> Result<(), String> {
+    crate::worktree_lifecycle::validate_removal_descendant(
+        root,
+        path.parent().ok_or("Link has no parent")?,
+    )?;
     validate_removal_link(path)?;
     #[cfg(windows)]
     {
@@ -986,8 +997,9 @@ fn preserve_removal_evidence(root: &Path, path: &Path) -> Result<(), String> {
         root,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
     )?;
-    let archive = Path::new(common.trim()).join("bycoda-worktree-evidence");
-    crate::worktree_lifecycle::validate_removal_path(&archive)?;
+    let common = crate::worktree_lifecycle::canonical_removal_path(Path::new(common.trim()))?;
+    let archive = common.join("bycoda-worktree-evidence");
+    crate::worktree_lifecycle::validate_removal_descendant(&common, &archive)?;
     if archive.starts_with(path) {
         return Err("Cleanup blocked: evidence archive is inside the worktree".into());
     }
@@ -1000,7 +1012,12 @@ fn preserve_removal_evidence(root: &Path, path: &Path) -> Result<(), String> {
 /// Retry-safe after Git has unregistered a partially deleted Windows directory.
 /// Never use recursive remove_dir_all on a tree containing unchecked reparse points.
 fn remove_remnants(path: &Path) -> Result<(), String> {
-    crate::worktree_lifecycle::validate_removal_path(path)?;
+    let path = crate::worktree_lifecycle::canonical_removal_path(path)?;
+    remove_remnants_below(&path, &path)
+}
+
+fn remove_remnants_below(root: &Path, path: &Path) -> Result<(), String> {
+    crate::worktree_lifecycle::validate_removal_descendant(root, path)?;
     match std::fs::symlink_metadata(path) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e.to_string()),
@@ -1010,7 +1027,7 @@ fn remove_remnants(path: &Path) -> Result<(), String> {
         Ok(_) => {}
     }
     for link in removal_links(path)? {
-        detach_removal_link(&link)?;
+        detach_removal_link(root, &link)?;
     }
     for entry in std::fs::read_dir(path).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
@@ -1019,9 +1036,9 @@ fn remove_remnants(path: &Path) -> Result<(), String> {
             return Err("Cleanup blocked: entry changed during removal".into());
         }
         if metadata.is_dir() {
-            remove_remnants(&path)?;
+            remove_remnants_below(root, &path)?;
         } else {
-            crate::worktree_lifecycle::validate_removal_path(path.parent().unwrap())?;
+            crate::worktree_lifecycle::validate_removal_descendant(root, path.parent().unwrap())?;
             std::fs::remove_file(path)
                 .map_err(|e| format!("Cleanup pending; release locked handles and retry: {e}"))?;
         }
@@ -1781,7 +1798,7 @@ mod tests {
     }
 
     #[cfg(windows)]
-    fn junction(link: &Path, target: &Path) {
+    fn directory_link(link: &Path, target: &Path) {
         let mut command = Command::new("cmd");
         crate::hide_window_console(&mut command);
         let output = command
@@ -1797,13 +1814,21 @@ mod tests {
         );
     }
 
-    #[cfg(windows)]
+    #[cfg(unix)]
+    fn directory_link(link: &Path, target: &Path) {
+        std::os::unix::fs::symlink(target, link).unwrap();
+    }
+
     #[test]
-    fn worktree_removal_detaches_node_modules_junction_and_preserves_external_sentinel() {
+    fn worktree_removal_allows_linked_ancestors_and_detaches_dependency_links() {
         let repo = repo();
-        let root = repo.0.join("repo");
+        let alias = repo.0.join("ancestor");
+        directory_link(&alias, &repo.0);
+        let root = alias.join("repo");
         let tree = create(&root, "junction-sentinel", "main", false).unwrap();
-        let path = Path::new(&tree.path);
+        let aliased_path = alias.join("repo-worktrees/junction-sentinel");
+        let path = aliased_path.as_path();
+        assert!(same_path(path, Path::new(&tree.path)));
         let sentinel = repo.0.join("main-node-modules");
         std::fs::create_dir_all(sentinel.join("package")).unwrap();
         std::fs::write(sentinel.join("package/sentinel.txt"), "must survive").unwrap();
@@ -1822,7 +1847,7 @@ mod tests {
             ],
         )
         .unwrap();
-        junction(&path.join("node_modules"), &sentinel);
+        directory_link(&path.join("node_modules"), &sentinel);
         std::fs::create_dir_all(path.join("temp/verification")).unwrap();
         std::fs::write(
             path.join("temp/verification/evidence.txt"),
@@ -1845,9 +1870,12 @@ mod tests {
             "retained evidence"
         );
         assert!(git(&root, &["rev-parse", "refs/heads/junction-sentinel"]).is_ok());
+        #[cfg(windows)]
+        std::fs::remove_dir(alias).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(alias).unwrap();
     }
 
-    #[cfg(windows)]
     #[test]
     fn worktree_removal_rejects_linked_target_before_touching_external_directory() {
         let repo = repo();
@@ -1855,14 +1883,17 @@ mod tests {
         std::fs::create_dir_all(&sentinel).unwrap();
         std::fs::write(sentinel.join("keep"), "retained").unwrap();
         let alias = repo.0.join("alias");
-        junction(&alias, &sentinel);
+        directory_link(&alias, &sentinel);
         assert!(crate::worktree_lifecycle::reserve_removal(&alias).is_err());
         assert!(remove(&repo.0.join("repo"), &alias, true).is_err());
         assert_eq!(
             std::fs::read_to_string(sentinel.join("keep")).unwrap(),
             "retained"
         );
+        #[cfg(windows)]
         std::fs::remove_dir(alias).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(alias).unwrap();
     }
 
     #[cfg(windows)]
