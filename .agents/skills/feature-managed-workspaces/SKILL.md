@@ -33,6 +33,15 @@ Maintained surfaces added to this inventory:
 - `src/features/workspaces/model/workspaceCreation.ts`: missing new native
   capability uses the existing update-pending/explicit-current recovery UI;
   Current checkout and remote Host execution retain their contracts.
+- `src/features/connections/model/desktopLiveFlush.ts`, `useDesktopLive.ts` and
+  `src/features/workspaces/ui/SessionWorkspaceActions.tsx`: local lifecycle
+  actions await a serialized fresh acknowledged desktop publication before
+  reading the workspace revision. Unreachable/missing publishers fail honestly;
+  actual and foreign activity fences remain enforced. Remote execution is unchanged.
+- `src/features/automations/ui/AutomationsView.tsx` and its real QueryClient
+  regression: successful saves cancel an in-flight list using normal revert
+  behavior before updating confirmed cache data, without surfacing internal
+  `CancelledError` or hiding genuine fetch/save errors.
 - `src/features/sessions/ui/AgentTranscript.tsx`, `SessionPane.tsx` and
   `AgentTranscript.rewindEligibility.test.ts`: reactive per-message rewind
   eligibility across memo boundaries, including busy and blocker transitions.
@@ -45,6 +54,13 @@ capability `555373f9`. Native acceptance evidence and final inclusion are record
 under `temp/verification/q1/`; source/unit success alone is not native acceptance.
 Run the maintained gate against a freshly built isolated run before release.
 No installer, owner profile, push or publication belongs to this gate.
+
+Follow-up source repairs: native owner-context settlement `c31c9f9b`, exact late
+provider binding for both startup orderings `0ddb1e69`, native lifecycle
+publication barrier `eade8f6c`, narrow lifecycle labels `9d34a963`, and automation
+query cancellation `a114ebb6`. Accepted crash recovery may complete during the
+next guarded send after reopening the exact retained session; an old native row
+must not be required to remain current after the next legitimate turn replaces it.
 
 ## Purpose and keywords
 
