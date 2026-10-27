@@ -668,6 +668,8 @@ export class HostTasks {
     );
   }
   onChange?: () => void;
+  /** Published only for an actual committed removal, never a failed/absent delete. */
+  onDelete?: (task: { id: string; projectId: string }) => void;
   private etagCache?: {
     revision: number;
     etag: string;
@@ -1468,7 +1470,10 @@ export class HostTasks {
           workspaceCleanupCompleted,
         },
       );
-    this.store.afterCommit(() => this.onChange?.());
+    this.store.afterCommit(() => {
+      this.onDelete?.({ id, projectId: task!.projectId });
+      this.onChange?.();
+    });
     this.listCache = undefined;
     this.projectListCache.clear();
     this.schedulerTasks?.delete(id);

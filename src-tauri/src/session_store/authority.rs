@@ -382,7 +382,7 @@ pub(crate) struct NativeScope {
 
 #[derive(Clone)]
 pub(crate) struct ExecutionGate {
-    conn: Arc<Mutex<Connection>>,
+    conn: Arc<Mutex<super::cohort::RegisteredConnection>>,
 }
 pub(crate) struct NativeLease {
     gate: ExecutionGate,

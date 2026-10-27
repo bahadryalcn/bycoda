@@ -7,11 +7,16 @@ import {
   type JsonValue,
 } from "../../../src/shared/model/host-contracts";
 
-export type BulkLease = Readonly<{ principalId: string; resource: string }>;
+export type BulkLease = Readonly<{
+  principalId: string;
+  resource: string;
+  dependencyKeys: readonly string[];
+}>;
 type Entry = {
   descriptor: BulkDescriptor;
   principalId: string;
   resource: string;
+  dependencyKeys: readonly string[];
   bytes: Buffer;
   touched: number;
 };
@@ -67,13 +72,19 @@ export class HostBulkTransfers {
     this.timer.unref();
   }
 
-  begin(principalId: string, resource: string): BulkLease {
+  begin(principalId: string, resource: string, dependencyKeys: readonly string[] = []): BulkLease {
     this.prune();
     if (this.stopped || !principalId || !resource)
       throw new HostBulkError(409, "Transfer context is unavailable.");
     if (this.leases.size >= this.limits.maxLeases)
       throw new HostBulkError(429, "Transfer admission is busy.");
-    const lease = Object.freeze({ principalId, resource });
+    if (dependencyKeys.length > 1024 || dependencyKeys.some((key) => typeof key !== "string" || !key))
+      throw new HostBulkError(409, "Transfer dependencies are invalid.");
+    const lease = Object.freeze({
+      principalId,
+      resource,
+      dependencyKeys: Object.freeze([...new Set(dependencyKeys)].sort()),
+    });
     this.leases.add(lease);
     return lease;
   }
@@ -102,6 +113,8 @@ export class HostBulkTransfers {
       if (
         entry.principalId === lease.principalId &&
         entry.resource === lease.resource &&
+        entry.dependencyKeys.length === lease.dependencyKeys.length &&
+        entry.dependencyKeys.every((key, index) => key === lease.dependencyKeys[index]) &&
         entry.descriptor.sha256 === sha256
       ) {
         entry.touched = this.now();
@@ -130,6 +143,7 @@ export class HostBulkTransfers {
       descriptor,
       principalId: lease.principalId,
       resource: lease.resource,
+      dependencyKeys: lease.dependencyKeys,
       bytes,
       touched: this.now(),
     });
@@ -155,8 +169,10 @@ export class HostBulkTransfers {
   }
 
   invalidate(resource: string): void {
-    for (const lease of this.leases) if (lease.resource === resource) this.leases.delete(lease);
-    for (const [id, entry] of this.entries) if (entry.resource === resource) this.remove(id);
+    for (const lease of this.leases)
+      if (lease.resource === resource || lease.dependencyKeys.includes(resource)) this.leases.delete(lease);
+    for (const [id, entry] of this.entries)
+      if (entry.resource === resource || entry.dependencyKeys.includes(resource)) this.remove(id);
   }
 
   close(): void {
@@ -175,6 +191,107 @@ export class HostBulkTransfers {
     for (const [id, entry] of this.entries)
       if (entry.descriptor.expiresAt <= this.now()) this.remove(id);
   }
+}
+
+/** Internal retained-copy dependencies, independent of the public stream target enum.
+ * Register before a domain owner can capture data, including on-read mutations. */
+export function hostBulkDependencies(
+  method: string,
+  params: Record<string, unknown>,
+  notesProjectCwd?: string,
+): readonly string[] {
+  const item = (prefix: string, value: unknown) =>
+    typeof value === "string" ? [`${prefix}:${value}`] : [];
+  switch (method) {
+    case "tasks.list":
+      return typeof params.projectId === "string"
+        ? [`tasks:project:${params.projectId}`]
+        : ["tasks:all"];
+    case "tasks.snapshotWithCursor":
+    case "tasks.events":
+      return ["tasks:all"];
+    case "tasks.save":
+      return item(
+        "task",
+        (params.task as Record<string, unknown> | undefined)?.id,
+      );
+    case "tasks.reorder":
+      return Array.isArray(params.taskIds)
+        ? params.taskIds.flatMap((id) => item("task", id))
+        : [];
+    case "tasks.move":
+    case "tasks.start":
+    case "tasks.retarget":
+    case "tasks.review.recheck":
+    case "tasks.notes.read":
+    case "tasks.notes.resolve":
+    case "tasks.evaluation.save":
+      return item("task", params.taskId);
+    case "goals.list":
+      return ["goals:all"];
+    case "goals.create":
+      return item("goal", (params.goal as Record<string, unknown> | undefined)?.id);
+    case "goals.finalReview.recheck":
+    case "goals.approve":
+    case "goals.update":
+    case "goals.replan":
+    case "goals.cancel":
+      return item("goal", params.goalId);
+    case "automations.list":
+      return ["automations:all"];
+    case "automations.save":
+      return item("automation", (params.automation as Record<string, unknown> | undefined)?.id);
+    case "automations.runs":
+      return item("automation-runs", params.automationId);
+    case "notes.list":
+      if (typeof params.sessionId === "string")
+        return [`notes:session:${params.sessionId}`];
+      // Composition resolves projectId to the same exact cwd used by Notes storage.
+      return notesProjectCwd === undefined
+        ? ["notes:all"]
+        : [`notes:cwd:${notesProjectCwd}`];
+    case "notes.get":
+      return item("note", params.id);
+    case "notes.upsert":
+      return item(
+        "note",
+        (params.note as Record<string, unknown> | undefined)?.id,
+      );
+    default:
+      // In particular, a delete acknowledgement must survive its own invalidation.
+      return [];
+  }
+}
+
+export function taskBulkDeleteKeys(task: {
+  id: string;
+  projectId: string;
+}): readonly string[] {
+  return [`task:${task.id}`, `tasks:project:${task.projectId}`, "tasks:all"];
+}
+
+export function noteBulkDeleteKeys(note: {
+  id: string;
+  sourceCwd?: string;
+  sourceSessionId?: string;
+}): readonly string[] {
+  return [
+    `note:${note.id}`,
+    "notes:all",
+    ...(note.sourceCwd === undefined ? [] : [`notes:cwd:${note.sourceCwd}`]),
+    ...(note.sourceSessionId === undefined
+      ? []
+      : [`notes:session:${note.sourceSessionId}`]),
+  ];
+}
+
+export function goalBulkDeleteKeys(goal: { id: string }): readonly string[] {
+  return [`goal:${goal.id}`, "goals:all"];
+}
+
+export function automationBulkDeleteKeys(automation: { id: string }): readonly string[] {
+  // The existing storage FK deletes automation_runs with its configuration.
+  return [`automation:${automation.id}`, `automation-runs:${automation.id}`, "automations:all"];
 }
 
 export function createHostBulkHandler(options: {

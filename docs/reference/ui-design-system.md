@@ -318,6 +318,65 @@ border, hover, pressed and disabled roles in the shared theme. Button consumes
 `--ui-tone-{tone}-*` through its adapter. The scoped Arc info bridge stays distinct
 from the user accent.
 
+### Theme and interaction ownership
+
+The palette supplies base seeds; `index.css` and `bycoda.css` derive the shared
+surface, text, state, geometry and motion roles, and `arc.css` maps them into
+scoped Arc controls. Appearance applies the saved theme and custom accent to the
+document. The accent foreground is chosen for the applied accent; it is not a
+replacement for the palette's status or running/on colors. Keep saved custom
+colors, tint, contrast and density preferences intact. An immediate preview is
+not evidence that a preference was durably saved.
+
+Use the shared control height, compact height, large height and radius tokens
+instead of per-feature control metrics. The Arc small and medium heights map to
+the compact and regular control heights. Comfortable and touch density override
+those heights and related targets; do not hard-code a single density in a
+consumer. Keep labels and touch targets usable alongside the visible control.
+
+`--color-background-base` is the canvas; `--ui-surface-panel` separates navigation,
+`--ui-surface` carries reading/forms, and `--ui-surface-raised` carries floating
+content. Dark layers become lighter as they rise; light layers rise towards paper.
+`--bycoda-panel` and `--bycoda-raised` delegate to those roles. Pane edges use
+`--ui-pane-border`, while input boundaries use `--ui-control-border`; both remain
+separate from the stronger focus cue. Structural edges follow the contrast
+preference. Toolbar/list density and reading/form geometry keep their existing
+owners and saved values.
+
+`--ui-interaction-accent` follows the saved accent. Solid accent actions use its
+exact foreground pair; `--ui-interaction-ink` moves extreme custom colors towards
+readable theme ink for focus, selected fills and navigation markers. General text
+selection uses the opaque accent/foreground pair. Composer and Markdown overlay
+editors use `--ui-overlay-selection-background` and preserve transparent glyphs;
+CodeMirror, PDF and terminal keep their specific selection adapters. Windows
+forced-colors uses system focus/selection colors and leaves disabled choices to
+the system. A new consumer should use the shared role rather than copying its
+mixing formula.
+
+Status foregrounds use `--ui-tone-{info,success,warning,danger}-fg`. On brighter
+custom dark canvases, their ink becomes lighter and their subtle surfaces become
+deeper, retaining the status hue and readable text. Light status ink becomes
+slightly deeper. Solid status actions keep the existing palette and on-solid
+pair; running/on colors remain separate. Arc fields, alerts and status controls
+consume these foreground roles rather than treating a solid palette seed as
+readable text on every surface.
+
+| Interaction          | Contract                                                                                                                                                                                                                                                                                        |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Hover and press      | Transient feedback uses shared surface or tone hover/pressed roles; it does not represent a saved choice.                                                                                                                                                                                       |
+| Selected and checked | Use selection roles for selected content and the control's on/mixed semantics for membership. Checkbox, switch, radio and segmented controls retain their distinct native or ARIA state.                                                                                                        |
+| Keyboard focus       | Shared focus width, offset and ring color indicate the focused control independently of hover and selection. Preserve visible focus in forced-colors mode.                                                                                                                                      |
+| Disabled and pending | Disabled roles communicate unavailable actions; pending retains the operation's label and state and prevents duplicate submission where appropriate. Do not treat either as selection.                                                                                                          |
+| Accent               | Opt into the accent tone for intended actions; neutral primary actions remain neutral. Message and composer selection styling are separate consumers. Changing the accent must not recolor status, diff or running meaning.                                                                     |
+| Text selection       | General document, composer, editor, PDF and terminal selections have different owners. Preserve the composer's transparent text/highlight layer and the PDF text layer when changing shared selection roles; verify actual rendered selection rather than assuming all consumers use one token. |
+
+Menu and other shared adapters should consume semantic hover, pressed and destructive
+roles from the theme. If a required role is missing, coordinate it with the
+theme owner rather than adding a local color recipe. Preserve native and custom
+theme behavior and test representative controls and consumers in both themes,
+including keyboard focus, selection, disabled/pending, custom accent extremes,
+and forced colors. These are acceptance checks, not claims of current coverage.
+
 Both themes and custom accents require readable text and visible controls. Target
 4.5:1 normal text, 3:1 large text and 3:1 essential control boundaries/indicators
 against adjacent colors. Test composited values on real backgrounds, including

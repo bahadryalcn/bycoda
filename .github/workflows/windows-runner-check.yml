@@ -1,0 +1,72 @@
+name: Verify isolated Windows runner
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    if: github.repository == 'bahadryalcn/bycoda' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Windows, X64, bycoda-windows-isolated]
+    timeout-minutes: 15
+    concurrency:
+      group: bycoda-windows-heavy
+      queue: max
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify protected runner and interactive packaging capability
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose package -ExportEnvironment
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+          install: "false"
+      - name: Exercise admission rejection and read available toolchains
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test scripts/checks/windows-runner-trust.test.mjs
+          if ($LASTEXITCODE -ne 0) { throw 'Runner admission tests failed' }
+          git --version
+          if ($LASTEXITCODE -ne 0) { throw 'Git is unavailable' }
+          rustc --version
+          if ($LASTEXITCODE -ne 0) { throw 'Rust is unavailable' }
+          cargo --version
+          if ($LASTEXITCODE -ne 0) { throw 'Cargo is unavailable' }
+      - name: Record exact source and runner preflight
+        shell: pwsh
+        env:
+          PREFLIGHT_SHA: ${{ github.sha }}
+          PREFLIGHT_RUN: ${{ github.run_id }}
+          PREFLIGHT_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $actual = (git rev-parse HEAD).Trim()
+          if ($LASTEXITCODE -ne 0 -or $actual -cne $env:PREFLIGHT_SHA) { throw 'Preflight source mismatch' }
+          New-Item -ItemType Directory -Path temp/test-results/windows-runner-check -Force | Out-Null
+          [ordered]@{
+            schemaVersion = 1
+            evidence = 'isolated-windows-runner-preflight'
+            sourceSha = $actual
+            runId = $env:PREFLIGHT_RUN
+            runAttempt = $env:PREFLIGHT_ATTEMPT
+            os = $env:RUNNER_OS
+            architecture = $env:RUNNER_ARCH
+            status = 'passed'
+            admissionTests = 'passed'
+            interactiveCapability = 'verified-by-protected-profile'
+            packageBuild = 'not-run'
+            nativeSmoke = 'not-run'
+          } | ConvertTo-Json | Set-Content -Encoding utf8 temp/test-results/windows-runner-check/receipt.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607ffa02 # v4
+        with:
+          name: windows-runner-preflight
+          path: temp/test-results/windows-runner-check/receipt.json
+          if-no-files-found: error
+          retention-days: 7

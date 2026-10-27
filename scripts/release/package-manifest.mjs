@@ -1,6 +1,7 @@
 /** Immutable package bytes and smoke receipts; never launches or publishes. */
 import assert from "node:assert/strict";
 import { parseSha256Sum } from "./checksum.mjs";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   copyFileSync,
@@ -64,25 +65,153 @@ const one = (files, description) => {
   assert.equal(files.length, 1, `Expected exactly one ${description}`);
   return files[0];
 };
+function regularPath(absolute, directory = false) {
+  assert(path.isAbsolute(absolute), "Cargo target must be an explicit absolute path");
+  const root = path.parse(absolute).root;
+  assert(!/^[/\\]{2}/.test(root), "Network Cargo targets are not supported");
+  const parts = path.relative(root, absolute).split(path.sep).filter(Boolean);
+  let current = root;
+  for (const [index, part] of parts.entries()) {
+    current = path.join(current, part);
+    const stat = lstatSync(current);
+    assert(!stat.isSymbolicLink(), "Cargo artifacts may not traverse links or reparse points");
+    assert(
+      index < parts.length - 1 || directory ? stat.isDirectory() : stat.isFile(),
+      "Cargo artifact path is not a regular file or directory",
+    );
+  }
+  return realpathSync(absolute);
+}
+function boundedBytes(absolute) {
+  regularPath(absolute);
+  const stat = lstatSync(absolute);
+  assert(stat.size > 0 && stat.size <= 512 * 1024 * 1024, "Cargo artifact must be bounded");
+  const bytes = readFileSync(absolute);
+  assert.equal(bytes.length, stat.size, "Cargo artifact changed during staging");
+  return bytes;
+}
+function rejectWindowsReparsePoints(paths) {
+  if (process.platform !== "win32") return;
+  // Node identifies symbolic links/junctions, while Windows also has other
+  // reparse-point types. Check all existing ancestors once, before reading bytes.
+  execFileSync("pwsh", ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "-"], {
+    input: String.raw`
+$ErrorActionPreference = 'Stop'
+try {
+  foreach ($item in (ConvertFrom-Json $env:BYCODA_CARGO_ARTIFACT_PATHS)) {
+    $current = [IO.Path]::GetFullPath($item)
+    while ($current) {
+      if (Test-Path -LiteralPath $current) {
+        $attributes = [IO.File]::GetAttributes($current)
+        if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+          throw 'Cargo artifacts may not traverse links or reparse points'
+        }
+      }
+      $current = [IO.Path]::GetDirectoryName($current)
+    }
+  }
+} catch { Write-Error $_; exit 1 }
+`,
+    env: { ...process.env, BYCODA_CARGO_ARTIFACT_PATHS: JSON.stringify(paths) },
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "pipe"],
+    timeout: 30000,
+    maxBuffer: 128 * 1024,
+  });
+}
+// A protected runner explicitly supplies this path after Verify -ExportEnvironment.
+// Ambient CARGO_TARGET_DIR is deliberately ignored. Only three known files may enter
+// the manifest; no cache walk, stale executable, arbitrary output or link is accepted.
+function stageExternalWindowsTarget(root, cargoTargetDir, candidate, identityBytes) {
+  const target = regularPath(cargoTargetDir, true);
+  const relative = path.relative(realpathSync(root), target);
+  assert(
+    relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative),
+    "The isolated Cargo target must stay outside the candidate checkout",
+  );
+  const base = "build/package-payload/windows/cargo/release";
+  const installer = `bundle/nsis/bycoda_${candidate.version}_x64-setup.exe`;
+  rejectWindowsReparsePoints([
+    path.join(target, "release/bycoda.exe"),
+    path.join(target, "release", installer),
+    ...(candidate.channel === "stable" ? [path.join(target, "release", `${installer}.sig`)] : []),
+    path.resolve(root, base, "bundle/nsis"),
+  ]);
+  const native = boundedBytes(path.join(target, "release/bycoda.exe"));
+  assert(
+    native.includes(identityBytes),
+    "External native artifact does not embed the exact frozen build identity",
+  );
+  const selected = new Map([
+    ["bycoda.exe", native],
+    [installer, boundedBytes(path.join(target, "release", installer))],
+  ]);
+  if (candidate.channel === "stable")
+    selected.set(
+      `${installer}.sig`,
+      boundedBytes(path.join(target, "release", `${installer}.sig`)),
+    );
+  for (const [file, bytes] of selected) {
+    const output = path.join(root, base, file);
+    // Validate each existing ancestor before creating an ignored staging directory.
+    let current = regularPath(path.resolve(root), true);
+    for (const part of `${base}/${path.posix.dirname(file)}`
+      .split("/")
+      .filter((part) => part !== ".")) {
+      current = path.join(current, part);
+      if (!existsSync(current)) mkdirSync(current);
+      regularPath(current, true);
+    }
+    if (existsSync(output))
+      assert.equal(
+        digest(boundedBytes(output)),
+        digest(bytes),
+        "External Cargo staging is immutable",
+      );
+    else writeFileSync(output, bytes, { flag: "wx" });
+  }
+  return { base, installer: `${base}/${installer}` };
+}
 export function createPackageManifest({
   candidate,
   platform,
   root,
+  cargoTargetDir,
   installerReader = readWindowsInstaller,
 }) {
   validateCandidate(candidate);
   assert(["windows-x64", "macos-arm64"].includes(platform), "Unsupported package platform");
   const windows = platform === "windows-x64";
-  const base = windows ? "target/release" : "target/aarch64-apple-darwin/release";
+  assert(cargoTargetDir === undefined || windows, "External Cargo targets are Windows-only");
+  const identityBytes = readFileSync(path.join(root, "build/build-info.json"));
+  const buildIdentity = parseBuildIdentity(JSON.parse(identityBytes.toString("utf8")));
+  assert(
+    buildIdentity &&
+      buildIdentity.head === candidate.sha &&
+      buildIdentity.version === candidate.version &&
+      buildIdentity.channel === candidate.channel,
+    "Frozen build identity differs from candidate",
+  );
+  const external =
+    cargoTargetDir === undefined
+      ? null
+      : stageExternalWindowsTarget(root, cargoTargetDir, candidate, identityBytes);
+  const base =
+    external?.base ?? (windows ? "target/release" : "target/aarch64-apple-darwin/release");
   const hostTarget = windows ? "win32-x64" : "darwin-arm64";
   const hostFolder = `build/host-packages/${hostTarget}`;
   const rawLauncher = windows
     ? `${base}/bycoda.exe`
     : `${base}/bundle/macos/bycoda.app/Contents/MacOS/bycoda`;
-  const installers = walk(root, `${base}/bundle/${windows ? "nsis" : "dmg"}`).filter((file) =>
-    file.endsWith(windows ? ".exe" : ".dmg"),
-  );
-  const installer = one(installers, "installer");
+  const installer =
+    external?.installer ??
+    one(
+      walk(root, `${base}/bundle/${windows ? "nsis" : "dmg"}`).filter((file) =>
+        file.endsWith(windows ? ".exe" : ".dmg"),
+      ),
+      "installer",
+    );
   assert(
     path.basename(installer).includes(candidate.version),
     "Installer version differs from candidate",
@@ -152,16 +281,6 @@ export function createPackageManifest({
   const files = [...named]
     .map(([file, role]) => packageFile(root, file, role))
     .sort((a, b) => a.path.localeCompare(b.path));
-  const buildIdentity = parseBuildIdentity(
-    JSON.parse(readFileSync(path.join(root, "build/build-info.json"), "utf8")),
-  );
-  assert(
-    buildIdentity &&
-      buildIdentity.head === candidate.sha &&
-      buildIdentity.version === candidate.version &&
-      buildIdentity.channel === candidate.channel,
-    "Frozen build identity differs from candidate",
-  );
   const version = JSON.parse(readFileSync(path.join(root, components.versionJson), "utf8"));
   assert(
     version.version === candidate.version &&
@@ -397,7 +516,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   if (command === "create") {
     const candidate = JSON.parse(readFileSync(input.candidate, "utf8"));
     stagePackage(
-      createPackageManifest({ candidate, platform: input.platform, root }),
+      createPackageManifest({
+        candidate,
+        platform: input.platform,
+        root,
+        cargoTargetDir: input["cargo-target-dir"],
+      }),
       root,
       input.output,
     );

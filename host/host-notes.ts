@@ -19,6 +19,7 @@ export type HostNote = {
   updatedAt: number;
   contentUpdatedAt?: number;
 };
+export type HostNoteDeleted = Pick<HostNote, "id" | "sourceCwd" | "sourceSessionId">;
 type Row = Record<string, unknown>;
 const noteFromRow = (row: Row): HostNote => ({
   id: String(row.id),
@@ -55,6 +56,7 @@ const cut = (text: string, length: number) => Array.from(text).slice(0, length).
 
 /** Uses the desktop's note table, including its shared content-order migration. */
 export class HostNotes {
+  onDelete?: (note: HostNoteDeleted) => void;
   constructor(
     private readonly paths = desktopDatabasePaths,
     private readonly now = Date.now,
@@ -323,17 +325,22 @@ export class HostNotes {
 
   delete(raw: unknown, expectedUpdatedAt: unknown, scopedCwd?: string) {
     const id = identifier(raw);
+    let deleted: HostNoteDeleted | undefined;
     const result = this.mutate(
       id,
       expectedUpdatedAt,
-      (db) => {
+      (db, existing) => {
         db.prepare("DELETE FROM notes WHERE id=?").run(id);
+        if (existing) deleted = { id, sourceCwd: existing.sourceCwd, sourceSessionId: existing.sourceSessionId };
         return { deleted: true };
       },
       false,
       scopedCwd,
     );
     this.version++;
+    // mutate has committed its own SQLite transaction; an outer HostDB rollback
+    // cannot undo this Notes deletion and must not defer invalidation.
+    if (deleted) this.onDelete?.(deleted);
     return result;
   }
 }

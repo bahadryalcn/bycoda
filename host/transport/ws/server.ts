@@ -24,7 +24,7 @@ import {
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
 import { HostReadWorkBudget } from "../read-budget";
-import { HostBulkError, type HostBulkTransfers } from "../http/bulk";
+import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
@@ -58,6 +58,7 @@ export type HostWebSocketOptions = {
   capabilities?: readonly string[];
   subscriptions?: HostSubscriptionHub;
   bulk?: HostBulkTransfers;
+  bulkDependencies?: (method: string, params: Record<string, unknown>) => readonly string[] | Promise<readonly string[]>;
   /** Exact reverse-proxy Host values require deliberate composition. No wildcards. */
   allowedHosts?: readonly string[];
   limits?: Partial<
@@ -382,7 +383,10 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             ? `project:${request.params.projectId}`
             : "environment";
       const action = async () => {
-        const lease = options.bulk?.begin(peer.principal.id, resource);
+        const dependencies = options.bulk
+          ? await (options.bulkDependencies?.(request.method, request.params) ?? hostBulkDependencies(request.method, request.params))
+          : [];
+        const lease = options.bulk?.begin(peer.principal.id, resource, dependencies);
         try {
           const result = await options.dispatch(request.method, request.params, {
             environmentId: options.environmentId,

@@ -64,7 +64,7 @@ import {
 } from "./domains/sessions/queue-service";
 import { createHostDispatcher } from "./transport/dispatch";
 import { attachHostWebSocketTransport, HOST_WS_READ_CAPABILITY } from "./transport/ws/server";
-import { HostBulkTransfers, createHostBulkHandler } from "./transport/http/bulk";
+import { HostBulkTransfers, createHostBulkHandler, hostBulkDependencies, taskBulkDeleteKeys, noteBulkDeleteKeys, goalBulkDeleteKeys, automationBulkDeleteKeys } from "./transport/http/bulk";
 import { HostSubscriptionHub } from "./transport/ws/subscriptions";
 import { MobileTlsAuthority } from "./security/mobile-tls";
 import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
@@ -1911,6 +1911,27 @@ export async function createHostServer(
     },
   });
   const bulkTransfers = new HostBulkTransfers({ environmentId: engine.store.environmentId });
+  const previousTaskDelete = tasks.onDelete;
+  const taskDeleted: NonNullable<typeof tasks.onDelete> = (task) => {
+    for (const key of taskBulkDeleteKeys(task)) bulkTransfers.invalidate(key);
+    previousTaskDelete?.(task);
+  };
+  tasks.onDelete = taskDeleted;
+  const previousGoalDelete = goals.onDelete;
+  const goalDeleted: NonNullable<typeof goals.onDelete> = (goal) => {
+    for (const key of goalBulkDeleteKeys(goal)) bulkTransfers.invalidate(key);
+    previousGoalDelete?.(goal);
+  };
+  goals.onDelete = goalDeleted;
+  const previousAutomationDelete = automations.onDelete;
+  const automationDeleted: NonNullable<typeof automations.onDelete> = (automation) => {
+    for (const key of automationBulkDeleteKeys(automation)) bulkTransfers.invalidate(key);
+    previousAutomationDelete?.(automation);
+  };
+  automations.onDelete = automationDeleted;
+  hostNotes.onDelete = (note) => {
+    for (const key of noteBulkDeleteKeys(note)) bulkTransfers.invalidate(key);
+  };
   const authenticateDevice = async (token: string) =>
     (await engine.store.authenticated(token))
       ? createHash("sha256").update(token).digest("hex")
@@ -4866,6 +4887,12 @@ export async function createHostServer(
     ],
     subscriptions: subscriptionHub,
     bulk: bulkTransfers,
+    bulkDependencies: async (method, params) => {
+      const cwd = method === "notes.list" && params.sessionId === undefined && typeof params.projectId === "string"
+        ? (await engine.store.project(params.projectId)).cwd
+        : undefined;
+      return hostBulkDependencies(method, params, cwd);
+    },
     authenticate: async (token) =>
       await engine.store.db.outsideScope(async () => {
         if (!(await engine.store.authenticated(token))) return null;
@@ -4930,6 +4957,9 @@ export async function createHostServer(
       drain(() => {
         unsubscribeChanges();
         unsubscribeAuthority();
+        if (tasks.onDelete === taskDeleted) tasks.onDelete = previousTaskDelete;
+        if (goals.onDelete === goalDeleted) goals.onDelete = previousGoalDelete;
+        if (automations.onDelete === automationDeleted) automations.onDelete = previousAutomationDelete;
         subscriptionHub.close();
         bulkTransfers.close();
       });

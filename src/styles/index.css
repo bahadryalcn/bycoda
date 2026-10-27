@@ -103,7 +103,7 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
   --color-stroke: color-mix(
     in srgb,
-    var(--color-content) var(--appearance-stroke-strength, 7%),
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 2),
     transparent
   );
   /* Interactive fills keep their dark-theme contrast but use gentler ink in
@@ -181,6 +181,11 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
     );
   --ui-tone-status-on-solid: var(--palette-scrim);
   --ui-tone-status-interaction-ink: var(--palette-solidInk);
+  /* Brighter custom dark canvases need lighter status ink and a quieter chip
+     beneath it. Keep the status hue and solid-action palette independent. */
+  --ui-status-ink-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 2.5), 50%);
+  --ui-status-shade-strength: clamp(0%, calc((var(--theme-dark-lightness) - 4%) * 3.5), 65%);
+  --ui-status-surface: color-mix(in oklab, var(--ui-surface) calc(100% - var(--ui-status-shade-strength)), var(--palette-scrim));
   --ui-control-disabled-fg: var(--ui-text-disabled);
   --ui-control-disabled-surface: var(--ui-surface-muted);
   --ui-control-disabled-border: var(--color-stroke);
@@ -189,14 +194,18 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-neutral-on-solid: var(--palette-scrim);
   --ui-tone-neutral-subtle: var(--color-selection-subtle);
   --ui-tone-neutral-border: var(--color-stroke);
-  --ui-tone-neutral-hover: var(--ui-surface-muted);
+  --ui-tone-neutral-hover: var(--ui-surface-hover);
   --ui-tone-neutral-pressed: var(--ui-surface-pressed);
   --ui-tone-neutral-solid-hover: var(--ui-primary-hover);
   --ui-tone-neutral-solid-pressed: var(--ui-primary-pressed);
   --ui-tone-neutral-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-neutral-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-neutral-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-accent-fg: color-mix(in srgb, var(--ui-tone-accent-solid) 35%, var(--color-content));
+  /* Bring extreme custom accents towards readable ink for focus and tinted states.
+     Solid actions retain the exact saved accent/foreground pair. */
+  --ui-interaction-accent: var(--user-accent-color, var(--color-accent));
+  --ui-interaction-ink: color-mix(in srgb, var(--ui-interaction-accent) 35%, var(--color-content));
+  --ui-tone-accent-fg: var(--ui-interaction-ink);
   --ui-tone-accent-solid: var(--user-accent-color, var(--color-accent));
   --ui-tone-accent-on-solid: var(--user-accent-foreground, var(--palette-scrim));
   --ui-tone-accent-subtle: color-mix(in srgb, var(--ui-tone-accent-fg) 9%, var(--ui-surface));
@@ -231,13 +240,13 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-code-log-warning: color-mix(in srgb, var(--color-warning) 7%, transparent);
   --ui-code-log-info: color-mix(in srgb, var(--color-info) 5%, transparent);
   --ui-code-log-success: color-mix(in srgb, var(--color-success) 7%, transparent);
-  --ui-tone-info-fg: var(--color-info);
+  --ui-tone-info-fg: color-mix(in srgb, var(--color-info) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
   --ui-tone-info-solid: var(--color-info);
   --ui-tone-info-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-surface));
+  --ui-tone-info-subtle: color-mix(in srgb, var(--ui-tone-info-fg) 9%, var(--ui-status-surface));
   --ui-tone-info-border: color-mix(in srgb, var(--ui-tone-info-fg) 60%, var(--color-stroke));
-  --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-surface));
-  --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-surface));
+  --ui-tone-info-hover: color-mix(in srgb, var(--ui-tone-info-fg) 14%, var(--ui-status-surface));
+  --ui-tone-info-pressed: color-mix(in srgb, var(--ui-tone-info-fg) 20%, var(--ui-status-surface));
   --ui-tone-info-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-info-solid) 94%,
@@ -251,13 +260,13 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-info-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-info-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-info-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-success-fg: var(--color-success);
+  --ui-tone-success-fg: color-mix(in srgb, var(--color-success) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
   --ui-tone-success-solid: var(--color-success);
   --ui-tone-success-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-success-subtle: color-mix(in srgb, var(--ui-tone-success-fg) 9%, var(--ui-surface));
+  --ui-tone-success-subtle: color-mix(in srgb, var(--ui-tone-success-fg) 9%, var(--ui-status-surface));
   --ui-tone-success-border: color-mix(in srgb, var(--ui-tone-success-fg) 60%, var(--color-stroke));
-  --ui-tone-success-hover: color-mix(in srgb, var(--ui-tone-success-fg) 14%, var(--ui-surface));
-  --ui-tone-success-pressed: color-mix(in srgb, var(--ui-tone-success-fg) 20%, var(--ui-surface));
+  --ui-tone-success-hover: color-mix(in srgb, var(--ui-tone-success-fg) 14%, var(--ui-status-surface));
+  --ui-tone-success-pressed: color-mix(in srgb, var(--ui-tone-success-fg) 20%, var(--ui-status-surface));
   --ui-tone-success-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-success-solid) 94%,
@@ -271,13 +280,13 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-success-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-success-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-success-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-warning-fg: var(--color-warning);
+  --ui-tone-warning-fg: color-mix(in srgb, var(--color-warning) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
   --ui-tone-warning-solid: var(--color-warning);
   --ui-tone-warning-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-warning-subtle: color-mix(in srgb, var(--ui-tone-warning-fg) 9%, var(--ui-surface));
+  --ui-tone-warning-subtle: color-mix(in srgb, var(--ui-tone-warning-fg) 9%, var(--ui-status-surface));
   --ui-tone-warning-border: color-mix(in srgb, var(--ui-tone-warning-fg) 60%, var(--color-stroke));
-  --ui-tone-warning-hover: color-mix(in srgb, var(--ui-tone-warning-fg) 14%, var(--ui-surface));
-  --ui-tone-warning-pressed: color-mix(in srgb, var(--ui-tone-warning-fg) 20%, var(--ui-surface));
+  --ui-tone-warning-hover: color-mix(in srgb, var(--ui-tone-warning-fg) 14%, var(--ui-status-surface));
+  --ui-tone-warning-pressed: color-mix(in srgb, var(--ui-tone-warning-fg) 20%, var(--ui-status-surface));
   --ui-tone-warning-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-warning-solid) 94%,
@@ -291,13 +300,13 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   --ui-tone-warning-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-warning-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-warning-disabled-border: var(--ui-control-disabled-border);
-  --ui-tone-danger-fg: var(--color-danger);
+  --ui-tone-danger-fg: color-mix(in srgb, var(--color-danger) calc(100% - var(--ui-status-ink-strength)), var(--color-content));
   --ui-tone-danger-solid: var(--color-danger);
   --ui-tone-danger-on-solid: var(--ui-tone-status-on-solid);
-  --ui-tone-danger-subtle: color-mix(in srgb, var(--ui-tone-danger-fg) 9%, var(--ui-surface));
+  --ui-tone-danger-subtle: color-mix(in srgb, var(--ui-tone-danger-fg) 9%, var(--ui-status-surface));
   --ui-tone-danger-border: color-mix(in srgb, var(--ui-tone-danger-fg) 60%, var(--color-stroke));
-  --ui-tone-danger-hover: color-mix(in srgb, var(--ui-tone-danger-fg) 14%, var(--ui-surface));
-  --ui-tone-danger-pressed: color-mix(in srgb, var(--ui-tone-danger-fg) 20%, var(--ui-surface));
+  --ui-tone-danger-hover: color-mix(in srgb, var(--ui-tone-danger-fg) 14%, var(--ui-status-surface));
+  --ui-tone-danger-pressed: color-mix(in srgb, var(--ui-tone-danger-fg) 20%, var(--ui-status-surface));
   --ui-tone-danger-solid-hover: color-mix(
     in srgb,
     var(--ui-tone-danger-solid) 94%,
@@ -314,6 +323,8 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
 }
 
 html.theme-light {
+  --ui-status-ink-strength: 10%;
+  --ui-status-shade-strength: 0%;
   --ui-elevation-floating: 0 8px 24px color-mix(in oklab, var(--color-scrim) 14%, transparent),
     0 1px 3px color-mix(in oklab, var(--color-scrim) 10%, transparent);
   --ui-tone-neutral-on-solid: var(--palette-solidInk);
@@ -353,19 +364,21 @@ html.theme-light {
     var(--color-content) var(--appearance-secondary-strength, 85%),
     var(--color-background-base)
   );
-  --ui-text-disabled: color-mix(in srgb, var(--color-content) 50%, var(--color-background-base));
-  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 72%, var(--color-background-base));
+  --ui-text-disabled: color-mix(in srgb, var(--color-content) 60%, var(--color-background-base));
+  --ui-text-muted: color-mix(in oklab, var(--ui-text-secondary) 82%, var(--color-background-base));
   --ui-terminal-suggestion: color-mix(
     in oklab,
     var(--color-info) 55%,
     var(--color-background-base)
   );
-  /* Cartesian mixing preserves the cool theme hue across light/dark surfaces. */
-  --ui-surface: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  /* Canvas < navigation panel < reading/form surface < floating surface.
+     Derive every layer from the user's tint rather than a second gray palette. */
+  --ui-surface-panel: color-mix(in oklab, var(--color-content) 5%, var(--color-background-base));
+  --ui-surface: color-mix(in oklab, var(--color-content) 10%, var(--color-background-base));
   /* Startup brand canvas stays dark so the white loading mark is legible in every theme. */
   --ui-startup-surface: var(--palette-scrim);
   --ui-startup-text: var(--palette-solidInk);
-  --ui-surface-raised: color-mix(in oklab, var(--color-content) 6%, var(--color-background-base));
+  --ui-surface-raised: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));
   --ui-conflict-current-surface: color-mix(
     in oklab,
     var(--color-conflict-ours) 12%,
@@ -379,15 +392,22 @@ html.theme-light {
   /* Intra-conflict differences sit on top of the side's line tint. */
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
-  --ui-surface-muted: color-mix(in oklab, var(--color-content) 8%, var(--color-background-base));
-  --ui-surface-hover: color-mix(in oklab, var(--color-content) 7%, var(--color-background-base));
-  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 16%, var(--color-background-base));
+  --ui-surface-muted: var(--ui-surface-panel);
+  --ui-surface-hover: color-mix(in oklab, var(--color-content) 18%, var(--color-background-base));
+  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 24%, var(--color-background-base));
   --ui-surface-selected: color-mix(
     in oklab,
-    var(--color-content) var(--selection-strength),
-    var(--bycoda-panel)
+    var(--ui-interaction-ink) 24%,
+    var(--ui-surface-panel)
   );
-  --ui-border-accent: color-mix(in oklab, var(--color-accent) 45%, var(--color-stroke));
+  --ui-border-accent: var(--ui-interaction-ink);
+  --ui-pane-border: color-mix(in oklab, var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3), var(--ui-surface-panel));
+  --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
+  /* Ordinary ranges use the exact contrast pair on an opaque fill, including
+     content with its own inverse background. Overlay editors keep a tint. */
+  --ui-text-selection-background: var(--ui-interaction-accent);
+  --ui-text-selection-foreground: var(--user-accent-foreground, var(--palette-scrim));
+  --ui-overlay-selection-background: color-mix(in srgb, var(--ui-interaction-ink) 32%, transparent);
   --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--color-background-base));
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--color-background-base));
   --ui-control-thumb: var(--color-on-solid);
@@ -403,11 +423,11 @@ html.theme-light {
   --ui-control-checkbox-size: 1rem;
   --ui-disabled-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
-  --ui-focus-ring-color: var(--color-accent);
+  --ui-focus-ring-color: var(--ui-interaction-ink);
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
-  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 24%, var(--ui-surface));
-  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 36%, var(--ui-surface));
+  --ui-field-border-hover: color-mix(in oklab, var(--color-content) 60%, var(--ui-surface-muted));
+  --ui-field-border-focus: var(--ui-focus-ring-color);
   --motion-reorder-duration: 160ms;
   --motion-tab-close-duration: 200ms;
   --motion-feedback-duration: 120ms;
@@ -479,7 +499,7 @@ html.theme-light {
   /* A fallback only: component outline/ring utilities must take precedence.
      Text fields can match :focus-visible even when focused with the mouse. */
   :where(button, input, select, textarea, a[href], [tabindex]):focus-visible {
-    outline: var(--ui-focus-width) solid var(--color-accent);
+    outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
     outline-offset: var(--ui-focus-offset);
   }
 }
@@ -506,6 +526,14 @@ html.theme-light {
   --ui-text-on-active: var(--palette-oklch_1_0_none);
   --background-lightness: 94%;
   --content-lightness: 18%;
+  /* Light surfaces rise towards paper instead of getting darker at each level. */
+  --ui-surface-panel: color-mix(in oklab, var(--color-background-base) 70%, var(--palette-solidInk));
+  --ui-surface: color-mix(in oklab, var(--color-background-base) 25%, var(--palette-solidInk));
+  --ui-surface-raised: var(--palette-solidInk);
+  --ui-surface-muted: var(--color-background-base);
+  --ui-surface-hover: color-mix(in oklab, var(--color-content) 8%, var(--ui-surface));
+  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
+  --ui-surface-selected: color-mix(in oklab, var(--ui-interaction-ink) 18%, var(--ui-surface));
   --link-color: var(--palette-hsl_211_92pct_40pct);
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);
@@ -518,6 +546,18 @@ html.theme-light {
   --color-diff-add-fg: var(--palette-hex047857);
   --color-diff-del-fg: var(--palette-hexbe123c);
   color-scheme: light;
+}
+
+/* Native ranges keep their text readable; transparent overlay editors below
+   retain their own glyph handling and PDF keeps its more specific rule. */
+::selection {
+  color: var(--ui-text-selection-foreground);
+  background: var(--ui-text-selection-background);
+}
+
+/* CodeMirror owns its selection fill; retain readable ink for that fill. */
+.cm-editor {
+  --ui-text-selection-foreground: var(--color-content);
 }
 
 /* Blue/orange stays distinguishable for protanopia, deuteranopia and
@@ -707,12 +747,12 @@ html.has-native-glass:not(.theme-light) #root {
 }
 
 .sidebar-glass {
-  background: color-mix(in srgb, var(--color-background-base) 90%, var(--palette-scrim));
+  background: var(--ui-surface-panel);
   transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
 }
 
 html.theme-light .sidebar-glass {
-  background: var(--color-background-base);
+  background: var(--ui-surface-panel);
 }
 
 html.has-native-glass:not(.theme-light) .sidebar-glass {
@@ -1736,7 +1776,7 @@ input,
 }
 
 .cm-mergeView .cm-merge-revert .cm-split-hunk button:focus-visible {
-  outline: 1px solid var(--color-accent);
+  outline: 1px solid var(--ui-focus-ring-color);
   outline-offset: -1px;
 }
 
@@ -1953,7 +1993,7 @@ html.has-user-accent .primary-action:disabled {
 .composer-field::selection {
   color: transparent;
   -webkit-text-fill-color: transparent;
-  background: color-mix(in srgb, var(--user-accent-color, var(--color-accent)) 30%, transparent);
+  background: var(--ui-overlay-selection-background);
 }
 
 .composer-field[data-composer-plain="true"],
@@ -1975,6 +2015,12 @@ html.has-user-accent .primary-action:disabled {
   color: transparent;
   caret-color: var(--color-content);
   -webkit-text-fill-color: transparent;
+}
+
+.markdown-source-field::selection {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background: var(--ui-overlay-selection-background);
 }
 
 .markdown-source-field::placeholder {
@@ -2134,12 +2180,12 @@ html.is-grabbing {
 }
 
 .sidebar-opacity-slider:focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: 3px;
 }
 
 .agent-markdown .markdown-code-copy:focus-visible {
-  outline-color: var(--color-accent);
+  outline-color: var(--ui-focus-ring-color);
   background: color-mix(in srgb, var(--color-content) 10%, transparent);
   color: var(--color-content);
 }
@@ -3385,16 +3431,16 @@ html:not(.theme-light) .markdown-code-token {
 
 /* Menus need a stable surface above bright buttons and custom backgrounds. */
 .popover-backdrop {
-  background: color-mix(in srgb, var(--color-background-base) 95%, transparent);
+  background: color-mix(in srgb, var(--ui-surface-raised) 95%, transparent);
 }
 
 html.theme-light .popover-backdrop {
-  background: var(--color-background-base);
+  background: var(--ui-surface-raised);
 }
 
 /* Opaque popover surface for live canvases; no backdrop sampling. */
 .popover-solid {
-  background: var(--color-background-base);
+  background: var(--ui-surface-raised);
 }
 
 /* Animate content only; its sibling glass stays still. Finish at `none` and

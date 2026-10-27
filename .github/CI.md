@@ -56,6 +56,12 @@ cache writes restricted to main. No remote test-result cache is enabled.
 
 ## Local entry points
 
+Heavy trusted Windows jobs can opt in to a dedicated isolated runner with
+`BYCODA_WINDOWS_SELF_HOSTED=true`; PRs remain hosted. Provisioning, machine-owned
+admission, shared queue semantics, warm cache paths, manual preflight and fallback
+are defined in [Windows runners](../docs/reference/windows-runners.md). Source
+implementation does not establish that a registered online runner exists.
+
 | Current entry                                                            | Contract                                                                                          |
 | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
 | `node scripts/checks/check-local.mjs`                                    | Plan only; starts no tests, builds or services.                                                   |

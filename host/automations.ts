@@ -44,6 +44,7 @@ export const PREVIOUS_RUN_SKIP = "Skipped: the previous run is still going.";
 /** Runs saved automations on this machine's own clock, so they keep going
  * with no desktop open. Each run is an ordinary host session. */
 export class HostAutomations {
+  onDelete?: (automation: { id: string }) => void;
   private readonly engine: SessionRunEngine;
   private timer?: ReturnType<typeof setInterval>;
   private ticking?: Promise<void>;
@@ -181,7 +182,8 @@ export class HostAutomations {
       throw new Error(
         "This automation is still releasing an owned activity. Wait for cleanup before deleting it.",
       );
-    await this.store.db.prepare("DELETE FROM automations WHERE id=?").run(id);
+    const deleted = await this.store.db.prepare("DELETE FROM automations WHERE id=?").run(id);
+    if (Number(deleted.changes) > 0) this.store.afterCommit(() => this.onDelete?.({ id }));
   }
   runNow(id: string): Promise<HostAutomationRun> {
     if (this.closing) return Promise.reject(new Error("Automation service is closing."));

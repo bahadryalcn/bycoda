@@ -24,9 +24,32 @@ permissions:
 concurrency:
   group: release-cache-${{ github.ref }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
+  windows-route:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      windows_runs_on: ${{ steps.route.outputs.windows_runs_on }}
+      windows_self_hosted: ${{ steps.route.outputs.windows_self_hosted }}
+      windows_concurrency_group: ${{ steps.route.outputs.windows_concurrency_group }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: route
+        env:
+          WINDOWS_SELF_HOSTED_OPT_IN: ${{ vars.BYCODA_WINDOWS_SELF_HOSTED }}
+        run: node scripts/checks/windows-runner-policy.mjs --scope release-cache --github-output "$GITHUB_OUTPUT"
+
   warm:
+    needs: windows-route
     if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
@@ -36,15 +59,26 @@ jobs:
             args: --config src-tauri/tauri.fork.conf.json
           - platform: macos-latest
             args: --target aarch64-apple-darwin --config src-tauri/tauri.fork.macos.conf.json
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.platform == 'windows-latest' && fromJSON(needs.windows-route.outputs.windows_runs_on) || matrix.platform }}
+    concurrency:
+      group: ${{ matrix.platform == 'windows-latest' && needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('release-cache-{0}-{1}', github.run_id, matrix.platform) }}
+      cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Verify isolated interactive Windows package runner before warming local caches
+        if: matrix.platform == 'windows-latest' && needs.windows-route.outputs.windows_self_hosted == 'true'
+        shell: pwsh
+        run: >-
+          & ./scripts/setup/windows-runner.ps1
+          -Mode Verify -Purpose package -ExportEnvironment
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: matrix.platform != 'windows-latest' || needs.windows-route.outputs.windows_self_hosted != 'true'
         id: cache
         with:
           shared-key: desktop-release-${{ matrix.platform }}

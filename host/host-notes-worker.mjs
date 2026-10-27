@@ -23,6 +23,7 @@ let paths = [];
 let desktop, desktopPlatform;
 let currentId = 0,
   checkAuthorization = false;
+let deletedNote;
 const notes = new HostNotes(
   () => paths,
   Date.now,
@@ -37,6 +38,7 @@ const notes = new HostNotes(
     return Atomics.load(status, 0) === 1;
   },
 );
+notes.onDelete = (note) => { deletedNote = note; };
 const methods = new Set([
   "list",
   "get",
@@ -48,6 +50,7 @@ const methods = new Set([
   "desktopSnapshot",
 ]);
 parentPort.on("message", ({ id, method, args, paths: nextPaths, checkAuthorization: check }) => {
+  deletedNote = undefined;
   try {
     if (
       !Number.isSafeInteger(id) ||
@@ -123,7 +126,7 @@ parentPort.on("message", ({ id, method, args, paths: nextPaths, checkAuthorizati
         desktop.releaseReadHandles();
       }
     } else value = notes[method](...args);
-    parentPort.postMessage({ id, value, revision: notes.revision });
+    parentPort.postMessage({ id, value, revision: notes.revision, deletedNote });
   } catch (error) {
     parentPort.postMessage({
       id,

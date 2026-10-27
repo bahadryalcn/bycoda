@@ -45,6 +45,7 @@ mod menu;
 mod mobile_pty;
 mod native_language;
 mod native_workspace;
+mod native_window_lifecycle;
 mod notes;
 mod notifications;
 mod pasteboard;
@@ -356,6 +357,7 @@ pub fn run() {
     #[cfg(windows)]
     let builder = builder.plugin(windows_instance::init());
     let app = builder
+        .plugin(native_window_lifecycle::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
@@ -381,8 +383,13 @@ pub fn run() {
         .manage(ssh_execution::SshExecutionReviews::default())
         .manage(std::sync::Arc::new(ssh_execution::SshExecutions::default()))
         .manage(window_transfer::WindowTransferState::new())
-        .on_page_load(package_smoke::on_page_load)
+        .manage(session_store::window_barrier::WindowBarrier::new())
+        .on_page_load(|webview, payload| {
+            native_window_lifecycle::on_page_load(webview, payload);
+            package_smoke::on_page_load(webview, payload);
+        })
         .setup(|app| {
+            native_window_lifecycle::observe_existing(app.handle());
             for window in window::workspace_windows(app.handle()) {
                 ssh_window_lifecycle::register(window.label())?;
             }

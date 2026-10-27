@@ -10,11 +10,13 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub(crate) mod authority;
+pub(crate) mod cohort;
 mod content_search;
 pub(crate) mod incremental;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
 pub mod usage;
+pub(crate) mod window_barrier;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
 
 const MIGRATION_V1: &str = r#"
@@ -37,7 +39,7 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 "#;
 
 pub struct SessionStore {
-    conn: Arc<Mutex<Connection>>,
+    conn: Arc<Mutex<cohort::RegisteredConnection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
     /// `read_conn` for its whole scan, so sharing it would queue these behind
@@ -55,10 +57,16 @@ pub struct SessionStore {
 
 impl SessionStore {
     pub fn open(path: PathBuf) -> Result<Self, String> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let conn = Connection::open(&path).map_err(|e| e.to_string())?;
+        let admission = cohort::OpenAdmission::begin(&path)?;
+        let path = admission.path().to_owned();
+        let conn = cohort::RegisteredConnection::new(
+            Connection::open(&path).map_err(|e| e.to_string())?,
+            admission.registration.clone(),
+        );
+        admission.verify()?;
+        // Registration freezes exclude new opens, not writes by a registered
+        // live actor. The connection now owns its kernel lease independently.
+        drop(admission);
         // NORMAL in WAL mode survives an app crash; only an OS crash or power
         // loss can drop the last commits (never corrupts), and skips a WAL
         // fsync on every autocommit write. The size limit truncates the WAL
@@ -73,7 +81,9 @@ impl SessionStore {
         crate::ssh_group_defaults::migrate(&conn)?;
         crate::worktrees::reconcile_removals(&conn)?;
         let open_reader = || -> Result<Connection, String> {
-            let reader = Connection::open(&path).map_err(|e| e.to_string())?;
+            let reader =
+                Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .map_err(|e| e.to_string())?;
             reader
                 .execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000;")
                 .map_err(|e| e.to_string())?;
@@ -102,7 +112,7 @@ impl SessionStore {
         migrate(&conn).map_err(|e| e.to_string())?;
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
+            conn: Arc::new(Mutex::new(cohort::RegisteredConnection::in_memory(conn))),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
@@ -165,10 +175,17 @@ impl SessionStore {
         })
     }
 
-    pub(crate) fn lock_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>, String> {
+    pub(crate) fn lock_conn(
+        &self,
+    ) -> Result<std::sync::MutexGuard<'_, cohort::RegisteredConnection>, String> {
         self.conn
             .lock()
             .map_err(|_| "Session store is locked".into())
+    }
+
+    #[allow(dead_code)] // Native-only inspection is not yet qualified migration input.
+    pub(crate) fn inspect_writer_cohort(&self) -> Result<cohort::Inspection, String> {
+        self.lock_conn()?.inspect()
     }
 }
 

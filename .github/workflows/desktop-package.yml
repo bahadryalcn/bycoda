@@ -28,7 +28,32 @@ on:
 permissions:
   contents: read
 jobs:
+  windows-route:
+    # Planning stays hosted. Machine-owned admission independently protects the VM.
+    if: >-
+      (inputs.channel == 'stable' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (inputs.channel != 'stable' && (github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'))
+    runs-on: ubuntu-latest
+    outputs:
+      windows_runs_on: ${{ steps.route.outputs.windows_runs_on }}
+      windows_self_hosted: ${{ steps.route.outputs.windows_self_hosted }}
+      windows_concurrency_group: ${{ steps.route.outputs.windows_concurrency_group }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: "24"
+          install: "false"
+      - id: route
+        env:
+          WINDOWS_SELF_HOSTED_OPT_IN: ${{ vars.BYCODA_WINDOWS_SELF_HOSTED }}
+        run: node scripts/checks/windows-runner-policy.mjs --scope package --github-output "$GITHUB_OUTPUT"
+
   package:
+    needs: windows-route
     # Signed builds only follow an owner-created stable tag. Nonstable manual
     # candidates never receive signing keys or stable updater endpoints.
     if: >-
@@ -44,7 +69,11 @@ jobs:
           - runner: macos-latest
             platform: macos-arm64
             args: --target aarch64-apple-darwin --bundles app,dmg --config src-tauri/tauri.fork.macos.conf.json
-    runs-on: ${{ matrix.runner }}
+    runs-on: ${{ matrix.platform == 'windows-x64' && fromJSON(needs.windows-route.outputs.windows_runs_on) || matrix.runner }}
+    concurrency:
+      group: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('desktop-package-{0}-{1}', github.run_id, matrix.platform) }}
+      cancel-in-progress: false
+      queue: max
     env:
       BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
     steps:
@@ -58,6 +87,12 @@ jobs:
           ref: ${{ inputs.tooling-sha || github.workflow_sha }}
           path: temp/release-tools
           persist-credentials: false
+      - name: Verify isolated interactive Windows package runner before any build or signing
+        if: matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true'
+        shell: pwsh
+        run: >-
+          & ./temp/release-tools/scripts/setup/windows-runner.ps1
+          -Mode Verify -Purpose package -ExportEnvironment
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: ${{ inputs.candidate-artifact || format('release-candidate-{0}', inputs.expected-sha) }}
@@ -86,6 +121,7 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-arm64' && 'aarch64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: matrix.platform != 'windows-x64' || needs.windows-route.outputs.windows_self_hosted != 'true'
         with:
           shared-key: desktop-release-${{ matrix.runner }}
           save-if: false
@@ -104,13 +140,20 @@ jobs:
         if: inputs.channel != 'stable'
         run: pnpm exec tauri build ${{ matrix.args }} --config temp/release-channel.json
       - name: Stage bounded immutable package bytes
+        env:
+          LOCAL_WINDOWS_PACKAGE: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' }}
         shell: bash
         run: |
           node temp/release-tools/scripts/release/prepare-candidate.mjs --verify
+          cargo_target=()
+          if [ "$LOCAL_WINDOWS_PACKAGE" = 'true' ]; then
+            : "${CARGO_TARGET_DIR:?The verified isolated runner must export its release target}"
+            cargo_target=(--cargo-target-dir "$CARGO_TARGET_DIR")
+          fi
           node temp/release-tools/scripts/release/package-manifest.mjs create \
             --candidate temp/test-results/release-candidate/candidate.json \
             --platform ${{ matrix.platform }} --root . \
-            --output temp/build/release-package/${{ matrix.platform }}
+            --output temp/build/release-package/${{ matrix.platform }} "${cargo_target[@]}"
       - name: Exercise packaged application and isolated old database
         run: >-
           node temp/release-tools/scripts/build/package-smoke.mjs

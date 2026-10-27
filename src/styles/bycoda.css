@@ -7,8 +7,8 @@
   --ui-island-text-secondary: color-mix(in srgb, var(--palette-solidInk) 66%, var(--palette-scrim));
   --ui-island-hover: color-mix(in srgb, var(--palette-solidInk) 10%, var(--palette-scrim));
   --ui-island-border: color-mix(in srgb, var(--palette-solidInk) 12%, var(--palette-scrim));
-  --bycoda-panel: color-mix(in srgb, var(--color-background-base) 97%, var(--palette-solidInk));
-  --bycoda-raised: color-mix(in srgb, var(--color-background-base) 94%, var(--palette-solidInk));
+  --bycoda-panel: var(--ui-surface-panel);
+  --bycoda-raised: var(--ui-surface-raised);
   --bycoda-brass-muted: var(--palette-hex7e8795);
 }
 .bycoda-workspace-heading {
@@ -135,6 +135,13 @@
   box-shadow: none;
   overflow: clip;
 }
+.bycoda-project-rail,
+.bycoda-sidebar {
+  border-inline-end-color: var(--ui-pane-border);
+}
+.bycoda-sidebar.body-glass {
+  background: var(--ui-surface);
+}
 .bycoda-rail-brand {
   display: flex;
   align-items: center;
@@ -175,7 +182,7 @@
 }
 .bycoda-sidebar [aria-selected="true"],
 .bycoda-project-rail [aria-current]:not(.project-reorder-item *):not([data-live-agent-card]) {
-  box-shadow: inset 2px 0 var(--color-accent);
+  box-shadow: inset 2px 0 var(--ui-interaction-ink);
 }
 /* Project buttons sit inside a padded card; anchor its marker to the card edge. */
 .bycoda-project-rail .project-reorder-item[data-selected="true"]::before {
@@ -185,7 +192,7 @@
   left: 0;
   width: 2px;
   border-radius: inherit;
-  background: var(--color-accent);
+  background: var(--ui-interaction-ink);
   pointer-events: none;
 }
 .bycoda-empty {

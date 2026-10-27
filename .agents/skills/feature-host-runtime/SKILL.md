@@ -59,10 +59,10 @@ buildIdentity and no new transport capabilities. It was not updated/restarted.
 | 16 Host durability          | `host/store-db.ts`, worker, `host/storage/persistence-health.ts`: FULL critical transaction barrier and explicit recovery, committed-change notifications. Engine rechecks before provider effects.                    |
 | 17 Backup/restore           | `host/storage/snapshots.ts`: Host-only coherent snapshot and blocked staged restore. Native+Host coherent restore remains open.                                                                                        |
 | 18 Workspace/rewind | Captured generation through review/confirmation/effects; historical receipts preserved, partial file revert/Undo bookkeeping and rescue retained. Installed acceptance open. |
-| 19 Files/editor/dev servers | `host/domains/files/service.ts` and neutral DTOs route seven HTTP/WS methods; workspace confinement/CAS/activity retained and queued grant rechecked. Other dev-server methods remain open.                                                                                                                                      |
+| 19 Files/editor/dev servers | Seven file and 13 DevServer HTTP/WS methods share neutral DTOs and existing owners; queued workspace/process/bridge effects recheck authorization. Installed acceptance remains open. |
 | 20 Terminals | Six pipe-shell HTTP/WS methods and neutral contracts share existing process/receipt/activity owner. Native PTY/SSH/mobile leases remain separate and unconverted. |
 | 21 Git/source control | Nine explicit HTTP/WS RPCs use neutral DTOs and a common service, rechecking grant after the actual repo mutex. Broad workspace tool routing and installed acceptance remain open. |
-| 22 Tasks/goals/crews        | Existing schedulers/budgets/services remain; common contract/transport extraction open.                                                                                                                                |
+| 22 Tasks/goals/crews | 14 Task/eight Goal/11 Sprint/six Automation HTTP/WS methods share finite DTOs and existing schedulers. Task delete CAS, Sprint receipts and Automation outcome/cleanup recovery retain concurrent state. Stewards/Crews and rich-desktop Automation parity remain open. |
 | 23 Scoped tools             | Browser/MCP/CLI/device/social/inbox boundaries remain; scope-specific extraction/tickets open.                                                                                                                         |
 | 24 Lifecycle/support        | Detach never sends Stop; per-client generation/access fencing implemented. Full quit/lock/logout/restart support-floor qualification open.                                                                             |
 | 25 Migration/recovery       | Default Host execution, idle migration, provider resume, rescue/downgrade and recovery UX remain disabled pending source and installed gates.                                                                          |
@@ -82,12 +82,26 @@ source bytes, FULL source fence, permanent Host decision and durable native
 receipt. Missing evidence blocks migration. Existing native work is not killed or
 moved by implementation. Snapshot fixtures do not prove power-loss safety.
 
+SessionStore now mandates native registration before writable SQLite opens;
+canonical/physical database binding and kernel leases follow cloned writer
+connections. Inspection closes only new registration admission, never claims
+live writers are idle. Coverage is always Unknown: unregistered legacy binaries,
+native channel authentication, executable/support qualification and remaining
+platform process identity still require proof. No Complete inventory is issued.
+Native window Ready/Started/destruction hooks retain one physical owner slot,
+exact incarnation and bounded listeners. Qualification taint preserves ordinary
+open work and actual committed operation results. Native/renderer drain coverage
+remains incomplete; no migration capability, floor or default is enabled.
+
 ## Checks and remaining gates
 
-Latest source registry: d40424f9db72. Four-domain integration56/56; final combined
-HTTP/WS/authority253/253 (including full HTTP119); client contracts69/69; rewind63
-and file/checkpoint109 in separate overlapping runs. Normal Host/web tsc-rs,
-neutral/domain boundaries, actual in-memory headless bundle and hygiene passed.
+Latest source registry: 1a682d66bdd7 (106 methods). Work-domain integration234/234
+including full HTTP119; later planning-domain composition37/37; separate owner
+Goals81, Sprints26 and Automations40; Native broker52/remote47 plus scoped Clippy;
+mobile103 plus normal typecheck. Counts overlap and are not an aggregate total.
+Normal Host/web tsc-rs, neutral/domain boundaries (47 files), actual in-memory
+headless bundle (851 inputs, zero UI/React/CSS) and hygiene passed on 2026-10-28.
+Rewind63 and file/checkpoint109 remain separate earlier focused evidence.
 Notes4 methods additionally use the same storage worker/CAS/commit grant through
 HTTP and WS; original outer expectedUpdatedAt remains required by its storage owner.
 Native/mobile final follow-up and older full frontend evidence are recorded in
@@ -111,9 +125,10 @@ behavior/ports, with no layout redesign or screenshot acceptance claimed.
 ## Handoff identity
 
 Baseline `0a42b1ab4fd891ccec5ca0fa238d7356b396b13c`; observed HEAD
-`d8bf868fae841b8b391ce148487cd7d373ea9762`, branch main. These changes remain
-uncommitted and excluded from that commit. Concurrent package version 0.6.94 is
-not a source inclusion stamp. Serving Host build inclusion is unknown.
+`83053d6b830fba764f702411faca464de28b1a29`, branch main (2026-10-28). Another
+writer's commit now includes prior Host/WS source; this session did not stage or
+commit it. Subsequent additions require individual inclusion checks. Package
+version 0.6.94 is not an installed build stamp. Serving Host inclusion is unknown.
 
 Plan/progress: `temp/local/2026-10-27-host-architecture-plan/`.
 Evidence: `temp/verification/2026-10-27-host-runtime-foundation/`.

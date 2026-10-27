@@ -170,6 +170,7 @@ function plannerPrompt(
  * its own, that starts once the tasks it depends on are merged. Runs on the
  * task board's timer. */
 export class HostGoals {
+  onDelete?: (goal: { id: string }) => void;
   readonly ready: Promise<void>;
   private readonly engine: SessionRunEngine;
   constructor(
@@ -458,7 +459,8 @@ export class HostGoals {
         await this.store.db.checkAuthorization();
         await this.tasks.delete(task.id, false);
       }
-    await this.store.db.prepare("DELETE FROM goals WHERE id=?").run(id);
+    const deleted = await this.store.db.prepare("DELETE FROM goals WHERE id=?").run(id);
+    if (Number(deleted.changes) > 0) this.store.afterCommit(() => this.onDelete?.({ id }));
   }
   /** Settles planners and brings every goal's progress up to date. Called by
    * the task board's tick, before queued tasks start. */

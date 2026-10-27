@@ -38,6 +38,7 @@
 - [Release operations](reference/releases.md): exact-source candidates, package proof, opt-in preview and cache.
 - [Repository operations](reference/platform-operations.md): staged checks, hooks, advisory reports and bounded Linux retry.
 - [Windows diagnostics](reference/windows-diagnostics.md): exact-file manual source checks and retained receipts.
+- [Windows CI runners](reference/windows-runners.md): isolated local execution, warm caches, admission and activation.
 - [Product identity](reference/fork.md): package, data, and host paths.
 - [Localization](reference/localization.md): maintain application translation catalogs.
 - [Remote session protocol](reference/remote-session-protocol.md): identity, authority, and recovery.

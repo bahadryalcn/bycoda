@@ -13,12 +13,12 @@
   --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
   --accent: var(--user-accent-color, var(--color-accent));
   --accent-strong: var(--accent);
-  --accent-subtle: var(--color-selection-subtle);
+  --accent-subtle: var(--ui-surface-selected);
   --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
-  --danger: var(--color-danger);
-  --info: var(--color-info);
-  --warning: var(--color-warning);
-  --success: var(--color-success);
+  --danger: var(--ui-tone-danger-fg);
+  --info: var(--ui-tone-info-fg);
+  --warning: var(--ui-tone-warning-fg);
+  --success: var(--ui-tone-success-fg);
   --control-on: var(--color-active);
   --control-fill: var(--color-active);
   --control-glyph: var(--color-on-solid);
@@ -68,6 +68,8 @@
 /* The camera island stays black in both themes to join the physical cutout. */
 .bycoda-arc[data-ui-appearance="island"],
 .bycoda-arc[data-ui-appearance="island"] .bycoda-arc {
+  --ui-focus-ring-color: var(--ui-island-text);
+  --ui-field-border-focus: var(--ui-island-text);
   --ui-tone-neutral-fg: var(--ui-island-text);
   --ui-tone-neutral-solid: var(--ui-island-text);
   --ui-tone-neutral-on-solid: var(--ui-island-surface);
@@ -104,6 +106,13 @@
   --control-height-md: var(--ui-control-height-compact);
 }
 
+/* A solid fill and its contrast ink must switch together when the theme or
+   custom accent changes. Interpolating them separately passes through gray-on-
+   gray frames; retain the control's opacity/press feedback instead. */
+.bycoda-arc[data-button-hierarchy="primary"] {
+  transition-property: opacity, transform;
+}
+
 .bycoda-arc-segmented {
   /* Unselected options remain readable choices, rather than muted metadata. */
   --text-muted: var(--ui-text-secondary);
@@ -113,8 +122,18 @@
 }
 
 .bycoda-arc-field {
+  --surface: var(--ui-surface-muted);
+  --border-strong: var(--ui-control-border);
   min-inline-size: 0;
   inline-size: 100%;
+}
+
+/* Disabled fields use a readable semantic pair instead of fading their text
+   and their already muted surface a second time. */
+.bycoda-arc.bycoda-arc-field :is(input, textarea):disabled {
+  color: var(--ui-control-disabled-fg);
+  border-color: var(--ui-control-disabled-border);
+  opacity: 1;
 }
 
 /* Generic choice presentation must also work outside the settings workbench. */
@@ -147,6 +166,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 .bycoda-arc.bycoda-arc-select {
+  --border: var(--ui-control-border);
+  --surface: var(--ui-surface-muted);
   display: inline-flex;
   min-block-size: var(--ui-control-height-md);
   inline-size: 100%;
@@ -222,8 +243,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   }
 }
 
-/* Text controls match :focus-visible on pointer focus too. Use a quiet neutral
-   border, never the foreground or accent (which can be white in dark themes).
+/* Text controls match :focus-visible on pointer focus too. Use the adjusted
+   interaction ink, which stays visible for white/black custom accents.
    Retain a real outline so forced-colors mode can still expose focus. */
 @media (hover: hover) and (pointer: fine) {
   .bycoda-arc.bycoda-arc-field
@@ -240,7 +261,7 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 [data-ui-focus="input"]:focus-visible,
 .bycoda-arc [data-ui-focus="input"]:focus-visible,
 [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
-  outline: 1px solid var(--ui-field-border-focus);
+  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
   outline-offset: -1px;
   box-shadow: none;
 }
@@ -257,6 +278,35 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 [data-ui-focus="menu"]:focus-visible {
   outline: none;
   box-shadow: none;
+}
+
+/* Let Windows high contrast choose the palette, while keeping keyboard focus
+   and text ranges explicit even when the component uses border-only focus. */
+@media (forced-colors: active) {
+  :root {
+    --ui-focus-ring-color: Highlight !important;
+    --ui-field-border-focus: Highlight !important;
+    --ui-control-border: ButtonText !important;
+    --ui-text-selection-background: Highlight !important;
+    --ui-text-selection-foreground: HighlightText !important;
+  }
+
+  html :is(button, input, textarea, select, a[href], [tabindex]):focus-visible,
+  html [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
+    outline: var(--ui-focus-width) solid Highlight !important;
+    outline-offset: var(--ui-focus-offset) !important;
+  }
+
+  html [data-ui-focus-group] [data-ui-focus="group"]:focus-visible {
+    outline: none !important;
+  }
+
+  html :is([data-button-selected], .bycoda-arc-select-option[aria-selected="true"]):not(:disabled, [aria-disabled="true"]) {
+    color: HighlightText;
+    background: Highlight;
+    border-color: Highlight;
+    forced-color-adjust: none;
+  }
 }
 
 .bycoda-arc[data-select-variant="pill"],

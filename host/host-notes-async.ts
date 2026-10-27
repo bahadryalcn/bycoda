@@ -7,7 +7,7 @@ import {
   type DesktopSnapshotRecord,
   type DesktopStampRow,
 } from "./desktopSessions";
-import type { HostNotes } from "./host-notes";
+import type { HostNotes, HostNoteDeleted } from "./host-notes";
 
 type NoteMethod = "list" | "get" | "save" | "delete";
 type Results = { [M in NoteMethod]: ReturnType<HostNotes[M]> } & {
@@ -40,6 +40,7 @@ export interface HostNotesAccess {
 /** The worker owns complete SQLite operations, including optimistic transactions.
  * A rejected/uncertain mutation is never replayed automatically. */
 export class AsyncHostNotes implements HostNotesAccess {
+  onDelete?: (note: HostNoteDeleted) => void;
   private worker?: Worker;
   private sequence = 0;
   private version = Date.now();
@@ -85,6 +86,7 @@ export class AsyncHostNotes implements HostNotesAccess {
         value?: unknown;
         error?: string;
         revision?: number;
+        deletedNote?: HostNoteDeleted;
       }) => {
         const request = this.pending.get(reply.id);
         if (reply.kind === "authorize" && reply.signal instanceof SharedArrayBuffer) {
@@ -102,9 +104,24 @@ export class AsyncHostNotes implements HostNotesAccess {
         if (!request) return;
         this.pending.delete(reply.id);
         if (typeof reply.revision === "number") this.version = reply.revision;
-        if (reply.error) request.reject(new Error(reply.error));
-        else request.resolve(reply.value);
-        if (!this.pending.size) worker.unref();
+        try {
+          if (reply.error) request.reject(new Error(reply.error));
+          else {
+            // Worker success follows its own COMMIT. Fence retained copies before
+            // resolving the owner wait; do not defer this behind a HostDB actor.
+            if (reply.deletedNote) this.onDelete?.(reply.deletedNote);
+            request.resolve(reply.value);
+          }
+        } catch (cause) {
+          // The deletion has already committed. Settle this waiter honestly;
+          // a notification failure must never strand it or replay the mutation.
+          request.reject(Object.assign(
+            new Error("The note was deleted, but its update notification failed. Refresh before continuing.", { cause }),
+            { code: "NOTES_DELETE_NOTIFICATION_FAILED", committed: true, uncertain: true },
+          ));
+        } finally {
+          if (!this.pending.size) worker.unref();
+        }
       },
     );
     this.worker = worker;

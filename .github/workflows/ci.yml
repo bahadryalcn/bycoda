@@ -30,6 +30,8 @@ jobs:
       scripts: ${{ steps.detect.outputs.scripts }}
       python: ${{ steps.detect.outputs.python }}
       source_sha: ${{ steps.detect.outputs.source_sha }}
+      windows_runs_on: ${{ steps.windows-runner.outputs.windows_runs_on }}
+      windows_self_hosted: ${{ steps.windows-runner.outputs.windows_self_hosted }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -44,6 +46,11 @@ jobs:
         env:
           CI_BASE: ${{ github.event.pull_request.base.sha || 'HEAD^' }}
         run: node scripts/checks/ci-changes.mjs --ci --base "$CI_BASE" --github-output "$GITHUB_OUTPUT"
+      - id: windows-runner
+        name: Route trusted Windows work (PRs and disabled opt-in stay hosted)
+        env:
+          WINDOWS_SELF_HOSTED_OPT_IN: ${{ vars.BYCODA_WINDOWS_SELF_HOSTED }}
+        run: node scripts/checks/windows-runner-policy.mjs --scope ci
 
   repository-hygiene:
     runs-on: ubuntu-latest
@@ -64,8 +71,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Each shard gets its own VM. Keep process integration tests serial
-        # inside that VM; Windows needs more shards than the other platforms.
+        # Hosted shards get independent VMs. Opt-in isolated Windows work shares
+        # one non-cancelling queue; Linux/macOS retain their hosted parallelism.
         include:
           - { os: ubuntu-latest, shard: 1, shard-count: 1 }
           - { os: macos-latest, shard: 1, shard-count: 2 }
@@ -76,11 +83,19 @@ jobs:
           - { os: windows-latest, shard: 4, shard-count: 6 }
           - { os: windows-latest, shard: 5, shard-count: 6 }
           - { os: windows-latest, shard: 6, shard-count: 6 }
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || matrix.os }}
+    concurrency:
+      group: ${{ matrix.os == 'windows-latest' && needs.changes.outputs.windows_self_hosted == 'true' && 'bycoda-windows-heavy' || format('ci-host-{0}-{1}-{2}-{3}', github.run_id, github.run_attempt, matrix.os, matrix.shard) }}
+      cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Verify isolated Windows admission and persistent cache roots
+        if: runner.environment == 'self-hosted'
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose ci -ExportEnvironment
       - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
@@ -178,11 +193,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'windows-latest' && fromJSON(needs.changes.outputs.windows_runs_on) || matrix.os }}
+    concurrency:
+      group: ${{ matrix.os == 'windows-latest' && needs.changes.outputs.windows_self_hosted == 'true' && 'bycoda-windows-heavy' || format('ci-native-{0}-{1}-{2}', github.run_id, github.run_attempt, matrix.os) }}
+      cancel-in-progress: false
+      queue: max
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Verify isolated Windows admission and persistent cache roots
+        if: runner.environment == 'self-hosted'
+        shell: pwsh
+        run: pwsh -NoProfile -NonInteractive -File scripts/setup/windows-runner.ps1 -Mode Verify -Purpose ci -ExportEnvironment
       - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
@@ -196,6 +219,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: runner.environment != 'self-hosted'
         with:
           key: native-check
           save-if: ${{ github.ref == 'refs/heads/main' }}

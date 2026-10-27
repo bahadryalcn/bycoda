@@ -43,6 +43,21 @@ const input = {
   sourceCwd: "/project",
 };
 
+it("settles a throwing committed-delete notification without replay, unhandled rejection or poisoning the next worker request", async () => {
+  const { notes } = fixture();
+  const saved = await notes.save(input, 0);
+  const cause = new Error("fixture notification failed");
+  let calls = 0;
+  notes.onDelete = () => { calls++; throw cause; };
+  await expect(notes.delete(saved.id, saved.updatedAt)).rejects.toMatchObject({
+    code: "NOTES_DELETE_NOTIFICATION_FAILED", committed: true, uncertain: true, cause,
+    message: "The note was deleted, but its update notification failed. Refresh before continuing.",
+  });
+  expect(calls).toBe(1);
+  expect(await notes.get(saved.id)).toBeNull();
+  expect((await notes.list()).notes).toEqual([]);
+});
+
 it("awaits asynchronous authority and preserves an awaited actor transaction during worker rechecks", async () => {
   const { notes, path } = fixture();
   const store = new HostStore(join(path, "..", "host.db"));

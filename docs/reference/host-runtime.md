@@ -103,6 +103,26 @@ provider resume, coherent two-store backup/restore and downgrade gates pass.
 Active native sessions continue under their existing owner during development.
 Host-only snapshot/staged-restore helpers do not prove that two-store contract.
 
+Native SessionStore now registers before its first writable SQLite open. Its
+identity uses the canonical database and physical file identity, independently
+of executable path or launch arguments. Kernel leases follow every cloned writer
+connection, including provider reservations. Query handles are genuinely
+read-only. A native inspection excludes new registrations while held; existing
+live writers continue and must be coordinated separately. Live and unleased
+records never imply a complete process roster or process death. Coverage remains
+`Unknown`, including older binaries that never registered. Native OS start
+identity is recorded where implemented; missing identity stays unknown.
+
+Physical native windows also have one lifecycle slot and destruction listener.
+Page starts replace their exact incarnation without accumulating listeners;
+delayed callbacks cannot overwrite or remove a replacement with the same label.
+Native write/checkpoint leases distinguish closed admission from qualification
+taint. Failed or abandoned work prevents migration proof while ordinary open
+work and successful committed results remain usable. Temporary admission
+saturation recovers when tracked work/windows settle. These source hooks do not
+certify renderer drafts or complete native persistence instrumentation, and do
+not enable migration, change support floor or launch a new executor.
+
 Before fencing, explicit native cancellation can commit a permanent cancellation
 receipt and advance the source generation. Missing snapshots do not prove that
 cancellation is safe; an existing fence requires permanent Host abort/recovery.
@@ -117,6 +137,31 @@ in other windows. Native IPC checks saved credentials and disclosure again after
 download; an already-admitted mutation remains an uncertain outcome if redacted.
 
 ## Contracts and qualification
+
+The shared HTTP/WS domain set now also includes Tasks, Goals, DevServers,
+Sprints and Automations. Their finite method DTOs retain the existing service
+owners, workspace/activity authorization and durable receipts. A request-scoped
+capability retains the original paired principal through awaited work; it is not
+a renderer-provided authorization flag. Task deletion uses a persisted-row CAS
+after external workspace cleanup so concurrent edits are not silently deleted.
+Sprint receipts compare JSON object content without changing persisted receipt
+bytes. Automation compensation retains confirmed send IDs and retries only
+cleanup of its own acquired activity.
+
+The canonical WS method `goals.finalReview.recheck` maps to the original HTTP
+spelling. Aliases are generated registry metadata and never broaden the wire
+method grammar. Before acquiring a native socket, clients check the negotiated
+method/capability, request shape and encoded UTF8 envelope budget. A legacy
+variant or oversized valid file request selects its original HTTP route before
+send. Accepted mutations never switch transports or replay. Cancellation or
+failed disclosure after admission reports uncertainty, including non-command
+mutations; it does not invent a receipt or a command identifier.
+
+These domain extractions do not establish complete desktop parity. In particular,
+paired Host Automations retain their existing four schedule kinds and limits;
+richer desktop account/context/dollar-budget behavior and a mobile Sprint
+producer are still outside the converted cohort. Local execution defaults remain
+unchanged pending the full migration gates.
 
 Zod wire schemas generate deterministic draft 2020-12 JSON Schema. Run
 `pnpm check:host-contracts:write` after deliberate changes, then

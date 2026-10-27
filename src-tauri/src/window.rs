@@ -355,6 +355,7 @@ fn build_session_window_with_url(
     };
 
     let label = config.label.clone();
+    let creation = crate::native_window_lifecycle::admit_window(app, &label)?;
     let position = seed.as_ref().and_then(|seed| seed.position);
     let ready = if let Some(seed) = seed {
         // Staged before the webview exists, so its boot always finds it.
@@ -384,6 +385,7 @@ fn build_session_window_with_url(
         app.state::<crate::window_transfer::WindowTransferState>()
             .discard(&label);
     })?;
+    creation.created(&window);
 
     // The persistence plugin runs during build. An explicit drop overrides its
     // old position and expanded state, while its remembered normal size survives.
