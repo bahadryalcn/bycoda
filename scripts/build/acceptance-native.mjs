@@ -904,7 +904,8 @@ async function scenario3(context) {
     90000,
   );
   const reset = await button(context, "Reset stuck turn");
-  if (await reset.isVisible()) await reset.click();
+  const resetUsed = await reset.isVisible();
+  if (resetUsed) await reset.click();
   await waitUntil(
     () => {
       const check = new DatabaseSync(databasePath);
@@ -946,7 +947,7 @@ async function scenario3(context) {
       userBlockId: crashUserBlockId,
       nativePhase: "complete",
       afterCapture: "complete",
-      resetUsed: await reset.isVisible(),
+      resetUsed,
     },
   });
   await sendPrompt(context, "Reply APPRECOVERED without editing files.");
