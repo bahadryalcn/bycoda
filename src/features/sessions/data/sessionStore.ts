@@ -1321,7 +1321,7 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   if (block.role === "system") {
     const interjection = sanitizeInterjection(block.interjection);
     if (interjection) next.interjection = interjection;
-    if (block.notice === "error" || block.notice === "interrupt") {
+    if (block.notice === "error" || block.notice === "interrupt" || block.notice === "info") {
       next.notice = block.notice;
     }
     const shell = sanitizeShellRun(block.shell);

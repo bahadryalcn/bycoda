@@ -33,6 +33,20 @@ const blocks: Block[] = [
 ];
 const chat = () => ({ ...newSession("codex", "/tmp"), blocks });
 
+it("keeps omitted-handoff information visible without marking the turn failed or retryable", () => {
+  const info: Block = {
+    id: "info",
+    role: "system",
+    notice: "info",
+    text: "Earlier conversation was not transferred. Saved history: /history.json",
+  };
+  const session = { ...chat(), blocks: [blocks[0], info] };
+  expect(isNoticeBlock(info)).toBe(true);
+  expect(isActivityBlock(info)).toBe(false);
+  expect(sessionIssue(session)).toBeUndefined();
+  expect(failedTurnRetry(session)).toBeNull();
+});
+
 it("keeps legacy host writer errors visible, failed and retryable", () => {
   const error: Block = {
     id: "legacy-error",
