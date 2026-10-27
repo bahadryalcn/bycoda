@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.92]
+
+### Sessions
+
+- Start sessions in the current checkout even while the Host has not yet been updated for managed workspaces, when Current checkout is chosen explicitly.
+- Explain that a pending Host update installs automatically once active sessions finish, offer Use current checkout in the composer, and clear the notice automatically after the Host reconnects with the new capabilities.
+
 ## [0.6.91]
 
 ### Worktree-first sessions and tasks
