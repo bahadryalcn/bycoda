@@ -49,6 +49,7 @@ import {
   steerHarnessTurn,
   cancelHarnessTurn,
   stopHarnessBackgroundWork,
+  stopHarnessSession,
   type HarnessAdapter,
 } from "./registry";
 import type { SendTurnInput, SteerTurnInput } from "./types";
@@ -292,6 +293,55 @@ describe("harness registry", () => {
     release();
     await Promise.all([first, second]);
     expect(order).toEqual(["send", "release", "send", "release"]);
+  });
+
+  it("keeps lightweight worktree Codex turns warm and still parks an idle writer", async () => {
+    vi.useFakeTimers();
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    const stopSession = vi.fn(async () => {});
+    registerHarness(stub("codex", { sendTurn, stopSession }));
+    const input = {
+      harness: "codex" as const,
+      sessionId: "lightweight-writer",
+      cwd: "/tmp/worktree",
+      model: "codex:test",
+      runtimeMode: "supervised" as const,
+      text: "hello",
+      onEvent: vi.fn(),
+      lightweightWorktree: true,
+    };
+    await sendHarnessTurn(input);
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS - 1);
+    await sendHarnessTurn(input);
+    await sendHarnessTurn(input);
+    expect(sendTurn).toHaveBeenCalledTimes(3);
+    expect(sendTurn.mock.calls[0][0]).not.toHaveProperty("lightweightWorktree");
+    expect(stopSession).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS - 1);
+    expect(stopSession).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stopSession).toHaveBeenCalledExactlyOnceWith(input.sessionId);
+  });
+
+  it("releases a warm lightweight worktree writer on explicit ownership transfer", async () => {
+    vi.useFakeTimers();
+    const stopSession = vi.fn(async () => {});
+    registerHarness(stub("codex", { stopSession }));
+    await sendHarnessTurn({
+      harness: "codex",
+      sessionId: "lightweight-transfer",
+      cwd: "/tmp/worktree",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      text: "hello",
+      onEvent: vi.fn(),
+      lightweightWorktree: true,
+    });
+    expect(stopSession).not.toHaveBeenCalled();
+    await stopHarnessSession("codex", "lightweight-transfer");
+    expect(stopSession).toHaveBeenCalledExactlyOnceWith("lightweight-transfer");
+    await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
+    expect(stopSession).toHaveBeenCalledOnce();
   });
 
   it.each([

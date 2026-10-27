@@ -271,11 +271,18 @@ function scheduleIdlePark(harness: HarnessId, sessionId: string): void {
   );
 }
 
-async function releaseIdleHarness(harness: HarnessId, sessionId: string): Promise<void> {
+async function releaseIdleHarness(
+  harness: HarnessId,
+  sessionId: string,
+  lightweightWorktree = false,
+): Promise<void> {
   // An idle Codex app-server still owns the thread's writer lock. Release it
   // before exposing an idle desktop session that another device can resume.
   // stopSession preserves the provider conversation identity and its history.
-  if (harness === "codex") await stopHarnessSession(harness, sessionId);
+  // Ordinary worktree turns retain their provider process for the next turn.
+  // Explicit ownership transfer still stops through stopHarnessSession; exact
+  // capture retains the immediate retirement path below.
+  if (harness === "codex" && !lightweightWorktree) await stopHarnessSession(harness, sessionId);
   else scheduleIdlePark(harness, sessionId);
 }
 
@@ -319,11 +326,13 @@ function assertHarnessModel(harness: HarnessId, model?: string): void {
 export function sendHarnessTurn(
   request: SendTurnInput & {
     harness: HarnessId;
+    /** Local lifetime policy for a worktree with exact Git rewind disabled. */
+    lightweightWorktree?: boolean;
     /** Local prompt preparation after runtime and skill guidance; never sent to a provider. */
     prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>;
   },
 ) {
-  const { prepareText, ...input } = request;
+  const { prepareText, lightweightWorktree, ...input } = request;
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   let ready!: () => void;
   const started = new Promise<void>((resolve) => {
@@ -408,7 +417,7 @@ export function sendHarnessTurn(
       } finally {
         activeTurnSessions.delete(input.sessionId);
         if (controlled) await invoke("control_turn_finished", { sessionId: input.sessionId });
-        await releaseIdleHarness(input.harness, input.sessionId);
+        await releaseIdleHarness(input.harness, input.sessionId, lightweightWorktree);
       }
     } finally {
       ready();
