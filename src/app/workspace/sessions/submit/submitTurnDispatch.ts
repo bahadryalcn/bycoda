@@ -111,7 +111,7 @@ export async function runSubmitDispatch(
     const lightweightWorktree = Boolean(
       latest.workspaceId &&
       !finishManagedTurn &&
-      (await getWorkspaceCapabilities({ cwd: latest.cwd }).catch(() => [])).includes(
+      (await getWorkspaceCapabilities({ cwd: latest.cwd }).catch((): string[] => [])).includes(
         "sessions.desktop-writer-retirement.v1",
       ),
     );
