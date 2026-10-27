@@ -208,6 +208,8 @@ large\" error itself."
   user block is excluded from earlier history to prevent replaying it twice.
 - `9192d03e`: Host budgets prepared skills/runtime/replay context once and resets
   the outgoing provider thread even when optional handoff text is empty.
+- `bdeaa630`: once the recap cannot fit, only the readback reference remains;
+  smaller history entries cannot reappear ahead of the dropped recap.
 - Focused checks: 337 client/catalog/persistence cases and all 130 Host engine
   cases passed; fast web/Host TypeScript checks passed. Evidence stays in
   `temp/verification/h1/`. No existing browser fixture covers handoff notices;
