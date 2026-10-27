@@ -815,6 +815,8 @@ export async function selectAcceptanceSession(context, sessionId) {
   const row = context.page
     .locator(`[data-session-select=${JSON.stringify(sessionId)}]:visible`)
     .first();
+  if (!(await row.isVisible()))
+    await context.page.getByRole("tab", { name: "Sessions", exact: true }).click();
   await row.waitFor({ state: "visible", timeout: 30000 });
   await row.click();
   await waitUntil(
