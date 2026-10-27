@@ -85,17 +85,20 @@ it("quotes POSIX CLI paths for the shell", async () => {
   );
 });
 
-it("keeps feature completeness and build provenance in the real conversation hint", async () => {
+it("keeps tiered verification, feature completeness and build provenance in the real hint", async () => {
   const { conversationToolsCliHint } = await vi.importActual<
     typeof import("./conversationToolsBridge")
   >("./conversationToolsBridge");
   expect(conversationToolsCliHint(null)).toBe("");
   const hint = conversationToolsCliHint({ command: "node", args: ["host.mjs"] });
-  expect(hint).toContain("search and read its project feature card");
+  expect(hint).toContain("search for its project feature card and read it if present");
   expect(hint).toContain("every affected surface including the Host operation");
-  expect(hint).toContain("opened screenshots");
   expect(hint).toContain(
-    "check build status/source identity before treating a screenshot as a new defect",
+    "Scale checks, opened screenshots, cards and reporting to the T0/T1/T2 rules in AGENTS.md",
+  );
+  expect(hint).not.toContain("verify UI changes with opened screenshots");
+  expect(hint).toContain(
+    "Check build status/source identity before treating a screenshot as a new defect",
   );
   expect(hint).toContain("Reads do not authorize sends, merges or publishing");
 });

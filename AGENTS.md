@@ -12,14 +12,13 @@ source tree at handoff. Never modify the main checkout from another workspace,
 commit to main, push, create a PR or merge into an integration branch; delivery
 requires the owner's UI approval. Do not rewrite published history.
 
-Other branches may contain concurrent work. Read the feature card and live feature
+Other branches may contain concurrent work. Read applicable cards and live feature
 claims before starting; coordinate dependencies instead of duplicating a redesign.
 Never edit or reset another workspace. Do not stash or clean work to make a check
 pass. Stay in a host-assigned task workspace; the host owns task commits when the
 execution brief says so. Explicit owner instructions take precedence.
 
-Handoff includes branch/commit SHA, outcome, surfaces, checks, visual evidence,
-concrete blockers and build identity. Finished means ready for review, separate
+Scale handoff detail to the tier below. Finished means ready for review, separate
 from merged, installed or released. Leave directory retirement to the managed
 lifecycle service. Detailed ownership, cleanup, recovery and development contracts
 are in `docs/reference/managed-workspaces.md`.
@@ -27,8 +26,8 @@ are in `docs/reference/managed-workspaces.md`.
 # Scope, features and done
 
 The owner's outcome sets scope. A screenshot is one example; "sadece bu ekran"
-limits work to that screen. Start a new request with tier, feature, preliminary
-surface count and feature-card path.
+limits work to that screen. Start with tier, feature and estimated surface count;
+include an applicable card path.
 
 - T0: one surface, no Host/API change. Complete and verify it.
 - T1: a named defect, component or screenshot. Search components, copy, classes,
@@ -38,14 +37,14 @@ surface count and feature-card path.
   than about eight surfaces. Maintain a complete surface checklist and run a
   meaningful completeness check before reporting.
 
-Before editing a named feature, search skills, read its
-`.agents/skills/feature-<name>/SKILL.md` and relevant recent Git history. Check
+For named features, search skills and read recent Git history.
+For T1/T2, read its existing `.agents/skills/feature-<name>/SKILL.md`. Check
 live feature claims across worktrees; a tracked card is not a concurrency lock.
 Continue existing work or record an explicit dependency/sub-scope. If claim APIs
 are unavailable, report the coordination gap and inspect available session state;
-do not pretend a local card reserves a feature. Create missing cards using
-`.agents/skills/feature-card-template/SKILL.md`. Update cards with delivered
-behavior and committed handoff references. Record owner decisions only with an
+do not pretend a local card reserves a feature. Create cards only for T2 using
+`.agents/skills/feature-card-template/SKILL.md`. Card updates include delivered
+behavior and commit references. Record owner decisions only with an
 exact quote, date and session/source; label agent ideas as proposals. Update user
 guides when behavior changes.
 
@@ -55,9 +54,16 @@ async state and recovery. Complete authorized work; do not stop at a screenshot
 or end with an offer to finish it. /task requests managed tasks; otherwise finish
 in this session. Delegate independent parts with one writer per file.
 
-Done means exercised. Run focused checks after relevant changes. UI changes need
-every affected surface exercised in light/dark at 1280 and 800 pixels. Save captures
-under `temp/verification/<id>/`, open them and fix visible defects. Use isolated
+Done means exercised, scaled by tier:
+
+- T0: focused code checks; one screenshot of the changed surface only
+  for visual changes. No card; short report.
+- T1: focused checks and screenshots of affected UI surfaces in light/dark at the
+  default width; add 800 px only for layout changes. Update existing cards.
+- T2: focused checks; screenshots of all affected UI surfaces in light/dark at 1280 and
+  800 px; create/update the card and give the full report below.
+
+Save captures in `temp/verification/<id>/`, open them and fix defects. Use isolated
 native/dev-host runs for integration; label fixture evidence. Report UNVERIFIED
 only for a named check you could not run and its concrete blocker. Never use
 production data for a destructive test.
@@ -67,9 +73,10 @@ new defect. Compare and exercise an already implemented change in the relevant
 build instead of redesigning it. Equal versions or capture times do not prove
 inclusion. Build/install/release remain owner-directed actions.
 
-Report outcome; done by surface with path:line; evidence (checks, screenshots,
-exact unverified checks); handoff (branch, SHA, readiness); remaining blockers and
-who must act; and build stamp with inclusion marked included/excluded/unknown.
+T0/T1 reports briefly state outcome, paths, checks, required screenshots,
+blockers and branch/SHA. T2 reports also list done by surface with path:line,
+exact unverified checks, readiness, blocker owners and build stamp with inclusion
+marked included/excluded/unknown.
 
 # Checks and file placement
 
