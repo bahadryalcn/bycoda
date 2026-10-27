@@ -1109,57 +1109,96 @@ export function assertRejectedNativeAdmission(error, request, expected) {
     assert.equal(request[key], expected[key], `Rejected native reservation has a different ${key}`);
 }
 
-export async function nativeDirtyBufferOwner(context, path, current) {
-  assertWithin(context.scratch, path, "native dirty-buffer fixture");
+export async function isolatedHostEditorActivity(context, current) {
+  assertWithin(context.scratch, current.worktreeCwd, "foreign editor fixture");
   assert.equal(resolve(current.cwd).toLowerCase(), resolve(context.state.project).toLowerCase());
-  const ownerId = `acceptance-editor-${crypto.randomUUID()}`;
-  const { DatabaseSync } = await import("node:sqlite");
-  const databasePath = join(context.run.desktopDataPath, "bycoda.db");
-  // This is explicitly synthetic DEV setup for a foreign editor writer. The
-  // real authenticated bridge aggregates every stored owner, including retained
-  // windows. A separate row cannot be overwritten by main's periodic report.
-  const publishMain = async (removeOwner = false) => {
-    const database = new DatabaseSync(databasePath);
-    let mainBuffers;
-    try {
-      if (removeOwner)
-        database.prepare("DELETE FROM native_workspace_buffers WHERE owner_id=?").run(ownerId);
-      const main = database
-        .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
-        .get();
-      assert(main, "The existing main native buffer snapshot is absent");
-      mainBuffers = JSON.parse(main.snapshot_json);
-    } finally {
-      database.close();
-    }
-    // Preserve the latest main buffers while acknowledging the complete owner list.
-    await context.page.evaluate(
-      (buffers) => window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
-      mainBuffers,
+  const storePath = await realpath(join(context.run.desktopDataPath, "remote-machines.json"));
+  assertWithin(
+    await realpath(context.run.desktopDataPath),
+    storePath,
+    "isolated paired connection",
+  );
+  const endpoint = `http://127.0.0.1:${context.run.ports.ports.host}`;
+  // The generic desktop RPC allowlist does not expose editor registration.
+  // Reuse ONLY the exact isolated Host's paired credential privately; never log it.
+  const machines = JSON.parse(await readFile(storePath, "utf8"));
+  const machine = machines.find(
+    (entry) => entry.localHost === true && !entry.ssh && entry.endpoint === endpoint,
+  );
+  assert(
+    machine && /^[A-Za-z0-9_-]{43}$/.test(machine.token),
+    "The isolated Host pairing is unavailable",
+  );
+  assert.equal(typeof machine.environmentId, "string");
+  const call = async (method, params) =>
+    context.stage(
+      `Isolated Host ${method}`,
+      async () => {
+        const response = await fetch(`${endpoint}/rpc`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${machine.token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            version: 1,
+            environmentId: machine.environmentId,
+            method,
+            params,
+          }),
+          signal: AbortSignal.timeout(15000),
+          redirect: "error",
+        });
+        const body = await response.json();
+        if (!response.ok || body.error)
+          throw new Error(
+            `Isolated Host editor activity failed (${response.status}): ${body.error ?? "invalid response"}`,
+          );
+        assert(Object.hasOwn(body, "result"), "The isolated Host activity result is absent");
+        return body.result;
+      },
+      20000,
     );
+  const descriptor = await call("environment.describe", {});
+  assert.equal(
+    descriptor.environmentId,
+    machine.environmentId,
+    "The paired Host environment changed",
+  );
+  assert.equal(
+    descriptor.buildIdentity?.channel,
+    "dev",
+    "The editor fixture requires a development Host",
+  );
+  assert.equal(
+    descriptor.buildIdentity?.buildId,
+    context.identity.buildId,
+    "The paired Host build differs from the verified native build",
+  );
+  assert.equal(
+    descriptor.buildIdentity?.head,
+    context.identity.head,
+    "The paired Host source differs from the verified native build",
+  );
+  const activity = await call("workspaces.activities.start", {
+    workspaceId: current.workspaceId,
+    kind: "editor",
+    dirtyBuffer: true,
+  });
+  assert(
+    activity?.id &&
+      activity.workspaceId === current.workspaceId &&
+      activity.kind === "editor" &&
+      activity.dirtyBuffer === true,
+    "The isolated Host returned a different editor activity",
+  );
+  return {
+    activityId: activity.id,
+    release: async () => {
+      const stopped = await call("workspaces.activities.stop", {
+        workspaceId: current.workspaceId,
+        activityId: activity.id,
+      });
+      assert.equal(stopped.stopped, true, "The exact foreign editor activity did not stop");
+    },
   };
-  const release = () => publishMain(true);
-  try {
-    const database = new DatabaseSync(databasePath);
-    try {
-      database
-        .prepare(
-          "INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed) VALUES(?,?,?,1)",
-        )
-        .run(ownerId, JSON.stringify([{ path, dirty: true }]), Date.now());
-    } finally {
-      database.close();
-    }
-    await publishMain();
-    return { ownerId, release };
-  } catch (error) {
-    try {
-      await release();
-    } catch (cleanupError) {
-      error.message += `; owned buffer cleanup also failed: ${cleanupError.message}`;
-    }
-    throw error;
-  }
 }
 
 async function scenario3(context) {
@@ -1176,7 +1215,7 @@ async function scenario3(context) {
   assert(existsSync(databasePath), "Isolated desktop database was not found");
   const dirtyPath = join(current.worktreeCwd, "counter.txt");
   assertWithin(context.scratch, dirtyPath, "simulated dirty buffer");
-  const dirtyOwner = await nativeDirtyBufferOwner(context, dirtyPath, current);
+  const dirtyOwner = await isolatedHostEditorActivity(context, current);
   let rejectedRequest;
   try {
     const rejectedBoundary = await context.page.evaluate(async (id) => {
@@ -1236,11 +1275,11 @@ async function scenario3(context) {
       }
     }, rejectedBoundary);
     context.steps.push({
-      step: "Publish a simulated dirty editor buffer and attempt native begin after the exact user boundary is durable",
+      step: "Register an authenticated foreign editor activity and attempt native begin after the exact user boundary is durable",
       actual: {
         path: dirtyPath,
         dirty: true,
-        bufferOwnerId: dirtyOwner.ownerId,
+        foreignEditorActivityId: dirtyOwner.activityId,
         ...rejectedBoundary,
         error: rejected.error,
       },
