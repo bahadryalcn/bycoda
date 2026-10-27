@@ -140,9 +140,9 @@ it("skips all managed reads for an explicit current checkout on an older Host", 
 });
 
 it("retains a stable update-required classification independently of the error text", async () => {
-  vi.mocked(requireWorkspaceCapability).mockRejectedValue(
-    new WorkspaceCapabilityError("Host needs an update"),
-  );
+  const error = new WorkspaceCapabilityError();
+  error.message = "Host needs an update";
+  vi.mocked(requireWorkspaceCapability).mockRejectedValue(error);
   await renderCreation();
   expect(state).toMatchObject({ updateRequired: true, error: "Host needs an update" });
   await renderCreation("current");
