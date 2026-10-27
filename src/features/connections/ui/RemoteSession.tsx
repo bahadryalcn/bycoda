@@ -58,7 +58,6 @@ import { prepareSessionWorkspace } from "../../workspaces/model/sessionWorkspace
 import { applyWorkspaceRewind, planWorkspaceRewind } from "../../workspaces/model/rewindClient";
 import {
   clearWorkspaceRewindUndo,
-  offerWorkspaceRewindUndo,
   requestWorkspaceRewindPreview,
   registerWorkspaceRewindUndoHandler,
   type WorkspaceRewindUndoIdentity,
@@ -2950,9 +2949,7 @@ function ConnectedRemoteSession({
       sendingRef.current ||
       preparingRef.current ||
       snapshot.history?.before !== undefined ||
-      !descriptor?.capabilities.includes(
-        hostSession?.workspaceId ? "sessions.git-rewind.v1" : SESSION_REWIND,
-      ) ||
+      !descriptor?.capabilities.includes(SESSION_REWIND) ||
       (sharedQueueEnabled && (!queue.loaded || queue.queue.messages.length > 0)) ||
       !canRewindConversation(hostSession, blockId)
     )
@@ -2969,57 +2966,6 @@ function ConnectedRemoteSession({
     setRewinding(true);
     forceTailRead.current = true;
     try {
-      if (hostSession.workspaceId) {
-        const workspaceId = hostSession.workspaceId;
-        const stillCurrent = () =>
-          alive.current &&
-          boundSession.current === targetSessionId &&
-          bindingVersion.current === targetBindingVersion &&
-          rewindOwner.current === owner;
-        const reconcile = (updated: HostSession) => {
-          if (!stillCurrent())
-            throw new Error(t("The conversation changed. Close this preview and try again."));
-          snapshotRef.current = updated;
-          setSnapshot(updated);
-          rememberSessionSnapshot(
-            snapshotKey(machine.id, targetSessionId),
-            updated,
-            machine.environmentId,
-          );
-          onSnapshot?.(shell.id, updated);
-          forceTailRead.current = false;
-        };
-        const managedSession = { ...session, workspaceId };
-        const plan = await planWorkspaceRewind(managedSession, workspaceId, {
-          userBlockId: blockId,
-        });
-        const operationKey = crypto.randomUUID();
-        return await requestWorkspaceRewindPreview(
-          plan,
-          async () => {
-            if (!stillCurrent() || snapshotRef.current?.revision !== known.revision)
-              throw new Error(t("The conversation changed. Close this preview and try again."));
-            await deleteRemotePageCache({
-              environmentId: machine.environmentId,
-              sessionId: targetSessionId,
-            });
-            const result = await applyWorkspaceRewind(managedSession, plan, operationKey);
-            if (!result.snapshot)
-              throw new Error(
-                t("The complete conversation could not be loaded. Retry the rewind preview."),
-              );
-            reconcile(result.snapshot);
-            const operationId = result.receipt.undoOperationId;
-            if (operationId)
-              offerWorkspaceRewindUndo(
-                shell.id,
-                () => undoManagedRef.current(shell.id, { workspaceId, operationId }),
-                { workspaceId, operationId },
-              );
-          },
-          shell.id,
-        );
-      }
       await deleteRemotePageCache({
         environmentId: machine.environmentId,
         sessionId: targetSessionId,
@@ -3299,9 +3245,7 @@ function ConnectedRemoteSession({
           : ["codex", "claude"],
     onSubmit: (_, text, attachments, options) => submit(text, attachments, options),
     onStop: stopTurn,
-    onRewindMessage: descriptor?.capabilities.includes(
-      hostSession?.workspaceId ? "sessions.git-rewind.v1" : SESSION_REWIND,
-    )
+    onRewindMessage: descriptor?.capabilities.includes(SESSION_REWIND)
       ? (requestedSessionId, blockId) =>
           requestedSessionId === shell.id ? rewind(blockId) : Promise.resolve(false)
       : undefined,

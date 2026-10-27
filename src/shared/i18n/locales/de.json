@@ -7149,5 +7149,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Aktuelles Arbeitsverzeichnis verwenden",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Das Host-Update auf diesem Computer wartet auf das Ende aktiver Sitzungen und wird automatisch installiert."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Das Host-Update auf diesem Computer wartet auf das Ende aktiver Sitzungen und wird automatisch installiert.",
+  "Edit from here": "Ab hier bearbeiten",
+  "Edit from here?": "Ab hier bearbeiten?",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "Den Chat auf den Stand vor dieser Nachricht zurücksetzen. Dein Prompt und deine Anhänge werden wieder in den Editor übernommen. „Dateien ebenfalls zurücksetzen“ macht auch deine eigenen Änderungen rückgängig.",
+  "Revert files too": "Dateien ebenfalls zurücksetzen",
+  "Revert and keep changes": "Zurücksetzen und Änderungen behalten",
+  "Checking session file history…": "Dateiverlauf der Sitzung wird geprüft…",
+  "Session file history is unavailable.": "Der Dateiverlauf der Sitzung ist nicht verfügbar.",
+  "Session files: {p0}": "Sitzungsdateien: {p0}",
+  "These files will be skipped because they changed:": "Diese Dateien werden übersprungen, da sie geändert wurden:",
+  "Reverting files…": "Dateien werden zurückgesetzt…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "Aktualisiere bycoda Host auf diesem Rechner, um Sitzungsdateien zurückzusetzen. Du kannst den Chat weiterhin zurücksetzen und Änderungen behalten.",
+  "Reverted files: {p0}": "Zurückgesetzte Dateien: {p0}",
+  "Skipped files: {p0}": "Übersprungene Dateien: {p0}",
+  "No session files were reverted.": "Es wurden keine Sitzungsdateien zurückgesetzt.",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Die Dateien wurden zurückgesetzt, der Chat jedoch nicht. Versuche es erneut, um diese Nachricht fertig zu bearbeiten."
 }

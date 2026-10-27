@@ -62,7 +62,7 @@ describe("AgentTranscript shell commands", () => {
 });
 
 describe("AgentTranscript collapsed work", () => {
-  it("offers edit and return for each rewindable historical user message", () => {
+  it("offers one Edit from here action for each rewindable historical user message", () => {
     const markup = render(
       [
         { id: "first", role: "user", text: "First" },
@@ -74,7 +74,37 @@ describe("AgentTranscript collapsed work", () => {
       { canRewindMessage: () => true, onRewindMessage: () => {} },
     );
 
-    expect(markup).toContain('aria-label="Message actions"');
+    expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
+    expect(markup).not.toContain('aria-label="Message actions"');
+    expect(markup).not.toContain("Return before this message");
+  });
+
+  it("keeps draft/internal messages out and disables unavailable Edit from here", () => {
+    const markup = render(
+      [
+        { id: "first", role: "user", text: "First" },
+        { id: "draft", role: "user", text: "Draft", draft: true },
+        { id: "internal", role: "user", text: "Internal", internal: true },
+        { id: "unavailable", role: "user", text: "Unavailable" },
+      ],
+      false,
+      undefined,
+      { canRewindMessage: (id) => id !== "unavailable", onRewindMessage: () => {} },
+    );
+    expect(markup.match(/aria-label="Edit from here"/g)).toHaveLength(2);
+    expect(markup).toContain("This conversation can no longer be rewound.");
+    expect(markup.match(/disabled=""/g)).toHaveLength(1);
+  });
+
+  it("keeps the action visible but disabled while the session is busy", () => {
+    const markup = render(
+      [{ id: "busy-message", role: "user", text: "Still working" }],
+      true,
+      undefined,
+      { canRewindMessage: () => false, onRewindMessage: () => {} },
+    );
+    expect(markup).toContain('aria-label="Edit from here"');
+    expect(markup).toContain('disabled=""');
   });
 
   it("shows a stopped turn as stopped by the user", () => {

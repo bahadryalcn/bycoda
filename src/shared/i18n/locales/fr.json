@@ -7149,5 +7149,20 @@
   "Source included": "Source included",
   "Different source": "Different source",
   "Use current checkout": "Utiliser le répertoire de travail actuel",
-  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La mise à jour du Host sur cet ordinateur attend la fin des sessions actives et sera installée automatiquement."
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La mise à jour du Host sur cet ordinateur attend la fin des sessions actives et sera installée automatiquement.",
+  "Edit from here": "Modifier à partir d’ici",
+  "Edit from here?": "Modifier à partir d’ici ?",
+  "Rewind chat to before this message. Your prompt and attachments return to the composer. \"Revert files too\" also undoes your own edits.": "Rétablit le chat avant ce message. Votre demande et ses pièces jointes reviennent dans l’éditeur. « Rétablir aussi les fichiers » annule également vos propres modifications.",
+  "Revert files too": "Rétablir aussi les fichiers",
+  "Revert and keep changes": "Revenir en gardant les modifications",
+  "Checking session file history…": "Vérification de l’historique des fichiers de la session…",
+  "Session file history is unavailable.": "L’historique des fichiers de la session est indisponible.",
+  "Session files: {p0}": "Fichiers de la session : {p0}",
+  "These files will be skipped because they changed:": "Ces fichiers seront ignorés car ils ont été modifiés :",
+  "Reverting files…": "Rétablissement des fichiers…",
+  "Update bycoda Host on this machine to revert session files. You can still rewind and keep changes.": "Mettez à jour bycoda Host sur cette machine pour rétablir les fichiers de la session. Vous pouvez toujours revenir en gardant les modifications.",
+  "Reverted files: {p0}": "Fichiers rétablis : {p0}",
+  "Skipped files: {p0}": "Fichiers ignorés : {p0}",
+  "No session files were reverted.": "Aucun fichier de la session n’a été rétabli.",
+  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.": "Les fichiers ont été rétablis, mais le chat n’a pas pu revenir en arrière. Réessayez pour terminer la modification de ce message."
 }
