@@ -1070,7 +1070,7 @@ async function scenario7(context) {
   const screenshots = [];
   await click(context, "Tasks");
   await waitUntil(
-    async () => context.page.locator('[data-remote-data-state="ready"]').count() > 0,
+    async () => (await context.page.locator('[data-remote-data-state="ready"]').count()) > 0,
     "Task board did not discover the connected development Host",
     45000,
   );
@@ -1257,7 +1257,7 @@ async function scenario8(context) {
     );
     await waitUntil(
       async () =>
-        (await button(context, "Save workspace policy")).isDisabled() &&
+        (await (await button(context, "Save workspace policy")).isDisabled()) &&
         (await (await button(context, "Save workspace policy")).getAttribute("aria-busy")) !==
           "true",
       "Workspace policy save control did not settle",
