@@ -193,10 +193,8 @@ export function prepareSubmittedTurn(
           },
           providerAccountId,
           usageLimit: undefined,
-          // Keep preparation failures retryable without falling back to the project checkout.
-          workspaceMode: createDraftWorktree
-            ? (selected.workspaceMode ?? "worktree")
-            : selected.workspaceMode,
+          // Automatic remains unresolved until the asynchronous policy read succeeds.
+          workspaceMode: selected.workspaceMode,
           worktreePreparing: createDraftWorktree ? true : selected.worktreePreparing,
           inboxCard: rawCommand || options?.ciRepair ? s.inboxCard : undefined,
           noteCard: rawCommand || options?.ciRepair ? s.noteCard : undefined,
@@ -226,7 +224,7 @@ export function prepareSubmittedTurn(
           next = sentQueuedMessage(next, options.queuedMessageId);
         }
         if (!live) {
-          return {
+          return withWorkspacePreparation({
             ...next,
             title: titled,
             pendingSwitch: undefined,
@@ -247,7 +245,7 @@ export function prepareSubmittedTurn(
                 notice: "error",
               },
             ],
-          };
+          });
         }
         if (pendingSwitch) {
           const sealed = stopStreaming({
@@ -255,14 +253,38 @@ export function prepareSubmittedTurn(
             title: titled,
             pendingSwitch: undefined,
           });
-          return appendUser(
-            appendPreparingHandoff(sealed, pendingSwitch.from, next.harness),
-            visibleText,
-            visible,
-            cards,
+          return withWorkspacePreparation(
+            appendUser(
+              appendPreparingHandoff(sealed, pendingSwitch.from, next.harness),
+              visibleText,
+              visible,
+              cards,
+            ),
           );
         }
-        return appendUser({ ...next, title: titled }, visibleText, visible, cards);
+        return withWorkspacePreparation(
+          appendUser({ ...next, title: titled }, visibleText, visible, cards),
+        );
+
+        function withWorkspacePreparation(submitted: Session): Session {
+          if (
+            !createDraftWorktree &&
+            !submitted.blocks.some((block) => block.workspacePreparationPending)
+          )
+            return submitted;
+          let userIndex = submitted.blocks.length - 1;
+          while (userIndex >= 0 && submitted.blocks[userIndex].role !== "user") userIndex--;
+          return {
+            ...submitted,
+            blocks: submitted.blocks.map((block, index) =>
+              createDraftWorktree && index === userIndex
+                ? { ...block, workspacePreparationPending: true }
+                : !createDraftWorktree && block.workspacePreparationPending
+                  ? { ...block, workspacePreparationPending: undefined }
+                  : block,
+            ),
+          };
+        }
       }),
     );
   };

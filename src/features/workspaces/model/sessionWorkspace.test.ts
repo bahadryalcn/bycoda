@@ -102,6 +102,50 @@ it("keeps established conversations in their existing checkout", async () => {
   expect(workspaceRequest).not.toHaveBeenCalled();
 });
 
+it("re-resolves Automatic after failed preparation survives a persisted user turn", async () => {
+  const retry = JSON.parse(
+    JSON.stringify({
+      ...session,
+      blocks: [
+        { id: "failed", role: "user", text: "First send", workspacePreparationPending: true },
+      ],
+    }),
+  );
+  expect(needsSessionWorkspace(retry)).toBe(true);
+  vi.mocked(workspaceRequest).mockRejectedValueOnce(new Error("Policy temporarily unavailable"));
+  await expect(prepareSessionWorkspace(retry)).rejects.toThrow("temporarily unavailable");
+  vi.mocked(workspaceRequest).mockResolvedValueOnce({
+    revision: 1,
+    resolved: { policy: { ...policy, defaultMode: "current" }, appliedScopes: ["host"] },
+  } as never);
+  await expect(prepareSessionWorkspace(retry)).resolves.toBeNull();
+  expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).toEqual([
+    "projects.workspacePolicy.get",
+    "projects.workspacePolicy.get",
+  ]);
+});
+
+it("keeps explicit Current and Worktree choices while a preparation is unresolved", async () => {
+  const pending = {
+    ...session,
+    blocks: [
+      { id: "failed", role: "user" as const, text: "Retry", workspacePreparationPending: true },
+    ],
+  };
+  await expect(
+    prepareSessionWorkspace({ ...pending, workspaceMode: "current" }),
+  ).resolves.toBeNull();
+  expect(workspaceRequest).not.toHaveBeenCalled();
+  await expect(prepareSessionWorkspace({ ...pending, workspaceMode: "worktree" })).resolves.toEqual(
+    workspace,
+  );
+  expect(workspaceRequest).toHaveBeenLastCalledWith(
+    "workspaces.prepare",
+    expect.objectContaining({ choice: { defaultMode: "worktree" } }),
+    expect.anything(),
+  );
+});
+
 it("retains a legacy current checkout after clear and persistence reload", async () => {
   const legacy = {
     ...session,

@@ -360,6 +360,8 @@ export type Block = {
   providerTurnId?: string;
   /** User turn saved to the session but not submitted to the harness yet. */
   draft?: boolean;
+  /** Workspace policy has not resolved for this submitted turn; retry must resolve it first. */
+  workspacePreparationPending?: boolean;
   /** Host follow-up retained until delivery is confirmed; uncertain work is never replayed automatically. */
   followUpDelivery?: "pending" | "undelivered" | "uncertain";
   /** This user turn activated Bycoda app access for its thread. */

@@ -1233,6 +1233,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
   const turnModel = sanitizeTurnModel(block.turnModel);
   if (block.role === "user" && turnModel) next.turnModel = turnModel;
   if (block.role === "user" && block.draft) next.draft = true;
+  if (block.role === "user" && block.workspacePreparationPending === true)
+    next.workspacePreparationPending = true;
   if (
     block.role === "user" &&
     block.draft &&

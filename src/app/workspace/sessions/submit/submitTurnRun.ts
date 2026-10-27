@@ -57,6 +57,11 @@ export function startSubmittedTurn(
                     }
                   : {}),
                 workspaceMode: workspace ? undefined : "current",
+                blocks: session.blocks.map((block) =>
+                  block.workspacePreparationPending
+                    ? { ...block, workspacePreparationPending: undefined }
+                    : block,
+                ),
                 worktreeBase: undefined,
                 worktreePreparing: undefined,
               }

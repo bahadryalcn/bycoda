@@ -25,7 +25,9 @@ export function needsSessionWorkspace(session: Session): boolean {
   return (
     !session.worktreeCwd &&
     session.workspaceMode !== "current" &&
-    (session.workspaceMode === "worktree" || isNewWorkspaceSession(session))
+    (session.workspaceMode === "worktree" ||
+      session.blocks.some((block) => block.role === "user" && block.workspacePreparationPending) ||
+      isNewWorkspaceSession(session))
   );
 }
 

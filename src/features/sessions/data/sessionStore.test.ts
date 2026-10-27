@@ -504,6 +504,23 @@ describe("persisting a subagent's trail", () => {
 });
 
 describe("sanitizeSessionForPersist", () => {
+  it("persists unresolved workspace preparation only on submitted user blocks", () => {
+    const session = newSession("codex", "/repo");
+    session.blocks = [
+      { id: "pending", role: "user", text: "Retry me", workspacePreparationPending: true },
+      {
+        id: "answer",
+        role: "assistant",
+        text: "Ignore malformed metadata",
+        workspacePreparationPending: true,
+      },
+    ];
+    const saved = sanitizeSessionForPersist(session);
+    expect(saved.blocks[0].workspacePreparationPending).toBe(true);
+    expect(saved.blocks[1].workspacePreparationPending).toBeUndefined();
+    expect(saved.workspaceMode).toBeUndefined();
+  });
+
   it.each(["pending", "undelivered", "uncertain"] as const)(
     "preserves %s follow-up recovery across local persistence",
     (followUpDelivery) => {

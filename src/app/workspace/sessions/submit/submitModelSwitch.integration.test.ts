@@ -24,6 +24,25 @@ import {
   resetHarnessModelOverlays,
   setHarnessModels,
 } from "../../../../features/sessions/model/models";
+import { sanitizeSessionForPersist } from "../../../../features/sessions/data/sessionStore";
+import { needsSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
+import { failedTurnRetry } from "../../../../features/sessions/ui/RetryFailedTurn";
+import {
+  getWorkspaceCapabilities,
+  workspaceRequest,
+} from "../../../../features/workspaces/model/workspaceClient";
+
+vi.mock("../../../../features/workspaces/model/workspaceClient", () => ({
+  getWorkspaceCapabilities: vi.fn(),
+  resolveWorkspaceContext: vi.fn(async () => ({
+    cwd: "/repo",
+    projectId: "project",
+    environmentId: "environment",
+    machineId: "machine",
+  })),
+  requireWorkspaceCapability: vi.fn(async () => {}),
+  workspaceRequest: vi.fn(),
+}));
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
@@ -146,6 +165,13 @@ beforeEach(async () => {
   stoppedSessions.length = 0;
   events = new Map();
   native.invoke.mockReset();
+  vi.mocked(getWorkspaceCapabilities).mockReset().mockResolvedValue(["workspaces.policy.v1"]);
+  vi.mocked(workspaceRequest)
+    .mockReset()
+    .mockResolvedValue({
+      revision: 1,
+      resolved: { policy: { defaultMode: "current" }, appliedScopes: ["host"] },
+    } as never);
   native.invoke.mockImplementation(async (command: string) => {
     if (command === "handoff_history_save") return { path: "/isolated/handoff-history.json" };
     return null;
@@ -222,6 +248,45 @@ async function submit(
   await vi.waitFor(() => expect(settled).toHaveBeenCalledOnce());
   expect(settled.mock.calls[0][0]).toMatchObject({ status });
 }
+
+it("retries a transient first-send preparation failure in Current after persistence reload", async () => {
+  const original = {
+    ...newSession("antigravity", "/repo"),
+    model: "antigravity:gemini-3.8-flash-high",
+  };
+  resetSessionsStore([original]);
+  vi.mocked(getWorkspaceCapabilities).mockRejectedValueOnce(
+    new Error("Policy temporarily unavailable"),
+  );
+  await submit("failed", {}, "İlk isteği koru ve yeniden dene");
+  const failed = getSessions()[0];
+  expect(sends).toHaveLength(0);
+  expect(failed.workspaceMode).toBeUndefined();
+  expect(failed.blocks[0]).toMatchObject({
+    role: "user",
+    text: "İlk isteği koru ve yeniden dene",
+    workspacePreparationPending: true,
+  });
+  expect(failed.worktreePreparing).toBeUndefined();
+  const saved = JSON.parse(JSON.stringify(sanitizeSessionForPersist(failed)));
+  resetSessionsStore([{ ...failed, ...saved, busy: false }]);
+  expect(needsSessionWorkspace(getSessions()[0])).toBe(true);
+  const retry = failedTurnRetry(getSessions()[0]);
+  expect(retry?.text).toBe("İlk isteği koru ve yeniden dene");
+  await submit("completed", {}, retry!.text);
+  expect(getWorkspaceCapabilities).toHaveBeenCalledTimes(2);
+  expect(workspaceRequest).toHaveBeenCalledOnce();
+  expect(workspaceRequest).toHaveBeenCalledWith(
+    "projects.workspacePolicy.get",
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(sends).toHaveLength(1);
+  expect(sends[0].input.cwd).toBe("/repo");
+  expect(getSessions()[0]).toMatchObject({ workspaceMode: "current" });
+  expect(getSessions()[0].worktreeCwd).toBeUndefined();
+  expect(getSessions()[0].blocks.some((block) => block.workspacePreparationPending)).toBe(false);
+});
 
 it("admits a managed native provider only after its accepted boundary is durable, and ends the same run", async () => {
   const original = {
