@@ -34,6 +34,15 @@ Delivered surface checklist:
   `host/checkpoints.ts`, `host/session-file-revert.ts`, `host/server.ts` and
   `src-tauri/src/checkpoint/file_revert.rs` own remote/native routing, bounded
   history, conflict rechecks and successful-rewind history retirement.
+- Done: Codex file-change notifications retain authoritative `fileChanges`
+  evidence in `src/integrations/harness/providers/codex/codexProtocol.ts`.
+  `src/app/workspace/helpers/workspaceNotify.ts` routes successful post-write
+  notifications to native `session_checkpoint_file_changes`; Host uses the same
+  proof path. Silently taking a pre-edit snapshot after the edit is forbidden.
+  Delete/add chains retain their actual initial contents; update hunks are
+  reversed only when their evidence validates. Missing or unsupported proof
+  makes history unavailable. Protocol and dispatch delivery: `d6cb4db10`,
+  `ab4c20ffb`; live native acceptance discovered this integration requirement.
 - Done: eight catalogs under `src/shared/i18n/locales/`; browser fixtures
   `tests/browser/edit-from-here.spec.ts` and `transcript-rewind.spec.ts` cover
   dialog choices, unavailable history, failures and attachment drafts.
@@ -46,6 +55,9 @@ repositories in an isolated dev profile. Results and build inclusion are recorde
 in `temp/verification/v94i/`; fixture evidence and source checks do not establish
 installed or released acceptance. See `docs/guides/managed-workspaces.md` for the
 user workflow. Existing W2 delivery commits: `9ba9a6a9`, `d01bc825`.
+The maintained dev runner can continue only a stopped, validated run's isolated
+profile with `--reuse-profile-run`, keeping completed acceptance turns and drafts
+while using a new immutable executable and newly allocated ports (`18d5159f7`).
 
 Prepare and deliver turns while preserving drafts, settings, attachments and honest delivery state. Keywords: composer, message input, send, queue, steer, stop, retry, draft, paste, IME, attachments, model, reasoning, workspace, quick composer, translation, reprompt.
 

@@ -168,7 +168,7 @@ the selected message onward. Created files are removed. Files changed by another
 writer are skipped and listed in a notice. Earlier Git commits and the index are
 preserved; restored contents appear as working-copy changes. This bounded file
 history works with Exact Git rewind off, in both Current checkout and Worktree
-sessions. Older or pruned history disables the file option with a reason while
+sessions. Older, pruned or incomplete provider history disables the file option with a reason while
 keeping conversation-only editing available. Remote file restoration requires
 an updated Host advertising `sessions.edit-from-here.v1`.
 
