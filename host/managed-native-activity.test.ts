@@ -16,71 +16,108 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-it("recovers only the exact acknowledged dead provider after service reconstruction", async () => {
-  const f = await fixture();
-  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    windowsHide: true,
-    stdio: "ignore",
-  });
-  await once(child, "spawn");
-  cleanups.push(async () => {
-    if (child.exitCode === null) child.kill();
-  });
-  const start = {
-    activityId: "crashed",
-    cwd: f.path,
-    kind: "provider" as const,
-    sessionId: "session",
-    clientId: "client",
-  };
-  await f.service.start(start, owner);
-  const activityOwnerId = (await f.activity.list("workspace"))[0].ownerId;
-  const request = {
-    workspaceId: "workspace",
-    sessionId: "session",
-    clientId: "client",
-    activityOwnerId,
-  };
-  await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("identity is unknown");
-  await expect(
-    f.service.spawned(
-      { activityId: start.activityId, processId: child.pid!, clientId: "foreign" },
+it.skipIf(process.platform !== "win32")(
+  "recovers only the exact acknowledged dead provider and desktop after reconstruction",
+  async () => {
+    const f = await fixture();
+    const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    await once(child, "spawn");
+    const desktop = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      windowsHide: true,
+      stdio: "ignore",
+    });
+    await once(desktop, "spawn");
+    cleanups.push(async () => {
+      if (child.exitCode === null) child.kill();
+      if (desktop.exitCode === null) desktop.kill();
+    });
+    const start = {
+      activityId: "crashed",
+      cwd: f.path,
+      kind: "provider" as const,
+      sessionId: "session",
+      clientId: "client",
+    };
+    await f.service.start(start, owner);
+    const activityOwnerId = (await f.activity.list("workspace"))[0].ownerId;
+    const request = {
+      workspaceId: "workspace",
+      sessionId: "session",
+      clientId: "client",
+      activityOwnerId,
+    };
+    await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow(
+      "identity is unknown",
+    );
+    await expect(
+      f.service.spawned(
+        {
+          activityId: start.activityId,
+          processId: child.pid!,
+          desktopProcessId: desktop.pid!,
+          clientId: "foreign",
+        },
+        owner,
+      ),
+    ).rejects.toThrow("another device or desktop");
+    await f.service.spawned(
+      {
+        activityId: start.activityId,
+        processId: child.pid!,
+        desktopProcessId: desktop.pid!,
+        clientId: "client",
+      },
       owner,
-    ),
-  ).rejects.toThrow("another device or desktop");
-  await f.service.spawned(
-    { activityId: start.activityId, processId: child.pid!, clientId: "client" },
-    owner,
-  );
-  await expect(
-    f.service.spawned(
-      { activityId: start.activityId, processId: process.pid, clientId: "client" },
-      owner,
-    ),
-  ).rejects.toThrow("identity changed");
-  await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("not proven dead");
-  expect(await f.service.reconcileProcesses({ ...request, clientId: "foreign" }, owner)).toBe(
-    false,
-  );
-  expect(await f.service.reconcileProcesses(request, other)).toBe(false);
-  expect(
-    await f.service.reconcileProcesses({ ...request, activityOwnerId: "unrelated" }, owner),
-  ).toBe(false);
-  expect(await f.activity.list("workspace")).toHaveLength(1);
-  const exited = once(child, "exit");
-  child.kill("SIGKILL");
-  await exited;
-  f.restart();
-  expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
-  expect(await f.activity.list("workspace")).toEqual([]);
-  expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
-  await expect(
-    f.service.spawned(
-      { activityId: start.activityId, processId: child.pid!, clientId: "client" },
-      owner,
-    ),
-  ).rejects.toThrow("unavailable");
-});
+    );
+    await expect(
+      f.service.spawned(
+        {
+          activityId: start.activityId,
+          processId: process.pid,
+          desktopProcessId: desktop.pid!,
+          clientId: "client",
+        },
+        owner,
+      ),
+    ).rejects.toThrow("identity changed");
+    await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("not proven dead");
+    expect(await f.service.reconcileProcesses({ ...request, clientId: "foreign" }, owner)).toBe(
+      false,
+    );
+    expect(await f.service.reconcileProcesses(request, other)).toBe(false);
+    expect(
+      await f.service.reconcileProcesses({ ...request, activityOwnerId: "unrelated" }, owner),
+    ).toBe(false);
+    expect(await f.activity.list("workspace")).toHaveLength(1);
+    const exited = once(child, "exit");
+    child.kill("SIGKILL");
+    await exited;
+    // A dead leader can leave detached descendants alive while its desktop job
+    // owner is still running. It is not sufficient evidence of tree retirement.
+    await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("not proven dead");
+    const desktopExited = once(desktop, "exit");
+    desktop.kill("SIGKILL");
+    await desktopExited;
+    f.restart();
+    expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
+    expect(await f.activity.list("workspace")).toEqual([]);
+    expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
+    await expect(
+      f.service.spawned(
+        {
+          activityId: start.activityId,
+          processId: child.pid!,
+          desktopProcessId: desktop.pid!,
+          clientId: "client",
+        },
+        owner,
+      ),
+    ).rejects.toThrow("unavailable");
+  },
+);
 
 it("keeps permission-denied process probes fenced", async () => {
   const f = await fixture();
@@ -91,7 +128,10 @@ it("keeps permission-denied process probes fenced", async () => {
     sessionId: "session",
   };
   await f.service.start(start, owner);
-  await f.service.spawned({ activityId: start.activityId, processId: process.pid }, owner);
+  await f.service.spawned(
+    { activityId: start.activityId, processId: process.pid, desktopProcessId: 1 },
+    owner,
+  );
   const activityOwnerId = (await f.activity.list("workspace"))[0].ownerId;
   vi.spyOn(process, "kill").mockImplementation(() => {
     throw Object.assign(new Error("denied"), { code: "EPERM" });

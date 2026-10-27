@@ -42,6 +42,8 @@ interface ProcessLease extends NativeActivityStart {
   sharedActivityId?: string;
   /** Native child PID, durably acknowledged before its streams are exposed. */
   processId?: number;
+  /** App owns the Windows kill-on-close job containing this provider tree. */
+  desktopProcessId?: number;
 }
 interface BufferLease extends NativeBufferSnapshot {
   device: string;
@@ -173,7 +175,12 @@ export function createManagedNativeActivity(deps: {
   return {
     probe,
     spawned(
-      request: { activityId: string; processId: number; clientId?: string },
+      request: {
+        activityId: string;
+        processId: number;
+        desktopProcessId: number;
+        clientId?: string;
+      },
       owner: WorkspaceOwnerAuthorization,
     ) {
       return serial(async () => {
@@ -181,6 +188,12 @@ export function createManagedNativeActivity(deps: {
         identity(request.activityId, "activity identity");
         if (!Number.isSafeInteger(request.processId) || request.processId < 1)
           throw new Error("Invalid native child process identity");
+        if (
+          !Number.isSafeInteger(request.desktopProcessId) ||
+          request.desktopProcessId < 1 ||
+          request.desktopProcessId === request.processId
+        )
+          throw new Error("Invalid native desktop process identity");
         const path = leasePath(request.activityId);
         const lease = await read<ProcessLease>(path);
         if (!lease || lease.device !== device || lease.clientId !== request.clientId)
@@ -193,7 +206,13 @@ export function createManagedNativeActivity(deps: {
             throw new Error("Native activity belongs to another device or desktop client");
           if (current.processId !== undefined && current.processId !== request.processId)
             throw new Error("Native child process identity changed");
+          if (
+            current.desktopProcessId !== undefined &&
+            current.desktopProcessId !== request.desktopProcessId
+          )
+            throw new Error("Native desktop process identity changed");
           current.processId = request.processId;
+          current.desktopProcessId = request.desktopProcessId;
           await durableWrite(path, JSON.stringify(current));
           return { acknowledged: true as const };
         });
@@ -242,17 +261,35 @@ export function createManagedNativeActivity(deps: {
           retired = true;
           continue;
         }
-        if (!Number.isSafeInteger(lease.processId) || !lease.processId || lease.processId < 1)
+        if (
+          !Number.isSafeInteger(lease.processId) ||
+          !lease.processId ||
+          lease.processId < 1 ||
+          !Number.isSafeInteger(lease.desktopProcessId) ||
+          !lease.desktopProcessId ||
+          lease.desktopProcessId < 1
+        )
           throw new Error("Native provider process identity is unknown; recovery remains fenced");
-        let dead = false;
-        try {
-          process.kill(lease.processId, 0);
-        } catch (error) {
-          dead = (error as NodeJS.ErrnoException).code === "ESRCH";
+        // A dead leader alone does not prove descendant writers exited. On
+        // Windows the native app enrolls the tree in its kill-on-close job
+        // before resuming the suspended provider. Both owning app and provider
+        // must be proven dead. Other platforms remain fenced absent tree proof.
+        for (const pid of [lease.processId, lease.desktopProcessId]) {
+          let dead = false;
+          try {
+            process.kill(pid, 0);
+          } catch (error) {
+            dead = (error as NodeJS.ErrnoException).code === "ESRCH";
+          }
+          if (!dead)
+            throw new Error(
+              "Native provider or desktop process is not proven dead; recovery remains fenced",
+            );
         }
-        // Alive, EPERM and reused PIDs are not proof of retirement.
-        if (!dead)
-          throw new Error("Native provider process is not proven dead; recovery remains fenced");
+        if (process.platform !== "win32")
+          throw new Error(
+            "Native provider tree retirement is unproven on this platform; recovery remains fenced",
+          );
         lease.phase = "ending";
         await durableWrite(path, JSON.stringify(lease));
         const owned = (await deps.activity.list(lease.workspaceId)).filter(
