@@ -246,6 +246,13 @@ delayed begin requests. Native recovery validates all echoed identity/revision
 fields before releasing only the matching `starting` row. Session load and the
 pre-save send path retry this proof; failed reads preserve the fence and drafts.
 
+A fresh, clean native buffer acknowledgement retries retained `starting` rows
+that were fenced before the first editor snapshot. This bounded retry runs after
+the buffer-report lock is released and excludes active/finishing turns. Native
+begin and recovery share a per-store/session operation claim: recovery cannot
+cancel a fresh admission while its Host before-capture request is still in flight.
+Other sessions remain independent, and a failed Host proof remains fenced.
+
 Accepted native turns use a different recovery path: the original before-capture
 is retained and an authenticated, exact completed after-capture receipt finalizes
 the matching `active`/`finishing` row. Provider process identity is acknowledged

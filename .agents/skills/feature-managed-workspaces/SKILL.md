@@ -72,6 +72,13 @@ Focused SQLite/transport regressions cover initial refusal, later release, batch
 fairness and a starting-to-active race. Final native evidence belongs to the Q1
 handoff, separately from these source checks.
 
+`a98c1eae` gives native begin and every recovery entry a per-store/session
+operation claim. Recovery cannot cancel a newly reserved starting row while its
+before-capture RPC is in flight; other sessions remain independent. A blocked-Host
+concurrency regression exercises load and heartbeat recovery during that window.
+`0737a010` keeps long folder labels inside the composer using the existing native
+shared Button layout, preserving the full-path title and accessible name.
+
 ## Purpose and keywords
 
 Default writers to the current checkout; offer owned branches/directories through
