@@ -4,7 +4,15 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, realpath, symlink, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  readFile,
+  readdir,
+  realpath,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium } from "@playwright/test";
@@ -14,6 +22,122 @@ import { nativeDevDesktopDataPath } from "../../host/workspace-bootstrap.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+let stageTimeoutOccurred = false;
+const pageMethods = new WeakMap();
+
+export async function acceptanceStage(context, stage, work, timeoutMs = 30000) {
+  const record = {
+    id: (context.stageSequence = (context.stageSequence ?? 0) + 1),
+    stage,
+    startedAt: Date.now(),
+    timeoutMs,
+  };
+  context.activeStages ??= [];
+  context.activeStages.push(record);
+  const save = async (status, error) => {
+    const event = {
+      ...record,
+      status,
+      at: Date.now(),
+      scenario: context.currentScenario ?? null,
+      sessionId: context.state?.sessionId ?? null,
+      userBlockId: context.state?.lastUserBlockId ?? null,
+      ...(error ? { error: error.message, code: error.code } : {}),
+    };
+    const snapshot = {
+      schemaVersion: 1,
+      runId: context.run?.runId,
+      event,
+      active: context.activeStages.map((entry) => ({ ...entry })),
+      lastFailure: context.lastStageFailure ?? null,
+    };
+    context.stageWrites = (context.stageWrites ?? Promise.resolve())
+      .catch(() => {})
+      .then(async () => {
+        await writeFile(
+          join(context.output, "native-stage.json"),
+          `${JSON.stringify(snapshot, null, 2)}\n`,
+        );
+        if ((context.stageEvents ?? 0) < 10000) {
+          context.stageEvents = (context.stageEvents ?? 0) + 1;
+          await appendFile(
+            join(context.output, "native-stages.jsonl"),
+            `${JSON.stringify(event)}\n`,
+          );
+        }
+      });
+    await context.stageWrites;
+  };
+  await save("running");
+  let timer;
+  try {
+    const result = await Promise.race([
+      Promise.resolve().then(work),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          context.stageTimedOut = true;
+          stageTimeoutOccurred = true;
+          reject(
+            Object.assign(
+              new Error(`Native acceptance stage timed out after ${timeoutMs} ms: ${stage}`),
+              { code: "NATIVE_ACCEPTANCE_STAGE_TIMEOUT", stage, timeoutMs },
+            ),
+          );
+        }, timeoutMs);
+      }),
+    ]);
+    context.activeStages = context.activeStages.filter((entry) => entry.id !== record.id);
+    await save("passed");
+    return result;
+  } catch (error) {
+    context.lastStageFailure = { ...record, error: error.message, code: error.code };
+    context.activeStages = context.activeStages.filter((entry) => entry.id !== record.id);
+    await save(error.code === "NATIVE_ACCEPTANCE_STAGE_TIMEOUT" ? "timed_out" : "failed", error);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function instrumentAcceptancePage(context, page) {
+  let originals = pageMethods.get(page);
+  if (!originals) {
+    originals = Object.fromEntries(
+      ["evaluate", "screenshot", "setViewportSize", "emulateMedia", "reload", "goto"].map(
+        (name) => [name, page[name].bind(page)],
+      ),
+    );
+    pageMethods.set(page, originals);
+  }
+  for (const [name, original] of Object.entries(originals)) {
+    page[name] = (...args) => {
+      const caller = new Error().stack
+        ?.split("\n")
+        .slice(2)
+        .find((line) => line.includes("acceptance-native.mjs:"))
+        ?.trim();
+      return acceptanceStage(context, `page.${name}${caller ? ` (${caller})` : ""}`, () =>
+        original(...args),
+      );
+    };
+  }
+}
+
+async function disconnectAcceptance(browser) {
+  let timer;
+  try {
+    await Promise.race([
+      browser.close(),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error("CDP disconnect timed out")), 5000);
+      }),
+    ]);
+  } catch {
+    /* Disconnect is bounded; a timed-out CLI exits only its own process. */
+  } finally {
+    clearTimeout(timer);
+  }
+}
 const titles = {
   1: "Current checkout: three consecutive real Codex turns",
   2: "Worktree: three commits, rewind and exact Undo",
@@ -113,6 +237,7 @@ export async function command(command, args, cwd) {
       cwd,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
+      timeout: 30000,
     });
     let output = "";
     child.stdout.on("data", (chunk) => {
@@ -132,10 +257,20 @@ export async function command(command, args, cwd) {
 
 export async function connectAcceptance(root, options) {
   const verified = await validateAcceptanceRun(root, options.run);
-  const browser = await chromium.connectOverCDP(
-    `http://127.0.0.1:${verified.run.ports.ports.cdp}`,
-    { timeout: 15000 },
+  const output = join(root, "temp", "verification", options.id);
+  const scratch = join(root, "temp", "local", options.id);
+  await Promise.all([mkdir(output, { recursive: true }), mkdir(scratch, { recursive: true })]);
+  const context = { root, options, ...verified, output, scratch, state: {}, steps: [] };
+  context.stage = (name, work, timeoutMs) => acceptanceStage(context, name, work, timeoutMs);
+  const browser = await context.stage(
+    "CDP connect",
+    () =>
+      chromium.connectOverCDP(`http://127.0.0.1:${verified.run.ports.ports.cdp}`, {
+        timeout: 15000,
+      }),
+    20000,
   );
+  context.browser = browser;
   try {
     const candidates = browser
       .contexts()
@@ -143,19 +278,24 @@ export async function connectAcceptance(root, options) {
       .filter((entry) => entry.url().startsWith(verified.run.devUrl));
     let page;
     for (const candidate of candidates) {
-      const windowLabel = await candidate
-        .evaluate(() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label)
-        .catch(() => null);
+      const windowLabel = await context.stage(
+        "Read native window identity",
+        () => candidate.evaluate(() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label),
+        10000,
+      );
       if (windowLabel === "main") {
         page = candidate;
         break;
       }
     }
     assert(page, "The isolated native development page is unavailable");
-    await verifyNativeIdentity(page, verified.identity);
-    const output = join(root, "temp", "verification", options.id);
-    const scratch = join(root, "temp", "local", options.id);
-    await Promise.all([mkdir(output, { recursive: true }), mkdir(scratch, { recursive: true })]);
+    context.page = page;
+    instrumentAcceptancePage(context, page);
+    await context.stage(
+      "Verify native build identity",
+      () => verifyNativeIdentity(page, verified.identity),
+      15000,
+    );
     await Promise.all(
       [output, scratch].map((path) =>
         writeFile(
@@ -164,42 +304,35 @@ export async function connectAcceptance(root, options) {
         ),
       ),
     );
-    const context = {
-      root,
-      options,
-      ...verified,
-      browser,
-      page,
-      output,
-      scratch,
-      state: {},
-      steps: [],
-    };
     context.step = async (text, work) => {
       console.log(text);
-      const result = await work();
+      const result = await context.stage(text, work, options.timeout + 30000);
       context.steps.push({ step: text, actual: result ?? "completed" });
       return result;
     };
-    context.capture = (name) => captureMatrix(context, name);
+    context.capture = (name) =>
+      context.stage(`Capture ${name}`, () => captureMatrix(context, name), 90000);
     context.rpc = (method, params, cwd = context.state.project) =>
-      context.page.evaluate(
-        async ({ method, params, cwd }) => {
-          const { workspaceRequest } =
-            await import("/src/features/workspaces/model/workspaceClient.ts");
-          return workspaceRequest(method, params, { cwd });
-        },
-        { method, params, cwd },
+      context.stage(`RPC ${method}`, () =>
+        context.page.evaluate(
+          async ({ method, params, cwd }) => {
+            const { workspaceRequest } =
+              await import("/src/features/workspaces/model/workspaceClient.ts");
+            return workspaceRequest(method, params, { cwd });
+          },
+          { method, params, cwd },
+        ),
       );
     return context;
   } catch (error) {
-    await browser.close();
+    await disconnectAcceptance(browser);
     throw error;
   }
 }
 
 export async function captureMatrix(context, name) {
   const { page, output } = context;
+  await dismissHarnessUpdateNotice(context);
   const captures = [];
   const previous = page.viewportSize();
   try {
@@ -221,7 +354,9 @@ export async function captureMatrix(context, name) {
         captures.push(path);
       }
   } finally {
-    if (previous) await page.setViewportSize(previous);
+    if (context.stageTimedOut) {
+      /* Avoid a second blocked renderer operation after a diagnosed timeout. */
+    } else if (previous) await page.setViewportSize(previous);
     else {
       const session = await page.context().newCDPSession(page);
       try {
@@ -308,8 +443,28 @@ async function button(context, text) {
     .first();
 }
 async function click(context, text) {
-  await (await button(context, text)).click();
+  await dismissHarnessUpdateNotice(context);
+  await context.stage(
+    `UI click ${text}`,
+    async () => (await button(context, text)).click({ timeout: 20000 }),
+    25000,
+  );
   context.steps.push({ step: `Activate ${text}`, actual: "Control activated" });
+}
+async function dismissHarnessUpdateNotice(context) {
+  const notice = context.page.getByRole("status", { name: "Harness updates", exact: true });
+  if (!(await notice.isVisible())) return;
+  await context.stage(
+    "Dismiss the existing harness update notice",
+    () =>
+      notice.getByRole("button", { name: "Dismiss notice", exact: true }).click({ timeout: 10000 }),
+    15000,
+  );
+  await notice.waitFor({ state: "hidden", timeout: 5000 });
+  context.steps.push({
+    step: "Dismiss the existing harness update notice",
+    actual: "Notice closed through its own dismiss control; no provider update requested",
+  });
 }
 async function getSessions(page) {
   return page.evaluate(
@@ -364,6 +519,7 @@ async function waitUntil(check, message, timeout = 30000) {
       const result = await check();
       if (result) return result;
     } catch (error) {
+      if (error.code === "NATIVE_ACCEPTANCE_STAGE_TIMEOUT") throw error;
       last = error;
     }
   }
@@ -615,7 +771,11 @@ export async function assertCodexComposer(context, expectedSessionId) {
 }
 
 export async function selectAcceptanceSession(context, sessionId) {
-  const current = await session(context, sessionId);
+  const current = await waitUntil(
+    async () => (await getSessions(context.page)).find((entry) => entry.id === sessionId),
+    "The retained acceptance session did not hydrate after native restart",
+    45000,
+  );
   assert.equal(current.harness, "codex", "The retained acceptance session is not Codex");
   assert.equal(
     resolve(current.cwd).toLowerCase(),
@@ -1189,7 +1349,7 @@ async function scenario3(context) {
     },
   });
   await controlNative(context, "restart-app");
-  await context.browser.close();
+  await disconnectAcceptance(context.browser);
   const replacement = await waitUntil(
     () => connectAcceptance(context.root, context.options),
     "Restarted native app CDP did not become ready",
@@ -1197,6 +1357,7 @@ async function scenario3(context) {
   );
   context.browser = replacement.browser;
   context.page = replacement.page;
+  instrumentAcceptancePage(context, context.page);
   context.preparedProject = false;
   await closeRecoveredSessions(context);
   await selectAcceptanceSession(context, current.id);
@@ -1563,12 +1724,20 @@ async function openWorkspaceSettings(context) {
 }
 
 async function scenario6(context) {
-  await newSession(context, "worktree");
+  await context.stage(
+    "Scenario 6: create the worktree session",
+    () => newSession(context, "worktree"),
+    120000,
+  );
   const targetCounter = Number(
     (await readFile(join(context.state.project, "counter.txt"), "utf8")).trim(),
   );
   assert(Number.isSafeInteger(targetCounter), "Fake target counter is invalid");
-  await commitTurn(context, targetCounter + 1, "lifecycle");
+  await context.stage(
+    "Scenario 6: first real native editing turn",
+    () => commitTurn(context, targetCounter + 1, "lifecycle"),
+    context.options.timeout + 30000,
+  );
   context.state.worktreeSessionId = context.state.sessionId;
   const current = await session(context, context.state.worktreeSessionId);
   const workspace = await context.rpc("workspaces.get", { workspaceId: current.workspaceId });
@@ -1915,6 +2084,7 @@ export async function runAcceptance(args = process.argv.slice(2)) {
       .then(JSON.parse)
       .catch(() => ({}));
     for (const number of options.scenarios) {
+      context.currentScenario = number;
       console.log(`Scenario ${number}: ${titles[number]}`);
       context.steps = [];
       const started = Date.now();
@@ -1925,14 +2095,21 @@ export async function runAcceptance(args = process.argv.slice(2)) {
         steps: context.steps,
       };
       try {
+        await dismissHarnessUpdateNotice(context);
         row.actual = await acceptanceScenarios[number](context);
         row.status = "pass";
       } catch (error) {
         row.status = "fail";
         row.error = error.stack ?? String(error);
-        row.screenshots = await context
-          .capture(`${String(number).padStart(2, "0")}-failure`)
-          .catch(() => []);
+        row.screenshots = context.stageTimedOut
+          ? []
+          : await context.capture(`${String(number).padStart(2, "0")}-failure`).catch(() => []);
+        if (context.stageTimedOut)
+          row.diagnostics = {
+            stage: context.lastStageFailure,
+            file: join(context.output, "native-stage.json"),
+            timeline: join(context.output, "native-stages.jsonl"),
+          };
         console.error(row.error);
       }
       row.durationMs = Date.now() - started;
@@ -1961,7 +2138,7 @@ export async function runAcceptance(args = process.argv.slice(2)) {
     if (report.failed || report.scenarios.length !== options.scenarios.length) process.exitCode = 1;
     return report;
   } finally {
-    await context.browser.close();
+    await disconnectAcceptance(context.browser);
   }
 }
 
@@ -1971,8 +2148,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       "pnpm acceptance:native --run <isolated dev-run.json> [--id q1] [--scenario all|1,2,...] [--model GPT-6-Luna] [--switch-model GPT-6.1-Sol] [--turn-timeout 240000]\nRequires pnpm dev:native --acceptance-controls. Real Codex, fake repositories, isolated native identity only. Screenshots and JSON evidence: temp/verification/<id>/. Stops on first failure; rerun a scenario with the same id after fixing it.",
     );
   else
-    runAcceptance().catch((error) => {
-      console.error(error.stack ?? error);
-      process.exitCode = 1;
-    });
+    runAcceptance()
+      .catch((error) => {
+        console.error(error.stack ?? error);
+        process.exitCode = 1;
+      })
+      .finally(() => {
+        if (stageTimeoutOccurred) process.exit(process.exitCode || 1);
+      });
 }

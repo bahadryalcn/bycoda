@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   acceptanceOptions,
   acceptanceProjectName,
+  acceptanceStage,
   assertWithin,
   validateAcceptanceRun,
 } from "./acceptance-native.mjs";
@@ -37,6 +38,55 @@ test("gives independent acceptance IDs distinct visible project names in the sam
     acceptanceProjectName(`${prefix}b`, "run"),
   );
   assert(acceptanceProjectName(`${prefix}a`, "run").length < 80);
+});
+
+test("bounds an unanswered operation and records its exact native acceptance stage", async () => {
+  const output = await mkdtemp(join(tmpdir(), "bycoda-acceptance-stage-"));
+  try {
+    const context = {
+      output,
+      currentScenario: 6,
+      run: { runId: "fake-run" },
+      state: { sessionId: "fake-session" },
+    };
+    await assert.rejects(
+      acceptanceStage(context, "native IPC never responds", () => new Promise(() => {}), 30),
+      (error) =>
+        error.code === "NATIVE_ACCEPTANCE_STAGE_TIMEOUT" &&
+        error.stage === "native IPC never responds",
+    );
+    const snapshot = JSON.parse(await readFile(join(output, "native-stage.json"), "utf8"));
+    assert.equal(snapshot.event.status, "timed_out");
+    assert.equal(snapshot.event.scenario, 6);
+    assert.equal(snapshot.event.sessionId, "fake-session");
+    assert.equal(snapshot.lastFailure.stage, "native IPC never responds");
+    assert.equal(context.stageTimedOut, true);
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
+});
+
+test("records nested stage completion without retaining completed operations", async () => {
+  const output = await mkdtemp(join(tmpdir(), "bycoda-acceptance-stage-"));
+  try {
+    const context = { output, state: {} };
+    assert.equal(
+      await acceptanceStage(context, "scenario", () =>
+        acceptanceStage(context, "IPC", async () => 42),
+      ),
+      42,
+    );
+    const snapshot = JSON.parse(await readFile(join(output, "native-stage.json"), "utf8"));
+    assert.equal(snapshot.event.stage, "scenario");
+    assert.equal(snapshot.event.status, "passed");
+    assert.deepEqual(snapshot.active, []);
+    assert.equal(
+      (await readFile(join(output, "native-stages.jsonl"), "utf8")).trim().split("\n").length,
+      4,
+    );
+  } finally {
+    await rm(output, { recursive: true, force: true });
+  }
 });
 
 async function fixture() {
