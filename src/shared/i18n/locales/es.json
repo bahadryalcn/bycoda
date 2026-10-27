@@ -7143,5 +7143,7 @@
   "Source comparison": "Source comparison",
   "Same source": "Same source",
   "Source included": "Source included",
-  "Different source": "Different source"
+  "Different source": "Different source",
+  "Use current checkout": "Usar el directorio de trabajo actual",
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "La actualización del Host en este equipo está esperando a que terminen las sesiones activas y se instalará automáticamente."
 }

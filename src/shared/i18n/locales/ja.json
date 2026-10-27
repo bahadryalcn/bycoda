@@ -7143,5 +7143,7 @@
   "Source comparison": "Source comparison",
   "Same source": "Same source",
   "Source included": "Source included",
-  "Different source": "Different source"
+  "Different source": "Different source",
+  "Use current checkout": "現在の作業ディレクトリを使用",
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "このコンピューターの Host 更新は、アクティブなセッションの終了を待ってから自動的にインストールされます。"
 }

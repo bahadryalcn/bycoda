@@ -6,5 +6,7 @@
   "!overlay && (!textFocus || emptyComposer)": "Outside text fields or in an empty composer, with overlays closed",
   "!editorFocus": "Outside the editor",
   "workspaceFocus": "Workspace focused",
-  "editorFocus": "Editor focused"
+  "editorFocus": "Editor focused",
+  "Use current checkout": "Use current checkout",
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "The Host update on this computer is waiting for active sessions to finish and will install automatically."
 }

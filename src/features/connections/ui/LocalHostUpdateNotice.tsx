@@ -6,29 +6,15 @@ import { buildIdentity } from "../../../shared/model/build-info";
 import { remoteRequest } from "../model/connections";
 import { localHostCompatibility } from "../model/buildCompatibility";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
-
-type BundledHostStatus = {
-  state: string;
-  message?: string | null;
-  bundled?: string | null;
-  installed?: string | null;
-};
+import { useBundledHostStatus } from "../model/bundledHostStatus";
 
 /** Explains a host update the app could not apply yet; silent when current. */
 export function LocalHostUpdateNotice() {
   useLocale();
-  const [status, setStatus] = useState<BundledHostStatus | null>(null);
+  const status = useBundledHostStatus();
   const [mismatch, setMismatch] = useState<"identity" | "capabilities" | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
-      invoke<BundledHostStatus | null>("local_host_bundle_status").then(
-        (value) => {
-          if (!cancelled) setStatus(value);
-        },
-        () => undefined,
-      );
-    void load();
     const loadCompatibility = async () => {
       try {
         const machines = await invoke<RemoteMachine[]>("remote_machines");
@@ -47,7 +33,6 @@ export function LocalHostUpdateNotice() {
     };
     void loadCompatibility();
     const timer = window.setInterval(() => {
-      void load();
       void loadCompatibility();
     }, 15_000);
     return () => {

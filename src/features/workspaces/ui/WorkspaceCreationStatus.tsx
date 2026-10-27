@@ -8,11 +8,13 @@ export function WorkspaceCreationStatus({
   pending,
   error,
   onRetry,
+  onUseCurrentCheckout,
 }: {
   preview?: WorkspaceCreationPreview;
   pending: boolean;
   error?: string;
   onRetry: () => void;
+  onUseCurrentCheckout?: () => void;
 }) {
   useLocale();
   return (
@@ -24,6 +26,11 @@ export function WorkspaceCreationStatus({
       {error ? (
         <>
           <span className="min-w-0 flex-1 break-words text-(--ui-tone-danger-fg)">{t(error)}</span>
+          {onUseCurrentCheckout ? (
+            <Button size="sm" variant="secondary" onClick={onUseCurrentCheckout}>
+              {t("Use current checkout")}
+            </Button>
+          ) : null}
           <Button size="sm" variant="secondary" onClick={onRetry}>
             {t("Retry")}
           </Button>

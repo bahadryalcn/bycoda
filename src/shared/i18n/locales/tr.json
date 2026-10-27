@@ -8035,5 +8035,7 @@
   "Source comparison": "Kaynak karşılaştırması",
   "Same source": "Aynı kaynak",
   "Source included": "Kaynak dahil",
-  "Different source": "Farklı kaynak"
+  "Different source": "Farklı kaynak",
+  "Use current checkout": "Geçerli çalışma dizinini kullan",
+  "The Host update on this computer is waiting for active sessions to finish and will install automatically.": "Bu bilgisayardaki Host güncellemesi, etkin oturumların bitmesini bekliyor ve otomatik olarak kurulacak."
 }

@@ -37,6 +37,11 @@ import type { QueueAction } from "../model/queueAction";
 import { useComposerSpelling } from "../../settings/model/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
 import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
+import { WORKSPACE_UPDATE_REQUIRED } from "../../workspaces/model/workspaceClient";
+import {
+  bundledHostWaitsForSessions,
+  useBundledHostStatus,
+} from "../../connections/model/bundledHostStatus";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
 import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
 import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
@@ -1085,12 +1090,24 @@ export const Composer = memo(function Composer({
     worktreeBase,
   );
   const remoteWorkspaceCreationBlocked =
-    draftWorkspace && !!parseRemotePath(cwd) && !managedWorkspaceCreationReady;
+    draftWorkspace &&
+    workspaceMode !== "current" &&
+    !!parseRemotePath(cwd) &&
+    !managedWorkspaceCreationReady;
+  const workspaceHostUpdateRequired =
+    workspaceCreation.error === t(WORKSPACE_UPDATE_REQUIRED) || remoteWorkspaceCreationBlocked;
+  const bundledHostStatus = useBundledHostStatus(
+    draftWorkspace && workspaceHostUpdateRequired && !parseRemotePath(cwd),
+  );
   const workspaceCreationError =
-    workspaceCreation.error ??
-    (remoteWorkspaceCreationBlocked
-      ? t("Update bycoda to create managed sessions on this remote Host.")
-      : undefined);
+    workspaceHostUpdateRequired && bundledHostWaitsForSessions(bundledHostStatus)
+      ? t(
+          "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+        )
+      : (workspaceCreation.error ??
+        (remoteWorkspaceCreationBlocked
+          ? t("Update bycoda to create managed sessions on this remote Host.")
+          : undefined));
   const workspaceSendBlocked =
     draftWorkspace && (workspaceCreation.pending || !!workspaceCreationError);
   const resolvedWorktreeBase =
@@ -3795,6 +3812,11 @@ export const Composer = memo(function Composer({
                   pending={workspaceCreation.pending && !workspaceCreationError}
                   error={workspaceCreationError}
                   onRetry={workspaceCreation.refresh}
+                  onUseCurrentCheckout={
+                    workspaceHostUpdateRequired && enabled && !busy && onWorkspaceModeChange
+                      ? () => onWorkspaceModeChange("current")
+                      : undefined
+                  }
                 />
               </div>
             ) : null}
