@@ -98,6 +98,12 @@ Finished sessions expose Delete directory directly. The same guarded removal
 preview and activity checks apply; the conversation, unmerged branch and recovery
 refs remain available.
 
+Managed directories can live beneath system path aliases such as macOS `/var`
+and `/tmp`, or an equivalent linked ancestor on Windows or Linux. Git identity,
+rewind and cleanup use the canonical directory. A link at the removal boundary
+or inside the workspace still blocks traversal; approved dependency links are
+detached as entries and their targets remain untouched.
+
 The default directory budget is 50 GiB, warning at 80%, with 20 GiB minimum free
 space. Shared caches and Git recovery objects are counted separately. Pressure
 can accelerate only already eligible safe cleanup. If that is insufficient, new

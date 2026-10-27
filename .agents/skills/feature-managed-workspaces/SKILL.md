@@ -327,3 +327,54 @@ delivery only; product/runtime acceptance remains as described above.
   Windows junction coverage is separate. Quick-delete captures cover both themes
   at 1280 and 800 and were opened for inspection. These are local and fixture
   acceptance, separate from installed/live-provider/released behavior.
+
+## X1 cross-platform path repair (2026-10-27)
+
+Scope: Host/native path identity, cleanup, rewind and automation execution on
+`fix/cross-platform-workspaces`, baseline `506b0b46`. The owner assigned this
+isolated stream; live claim APIs were unavailable. No UI source changed.
+
+Owner instruction, exact quote from the X1 stream prompt, 2026-10-27:
+
+> Symlink/junction rejection applies only to entries at or BELOW the canonical managed root/workspace (the things removal or rewind could traverse), never to ancestors of the root.
+
+### Delivered surface checklist
+
+| Status | Surface                               | Implementation and regression evidence                                                                                                                                                                                                                                                                               |
+| ------ | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Done   | Canonical identities                  | `host/workspace-paths.ts:18` resolves existing and missing paths and rejects linked endpoints; `.test.ts` covers linked ancestors and ordinary Windows path spelling.                                                                                                                                                |
+| Done   | Registry and Git materialization      | `host/git-worktrees.ts:66`, `host/managed-workspaces.ts:188` normalize root, registration and selected target identities; registry tests use canonical fixture roots.                                                                                                                                                |
+| Done   | Session and native activity admission | `host/managed-workspace-runtime.ts:275`, `host/managed-native-activity.ts:92` normalize legacy rows, create requests, stored sessions, process cwd and buffers; missing identity and linked workspace entries remain blocked. Broken siblings cannot admit work or block healthy candidates.                         |
+| Done   | Turn capture and rewind/Undo          | `host/turn-git-history.ts:240`, `:341`, `:594` retain canonical operation paths; `host/session-rewind.test.ts` exercises rewind/Undo under a linked ancestor and refuses an internal unsafe link.                                                                                                                    |
+| Done   | Automation                            | `host/automations.test.ts` exercises dispatch and settlement beneath a linked ancestor. The existing 20 second waits remain unchanged; the original timeout was blocked pre-provider turn capture.                                                                                                                   |
+| Done   | Cleanup, recovery and storage         | `host/workspace-cleanup.ts:54`, `:507`, `host/workspace-retention.ts:238` fix a canonical boundary before traversal. Portable tests retain dirty/unknown fences, dependency-link detachment, source-drift checks, branches, rescue refs and outside sentinels.                                                       |
+| Done   | Legacy task adapter                   | `host/task-worktree-cleanup.ts:16` uses canonical removal/process-fence keys; `.test.ts` verifies both alias spellings are fenced while removal runs.                                                                                                                                                                |
+| Done   | Artifact review and transfer          | `host/task-delivery-artifacts.ts:117`, `host/task-artifacts.ts:27` normalize checkouts, then reject target links before Git ignore matching. Tests create junctions on Windows and directory symlinks on Unix; dependency-link fixture ignore rules cover both entry types.                                          |
+| Done   | Native lifecycle and checkpoint Undo  | `src-tauri/src/worktree_lifecycle.rs:111`, `:157`, `src-tauri/src/worktrees.rs:639`, `:1019`, `src-tauri/src/fs.rs:7464` preserve fixed traversal boundaries and ordinary Windows path exports. Native lifecycle/removal and checkpoint Undo tests include linked ancestors and inside-link/outside-sentinel checks. |
+
+### Acceptance and immutable delivery references
+
+- `a6a0907e`: shared helpers, registry/runtime/native activity identity and Host
+  rewind/automation regressions.
+- `46a80a1f`: bounded Host cleanup/storage and portable artifact/dependency links.
+- `284bb9fa`: legacy cleanup fencing, stable public history operation paths,
+  destination-link preflight and canonical test expectations.
+- `49fa0313`: native fixed-boundary removal/recovery and checkpoint Undo coverage.
+- `c1ee2462`: legacy session/create path admission, canonical provider execution
+  and missing-workspace-identity regression.
+
+Windows native checks passed: worktree 35; rewind 18; checkpoint 74; Windows
+prefix export 1; Clippy with `--workspace --all-targets -- -D warnings`; rustfmt.
+The rewind/checkpoint filters each retain one intentional ignored subprocess
+harness test. At final Host revision `c1ee2462`, both WSL runs passed all 25 files
+(247 tests, one Windows-only skip), normally and with symlinked `TMPDIR`; web and
+Host fast TypeScript checks passed. Windows exercised the same 25 affected files
+in groups. Two earlier loaded-revision failures were corrected; the final rebuilt
+Host/regression run passed 21 selected cases in six files, including both failed
+cases, with 32 cases excluded by the explicit test-name filter. Full commands,
+intermediate results and final evidence are under `temp/verification/x1/`.
+
+The baseline WSL runs reproduced the three Ubuntu CI failures, 36 path-related
+failures with linked `TMPDIR`, and the automation dispatch timeout. Actual macOS
+Host/native and Linux native execution remain CI acceptance. No installer,
+installed application, live provider or release acceptance was performed.

@@ -58,6 +58,13 @@ the workspace path is the execution directory. Owners are sessions, tasks,
 automation runs or steward runs. One independently scheduled writer owns a
 workspace; parallel child writers receive separate workspaces.
 
+Path comparisons resolve existing ancestor aliases before comparing registry and
+Git paths. Removal fixes its canonical boundary first, then checks the boundary
+and every traversed descendant without following links. System aliases above
+that boundary are valid, including macOS temporary-directory ancestors. Missing
+descendants in interrupted-removal recovery retain that same boundary. Windows
+canonical paths are exposed to Git and UI consumers without verbatim prefixes.
+
 New coding work defaults to worktrees. Existing sessions keep their checkout
 until explicitly migrated. Policy precedence is explicit owner creation choice,
 then project policy, then execution-host default. Resolve the selected committed
