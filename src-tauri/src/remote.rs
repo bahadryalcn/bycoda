@@ -1447,6 +1447,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "workspaces.resume"
             | "workspaces.finish"
             | "workspaces.close"
+            | "workspaces.exactGitRewind.get"
+            | "workspaces.exactGitRewind.set"
             | "projects.workspacePolicy.get"
             | "projects.workspacePolicy.update"
             | "workspaces.featureClaims.list"
@@ -1455,6 +1457,8 @@ fn supported_remote_method(method: &str) -> bool {
             | "sessions.rewind.plan"
             | "sessions.rewind.apply"
             | "sessions.rewind.undo"
+            | "sessions.files.revertPlan"
+            | "sessions.files.revert"
             | "workspaces.delivery.review"
             | "workspaces.delivery.merge"
             | "workspaces.delivery.publish"
@@ -2702,6 +2706,101 @@ mod tests {
                 "renderer must not call trusted transport {method}"
             );
         }
+    }
+
+    #[test]
+    fn edit_from_here_rpc_methods_preserve_authenticated_transport_and_write_isolation() {
+        use std::io::{BufRead, BufReader};
+        use std::{net::TcpListener, thread, time::Duration};
+        let requests = [
+            ("workspaces.exactGitRewind.get", json!({})),
+            ("workspaces.exactGitRewind.set", json!({"enabled": false})),
+            (
+                "sessions.files.revertPlan",
+                json!({"sessionId": "session", "userBlockId": "message"}),
+            ),
+            (
+                "sessions.files.revert",
+                json!({"sessionId": "session", "userBlockId": "message", "planToken": "reviewed"}),
+            ),
+        ];
+        for (method, params) in &requests {
+            assert!(supported_remote_method(method), "{method}");
+            // Neither writes nor revision-sensitive plans share an in-flight request.
+            assert!(!shareable_remote_read(method, params), "{method}");
+        }
+        for method in [
+            "workspaces.exactGitRewind.reset",
+            "sessions.files.delete",
+            "sessions.files.revertAll",
+            "sessions.files.revertplan",
+        ] {
+            assert!(!supported_remote_method(method), "{method}");
+        }
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let expected = requests.clone();
+        let server = thread::spawn(move || {
+            for (method, params) in expected {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut size = 0;
+                let mut authorization = String::new();
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    let lower = line.to_ascii_lowercase();
+                    if lower.starts_with("content-length:") {
+                        size = line
+                            .split(':')
+                            .nth(1)
+                            .unwrap()
+                            .trim()
+                            .parse::<usize>()
+                            .unwrap();
+                    }
+                    if lower.starts_with("authorization:") {
+                        authorization = line;
+                    }
+                }
+                assert!(authorization.trim().ends_with("Bearer paired-owner"));
+                let mut body = vec![0; size];
+                reader.read_exact(&mut body).unwrap();
+                let payload: Value = serde_json::from_slice(&body).unwrap();
+                assert_eq!(
+                    payload,
+                    json!({"version": 1, "environmentId": "execution-host", "method": method, "params": params})
+                );
+                let body = json!({"result": {"method": method}}).to_string();
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                )
+                .unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        for (method, params) in requests {
+            assert_eq!(
+                rpc(
+                    &endpoint,
+                    "paired-owner",
+                    Some("execution-host"),
+                    method,
+                    params
+                )
+                .unwrap(),
+                json!({"method": method})
+            );
+        }
+        server.join().unwrap();
     }
 
     #[test]
