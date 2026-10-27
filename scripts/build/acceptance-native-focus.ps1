@@ -24,7 +24,58 @@ if (-not [string]::Equals($acceptanceProcess.Path, $acceptanceExecutable, [Syste
     throw 'The recorded PID is not running this isolated development executable'
 }
 $acceptanceShell = New-Object -ComObject WScript.Shell
-if (-not $acceptanceShell.AppActivate([int]$acceptanceProcess.Id)) {
-    throw 'Windows could not activate the isolated development PID'
+$null = $acceptanceShell.AppActivate([int]$acceptanceProcess.Id)
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class NativeAcceptanceFocus {
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll", SetLastError = true)] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr window);
+    [DllImport("user32.dll")] static extern bool ShowWindowAsync(IntPtr window, int command);
+    public static uint ForegroundProcessId() {
+        uint process;
+        GetWindowThreadProcessId(GetForegroundWindow(), out process);
+        return process;
+    }
+    public static bool ActivateOwnedWindow(IntPtr window, uint expectedProcess) {
+        uint targetProcess;
+        uint target = GetWindowThreadProcessId(window, out targetProcess);
+        if (window == IntPtr.Zero || target == 0 || targetProcess != expectedProcess) return false;
+        uint ignored;
+        uint foreground = GetWindowThreadProcessId(GetForegroundWindow(), out ignored);
+        uint caller = GetCurrentThreadId();
+        bool attachedForeground = false;
+        bool attachedTarget = false;
+        try {
+            ShowWindowAsync(window, 9);
+            if (foreground != 0 && foreground != caller)
+                attachedForeground = AttachThreadInput(caller, foreground, true);
+            if (target != caller && target != foreground)
+                attachedTarget = AttachThreadInput(caller, target, true);
+            BringWindowToTop(window);
+            SetForegroundWindow(window);
+            return ForegroundProcessId() == expectedProcess;
+        } finally {
+            if (attachedTarget) AttachThreadInput(caller, target, false);
+            if (attachedForeground) AttachThreadInput(caller, foreground, false);
+        }
+    }
 }
-Write-Output 'Activated the verified isolated development PID'
+'@
+$acceptanceProcess.Refresh()
+$acceptanceWindow = $acceptanceProcess.MainWindowHandle
+if ($acceptanceWindow -eq [IntPtr]::Zero) { throw 'The verified development process has no main window' }
+for ($acceptanceAttempt = 0; $acceptanceAttempt -lt 8; $acceptanceAttempt++) {
+    if ([NativeAcceptanceFocus]::ForegroundProcessId() -eq [uint32]$acceptanceProcess.Id) { break }
+    $null = [NativeAcceptanceFocus]::ActivateOwnedWindow($acceptanceWindow, [uint32]$acceptanceProcess.Id)
+    Start-Sleep -Milliseconds 80
+}
+$acceptanceForeground = [NativeAcceptanceFocus]::ForegroundProcessId()
+if ($acceptanceForeground -ne [uint32]$acceptanceProcess.Id) {
+    throw "Windows foreground activation failed: expected development PID $($acceptanceProcess.Id), observed PID $acceptanceForeground"
+}
+Write-Output "Verified foreground development PID $acceptanceForeground"
