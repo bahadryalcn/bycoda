@@ -2,6 +2,7 @@ import type { Session, WorkspaceMode } from "../../sessions/model/session";
 import { t } from "../../../shared/i18n";
 import type { ManagedWorkspace, WorkspacePolicy } from "./contracts";
 import {
+  getWorkspaceCapabilities,
   requireWorkspaceCapability,
   resolveWorkspaceContext,
   workspaceRequest,
@@ -35,10 +36,15 @@ export function workspaceModeForPolicy(
   return choice ?? policy.defaultMode;
 }
 
-export async function prepareSessionWorkspace(session: Session): Promise<ManagedWorkspace | null> {
+export async function prepareSessionWorkspace(
+  session: Session,
+  managedCreationReady = true,
+): Promise<ManagedWorkspace | null> {
   if (!needsSessionWorkspace(session)) return null;
+  const capabilities = await getWorkspaceCapabilities({ cwd: session.cwd });
+  if (!capabilities.includes("workspaces.policy.v1") && session.workspaceMode !== "worktree")
+    return null;
   const context = await resolveWorkspaceContext(session.cwd);
-  await requireWorkspaceCapability("workspaces.managed.v1", context);
   await requireWorkspaceCapability("workspaces.policy.v1", context);
   const { resolved } = await workspaceRequest(
     "projects.workspacePolicy.get",
@@ -50,6 +56,9 @@ export async function prepareSessionWorkspace(session: Session): Promise<Managed
   );
   const mode = workspaceModeForPolicy(session.workspaceMode, resolved.policy);
   if (mode === "current") return null;
+  if (!managedCreationReady)
+    throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
+  await requireWorkspaceCapability("workspaces.managed.v1", context);
   const { workspace } = await workspaceRequest(
     "workspaces.prepare",
     {

@@ -1657,17 +1657,20 @@ function ConnectedRemoteSession({
     );
     try {
       const managedCreation = descriptor?.capabilities.includes("sessions.managedCreation.v1");
-      if (!descriptor || (!managedCreation && draftWorkspaceMode !== "current"))
+      if (!descriptor || (!managedCreation && draftWorkspaceMode === "worktree"))
         throw new Error(t("Update bycoda to create managed sessions on this remote Host."));
       const reservedSessionId = managedCreateId();
-      const workspace = await prepareSessionWorkspace({
-        ...shell,
-        id: reservedSessionId,
-        cwd: project.key,
-        workspaceMode: draftWorkspaceMode,
-        worktreeBase: draftWorktreeBase,
-        worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
-      });
+      const workspace = await prepareSessionWorkspace(
+        {
+          ...shell,
+          id: reservedSessionId,
+          cwd: project.key,
+          workspaceMode: draftWorkspaceMode,
+          worktreeBase: draftWorktreeBase,
+          worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+        },
+        !!managedCreation,
+      );
       if (
         !alive.current ||
         version !== bindingVersion.current ||
@@ -2024,21 +2027,24 @@ function ConnectedRemoteSession({
     // A new conversation: the command needs a session to run in.
     if (sessionId || !draft.model) return false;
     const managedCreation = descriptor.capabilities.includes("sessions.managedCreation.v1");
-    if (!managedCreation && draftWorkspaceMode !== "current") {
+    if (!managedCreation && draftWorkspaceMode === "worktree") {
       setError(t("Update bycoda to create managed sessions on this remote Host."));
       return false;
     }
     preparingRef.current = true;
     void (async () => {
       const reservedSessionId = managedCreateId();
-      const workspace = await prepareSessionWorkspace({
-        ...shell,
-        id: reservedSessionId,
-        cwd: project.key,
-        workspaceMode: draftWorkspaceMode,
-        worktreeBase: draftWorktreeBase,
-        worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
-      });
+      const workspace = await prepareSessionWorkspace(
+        {
+          ...shell,
+          id: reservedSessionId,
+          cwd: project.key,
+          workspaceMode: draftWorkspaceMode,
+          worktreeBase: draftWorktreeBase,
+          worktreeCwd: selectedCwd !== project.cwd ? selectedCwd : undefined,
+        },
+        !!managedCreation,
+      );
       if (!alive.current || version !== bindingVersion.current) return undefined;
       const cwd = workspace?.path ?? selectedCwd;
       return run({
