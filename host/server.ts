@@ -511,6 +511,18 @@ export async function createHostServer(
   };
   const desktopDelete = new DesktopDelete();
   const sessionQueues = new SessionQueues(engine.store.db);
+  const writerTransfers = new Set<string>();
+  const withRetiredDesktopWriters = async <T>(id: string, run: () => Promise<T>): Promise<T> => {
+    if (writerTransfers.has(id)) throw new LeaseHeldError("host");
+    writerTransfers.add(id);
+    try {
+      await desktop.live.retireWriters(id);
+      await assertHostMayRun(id);
+      return await run();
+    } finally {
+      writerTransfers.delete(id);
+    }
+  };
   await sessionQueues.ready;
   /** Which desktop window runs a turn of which conversation (the host's own are the engine's). */
   const adoptedChanges = new AdoptedChanges(
@@ -752,7 +764,12 @@ export async function createHostServer(
           await engine.command(command);
         await touchSessionWorkspace(id);
       },
-      transaction: async (action) => await engine.store.transaction(action),
+      // Writer ACKs arrive through another RPC. Await them before taking the
+      // store transaction, while keeping queue dispatch and consume atomic.
+      transaction: async (action, id) =>
+        id
+          ? await withRetiredDesktopWriters(id, () => engine.store.transaction(action))
+          : await engine.store.transaction(action),
       wakeAt: () => {
         const times = [runLeases.nextExpiry(), desktop.live.nextStoredExpiry()].filter(
           (time): time is number => time !== undefined,
@@ -2926,6 +2943,7 @@ export async function createHostServer(
                       "shell.profile.compare.v1",
                       "sessions.desktop",
                       "sessions.desktopLive",
+                      "sessions.desktop-writer-retirement.v1",
                       "sessions.queue",
                       "sessions.queue.lease",
                       "sessions.runLease",
@@ -3718,7 +3736,7 @@ export async function createHostServer(
                   if (params.action !== "acquire") throw new Error("Invalid run lease request");
                   await queueSessionStatus(id); // The same authorized existence check as the queue calls.
                   result = await engine.store.db.scope(async () => {
-                    const hostRunning = await hostRuns(id);
+                    const hostRunning = writerTransfers.has(id) || (await hostRuns(id));
                     return {
                       lease: runLeases.acquire(id, holder, () => {
                         // The host's own turn, or another window's, keeps it from being granted.
@@ -4368,18 +4386,24 @@ export async function createHostServer(
                     result = await engine.rewind(params);
                     break;
                   }
-                  result = await engine.store.transaction(async () => {
-                    const receipt = await engine.command(params);
-                    if (
-                      queued &&
-                      (await sessionQueues.get(sessionId)).messages.some(
-                        (row) => row.id === queued.id,
+                  const dispatch = () =>
+                    engine.store.transaction(async () => {
+                      if (!(await engine.store.authenticated(token)))
+                        throw new Error("Device authorization was revoked");
+                      const receipt = await engine.command(params);
+                      if (
+                        queued &&
+                        (await sessionQueues.get(sessionId)).messages.some(
+                          (row) => row.id === queued.id,
+                        )
                       )
-                    )
-                      await sessionQueues.consumed(sessionId, String(queued.id));
-                    await crews.ownerDirective(params);
-                    return receipt;
-                  });
+                        await sessionQueues.consumed(sessionId, String(queued.id));
+                      await crews.ownerDirective(params);
+                      return receipt;
+                    });
+                  result = ["send", "compact", "contextual"].includes(String(params.type))
+                    ? await withRetiredDesktopWriters(sessionId, dispatch)
+                    : await dispatch();
                   if (
                     ["send", "steer", "compact", "contextual", "shell"].includes(
                       String(params.type),
@@ -5123,6 +5147,7 @@ export async function createHostServer(
       drain(async () => await tunnels.close());
       drain(async () => await desktop.closeAsync());
       drain(() => desktopDelete.close());
+      drain(() => desktop.live.closeWriterTransfers());
       drain(() => mobilePairing.close());
       drain(async () => await mobileLan.close());
       drain(() => conversationDesktop.close());

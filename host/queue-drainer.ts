@@ -33,7 +33,7 @@ export type QueueDrainHost = {
   ready(sessionId: string): boolean | Promise<boolean>;
   /** Sends the row as a turn, throwing if the host refuses it. */
   send(sessionId: string, row: QueuedMessage): void | Promise<void>;
-  transaction<T>(action: () => T | Promise<T>): T | Promise<T>;
+  transaction<T>(action: () => T | Promise<T>, sessionId?: string): T | Promise<T>;
   outsideScope?<T>(action: () => T): T;
   /** When a desktop's hold on a conversation (its run lease) ends if not renewed. */
   wakeAt?(): number | undefined;
@@ -296,7 +296,7 @@ export class QueueDrainer {
             return;
           await this.host.send(id, head);
           await this.queues.consumed(id, head.id);
-        });
+        }, id);
       } catch (error) {
         // A conversation that is busy right now (a turn that started meanwhile,
         // the host stopping, a rewind or branch switch) says nothing about the

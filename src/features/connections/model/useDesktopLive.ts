@@ -23,6 +23,10 @@ import {
 import type { RemoteMachine } from "./protocol";
 import { buildMobileProjectDirectory } from "../../projects/model/mobileProjectDirectory";
 import { withMobileProjectLogos } from "../../projects/model/mobileProjectLogos";
+import {
+  retainedHarnessWriters,
+  retireHarnessWriter,
+} from "../../../integrations/harness/core/registry";
 
 const MACHINE_RECHECK_MS = 15_000;
 // One identity per WebView, stable across StrictMode remounts and app restarts:
@@ -75,11 +79,13 @@ export function useDesktopLive(
           request: (payload) =>
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
           sessions: () => sessionsRef.current,
+          writers: retainedHarnessWriters,
           projectDirectory: () =>
             withMobileProjectLogos(
               buildMobileProjectDirectory(sessionsRef.current.map((session) => session.cwd)),
             ),
           handlers: {
+            retireWriter: retireHarnessWriter,
             delete: (sessionId, cwd) => {
               const handler = handlersRef.current.delete;
               if (!handler) return Promise.reject(new Error("Desktop deletion is unavailable."));
@@ -98,7 +104,11 @@ export function useDesktopLive(
           beat,
           deletions: state.current.deletions,
           inbox: {
-            jira: async (operation, deadline) => (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(operation, deadline),
+            jira: async (operation, deadline) =>
+              (await import("../../inbox/model/jiraMobileBridge")).executeRemoteJiraBoard(
+                operation,
+                deadline,
+              ),
             invoke: (command, args) => invoke(command, args),
             list: async (projects, query) => {
               const { listInboxItems } = await import("../../inbox/model/githubTasks");

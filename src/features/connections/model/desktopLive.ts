@@ -1,7 +1,10 @@
 import type { Block, Session } from "../../sessions/model/session";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { DesktopProjectDirectory } from "./protocol";
-import { isRemoteJiraOperation, type RemoteJiraOperation } from "../../inbox/model/jiraBoardProtocol";
+import {
+  isRemoteJiraOperation,
+  type RemoteJiraOperation,
+} from "../../inbox/model/jiraBoardProtocol";
 import {
   REMOTE_INBOX_VERSION,
   REMOTE_INBOX_PROVIDERS,
@@ -35,6 +38,7 @@ export type DesktopLiveSession = {
 };
 
 export type DesktopLivePayload = {
+  writers?: { version: 1; sessionIds: string[] };
   projectDirectory?: DesktopProjectDirectory;
   /** Omit directory contents only after the host acknowledges this revision. */
   projectDirectoryRevision?: string;
@@ -91,8 +95,14 @@ export async function executeDesktopInboxOperation(
     return runner.jira(operation, deadline);
   }
   if (operation.action === "review") {
-    if (!Number.isSafeInteger(deadline) || Number(deadline) <= Date.now() || Number(deadline) > Date.now() + 120_000)
-      throw new Error("The desktop review approval deadline is missing or expired. Update the host and review again.");
+    if (
+      !Number.isSafeInteger(deadline) ||
+      Number(deadline) <= Date.now() ||
+      Number(deadline) > Date.now() + 120_000
+    )
+      throw new Error(
+        "The desktop review approval deadline is missing or expired. Update the host and review again.",
+      );
     return runner.invoke("desktop_inbox_review", { operation, deadline });
   }
   if (operation.action === "providers") {
@@ -136,13 +146,14 @@ export async function executeDesktopInboxOperation(
 export type DesktopLiveCommand = {
   id: string;
   sessionId: string;
-  type: "cancel" | "approve" | "answer";
+  type: "cancel" | "approve" | "answer" | "retire-writer";
   requestId?: number;
   decision?: "allow" | "deny";
   reply?: UserQuestionReply;
 };
 
 export type DesktopLiveHandlers = {
+  retireWriter?: (sessionId: string) => Promise<void>;
   delete?: (sessionId: string, cwd: string) => Promise<void>;
   stop: (sessionId: string) => void;
   approve: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
@@ -253,6 +264,7 @@ export async function runDesktopLiveTick(deps: {
   clientId?: string;
   request: (payload: DesktopLivePayload) => Promise<DesktopLiveResult | undefined>;
   sessions: () => readonly Session[];
+  writers?: () => string[];
   projectDirectory?: () => DesktopProjectDirectory;
   handlers: DesktopLiveHandlers;
   unacked: Set<string>;
@@ -293,15 +305,21 @@ export async function runDesktopLiveTick(deps: {
         ? serialized.json
         : JSON.stringify(projectDirectory);
     if (deps.beat) {
-      directoryRevision = serialized?.json === directoryFingerprint ? serialized.revision : undefined;
+      directoryRevision =
+        serialized?.json === directoryFingerprint ? serialized.revision : undefined;
       if (!directoryRevision) {
         deps.beat.directorySequence = (deps.beat.directorySequence ?? 0) + 1;
         directoryRevision = String(deps.beat.directorySequence);
       }
-      deps.beat.serialized = { directory: projectDirectory, json: directoryFingerprint, revision: directoryRevision };
+      deps.beat.serialized = {
+        directory: projectDirectory,
+        json: directoryFingerprint,
+        revision: directoryRevision,
+      };
     }
   }
-  const directoryChanged = directoryFingerprint !== deps.beat?.directoryFingerprint || deps.beat?.directoryResend === true;
+  const directoryChanged =
+    directoryFingerprint !== deps.beat?.directoryFingerprint || deps.beat?.directoryResend === true;
   const inboxReplies = [...(deps.inbox?.results.values() ?? [])].slice(0, 2);
   const heldLeases = deps.queueLeases?.held() ?? [];
   const heldRuns = deps.runLeases?.held() ?? [];
@@ -322,8 +340,12 @@ export async function runDesktopLiveTick(deps: {
   )
     return;
   const payload: DesktopLivePayload = {
+    ...(deps.writers && deps.handlers.retireWriter
+      ? { writers: { version: 1 as const, sessionIds: deps.writers() } }
+      : {}),
     ...(projectDirectory && (!directoryRevision || deps.beat?.directoryAck !== directoryRevision)
-      ? { projectDirectory } : {}),
+      ? { projectDirectory }
+      : {}),
     ...(directoryRevision ? { projectDirectoryRevision: directoryRevision } : {}),
     ...(deps.deletions && deps.handlers.delete
       ? {
@@ -352,17 +374,21 @@ export async function runDesktopLiveTick(deps: {
   const result = await deps.request(payload);
   if (deps.beat) {
     deps.beat.directoryFingerprint = directoryFingerprint;
-    deps.beat.directoryAck = directoryRevision && result?.projectDirectoryRevision === directoryRevision
-      ? directoryRevision : undefined;
+    deps.beat.directoryAck =
+      directoryRevision && result?.projectDirectoryRevision === directoryRevision
+        ? directoryRevision
+        : undefined;
     // A restarted host cannot acknowledge an omitted projection. Retry the
     // full privacy snapshot next beat; old hosts keep the legacy full cadence.
-    deps.beat.directoryResend = !!projectDirectory && !payload.projectDirectory && !deps.beat.directoryAck;
+    deps.beat.directoryResend =
+      !!projectDirectory && !payload.projectDirectory && !deps.beat.directoryAck;
   }
   if (result?.queueLeases) deps.queueLeases?.answered(result.queueLeases);
   // A run lease the host took back: another computer runs this conversation now,
   // so this window stops its turn instead of writing next to it.
   if (result?.runLeases && deps.runLeases)
-    for (const sessionId of deps.runLeases.answered(result.runLeases)) deps.handlers.stop(sessionId);
+    for (const sessionId of deps.runLeases.answered(result.runLeases))
+      deps.handlers.stop(sessionId);
   if (deps.deletions && deps.handlers.delete) {
     const runner = deps.deletions;
     for (const id of result?.deletions?.acked ?? []) runner.results.delete(id);
@@ -445,13 +471,23 @@ export async function runDesktopLiveTick(deps: {
     if (!command || typeof command.id !== "string") continue;
     // Older hosts return all windows' commands. Never acknowledge a session
     // this window doesn't have, or it will disappear before its owner sees it.
-    if (!deps.sessions().some((session) => session.id === command.sessionId)) continue;
+    if (
+      command.type !== "retire-writer" &&
+      !deps.sessions().some((session) => session.id === command.sessionId)
+    )
+      continue;
     if (deps.handled.has(command.id)) {
       deps.unacked.add(command.id);
       continue;
     }
     try {
-      applyDesktopLiveCommand(command, deps.sessions(), deps.handlers);
+      if (command.type === "retire-writer") {
+        if (!deps.handlers.retireWriter)
+          throw new Error("Desktop writer retirement is unavailable. Reopen the updated app.");
+        if (deps.sessions().some((session) => session.id === command.sessionId && session.busy))
+          throw new Error("The desktop session is still running. Retry after it finishes.");
+        await deps.handlers.retireWriter(command.sessionId);
+      } else applyDesktopLiveCommand(command, deps.sessions(), deps.handlers);
     } catch (error) {
       console.error(error);
       continue; // Keep the command pending if its handler failed.

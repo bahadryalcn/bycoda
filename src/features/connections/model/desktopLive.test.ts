@@ -37,10 +37,19 @@ it("dispatches review context and inline review batches through the finite nativ
     runner,
     deadline,
   );
-  expect(runner.invoke).toHaveBeenLastCalledWith("desktop_inbox_review", { operation: { action: "review", cwd: "/project", item, ...review }, deadline });
+  expect(runner.invoke).toHaveBeenLastCalledWith("desktop_inbox_review", {
+    operation: { action: "review", cwd: "/project", item, ...review },
+    deadline,
+  });
   runner.invoke.mockClear();
   for (const invalid of [undefined, Date.now() - 1, Date.now() + 130_000])
-    await expect(executeDesktopInboxOperation({ action: "review", cwd: "/project", item, ...review }, runner, invalid)).rejects.toThrow(/deadline/);
+    await expect(
+      executeDesktopInboxOperation(
+        { action: "review", cwd: "/project", item, ...review },
+        runner,
+        invalid,
+      ),
+    ).rejects.toThrow(/deadline/);
   expect(runner.invoke).not.toHaveBeenCalled();
 });
 
@@ -172,24 +181,106 @@ describe("applyDesktopLiveCommand", () => {
 });
 
 describe("runDesktopLiveTick", () => {
+  it("acknowledges writer transfer only after retirement finishes, including a closed tab", async () => {
+    let finish!: () => void;
+    let writers = ["warm"];
+    const retireWriter = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = () => {
+            writers = [];
+            resolve();
+          };
+        }),
+    );
+    const job = { id: "transfer", sessionId: "warm", type: "retire-writer" as const };
+    const request = vi.fn(async (_payload: DesktopLivePayload) => ({ commands: [job] }));
+    const unacked = new Set<string>();
+    const deps = {
+      request,
+      sessions: () => [],
+      writers: () => writers,
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn(), retireWriter },
+      unacked,
+      handled: new Set<string>(),
+    };
+    const tick = runDesktopLiveTick(deps);
+    await vi.waitFor(() => expect(retireWriter).toHaveBeenCalledWith("warm"));
+    expect(unacked.size).toBe(0);
+    finish();
+    await tick;
+    expect(unacked.has(job.id)).toBe(true);
+    await runDesktopLiveTick(deps);
+    expect(request.mock.lastCall?.[0]).toMatchObject({
+      acked: [job.id],
+      writers: { version: 1, sessionIds: [] },
+    });
+    expect(retireWriter).toHaveBeenCalledOnce();
+  });
+
+  it("never ACKs failed writer retirement", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const unacked = new Set<string>();
+      await runDesktopLiveTick({
+        request: async () => ({
+          commands: [{ id: "failed", sessionId: "warm", type: "retire-writer" }],
+        }),
+        sessions: () => [],
+        writers: () => ["warm"],
+        handlers: {
+          stop: vi.fn(),
+          approve: vi.fn(),
+          answer: vi.fn(),
+          retireWriter: async () => {
+            throw new Error("stop failed");
+          },
+        },
+        unacked,
+        handled: new Set<string>(),
+      });
+      expect(unacked.size).toBe(0);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
   it("omits acknowledged directory bytes, resends after reset and falls back for old hosts", async () => {
     let directory = {
-      version: 1 as const, groups: [], excludedPaths: [] as string[], excludedGroupIds: [],
-      projects: Array.from({ length: 200 }, (_, index) => ({ cwd: `/p/${index}`, name: `Project ${index}`, appearance: { logo: `data:image/png;base64,${"a".repeat(1024)}` } })),
+      version: 1 as const,
+      groups: [],
+      excludedPaths: [] as string[],
+      excludedGroupIds: [],
+      projects: Array.from({ length: 200 }, (_, index) => ({
+        cwd: `/p/${index}`,
+        name: `Project ${index}`,
+        appearance: { logo: `data:image/png;base64,${"a".repeat(1024)}` },
+      })),
     };
     let mode: "new" | "reset" | "old" = "new";
-    const request = vi.fn(async (payload: DesktopLivePayload) => ({ commands: [],
+    const request = vi.fn(async (payload: DesktopLivePayload) => ({
+      commands: [],
       ...(mode === "new" || (mode === "reset" && payload.projectDirectory)
-        ? { projectDirectoryRevision: payload.projectDirectoryRevision } : {}),
+        ? { projectDirectoryRevision: payload.projectDirectoryRevision }
+        : {}),
     }));
-    const deps = { beat: {}, request, sessions: () => [session({ id: "busy", busy: true })],
-      projectDirectory: () => directory, handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
-      unacked: new Set<string>(), handled: new Set<string>(), clientId: "window-a" };
+    const deps = {
+      beat: {},
+      request,
+      sessions: () => [session({ id: "busy", busy: true })],
+      projectDirectory: () => directory,
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+      clientId: "window-a",
+    };
     await runDesktopLiveTick(deps);
     await runDesktopLiveTick(deps);
     expect(request.mock.calls[0][0].projectDirectory).toBe(directory);
     expect(request.mock.calls[1][0].projectDirectory).toBeUndefined();
-    expect(JSON.stringify(request.mock.calls[1][0]).length).toBeLessThan(JSON.stringify(request.mock.calls[0][0]).length / 10);
+    expect(JSON.stringify(request.mock.calls[1][0]).length).toBeLessThan(
+      JSON.stringify(request.mock.calls[0][0]).length / 10,
+    );
     directory = { ...directory, excludedPaths: ["/private"] };
     await runDesktopLiveTick(deps);
     expect(request.mock.lastCall![0].projectDirectory?.excludedPaths).toEqual(["/private"]);
@@ -202,17 +293,37 @@ describe("runDesktopLiveTick", () => {
     await runDesktopLiveTick(deps);
     await runDesktopLiveTick(deps);
     await runDesktopLiveTick(deps);
-    expect(request.mock.calls.slice(-2).every(([payload]) => payload.projectDirectory === directory)).toBe(true);
+    expect(
+      request.mock.calls.slice(-2).every(([payload]) => payload.projectDirectory === directory),
+    ).toBe(true);
   });
 
   it("publishes session folder and manual-order changes during an otherwise idle heartbeat", async () => {
     let folderName = "Initial";
     const deps = {
-      now: () => 100, beat: {}, request: vi.fn().mockResolvedValue({ commands: [] }), sessions: () => [],
-      projectDirectory: () => ({ version: 1 as const, groups: [], excludedPaths: [], excludedGroupIds: [], projects: [{
-        cwd: "/project", name: "Project", sessionLayout: { folders: [{ id: "f", name: folderName, sessionIds: ["s"], collapsed: false }], order: { loose: [folderName] } },
-      }] }),
-      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() }, unacked: new Set<string>(), handled: new Set<string>(),
+      now: () => 100,
+      beat: {},
+      request: vi.fn().mockResolvedValue({ commands: [] }),
+      sessions: () => [],
+      projectDirectory: () => ({
+        version: 1 as const,
+        groups: [],
+        excludedPaths: [],
+        excludedGroupIds: [],
+        projects: [
+          {
+            cwd: "/project",
+            name: "Project",
+            sessionLayout: {
+              folders: [{ id: "f", name: folderName, sessionIds: ["s"], collapsed: false }],
+              order: { loose: [folderName] },
+            },
+          },
+        ],
+      }),
+      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn() },
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
     };
     await runDesktopLiveTick(deps);
     await runDesktopLiveTick(deps);
@@ -220,8 +331,11 @@ describe("runDesktopLiveTick", () => {
     folderName = "Renamed";
     await runDesktopLiveTick(deps);
     expect(deps.request).toHaveBeenCalledTimes(2);
-    expect(deps.request.mock.lastCall?.[0].projectDirectory.projects[0].sessionLayout).toMatchObject({
-      folders: [{ name: "Renamed" }], order: { loose: ["Renamed"] },
+    expect(
+      deps.request.mock.lastCall?.[0].projectDirectory.projects[0].sessionLayout,
+    ).toMatchObject({
+      folders: [{ name: "Renamed" }],
+      order: { loose: ["Renamed"] },
     });
   });
   it("publishes a changed directory privacy snapshot without waiting for the idle heartbeat", async () => {
@@ -383,7 +497,9 @@ describe("runDesktopLiveTick", () => {
     // A lease that was kept stops nothing, and holding nothing adds nothing to the beat.
     stop.mockClear();
     answered.mockReturnValue([]);
-    request.mockResolvedValue({ runLeases: { chat: { holder: "desktop:w", epoch: 5, expiresAt: 9 } } });
+    request.mockResolvedValue({
+      runLeases: { chat: { holder: "desktop:w", epoch: 5, expiresAt: 9 } },
+    });
     await runDesktopLiveTick({
       request,
       runLeases: { held, answered },

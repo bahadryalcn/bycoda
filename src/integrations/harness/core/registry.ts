@@ -185,6 +185,7 @@ const adapters = new Map<HarnessId, HarnessAdapter>();
  */
 export const HARNESS_IDLE_PARK_MS = 5 * 60_000;
 const idleParkTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const retainedWriters = new Map<string, HarnessId>();
 const sessionOperationTails = new Map<string, Promise<void>>();
 const sessionSteerTails = new Map<string, Promise<void>>();
 const activeTurnSessions = new Set<string>();
@@ -346,6 +347,7 @@ export function sendHarnessTurn(
         throw new Error("Turn cancelled before it started");
       const adapter = requireHarness(input.harness);
       if (!adapter.live) throw new Error(`${input.harness} is not connected yet`);
+      if (lightweightWorktree) retainedWriters.set(input.sessionId, input.harness);
       cancelIdlePark(input.sessionId);
       const controlled = typeof isTauri === "function" && isTauri();
       if (controlled)
@@ -592,6 +594,28 @@ export async function stopHarnessSession(harness: HarnessId, sessionId: string):
   const adapter = getHarness(harness);
   if (!adapter?.live) return;
   await adapter.stopSession(sessionId);
+  if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
+}
+
+/** Writers held between lightweight turns, reported to the execution Host. */
+export function retainedHarnessWriters(): string[] {
+  return [...retainedWriters.keys()];
+}
+
+/** Explicit Host ownership transfer; ordinary local turns never call this. */
+export function retireHarnessWriter(sessionId: string): Promise<void> {
+  return queueSessionOperation(sessionId, async () => {
+    if (activeTurnSessions.has(sessionId) || adapterOperations.has(sessionId))
+      throw new Error("The desktop session is still running. Retry after it finishes.");
+    const harness = retainedWriters.get(sessionId);
+    if (harness) {
+      cancelIdlePark(sessionId);
+      // Mute intentional exit events first; the native receipt survives kill.
+      await requireHarness(harness).stopSession(sessionId);
+      await invoke("harness_retire", { sessionId });
+      retainedWriters.delete(sessionId);
+    }
+  });
 }
 
 export async function forgetHarnessSession(harness: HarnessId, sessionId: string): Promise<void> {
@@ -600,6 +624,7 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
   forgetRuntimeHint(sessionId);
   if (!adapter) return;
   await adapter.forgetSession(sessionId);
+  if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
 }
 
 export function bindHarnessSession(

@@ -1,4 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+const nativeInvoke = vi.hoisted(() => vi.fn(async (_command: string, _args?: unknown) => {}));
+vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
+  invoke: nativeInvoke,
+}));
 
 const socialBridgeMock = vi.hoisted(() =>
   vi.fn<(_sessionId: string) => Promise<{ command: string; args: string[] } | null>>(
@@ -50,6 +55,8 @@ import {
   cancelHarnessTurn,
   stopHarnessBackgroundWork,
   stopHarnessSession,
+  retainedHarnessWriters,
+  retireHarnessWriter,
   type HarnessAdapter,
 } from "./registry";
 import type { SendTurnInput, SteerTurnInput } from "./types";
@@ -338,10 +345,39 @@ describe("harness registry", () => {
       lightweightWorktree: true,
     });
     expect(stopSession).not.toHaveBeenCalled();
-    await stopHarnessSession("codex", "lightweight-transfer");
+    expect(retainedHarnessWriters()).toContain("lightweight-transfer");
+    await retireHarnessWriter("lightweight-transfer");
+    expect(nativeInvoke).toHaveBeenCalledWith("harness_retire", {
+      sessionId: "lightweight-transfer",
+    });
+    expect(stopSession.mock.invocationCallOrder[0]).toBeLessThan(
+      nativeInvoke.mock.invocationCallOrder.at(-1)!,
+    );
+    expect(retainedHarnessWriters()).not.toContain("lightweight-transfer");
     expect(stopSession).toHaveBeenCalledExactlyOnceWith("lightweight-transfer");
     await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
     expect(stopSession).toHaveBeenCalledOnce();
+  });
+
+  it("retains ownership when native writer retirement cannot be confirmed", async () => {
+    const stopSession = vi.fn(async () => {});
+    registerHarness(stub("codex", { stopSession }));
+    await sendHarnessTurn({
+      harness: "codex",
+      sessionId: "failed-retirement",
+      cwd: "/tmp/worktree",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      text: "hello",
+      onEvent: vi.fn(),
+      lightweightWorktree: true,
+    });
+    nativeInvoke.mockRejectedValueOnce(new Error("process exit unknown"));
+    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow("process exit unknown");
+    expect(retainedHarnessWriters()).toContain("failed-retirement");
+    expect(stopSession).toHaveBeenCalledOnce();
+    await retireHarnessWriter("failed-retirement");
+    expect(retainedHarnessWriters()).not.toContain("failed-retirement");
   });
 
   it.each([

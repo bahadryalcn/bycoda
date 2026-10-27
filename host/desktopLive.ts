@@ -20,6 +20,7 @@ export const DESKTOP_BEAT_STALE_MS = 20_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
 export const DESKTOP_COMMAND_RETAIN_MS = 5 * 60_000;
+export const DESKTOP_WRITER_TRANSFER_MS = 12_000;
 /**
  * How long the desktop database's in-flight mark is believed from an app that
  * never sent a heartbeat. A crashed app leaves the mark behind for good; without
@@ -30,7 +31,7 @@ export const DESKTOP_STORED_RUNNING_MS = 15 * 60_000;
 export type DesktopCommand = {
   id: string;
   sessionId: string;
-  type: "cancel" | "approve" | "answer";
+  type: "cancel" | "approve" | "answer" | "retire-writer";
   requestId?: number;
   decision?: "allow" | "deny";
   reply?: unknown;
@@ -143,7 +144,15 @@ export class DesktopLive {
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
-  private directories = new Map<string, { at: number; value?: DesktopProjectDirectory; revision?: string }>();
+  private writerClients = new Map<string, Set<string>>();
+  private writerTransfers = new Map<
+    string,
+    { clientId: string; sessionId: string; finish: (error?: string) => void }
+  >();
+  private directories = new Map<
+    string,
+    { at: number; value?: DesktopProjectDirectory; revision?: string }
+  >();
 
   private lastChange = 0;
 
@@ -191,18 +200,39 @@ export class DesktopLive {
     if (!Array.isArray(value.sessions)) throw new Error("Invalid desktop sessions");
     const clientId =
       typeof value.clientId === "string" && value.clientId ? value.clientId : "legacy";
-    const revision = typeof value.projectDirectoryRevision === "string" &&
-      value.projectDirectoryRevision.length > 0 && value.projectDirectoryRevision.length <= 64
-      ? value.projectDirectoryRevision : undefined;
+    const revision =
+      typeof value.projectDirectoryRevision === "string" &&
+      value.projectDirectoryRevision.length > 0 &&
+      value.projectDirectoryRevision.length <= 64
+        ? value.projectDirectoryRevision
+        : undefined;
     if (Object.hasOwn(value, "projectDirectory")) {
       const projection = parseDesktopProjectDirectory(value.projectDirectory);
-      this.directories.set(clientId, { at: this.now(), value: projection, revision: projection ? revision : undefined });
+      this.directories.set(clientId, {
+        at: this.now(),
+        value: projection,
+        revision: projection ? revision : undefined,
+      });
     } else if (revision) {
       const previous = this.directories.get(clientId);
-      if (previous?.value && previous.revision === revision)
-        previous.at = this.now();
+      if (previous?.value && previous.revision === revision) previous.at = this.now();
     }
     const acked = new Set(Array.isArray(value.acked) ? value.acked.map(String) : []);
+    const writers = value.writers as { version?: number; sessionIds?: unknown } | undefined;
+    if (writers?.version === 1 && Array.isArray(writers.sessionIds))
+      this.writerClients.set(
+        clientId,
+        new Set(writers.sessionIds.filter((id): id is string => typeof id === "string")),
+      );
+    for (const id of acked) {
+      const transfer = this.writerTransfers.get(id);
+      if (transfer?.clientId === clientId)
+        transfer.finish(
+          this.writerClients.get(clientId)?.has(transfer.sessionId)
+            ? "The desktop still owns the provider writer. Retry after it finishes."
+            : undefined,
+        );
+    }
     const next = new Map(this.sessions);
     const reported = new Set<string>();
     for (const raw of value.sessions) {
@@ -292,10 +322,20 @@ export class DesktopLive {
     if (changed) this.onChange?.();
     return {
       ...(revision && this.directories.get(clientId)?.revision === revision
-        ? { projectDirectoryRevision: revision } : {}),
+        ? { projectDirectoryRevision: revision }
+        : {}),
       commands: this.commands
         .filter((command) => this.sessions.get(command.sessionId)?.clientId === clientId)
-        .map(({ queuedAt: _queuedAt, ...command }) => command),
+        .map(({ queuedAt: _queuedAt, ...command }) => command)
+        .concat(
+          [...this.writerTransfers]
+            .filter(([, transfer]) => transfer.clientId === clientId)
+            .map(([id, transfer]) => ({
+              id,
+              sessionId: transfer.sessionId,
+              type: "retire-writer" as const,
+            })),
+        ),
     };
   }
 
@@ -401,6 +441,47 @@ export class DesktopLive {
   busyClient(id: string): string | undefined {
     const session = this.sessions.get(id);
     return session?.busy && this.clientAlive(session.clientId) ? session.clientId : undefined;
+  }
+
+  /** Before Host continuation, every updated window must release this writer.
+   * Known stale owners remain a blocker until they reconnect and acknowledge. */
+  async retireWriters(sessionId: string): Promise<void> {
+    const clients = [...this.writerClients].filter(
+      ([clientId, writers]) => writers.has(sessionId) || this.clientAlive(clientId),
+    );
+    if (clients.some(([clientId]) => !this.clientAlive(clientId)))
+      throw new Error(
+        "The desktop writer is unreachable. Reopen bycoda there before continuing on the Host.",
+      );
+    if (this.busyClient(sessionId))
+      throw new Error("The desktop session is still running. Retry after it finishes.");
+    await Promise.all(
+      clients.map(
+        ([clientId]) =>
+          new Promise<void>((resolve, reject) => {
+            const id = randomUUID();
+            const timer = setTimeout(
+              () =>
+                finish(
+                  "The desktop did not confirm provider writer retirement. Reopen bycoda there and retry.",
+                ),
+              DESKTOP_WRITER_TRANSFER_MS,
+            );
+            const finish = (error?: string) => {
+              clearTimeout(timer);
+              this.writerTransfers.delete(id);
+              if (error) reject(new Error(error));
+              else resolve();
+            };
+            this.writerTransfers.set(id, { clientId, sessionId, finish });
+          }),
+      ),
+    );
+  }
+
+  closeWriterTransfers(): void {
+    for (const transfer of this.writerTransfers.values())
+      transfer.finish("The Host closed before desktop writer retirement was confirmed.");
   }
 
   /** Live prompts laid over a stored session, and when they last changed. */

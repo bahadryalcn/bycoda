@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DesktopLive,
   DESKTOP_BEAT_STALE_MS,
   DESKTOP_COMMAND_RETAIN_MS,
+  DESKTOP_WRITER_TRANSFER_MS,
   DESKTOP_STORED_RUNNING_MS,
 } from "./desktopLive";
 import { ChangeSignal } from "./changeSignal";
@@ -13,6 +14,63 @@ import type {
 } from "../src/features/connections/model/protocol";
 
 describe("desktop window ownership", () => {
+  it("waits for the owning window to retire a warm writer and rejects foreign ACKs", async () => {
+    const live = new DesktopLive();
+    live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
+    let finished = false;
+    const transfer = live.retireWriters("warm").then(() => {
+      finished = true;
+    });
+    const job = live.beat({
+      clientId: "owner",
+      sessions: [],
+      writers: { version: 1, sessionIds: ["warm"] },
+    }).commands[0];
+    expect(job).toMatchObject({ sessionId: "warm", type: "retire-writer" });
+    live.beat({ clientId: "other", sessions: [], acked: [job.id] });
+    await Promise.resolve();
+    expect(finished).toBe(false);
+    live.beat({
+      clientId: "owner",
+      sessions: [],
+      writers: { version: 1, sessionIds: [] },
+      acked: [job.id],
+    });
+    await transfer;
+    expect(finished).toBe(true);
+  });
+
+  it("fails closed when an acknowledged writer remains owned or its desktop disappears", async () => {
+    let now = 0;
+    const live = new DesktopLive(() => now);
+    const beat = { clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } };
+    live.beat(beat);
+    const transfer = live.retireWriters("warm");
+    const rejected = expect(transfer).rejects.toThrow("still owns");
+    const [job] = live.beat(beat).commands;
+    live.beat({ ...beat, acked: [job.id] });
+    await rejected;
+    now = DESKTOP_BEAT_STALE_MS + 1;
+    await expect(live.retireWriters("warm")).rejects.toThrow("unreachable");
+  });
+
+  it("times out without an ACK and cancels requests when the Host closes", async () => {
+    vi.useFakeTimers();
+    try {
+      const live = new DesktopLive();
+      live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
+      const timed = expect(live.retireWriters("warm")).rejects.toThrow("did not confirm");
+      await vi.advanceTimersByTimeAsync(DESKTOP_WRITER_TRANSFER_MS);
+      await timed;
+      expect(live.beat({ clientId: "owner", sessions: [] }).commands).toEqual([]);
+      const closed = expect(live.retireWriters("warm")).rejects.toThrow("Host closed");
+      live.closeWriterTransfers();
+      await closed;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reclaims old undeliverable commands while preserving a brief same-session reconnect", () => {
     let now = 0;
     const live = new DesktopLive(() => now);
@@ -162,19 +220,51 @@ describe("privacy-filtered project directory", () => {
   it("renews only an acknowledged client's exact privacy revision and requires content after reset", () => {
     let now = 0;
     const live = new DesktopLive(() => now);
-    const projection = { version: 1 as const, groups: [], excludedPaths: [], excludedGroupIds: [], projects: [{ cwd: "/work", name: "Work" }] };
-    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1", projectDirectory: projection }).projectDirectoryRevision).toBe("1");
+    const projection = {
+      version: 1 as const,
+      groups: [],
+      excludedPaths: [],
+      excludedGroupIds: [],
+      projects: [{ cwd: "/work", name: "Work" }],
+    };
+    expect(
+      live.beat({
+        clientId: "a",
+        sessions: [],
+        projectDirectoryRevision: "1",
+        projectDirectory: projection,
+      }).projectDirectoryRevision,
+    ).toBe("1");
     now = 15_000;
-    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBe("1");
+    expect(
+      live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" })
+        .projectDirectoryRevision,
+    ).toBe("1");
     now = 25_000;
     expect(live.projectDirectory([], "host").privacyReady).toBe(true);
-    expect(live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "wrong" }).projectDirectoryRevision).toBeUndefined();
+    expect(
+      live.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "wrong" })
+        .projectDirectoryRevision,
+    ).toBeUndefined();
     now = 35_001;
     expect(live.projectDirectory([], "host").privacyReady).toBe(false);
     const restarted = new DesktopLive(() => now);
-    expect(restarted.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBeUndefined();
-    expect(restarted.beat({ clientId: "b", sessions: [], projectDirectoryRevision: "1" }).projectDirectoryRevision).toBeUndefined();
-    expect(restarted.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "2", projectDirectory: { ...projection, excludedPaths: undefined } }).projectDirectoryRevision).toBeUndefined();
+    expect(
+      restarted.beat({ clientId: "a", sessions: [], projectDirectoryRevision: "1" })
+        .projectDirectoryRevision,
+    ).toBeUndefined();
+    expect(
+      restarted.beat({ clientId: "b", sessions: [], projectDirectoryRevision: "1" })
+        .projectDirectoryRevision,
+    ).toBeUndefined();
+    expect(
+      restarted.beat({
+        clientId: "a",
+        sessions: [],
+        projectDirectoryRevision: "2",
+        projectDirectory: { ...projection, excludedPaths: undefined },
+      }).projectDirectoryRevision,
+    ).toBeUndefined();
   });
 
   it("carries saved identity through host IDs, replacements, and privacy exclusions", () => {

@@ -107,6 +107,138 @@ async function setup() {
 }
 
 describe("desktop sessions on the host", () => {
+  it("waits for desktop writer retirement before direct continuation and fences new local turns", async () => {
+    const s = await setup();
+    s.seed({ id: "warm", cwd: s.projectDir });
+    const beat = (ids = ["warm"], acked: string[] = []) =>
+      s.call("sessions.desktopLive", {
+        clientId: "writer",
+        sessions: [],
+        writers: { version: 1, sessionIds: ids },
+        acked,
+      });
+    await beat();
+    const sending = s.call("commands.dispatch", {
+      type: "send",
+      commandId: "transfer-send",
+      sessionId: "warm",
+      text: "continue",
+    });
+    let job: { id: string } | undefined;
+    await vi.waitFor(async () => {
+      job = (await beat()).result.commands.find(
+        (command: { type: string }) => command.type === "retire-writer",
+      );
+      expect(job).toBeDefined();
+    });
+    expect(s.send).not.toHaveBeenCalled();
+    expect(
+      (
+        await s.call("sessions.runLease", {
+          sessionId: "warm",
+          clientId: "desktop:new",
+          action: "acquire",
+        })
+      ).error,
+    ).toMatch(/^LEASE_HELD:/);
+    await beat([], [job!.id]);
+    expect((await sending).error).toBeUndefined();
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  });
+
+  it("refuses continuation when the desktop still owns its writer and releases the transfer fence", async () => {
+    const s = await setup();
+    s.seed({ id: "warm", cwd: s.projectDir });
+    const beat = (acked: string[] = []) =>
+      s.call("sessions.desktopLive", {
+        clientId: "writer",
+        sessions: [],
+        writers: { version: 1, sessionIds: ["warm"] },
+        acked,
+      });
+    await beat();
+    const sending = s.call("commands.dispatch", {
+      type: "send",
+      commandId: "failed-transfer",
+      sessionId: "warm",
+      text: "continue",
+    });
+    let job: { id: string } | undefined;
+    await vi.waitFor(async () => {
+      job = (await beat()).result.commands.find(
+        (command: { type: string }) => command.type === "retire-writer",
+      );
+      expect(job).toBeDefined();
+    });
+    await beat([job!.id]);
+    expect((await sending).error).toContain("still owns");
+    expect(s.send).not.toHaveBeenCalled();
+    expect(
+      (
+        await s.call("sessions.runLease", {
+          sessionId: "warm",
+          clientId: "desktop:new",
+          action: "acquire",
+        })
+      ).result.lease.holder,
+    ).toBe("desktop:new");
+  });
+
+  it("retires the desktop writer before the Host drains a queued continuation", async () => {
+    const s = await setup();
+    s.seed({ id: "warm", cwd: s.projectDir });
+    // The Host queue resumes a desktop conversation previously adopted here.
+    expect(
+      (
+        await s.call("sessions.update", {
+          sessionId: "warm",
+          projectId: s.project.id,
+          title: "Warm",
+        })
+      ).error,
+    ).toBeUndefined();
+    const beat = (ids = ["warm"], acked: string[] = []) =>
+      s.call("sessions.desktopLive", {
+        clientId: "writer",
+        sessions: [],
+        writers: { version: 1, sessionIds: ids },
+        acked,
+      });
+    await beat();
+    const before = (
+      await s.call("sessions.queue.get", {
+        sessionId: "warm",
+        clientId: "mobile:remote",
+        leaseAware: true,
+      })
+    ).result;
+    expect(
+      (
+        await s.call("sessions.queue.change", {
+          sessionId: "warm",
+          clientId: "mobile:remote",
+          leaseAware: true,
+          before,
+          after: {
+            ...before,
+            status: "active",
+            messages: [{ id: "queued", text: "queued continuation", attachments: [] }],
+          },
+        })
+      ).error,
+    ).toBeUndefined();
+    let job: { id: string } | undefined;
+    await vi.waitFor(async () => {
+      job = (await beat()).result.commands.find(
+        (command: { type: string }) => command.type === "retire-writer",
+      );
+      expect(job).toBeDefined();
+    });
+    expect(s.send).not.toHaveBeenCalled();
+    await beat([], [job!.id]);
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+  });
+
   it("never caches an unreadable desktop database as an empty project", async () => {
     const s = await setup();
     s.seed({ id: "recovered-metadata", cwd: s.projectDir });
@@ -222,7 +354,7 @@ describe("desktop sessions on the host", () => {
     expect(sent.error).toBeUndefined();
     expect((await s.store.session("a")).projectId).toBe(s.project.id);
     expect(s.bind).toHaveBeenCalledWith("a", "prov-a", s.project.cwd, undefined);
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1), { timeout: 5_000 });
     const list = (await s.call("sessions.list", { projectId: s.project.id })).result;
     expect(list.map((x: any) => x.id)).toEqual(["a"]);
     expect(list[0].origin).toBeUndefined();
@@ -946,7 +1078,7 @@ describe("the run lease of a conversation", () => {
         })
       ).error,
     ).toBeUndefined();
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce(), { timeout: 5_000 });
     const active = (await s.call("sessions.sync", { sessionId })).result.value;
     expect(active.desktop).toBeDefined();
     expect(active.executionOwner).toBe("host");
