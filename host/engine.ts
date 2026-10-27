@@ -30,7 +30,11 @@ import {
   planTurnPrompt,
 } from "../src/features/sessions/model/plan";
 import { changedBlocks, type BlockChanges } from "../src/features/sessions/model/blockChanges";
-import { modelBelongsToHarness, resolveModel } from "../src/features/sessions/model/models";
+import {
+  modelBelongsToHarness,
+  modelContextWindow,
+  resolveModel,
+} from "../src/features/sessions/model/models";
 import {
   appendReadyHandoff,
   buildDeterministicHandoff,
@@ -1820,6 +1824,23 @@ export class HostEngine {
                   command.secondOpinion.to !== value.session.harness
                 )
                   throw new Error("The second opinion target does not match this conversation");
+                const shellRuns =
+                  command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
+                let turnText =
+                  command.type === "send"
+                    ? plan
+                      ? buildPlanPrompt(approvedPlanText ?? plan.text)
+                      : turnIntent === "plan"
+                        ? planTurnPrompt(command.text)
+                        : command.noteCard
+                          ? composeNoteContext(command.noteCard, command.text)
+                          : command.text
+                    : "";
+                const codexGoal =
+                  command.type === "send" &&
+                  value.session.harness === "codex" &&
+                  /^\s*\/goal(?=\s|$)/.test(command.text);
+                let handoffPromptPrepared = false;
                 // Read before the turn's own block lands after them.
                 let handoffText: string | undefined;
                 let handoffFrom: RemoteProvider | undefined;
@@ -1846,18 +1867,66 @@ export class HostEngine {
                     const archive = new HandoffHistoryStore(
                       dirname(this.store.attachmentDir),
                     ).saveSync(handoffHistory(value.session));
-                    handoffText = buildBudgetedHandoff(value.session, {
-                      contextWindow: resolveModel(value.session.harness, value.session.model)
-                        .contextWindow,
-                      request: command.text,
+                    // Budget the actual outgoing request once. Skill bodies and runtime
+                    // hints are model input too, but must not be added to the request twice.
+                    const request = codexGoal
+                      ? command.text
+                      : withShellContext(shellRuns, turnText);
+                    turnText =
+                      !codexGoal && /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(request)
+                        ? await prepareHostSkillPrompt(
+                            request,
+                            value.session.worktreeCwd ?? value.session.cwd,
+                            undefined,
+                            value.session.id,
+                          )
+                        : request;
+                    handoffPromptPrepared = true;
+                    // A handoff starts a new provider thread, so its hint is sent again.
+                    const hint = await harnessRuntimeHints(value.session.id);
+                    const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
+                    const budgetRequest =
+                      value.session.harness === "codex"
+                        ? [
+                            hint,
+                            body,
+                            codexGoal
+                              ? withShellContext(
+                                  shellRuns,
+                                  command.noteCard ? composeNoteContext(command.noteCard, "") : "",
+                                )
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join("\n\n")
+                        : [hint, body].filter(Boolean).join("\n\n");
+                    const packet = buildBudgetedHandoff(value.session, {
+                      contextWindow: modelContextWindow(value.session.model, value.session.harness),
+                      request: budgetRequest,
                       brief: handoffText,
                       historyPath: archive.path,
-                    }).text;
-                    value = { ...value, session: consumeHandoff(value.session) };
+                    });
+                    handoffText = packet.text;
+                    const consumed = consumeHandoff(value.session);
+                    value = {
+                      ...value,
+                      session: packet.notice
+                        ? {
+                            ...consumed,
+                            blocks: [
+                              ...consumed.blocks,
+                              {
+                                id: randomUUID(),
+                                role: "system",
+                                notice: "info",
+                                text: packet.notice,
+                              },
+                            ],
+                          }
+                        : consumed,
+                    };
                   }
                 }
-                const shellRuns =
-                  command.type === "send" ? pendingShellRuns(value.session.blocks) : [];
                 const runId = randomUUID();
                 const firstTurn =
                   command.type === "send" && !value.session.blocks.some((block) => !block.draft);
@@ -1935,35 +2004,23 @@ export class HostEngine {
                   },
                 };
                 effect = (saved) => {
-                  const turnText =
-                    command.type === "send"
-                      ? plan
-                        ? buildPlanPrompt(approvedPlanText ?? plan.text)
-                        : turnIntent === "plan"
-                          ? planTurnPrompt(command.text)
-                          : command.noteCard
-                            ? composeNoteContext(command.noteCard, command.text)
-                            : command.text
-                      : "";
                   const handoffBlock = handoffText
                     ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
                     : "";
                   // Codex parses /goal only as the first token; context travels separately.
-                  const codexGoal =
-                    command.type === "send" &&
-                    saved.session.harness === "codex" &&
-                    /^\s*\/goal(?=\s|$)/.test(command.text);
                   this.run(
                     saved,
                     command.type === "compact"
                       ? null
                       : codexGoal
                         ? command.text
-                        : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
+                        : handoffPromptPrepared
+                          ? `${handoffBlock}${turnText}`
+                          : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
                     turnIntent,
                     attachments,
                     command.resumeAtReset,
-                    handoffText ? handoffFrom : undefined,
+                    handoffFrom,
                     rewindReplay,
                     codexGoal
                       ? withShellContext(
@@ -1972,6 +2029,7 @@ export class HostEngine {
                         ).trim()
                       : "",
                     command.commandId,
+                    handoffPromptPrepared,
                   );
                   if (firstTurn && command.type === "send") {
                     this.generateFirstTurnNames(saved, command.text, placeholderTitle);
@@ -2631,6 +2689,7 @@ export class HostEngine {
     /** Shell/handoff context kept out of a leading Codex /goal command. */
     goalContext = "",
     userBlockId?: string,
+    promptPrepared = false,
   ): void {
     let session = value.session;
     const { runId } = value;
@@ -2725,6 +2784,7 @@ export class HostEngine {
               forgetRuntimeHint(session.id);
             } else {
               const preparedPrompt =
+                !promptPrepared &&
                 /(^|\s)[/$][A-Za-z0-9][A-Za-z0-9_.:-]*(?=\s|$)/.test(prompt) &&
                 !(session.harness === "codex" && /^\s*\/goal(?:\s|$)/.test(prompt))
                   ? await prepareHostSkillPrompt(prompt, session.cwd, undefined, session.id)
