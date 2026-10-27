@@ -50,6 +50,8 @@ struct Pair {
     after: Option<SnapshotKind>,
     #[serde(default)]
     conflict: bool,
+    #[serde(default)]
+    provider_after: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -428,6 +430,7 @@ impl CheckpointStore {
                             before: before_kind,
                             after: None,
                             conflict: false,
+                            provider_after: false,
                         },
                     );
                 }
@@ -610,6 +613,7 @@ pub(super) fn prepare(dir: &Path, root: &Path, paths: &[String]) -> Result<(), S
                 before,
                 after: None,
                 conflict: false,
+                provider_after: false,
             },
         );
     }
@@ -634,6 +638,7 @@ pub(super) fn capture(dir: &Path, root: &Path, paths: &[String]) -> Result<(), S
             continue;
         };
         pair.after = Some(snapshot_file_at(&history_dir.join("after"), root, &path)?);
+        pair.provider_after = false;
     }
     turn.bytes = Some(disk_bytes(&history_dir));
     prune(dir, &mut journal, HISTORY_BYTES)?;
@@ -741,6 +746,19 @@ fn capture_provider_changes(
             .get(&path)
             .copied()
             .unwrap_or(SnapshotKind::Missing);
+        // Codex AddFile can overwrite an existing file. Its new contents alone
+        // do not prove the previous file was absent. Only a chained proven
+        // deletion, or an observed complete/nonignored missing baseline, permits
+        // restoring that absence. Keep ambiguity local to this path.
+        let proven_deletion = turn
+            .files
+            .get(&path)
+            .is_some_and(|pair| pair.provider_after && pair.after == Some(SnapshotKind::Missing));
+        let ambiguous_add = change.kind == "add"
+            && !proven_deletion
+            && (baseline_kind != SnapshotKind::Missing
+                || !turn.baseline_complete
+                || add_path_excluded(root, &path));
         let before_mode = if change.kind == "update" {
             file_mode(&root.join(&path))
         } else if before == read_snapshot_at(&dir.join("files-baseline"), &path, baseline_kind) {
@@ -754,6 +772,7 @@ fn capture_provider_changes(
             None
         };
         if let Some(pair) = turn.files.get_mut(&path) {
+            pair.conflict |= ambiguous_add;
             if let Some(previous_after) = pair.after {
                 // A provider-proven chain must still consume exactly our last
                 // output. Foreign contributions between own edits stay fenced.
@@ -764,6 +783,7 @@ fn capture_provider_changes(
                 pair.before = before_kind;
             }
             pair.after = Some(after_kind);
+            pair.provider_after = true;
         } else {
             copy_state(&history.join("before"), &path, &before, before_mode)?;
             turn.files.insert(
@@ -771,7 +791,8 @@ fn capture_provider_changes(
                 Pair {
                     before: before_kind,
                     after: Some(after_kind),
-                    conflict: false,
+                    conflict: ambiguous_add,
+                    provider_after: true,
                 },
             );
         }
@@ -781,6 +802,27 @@ fn capture_provider_changes(
     turn.bytes = Some(disk_bytes(&history));
     prune(dir, &mut journal, HISTORY_BYTES)?;
     save(dir, &journal)
+}
+
+fn add_path_excluded(root: &Path, path: &str) -> bool {
+    match has_git_marker(root) {
+        Ok(true) => {
+            let result = git_cmd_output(git_cmd().current_dir(root).args([
+                "check-ignore",
+                "--no-index",
+                "--quiet",
+                "--",
+                path,
+            ]));
+            // Exit 1 is Git's explicit nonignored classification. Failed reads
+            // and other exit codes are unknown, never evidence of absence.
+            !result.is_ok_and(|output| output.status.code() == Some(1))
+        }
+        Ok(false) => path
+            .split('/')
+            .any(|part| matches!(part, "node_modules" | "target")),
+        Err(_) => true,
+    }
 }
 
 /// Reverse only verified unified hunks. Unchanged lines come from the current
@@ -1498,6 +1540,76 @@ mod tests {
             ["a.txt"]
         );
         assert_eq!(f.read("a.txt"), "peer outside hunk\nold\n");
+    }
+
+    #[test]
+    fn checkpoint_files_revert_provider_add_over_existing_or_ignored_path_stays_conflicted() {
+        for (ignored, peer_before) in [(false, false), (false, true), (true, true)] {
+            let f = Fixture::new(true);
+            f.write("counter.txt", "zero\n");
+            let path = if ignored { "ignored.txt" } else { "a.txt" };
+            if ignored {
+                f.write(".gitignore", "ignored.txt\n");
+                f.write(path, "ignored original\n");
+            }
+            f.begin("session", "one");
+            if peer_before {
+                f.write(path, "peer before AddFile\n");
+            }
+            f.write(path, "provider overwrote existing contents\n");
+            f.write("counter.txt", "one\n");
+            f.write("new.txt", "genuinely new\n");
+            let dir = f.store.session_dir("session");
+            capture_provider_changes(
+                &dir,
+                &f.repo,
+                "add-overwrite",
+                &[ProviderFileChange {
+                    path: path.into(),
+                    kind: "add".into(),
+                    contents: "provider overwrote existing contents\n".into(),
+                }],
+            )
+            .unwrap();
+            capture_provider_changes(
+                &dir,
+                &f.repo,
+                "counter-update",
+                &[ProviderFileChange {
+                    path: "counter.txt".into(),
+                    kind: "update".into(),
+                    contents: "@@ -1 +1 @@\n-zero\n+one\n".into(),
+                }],
+            )
+            .unwrap();
+            capture_provider_changes(
+                &dir,
+                &f.repo,
+                "new-add",
+                &[ProviderFileChange {
+                    path: "new.txt".into(),
+                    kind: "add".into(),
+                    contents: "genuinely new\n".into(),
+                }],
+            )
+            .unwrap();
+            f.finish("session", "one");
+            let plan = f.store.files_revert_plan("session", "message-one").unwrap();
+            assert!(plan.unavailable.is_none());
+            assert!(plan
+                .files
+                .iter()
+                .find(|file| file.path == path)
+                .unwrap()
+                .conflict
+                .is_some());
+            let result = f.store.files_revert("session", "message-one").unwrap();
+            assert_eq!(result.reverted, ["counter.txt", "new.txt"]);
+            assert_eq!(result.skipped[0].path, path);
+            assert_eq!(f.read(path), "provider overwrote existing contents\n");
+            assert_eq!(f.read("counter.txt"), "zero\n");
+            assert!(!f.repo.join("new.txt").exists());
+        }
     }
 
     #[test]
