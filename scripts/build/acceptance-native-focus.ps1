@@ -14,7 +14,20 @@ $acceptanceRecord = Get-Content -LiteralPath $acceptanceRecordPath -Raw | Conver
 if ((Split-Path -Leaf $acceptanceRecord.desktopDataPath) -notmatch '^com\.bycoda\.desktop\.dev\.[a-f0-9]{20}$') {
     throw 'Refusing a non-development desktop profile'
 }
-$null = Assert-AcceptanceChild $acceptanceRecord.hostDataPath 'Host data'
+$acceptanceDigest = [Security.Cryptography.SHA256]::Create()
+try {
+    $acceptanceHash = -join ($acceptanceDigest.ComputeHash([Text.Encoding]::UTF8.GetBytes([string]$acceptanceRecord.instanceId)) | ForEach-Object { $_.ToString('x2') })
+} finally { $acceptanceDigest.Dispose() }
+$acceptanceProfile = 'com.bycoda.desktop.dev.' + $acceptanceHash.Substring(0, 20)
+$acceptanceExpectedDesktop = [IO.Path]::GetFullPath((Join-Path $env:APPDATA $acceptanceProfile))
+if (-not [string]::Equals([IO.Path]::GetFullPath($acceptanceRecord.desktopDataPath), $acceptanceExpectedDesktop, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Refusing an unexpected development desktop profile'
+}
+$acceptanceHostData = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $acceptanceRecord.hostDataPath).ProviderPath)
+$acceptanceProfileHost = [IO.Path]::GetFullPath((Join-Path $acceptanceExpectedDesktop 'host'))
+if (-not [string]::Equals($acceptanceHostData, $acceptanceProfileHost, [StringComparison]::OrdinalIgnoreCase)) {
+    $null = Assert-AcceptanceChild $acceptanceHostData 'Host data'
+}
 $acceptanceExecutable = Assert-AcceptanceChild $acceptanceRecord.executable 'executable'
 $acceptanceManifestPath = Assert-AcceptanceChild $acceptanceRecord.buildManifest 'build manifest'
 $acceptanceManifest = Get-Content -LiteralPath $acceptanceManifestPath -Raw | ConvertFrom-Json
