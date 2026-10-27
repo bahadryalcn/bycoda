@@ -831,10 +831,10 @@ export async function selectAcceptanceSession(context, sessionId) {
 export async function sendPrompt(
   context,
   prompt,
-  { allowFailure = false, wait = true, expectedSessionId } = {},
+  { allowFailure = false, wait = true, expectedSessionId, preserveAttachmentTokens = false } = {},
 ) {
   const { page } = context;
-  const { textarea } = await assertCodexComposer(context, expectedSessionId);
+  const { textarea, sessionId } = await assertCodexComposer(context, expectedSessionId);
   const selected = await page
     .locator('[data-project-path][data-selected="true"]')
     .first()
@@ -848,7 +848,41 @@ export async function sendPrompt(
       entry.blocks.filter((block) => block.role === "user").map((block) => block.id),
     ),
   );
-  await textarea.fill(prompt);
+  let submittedPrompt = prompt;
+  let retainedAttachmentIds;
+  if (preserveAttachmentTokens) {
+    const retained = await page.evaluate(
+      async ({ id, prompt, draft }) => {
+        const { getComposerAttachments } =
+          await import("/src/features/sessions/model/draftCache.ts");
+        const { findTokens } = await import("/src/features/sessions/model/attachmentTokens.ts");
+        const files = getComposerAttachments(id);
+        const present = new Set(findTokens(prompt, files).map((entry) => entry.token));
+        const tokens = [...new Set(findTokens(draft, files).map((entry) => entry.token))].filter(
+          (token) => !present.has(token),
+        );
+        return { ids: files.map((file) => file.id), tokens };
+      },
+      { id: sessionId, prompt, draft: await textarea.inputValue() },
+    );
+    retainedAttachmentIds = retained.ids;
+    if (retained.tokens.length) submittedPrompt = `${prompt}\n${retained.tokens.join(" ")}`;
+  }
+  await textarea.fill(submittedPrompt);
+  if (retainedAttachmentIds) {
+    const actual = await page.evaluate(
+      async (id) =>
+        (await import("/src/features/sessions/model/draftCache.ts"))
+          .getComposerAttachments(id)
+          .map((file) => file.id),
+      sessionId,
+    );
+    assert.deepEqual(
+      actual,
+      retainedAttachmentIds,
+      "Preparing a prompt discarded its attached files",
+    );
+  }
   await click(context, "Send");
   const accepted = await waitUntil(
     async () =>
@@ -2495,8 +2529,9 @@ async function assertLightweightDefault(context) {
   );
 }
 
-async function v94Turn(context, prompt) {
-  const current = await sendPrompt(context, prompt);
+async function v94Turn(context, prompt, options) {
+  const current = await sendPrompt(context, prompt, options);
+  const user = current.blocks.find((block) => block.id === context.state.lastUserBlockId);
   const tail = current.blocks.slice(
     current.blocks.findIndex((block) => block.id === context.state.lastUserBlockId) + 1,
   );
@@ -2511,28 +2546,14 @@ async function v94Turn(context, prompt) {
   return {
     sessionId: current.id,
     userBlockId: context.state.lastUserBlockId,
-    prompt,
+    prompt: user.text,
     cwd: current.worktreeCwd || current.cwd,
-    attachmentIds:
-      current.blocks
-        .find((block) => block.id === context.state.lastUserBlockId)
-        ?.attachments?.map((file) => file.id) ?? [],
+    attachmentIds: user.attachments?.map((file) => file.id) ?? [],
   };
 }
 
-async function v94Current(context) {
-  await newSession(context, null);
-  await assertLightweightDefault(context);
-  assert(
-    await context.page
-      .getByRole("button", { name: "Workspace Current checkout", exact: true })
-      .isVisible(),
-    "New sessions must default to Current checkout",
-  );
-  const first = await v94Turn(
-    context,
-    "Use apply_patch to set counter.txt to 1 plus newline. Do not commit. Reply DONE.",
-  );
+async function attachV94Note(context) {
+  const { sessionId } = await assertCodexComposer(context);
   const attachment = join(context.scratch, "acceptance-note.txt");
   await writeFile(attachment, "Attachment restoration acceptance. No edits required.\n");
   await context.page
@@ -2552,15 +2573,122 @@ async function v94Current(context) {
     .locator("[data-attachment-chip]")
     .filter({ hasText: "acceptance-note.txt" })
     .waitFor();
+  await waitUntil(
+    () =>
+      context.page.evaluate(
+        async (id) =>
+          (await import("/src/features/sessions/model/draftCache.ts"))
+            .getComposerAttachments(id)
+            .some((file) => file.name === "acceptance-note.txt"),
+        sessionId,
+      ),
+    "The dropped attachment was not retained by the actual composer",
+  );
+}
+
+async function v94Current(context) {
+  await newSession(context, null);
+  await assertLightweightDefault(context);
+  assert(
+    await context.page
+      .getByRole("button", { name: "Workspace Current checkout", exact: true })
+      .isVisible(),
+    "New sessions must default to Current checkout",
+  );
+  const first = await v94Turn(
+    context,
+    "Use apply_patch to set counter.txt to 1 plus newline. Do not commit. Reply DONE.",
+  );
+  await attachV94Note(context);
   const second = await v94Turn(
     context,
     "Use apply_patch to set counter.txt to 2 plus newline. Keep the attachment unchanged. Do not commit. Reply DONE.",
+    { preserveAttachmentTokens: true },
   );
   assert.equal(second.attachmentIds.length, 1, "The real request did not carry its attachment");
   assert.equal((await readFile(join(second.cwd, "counter.txt"), "utf8")).trim(), "2");
   assert(!(await session(context)).workspaceId, "Current checkout acquired managed admission");
   context.state.v94Current = [first, second];
   return { turns: [first, second], screenshots: await context.capture("v94-01-current") };
+}
+
+/** Continue one existing acceptance pass after its attachment-setup helper removed a token. */
+export async function recoverV94CurrentAttachment(context) {
+  const statePath = join(context.output, "acceptance-state.json");
+  context.state = JSON.parse(await readFile(statePath, "utf8"));
+  assertWithin(context.scratch, context.state.project, "retained acceptance project");
+  const sessionId = context.state.sessionId;
+  assert(sessionId, "The completed real current session must be retained");
+  await prepareProject(context);
+  await selectAcceptanceSession(context, sessionId);
+  const original = await session(context, sessionId);
+  assert.equal(resolve(original.cwd).toLowerCase(), resolve(context.state.project).toLowerCase());
+  assert(
+    !original.worktreeCwd && !original.workspaceId && !original.busy,
+    "Recovery requires the same idle Current checkout session",
+  );
+  const users = original.blocks.filter((block) => block.role === "user" && !block.draft);
+  assert.equal(users.length, 2, "Recovery must retain exactly the original two provider turns");
+  for (const user of users) {
+    const boundary = original.blocks.indexOf(user);
+    const next = original.blocks.findIndex(
+      (block, index) => index > boundary && block.role === "user",
+    );
+    const tail = original.blocks.slice(boundary + 1, next < 0 ? undefined : next);
+    assert(
+      tail.some((block) => block.role === "assistant" && block.text.trim()),
+      "An original Codex turn did not complete",
+    );
+    assert(
+      !tail.some((block) => block.error || block.notice === "error"),
+      "An original Codex turn failed",
+    );
+  }
+  const paths = ["counter.txt", "preserve.txt", ".gitignore"];
+  const before = await Promise.all(paths.map((path) => readFile(join(original.cwd, path), "utf8")));
+  assert.equal(before[0].trim(), "2", "The original two completed file edits were not preserved");
+  await attachV94Note(context);
+  const recovery = await v94Turn(
+    context,
+    "Read the attachment. Reply ATTACHED. Do not edit files or commit.",
+    { preserveAttachmentTokens: true, expectedSessionId: sessionId },
+  );
+  assert.equal(
+    recovery.attachmentIds.length,
+    1,
+    "Recovery's real provider request omitted the attachment",
+  );
+  assert.deepEqual(
+    await Promise.all(paths.map((path) => readFile(join(original.cwd, path), "utf8"))),
+    before,
+    "The attachment setup turn changed files",
+  );
+  const originals = users.map((user) => ({
+    sessionId,
+    userBlockId: user.id,
+    prompt: user.text,
+    cwd: original.cwd,
+    attachmentIds: user.attachments?.map((file) => file.id) ?? [],
+  }));
+  context.state.v94Current = [...originals, recovery];
+  context.state.v94CurrentSetupRecovery = {
+    reason:
+      "Runner fill replaced the dropped attachment token; Composer correctly removed the attachment. Original two completed turns retained; one no-edit attached setup turn added.",
+    originalUserBlockIds: users.map((user) => user.id),
+    recoveryUserBlockId: recovery.userBlockId,
+  };
+  await writeFile(statePath, `${JSON.stringify(context.state, null, 2)}\n`);
+  const result = {
+    setupRecovery: context.state.v94CurrentSetupRecovery,
+    turns: context.state.v94Current,
+    filesUnchanged: paths,
+    screenshots: await context.capture("v94-01-attachment-setup-recovery"),
+  };
+  await writeFile(
+    join(context.output, "attachment-setup-recovery.json"),
+    `${JSON.stringify(result, null, 2)}\n`,
+  );
+  return result;
 }
 
 async function v94Worktree(context) {
@@ -2637,7 +2765,7 @@ async function v94Edit(context, turn, mode) {
 
 async function v94Keep(context) {
   assert(context.state.v94Current, "Run scenario 1 before scenario 3");
-  const turn = context.state.v94Current[1];
+  const turn = context.state.v94Current.at(-1);
   const paths = ["counter.txt", "preserve.txt", ".gitignore"];
   const before = await Promise.all(paths.map((path) => readFile(join(turn.cwd, path), "utf8")));
   const screenshots = await v94Edit(context, turn, "keep");
