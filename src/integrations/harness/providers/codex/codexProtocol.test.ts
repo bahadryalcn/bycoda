@@ -616,6 +616,66 @@ describe("mapCodexNotification", () => {
     });
   });
 
+  it("retains full provider evidence for DeleteFile then AddFile notifications", () => {
+    const events = [
+      { id: "delete-counter", kind: { type: "delete" }, diff: "0\n" },
+      { id: "add-counter", kind: { type: "add" }, diff: "1\n" },
+    ].flatMap(
+      ({ id, kind, diff }) =>
+        mapCodexNotification("item/completed", {
+          item: {
+            id,
+            type: "fileChange",
+            status: "completed",
+            changes: [{ path: "counter.txt", kind, diff }],
+          },
+        }).events,
+    );
+    expect(events).toMatchObject([
+      {
+        type: "tool.updated",
+        callId: "delete-counter",
+        status: "completed",
+        fileChanges: [{ path: "counter.txt", kind: "delete", contents: "0\n" }],
+      },
+      {
+        type: "tool.updated",
+        callId: "add-counter",
+        status: "completed",
+        fileChanges: [{ path: "counter.txt", kind: "add", contents: "1\n" }],
+      },
+    ]);
+  });
+
+  it("preserves empty file contents and unified patches while marking incomplete post-write evidence", () => {
+    const changes = [
+      { path: "empty.txt", kind: { type: "add" }, diff: "" },
+      { path: "spaces.txt", kind: "delete", diff: " \t\n" },
+      { path: "updated.txt", kind: { type: "update" }, diff: "@@ -1 +1 @@\n-old\n+new\n" },
+      { path: "unavailable.txt", kind: { type: "update" } },
+    ];
+    expect(
+      mapCodexNotification("item/started", { item: { id: "proof", type: "fileChange", changes } })
+        .events[0],
+    ).toMatchObject({
+      fileChanges: [
+        { path: "empty.txt", kind: "add", contents: "" },
+        { path: "spaces.txt", kind: "delete", contents: " \t\n" },
+        { path: "updated.txt", kind: "update", contents: changes[2].diff },
+      ],
+    });
+    expect(
+      mapCodexNotification("item/started", { item: { id: "pending", type: "fileChange" } })
+        .events[0],
+    ).toHaveProperty("fileChanges", []);
+    expect(
+      mapCodexNotification("item/fileChange/patchUpdated", {
+        itemId: "pending",
+        diff: "patch without typed changes",
+      }).events[0],
+    ).toHaveProperty("fileChanges", []);
+  });
+
   it("retains MCP text results for successful tool inspection", () => {
     const mapped = mapCodexNotification("item/completed", {
       item: {

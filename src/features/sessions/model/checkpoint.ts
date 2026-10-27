@@ -1,5 +1,6 @@
 import { invokeWorkspace } from "../../../platform/tauri/fs";
 import { remoteSessionFor } from "../../connections/model/connections";
+import type { HarnessFileChange } from "../../../integrations/harness/core/types";
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   if (
@@ -151,6 +152,19 @@ export function captureSessionCheckpoint(
       cwd,
       paths,
     }),
+  );
+}
+
+/** Record successful post-write provider evidence without sampling a late baseline. */
+export function captureSessionFileChanges(
+  sessionId: string,
+  cwd: string,
+  callId: string,
+  changes: HarnessFileChange[],
+): Promise<void> {
+  if (changes.length === 0) return Promise.resolve();
+  return enqueueCheckpoint(sessionId, () =>
+    invoke<void>("session_checkpoint_file_changes", { sessionId, cwd, callId, changes }),
   );
 }
 

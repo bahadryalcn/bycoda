@@ -17,6 +17,14 @@ import type {
   UserQuestionReply,
 } from "../../../features/sessions/model/userQuestion";
 
+/** Provider-supplied post-write evidence, independent of display previews. */
+export type HarnessFileChange = {
+  path: string;
+  kind: "add" | "delete" | "update";
+  /** Full file text for add/delete; the provider's unified patch for update. */
+  contents: string;
+};
+
 export type HarnessEvent =
   | { type: "session.started" }
   | { type: "session.ended"; code?: number | null }
@@ -76,6 +84,8 @@ export type HarnessEvent =
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
+      /** Presence, even empty, identifies post-write file notifications. */
+      fileChanges?: HarnessFileChange[];
     }
   | {
       type: "tool.updated";
@@ -89,6 +99,8 @@ export type HarnessEvent =
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
+      /** Presence, even empty, identifies post-write file notifications. */
+      fileChanges?: HarnessFileChange[];
     }
   /** Something a subagent did, mirrored onto its parent Agent tool call. */
   | {

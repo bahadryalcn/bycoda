@@ -1,7 +1,12 @@
 import { invalidateProjectFiles } from "../../../features/files/model/fileIndex";
 import { notifyDirsChanged } from "../../../features/files/model/fileTree";
 import { invalidateWatchedFiles, nudgeWatchedFiles } from "../../../features/files/model/fileWatch";
-import { captureSessionCheckpoint, notifyReviewChanged, prepareSessionCheckpoint } from "../../../features/sessions/model/checkpoint";
+import {
+  captureSessionCheckpoint,
+  captureSessionFileChanges,
+  notifyReviewChanged,
+  prepareSessionCheckpoint,
+} from "../../../features/sessions/model/checkpoint";
 import { type HarnessEvent } from "../../../integrations/harness";
 import { isEditTool } from "../../../integrations/harness/core/preview";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
@@ -13,6 +18,20 @@ const preparedCalls = new Set<string>();
 
 export function trackSessionEdits(sessionId: string, cwd: string, event: HarnessEvent) {
   if (event.type !== "tool.started" && event.type !== "tool.updated") return;
+  if (cwd === "~") return;
+  if (event.fileChanges !== undefined) {
+    // Codex fileChange notifications arrive after disk writes. Their provider
+    // evidence, including DeleteFile then AddFile, owns the before/after chain.
+    // Empty or incomplete evidence must never become a late disk snapshot.
+    if (
+      event.type === "tool.updated" &&
+      (event.status === "completed" || event.status === "success")
+    )
+      void captureSessionFileChanges(sessionId, cwd, event.callId, event.fileChanges)
+        .catch((error) => console.warn("App operation failed", error))
+        .then(() => notifyReviewChanged(sessionId));
+    return;
+  }
   if (!isEditTool(event.kind, event.title, event.preview)) return;
   const paths = [
     ...(event.paths ?? []),

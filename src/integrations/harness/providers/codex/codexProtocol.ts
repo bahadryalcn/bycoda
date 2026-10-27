@@ -19,7 +19,7 @@ import { normalizeTaskListStatus } from "../../../../features/sessions/model/tas
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";
 import { formatShellIntent, inferShellIntent } from "../../core/shellIntent";
 import { streamTextDelta } from "../../core/streamText";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessFileChange } from "../../core/types";
 import { dollarTokenAt } from "../../../../features/skills/model/slashCommands";
 import { retainToolInspection } from "../../../../features/sessions/model/toolInspection";
 import { codexStructuredResultText } from "./codexStructuredResult";
@@ -1262,6 +1262,21 @@ function collabAgentFailureDetail(item: Record<string, unknown>): string | undef
   return stringField(item, "status") === "failed" ? "Subagent operation failed." : undefined;
 }
 
+function fileChangeEvidence(changes: unknown[]): HarnessFileChange[] {
+  return changes.flatMap((change) => {
+    const row = asRecord(change);
+    const path = stringField(row, "path");
+    const kind = typeof row?.kind === "string" ? row.kind : asRecord(row?.kind)?.type;
+    if (
+      !path ||
+      (kind !== "add" && kind !== "delete" && kind !== "update") ||
+      typeof row?.diff !== "string"
+    )
+      return [];
+    return [{ path, kind, contents: row.diff }];
+  });
+}
+
 function mapFileChangeItem(
   item: Record<string, unknown>,
   callId: string,
@@ -1291,6 +1306,7 @@ function mapFileChangeItem(
       kind: "edit",
       status,
       preview,
+      fileChanges: fileChangeEvidence(changes),
       ...(paths.length ? { paths } : {}),
     };
   }
@@ -1301,6 +1317,7 @@ function mapFileChangeItem(
     kind: "edit",
     status,
     preview,
+    fileChanges: fileChangeEvidence(changes),
     ...(paths.length ? { paths } : {}),
   };
 }
@@ -1332,6 +1349,7 @@ function mapFileChangePatch(rec: Record<string, unknown>): MappedCodexNotificati
         kind: "edit",
         status: "in_progress",
         preview,
+        fileChanges: fileChangeEvidence(changes),
         ...(paths.length ? { paths } : {}),
       },
     ],

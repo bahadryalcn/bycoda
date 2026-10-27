@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   invalidateWatchedFiles: vi.fn(),
   prepare: vi.fn(async () => {}),
   capture: vi.fn(async () => {}),
+  fileChanges: vi.fn(async () => {}),
   notifyReviewChanged: vi.fn(),
 }));
 vi.mock("../../../platform/tauri/fs", () => ({ notifyGitChanged: mocks.notifyGitChanged }));
@@ -24,10 +25,12 @@ vi.mock("../../../features/files/model/fileWatch", () => ({
 vi.mock("../../../features/sessions/model/checkpoint", () => ({
   prepareSessionCheckpoint: mocks.prepare,
   captureSessionCheckpoint: mocks.capture,
+  captureSessionFileChanges: mocks.fileChanges,
   notifyReviewChanged: mocks.notifyReviewChanged,
 }));
 import { notifyFinishedWorkspace, nudgeOpenEditors, trackSessionEdits } from "./workspaceNotify";
 import type { HarnessEvent } from "../../../integrations/harness";
+import { mapCodexNotification } from "../../../integrations/harness/providers/codex/codexProtocol";
 
 const defer = (callback: () => void, delay: number) => void setTimeout(callback, delay);
 const shell = (callId: string): HarnessEvent =>
@@ -75,4 +78,44 @@ it("takes one pre-edit checkpoint per streaming edit call", () => {
   // The same call id streaming again after completion is a new edit.
   trackSessionEdits("s", "/repo", edit("in_progress"));
   expect(mocks.prepare).toHaveBeenCalledTimes(2);
+});
+
+it("records completed Codex DeleteFile/AddFile proof without sampling the post-write disk", () => {
+  for (const { id, kind, diff } of [
+    { id: "delete", kind: "delete", diff: "0\n" },
+    { id: "add", kind: "add", diff: "1\n" },
+  ]) {
+    for (const method of ["item/started", "item/completed"]) {
+      const mapped = mapCodexNotification(method, {
+        item: {
+          id,
+          type: "fileChange",
+          status: method === "item/completed" ? "completed" : "inProgress",
+          changes: [{ path: "counter.txt", kind: { type: kind }, diff }],
+        },
+      });
+      for (const event of mapped.events) trackSessionEdits("proof-session", "/repo", event);
+    }
+  }
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.capture).not.toHaveBeenCalled();
+  expect(mocks.fileChanges.mock.calls).toEqual([
+    [
+      "proof-session",
+      "/repo",
+      "delete",
+      [{ path: "counter.txt", kind: "delete", contents: "0\n" }],
+    ],
+    ["proof-session", "/repo", "add", [{ path: "counter.txt", kind: "add", contents: "1\n" }]],
+  ]);
+});
+
+it("does not capture incomplete, failed or in-progress post-write file notifications", () => {
+  for (const status of ["in_progress", "failed", "cancelled"]) {
+    const event = edit(status);
+    trackSessionEdits("incomplete-proof", "/repo", { ...event, fileChanges: [] } as HarnessEvent);
+  }
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  expect(mocks.capture).not.toHaveBeenCalled();
+  expect(mocks.fileChanges).not.toHaveBeenCalled();
 });
