@@ -271,11 +271,13 @@ async function waitUntil(check, message, timeout = 30000) {
 }
 
 export async function prepareProject(context) {
-  if (context.state.project) return context.state.project;
-  const project = join(
-    context.scratch,
-    `provider-repo-${context.run.runId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 40)}`,
-  );
+  if (context.preparedProject && context.state.project) return context.state.project;
+  const project =
+    context.state.project ??
+    join(
+      context.scratch,
+      `provider-repo-${context.run.runId.replace(/[^a-zA-Z0-9-]/g, "").slice(0, 40)}`,
+    );
   if (!existsSync(project)) {
     await mkdir(project, { recursive: true });
     await command("git", ["init", "-b", "main"], project);
@@ -298,17 +300,23 @@ export async function prepareProject(context) {
     recents.rememberProject(cwd);
     recents.notifyProjectPathsChanged();
   }, project);
-  await context.page.reload({ waitUntil: "domcontentloaded" });
   await closeRecoveredSessions(context);
-  await context.page
+  const projectButton = context.page
     .getByRole("button", { name: basename(project), exact: true })
-    .first()
-    .click();
+    .first();
+  if (!(await projectButton.isVisible())) {
+    await projectButton.waitFor({ state: "visible", timeout: 5000 }).catch(async () => {
+      await context.page.reload({ waitUntil: "domcontentloaded" });
+      await closeRecoveredSessions(context);
+    });
+  }
+  await projectButton.click();
   await context.page.evaluate(async (cwd) => {
     await (
       await import("/src/features/workspaces/model/workspaceClient.ts")
     ).getWorkspaceCapabilities({ cwd });
   }, project);
+  context.preparedProject = true;
   return project;
 }
 
@@ -336,21 +344,36 @@ export async function selectCodex(context, model = context.options.model) {
 export async function newSession(context, mode = "current", model = context.options.model) {
   await prepareProject(context);
   await closeRecoveredSessions(context);
+  await context.page.keyboard.press("Escape");
   await click(context, "New session");
-  if (mode) {
+  try {
     const trigger = context.page
       .getByRole("button", { name: /^Workspace (Current checkout|New worktree)$/ })
       .first();
-    await trigger.click();
-    await context.page
-      .getByRole("button", {
-        name: await label(context.page, mode === "worktree" ? "New worktree" : "Current checkout"),
-        exact: true,
-      })
-      .last()
-      .click();
+    await waitUntil(
+      async () => (await trigger.isVisible()) && (await trigger.isEnabled()),
+      "New-session workspace controls did not finish loading",
+      45000,
+    );
+    if (mode) {
+      const selectedLabel = mode === "worktree" ? "New worktree" : "Current checkout";
+      const expected = `Workspace ${selectedLabel}`;
+      if ((await trigger.getAttribute("aria-label")) !== expected) {
+        await trigger.click();
+        await context.page
+          .getByRole("dialog", { name: "Workspace", exact: true })
+          .getByRole("button", { name: selectedLabel, exact: true })
+          .click();
+      }
+      await context.page
+        .getByRole("button", { name: expected, exact: true })
+        .waitFor({ state: "visible", timeout: 45000 });
+    }
+    await selectCodex(context, model);
+  } catch (error) {
+    await context.page.keyboard.press("Escape").catch(() => {});
+    throw error;
   }
-  await selectCodex(context, model);
 }
 
 export async function sendPrompt(context, prompt, { allowFailure = false, wait = true } = {}) {
@@ -766,6 +789,7 @@ async function scenario3(context) {
   );
   context.browser = replacement.browser;
   context.page = replacement.page;
+  context.preparedProject = false;
   await closeRecoveredSessions(context);
   await waitUntil(
     async () =>
@@ -898,6 +922,7 @@ async function scenario5(context) {
       await window.__TAURI_INTERNALS__.invoke("local_host_connect");
     });
     await context.page.reload({ waitUntil: "domcontentloaded" });
+    context.preparedProject = false;
     await closeRecoveredSessions(context);
   };
   try {
