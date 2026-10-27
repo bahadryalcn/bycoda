@@ -1017,14 +1017,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const sessionBusy = !!session.busy;
   const hasPendingQuestion = !!session.pendingQuestion;
   const dockAtEnd = !showJumpToBottom;
-  const canRewindMessage = useStableCallback(
-    (blockId: string) =>
-      !!onRewindMessage &&
-      !managed &&
-      !session.inboxAsk &&
-      !session.worktreeRemoved &&
-      !sendBlockedReason &&
-      canRewindConversation(session, blockId),
+  const rewindableMessageIds = useStableValue(
+    useMemo(() => {
+      if (
+        !onRewindMessage ||
+        managed ||
+        stableSession.inboxAsk ||
+        stableSession.worktreeRemoved ||
+        sendBlockedReason
+      )
+        return [];
+      const messages = stableSession.blocks.filter(
+        (block) => block.role === "user" && !block.draft && !block.internal,
+      );
+      // The conversation guards are shared by every accepted user message.
+      if (!messages.length || !canRewindConversation(stableSession, messages[0].id)) return [];
+      return messages.map((block) => block.id);
+    }, [stableSession, onRewindMessage, managed, sendBlockedReason]),
+    shallowArrayEqual,
+  );
+  // Render predicates must change identity when their result changes so memoized
+  // historical turns update after an async permission/preparation gate clears.
+  const canRewindMessage = useCallback(
+    (blockId: string) => rewindableMessageIds.includes(blockId),
+    [rewindableMessageIds],
   );
   const rewindMessage = useStableCallback((block: Block, action: "return" | "edit") =>
     requestMessageRewind(block, action),

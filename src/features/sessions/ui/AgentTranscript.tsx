@@ -758,7 +758,6 @@ function AgentTranscriptComponent({
   const stableSecondOpinion = useStableCallback(onSecondOpinion);
   const stableHandoff = useStableCallback(onHandoff);
   const stableEditLastTurn = useStableCallback(onEditLastTurn);
-  const stableCanRewindMessage = useStableCallback(canRewindMessage);
   const stableRewindMessage = useStableCallback(onRewindMessage);
   const turnsRef = useRef(turns);
   turnsRef.current = turns;
@@ -1188,7 +1187,7 @@ function AgentTranscriptComponent({
                 onSecondOpinion={stableSecondOpinion}
                 onHandoff={stableHandoff}
                 onEditLastTurn={stableEditLastTurn}
-                canRewindMessage={stableCanRewindMessage}
+                canRewindMessage={canRewindMessage}
                 onRewindMessage={stableRewindMessage}
               />
             );
