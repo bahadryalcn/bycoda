@@ -267,7 +267,7 @@ export function parseHostGoal(input: unknown): HostGoalInput {
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
-    ...(v.isolate === false ? { isolate: false } : {}),
+    ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
     ...(Object.keys(workspaces).length ? { workspaces } : {}),
     ...(v.maxRunningTasks !== undefined ? { maxRunningTasks: Number(v.maxRunningTasks) } : {}),
     ...(v.manualStart === true ? { manualStart: true } : {}),

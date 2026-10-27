@@ -146,8 +146,8 @@ function plannerPrompt(
     "",
     `You are in ${lead.name}. Read the other projects at their paths as you need to.`,
     "",
-    goal.isolate === false
-      ? `Break the job into 1 to ${MAX_PLAN_TASKS} tasks. Each task is carried out by one agent directly in the selected checkout, preserving existing uncommitted changes. Independent tasks may run concurrently in the same checkout, within the configured limits. They must own separate scopes, preserve other sessions' changes, and leave all work uncommitted for the owner. No host commit or merge is performed. Make every prompt self-contained, use paths relative to the project root, and do not instruct agents to create worktrees or switch branches. When a task needs another task's completed result, list its key in dependsOn; it starts after that task passes its configured checks. Tasks in separate checkouts may run concurrently.`
+    goal.isolate !== true
+      ? `Break the job into 1 to ${MAX_PLAN_TASKS} tasks. Each task follows its explicit workspace choice or project workspace policy, using the current checkout by default and preserving existing uncommitted changes. Independent tasks may run concurrently in the same checkout, within the configured limits. Tasks in a shared checkout must own separate scopes, preserve other sessions' changes, and leave all work uncommitted for the owner. Managed worktree tasks commit scoped changes only on their assigned branch. No host commit or merge is performed. Make every prompt self-contained, use paths relative to the project root, and do not instruct agents to create worktrees or switch branches. When a task needs another task's completed result, list its key in dependsOn; it starts after that task passes its configured checks. Tasks in separate checkouts may run concurrently.`
       : `Break the job into 1 to ${MAX_PLAN_TASKS} tasks. Each task is carried out by one agent that works only in its project, on a branch of its own that is merged once the task is approved. The agent sees nothing but its task's prompt, so make every prompt self-contained. Each agent starts in its own copy of its project, so in prompts refer to files by paths relative to the project root, never by the absolute paths above, and do not tell the agent which folder or branch to work in. When a task needs the merged result of another, list that task's key in its dependsOn; it then starts only after that task is merged. Leave out dependencies that are not needed, so independent tasks can run at the same time.`,
     ...(goal.feedback ? ["", "The owner's feedback on an earlier plan:", goal.feedback] : []),
     "",
@@ -594,6 +594,9 @@ export class HostGoals {
       this.engine,
       {
         projectId: goal.leadProjectId,
+        ...(goal.isolate !== undefined
+          ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
+          : {}),
         ...(projects.find((project) => project.lead)?.workingCwd
           ? { worktreeCwd: projects.find((project) => project.lead)!.workingCwd }
           : {}),
@@ -850,7 +853,7 @@ export class HostGoals {
           modelSettings: goal.modelSettings,
           runtimeMode: goal.runtimeMode,
           maxRunMinutes: goal.maxRunMinutes,
-          isolate: goal.isolate !== false,
+          ...(goal.isolate !== undefined ? { isolate: goal.isolate } : {}),
           ...(goal.workspaces?.[projectId] ? { workspace: goal.workspaces[projectId] } : {}),
           ...(goal.manualStart ? { status: "todo" } : {}),
           ...(command ? { verifyCommand: command } : {}),
@@ -1197,6 +1200,9 @@ export class HostGoals {
         {
           requestId: `goal-final:${requestId}`,
           projectId: goal.leadProjectId,
+          ...(goal.isolate !== undefined
+            ? { workspaceMode: goal.isolate ? ("worktree" as const) : ("current" as const) }
+            : {}),
           worktreeCwd: projects.find((project) => project.id === goal.leadProjectId)!.cwd,
           harness: goal.harness,
           providerAccountId: goal.providerAccountId,

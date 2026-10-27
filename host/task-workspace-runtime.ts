@@ -7,11 +7,15 @@ import type {
   WorkspaceRegistry,
   WorkspaceRemovalService,
   WorkspaceOwnerAuthorization,
+  WorkspacePolicyResolver,
 } from "./workspace-service-contracts";
+import { createWorkspacePolicyResolver } from "./workspace-policy";
+import type { HostStore } from "./store";
 import type { ManagedWorkspace, WorkspaceMutation } from "./workspace-contracts";
 
 /** Supplied by the execution host. Never construct a second registry in an orchestrator. */
 export interface TaskWorkspaceServices {
+  policy?: WorkspacePolicyResolver;
   registry: WorkspaceRegistry;
   activity: ExecutionActivityReservations;
   removal: WorkspaceRemovalService;
@@ -23,6 +27,21 @@ export interface TaskWorkspaceServices {
     request: WorkspaceMutation & { targetBranchRef: string; targetDirectory: string },
     owner: WorkspaceOwnerAuthorization,
   ): Promise<ManagedWorkspace>;
+}
+
+/** Explicit writer choices override stored project policy; omitted choices inherit it. */
+export async function writerWorkspaceMode(
+  store: HostStore,
+  services: { policy?: WorkspacePolicyResolver; environmentId: string } | undefined,
+  projectId: string,
+  isolate?: boolean,
+): Promise<"current" | "worktree"> {
+  if (isolate !== undefined) return isolate ? "worktree" : "current";
+  const resolved = await (services?.policy ?? createWorkspacePolicyResolver(store)).resolve({
+    projectId,
+    environmentId: services?.environmentId ?? store.environmentId,
+  });
+  return resolved.policy.defaultMode;
 }
 
 export interface TaskFinalizationPreview {

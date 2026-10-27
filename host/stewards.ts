@@ -21,9 +21,11 @@ import {
 } from "./sessionRuns";
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
+import { writerWorkspaceMode } from "./task-workspace-runtime";
 import type {
   ExecutionActivityReservations,
   WorkspaceRegistry,
+  WorkspacePolicyResolver,
   WorkspaceRemovalService,
 } from "./workspace-service-contracts";
 type ManagedStewardRun = NonNullable<HostSteward["run"]> & {
@@ -32,6 +34,7 @@ type ManagedStewardRun = NonNullable<HostSteward["run"]> & {
 };
 type HostSteward = StoredHostSteward & { deliveryApprovalRequired?: boolean };
 export interface StewardWorkspaceServices {
+  policy?: WorkspacePolicyResolver;
   registry: WorkspaceRegistry;
   activity: ExecutionActivityReservations;
   removal: WorkspaceRemovalService;
@@ -98,7 +101,7 @@ function stewardPrompt(
 }
 
 /** Runs each project's steward on its schedule: an agent that reads the
- * project in a throwaway checkout and proposes work as to-do items on the task
+ * project in its selected checkout and proposes work as to-do items on the task
  * board. Runs on this machine's own clock, with no desktop open. */
 export class HostStewards {
   private closing = false;
@@ -412,51 +415,65 @@ export class HostStewards {
         return;
       }
       const project = await this.store.project(steward.projectId);
-      let worktree: { path: string; branch: string; workspaceId: string; activityId?: string };
+      let worktree: { path: string; branch?: string; workspaceId?: string; activityId?: string } = {
+        path: project.cwd,
+      };
       try {
-        if (!this.workspaces)
-          throw new Error("Update the Host to enable managed steward workspaces.");
-        const ownerId = randomUUID();
-        const { workspace } = await this.workspaces.registry.prepare({
-          idempotencyKey: `steward:${ownerId}`,
-          projectId: steward.projectId,
-          environmentId: this.workspaces.environmentId,
-          owner: { kind: "stewardRun", id: ownerId },
-          slug: `steward-${project.name}`,
-          choice: { defaultMode: "worktree" },
-        });
-        if (
-          workspace.owner.kind !== "stewardRun" ||
-          workspace.owner.id !== ownerId ||
-          workspace.projectId !== steward.projectId ||
-          workspace.directoryState !== "present"
-        )
-          throw new Error("The managed workspace does not belong to this steward run.");
-        worktree = { path: workspace.path, branch: workspace.branchRef, workspaceId: workspace.id };
-        await this.write({
-          ...steward,
-          run: {
-            startedAt: now,
-            worktreeCwd: workspace.path,
+        const mode = await writerWorkspaceMode(
+          this.store,
+          this.workspaces,
+          steward.projectId,
+          steward.isolate,
+        );
+        if (mode === "worktree") {
+          if (!this.workspaces)
+            throw new Error("Update the Host to enable managed steward workspaces.");
+          const ownerId = randomUUID();
+          const { workspace } = await this.workspaces.registry.prepare({
+            idempotencyKey: `steward:${ownerId}`,
+            projectId: steward.projectId,
+            environmentId: this.workspaces.environmentId,
+            owner: { kind: "stewardRun", id: ownerId },
+            slug: `steward-${project.name}`,
+            choice: { defaultMode: "worktree" },
+          });
+          if (
+            workspace.owner.kind !== "stewardRun" ||
+            workspace.owner.id !== ownerId ||
+            workspace.projectId !== steward.projectId ||
+            workspace.directoryState !== "present"
+          )
+            throw new Error("The managed workspace does not belong to this steward run.");
+          worktree = {
+            path: workspace.path,
             branch: workspace.branchRef,
-            ...{ workspaceId: workspace.id },
-          },
-        });
-        const activity = await this.workspaces.activity.start({
-          workspaceId: workspace.id,
-          kind: "provider",
-          ownerId,
-        });
-        worktree.activityId = activity.id;
-        await this.write({
-          ...steward,
-          run: {
-            startedAt: now,
-            worktreeCwd: workspace.path,
-            branch: workspace.branchRef,
-            ...{ workspaceId: workspace.id, activityId: activity.id },
-          },
-        });
+            workspaceId: workspace.id,
+          };
+          await this.write({
+            ...steward,
+            run: {
+              startedAt: now,
+              worktreeCwd: workspace.path,
+              branch: workspace.branchRef,
+              ...{ workspaceId: workspace.id },
+            },
+          });
+          const activity = await this.workspaces.activity.start({
+            workspaceId: workspace.id,
+            kind: "provider",
+            ownerId,
+          });
+          worktree.activityId = activity.id;
+          await this.write({
+            ...steward,
+            run: {
+              startedAt: now,
+              worktreeCwd: workspace.path,
+              branch: workspace.branchRef,
+              ...{ workspaceId: workspace.id, activityId: activity.id },
+            },
+          });
+        }
       } catch (error) {
         await this.finish(
           steward,
@@ -473,7 +490,12 @@ export class HostStewards {
         workspaceId: worktree.workspaceId,
         activityId: worktree.activityId,
       };
-      const prompt = stewardPrompt(steward, project, await this.tasks.list(), worktree.path);
+      const prompt = stewardPrompt(
+        steward,
+        project,
+        await this.tasks.list(),
+        worktree.workspaceId ? worktree.path : undefined,
+      );
       if (this.closing) {
         await this.removeWorktree(steward.projectId, prepared);
         await this.finish(steward, "cancelled", "Host is stopping.", now);
@@ -490,8 +512,9 @@ export class HostStewards {
           runtimeMode: steward.runtimeMode,
           title: `Steward: ${project.name}`.slice(0, 200),
           prompt,
-          worktreeCwd: worktree.path,
-          workspaceId: worktree.workspaceId,
+          ...(worktree.workspaceId
+            ? { worktreeCwd: worktree.path, workspaceId: worktree.workspaceId }
+            : { workspaceMode: "current" as const }),
         },
         () => !this.closing,
       );
@@ -609,7 +632,7 @@ export class HostStewards {
         modelSettings: latest.modelSettings,
         runtimeMode: latest.runtimeMode,
         maxRunMinutes: 0,
-        isolate: true,
+        ...(latest.isolate !== undefined ? { isolate: latest.isolate } : {}),
         review: true,
         // Persistent preferences cannot authorize a new delivery.
         ...(latest.deliveryApprovalRequired ? { deliveryApprovalRequired: true } : {}),

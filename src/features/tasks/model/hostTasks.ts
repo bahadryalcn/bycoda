@@ -505,7 +505,11 @@ export function parseHostTask(input: unknown): HostTaskInput {
     modelSettings: settings as Record<string, string>,
     runtimeMode: v.runtimeMode as RuntimeMode,
     maxRunMinutes: Number(limit),
-    isolate: v.crewDefinitionId ? false : v.isolate !== false,
+    ...(v.crewDefinitionId
+      ? { isolate: false }
+      : v.isolate === undefined
+        ? {}
+        : { isolate: v.isolate as boolean }),
     ...(workspace ? { workspace } : {}),
     ...(v.position !== undefined ? { position: Number(v.position) } : {}),
     ...(check.trim() ? { verifyCommand: check.trim() } : {}),

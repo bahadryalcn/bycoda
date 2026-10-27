@@ -2,7 +2,10 @@ import type { HostStore } from "./store";
 import type { HostGoals } from "./goals";
 import type { HostTasks } from "./tasks";
 import type { RuntimeLogPrincipal } from "./runtime-log-tools";
-import { assertConversationWorkspaceIntent } from "./conversation-task-tools";
+import {
+  assertConversationWorkspaceIntent,
+  TASK_CONFIGURATION_FIELDS,
+} from "./conversation-task-tools";
 import { MAX_RUNNING_TASKS_LIMIT } from "../src/features/tasks/model/hostSettings";
 
 const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
@@ -18,6 +21,7 @@ export const GOAL_WRITE_TOOLS = {
   "goals.create": object(
     {
       goalId: id,
+      isolate: TASK_CONFIGURATION_FIELDS.isolate,
       title: { type: "string", minLength: 1, maxLength: 200 },
       prompt: { type: "string", minLength: 1, maxLength: 12000 },
     },
@@ -54,7 +58,7 @@ export const isGoalWriteTool = (action: string): action is GoalWriteTool =>
   Object.hasOwn(GOAL_WRITE_TOOLS, action);
 export const describeGoalWriteTool = (action: string): string | undefined =>
   isGoalWriteTool(action)
-    ? "Create a goal plan in this project using the calling conversation's provider, model and runtime permissions; the owner must approve its plan and start its tasks. Writers receive managed worktrees; no automatic integration, push, PR or continuous execution. Mutations require singleton-project scope and expectedUpdatedAt; a goal's planner, workers and reviewers cannot change their own goal. Replan starts a new planner; update changes only concurrency/run limits on a goal whose safe execution identity matches the caller. Cancel stops its planner/tasks while retaining branches. Delete removes only a terminal goal or a never-executed awaiting/blocked plan, with no active planner; tasks, branches and artifacts stay. Creation rejects reused goal IDs: read goals.get before retrying. This never approves, merges or discards work."
+    ? "Create a goal plan in this project using the calling conversation's provider, model and runtime permissions; the owner must approve its plan and start its tasks. Writers follow project workspace policy and use the current checkout by default; no automatic integration, push, PR or continuous execution. Mutations require singleton-project scope and expectedUpdatedAt; a goal's planner, workers and reviewers cannot change their own goal. Replan starts a new planner; update changes only concurrency/run limits on a goal whose safe execution identity matches the caller. Cancel stops its planner/tasks while retaining branches. Delete removes only a terminal goal or a never-executed awaiting/blocked plan, with no active planner; tasks, branches and artifacts stay. Creation rejects reused goal IDs: read goals.get before retrying. This never approves, merges or discards work."
     : undefined;
 
 export class ConversationGoalTools {
@@ -98,7 +102,7 @@ export class ConversationGoalTools {
         modelSettings: { ...caller.session.modelSettings },
         runtimeMode: caller.session.runtimeMode,
         maxRunMinutes: 0,
-        isolate: true,
+        ...(typeof input.isolate === "boolean" ? { isolate: input.isolate } : {}),
         autoMerge: false,
         continueUntilDone: false,
         approvePlan: true,
@@ -135,7 +139,6 @@ export class ConversationGoalTools {
       const settings = caller.session.modelSettings ?? {};
       const goalSettings = goal.modelSettings ?? {};
       if (
-        goal.isolate === false ||
         goal.autoMerge ||
         !goal.approvePlan ||
         !goal.manualStart ||

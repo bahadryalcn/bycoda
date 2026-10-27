@@ -21,6 +21,8 @@ export type HostAutomationInput = AutomationSchedule & {
   maxRunMinutes: number;
   maxRunsPerDay: number;
   enabled: boolean;
+  /** Omitted inherits the execution Host project policy. */
+  isolate?: boolean;
 };
 
 export type HostAutomation = HostAutomationInput & {
@@ -93,7 +95,10 @@ export function parseHostAutomation(input: unknown): HostAutomationInput {
     Object.values(settings as object).some((value) => typeof value !== "string")
   )
     throw new Error("Invalid model settings");
+  if (v.isolate !== undefined && typeof v.isolate !== "boolean")
+    throw new Error("Invalid automation options");
   return {
+    ...(typeof v.isolate === "boolean" ? { isolate: v.isolate } : {}),
     id: v.id,
     name: v.name.trim(),
     prompt: v.prompt,

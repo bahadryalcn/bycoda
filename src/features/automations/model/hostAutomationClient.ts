@@ -150,7 +150,9 @@ export function automationFromHost(
     model: host.model,
     modelSettings: host.modelSettings,
     cwd,
-    workspaceMode: "current",
+    ...(typeof host.isolate === "boolean"
+      ? { workspaceMode: host.isolate ? ("worktree" as const) : ("current" as const) }
+      : {}),
     reuseSession: false,
     runtimeMode: host.runtimeMode,
     triggerKind: "time",
@@ -212,6 +214,11 @@ export function hostAutomationFromDraft(
     minute: trigger.minute,
     time: trigger.time,
     dayOfWeek: trigger.dayOfWeek,
+    ...(draft.workspaceMode === "worktree"
+      ? { isolate: true }
+      : draft.workspaceMode === "current"
+        ? { isolate: false }
+        : {}),
     maxRunMinutes: draft.maxRunMinutes,
     maxRunsPerDay: draft.maxRunsPerDay,
     enabled: draft.enabled,

@@ -414,17 +414,29 @@ export async function createHostServer(
     return value;
   };
   const automations =
-    automationsOverride ?? new HostAutomations(engine.store, engine, undefined, managed.services);
+    automationsOverride ??
+    new HostAutomations(engine.store, engine, undefined, {
+      ...managed.services,
+      policy: managed.policy,
+    });
   await automations.ready;
   const tasks =
-    tasksOverride ?? new HostTasks(engine.store, engine, undefined, undefined, managed.services);
+    tasksOverride ??
+    new HostTasks(engine.store, engine, undefined, undefined, {
+      ...managed.services,
+      policy: managed.policy,
+    });
   await tasks.ready;
   const sprints = new HostSprints(engine.store);
   await sprints.ready;
   const goals = goalsOverride ?? new HostGoals(engine.store, engine, tasks);
   await goals.ready;
   const stewards =
-    stewardsOverride ?? new HostStewards(engine.store, engine, tasks, undefined, managed.services);
+    stewardsOverride ??
+    new HostStewards(engine.store, engine, tasks, undefined, {
+      ...managed.services,
+      policy: managed.policy,
+    });
   await stewards.ready;
   const featureDirectory = dirname(engine.store.attachmentDir);
   const deviceHost = new DeviceHost(featureDirectory);

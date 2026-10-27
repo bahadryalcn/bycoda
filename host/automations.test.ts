@@ -131,6 +131,7 @@ async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) 
     model: "claude:test",
     modelSettings: {},
     runtimeMode: "auto",
+    isolate: true,
     scheduleKind: "daily",
     minute: 0,
     time: "09:00",
@@ -158,6 +159,39 @@ async function setup(start = at("2026-10-05T08:00:00"), linkedAncestor = false) 
   };
 }
 describe("host automations", () => {
+  it("defaults writing runs to the current checkout without managed admission", async () => {
+    const f = await setup();
+    await f.automations.save(f.input({ isolate: undefined }));
+    const run = await f.automations.runNow("nightly");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1));
+    expect(run.status).toBe("running");
+    expect(f.turns[0].input.cwd).toBe(f.directory);
+    expect(f.turns[0].input.text).toContain("leave your changes uncommitted");
+    expect(f.workspaces.prepare).not.toHaveBeenCalled();
+  });
+  it("inherits a project worktree policy when no run choice is supplied", async () => {
+    const f = await setup();
+    const { createWorkspacePolicyResolver } = await import("./workspace-policy");
+    const policy = createWorkspacePolicyResolver(f.store);
+    const projectId = String(f.input().projectId);
+    await policy.update(
+      {
+        projectId,
+        environmentId: f.workspaces.environmentId,
+        policy: { defaultMode: "worktree" },
+        expectedRevision: 0,
+        idempotencyKey: "automation-worktree",
+      },
+      { ownerId: "test", authorizationId: "test" },
+    );
+    f.workspaces.policy = policy;
+    await f.automations.save(f.input({ isolate: undefined }));
+    const run = await f.automations.runNow("nightly");
+    await vi.waitFor(() => expect(f.turns).toHaveLength(1), { timeout: 20000 });
+    expect(run.status).toBe("running");
+    expect(f.workspaces.prepare).toHaveBeenCalledOnce();
+    expect(f.turns[0].input.cwd).toBe([...f.workspaces.rows.values()][0].path);
+  });
   it("dispatches and finalizes a managed run beneath an aliased ancestor", async () => {
     const f = await setup(undefined, true);
     await f.automations.save(f.input());
