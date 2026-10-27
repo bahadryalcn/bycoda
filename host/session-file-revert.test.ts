@@ -57,6 +57,38 @@ async function fixture(gitRepo = true) {
   };
 }
 describe("session message file revert", () => {
+  it.each([false, true])(
+    "protects ignored first-Add overwrites and permits proven ignored Delete/Add (prior delete: %s)",
+    async (priorDelete) => {
+      const f = await fixture();
+      await f.write(".gitignore", "ignored.txt\n");
+      await f.write("ignored.txt", "peer bytes before turn\n");
+      await f.checkpoints.beginFilesTurn("s", f.cwd, "one");
+      await f.write("ignored.txt", "provider replacement\n");
+      await f.write("proven-new.txt", "new\n");
+      if (priorDelete)
+        await f.checkpoints.claimFilesProof("s", f.cwd, "one", "delete", [
+          { path: "ignored.txt", kind: "delete", contents: "peer bytes before turn\n" },
+        ]);
+      await f.checkpoints.claimFilesProof("s", f.cwd, "one", "add", [
+        { path: "ignored.txt", kind: "add", contents: "provider replacement\n" },
+        { path: "proven-new.txt", kind: "add", contents: "new\n" },
+      ]);
+      await f.checkpoints.finishFilesTurn("s", f.cwd, "one");
+      const plan = await f.checkpoints.filesRevertPlan("s", f.cwd, "one");
+      expect(plan.unavailable).toBeUndefined();
+      const ignored = plan.files.find((file) => file.path === "ignored.txt");
+      if (priorDelete) expect(ignored?.conflict).toBeUndefined();
+      else expect(ignored?.conflict).toMatch(/ignored.*unavailable/);
+      const result = await f.checkpoints.filesRevert("s", f.cwd, "one");
+      expect(result.reverted).toContain("proven-new.txt");
+      expect(result.skipped.map((file) => file.path)).toEqual(priorDelete ? [] : ["ignored.txt"]);
+      expect(await f.read("ignored.txt")).toBe(
+        priorDelete ? "peer bytes before turn\n" : "provider replacement\n",
+      );
+      await expect(f.read("proven-new.txt")).rejects.toMatchObject({ code: "ENOENT" });
+    },
+  );
   it.each(["baseline", "peer-before", "skipped"])(
     "skips an AddFile overwrite with unknown old contents (%s), while reverting proven new files",
     async (source) => {

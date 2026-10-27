@@ -485,6 +485,25 @@ export class SessionFileRevert {
           )
             unavailableBefore =
               "Pre-edit contents for overwritten provider AddFile are unavailable";
+          else if (!previous) {
+            // Git's baseline enumeration omits ignored files. AddFile may have
+            // overwritten one, so absence there cannot authorize deletion.
+            let knownNonIgnored = false;
+            try {
+              await execFileAsync("git", ["check-ignore", "-q", "--no-index", "--", path], {
+                cwd: active.cwd,
+                windowsHide: true,
+                encoding: "utf8",
+                maxBuffer: 4096,
+                timeout: 15_000,
+              });
+            } catch (error) {
+              knownNonIgnored = (error as { code?: number }).code === 1;
+            }
+            if (!knownNonIgnored)
+              unavailableBefore =
+                "Pre-edit contents for ignored or unverified provider AddFile are unavailable";
+          }
         } else if (change.kind === "delete") {
           before = textImage(change.contents, active.baseline.get(path)?.mode ?? 0o644);
           after = null;
