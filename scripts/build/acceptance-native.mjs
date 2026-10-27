@@ -1109,103 +1109,55 @@ export function assertRejectedNativeAdmission(error, request, expected) {
     assert.equal(request[key], expected[key], `Rejected native reservation has a different ${key}`);
 }
 
-async function nativeDirtyBufferOwner(context, path, current) {
-  const ownerId = `tools-acceptance-${crypto.randomUUID()}`;
-  let page;
-  const release = async () => {
+export async function nativeDirtyBufferOwner(context, path, current) {
+  assertWithin(context.scratch, path, "native dirty-buffer fixture");
+  assert.equal(resolve(current.cwd).toLowerCase(), resolve(context.state.project).toLowerCase());
+  const ownerId = `acceptance-editor-${crypto.randomUUID()}`;
+  const { DatabaseSync } = await import("node:sqlite");
+  const databasePath = join(context.run.desktopDataPath, "bycoda.db");
+  // This is explicitly synthetic DEV setup for a foreign editor writer. The
+  // real authenticated bridge aggregates every stored owner, including retained
+  // windows. A separate row cannot be overwritten by main's periodic report.
+  const publishMain = async (removeOwner = false) => {
+    const database = new DatabaseSync(databasePath);
+    let mainBuffers;
     try {
-      if (page && !page.isClosed())
-        await page.evaluate(() =>
-          window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers: [] }),
-        );
+      if (removeOwner)
+        database.prepare("DELETE FROM native_workspace_buffers WHERE owner_id=?").run(ownerId);
+      const main = database
+        .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
+        .get();
+      assert(main, "The existing main native buffer snapshot is absent");
+      mainBuffers = JSON.parse(main.snapshot_json);
     } finally {
-      try {
-        await context.page.evaluate(async (label) => {
-          const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-          const window = await WebviewWindow.getByLabel(label);
-          if (window) await window.destroy();
-        }, ownerId);
-      } finally {
-        // Remove only this synthetic owner's DEV row after clearing/closing it.
-        // Otherwise a closed window's old clean report becomes unknown after45s.
-        const { DatabaseSync } = await import("node:sqlite");
-        const database = new DatabaseSync(join(context.run.desktopDataPath, "bycoda.db"));
-        let mainBuffers;
-        try {
-          database.prepare("DELETE FROM native_workspace_buffers WHERE owner_id=?").run(ownerId);
-          const main = database
-            .prepare("SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='main'")
-            .get();
-          mainBuffers = main ? JSON.parse(main.snapshot_json) : [];
-        } finally {
-          database.close();
-        }
-        // Preserve the latest main snapshot, and acknowledge the complete owner list.
-        await context.page.evaluate(
-          (buffers) => window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
-          mainBuffers,
-        );
-      }
+      database.close();
     }
-  };
-  try {
+    // Preserve the latest main buffers while acknowledging the complete owner list.
     await context.page.evaluate(
-      async ({ ownerId, current }) => {
-        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-        // The existing hostTools role never loads App/useManagedWorkspaceBuffers.
-        // Its own authenticated dirty row cannot be overwritten by main's clean heartbeat.
-        const payload = {
-          cwd: current.worktreeCwd,
-          sessionId: current.id,
-          title: "Acceptance buffer owner",
-          onlyTab: "logs",
-        };
-        const view = new WebviewWindow(ownerId, {
-          url: `index.html?acceptanceBufferOwner=${encodeURIComponent(ownerId)}&hostTools=${encodeURIComponent(JSON.stringify(payload))}`,
-          title: "bycoda isolated acceptance buffer owner",
-          visible: false,
-          focus: false,
-          skipTaskbar: true,
-          width: 640,
-          height: 480,
-        });
-        await new Promise((resolve, reject) => {
-          void view.once("tauri://created", resolve).catch(reject);
-          void view
-            .once("tauri://error", (event) => reject(new Error(String(event.payload))))
-            .catch(reject);
-        });
-      },
-      { ownerId, current: { id: current.id, worktreeCwd: current.worktreeCwd } },
+      (buffers) => window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", { buffers }),
+      mainBuffers,
     );
-    page = await waitUntil(
-      () =>
-        context.browser
-          .contexts()
-          .flatMap((entry) => entry.pages())
-          .find((entry) => entry.url().includes(`acceptanceBufferOwner=${ownerId}`)),
-      "The owned native buffer window did not attach",
-      15000,
-    );
-    instrumentAcceptancePage(context, page);
-    await waitUntil(
-      async () =>
-        (await page.evaluate(() => window.__TAURI_INTERNALS__?.metadata?.currentWindow?.label)) ===
-        ownerId,
-      "The native buffer window identity did not become ready",
-      15000,
-    );
-    await verifyNativeIdentity(page, context.identity);
-    await page.evaluate(
-      (path) =>
-        window.__TAURI_INTERNALS__.invoke("managed_workspace_buffers", {
-          buffers: [{ path, dirty: true }],
-        }),
-      path,
-    );
+  };
+  const release = () => publishMain(true);
+  try {
+    const database = new DatabaseSync(databasePath);
+    try {
+      database
+        .prepare(
+          "INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed) VALUES(?,?,?,1)",
+        )
+        .run(ownerId, JSON.stringify([{ path, dirty: true }]), Date.now());
+    } finally {
+      database.close();
+    }
+    await publishMain();
     return { ownerId, release };
   } catch (error) {
-    await release();
+    try {
+      await release();
+    } catch (cleanupError) {
+      error.message += `; owned buffer cleanup also failed: ${cleanupError.message}`;
+    }
     throw error;
   }
 }
