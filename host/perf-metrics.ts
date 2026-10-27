@@ -4,8 +4,8 @@ const BUCKETS = 768;
 const RATIO = 1.05;
 const MIN_MS = 0.001;
 const LOG_RATIO = Math.log(RATIO);
-// Static RPC and MCP labels (about 260) plus headroom; 768 buckets x 8 bytes each.
-export const MAX_METRICS = 320;
+// Static RPC and MCP labels (about 325) plus headroom; 768 buckets x 8 bytes each.
+export const MAX_METRICS = 384;
 type Distribution = { buckets: Float64Array; count: number; max: number };
 
 /** Fixed-size, cumulative histograms. Percentiles use upper bucket bounds
@@ -372,6 +372,17 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "social.native.reset",
   "social.native.status",
   "social.tools.call",
+  "sprints.archive",
+  "sprints.complete",
+  "sprints.create",
+  "sprints.get",
+  "sprints.goalContext",
+  "sprints.ingest",
+  "sprints.list",
+  "sprints.plan",
+  "sprints.report",
+  "sprints.start",
+  "sprints.update",
   "stewards.decline",
   "stewards.delete",
   "stewards.list",
@@ -381,6 +392,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "sync.pull",
   "sync.push",
   "tasks.delete",
+  "tasks.events",
   "tasks.evaluation.save",
   "tasks.list",
   "tasks.move",
@@ -391,6 +403,7 @@ const RPC_METHOD_NAMES: readonly string[] = [
   "tasks.retarget",
   "tasks.review.recheck",
   "tasks.save",
+  "tasks.snapshotWithCursor",
   "tasks.start",
   "terminals.close",
   "terminals.create",
