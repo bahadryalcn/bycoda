@@ -5,6 +5,48 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## V94 Edit from here integration (2026-10-27)
+
+T2 integration on `release/0.6.94`, starting at `c81d06971`. The owner's V94
+stream brief requires "W1's OFF setting must not disable W3's per-message file
+history". Live feature-claim APIs are unavailable in this session; the owner's
+W1/W2/W3 handoffs and explicit V94-I assignment establish the coordination scope.
+
+Delivered surface checklist:
+
+- Done: `AgentTranscript.tsx`, `EditFromHereDialog.tsx`, `SessionPane.tsx` and
+  `Composer.tsx` under `src/features/sessions/ui/`: keyboard-reachable action,
+  shared confirmation, clicked-action pending/error state, unsent prompt and
+  attachment restoration, and skipped-file notices.
+- Done: `src/features/sessions/model/editFromHere.ts` routes native
+  `session_files_revert_plan` / `session_files_revert` and owner-authenticated
+  Host `sessions.files.revertPlan` / `sessions.files.revert`, preserving plan
+  tokens, conflict reasons and old-Host capability fallback.
+- Done: `src/app/workspace/sessions/submit/submitTurnDispatch.ts` begins bounded
+  history under the accepted user message ID for Current and lightweight
+  Worktree turns; the experimental managed lifecycle remains separate.
+  `src/features/sessions/model/checkpoint.ts` carries that ID and explicit
+  experimental flag to native `session_checkpoint_begin_turn`.
+- Done: `src/app/workspace/sessions/useCompactAndRewind.ts` replays retained
+  conversation without opaque provider file rewinds, persists the replacement
+  before retiring removed history with `session_files_forget_from_message`.
+- Done: `src/features/connections/ui/RemoteSession.tsx`, `host/engine.ts`,
+  `host/checkpoints.ts`, `host/session-file-revert.ts`, `host/server.ts` and
+  `src-tauri/src/checkpoint/file_revert.rs` own remote/native routing, bounded
+  history, conflict rechecks and successful-rewind history retirement.
+- Done: eight catalogs under `src/shared/i18n/locales/`; browser fixtures
+  `tests/browser/edit-from-here.spec.ts` and `transcript-rewind.spec.ts` cover
+  dialog choices, unavailable history, failures and attachment drafts.
+
+Preserve exact selected-message boundaries, earlier steers, drafts, attachment
+identity, permissions, partial-success retry and foreign filesystem edits.
+No mobile sources are changed in this integration. Native acceptance uses
+`scripts/build/acceptance-native.mjs --suite v94` with real Codex and fake
+repositories in an isolated dev profile. Results and build inclusion are recorded
+in `temp/verification/v94i/`; fixture evidence and source checks do not establish
+installed or released acceptance. See `docs/guides/managed-workspaces.md` for the
+user workflow. Existing W2 delivery commits: `9ba9a6a9`, `d01bc825`.
+
 Prepare and deliver turns while preserving drafts, settings, attachments and honest delivery state. Keywords: composer, message input, send, queue, steer, stop, retry, draft, paste, IME, attachments, model, reasoning, workspace, quick composer, translation, reprompt.
 
 Inventory inspected on 2026-10-26 at contracts baseline `f26ac112404e326478adb687c23ca9cc032acfef`. Paths are repository-relative. Re-run searches and inspect recent Git history before editing. This card is an acceptance inventory, not a concurrency lock: check live feature claims and session/workspace ownership across worktrees. `docs/reference/managed-workspaces.md` defines contracts; contract presence does not establish runtime capability.

@@ -151,8 +151,24 @@ Hosts retain their own policy. Unavailable policy disables the experimental
 path so ordinary work can continue; Settings shows a retryable read error.
 With the setting off, old unfinished exact-rewind turns do not block new turns,
 and the Host does not advertise `sessions.git-rewind*` capabilities.
+Lightweight worktree sessions keep their provider warm between turns and park it
+after five idle minutes. Explicit stop or ownership transfer still releases it.
+
+Every completed user message offers **Edit from here** in its message actions.
+Confirm **Revert and keep changes** to rewind chat to before that exact message
+and return its prompt and attachments to the composer without sending them.
+Files stay as they are.
+
+Choose **Revert files too** to also restore this session's recorded edits from
+the selected message onward. Created files are removed. Files changed by another
+writer are skipped and listed in a notice. Earlier Git commits and the index are
+preserved; restored contents appear as working-copy changes. This bounded file
+history works with Exact Git rewind off, in both Current checkout and Worktree
+sessions. Older or pruned history disables the file option with a reason while
+keeping conversation-only editing available. Remote file restoration requires
+an updated Host advertising `sessions.edit-from-here.v1`.
+
 The exact-rewind workflow below applies only when the experimental setting is on.
-Codex's separate idle writer-lock release for cross-device handoff remains in effect.
 
 Managed Git rewind restores the selected accepted user boundary's conversation,
 branch HEAD, index and working copy together. Preview shows affected commits and
@@ -185,9 +201,8 @@ native intent. Request a fresh preview afterward. Delayed requests with the old
 key cannot recreate it; uncertain outcomes continue to hold the fence.
 An expired preview explains why applying is disabled. Close it and request a
 fresh preview before continuing.
-Existing `current` sessions retain their legacy rewind confirmation. Per-file
-checkpoint review/Undo remains a separate operation with shared-work and
-HEAD-change guards.
+Per-file checkpoint review/Undo remains a separate operation with shared-work
+and HEAD-change guards.
 
 ## Knowing which build is visible
 

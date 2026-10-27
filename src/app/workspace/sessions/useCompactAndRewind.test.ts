@@ -14,7 +14,9 @@ const effects = vi.hoisted(() => ({
   apply: vi.fn(),
   save: vi.fn(),
   reviewChanged: vi.fn(),
+  retireFiles: vi.fn(),
 }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: effects.retireFiles }));
 
 vi.mock("../../../shared/i18n", () => ({ t: (value: string) => value }));
 vi.mock("../../../integrations/harness", () => ({
@@ -92,6 +94,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   effects.forget.mockReset().mockResolvedValue(undefined);
   effects.save.mockReset().mockResolvedValue(undefined);
+  effects.retireFiles.mockReset().mockResolvedValue(undefined);
   deps = {
     sessionsRef: { current: [chat()] },
     setSessions: (update) => {
@@ -142,6 +145,13 @@ it.each([false, true])(
     expect(rewound.pendingContextReplay).not.toContain("Edit selected prompt");
     expect(rewound.pendingContextReplay).not.toContain("Remove answer after selection");
     expect(effects.forget).toHaveBeenCalledWith("codex", "session");
+    expect(effects.retireFiles).toHaveBeenCalledWith("session_files_forget_from_message", {
+      sessionId: "session",
+      userBlockId: "selected-user",
+    });
+    expect(effects.save.mock.invocationCallOrder[0]).toBeLessThan(
+      effects.retireFiles.mock.invocationCallOrder[0],
+    );
     expect(effects.providerRewind).not.toHaveBeenCalled();
     expect(effects.stop).not.toHaveBeenCalled();
     expect(effects.plan).not.toHaveBeenCalled();

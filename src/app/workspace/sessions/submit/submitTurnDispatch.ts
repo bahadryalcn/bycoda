@@ -110,15 +110,20 @@ export async function runSubmitDispatch(
     const preparation = await prepareLocalTurn({
       traceId,
       checkpoint: async () => {
-        // Managed worktrees are ordinary folders unless exact rewind is opted in.
-        // Do not fall back to the legacy whole-tree checkpoint capture here.
-        if (latest.workspaceId) return;
+        // Exact managed capture owns its own lifecycle; lightweight turns still
+        // retain bounded file history under the actual accepted message ID.
+        if (finishManagedTurn) return;
+        const user = [...latest.blocks]
+          .reverse()
+          .find((block) => block.role === "user" && !block.draft);
         return !current.inboxAsk && !orchestrator.forSession(sessionId)
           ? ((turn.checkpointStarted = true),
-            beginSessionTurn(sessionId, workCwd, checkpointTurnId)).catch((error) => {
-              if (String(error).includes("checkpoint-coordination:")) throw error;
-              console.warn("App operation failed", error);
-            })
+            beginSessionTurn(sessionId, workCwd, checkpointTurnId, user?.id, false)).catch(
+              (error) => {
+                if (String(error).includes("checkpoint-coordination:")) throw error;
+                console.warn("App operation failed", error);
+              },
+            )
           : Promise.resolve();
       },
       attachments: () => prepareAttachments(attachments),
@@ -198,6 +203,7 @@ export async function runSubmitDispatch(
       markSharedProviderSend(sessionId);
       return sendHarnessTurn({
         harness: current.harness,
+        lightweightWorktree: Boolean(latest.workspaceId && !finishManagedTurn),
         sessionId,
         cwd: workCwd,
         model: current.model,

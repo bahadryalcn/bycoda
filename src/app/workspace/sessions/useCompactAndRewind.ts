@@ -1,4 +1,5 @@
 import { type MutableRefObject, useCallback, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
 import {
   HARNESS_TITLE,
@@ -277,6 +278,12 @@ export function useCompactAndRewind({
           ),
         );
         persistSession(rewound);
+        // Retire removed message history only after the replacement transcript
+        // is durable. A cleanup failure must not undo the successful chat edit.
+        await invoke("session_files_forget_from_message", {
+          sessionId,
+          userBlockId: blockId,
+        }).catch((error) => console.warn("File history retirement failed", error));
         notifyReviewChanged(sessionId);
         return true;
       } catch (error) {

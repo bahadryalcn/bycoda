@@ -49,6 +49,10 @@ vi.mock("../../../../features/workspaces/model/workspaceClient", () => ({
 }));
 
 const native = vi.hoisted(() => ({ invoke: vi.fn() }));
+const fileHistory = vi.hoisted(() => ({
+  begin: vi.fn(async (..._args: unknown[]) => {}),
+  finish: vi.fn(async (..._args: unknown[]) => {}),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke, isTauri: () => false }));
 vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   orchestrator: {
@@ -61,8 +65,8 @@ vi.mock("../../../../features/orchestration/model/orchestration", () => ({
   shellPath: (path: string) => path,
 }));
 vi.mock("../../../../features/sessions/model/checkpoint", () => ({
-  beginSessionTurn: async () => {},
-  finishSessionTurn: async () => {},
+  beginSessionTurn: fileHistory.begin,
+  finishSessionTurn: fileHistory.finish,
   flushSessionCheckpoint: async () => {},
   notifyReviewChanged: () => {},
 }));
@@ -165,6 +169,8 @@ function initialSession(): Session {
 }
 
 beforeEach(async () => {
+  fileHistory.begin.mockClear();
+  fileHistory.finish.mockClear();
   vi.mocked(getExactGitRewindEnabled).mockReset().mockResolvedValue(false);
   sends.length = 0;
   stoppedSessions.length = 0;
@@ -399,6 +405,18 @@ it("runs three worktree sends without managed turn calls or forced managed retir
     false,
   );
   expect(stoppedSessions).toHaveLength(0);
+  expect(fileHistory.begin).toHaveBeenCalledTimes(3);
+  expect(fileHistory.finish).toHaveBeenCalledTimes(3);
+  const userIds = getSessions()[0]
+    .blocks.filter((block) => block.role === "user")
+    .map((block) => block.id);
+  for (const [sessionId, cwd, runId, userBlockId, exact] of fileHistory.begin.mock.calls) {
+    expect(sessionId).toBe(getSessions()[0].id);
+    expect(cwd).toBe("/owned/worktree");
+    expect(userIds).toContain(userBlockId);
+    expect(userBlockId).not.toBe(runId);
+    expect(exact).toBe(false);
+  }
 });
 
 it("does not invoke a managed provider when native admission has an unknown outcome", async () => {

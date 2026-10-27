@@ -2,7 +2,11 @@ import { invokeWorkspace } from "../../../platform/tauri/fs";
 import { remoteSessionFor } from "../../connections/model/connections";
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  if (typeof args?.cwd === "string" && args.cwd.startsWith("remote://") && typeof args.sessionId === "string") {
+  if (
+    typeof args?.cwd === "string" &&
+    args.cwd.startsWith("remote://") &&
+    typeof args.sessionId === "string"
+  ) {
     args = { ...args, sessionId: remoteSessionFor(args.sessionId) ?? args.sessionId };
   }
   return invokeWorkspace<T>(command, args);
@@ -12,8 +16,17 @@ import {
   sessionPerformanceTrace,
 } from "../../../shared/lib/performanceTrace";
 
-import type { CheckpointStatus, CheckpointFileDiff, CheckpointApplyResult } from "./checkpoint-types";
-export type { CheckpointFile, CheckpointStatus, CheckpointFileDiff, CheckpointApplyResult } from "./checkpoint-types";
+import type {
+  CheckpointStatus,
+  CheckpointFileDiff,
+  CheckpointApplyResult,
+} from "./checkpoint-types";
+export type {
+  CheckpointFile,
+  CheckpointStatus,
+  CheckpointFileDiff,
+  CheckpointApplyResult,
+} from "./checkpoint-types";
 
 const REVIEW_CHANGED = "bycoda-review-changed";
 const checkpointQueues = new Map<string, Promise<void>>();
@@ -78,16 +91,36 @@ export function ensureSessionCheckpoint(sessionId: string, cwd: string): Promise
   });
 }
 
-/** Snapshot the worktree before a live turn so Keep/Undo can target this session. */
-export async function beginSessionTurn(sessionId: string, cwd: string, turnId = crypto.randomUUID()): Promise<void> {
+/** Begin bounded per-message file history; whole-tree capture requires explicit opt-in. */
+export async function beginSessionTurn(
+  sessionId: string,
+  cwd: string,
+  turnId = crypto.randomUUID(),
+  userBlockId: string = turnId,
+  experimentalExactGitRewind = false,
+): Promise<void> {
   if (!cwd || cwd === "~") return;
-  await enqueueCheckpoint(sessionId, () => invoke<void>("session_checkpoint_begin_turn", { sessionId, cwd, turnId }));
+  await enqueueCheckpoint(sessionId, () =>
+    invoke<void>("session_checkpoint_begin_turn", {
+      sessionId,
+      cwd,
+      turnId,
+      userBlockId,
+      experimentalExactGitRewind,
+    }),
+  );
   notifyReviewChanged(sessionId);
 }
 
-export function finishSessionTurn(sessionId: string, cwd: string, turnId: string, interrupted = false): Promise<void> {
-  return enqueueCheckpoint(sessionId, () => invoke<void>("session_checkpoint_finish_turn", { sessionId, cwd, turnId, interrupted }))
-    .finally(() => notifyReviewChanged(sessionId));
+export function finishSessionTurn(
+  sessionId: string,
+  cwd: string,
+  turnId: string,
+  interrupted = false,
+): Promise<void> {
+  return enqueueCheckpoint(sessionId, () =>
+    invoke<void>("session_checkpoint_finish_turn", { sessionId, cwd, turnId, interrupted }),
+  ).finally(() => notifyReviewChanged(sessionId));
 }
 
 /** Capture a file immediately before a structured edit starts. */
