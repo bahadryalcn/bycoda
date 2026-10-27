@@ -211,6 +211,7 @@ export function createManagedWorkspaceRuntime(
     activity,
     assertWritable,
     authorize: async (owner) => authorized(owner),
+    reconcileProcess: (request, owner) => nativeActivity.reconcileProcesses(request, owner),
   });
   const nativeRewind = createManagedNativeRewind({
     root,

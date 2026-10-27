@@ -40,6 +40,8 @@ interface ProcessLease extends NativeActivityStart {
   activityOwnerId: string;
   phase: "starting" | "active" | "ending" | "ended";
   sharedActivityId?: string;
+  /** Native child PID, durably acknowledged before its streams are exposed. */
+  processId?: number;
 }
 interface BufferLease extends NativeBufferSnapshot {
   device: string;
@@ -170,6 +172,99 @@ export function createManagedNativeActivity(deps: {
   };
   return {
     probe,
+    spawned(
+      request: { activityId: string; processId: number; clientId?: string },
+      owner: WorkspaceOwnerAuthorization,
+    ) {
+      return serial(async () => {
+        const device = await authenticate(owner);
+        identity(request.activityId, "activity identity");
+        if (!Number.isSafeInteger(request.processId) || request.processId < 1)
+          throw new Error("Invalid native child process identity");
+        const path = leasePath(request.activityId);
+        const lease = await read<ProcessLease>(path);
+        if (!lease || lease.device !== device || lease.clientId !== request.clientId)
+          throw new Error("Native activity belongs to another device or desktop client");
+        return withHostGitMutation((await deps.workspace(lease.workspaceId)).path, async () => {
+          const current = await read<ProcessLease>(path);
+          if (!current || current.phase !== "active" || current.kind !== "provider")
+            throw new Error("Native provider is unavailable for process registration");
+          if (current.device !== device || current.clientId !== request.clientId)
+            throw new Error("Native activity belongs to another device or desktop client");
+          if (current.processId !== undefined && current.processId !== request.processId)
+            throw new Error("Native child process identity changed");
+          current.processId = request.processId;
+          await durableWrite(path, JSON.stringify(current));
+          return { acknowledged: true as const };
+        });
+      });
+    },
+    /** Internal only: the native-turn caller holds this workspace's Git gate.
+     * Do not acquire serial/the Git gate here: start holds serial while waiting
+     * for that same gate. Unknown legacy leases deliberately remain fenced. */
+    async reconcileProcesses(
+      request: {
+        workspaceId: string;
+        sessionId: string;
+        activityOwnerId: string;
+        clientId?: string;
+      },
+      owner: WorkspaceOwnerAuthorization,
+    ) {
+      const device = await authenticate(owner);
+      const workspace = await deps.workspace(request.workspaceId);
+      if (workspace.owner.kind !== "session" || workspace.owner.id !== request.sessionId)
+        throw new Error("Native session does not own this workspace");
+      let names: string[];
+      const directory = join(deps.root, "native-activity", "processes");
+      try {
+        names = await readdir(directory);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+        throw error;
+      }
+      let retired = false;
+      for (const name of names.filter((entry) => /^[a-f0-9]{64}\.json$/.test(entry))) {
+        const path = join(directory, name);
+        const lease = await read<ProcessLease>(path);
+        if (
+          !lease ||
+          lease.kind !== "provider" ||
+          lease.activityOwnerId !== request.activityOwnerId ||
+          lease.workspaceId !== request.workspaceId ||
+          lease.sessionId !== request.sessionId ||
+          lease.device !== device ||
+          lease.clientId !== request.clientId
+        )
+          continue;
+        if (retired) throw new Error("Duplicate native provider process identity");
+        if (lease.phase === "ended") {
+          retired = true;
+          continue;
+        }
+        if (!Number.isSafeInteger(lease.processId) || !lease.processId || lease.processId < 1)
+          throw new Error("Native provider process identity is unknown; recovery remains fenced");
+        let dead = false;
+        try {
+          process.kill(lease.processId, 0);
+        } catch (error) {
+          dead = (error as NodeJS.ErrnoException).code === "ESRCH";
+        }
+        // Alive, EPERM and reused PIDs are not proof of retirement.
+        if (!dead)
+          throw new Error("Native provider process is not proven dead; recovery remains fenced");
+        lease.phase = "ending";
+        await durableWrite(path, JSON.stringify(lease));
+        const owned = (await deps.activity.list(lease.workspaceId)).filter(
+          (entry) => entry.ownerId === lease.activityOwnerId,
+        );
+        for (const entry of owned) await deps.activity.stop(entry.id);
+        lease.phase = "ended";
+        await durableWrite(path, JSON.stringify(lease));
+        retired = true;
+      }
+      return retired;
+    },
     start(request: NativeActivityStart, owner: WorkspaceOwnerAuthorization) {
       return serial(async () => {
         const device = await authenticate(owner);

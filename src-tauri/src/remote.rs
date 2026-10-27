@@ -1209,6 +1209,7 @@ impl NativeWorkspaceTransport {
                 | "native.turn.end"
                 | "native.turn.recover"
                 | "native.activity.start"
+                | "native.activity.spawned"
                 | "native.activity.end"
                 | "native.buffers.update"
                 | "native.buffers.retire"
@@ -1232,6 +1233,7 @@ impl NativeWorkspaceTransport {
                 | "native.turn.end"
                 | "native.turn.recover"
                 | "native.activity.start"
+                | "native.activity.spawned"
                 | "native.activity.end"
         ) {
             if let Some(client_id) = self.client_id.as_deref() {
@@ -2713,6 +2715,7 @@ mod tests {
             "native.turn.begin",
             "native.turn.end",
             "native.activity.start",
+            "native.activity.spawned",
             "native.activity.end",
             "native.buffers.update",
             "native.buffers.retire",

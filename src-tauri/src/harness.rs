@@ -1175,7 +1175,15 @@ pub fn harness_spawn(
     })?;
     let pid = child.id();
     if let Some(activity) = workspace_activity.as_mut() {
-        activity.started();
+        if let Err(error) = activity.spawned(pid) {
+            terminate(pid);
+            if child.wait().is_ok() {
+                if let Some(activity) = workspace_activity.take() {
+                    let _ = activity.settled();
+                }
+            }
+            return Err(error);
+        }
     }
 
     let stdin = child

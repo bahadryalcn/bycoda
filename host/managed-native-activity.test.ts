@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,97 @@ import type { NativeBufferSnapshot } from "./managed-native-activity";
 import type { ManagedWorkspace } from "./workspace-contracts";
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+
+it("recovers only the exact acknowledged dead provider after service reconstruction", async () => {
+  const f = await fixture();
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  await once(child, "spawn");
+  cleanups.push(async () => {
+    if (child.exitCode === null) child.kill();
+  });
+  const start = {
+    activityId: "crashed",
+    cwd: f.path,
+    kind: "provider" as const,
+    sessionId: "session",
+    clientId: "client",
+  };
+  await f.service.start(start, owner);
+  const activityOwnerId = (await f.activity.list("workspace"))[0].ownerId;
+  const request = {
+    workspaceId: "workspace",
+    sessionId: "session",
+    clientId: "client",
+    activityOwnerId,
+  };
+  await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("identity is unknown");
+  await expect(
+    f.service.spawned(
+      { activityId: start.activityId, processId: child.pid!, clientId: "foreign" },
+      owner,
+    ),
+  ).rejects.toThrow("another device or desktop");
+  await f.service.spawned(
+    { activityId: start.activityId, processId: child.pid!, clientId: "client" },
+    owner,
+  );
+  await expect(
+    f.service.spawned(
+      { activityId: start.activityId, processId: process.pid, clientId: "client" },
+      owner,
+    ),
+  ).rejects.toThrow("identity changed");
+  await expect(f.service.reconcileProcesses(request, owner)).rejects.toThrow("not proven dead");
+  expect(await f.service.reconcileProcesses({ ...request, clientId: "foreign" }, owner)).toBe(
+    false,
+  );
+  expect(await f.service.reconcileProcesses(request, other)).toBe(false);
+  expect(
+    await f.service.reconcileProcesses({ ...request, activityOwnerId: "unrelated" }, owner),
+  ).toBe(false);
+  expect(await f.activity.list("workspace")).toHaveLength(1);
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  f.restart();
+  expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
+  expect(await f.activity.list("workspace")).toEqual([]);
+  expect(await f.service.reconcileProcesses(request, owner)).toBe(true);
+  await expect(
+    f.service.spawned(
+      { activityId: start.activityId, processId: child.pid!, clientId: "client" },
+      owner,
+    ),
+  ).rejects.toThrow("unavailable");
+});
+
+it("keeps permission-denied process probes fenced", async () => {
+  const f = await fixture();
+  const start = {
+    activityId: "denied",
+    cwd: f.path,
+    kind: "provider" as const,
+    sessionId: "session",
+  };
+  await f.service.start(start, owner);
+  await f.service.spawned({ activityId: start.activityId, processId: process.pid }, owner);
+  const activityOwnerId = (await f.activity.list("workspace"))[0].ownerId;
+  vi.spyOn(process, "kill").mockImplementation(() => {
+    throw Object.assign(new Error("denied"), { code: "EPERM" });
+  });
+  await expect(
+    f.service.reconcileProcesses(
+      { workspaceId: "workspace", sessionId: "session", activityOwnerId },
+      owner,
+    ),
+  ).rejects.toThrow("not proven dead");
+  expect(await f.activity.list("workspace")).toHaveLength(1);
 });
 const owner = { ownerId: "device-one", authorizationId: "trusted" };
 const other = { ownerId: "device-two", authorizationId: "trusted" };

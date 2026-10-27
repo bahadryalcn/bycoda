@@ -84,11 +84,8 @@ fn recover_matching_managed_turn(
             reason: None,
         });
     };
-    if phase != "starting" {
-        return Ok(ManagedTurnRecovery {
-            released: false,
-            reason: Some("The managed turn was authorized or is still completing. Reconnect to finish its capture.".into()),
-        });
+    if !matches!(phase.as_str(), "starting" | "active" | "finishing") {
+        return Err("Unknown managed turn phase; recovery remains fenced".into());
     }
     let request: ManagedTurnRequest = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     if expected.is_some_and(|expected| expected != &request) {
@@ -113,10 +110,17 @@ fn recover_matching_managed_turn(
             ),
         });
     }
+    if response["completed"] == true {
+        // Accepted execution is finalized with its durable after-capture; it
+        // is never mistaken for a rejected admission where nothing executed.
+        validate_turn_capture(&response["record"], &request, "after")?;
+    } else if phase != "starting" {
+        return Err("Accepted managed turn recovery requires a complete after capture".into());
+    }
     // Consume only the exact unresolved request acknowledged by the Host.
     let changed = store.lock_conn()?.execute(
-        "UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
-        params![session_id, raw],
+        "UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase=?3",
+        params![session_id, raw, phase],
     ).map_err(|e| e.to_string())?;
     let released = changed == 1 || pending_turn(store, session_id)?.is_none();
     Ok(ManagedTurnRecovery {
@@ -757,7 +761,7 @@ pub(crate) fn reconcile_pending_native(
 ) -> Result<Vec<String>, String> {
     let starting = {
         let conn = store.lock_conn()?;
-        let mut statement = conn.prepare("SELECT session_id FROM native_managed_turns WHERE phase='starting' AND (?1 IS NULL OR session_id=?1)").map_err(|e| e.to_string())?;
+        let mut statement = conn.prepare("SELECT session_id FROM native_managed_turns WHERE phase IN ('starting','active','finishing') AND (?1 IS NULL OR session_id=?1)").map_err(|e| e.to_string())?;
         let rows = statement
             .query_map([session_id], |row| row.get::<_, String>(0))
             .map_err(|e| e.to_string())?;
@@ -861,7 +865,7 @@ pub fn managed_turn_recover(
     client_id: Option<String>,
 ) -> Result<ManagedTurnRecovery, String> {
     validate_id(&session_id, "session")?;
-    let Some((raw, phase)) = pending_turn(&store, &session_id)? else {
+    let Some((raw, _phase)) = pending_turn(&store, &session_id)? else {
         return Ok(ManagedTurnRecovery {
             released: true,
             reason: None,
@@ -877,10 +881,8 @@ pub fn managed_turn_recover(
     let host =
         crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-execution.v1")?
             .with_client_id(client_id)?;
-    if phase == "starting" {
-        app.state::<crate::harness::HarnessHost>()
-            .retire_managed_session(&session_id)?;
-    }
+    app.state::<crate::harness::HarnessHost>()
+        .retire_managed_session(&session_id)?;
     recover_managed_turn(&store, &host, &session_id)
 }
 
@@ -1673,6 +1675,7 @@ mod tests {
                         | "native.turn.end"
                         | "native.turn.recover"
                         | "native.activity.start"
+                        | "native.activity.spawned"
                         | "native.activity.end"
                 );
                 assert_eq!(
@@ -1751,6 +1754,70 @@ mod tests {
     }
 
     #[test]
+    fn checkpoint_native_crash_recovery_requires_matching_completed_capture_and_preserves_transcript(
+    ) {
+        for phase in ["active", "finishing"] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let request = native_turn_request(seed(&store), "crashed");
+            let original = get_session(&store.lock_conn().unwrap(), "native")
+                .unwrap()
+                .unwrap();
+            let mut completed = turn_reply(&request, true);
+            completed["completed"] = json!(true);
+            completed["record"] = turn_reply(&request, false);
+            let mut foreign = completed.clone();
+            foreign["record"]["runId"] = json!("foreign-run");
+            let mut incomplete = completed.clone();
+            incomplete["record"]["after"] =
+                json!({"status":"blocked","reason":"writer still active"});
+            let next = native_turn_request(request.conversation_revision, "next");
+            let (host, server) = fake_native_host(vec![
+                ("native.turn.begin", Some(turn_reply(&request, false))),
+                ("native.turn.recover", Some(turn_reply(&request, false))),
+                ("native.turn.recover", Some(turn_reply(&request, true))),
+                ("native.turn.recover", Some(foreign)),
+                ("native.turn.recover", Some(incomplete)),
+                ("native.turn.recover", Some(completed)),
+                ("native.turn.begin", Some(turn_reply(&next, false))),
+                ("native.turn.end", Some(turn_reply(&next, false))),
+            ]);
+            begin_managed_turn(&store, &host, &request).unwrap();
+            store
+                .lock_conn()
+                .unwrap()
+                .execute(
+                    "UPDATE native_managed_turns SET phase=?1 WHERE session_id='native'",
+                    [phase],
+                )
+                .unwrap();
+            assert!(
+                !recover_managed_turn(&store, &host, "native")
+                    .unwrap()
+                    .released
+            );
+            for _ in 0..3 {
+                assert!(recover_managed_turn(&store, &host, "native").is_err());
+                assert_eq!(pending_turn(&store, "native").unwrap().unwrap().1, phase);
+                assert!(assert_writable(&store, "native").is_err());
+            }
+            assert!(
+                recover_managed_turn(&store, &host, "native")
+                    .unwrap()
+                    .released
+            );
+            assert!(pending_turn(&store, "native").unwrap().is_none());
+            let recovered = get_session(&store.lock_conn().unwrap(), "native")
+                .unwrap()
+                .unwrap();
+            assert_eq!(recovered.blocks, original.blocks);
+            assert_eq!(recovered.transcript_revision, original.transcript_revision);
+            begin_managed_turn(&store, &host, &next).unwrap();
+            finish_managed_turn(&store, &host, &next).unwrap();
+            assert_eq!(server.join().unwrap().len(), 8);
+        }
+    }
+
+    #[test]
     fn checkpoint_native_unknown_begin_needs_positive_matching_recovery_receipt() {
         let store = SessionStore::open_in_memory().unwrap();
         let request = native_turn_request(seed(&store), "unknown");
@@ -1811,11 +1878,9 @@ mod tests {
         assert!(assert_writable(&store, "native").is_ok());
         let next = native_turn_request(request.conversation_revision, "next");
         begin_managed_turn(&store, &TurnHost { blocked: false }, &next).unwrap();
-        assert!(
-            !recover_managed_turn(&store, &TurnHost { blocked: false }, "native")
-                .unwrap()
-                .released
-        );
+        // An older/unavailable Host cannot finalize an accepted turn without
+        // an exact completed after-capture receipt.
+        assert!(recover_managed_turn(&store, &TurnHost { blocked: false }, "native").is_err());
         assert!(assert_writable(&store, "native").is_err());
         finish_managed_turn(&store, &TurnHost { blocked: false }, &next).unwrap();
         assert_eq!(server.join().unwrap().len(), 2);
@@ -1838,6 +1903,10 @@ mod tests {
                     Some(json!({"activityId":"provider","workspaceId":"managed"})),
                 ),
                 ("native.activity.end", Some(json!({"acknowledged":true}))),
+                (
+                    "native.activity.spawned",
+                    Some(json!({"acknowledged":true})),
+                ),
                 ("native.buffers.update", Some(json!({"acknowledged":true}))),
             ],
             Some("current-window"),
@@ -1874,8 +1943,13 @@ mod tests {
         .unwrap();
         host.call("native.activity.end", json!({"activityId":"provider"}))
             .unwrap();
+        host.call(
+            "native.activity.spawned",
+            json!({"activityId":"provider","processId":1234}),
+        )
+        .unwrap();
         host.call("native.buffers.update", json!({})).unwrap();
-        assert_eq!(server.join().unwrap().len(), 6);
+        assert_eq!(server.join().unwrap().len(), 7);
         assert!(
             crate::remote::NativeWorkspaceTransport::for_test("http://127.0.0.1:1".into())
                 .with_client_id(Some("invalid client".into()))

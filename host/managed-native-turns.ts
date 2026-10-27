@@ -24,6 +24,8 @@ export interface ManagedNativeTurnBeginRequest extends ManagedNativeTurnRequest 
 interface NativeTurnBinding extends ManagedNativeTurnBeginRequest {
   ownerFingerprint: string;
   activityOwnerId: string;
+  /** Exact admitted provider lease; older/pidless bindings remain fenced. */
+  processActivityOwnerId?: string;
   /** Durable cancellation receipt: execution can never start for this key. */
   released?: boolean;
 }
@@ -36,6 +38,10 @@ export function createManagedNativeTurns(deps: {
   activity: ExecutionActivityReservations;
   assertWritable(workspaceId: string): Promise<void>;
   authorize(owner: WorkspaceOwnerAuthorization): Promise<boolean>;
+  reconcileProcess?(
+    request: ManagedNativeTurnRequest & { activityOwnerId: string },
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<boolean>;
 }) {
   // Transport identities may be credential-derived. Persist only a one-way binding.
   const ownerFingerprint = (owner: WorkspaceOwnerAuthorization) =>
@@ -148,6 +154,35 @@ export function createManagedNativeTurns(deps: {
       throw new Error("Another workspace writer or unknown activity is still active");
     return owned[0] ?? null;
   };
+  const completeCapturedTurn = async (
+    request: ManagedNativeTurnRequest,
+    owner: WorkspaceOwnerAuthorization,
+  ): Promise<TurnGitRecord> => {
+    await deps.assertWritable(request.workspaceId);
+    const binding = await readBinding(request);
+    if (!binding) throw new Error("Unknown accepted native turn");
+    checkBinding(binding, request, owner);
+    if (binding.clientId !== request.clientId)
+      throw new Error("Native turn belongs to another desktop client");
+    const previous = await deps.history.get(request.workspaceId, request.userBlockId);
+    checkRecord(previous, request);
+    if (previous?.before.status !== "complete")
+      throw new Error("Native turn has no complete before capture");
+    const activity = await activities(
+      request,
+      binding,
+      owner,
+      previous.after?.status === "complete",
+    );
+    if (!activity && previous.after?.status !== "complete")
+      throw new Error("Native turn activity is missing; reconcile before capturing its end");
+    const record =
+      previous.after?.status === "complete" ? previous : await deps.history.end(request);
+    if (record.after?.status !== "complete")
+      throw new Error(record.after?.reason ?? "Native turn after capture is incomplete");
+    if (activity) await deps.activity.stop(activity.id);
+    return record;
+  };
   return {
     async begin(
       request: ManagedNativeTurnBeginRequest,
@@ -200,6 +235,17 @@ export function createManagedNativeTurns(deps: {
           // Admission can await durable storage. Recheck writers that appeared
           // while installing this marker before authorizing native execution.
           await activities(request, binding, owner, false, true);
+          const processes = (await deps.activity.list(request.workspaceId)).filter(
+            (entry) =>
+              entry.kind === "provider" &&
+              entry.ownerId.startsWith(
+                nativeProcessPrefix(owner.ownerId, request.sessionId, request.clientId),
+              ),
+          );
+          if (processes.length === 1 && !binding.processActivityOwnerId) {
+            binding.processActivityOwnerId = processes[0].ownerId;
+            await durableWrite(bindingPath(request), JSON.stringify(binding));
+          }
           record = await deps.history.begin(request);
           if (record.before.status !== "complete") throw new Error(record.before.reason);
           return record;
@@ -229,36 +275,20 @@ export function createManagedNativeTurns(deps: {
       const workspace = await validate(request, owner);
       return withHostGitMutation(workspace.path, async () => {
         await validate(request, owner);
-        await deps.assertWritable(request.workspaceId);
-        const binding = await readBinding(request);
-        if (!binding) throw new Error("Unknown accepted native turn");
-        checkBinding(binding, request, owner);
-        if (binding.clientId !== request.clientId)
-          throw new Error("Native turn belongs to another desktop client");
-        const previous = await deps.history.get(request.workspaceId, request.userBlockId);
-        checkRecord(previous, request);
-        if (previous?.before.status !== "complete")
-          throw new Error("Native turn has no complete before capture");
-        const activity = await activities(
-          request,
-          binding,
-          owner,
-          previous.after?.status === "complete",
-        );
-        if (!activity && previous.after?.status !== "complete")
-          throw new Error("Native turn activity is missing; reconcile before capturing its end");
-        const record =
-          previous.after?.status === "complete" ? previous : await deps.history.end(request);
-        if (record.after?.status !== "complete")
-          throw new Error(record.after?.reason ?? "Native turn after capture is incomplete");
-        if (activity) await deps.activity.stop(activity.id);
-        return record;
+        return completeCapturedTurn(request, owner);
       });
     },
     async recover(
       request: ManagedNativeTurnBeginRequest,
       owner: WorkspaceOwnerAuthorization,
-    ): Promise<ManagedNativeTurnBeginRequest & { released: boolean; reason?: string }> {
+    ): Promise<
+      ManagedNativeTurnBeginRequest & {
+        released: boolean;
+        reason?: string;
+        completed?: boolean;
+        record?: TurnGitRecord;
+      }
+    > {
       const workspace = await validate(request, owner);
       if (!Number.isSafeInteger(request.conversationRevision) || request.conversationRevision < 0)
         throw new Error("Invalid native turn conversation revision");
@@ -269,12 +299,26 @@ export function createManagedNativeTurns(deps: {
         checkRecord(record, request);
         if (binding) checkBinding(binding, request, owner, request.conversationRevision);
         else if (record) throw new Error("Existing Git turn has no native owner binding");
-        if (record?.before.status === "complete")
+        if (record?.before.status === "complete") {
+          if (
+            binding?.clientId === request.clientId &&
+            (record.after?.status === "complete" ||
+              (binding?.processActivityOwnerId &&
+                deps.reconcileProcess &&
+                (await deps.reconcileProcess(
+                  { ...request, activityOwnerId: binding.processActivityOwnerId },
+                  owner,
+                ))))
+          ) {
+            const completed = await completeCapturedTurn(request, owner);
+            return { ...request, released: true, completed: true, record: completed };
+          }
           return {
             ...request,
             released: false,
             reason: "Native turn has a complete before capture; execution may have started",
           };
+        }
         // A rejected begin or prior recovery already durably forbids this key.
         if (binding?.released) return { ...request, released: true };
         if (

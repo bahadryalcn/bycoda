@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,6 +23,69 @@ afterEach(async () => {
 });
 const owner = { ownerId: "device-one", authorizationId: "trusted" };
 const secondOwner = { ownerId: "device-two", authorizationId: "trusted" };
+
+it("finalizes a crashed accepted turn only after exact provider death and preserves both captures", async () => {
+  const f = await fixture();
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  await once(child, "spawn");
+  cleanups.push(async () => {
+    if (child.exitCode === null) child.kill();
+  });
+  const provider = {
+    activityId: "crashed-provider",
+    cwd: f.workspace.path,
+    kind: "provider" as const,
+    sessionId: f.request.sessionId,
+    clientId: "desktop",
+  };
+  const request = { ...f.request, clientId: "desktop" };
+  await f.process.start(provider, owner);
+  await f.process.spawned(
+    { activityId: provider.activityId, processId: child.pid!, clientId: "desktop" },
+    owner,
+  );
+  const before = await f.native.begin(request, owner);
+  await writeFile(join(f.workspace.path, "source.txt"), "changes before application crash\n");
+  await expect(f.native.recover(request, owner)).rejects.toThrow("not proven dead");
+  expect(
+    (await f.native.recover({ ...request, clientId: "another-desktop" }, owner)).released,
+  ).toBe(false);
+  await expect(f.native.recover(request, secondOwner)).rejects.toThrow("another owner device");
+  expect((await f.history.get(request.workspaceId, request.userBlockId))?.after).toBeUndefined();
+  const exited = once(child, "exit");
+  child.kill("SIGKILL");
+  await exited;
+  const foreign = await f.activity.start({
+    workspaceId: request.workspaceId,
+    kind: "editor",
+    ownerId: "foreign-editor",
+  });
+  await expect(f.native.recover(request, owner)).rejects.toThrow("Another workspace writer");
+  await f.activity.stop(foreign.id);
+  await f.store.close();
+  const reopened = await f.compose();
+  const recovered = await reopened.native.recover(request, owner);
+  expect(recovered).toMatchObject({ released: true, completed: true });
+  expect(recovered.record?.before).toEqual(before.before);
+  expect(recovered.record?.after?.status).toBe("complete");
+  expect(await readFile(join(f.workspace.path, "source.txt"), "utf8")).toBe(
+    "changes before application crash\n",
+  );
+  expect(await reopened.activity.list(f.workspace.id)).toEqual([]);
+  expect((await reopened.native.recover(request, owner)).record).toEqual(recovered.record);
+  const next = {
+    ...request,
+    userBlockId: "next-user",
+    runId: "next-run",
+    conversationRevision: request.conversationRevision + 1,
+  };
+  expect((await reopened.native.begin(next, owner)).before.status).toBe("complete");
+  expect((await reopened.native.end(next, owner)).after?.status).toBe("complete");
+}, 120_000);
+
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "managed-native-turns-"));
   cleanups.push(async () => rm(root, { recursive: true, force: true }));
@@ -99,6 +164,7 @@ async function fixture() {
       authorize: async (value) =>
         [owner.ownerId, secondOwner.ownerId].includes(value.ownerId) &&
         value.authorizationId === "trusted",
+      reconcileProcess: (request, owner) => process.reconcileProcesses(request, owner),
     });
     return {
       store,
@@ -115,6 +181,7 @@ async function fixture() {
   const graph = await compose();
   const project = await graph.store.addProject(repo, "Native project");
   const { workspace } = await graph.registry.prepare({
+    choice: { defaultMode: "worktree" },
     projectId: project.id,
     environmentId: graph.store.environmentId,
     owner: { kind: "session", id: "native-session" },

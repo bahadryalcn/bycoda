@@ -2180,6 +2180,7 @@ export async function createHostServer(
                   result = await workspaceForOwnerRpc(params.workspaceId);
                   break;
                 case "native.activity.start":
+                case "native.activity.spawned":
                 case "native.activity.end":
                 case "native.buffers.retire":
                 case "native.buffers.reconcile":
@@ -2193,7 +2194,9 @@ export async function createHostServer(
                           ? "updateBuffers"
                           : input.method === "native.activity.start"
                             ? "start"
-                            : "end";
+                            : input.method === "native.activity.spawned"
+                              ? "spawned"
+                              : "end";
                   result = await withNativeDesktopOwner<unknown>(token, params, (owner) =>
                     managed.nativeActivity[action](params as never, owner),
                   );

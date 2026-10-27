@@ -51,6 +51,19 @@ impl Activity {
     pub(crate) fn started(&mut self) {
         self.started = true;
     }
+    pub(crate) fn spawned(&mut self, process_id: u32) -> Result<(), String> {
+        // An uncertain registration must not cause Drop to release a child
+        // which may already exist. The spawn caller kills/waits it on failure.
+        self.started = true;
+        let result = self.host.call(
+            "native.activity.spawned",
+            json!({"activityId":self.id,"processId":process_id}),
+        )?;
+        if result["acknowledged"] != true {
+            return Err("Execution Host has not recorded native process identity".into());
+        }
+        Ok(())
+    }
     pub(crate) fn settled(mut self) -> Result<(), String> {
         // Do not retry an unknown release from Drop. The durable Host lease stays
         // fenced unless this exact release receives its acknowledgement.
