@@ -408,11 +408,35 @@ export async function selectCodex(context, model = context.options.model) {
   await trigger.click();
   const modelEntry = page.getByRole("menuitem", { name: /^Model|^Model seç/ }).first();
   const codexTab = page.getByRole("tab", { name: "Codex", exact: true });
-  await waitUntil(
-    async () => (await modelEntry.isVisible()) || (await codexTab.isVisible()),
-    "Model picker did not open on the focused development window",
-    10000,
-  );
+  const pickerVisible = async () => (await modelEntry.isVisible()) || (await codexTab.isVisible());
+  try {
+    await waitUntil(
+      pickerVisible,
+      "Model picker did not open on the focused development window",
+      10000,
+    );
+  } catch (error) {
+    if (!(await pickerVisible())) {
+      const focused = await page.evaluate(async () =>
+        (await import("/node_modules/@tauri-apps/api/window.js")).getCurrentWindow().isFocused(),
+      );
+      if (focused) throw error;
+      await focusNativeWindow(context);
+      if (!(await pickerVisible())) {
+        if ((await trigger.getAttribute("aria-expanded")) === "true") await trigger.click();
+        await trigger.click();
+      }
+      await waitUntil(
+        pickerVisible,
+        "Model picker did not reopen after one verified native focus-loss recovery",
+        10000,
+      );
+      context.steps.push({
+        step: "Recover model-picker interaction after native focus loss",
+        actual: "Reactivated only the verified development PID and reopened its picker once",
+      });
+    }
+  }
   if (await modelEntry.isVisible()) await modelEntry.click();
   await codexTab.click();
   const choice = page.getByRole("option").filter({ hasText: model }).first();
