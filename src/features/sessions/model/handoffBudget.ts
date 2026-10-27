@@ -78,7 +78,8 @@ export function buildBudgetedHandoff(
   const recap = options.brief ? clip(`Recap:\n${options.brief}\n`, 6000) : "";
   // Prefer dropping history, then the recap, then the reference. Never truncate
   // the archive path or stop a send because optional context cannot fit.
-  if (referenceFits && handoffTokenEstimate(text + recap) <= limit) text += recap;
+  const recapFits = referenceFits && handoffTokenEstimate(text + recap) <= limit;
+  if (recapFits) text += recap;
   const chosen: HandoffHistoryMessage[] = [];
   let charged = handoffTokenEstimate(text);
   // Original user intent first, then recent complete messages. Oversized entries remain readable.
@@ -91,7 +92,7 @@ export function buildBudgetedHandoff(
       .filter((message) => message !== firstUser),
   ];
   for (const message of prioritized) {
-    if (!referenceFits) break;
+    if (!recapFits) break;
     const formatted = `\n[${message.id}] ${message.role}:\n${message.text}\n`;
     const charge = handoffTokenEstimate(formatted);
     if (charged + charge <= budgetTokens) {

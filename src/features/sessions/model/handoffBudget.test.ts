@@ -66,6 +66,12 @@ describe("capacity-aware handoff", () => {
     const reference = buildBudgetedHandoff(session, { ...options, request: "x".repeat(1100) });
     expect(reference.text).toContain("/history.json");
     expect(reference.text).not.toContain("Recap:");
+    expect(
+      buildBudgetedHandoff(
+        { ...session, blocks: [{ id: "small", role: "user", text: "Keep." }] },
+        { ...options, request: "x".repeat(1100) },
+      ).selectedIds,
+    ).toEqual([]);
     const empty = buildBudgetedHandoff(session, { ...options, request: "x".repeat(2000) });
     expect(empty.text).toBe("");
     expect(empty.notice).toContain("/history.json");
