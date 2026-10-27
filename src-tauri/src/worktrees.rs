@@ -1832,7 +1832,9 @@ mod tests {
         let sentinel = repo.0.join("main-node-modules");
         std::fs::create_dir_all(sentinel.join("package")).unwrap();
         std::fs::write(sentinel.join("package/sentinel.txt"), "must survive").unwrap();
-        std::fs::write(path.join(".gitignore"), "node_modules/\ntemp/\n").unwrap();
+        // A Unix directory symlink is a file entry to Git, unlike a Windows
+        // junction. Ignore either entry type so this fixture is clean on both.
+        std::fs::write(path.join(".gitignore"), "node_modules\ntemp/\n").unwrap();
         git_checked(path, &["add", ".gitignore"]).unwrap();
         git_checked(
             path,
@@ -1854,6 +1856,11 @@ mod tests {
             "retained evidence",
         )
         .unwrap();
+        assert!(
+            git(path, &["status", "--porcelain", "--untracked-files=all"])
+                .unwrap()
+                .is_empty()
+        );
         remove(&root, path, false).unwrap();
         assert!(!path.exists());
         assert_eq!(
