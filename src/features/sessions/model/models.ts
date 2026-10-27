@@ -574,14 +574,24 @@ export function modelContextWindow(id: string, harness?: HarnessId): number | un
     harness ??
     findModelIdentity(id)?.harness ??
     (HARNESSES.includes(id.split(":")[0] as HarnessId) ? (id.split(":")[0] as HarnessId) : "acp");
+  const nativeIdentity = (value: string) =>
+    comparableNativeId(
+      owner,
+      owner === "claude" ? value.trim().replace(/\[1m\]$/i, "") : value.trim(),
+    );
+  // Only bycoda's owning-harness prefix is structural. Colons inside native
+  // ids (provider:model, URLs, custom endpoints) distinguish different models.
+  const keyIdentity = (value: string) =>
+    nativeIdentity(
+      value.trim().startsWith(`${owner}:`) ? value.trim().slice(owner.length + 1) : value,
+    );
+  const requested = keyIdentity(id);
   const matches = (model: AgentModel, alias = false) =>
     model.harness === owner &&
-    (alias ? [model.aliasTarget] : [model.id, model.nativeId]).some(
-      (key) =>
-        key != null &&
-        comparableNativeId(owner, nativeIdFrom(key)) ===
-          comparableNativeId(owner, nativeIdFrom(id)),
-    );
+    (alias
+      ? model.aliasTarget != null && nativeIdentity(model.aliasTarget) === requested
+      : keyIdentity(model.id) === requested ||
+        (model.nativeId != null && nativeIdentity(model.nativeId) === requested));
   const capacity = (models: AgentModel[], alias = false) =>
     models.find(
       (model) =>

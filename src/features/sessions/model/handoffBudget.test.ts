@@ -4,6 +4,33 @@ import { buildBudgetedHandoff, handoffTokenEstimate } from "./handoffBudget";
 import { modelContextWindow, resetHarnessModelOverlays, setHarnessModels } from "./models";
 
 describe("capacity-aware handoff", () => {
+  it("keeps native provider prefixes and URL-like custom model identities distinct", () => {
+    try {
+      setHarnessModels("pi", [
+        {
+          id: "pi:provider-a:model",
+          nativeId: "provider-a:model",
+          harness: "pi",
+          name: "A",
+          contextWindow: 256_000,
+        },
+        {
+          id: "pi:https://a.example/model",
+          nativeId: "https://a.example/model",
+          harness: "pi",
+          name: "URL",
+          contextWindow: 64_000,
+        },
+      ]);
+      expect(modelContextWindow("pi:provider-a:model", "pi")).toBe(256_000);
+      expect(modelContextWindow("provider-a:model", "pi")).toBe(256_000);
+      expect(modelContextWindow("provider-b:model", "pi")).toBe(32_000);
+      expect(modelContextWindow("https://a.example/model", "pi")).toBe(64_000);
+      expect(modelContextWindow("http://a.example/model", "pi")).toBe(32_000);
+    } finally {
+      resetHarnessModelOverlays();
+    }
+  });
   it("preserves recent whole messages and archives oversized old text", () => {
     const session = {
       ...newSession("codex", "/project"),
