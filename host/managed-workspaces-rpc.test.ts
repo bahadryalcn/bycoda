@@ -93,6 +93,7 @@ async function fixture(buildIdentity: BuildIdentity | null = null) {
     return result.value.result as T;
   };
   const projectScope = { projectId: project.id, environmentId: store.environmentId };
+  await call("workspaces.exactGitRewind.set", { enabled: true });
   await call("projects.workspacePolicy.update", {
     ...projectScope,
     expectedRevision: 0,

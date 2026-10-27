@@ -42,6 +42,7 @@ async function fixture(options: Parameters<typeof createManagedWorkspaceRuntime>
   });
   const project = await engine.openProject(root);
   const runtime = createManagedWorkspaceRuntime(store, engine, options);
+  await runtime.exactGitRewind.save(true);
   cleanups.push(async () => {
     runtime.retention.stop();
     await engine.close();
