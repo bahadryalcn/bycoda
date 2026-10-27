@@ -20,6 +20,7 @@ import {
 import { sourceIdentity } from "./build-info.mjs";
 import { chromium } from "@playwright/test";
 import { verifyNativeIdentity } from "./dev-shot.mjs";
+import { acceptanceControl } from "./dev-native-control.mjs";
 
 const hash = (value) => createHash("sha256").update(value).digest("hex");
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -362,30 +363,34 @@ export async function runNativeDev(args = process.argv.slice(2)) {
           abort.signal,
         );
         await leases.handoff(lease.id, ["host"]);
-        const host = launch(
-          process.execPath,
-          [
-            env.BYCODA_DEV_HOST_ENTRY,
-            "serve",
-            "--data-dir",
-            environment.hostDataPath,
-            "--port",
-            String(lease.ports.host),
-          ],
-          env,
-        );
-        await waitFor(
-          host,
-          async () => {
-            const state = JSON.parse(
-              await readFile(join(environment.hostDataPath, "running.json"), "utf8"),
-            );
-            return state.pid === host.pid && state.port === lease.ports.host;
-          },
-          abort.signal,
-        );
+        const launchHost = () =>
+          launch(
+            process.execPath,
+            [
+              env.BYCODA_DEV_HOST_ENTRY,
+              "serve",
+              "--data-dir",
+              environment.hostDataPath,
+              "--port",
+              String(lease.ports.host),
+            ],
+            env,
+          );
+        let host = launchHost();
+        const waitForHost = async () =>
+          waitFor(
+            host,
+            async () => {
+              const state = JSON.parse(
+                await readFile(join(environment.hostDataPath, "running.json"), "utf8"),
+              );
+              return state.pid === host.pid && state.port === lease.ports.host;
+            },
+            abort.signal,
+          );
+        await waitForHost();
         await leases.handoff(lease.id, ["cdp"]);
-        const native = launch(executable, [], env);
+        let native = launch(executable, [], env);
         if (process.platform === "win32") {
           try {
             await waitFor(
@@ -444,13 +449,54 @@ export async function runNativeDev(args = process.argv.slice(2)) {
           buildManifest: env.BYCODA_BUILD_MANIFEST,
         };
         const recordPath = join(dirname(environment.executableRunDir), "dev-run.json");
+        let hostStopped = false;
+        const saveRecord = async () => {
+          record.pid = native.pid;
+          record.hostPid = host?.pid;
+          await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+        };
+        const stopHost = async () => {
+          hostStopped = true;
+          await stopChildren(new Set([host]));
+          return { hostPid: host.pid };
+        };
+        const startHost = async () => {
+          if (hostStopped) {
+            host = launchHost();
+            await waitForHost();
+            hostStopped = false;
+            await saveRecord();
+          }
+          return { hostPid: host.pid };
+        };
+        const controls = args.includes("--acceptance-controls")
+          ? acceptanceControl(dirname(recordPath), {
+              "stop-host": stopHost,
+              "start-host": startHost,
+              "restart-host": async () => {
+                await stopHost();
+                return startHost();
+              },
+              "restart-app": async () => {
+                await stopChildren(new Set([native]));
+                native = launch(executable, [], env);
+                await saveRecord();
+                return { pid: native.pid };
+              },
+            })
+          : null;
+        if (controls) {
+          record.acceptanceControlPath = controls.path;
+          record.acceptanceResultPath = controls.resultPath;
+        }
         await mkdir(dirname(recordPath), { recursive: true });
-        await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+        await saveRecord();
         console.log(`Native development ready. Run record: ${recordPath}`);
         while (native.exitCode === null && native.signalCode === null) {
           abort.signal.throwIfAborted();
+          await controls?.poll();
           assertRunning(vite);
-          assertRunning(host);
+          if (!hostStopped) assertRunning(host);
           assertRunning(native);
           await sleep(200);
         }
