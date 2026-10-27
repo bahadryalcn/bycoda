@@ -790,7 +790,11 @@ async function waitForActiveNativeProcess(context, sessionId, userBlockId) {
 
 async function scenario3(context) {
   await newSession(context, "worktree");
-  await commitTurn(context, 1, "recovery");
+  const recoveryCounter = Number(
+    (await readFile(join(context.state.project, "counter.txt"), "utf8")).trim(),
+  );
+  assert(Number.isSafeInteger(recoveryCounter), "Fake target counter is invalid");
+  await commitTurn(context, recoveryCounter + 1, "recovery");
   let current = await session(context);
   const { DatabaseSync } = await import("node:sqlite");
   const databasePath = join(context.run.desktopDataPath, "bycoda.db");
@@ -881,7 +885,7 @@ async function scenario3(context) {
     previousHostPid,
     "The isolated Host process did not restart",
   );
-  const hostCompleted = await waitUntil(
+  await waitUntil(
     async () => {
       const candidate = await session(context, current.id);
       if (candidate.busy) return false;
