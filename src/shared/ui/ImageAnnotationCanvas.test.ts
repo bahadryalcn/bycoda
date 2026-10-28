@@ -98,3 +98,55 @@ it("offers keyboard pin placement and prevents disabled drawing", async () => {
   expect(onChange).toHaveBeenCalledTimes(1);
   expect(layer.getAttribute("tabindex")).toBe("-1");
 });
+
+it("shows a readable failure with Retry and keeps the owner's marks when the frame cannot load", async () => {
+  const onChange = vi.fn();
+  const marks: ImageAnnotationDocument = {
+    marks: [{ id: "a", type: "pin", point: { x: 0.5, y: 0.5 }, number: 1 }],
+  };
+  await act(async () =>
+    root.render(
+      createElement(ImageAnnotationCanvas, {
+        src: "broken-frame",
+        alt: "Frozen device screen",
+        tool: "box",
+        document: marks,
+        onChange,
+      }),
+    ),
+  );
+  expect(container.querySelector(".image-annotation-canvas-layer")).not.toBeNull();
+  await act(async () => container.querySelector("img")!.dispatchEvent(new Event("error")));
+  const alert = container.querySelector('[role="alert"]')!;
+  expect(alert.textContent).toContain("Preview unavailable");
+  expect(container.querySelector(".image-annotation-canvas-layer")).toBeNull();
+  await act(async () =>
+    [...alert.querySelectorAll("button")].find((b) => b.textContent === "Retry")!.click(),
+  );
+  expect(container.querySelector('[role="alert"]')).toBeNull();
+  expect(container.querySelector(".image-annotation-canvas-layer")).not.toBeNull();
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("shows the keyboard hint only while the keyboard drives the layer", async () => {
+  await act(async () =>
+    root.render(
+      createElement(ImageAnnotationCanvas, {
+        src: "frame",
+        alt: "Frozen device screen",
+        tool: "box",
+        document: { marks: [] },
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  const help = container.querySelector(".image-annotation-canvas-help")!;
+  expect(help.hasAttribute("data-visible")).toBe(false);
+  const layer = container.querySelector("svg")!;
+  await act(async () =>
+    layer.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
+  );
+  expect(help.hasAttribute("data-visible")).toBe(true);
+  await act(async () => layer.dispatchEvent(new FocusEvent("focusout", { bubbles: true })));
+  expect(help.hasAttribute("data-visible")).toBe(false);
+});

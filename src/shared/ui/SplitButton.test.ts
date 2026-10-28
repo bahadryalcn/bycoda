@@ -169,3 +169,29 @@ it("allows keyboard choices while the primary is disabled, but keeps loading and
   expect(controls.menu.disabled).toBe(true);
   expect(commit).not.toHaveBeenCalled();
 });
+
+it.each([
+  ["primary", "gap"],
+  ["secondary", "shared"],
+  [undefined, "shared"],
+  ["danger", "shared"],
+  ["ghost", "none"],
+] as const)("marks the primary and menu parts and a %s seam for %s", async (variant, seam) => {
+  await render({ variant, actions: [{ id: "squash", label: "Squash", onSelect: vi.fn() }] });
+  const group = container.querySelector<HTMLElement>('[role="group"]')!;
+  expect(group.dataset.splitSeam).toBe(seam);
+  expect(group.querySelector('[data-split-part="primary"]')?.textContent).toBe("Merge");
+  expect(group.querySelector('[data-split-part="menu"]')?.getAttribute("aria-label")).toBe(
+    "Merge options",
+  );
+});
+
+it("keeps the options trigger the same size family as the primary action", async () => {
+  const { main, menu } = await render({
+    size: "md",
+    actions: [{ id: "squash", label: "Squash", onSelect: vi.fn() }],
+  });
+  expect(main.dataset.buttonSize).toBe("md");
+  expect(menu.dataset.buttonSize).toBe("md");
+  expect(menu.getAttribute("aria-haspopup")).toBe("menu");
+});

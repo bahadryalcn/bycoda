@@ -1,85 +1,13 @@
+/* Rows, slots, separators, group labels and their states come from the shared menu row in
+   arc/context-menu/context-menu.module.css; this file only shapes the menu surface. */
 .menu {
-  padding: var(--space-1);
+  padding: 0.25rem;
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: var(--foreground);
-}
-.separator {
-  block-size: 1px;
-  margin-block: var(--space-1);
-  background: var(--border);
+  color: var(--color-content);
 }
 .group + .group {
-  border-block-start: 1px solid var(--border);
-  margin-block-start: var(--space-1);
-  padding-block-start: var(--space-1);
-}
-.heading {
-  padding: var(--space-1) var(--space-2);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
-  font-weight: 500;
-}
-.row {
-  min-block-size: 32px;
-  gap: var(--space-2);
-  padding-block: 6px;
-}
-.row[data-described] {
-  align-items: flex-start;
-}
-.row[data-described] > .icon {
-  margin-block-start: 1px;
-}
-@media (pointer: coarse) {
-  .row {
-    min-block-size: 44px;
-  }
-}
-.icon {
-  display: inline-flex;
-  inline-size: 1rem;
-  block-size: 1rem;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-}
-.icon svg {
-  inline-size: 100%;
-  block-size: 100%;
-}
-.menu .row > .copy {
-  flex: 1;
-  min-inline-size: 0;
-  overflow-wrap: anywhere;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-}
-.copy > span {
-  display: block;
-}
-.copy > .label {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  font-size: var(--ui-font-secondary);
-  line-height: var(--ui-leading-secondary);
-  font-weight: 500;
-}
-.label > :first-child {
-  min-inline-size: 0;
-}
-.label > :not(:first-child) {
-  flex: none;
-}
-.description,
-.shortcut {
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: var(--ui-leading-caption);
-}
-.shortcut {
-  flex: none;
+  border-block-start: 1px solid var(--color-stroke);
+  margin-block-start: 0.25rem;
+  padding-block-start: 0.25rem;
 }

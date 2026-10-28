@@ -8,6 +8,7 @@ import { once } from "node:events";
 import { WebSocket } from "ws";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
+import { ModelCatalogCache } from "./model-catalog-cache";
 import type { HostProvider } from "./providers";
 import { DesktopSessions } from "./desktopSessions";
 import { HostTerminals } from "./terminals";
@@ -160,17 +161,118 @@ async function setup(provider: Partial<HostProvider> = {}, terminals?: HostTermi
 }
 
 describe("Host HTTP/WS read composition", () => {
+  it("shares Crew request identities and preserves raw versus redacted views across HTTP/WS", async () => {
+    const send = vi.fn(async () => {});
+    const host = await setup({ send });
+    // Only model discovery is a fixture port. Owners, stores and both transports
+    // are real; no installed CLI, native probe or provider account is contacted.
+    vi.spyOn(ModelCatalogCache.prototype, "read").mockResolvedValue({
+      models: {
+        codex: [{ id: "codex:test", harness: "codex", name: "Fixture" }],
+        claude: [{ id: "claude:test", harness: "claude", name: "Review fixture" }],
+      },
+      errors: {},
+    });
+    vi.spyOn(host.server.tasks, "tick").mockResolvedValue(undefined);
+    const socket = await host.ready();
+    const projectId = host.project.id;
+    const schema = await host.rpc(socket, "crews.schema", { projectId });
+    expect(schema.error).toBeUndefined();
+    const definition = {
+      ...schema.result.definition,
+      id: "composition-crew",
+      name: "Shared crew",
+      agents: schema.result.definition.agents.map((agent: { role: string }) => ({
+        id: agent.role,
+        name: agent.role,
+        role: agent.role,
+        instructions: "private-source-instructions",
+        selection: "fixed",
+        candidates: [
+          {
+            id: `${agent.role}-model`,
+            harness: agent.role === "reviewer" ? "claude" : "codex",
+            model: agent.role === "reviewer" ? "claude:test" : "codex:test",
+            modelSettings: {},
+            capabilities: {},
+            cost: 1,
+          },
+        ],
+      })),
+    };
+    const saved = await host.http("crews.save", { projectId, definition });
+    const listed = await host.rpc(socket, "crews.list", { projectId });
+    expect(listed.error).toBeUndefined();
+    expect(listed.result.definitions).toContainEqual(saved);
+    const start = {
+      projectId,
+      definitionId: saved.id,
+      prompt: "Only a source fixture",
+      requestId: "crew-start-retained",
+      newConversation: true,
+    };
+    const original = await host.http("crews.start", start);
+    const retry = await host.rpc(socket, "crews.start", start);
+    expect(retry.error).toBeUndefined();
+    expect(retry.result.id).toBe(original.id);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledOnce(), { timeout: 5000 });
+    expect(retry.result.definition.agents[0].instructions).toBe("private-source-instructions");
+    expect(
+      (await host.rpc(socket, "crews.pause", { projectId, runId: original.id })).result.status,
+    ).toBe("paused");
+    const request = {
+      projectId,
+      runId: original.id,
+      requestId: "crew-message-retained",
+      text: "Retain this request",
+    };
+    const firstMessage = await host.http("crews.request", request);
+    const sameMessage = await host.rpc(socket, "crews.request", request);
+    expect(sameMessage.error).toBeUndefined();
+    expect(sameMessage.result.id).toBe(firstMessage.id);
+    const read = await host.rpc(socket, "crews.get", { projectId, runId: original.id });
+    expect(read.error).toBeUndefined();
+    expect(
+      read.result.definition.agents.every(
+        (agent: { instructions: string }) => agent.instructions === "",
+      ),
+    ).toBe(true);
+    expect(read.result).not.toHaveProperty("launch");
+    expect(read.result).not.toHaveProperty("pendingDelivery");
+    expect(
+      read.result.messages.filter((message: { id: string }) => message.id === firstMessage.id),
+    ).toHaveLength(1);
+    const denied = await host.rpc(socket, "crews.list", {
+      projectId,
+      principal: { sessionId: "forged" },
+    });
+    expect(denied.error.code).toBe(RPC_ERROR_CODES.invalidParams);
+    expect(send).toHaveBeenCalledOnce();
+  });
+
   it("shares Steward configuration and declined proposals through the same HTTP/WS owners", async () => {
     const host = await setup();
     const socket = await host.ready();
     const description = await host.http("environment.describe");
     expect(description.capabilities).toContain("transport.ws.stewards.v2");
     const input = {
-      id: "steward-composition", projectId: host.project.id, enabled: false,
-      harness: "codex", model: "codex:test", modelSettings: {}, runtimeMode: "auto",
-      focus: "Preserve the source", maxProposals: 5, maxOpen: 10,
-      autoStart: false, autoMerge: false, isolate: false,
-      scheduleKind: "daily", minute: 0, time: "09:00", dayOfWeek: 1,
+      id: "steward-composition",
+      projectId: host.project.id,
+      enabled: false,
+      harness: "codex",
+      model: "codex:test",
+      modelSettings: {},
+      runtimeMode: "auto",
+      focus: "Preserve the source",
+      maxProposals: 5,
+      maxOpen: 10,
+      autoStart: false,
+      autoMerge: false,
+      isolate: false,
+      scheduleKind: "daily",
+      minute: 0,
+      time: "09:00",
+      dayOfWeek: 1,
     };
     const saved = await host.http("stewards.save", { steward: input });
     expect((await host.rpc(socket, "stewards.list")).result).toEqual([saved]);
@@ -179,12 +281,22 @@ describe("Host HTTP/WS read composition", () => {
     });
     expect(edited.error).toBeUndefined();
     expect((await host.http("stewards.list"))[0]).toEqual(edited.result);
-    await host.http("tasks.save", { task: {
-      id: "steward-proposal", projectId: host.project.id, title: "Retain this suggestion",
-      prompt: "Only a source fixture", harness: "codex", model: "codex:test",
-      runtimeMode: "auto", modelSettings: {}, source: "steward", stewardId: input.id,
-      isolate: false, status: "todo",
-    } });
+    await host.http("tasks.save", {
+      task: {
+        id: "steward-proposal",
+        projectId: host.project.id,
+        title: "Retain this suggestion",
+        prompt: "Only a source fixture",
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "auto",
+        modelSettings: {},
+        source: "steward",
+        stewardId: input.id,
+        isolate: false,
+        status: "todo",
+      },
+    });
     const declined = await host.rpc(socket, "stewards.decline", { taskId: "steward-proposal" });
     expect(declined.error).toBeUndefined();
     expect(declined.result).toEqual({ declined: true });
@@ -192,8 +304,9 @@ describe("Host HTTP/WS read composition", () => {
     expect(await host.http("tasks.list")).toEqual([]);
     const missing = await host.rpc(socket, "stewards.runNow", { stewardId: "absent-steward" });
     expect(missing.error.code).not.toBe(RPC_ERROR_CODES.methodNotFound);
-    expect((await host.rpc(socket, "stewards.delete", { stewardId: input.id })).result)
-      .toEqual({ deleted: true });
+    expect((await host.rpc(socket, "stewards.delete", { stewardId: input.id })).result).toEqual({
+      deleted: true,
+    });
     expect(await host.http("stewards.list")).toEqual([]);
   });
 

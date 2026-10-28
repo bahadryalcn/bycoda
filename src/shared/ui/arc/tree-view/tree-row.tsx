@@ -35,3 +35,26 @@ export function TreeRow({
     />
   );
 }
+
+type SlotProps = ComponentPropsWithRef<"span">;
+const join = (...names: (string | undefined)[]) => names.filter(Boolean).join(" ");
+
+/** Fixed-width expand/collapse slot. Keeps chevrons and empty leaf rows aligned; decorative by default. */
+export function TreeRowToggle({ className, ...props }: SlotProps) {
+  return <span aria-hidden="true" {...props} className={join(styles.toggle, className)} />;
+}
+
+/** Leading icon slot that never shrinks. */
+export function TreeRowIcon({ className, ...props }: SlotProps) {
+  return <span aria-hidden="true" {...props} className={join(styles.icon, className)} />;
+}
+
+/** Truncating name. The complete text stays in the DOM (and in `title` when provided) for assistive technology. */
+export function TreeRowLabel({ className, ...props }: SlotProps) {
+  return <span {...props} className={join(styles.label, className)} />;
+}
+
+/** Stable end column for counts, badges and status marks. */
+export function TreeRowTrailing({ className, ...props }: SlotProps) {
+  return <span {...props} className={join(styles.trailing, className)} />;
+}

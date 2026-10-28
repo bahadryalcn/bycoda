@@ -247,6 +247,12 @@ fn data_dir() -> Option<PathBuf> {
     Some(PathBuf::from(home).join(".bycoda-host"))
 }
 
+/// Reuse the exact native Host selection, including isolated development data.
+/// Returning None never falls back from a missing debug profile to personal data.
+pub(crate) fn native_authority_profile() -> Option<PathBuf> {
+    data_dir()
+}
+
 /// The version of the runtime the installed launcher points at.
 fn installed_version(base: &Path) -> Option<String> {
     let runtime = std::fs::read_to_string(base.join("runtime-path")).ok()?;

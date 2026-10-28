@@ -33,7 +33,7 @@ export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   icon?: ReactNode;
   variant?: BadgeVariant;
   appearance?: BadgeAppearance;
-  /** Accessible name. Required for a `dot` without text, which renders as a labelled image. */
+  /** Accessible name. A `dot` without text needs it to carry meaning; without one it is decorative and hidden from assistive tech. A `count` can use it for context, such as "12 unread". */
   label?: string;
   /** For `count`: numbers above this render as `max+`. */
   max?: number;
@@ -98,6 +98,12 @@ export function Badge({
         ? String(children)
         : null;
   const dotOnly = variant === "dot" && (children === undefined || children === null);
+  // A capped count still exposes its real number, and a dot with no name is decoration rather than a colour-only status.
+  const name =
+    label ??
+    (variant === "count" && typeof children === "number" && text !== String(children)
+      ? String(children)
+      : undefined);
   const glyphKey = icon ? iconKey(icon) : "";
   const body = useRef<HTMLSpanElement>(null);
   const content = useRef<HTMLSpanElement>(null);
@@ -153,7 +159,11 @@ export function Badge({
   ]
     .filter(Boolean)
     .join(" ");
-  const a11y = label ? { "aria-label": label, ...(dotOnly ? { role: "img" } : {}) } : {};
+  const a11y = name
+    ? { "aria-label": name, ...(dotOnly ? { role: "img" } : {}) }
+    : dotOnly
+      ? { "aria-hidden": true as const }
+      : {};
   // The pill follows its content: text and icon swap in place while the width springs to the new size.
   return (
     <span {...a11y} {...props} className={classes}>

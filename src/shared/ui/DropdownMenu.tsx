@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
-import { ContextMenuRow } from "./arc/context-menu/context-menu";
+import { ContextMenuRow, contextMenuSlotClassName as slot } from "./arc/context-menu/context-menu";
 import { Popover, type PopoverAnchor } from "./Popover";
 import { Check } from "./icons";
 import { Badge } from "./Badge";
@@ -60,6 +60,12 @@ export function DropdownMenu({
       surface.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ??
         [],
     );
+  // Keyboard moves keep the row inside a scrolling menu; pointer moves never scroll it.
+  const focusRow = (row: HTMLElement | undefined) => {
+    if (!row) return;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView?.({ block: "nearest" });
+  };
   const close = (restore: boolean) => {
     if (closed.current) return;
     closed.current = true;
@@ -119,15 +125,21 @@ export function DropdownMenu({
       );
       if (match) {
         event.preventDefault();
-        match.focus({ preventScroll: true });
+        focusRow(match);
       }
       return;
     }
     if (next !== undefined && enabled.length) {
       event.preventDefault();
-      enabled[next]?.focus({ preventScroll: true });
+      focusRow(enabled[next]);
     }
   };
+  // One leading icon slot for the whole menu, so rows without an icon keep the label column.
+  const hasIcons = items.some((item) =>
+    item.kind === "group"
+      ? item.items.some((action) => action.icon != null)
+      : item.kind === "item" && item.icon != null,
+  );
   const renderAction = (item: DropdownMenuAction) => (
     <ContextMenuRow
       key={item.id}
@@ -147,7 +159,6 @@ export function DropdownMenu({
       destructive={item.danger}
       data-menu-label={item.label}
       data-described={item.description ? "true" : undefined}
-      className={styles.row}
       tabIndex={-1}
       onPointerMove={(event) => {
         if (!item.disabled) event.currentTarget.focus({ preventScroll: true });
@@ -158,24 +169,24 @@ export function DropdownMenu({
         onPick(item.id);
       }}
     >
-      {item.icon ? (
-        <span className={styles.icon} aria-hidden="true">
+      {hasIcons ? (
+        <span className={slot.icon} aria-hidden="true">
           {item.icon}
         </span>
       ) : null}
-      <span className={styles.copy}>
-        <span className={styles.label}>
+      <span className={slot.copy}>
+        <span className={slot.label}>
           <span>{item.label}</span>
           {item.badge ? <Badge size="sm">{item.badge}</Badge> : null}
         </span>
-        {item.description ? <span className={styles.description}>{item.description}</span> : null}
+        {item.description ? <span className={slot.description}>{item.description}</span> : null}
       </span>
       {item.checked != null ? (
-        <span className={styles.icon} aria-hidden="true">
+        <span className={slot.trailing} aria-hidden="true">
           {item.checked ? <Check /> : null}
         </span>
       ) : item.shortcut ? (
-        <span className={styles.shortcut} aria-hidden="true">
+        <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">
           {item.shortcut}
         </span>
       ) : null}
@@ -198,11 +209,11 @@ export function DropdownMenu({
     >
       {items.map((item, index) =>
         item.kind === "sep" ? (
-          <div role="separator" key={`sep-${index}`} className={styles.separator} />
+          <div role="separator" key={`sep-${index}`} className={slot.separator} />
         ) : item.kind === "group" ? (
           item.items.length ? (
             <div key={item.id} role="group" aria-label={item.label} className={styles.group}>
-              <div className={styles.heading} aria-hidden="true">
+              <div className={slot.heading} aria-hidden="true">
                 {item.label}
               </div>
               {item.items.map(renderAction)}

@@ -509,6 +509,9 @@ export class HostChildBackend implements ChildBackend {
 
   private async startOwned(id: string, args: Record<string, unknown>): Promise<number> {
     if (this.closing) throw new Error("Host is stopping");
+    const beforeSpawn = args.beforeSpawn;
+    if (beforeSpawn !== undefined && typeof beforeSpawn !== "function")
+      throw new Error("beforeSpawn must be an in-process function.");
     const attempt = {};
     let tools: ToolPreparation | undefined;
     let published = false;
@@ -519,7 +522,13 @@ export class HostChildBackend implements ChildBackend {
       if (this.starts.get(id) !== attempt)
         throw new ProviderStartupCancelled("Provider startup cancelled");
     };
+    const restrict = async () => {
+      check();
+      if (beforeSpawn) await beforeSpawn();
+      check();
+    };
     try {
+      if (beforeSpawn) await restrict();
       let genericEnv: Record<string, string> = {};
       if (args.genericAcpId) {
         if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
@@ -528,17 +537,22 @@ export class HostChildBackend implements ChildBackend {
         args = { ...args, command: config.command, args: config.args };
         genericEnv = config.env ?? {};
       }
+      if (beforeSpawn) await restrict();
       await this.killCurrent(id);
       check();
+      if (beforeSpawn) await restrict();
       tools = this.preparation(id, attempt);
       const account = await providerAccountEnvironment(
         args.account as { provider?: string; id?: string } | undefined,
       );
       check();
+      if (beforeSpawn) await restrict();
       const cwd = await workingDirectory(String(args.cwd));
       check();
+      if (beforeSpawn) await restrict();
       const launch = await providerLaunch(String(args.command), args.args as string[]);
       check();
+      if (beforeSpawn) await restrict();
       const env: NodeJS.ProcessEnv = { ...process.env, ...genericEnv, ...account?.set };
       for (const key of Object.keys(env))
         if (
@@ -550,10 +564,12 @@ export class HostChildBackend implements ChildBackend {
       for (const group of ["social", "conversation", "runtime-logs"] as const) {
         const tool = await this.prepareTool(id, tools, group, check);
         check();
+        if (beforeSpawn) await restrict();
         Object.assign(env, tool?.env);
       }
       for (const key of account?.remove ?? []) delete env[key];
       check();
+      if (beforeSpawn) await restrict();
       // Preparation is local to this attempt. A cancelled older grant must not
       // replace the authority used by a newer child under the same session ID.
       for (const [prefix, target] of [

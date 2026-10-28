@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Text } from "@codemirror/state";
 import { Decoration, EditorView, keymap, lineNumbers } from "@codemirror/view";
 import { minimalSetup } from "codemirror";
 import { openSearchPanel } from "@codemirror/search";
@@ -43,6 +43,8 @@ export type MergeConflictEditorProps = {
   disabled?: boolean;
   onSave: (text: string) => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
+  /** Captures result text only; unresolved region choices remain separate state. */
+  onDocumentChange?: (document: Text) => void;
   canSave: () => boolean;
   onResolved?: () => void;
   onOpenFile?: (path: string) => void;
@@ -153,6 +155,7 @@ export function MergeConflictEditor(props: MergeConflictEditorProps) {
           const before = mergeResolution(update.startState);
           if (next !== before) setState(next);
           if (!update.docChanged && next.regions === before.regions) return;
+          if (update.docChanged) propsRef.current.onDocumentChange?.(update.state.doc);
           setResolved(false);
           const saved = savedRef.current;
           const changed =

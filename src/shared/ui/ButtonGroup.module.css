@@ -1,18 +1,20 @@
+/* One joined surface. The boundary is an overlay rather than a border, so the group is
+   exactly as tall as one Button and never shifts a toolbar row. Segment states, dividers
+   and end radii are owned by Button.module.css under [data-button-group="joined"]. */
 .group {
+  position: relative;
   display: flex;
   align-items: stretch;
   min-inline-size: 0;
-  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: var(--ui-control-radius);
   background: var(--ui-surface);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .group:has(> button:not(:disabled, [aria-disabled="true"]):hover) {
-    background: var(--ui-surface-hover);
-  }
-}
-
-.group:has(> button:not(:disabled, [aria-disabled="true"]):active) {
-  background: var(--ui-surface-pressed);
+.group::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--ui-tone-neutral-border);
+  border-radius: inherit;
+  pointer-events: none;
 }

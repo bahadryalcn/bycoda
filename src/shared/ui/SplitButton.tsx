@@ -52,16 +52,25 @@ export function SplitButton({
     if (menuOpen === undefined) setInternalOpen(next);
     onMenuOpenChange?.(next);
   };
+  // Solid actions separate with a gap, outlined ones share a border, quiet ones need no seam.
+  const hierarchy = buttonProps.variant ?? "secondary";
+  const seam =
+    hierarchy === "primary"
+      ? "gap"
+      : hierarchy === "secondary" || hierarchy === "danger"
+        ? "shared"
+        : "none";
   return (
     <div
       ref={groupRef}
       role="group"
       aria-label={label}
+      data-split-seam={seam}
       className={[styles.group, buttonProps.fullWidth ? styles.fullWidth : ""]
         .filter(Boolean)
         .join(" ")}
     >
-      <Button {...buttonProps} disabled={disabled} loading={loading}>
+      <Button {...buttonProps} data-split-part="primary" disabled={disabled} loading={loading}>
         {label}
       </Button>
       <Button
@@ -70,6 +79,7 @@ export function SplitButton({
         size={buttonProps.size}
         shape={buttonProps.shape}
         type="button"
+        data-split-part="menu"
         ref={trigger}
         iconOnly
         label={menuLabel}

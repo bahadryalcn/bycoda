@@ -103,7 +103,7 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   /* Structural separators: use border-stroke, divide-stroke, or bg-stroke. */
   --color-stroke: color-mix(
     in srgb,
-    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 2),
+    var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 1.5),
     transparent
   );
   /* Interactive fills keep their dark-theme contrast but use gentler ink in
@@ -393,8 +393,9 @@ html.theme-light {
   --ui-conflict-current-word: color-mix(in oklab, var(--color-conflict-ours) 30%, transparent);
   --ui-conflict-incoming-word: color-mix(in oklab, var(--color-conflict-theirs) 30%, transparent);
   --ui-surface-muted: var(--ui-surface-panel);
-  --ui-surface-hover: color-mix(in oklab, var(--color-content) 18%, var(--color-background-base));
-  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 24%, var(--color-background-base));
+  /* Hover stays a transient step below selection so the two never read alike. */
+  --ui-surface-hover: color-mix(in oklab, var(--color-content) 13%, var(--color-background-base));
+  --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--color-background-base));
   --ui-surface-selected: color-mix(
     in oklab,
     var(--ui-interaction-ink) 24%,
@@ -402,7 +403,8 @@ html.theme-light {
   );
   --ui-border-accent: var(--ui-interaction-ink);
   --ui-pane-border: color-mix(in oklab, var(--color-content) calc(var(--appearance-stroke-strength, 7%) * 3), var(--ui-surface-panel));
-  --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
+  /* Lightest field edge that keeps 3:1 against its surface; light needs more ink. */
+  --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
      content with its own inverse background. Overlay editors keep a tint. */
   --ui-text-selection-background: var(--ui-interaction-accent);
@@ -534,6 +536,7 @@ html.theme-light {
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 8%, var(--ui-surface));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 14%, var(--ui-surface));
   --ui-surface-selected: color-mix(in oklab, var(--ui-interaction-ink) 18%, var(--ui-surface));
+  --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
   --link-color: var(--palette-hsl_211_92pct_40pct);
   --color-skill: var(--palette-hexa07c10);
   --color-mention: var(--palette-hex0284c7);

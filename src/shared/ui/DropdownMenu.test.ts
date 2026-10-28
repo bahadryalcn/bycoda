@@ -257,3 +257,59 @@ it("navigates across named groups, skips disabled actions and keeps selection wi
   expect(pick).toHaveBeenCalledExactlyOnceWith("plan");
   expect(document.activeElement).toBe(anchor);
 });
+
+it("reserves one leading icon slot so labels align, and keeps shortcut/check in the trailing slot", async () => {
+  await act(async () =>
+    root.render(
+      createElement(DropdownMenu, {
+        anchor,
+        label: "Slots",
+        onPick: vi.fn(),
+        onClose: vi.fn(),
+        items: [
+          { kind: "item", id: "a", label: "With icon", icon: createElement("svg"), shortcut: "F2" },
+          { kind: "item", id: "b", label: "No icon", checked: true },
+          { kind: "item", id: "c", label: "Described", description: "Quiet detail" },
+        ],
+      }),
+    ),
+  );
+  const rows = [...document.querySelectorAll<HTMLElement>('[role^="menuitem"]')];
+  expect(rows).toHaveLength(3);
+  for (const row of rows) expect(row.querySelectorAll('[class*="_icon_"]')).toHaveLength(1);
+  expect(rows[0].querySelector('[class*="_shortcut_"]')?.textContent).toBe("F2");
+  expect(rows[1].querySelector('[class*="_trailing_"] svg')).not.toBeNull();
+  expect(rows[2].getAttribute("data-described")).toBe("true");
+  expect(rows[2].getAttribute("aria-description")).toBe("Quiet detail");
+});
+
+it("scrolls keyboard-focused rows into view but never scrolls on pointer hover", async () => {
+  const scroll = vi.fn();
+  const original = HTMLElement.prototype.scrollIntoView;
+  HTMLElement.prototype.scrollIntoView = scroll;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(DropdownMenu, {
+          anchor,
+          label: "Actions",
+          items,
+          onPick: vi.fn(),
+          onClose: vi.fn(),
+        }),
+      ),
+    );
+    await key("ArrowDown");
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+    scroll.mockClear();
+    await act(async () =>
+      document
+        .querySelector('[aria-label="Duplicate"]')!
+        .dispatchEvent(new PointerEvent("pointermove", { bubbles: true })),
+    );
+    expect(focused()).toBe("Duplicate");
+    expect(scroll).not.toHaveBeenCalled();
+  } finally {
+    HTMLElement.prototype.scrollIntoView = original;
+  }
+});

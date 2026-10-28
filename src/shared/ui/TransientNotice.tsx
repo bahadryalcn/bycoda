@@ -19,8 +19,11 @@ export interface TransientNoticeProps {
   tone?: TransientNoticeTone;
   /** Extra body, such as a list of rows. Rendered below the message. */
   children?: ReactNode;
-  /** One secondary action, for example Undo. */
-  action?: { label: string; onClick: () => void; disabled?: boolean };
+  /**
+   * One secondary action, for example Undo or Retry. It sits under the message.
+   * `pending` shows progress and blocks a second activation; the caller owns the operation.
+   */
+  action?: { label: string; onClick: () => void; disabled?: boolean; pending?: boolean };
   /** Additional header actions, such as "Update all". Use shared Button. */
   actions?: ReactNode;
   /** Determinate progress from 0 to 1, with an accessible label. */
@@ -28,7 +31,7 @@ export interface TransientNoticeProps {
   onDismiss: () => void;
   /** Disables the dismiss control while an operation cannot be interrupted. */
   dismissDisabled?: boolean;
-  /** Auto-dismiss delay. `null` keeps the notice until dismissed. */
+  /** Auto-dismiss delay. `null` keeps the notice until dismissed. Danger notices default to `null` so a failure and its diagnostic are never lost to a timer. */
   durationMs?: number | null;
   /** Corner stack. `top-end` honours `offset` (px) for sibling banners. */
   placement?: "bottom-end" | "top-end";
@@ -55,7 +58,7 @@ export function TransientNotice({
   progress,
   onDismiss,
   dismissDisabled,
-  durationMs = VISIBLE_MS,
+  durationMs: durationOption,
   placement = "bottom-end",
   offset,
   width = "md",
@@ -64,6 +67,8 @@ export function TransientNotice({
   "aria-label": ariaLabel,
 }: TransientNoticeProps) {
   const t = useT();
+  const durationMs =
+    durationOption === undefined ? (tone === "danger" ? null : VISIBLE_MS) : durationOption;
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
   const surface = useRef<HTMLDivElement>(null);
@@ -143,6 +148,17 @@ export function TransientNotice({
   const position = placement === "top-end" ? { insetBlockStart: inset } : { insetBlockEnd: inset };
   const widthClass =
     width === "lg" ? "w-[min(360px,calc(100vw-24px))]" : "w-[min(340px,calc(100vw-24px))]";
+  const actionButton = action ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      disabled={action.disabled}
+      loading={action.pending}
+      onClick={action.onClick}
+    >
+      {action.label}
+    </Button>
+  ) : null;
   const notice = (
     <Alert
       ref={surface}
@@ -157,7 +173,7 @@ export function TransientNotice({
     >
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex min-w-0 items-start gap-2">
-          <div className="min-w-0 flex-1 self-center break-words">
+          <div className="min-w-0 flex-1 select-text self-center break-words">
             {title ? <strong className="text-ui-secondary font-medium">{title}</strong> : message}
           </div>
           <Button
@@ -172,28 +188,24 @@ export function TransientNotice({
             <X className="size-3.5" aria-hidden />
           </Button>
         </div>
-        {actions || action ? (
+        {actions ? (
           <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {actions}
-            {action ? (
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={action.disabled}
-                onClick={action.onClick}
-              >
-                {action.label}
-              </Button>
-            ) : null}
+            {actionButton}
           </div>
         ) : null}
         {children || progress || (title && message) ? (
-          <div className="min-w-0 break-words">
+          <div className="min-w-0 select-text break-words">
             {title ? message : null}
             {children}
             {progress ? (
               <Progress compact value={progress.value * 100} max={100} label={progress.label} />
             ) : null}
+          </div>
+        ) : null}
+        {!actions && actionButton ? (
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            {actionButton}
           </div>
         ) : null}
       </div>

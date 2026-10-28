@@ -114,3 +114,33 @@ it("preserves the default linear completed-only selection and read-only guide ow
   expect(container.querySelectorAll('[data-status="complete"]')).toHaveLength(5);
   expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("Done");
 });
+
+it("distinguishes complete, current, error and upcoming steps for assistive technology", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Stepper, {
+        steps: [
+          { id: "a", label: "Workspace" },
+          { id: "b", label: "Agents", error: "Sign-in failed" },
+          { id: "c", label: "Connections", description: "Optional" },
+          { id: "d", label: "Projects" },
+        ],
+        current: 2,
+        label: "Setup",
+      }),
+    ),
+  );
+  const rows = Array.from(container.querySelectorAll("li"));
+  expect(rows.map((row) => row.dataset.status)).toEqual([
+    "complete",
+    "error",
+    "current",
+    "upcoming",
+  ]);
+  expect(rows.map((row) => row.getAttribute("aria-current"))).toEqual([null, null, "step", null]);
+  expect(container.firstElementChild?.getAttribute("aria-label")).toBe("Setup");
+  expect(rows[1].textContent).toContain("Sign-in failed");
+  expect(rows[0].textContent).toContain("Completed");
+  expect(rows[3].textContent).toContain("Pending");
+  expect(container.querySelector('[aria-live="polite"]')?.textContent).toBe("3/4: Connections");
+});

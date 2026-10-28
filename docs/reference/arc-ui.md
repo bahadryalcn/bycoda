@@ -282,6 +282,25 @@ not a new product build or UI test suite.
 - Public `MenuRow` delegates the existing private Arc ContextMenuRow and exports
   `menuRowClassName`. It forwards native button refs/events and disabled/submenu
   semantics to existing domain menu controllers; it does not create a menu stack.
+- DropdownMenu, the native ContextMenu path, MenuRow and the standalone Arc menu
+  share one row in `arc/context-menu/context-menu.module.css`: compact height is
+  the density's compact control height plus 4px (44px minimum on coarse pointers),
+  with icon, title/description and trailing shortcut/check/chevron slots. Hover,
+  pressed and danger consume `--ui-surface-hover`, `--ui-surface-pressed` and the
+  danger tone roles; keyboard highlight adds the shared focus ring; disabled rows
+  have no hover fill and are skipped by arrow keys. Do not restyle rows per menu.
+- `Popover` content flow is explicit: the default `flow="intrinsic"` keeps the
+  previous clipped, natural-height behavior; `flow="scroll"` gives the popover one
+  bounded scroll region with overscroll containment, and its own scrolling never
+  re-places or dismisses it. Do not add a second scroll rail inside a scroll flow.
+- `Modal` paints the shared raised popup surface. Compact dialogs (`size="sm"`)
+  and end sheets use the title type role, `md`/`lg` task dialogs the heading role;
+  `placement="end"` renders as a pane with an inline-start edge and header rule.
+- `EmptyState` accepts `context="page" | "panel" | "list"` (default `page`) for
+  page versus compact panel/list absence. `FailureState` keeps an 8,000-character
+  readable preview, states when it is cut, and copies the complete diagnostic;
+  after a copy failure it reveals and selects the full text for manual copying.
+  An `onRetry` promise keeps Retry pending and blocks a duplicate attempt.
 - Public `TreeRow` forwards native button props/ref to `arc/tree-view/tree-row.tsx`.
   Controlled `selected`, `cut`, `dropTarget` and finite depth clamped to 0..64
   drive shared density/token presentation. The default role is treeitem with

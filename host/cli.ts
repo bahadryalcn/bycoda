@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import { REMOTE_PROVIDERS, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { version } from "../package.json";
 import { readHostBuildIdentity } from "./build-identity";
+import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -105,6 +106,55 @@ Connect another computer using an SSH forward to the loopback port.`);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") await protectWindowsDirectory(directory);
   else chmodSync(directory, 0o700);
+  if (command === "native-authority-deploy") {
+    try {
+      // Local installer/native-owned child only. No HTTP route can select an
+      // executable or write this deployment permission.
+      const chunks: Buffer[] = [];
+      let bytes = 0;
+      const input = await new Promise<Buffer>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          process.stdin.destroy();
+          reject(new Error("Native deployment input deadline"));
+        }, 10_000);
+        process.stdin.once("error", (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        process.stdin.on("data", (chunk: Buffer) => {
+          bytes += chunk.length;
+          if (bytes > 8192) {
+            clearTimeout(timer);
+            process.stdin.destroy();
+            reject(new Error("Native deployment input too large"));
+            return;
+          }
+          chunks.push(chunk);
+        });
+        process.stdin.once("end", () => {
+          clearTimeout(timer);
+          resolve(Buffer.concat(chunks, bytes));
+        });
+      });
+      const { writeNativeHelperDeployment } = await import("./native-authority/deployment");
+      const record = await writeNativeHelperDeployment(
+        directory,
+        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input)),
+      );
+      console.log(
+        JSON.stringify({
+          version: 1,
+          deploymentId: record.sourceProfileId,
+          generation: record.generation,
+          qualified: false,
+        }),
+      );
+      return;
+    } catch {
+      // Parsing/IO failures must not echo private native profile input.
+      throw new Error("Native helper deployment unavailable");
+    }
+  }
   if (command === "connection-info") {
     console.log(JSON.stringify(await connectionInfo(directory, entryPath)));
     return;
@@ -297,6 +347,12 @@ Connect another computer using an SSH forward to the loopback port.`);
     const engine = new HostEngine(store, hostProviders);
     await engine.ready;
     const secret = randomBytes(32).toString("base64url");
+    const { NativeSourceRegistry } = await import("./native-authority/source-registry");
+    const { createNativeSourceHelperProvider } = await import("./native-authority/deployment");
+    const nativeSources = new NativeSourceRegistry({
+      provider: createNativeSourceHelperProvider({ directory }),
+      environmentId: store.environmentId,
+    });
     let stopping: Promise<void> | undefined;
     let stop: () => Promise<void>;
     // A separate local administrative credential cannot be used as a paired
@@ -304,40 +360,48 @@ Connect another computer using an SSH forward to the loopback port.`);
     const server = await createHostServer(
       engine,
       available,
-      (request, response) => {
-        if (
-          request.method !== "POST" ||
-          request.headers.origin ||
-          request.headers.authorization !== `Bearer ${secret}`
-        ) {
-          response.writeHead(403).end();
-          return;
-        }
-        let body = "";
-        request.on("data", (chunk) => {
-          body += String(chunk);
-          if (body.length > 128) request.destroy();
-        });
-        request.on("end", () => {
-          try {
-            const action = JSON.parse(body).action;
-            if (action !== "status" && action !== "stop") {
-              response.writeHead(400).end();
-              return;
-            }
-            response.end(
-              JSON.stringify({
-                pid: process.pid,
-                version,
-                runtime: entryPath,
-                buildIdentity: readHostBuildIdentity(entryPath),
-              }),
-            );
-            if (action === "stop") void stop();
-          } catch {
-            response.writeHead(400).end();
+      {
+        lifecycle: (request, response) => {
+          if (
+            request.method !== "POST" ||
+            request.headers.origin ||
+            request.headers.authorization !== `Bearer ${secret}`
+          ) {
+            response.writeHead(403).end();
+            return;
           }
-        });
+          let body = "";
+          request.on("data", (chunk) => {
+            body += String(chunk);
+            if (body.length > 128) request.destroy();
+          });
+          request.on("end", () => {
+            try {
+              const action = JSON.parse(body).action;
+              if (action !== "status" && action !== "stop") {
+                response.writeHead(400).end();
+                return;
+              }
+              response.end(
+                JSON.stringify({
+                  pid: process.pid,
+                  version,
+                  runtime: entryPath,
+                  buildIdentity: readHostBuildIdentity(entryPath),
+                }),
+              );
+              if (action === "stop") void stop();
+            } catch {
+              response.writeHead(400).end();
+            }
+          });
+        },
+        nativeAuthorityBootstrap: createNativeAuthorityBootstrap({
+          secret,
+          environmentId: store.environmentId,
+          registry: nativeSources,
+          provisioningLauncher: { nodeExecutable: process.execPath, entryPath },
+        }),
       },
       undefined,
       undefined,

@@ -139,3 +139,70 @@ it("clamps the full physical width inside the viewport at 125 percent zoom", asy
   expect(Number.parseFloat(surface.style.left)).toBe(592);
   expect((Number.parseFloat(surface.style.left) + 200) * 1.25).toBe(990);
 });
+
+it("keeps intrinsic content unscrolled by default and owns one scroll region when asked", async () => {
+  await act(async () => root.render(createElement(Popover, { anchor, solid: true }, "Menu")));
+  let content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("intrinsic");
+  expect(content.style.overflowY).toBe("");
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, solid: true, flow: "scroll" }, "Menu")),
+  );
+  content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("scroll");
+  expect(content.style.overflowY).toBe("auto");
+  expect(content.style.overscrollBehavior).toBe("contain");
+  expect(content.hasAttribute("flow")).toBe(false);
+});
+
+it("does not scroll when the height is not constrained", async () => {
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, flow: "scroll", constrainHeight: false }, "Menu")),
+  );
+  const content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  expect(content.dataset.popoverFlow).toBe("intrinsic");
+  expect(content.style.overflowY).toBe("");
+});
+
+it("treats scrolling inside the popover as neither a re-placement nor an outside dismissal", async () => {
+  const measure = vi
+    .spyOn(anchor, "getBoundingClientRect")
+    .mockReturnValue(new DOMRect(40, 50, 80, 20));
+  const dismiss = vi.fn();
+  await act(async () =>
+    root.render(createElement(Popover, { anchor, flow: "scroll", onDismiss: dismiss }, "Menu")),
+  );
+  await frame();
+  const content = document.querySelector<HTMLElement>("[data-popover-flow]")!;
+  measure.mockClear();
+  await act(async () => {
+    content.dispatchEvent(new Event("scroll"));
+    content.dispatchEvent(new WheelEvent("wheel", { deltaY: 40, bubbles: true }));
+  });
+  await frame();
+  expect(measure).not.toHaveBeenCalled();
+  expect(dismiss).not.toHaveBeenCalled();
+  // A scroll elsewhere still follows the anchor.
+  await act(async () => {
+    window.dispatchEvent(new Event("scroll"));
+  });
+  await frame();
+  expect(measure).toHaveBeenCalledTimes(1);
+});
+
+it("keeps a passive tooltip out of Escape handling", async () => {
+  const dismiss = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        Popover,
+        { anchor, role: "tooltip", passive: true, restoreFocus: false, onDismiss: dismiss },
+        "Hint",
+      ),
+    ),
+  );
+  await act(async () => {
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(dismiss).not.toHaveBeenCalledWith("escape");
+});

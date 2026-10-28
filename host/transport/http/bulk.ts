@@ -78,7 +78,10 @@ export class HostBulkTransfers {
       throw new HostBulkError(409, "Transfer context is unavailable.");
     if (this.leases.size >= this.limits.maxLeases)
       throw new HostBulkError(429, "Transfer admission is busy.");
-    if (dependencyKeys.length > 1024 || dependencyKeys.some((key) => typeof key !== "string" || !key))
+    if (
+      dependencyKeys.length > 1024 ||
+      dependencyKeys.some((key) => typeof key !== "string" || !key)
+    )
       throw new HostBulkError(409, "Transfer dependencies are invalid.");
     const lease = Object.freeze({
       principalId,
@@ -170,7 +173,8 @@ export class HostBulkTransfers {
 
   invalidate(resource: string): void {
     for (const lease of this.leases)
-      if (lease.resource === resource || lease.dependencyKeys.includes(resource)) this.leases.delete(lease);
+      if (lease.resource === resource || lease.dependencyKeys.includes(resource))
+        this.leases.delete(lease);
     for (const [id, entry] of this.entries)
       if (entry.resource === resource || entry.dependencyKeys.includes(resource)) this.remove(id);
   }
@@ -202,7 +206,57 @@ export function hostBulkDependencies(
 ): readonly string[] {
   const item = (prefix: string, value: unknown) =>
     typeof value === "string" ? [`${prefix}:${value}`] : [];
+  const jsonId = (value: unknown): unknown => {
+    if (typeof value !== "string") return undefined;
+    try {
+      return (JSON.parse(value) as { id?: unknown } | null)?.id;
+    } catch {
+      return undefined;
+    }
+  };
+  const crewProject = typeof params.projectId === "string" ? params.projectId : "";
   switch (method) {
+    case "crews.list":
+      return [
+        "crew-definitions:global",
+        `crew-definitions:project:${crewProject}`,
+        "crew-agents:global",
+        `crew-agents:project:${crewProject}`,
+        `crew-runs:project:${crewProject}`,
+        `tasks:project:${crewProject}`,
+      ];
+    case "crews.inspect":
+      return [
+        ...item("crew-definition", params.definitionId),
+        "crew-agents:global",
+        `crew-agents:project:${crewProject}`,
+      ];
+    case "crews.save":
+      return [
+        ...item("crew-definition", (params.definition as Record<string, unknown> | undefined)?.id),
+        ...item("crew-definition", jsonId(params.definitionJson)),
+      ];
+    case "crews.agent.save":
+      return [
+        ...item("crew-agent", (params.agent as Record<string, unknown> | undefined)?.id),
+        ...item("crew-agent", jsonId(params.agentJson)),
+      ];
+    case "crews.get":
+      return [...item("crew-run", params.runId), `tasks:project:${crewProject}`];
+    case "crews.start":
+    case "crews.pause":
+    case "crews.stop":
+    case "crews.resume":
+    case "crews.finish":
+      return [...item("crew-run", params.runId), `crew-runs:project:${crewProject}`];
+    case "crews.assign":
+    case "crews.request":
+    case "crews.resolve":
+    case "crews.respond":
+    case "crews.answer":
+      return item("crew-run", params.runId);
+    case "crews.accept":
+      return [...item("crew-run", params.runId), ...item("task", params.taskId)];
     case "tasks.list":
       return typeof params.projectId === "string"
         ? [`tasks:project:${params.projectId}`]
@@ -211,14 +265,9 @@ export function hostBulkDependencies(
     case "tasks.events":
       return ["tasks:all"];
     case "tasks.save":
-      return item(
-        "task",
-        (params.task as Record<string, unknown> | undefined)?.id,
-      );
+      return item("task", (params.task as Record<string, unknown> | undefined)?.id);
     case "tasks.reorder":
-      return Array.isArray(params.taskIds)
-        ? params.taskIds.flatMap((id) => item("task", id))
-        : [];
+      return Array.isArray(params.taskIds) ? params.taskIds.flatMap((id) => item("task", id)) : [];
     case "tasks.move":
     case "tasks.start":
     case "tasks.retarget":
@@ -250,29 +299,20 @@ export function hostBulkDependencies(
     case "automations.runs":
       return item("automation-runs", params.automationId);
     case "notes.list":
-      if (typeof params.sessionId === "string")
-        return [`notes:session:${params.sessionId}`];
+      if (typeof params.sessionId === "string") return [`notes:session:${params.sessionId}`];
       // Composition resolves projectId to the same exact cwd used by Notes storage.
-      return notesProjectCwd === undefined
-        ? ["notes:all"]
-        : [`notes:cwd:${notesProjectCwd}`];
+      return notesProjectCwd === undefined ? ["notes:all"] : [`notes:cwd:${notesProjectCwd}`];
     case "notes.get":
       return item("note", params.id);
     case "notes.upsert":
-      return item(
-        "note",
-        (params.note as Record<string, unknown> | undefined)?.id,
-      );
+      return item("note", (params.note as Record<string, unknown> | undefined)?.id);
     default:
       // In particular, a delete acknowledgement must survive its own invalidation.
       return [];
   }
 }
 
-export function taskBulkDeleteKeys(task: {
-  id: string;
-  projectId: string;
-}): readonly string[] {
+export function taskBulkDeleteKeys(task: { id: string; projectId: string }): readonly string[] {
   return [`task:${task.id}`, `tasks:project:${task.projectId}`, "tasks:all"];
 }
 
@@ -285,9 +325,7 @@ export function noteBulkDeleteKeys(note: {
     `note:${note.id}`,
     "notes:all",
     ...(note.sourceCwd === undefined ? [] : [`notes:cwd:${note.sourceCwd}`]),
-    ...(note.sourceSessionId === undefined
-      ? []
-      : [`notes:session:${note.sourceSessionId}`]),
+    ...(note.sourceSessionId === undefined ? [] : [`notes:session:${note.sourceSessionId}`]),
   ];
 }
 
@@ -297,6 +335,35 @@ export function goalBulkDeleteKeys(goal: { id: string }): readonly string[] {
 
 export function stewardBulkDeleteKeys(steward: { id: string }): readonly string[] {
   return [`steward:${steward.id}`, "stewards:all"];
+}
+
+export function crewDefinitionBulkDeleteKeys(change: {
+  definitionId: string;
+  projectId?: string;
+}): readonly string[] {
+  return [
+    `crew-definition:${change.definitionId}`,
+    change.projectId === undefined
+      ? "crew-definitions:global"
+      : `crew-definitions:project:${change.projectId}`,
+  ];
+}
+export function crewAgentBulkDeleteKeys(change: {
+  agentId: string;
+  projectId?: string;
+}): readonly string[] {
+  return [
+    `crew-agent:${change.agentId}`,
+    change.projectId === undefined
+      ? "crew-agents:global"
+      : `crew-agents:project:${change.projectId}`,
+  ];
+}
+export function crewRunBulkDeleteKeys(change: {
+  runId: string;
+  projectId: string;
+}): readonly string[] {
+  return [`crew-run:${change.runId}`, `crew-runs:project:${change.projectId}`];
 }
 
 export function automationBulkDeleteKeys(automation: { id: string }): readonly string[] {

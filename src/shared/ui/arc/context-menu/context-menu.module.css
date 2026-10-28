@@ -1,3 +1,228 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/*
+ * One row primitive for every menu: DropdownMenu, ContextMenu (point/anchor/submenu),
+ * MenuRow consumers and the standalone Arc ContextMenu. Box layout lives in `components`
+ * so consumer utilities can size or align a row; state colors stay unlayered and consume
+ * shared roles only. Slot classes (.icon, .copy, .label, .description, .trailing) are the
+ * same for every path, so icons, labels, shortcuts, checks and submenu chevrons align alike.
+ */
+.item {
+  /* Compact row: the control-compact height plus 4px (32px compact, 36px comfortable,
+     48px touch). Coarse pointers never get a target below 44px. */
+  --menu-row-height: calc(var(--ui-control-height-compact) + 0.25rem);
+  --menu-row-gap: 0.5rem;
+  --menu-row-inset: 0.5rem;
+  --menu-slot-size: 1rem;
+  /* Concentric with the popup: popup radius minus the 1px frame border and 4px menu padding. */
+  --menu-row-radius: calc(var(--ui-radius-popup) - 0.25rem - 1px);
+  --menu-row-hover: var(--ui-surface-hover);
+  --menu-row-pressed: var(--ui-surface-pressed);
+  --menu-row-danger-hover: var(--ui-tone-danger-hover);
+  --menu-row-danger-pressed: var(--ui-tone-danger-pressed);
+}
+@layer components {
+  .item {
+    position: relative;
+    display: flex;
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--menu-row-height);
+    align-items: center;
+    gap: var(--menu-row-gap);
+    padding-block: 0.375rem;
+    padding-inline: var(--menu-row-inset);
+    text-align: start;
+  }
+  .item[data-described] {
+    align-items: flex-start;
+  }
+  @media (pointer: coarse) {
+    .item {
+      min-block-size: max(var(--menu-row-height), 44px);
+    }
+  }
+}
+.item {
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+  cursor: pointer;
+  outline: none;
+  transition:
+    background-color var(--motion-feedback-duration) var(--motion-ease-out),
+    color var(--motion-feedback-duration) var(--motion-ease-out);
+}
+.item.destructive,
+.item[data-danger="true"] {
+  color: var(--ui-tone-danger-fg);
+}
+
+/* Slots: leading icon, copy, trailing shortcut/check/chevron. */
+.icon {
+  display: inline-flex;
+  inline-size: var(--menu-slot-size);
+  block-size: var(--menu-slot-size);
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--ui-text-secondary);
+}
+.icon > svg {
+  inline-size: 100%;
+  block-size: 100%;
+}
+.destructive .icon,
+.item[data-danger="true"] .icon {
+  color: currentColor;
+}
+.item[data-described] > .icon {
+  margin-block-start: 1px;
+}
+.copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.copy > span {
+  display: block;
+}
+.copy > .label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.label > :first-child {
+  min-inline-size: 0;
+}
+.label > :not(:first-child) {
+  flex: none;
+}
+/* A row with a description titles it: the title carries the weight, the description stays quiet. */
+.item[data-described] .label {
+  font-weight: 500;
+}
+.description {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+.trailing {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: var(--menu-slot-size);
+  margin-inline-start: auto;
+  padding-inline-start: 0.25rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  white-space: nowrap;
+}
+.shortcut {
+  color: var(--ui-text-muted);
+}
+.trailing > svg {
+  inline-size: var(--menu-slot-size);
+  block-size: var(--menu-slot-size);
+}
+.destructive .trailing,
+.item[data-danger="true"] .trailing {
+  color: currentColor;
+}
+/* Existing domain rows end with their label span; it wraps instead of ellipsizing. */
+.item > span:last-child:not(.trailing, .copy, .icon) {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+.item[data-branch-side="left"] > [data-branch-indicator] {
+  transform: rotate(180deg);
+}
+
+/* Quiet structure: a hairline between sections and a muted label that aligns with row text. */
+.separator {
+  block-size: 1px;
+  margin-block: 0.25rem;
+  background: var(--color-stroke);
+}
+.heading {
+  padding: 0.25rem var(--menu-row-inset, 0.5rem);
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  font-weight: 500;
+}
+
+/* States. Hover, keyboard focus and the controller's highlight share one fill; pointer
+   hover only applies where hover exists. Keyboard focus also draws the shared focus ring,
+   inset so the menu's scroll clip never cuts it. */
+.item[data-highlighted="true"],
+.item[aria-expanded="true"] {
+  background: var(--menu-row-hover);
+}
+button.item.item:focus-visible {
+  background: var(--menu-row-hover);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: calc(var(--ui-focus-width) * -1);
+}
+/* Controllers that keep focus on the menu and mark the active row (aria-activedescendant)
+   show the same inset ring, but only while the menu itself shows keyboard focus. */
+:global([role="menu"]:focus-visible) .item[data-highlighted="true"] {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: calc(var(--ui-focus-width) * -1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .item:hover:not(:disabled, [aria-disabled="true"]) {
+    background: var(--menu-row-hover);
+  }
+}
+.item:is(.destructive, [data-danger="true"]):is([data-highlighted="true"], [aria-expanded="true"]),
+button.item.item:is(.destructive, [data-danger="true"]):focus-visible {
+  background: var(--menu-row-danger-hover);
+}
+@media (hover: hover) and (pointer: fine) {
+  .item:is(.destructive, [data-danger="true"]):hover:not(:disabled, [aria-disabled="true"]) {
+    background: var(--menu-row-danger-hover);
+  }
+}
+/* The leading glyph steps up to primary ink with the row, a cue that does not depend on the fill. */
+.item:is([data-highlighted="true"], [aria-expanded="true"], :focus-visible) > .icon {
+  color: var(--color-content);
+}
+@media (hover: hover) and (pointer: fine) {
+  .item:hover:not(:disabled, [aria-disabled="true"]) > .icon {
+    color: var(--color-content);
+  }
+}
+.item:is(.destructive, [data-danger="true"]) > .icon {
+  color: currentColor;
+}
+/* Pressed comes last so it outranks hover and focus for both tones. */
+.item.item:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--menu-row-pressed);
+}
+.item.item:is(.destructive, [data-danger="true"]):active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--menu-row-danger-pressed);
+}
+/* Disabled rows are inert: no hover, no pressed fill, and no pointer cursor. */
+.item:disabled,
+.item[aria-disabled="true"] {
+  opacity: var(--ui-disabled-opacity, 0.5);
+  cursor: default;
+}
+
+/* Standalone Arc ContextMenu: the gliding highlight is its pointer and keyboard indicator. */
 .target {
   display: block;
   outline: none;
@@ -10,121 +235,38 @@
   max-width: calc(100vw - 16px);
   max-height: min(300px, calc(100vh - 16px));
   overflow-y: auto;
-  padding: 5px;
-  border: 1px solid var(--border);
+  overscroll-behavior: contain;
+  padding: 0.25rem;
+  border: 1px solid var(--color-stroke);
   border-radius: var(--ui-radius-popup);
-  background: var(--surface-raised);
-  color: var(--foreground);
+  background: var(--ui-surface-raised);
+  color: var(--color-content);
   box-shadow: var(--ui-elevation-floating);
   outline: none;
 }
 .highlight {
   position: absolute;
   top: 0;
-  right: 5px;
-  left: 5px;
-  border-radius: calc(var(--ui-radius-popup) - 6px);
-  background: var(--surface-muted);
+  right: 0.25rem;
+  left: 0.25rem;
+  border-radius: var(--menu-row-radius, calc(var(--ui-radius-popup) - 0.25rem - 1px));
+  background: var(--ui-surface-hover);
   opacity: 0;
   pointer-events: none;
-  transition: background-color var(--duration-fast) var(--ease-standard);
+  transition: background-color var(--motion-feedback-duration) var(--motion-ease-out);
 }
 .highlight[data-tone="danger"] {
-  background: color-mix(in oklab, var(--danger) 8%, var(--surface));
+  background: var(--ui-tone-danger-hover);
 }
-.item {
-  position: relative;
-  display: flex;
-  width: 100%;
-  min-height: 34px;
-  align-items: center;
-  gap: 9px;
-  padding: 0 11px;
-  border: 0;
-  border-radius: calc(var(--ui-radius-popup) - 6px);
+.menu .item:is(:hover, [data-highlighted="true"]):not(:disabled, :active),
+.menu button.item.item:focus-visible:not(:active) {
   background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: var(--text-sm);
-  letter-spacing: var(--tracking-body);
-  line-height: var(--leading-body);
-  text-align: left;
-  cursor: pointer;
   outline: none;
-  transition:
-    background-color var(--duration-instant) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard);
-}
-/* The gliding highlight is the focus indicator, as in the dropdown menu. */
-.item:focus-visible {
-  outline: none;
-}
-/* Rows press with a tint, not a scale. */
-.item:active:not(:disabled) {
-  background: color-mix(in oklab, var(--foreground) 5%, transparent);
-}
-.item:disabled {
-  opacity: var(--ui-disabled-opacity, 0.5);
-  cursor: default;
-}
-.item.destructive {
-  color: var(--danger);
-}
-.icon {
-  display: inline-flex;
-  flex: none;
-  width: 16px;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
-}
-.item > span:last-child {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.destructive .icon {
-  color: currentColor;
 }
 @media (prefers-reduced-motion: reduce) {
   .item,
   .highlight {
     animation: none;
     transition: none;
-  }
-}
-
-/* Host-positioned rows use the shared focus rules and immediate hover states. */
-.item {
-  text-align: start;
-  padding-inline: 8px;
-  animation: none;
-}
-.item[data-highlighted="true"],
-.item[aria-expanded="true"] {
-  background: var(--surface-muted);
-}
-.item[data-danger="true"] {
-  color: var(--danger);
-}
-.item > span:last-child {
-  white-space: normal;
-}
-.item[data-branch-side="left"] > [data-branch-indicator] {
-  transform: rotate(180deg);
-}
-@media (pointer: coarse) {
-  .item {
-    min-block-size: 44px;
-  }
-}
-@media (hover: hover) and (pointer: fine) {
-  .item:hover:not(:disabled) {
-    background: var(--surface-muted);
-  }
-  .item.destructive:hover:not(:disabled),
-  .item[data-danger="true"]:hover:not(:disabled) {
-    background: color-mix(in oklch, var(--danger) 15%, transparent);
   }
 }

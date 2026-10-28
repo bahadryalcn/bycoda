@@ -8,12 +8,37 @@
   font-size: var(--text-sm);
   font-weight: 500;
 }
+/* The frame matches the text fields: resting boundary, hover, invalid, disabled and read-only share their roles. The group
+   outline for keyboard focus comes from the field owner (data-ui-focus-group). */
 .control {
   box-sizing: content-box;
   overflow: clip;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-control-border);
   border-radius: var(--radius-control);
-  background: var(--ui-surface);
+  background: var(--ui-surface-muted);
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+@media (hover: hover) and (pointer: fine) {
+  .control:hover:not([data-disabled], [data-readonly], [data-invalid], :has(input:focus-visible)) {
+    border-color: var(--ui-field-border-hover);
+  }
+}
+.control:has(input:focus-visible):not([data-invalid]) {
+  border-color: var(--ui-field-border-focus);
+}
+.control[data-invalid] {
+  border-color: var(--danger);
+}
+.control[data-readonly] {
+  background: transparent;
+}
+.control[data-disabled] {
+  border-color: var(--ui-control-disabled-border);
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
+}
+.control[data-disabled] .tag {
+  color: var(--ui-control-disabled-fg);
 }
 .content {
   position: relative;
@@ -49,10 +74,14 @@
   box-sizing: border-box;
   border: 0;
   padding-inline: var(--space-1);
-  background: var(--ui-surface);
+  background: transparent;
   color: var(--foreground);
   font: inherit;
   font-size: var(--text-sm);
+}
+.content input:disabled {
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
 }
 .content input::placeholder {
   color: var(--text-muted);
@@ -81,12 +110,18 @@
   display: block;
   overflow: clip;
 }
-.hint {
+.hint,
+.error {
   display: block;
   padding-block-start: var(--space-2);
-  color: var(--text-muted);
   font-size: var(--text-xs);
   line-height: var(--leading-body);
+}
+.hint {
+  color: var(--text-secondary);
+}
+.error {
+  color: var(--danger);
 }
 .words {
   position: relative;

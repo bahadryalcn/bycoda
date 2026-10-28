@@ -2,6 +2,7 @@
 import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { TreeRow } from "./TreeRow";
 it("preserves native focus/ref, keyboard, pointer and drag ownership without synthesizing selection", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -84,4 +85,55 @@ it("preserves native focus/ref, keyboard, pointer and drag ownership without syn
     host.remove();
     vi.unstubAllGlobals();
   }
+});
+
+it("keeps drop destination, selection and cut as independent states with their own appearance", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          "div",
+          null,
+          createElement(TreeRow, { key: "drop", dropTarget: true }, "drop"),
+          createElement(TreeRow, { key: "sel", selected: true }, "selected"),
+          createElement(TreeRow, { key: "both", selected: true, dropTarget: true }, "both"),
+        ),
+      ),
+    );
+    const [drop, selected, both] = Array.from(host.querySelectorAll("button"));
+    expect(drop.getAttribute("aria-selected")).not.toBe("true");
+    expect(drop.dataset.treeDropTarget).toBe("true");
+    expect(selected.dataset.treeDropTarget).toBeUndefined();
+    expect(both.getAttribute("aria-selected")).toBe("true");
+    expect(both.dataset.treeDropTarget).toBe("true");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("styles the drop destination outside the selected-fill rule", () => {
+  const css = readFileSync("src/shared/ui/arc/tree-view/tree-row.module.css", "utf8").replace(
+    /\/\*[\s\S]*?\*\//g,
+    "",
+  );
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(([, selector, body]) => ({
+    selector: selector.trim(),
+    body,
+  }));
+  const selectedFill = rules.find(
+    (rule) =>
+      rule.selector.includes('[aria-selected="true"]') && /surface-selected/.test(rule.body),
+  );
+  expect(selectedFill?.selector).not.toContain("data-tree-drop-target");
+  const drop = rules.find(
+    (rule) => rule.selector === ".row[data-tree-drop-target]" && /box-shadow/.test(rule.body),
+  );
+  expect(drop?.body).toContain("--ui-border-accent");
+  expect(drop?.body).not.toContain("surface-selected");
 });

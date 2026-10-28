@@ -9,6 +9,107 @@ fn store() -> SessionStore {
     SessionStore::open_in_memory().unwrap()
 }
 
+#[test]
+fn retained_reader_returns_exact_existing_bytes_without_changing_authority() {
+    let store = store();
+    let source = store
+        .authority_test_retained_snapshot("env.1", "retained", "m.retained", "漢🦀 preserved")
+        .unwrap();
+    let ids = store.authority_identity().unwrap();
+    let before = store.authority_status("retained").unwrap().unwrap();
+    let changes: i64 = store
+        .lock_conn()
+        .unwrap()
+        .query_row("SELECT total_changes()", [], |row| row.get(0))
+        .unwrap();
+    let actual = store
+        .authority_retained_snapshot("env.1", "retained", "m.retained", &ids)
+        .unwrap()
+        .unwrap();
+    assert_eq!(actual.snapshot_json, source.snapshot_json);
+    assert_eq!(actual.fence, source.fence);
+    assert_eq!(
+        store.authority_status("retained").unwrap().unwrap().phase,
+        before.phase
+    );
+    assert_eq!(
+        store
+            .lock_conn()
+            .unwrap()
+            .query_row("SELECT total_changes()", [], |row| row.get::<_, i64>(0))
+            .unwrap(),
+        changes
+    );
+}
+
+#[test]
+fn retained_reader_distinguishes_absence_from_partial_and_unreadable_journal() {
+    let store = store();
+    let ids = store.authority_identity().unwrap();
+    assert!(store
+        .authority_retained_snapshot("env.1", "retained", "missing", &ids)
+        .unwrap()
+        .is_none());
+    seed(&store, "retained");
+    store
+        .authority_begin_quiesce("env.1", "retained", "partial", 0)
+        .unwrap();
+    assert!(store
+        .authority_retained_snapshot("env.1", "retained", "partial", &ids)
+        .is_err());
+    store
+        .lock_conn()
+        .unwrap()
+        .execute("DROP TABLE native_authority_journal", [])
+        .unwrap();
+    assert!(store
+        .authority_retained_snapshot("env.1", "retained", "missing", &ids)
+        .is_err());
+}
+
+#[test]
+fn retained_reader_rejects_foreign_scope_and_current_identity_changes() {
+    let store = store();
+    store
+        .authority_test_retained_snapshot("env.1", "retained", "m.retained", "preserved")
+        .unwrap();
+    let ids = store.authority_identity().unwrap();
+    for (env, session) in [("foreign", "retained"), ("env.1", "foreign")] {
+        assert!(store
+            .authority_retained_snapshot(env, session, "m.retained", &ids)
+            .is_err());
+    }
+    store
+        .lock_conn()
+        .unwrap()
+        .execute(
+            "UPDATE native_authority_identity SET source_store_id='replaced'",
+            [],
+        )
+        .unwrap();
+    assert!(store
+        .authority_retained_snapshot("env.1", "retained", "m.retained", &ids)
+        .is_err());
+}
+
+#[test]
+fn retained_reader_rejects_oversized_raw_values_and_corrupt_fences_before_disclosure() {
+    for sql in [
+        "UPDATE native_authority_journal SET snapshot_json=CAST(zeroblob(33554433) AS TEXT)",
+        "UPDATE native_authority_journal SET fence_json=CAST(zeroblob(16385) AS TEXT)",
+        "UPDATE native_authority_journal SET snapshot_json=x'7b7d'",
+        "UPDATE native_authority_journal SET snapshot_json='{}'",
+        "UPDATE native_authority_journal SET fence_json=json_set(fence_json,'$.extra',true)",
+        "UPDATE native_authority_journal SET fence_json=json_set(fence_json,'$.sessionId','foreign')",
+    ] {
+        let store = store();
+        store.authority_test_retained_snapshot("env.1", "retained", "m.retained", "preserved").unwrap();
+        let ids = store.authority_identity().unwrap();
+        store.lock_conn().unwrap().execute(sql, []).unwrap();
+        assert!(store.authority_retained_snapshot("env.1", "retained", "m.retained", &ids).is_err(), "{sql}");
+    }
+}
+
 fn seed(store: &SessionStore, id: &str) {
     let conn = store.lock_conn().unwrap();
     upsert_session_with_git(&conn, &session(id), crate::fs::GitInfo::default(), None).unwrap();
@@ -256,6 +357,358 @@ fn proof(store: &SessionStore, decision: &HostDecision) -> VerifiedHostDecision 
             &IsolatedAuthenticatedPort,
         )
         .unwrap()
+}
+
+#[test]
+fn applied_decision_ack_reads_only_committed_exact_bytes_across_cache_and_reopen() {
+    let directory = Directory::new();
+    let path = directory.0.join("applied-ack.db");
+    let store = SessionStore::open(path.clone()).unwrap();
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let decision = decision(&source.fence, "host-active", 1);
+    let raw = format!("{}\n", serde_json::to_string_pretty(&decision).unwrap());
+    let verified = store
+        .authority_verify_host_decision("m", &raw, &IsolatedAuthenticatedPort)
+        .unwrap();
+    // Verifying a submitted record is not evidence it was actually applied.
+    assert!(store
+        .authority_applied_host_decision("m", &decision.decision_digest)
+        .is_err());
+    store.authority_apply_host_decision(&verified).unwrap();
+    let changes = store.lock_conn().unwrap().total_changes();
+    assert_eq!(
+        store
+            .authority_applied_host_decision("m", &decision.decision_digest)
+            .unwrap(),
+        raw
+    );
+    assert_eq!(store.lock_conn().unwrap().total_changes(), changes);
+    store
+        .authority_apply_projection(&verified, &session("native"))
+        .unwrap();
+    assert_eq!(
+        store.authority_status("native").unwrap().unwrap().phase,
+        "CACHE"
+    );
+    assert_eq!(
+        store
+            .authority_applied_host_decision("m", &decision.decision_digest)
+            .unwrap(),
+        raw
+    );
+    drop(store);
+    let reopened = SessionStore::open(path).unwrap();
+    assert_eq!(
+        reopened
+            .authority_applied_host_decision("m", &decision.decision_digest)
+            .unwrap(),
+        raw
+    );
+}
+
+#[test]
+fn applied_abort_ack_does_not_bless_a_later_migration_or_mutate_authority() {
+    let store = store();
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let abort = decision(&source.fence, "aborted", 2);
+    let verified = proof(&store, &abort);
+    store.authority_apply_host_decision(&verified).unwrap();
+    let raw = store
+        .authority_applied_host_decision("m", &abort.decision_digest)
+        .unwrap();
+    store
+        .authority_native_checkpoint(
+            &NativeScope {
+                environment_id: "env.1".into(),
+                generation: 2,
+            },
+            &session("native"),
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .authority_applied_host_decision("m", &abort.decision_digest)
+            .unwrap(),
+        raw
+    );
+    assert!(store
+        .authority_applied_host_decision("m", "not-a-digest")
+        .is_err());
+    store
+        .authority_begin_quiesce("env.1", "native", "next", 2)
+        .unwrap();
+    assert!(store
+        .authority_applied_host_decision("m", &abort.decision_digest)
+        .is_err());
+    let current = store.authority_status("native").unwrap().unwrap();
+    assert_eq!(
+        (
+            current.phase.as_str(),
+            current.migration_id.as_str(),
+            current.generation
+        ),
+        ("QUIESCING", "next", 2)
+    );
+    let retained: String = store
+        .lock_conn()
+        .unwrap()
+        .query_row(
+            "SELECT host_decision_json FROM native_authority_journal WHERE migration_id='m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(retained, raw);
+}
+
+#[test]
+fn applied_decision_ack_rejects_inconsistent_floor_journal_and_store_without_repair() {
+    for sql in [
+        "UPDATE native_authority_floor SET phase='FENCED'",
+        "UPDATE native_authority_floor SET phase='RECOVERY_BLOCKED'",
+        "UPDATE native_authority_floor SET environment_id='other'",
+        "UPDATE native_authority_floor SET migration_id='other'",
+        "UPDATE native_authority_floor SET generation=generation+1",
+        "UPDATE native_authority_floor SET min_writer_protocol=3",
+        "UPDATE native_authority_floor SET source_digest='other'",
+        "UPDATE native_authority_floor SET host_receipt_id='other'",
+        "DELETE FROM native_authority_floor",
+        "UPDATE native_authority_identity SET source_store_id='other'",
+        "UPDATE native_authority_identity SET source_profile_id='other'",
+        "UPDATE native_authority_journal SET host_decision_json=NULL",
+        "UPDATE native_authority_journal SET generation=generation+1",
+        "UPDATE native_authority_journal SET generation=-1",
+        "UPDATE native_authority_journal SET phase='FENCED'",
+        "UPDATE native_authority_journal SET snapshot_json='{}'",
+    ] {
+        let store = store();
+        seed(&store, "native");
+        let source = fence(&store, "native", "m");
+        let active = decision(&source.fence, "host-active", 1);
+        store
+            .authority_apply_host_decision(&proof(&store, &active))
+            .unwrap();
+        store.lock_conn().unwrap().execute_batch(sql).unwrap();
+        let changes = store.lock_conn().unwrap().total_changes();
+        assert!(
+            store
+                .authority_applied_host_decision("m", &active.decision_digest)
+                .is_err(),
+            "{sql}"
+        );
+        assert_eq!(store.lock_conn().unwrap().total_changes(), changes, "{sql}");
+    }
+}
+
+#[test]
+fn applied_decision_ack_rejects_wrong_digest_strict_shape_and_self_hashed_wrong_scope() {
+    let store = store();
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let active = decision(&source.fence, "host-active", 1);
+    store
+        .authority_apply_host_decision(&proof(&store, &active))
+        .unwrap();
+    assert!(store
+        .authority_applied_host_decision("m", &"0".repeat(64))
+        .is_err());
+    let mut other = active.clone();
+    other.environment_id = "other.environment".into();
+    other.decision_digest = decision_digest(&other).unwrap();
+    let mut unknown = serde_json::to_value(&active).unwrap();
+    unknown["unqualified"] = json!(true);
+    for (raw, expected) in [
+        (
+            serde_json::to_string(&other).unwrap(),
+            other.decision_digest,
+        ),
+        (unknown.to_string(), active.decision_digest.clone()),
+        (" ".repeat(16_385), active.decision_digest.clone()),
+        ("{}".into(), active.decision_digest.clone()),
+    ] {
+        store
+            .lock_conn()
+            .unwrap()
+            .execute(
+                "UPDATE native_authority_journal SET host_decision_json=?1",
+                [&raw],
+            )
+            .unwrap();
+        assert!(store
+            .authority_applied_host_decision("m", &expected)
+            .is_err());
+    }
+}
+
+#[test]
+fn applied_decision_retry_requires_the_same_saved_decision_not_just_receipt_and_generation() {
+    let store = store();
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let active = decision(&source.fence, "host-active", 1);
+    let verified = proof(&store, &active);
+    store.authority_apply_host_decision(&verified).unwrap();
+    let original = store
+        .authority_applied_host_decision("m", &active.decision_digest)
+        .unwrap();
+    let equivalent = store
+        .authority_verify_host_decision(
+            "m",
+            &serde_json::to_string_pretty(&active).unwrap(),
+            &IsolatedAuthenticatedPort,
+        )
+        .unwrap();
+    store.authority_apply_host_decision(&equivalent).unwrap();
+    assert_eq!(
+        store
+            .authority_applied_host_decision("m", &active.decision_digest)
+            .unwrap(),
+        original
+    );
+    let mut different = active.clone();
+    different.committed_at += 1;
+    different.decision_digest = decision_digest(&different).unwrap();
+    assert!(store
+        .authority_apply_host_decision(&proof(&store, &different))
+        .is_err());
+    assert_eq!(
+        store
+            .authority_applied_host_decision("m", &active.decision_digest)
+            .unwrap(),
+        original
+    );
+    store
+        .lock_conn()
+        .unwrap()
+        .execute(
+            "UPDATE native_authority_journal SET host_decision_json=NULL",
+            [],
+        )
+        .unwrap();
+    assert!(store.authority_apply_host_decision(&verified).is_err());
+    let retained: Option<String> = store
+        .lock_conn()
+        .unwrap()
+        .query_row(
+            "SELECT host_decision_json FROM native_authority_journal WHERE migration_id='m'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(retained.is_none());
+}
+
+#[test]
+fn present_null_host_decision_target_is_not_optional_absence() {
+    let store = store();
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let abort = decision(&source.fence, "aborted", 2);
+    let mut explicit_null = serde_json::to_value(&abort).unwrap();
+    explicit_null["targetDigest"] = Value::Null;
+    let raw = explicit_null.to_string();
+    // The tuple digest intentionally represents absent target as null, but the
+    // actual closed wire/storage DTO still distinguishes absence from null.
+    assert!(store
+        .authority_verify_host_decision("m", &raw, &IsolatedAuthenticatedPort)
+        .is_err());
+    assert_eq!(
+        store.authority_status("native").unwrap().unwrap().phase,
+        "FENCED"
+    );
+    store
+        .authority_apply_host_decision(&proof(&store, &abort))
+        .unwrap();
+    store
+        .lock_conn()
+        .unwrap()
+        .execute(
+            "UPDATE native_authority_journal SET host_decision_json=?1",
+            [raw],
+        )
+        .unwrap();
+    assert!(store
+        .authority_applied_host_decision("m", &abort.decision_digest)
+        .is_err());
+}
+
+#[test]
+fn applied_decision_ack_uses_one_wal_snapshot_against_an_external_writer() {
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+    use std::{
+        sync::{mpsc, Arc},
+        time::Duration,
+    };
+    let directory = Arc::new(Directory::new());
+    let path = directory.0.join("ack-cut.db");
+    let store = Arc::new(SessionStore::open(path.clone()).unwrap());
+    seed(&store, "native");
+    let source = fence(&store, "native", "m");
+    let active = decision(&source.fence, "host-active", 1);
+    store
+        .authority_apply_host_decision(&proof(&store, &active))
+        .unwrap();
+    let original = store
+        .authority_applied_host_decision("m", &active.decision_digest)
+        .unwrap();
+    let mut changed = active.clone();
+    changed.committed_at += 1;
+    changed.decision_digest = decision_digest(&changed).unwrap();
+    let (paused, reached) = mpsc::sync_channel(1);
+    let (resume, release) = mpsc::sync_channel(1);
+    let worker_store = store.clone();
+    let worker_directory = directory.clone();
+    let expected = active.decision_digest.clone();
+    let worker = std::thread::spawn(move || {
+        let _directory = worker_directory;
+        let mut first = true;
+        worker_store
+            .lock_conn()
+            .unwrap()
+            .authorizer(Some(move |context: AuthContext<'_>| {
+                if first
+                    && matches!(
+                        context.action,
+                        AuthAction::Read {
+                            table_name: "native_authority_journal",
+                            column_name: "host_decision_json"
+                        }
+                    )
+                {
+                    first = false;
+                    let _ = paused.send(());
+                    if release.recv_timeout(Duration::from_secs(10)).is_err() {
+                        return Authorization::Deny;
+                    }
+                }
+                Authorization::Allow
+            }))
+            .unwrap();
+        let result = worker_store.authority_applied_host_decision("m", &expected);
+        worker_store
+            .lock_conn()
+            .unwrap()
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+            .unwrap();
+        result
+    });
+    let did_pause = reached.recv_timeout(Duration::from_secs(10));
+    let writer = Connection::open(path).unwrap();
+    writer.busy_timeout(Duration::from_secs(3)).unwrap();
+    let committed = writer.execute(
+        "UPDATE native_authority_journal SET host_decision_json=?1",
+        [serde_json::to_string(&changed).unwrap()],
+    );
+    let _ = resume.send(());
+    let result = worker.join().unwrap();
+    did_pause.unwrap();
+    committed.unwrap();
+    assert_eq!(result.unwrap(), original);
+    assert!(store
+        .authority_applied_host_decision("m", &active.decision_digest)
+        .is_err());
 }
 
 struct Directory(std::path::PathBuf);

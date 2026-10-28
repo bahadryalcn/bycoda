@@ -71,6 +71,23 @@
 .button[data-selected="true"] {
   color: var(--foreground);
 }
+/* Unselected options answer hover and press on their own pill; the selected plate does not change. */
+@media (hover: hover) and (pointer: fine) {
+  .button:not([data-selected="true"], :disabled):hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.button:not([data-selected="true"], :disabled):active {
+  background: var(--ui-surface-pressed);
+}
+/* The track scrolls and fades at its edges, so an outset ring would be clipped there. */
+.track .button:focus-visible {
+  outline-offset: -2px;
+}
+.button:disabled {
+  color: var(--ui-control-disabled-fg);
+  cursor: not-allowed;
+}
 .selection {
   position: absolute;
   z-index: -1;

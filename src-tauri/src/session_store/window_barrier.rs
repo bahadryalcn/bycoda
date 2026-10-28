@@ -49,6 +49,7 @@ pub(crate) enum BarrierError {
     PendingNativeWindow,
     UnexpectedWindowAdmission,
     UnattributedWindowDestruction,
+    UnattributedNativeOperation,
     EmptyWindowRoster,
     StaleProof,
 }
@@ -127,9 +128,13 @@ struct WindowState {
 }
 
 struct Operation {
-    label: String,
-    incarnation: u64,
+    owner: OperationOwner,
     checkpoint: Option<(NativeLane, u64)>,
+}
+
+enum OperationOwner {
+    Window { label: String, incarnation: u64 },
+    Process,
 }
 
 #[derive(Default)]
@@ -474,6 +479,50 @@ impl WindowBarrier {
         self.begin(window, None)
     }
 
+    /// Native process work is independent of every renderer/window lifetime.
+    pub(crate) fn begin_process_write(&self) -> Result<NativeOperation, BarrierError> {
+        let mut state = self.lock()?;
+        state.healthy()?;
+        if state.closed_round.is_some() {
+            return Err(BarrierError::AdmissionClosed);
+        }
+        if state.operations.len() >= MAX_OPERATIONS {
+            return Err(BarrierError::CapacityExceeded);
+        }
+        let id = state.id()?;
+        state.tick()?;
+        for window in state.windows.values_mut() {
+            window.checkpoints = [None; 2];
+        }
+        state.operations.insert(
+            id,
+            Operation {
+                owner: OperationOwner::Process,
+                checkpoint: None,
+            },
+        );
+        Ok(NativeOperation {
+            state: self.state.clone(),
+            id: Some(id),
+        })
+    }
+
+    /// Missing native attribution cannot newly disable ordinary persistence.
+    /// Check closure and taint qualification in one critical section: this is
+    /// deliberately NOT a lease or evidence of a drained operation.
+    pub(crate) fn admit_unqualified_write(&self) -> Result<(), BarrierError> {
+        let mut state = self.state.lock().unwrap_or_else(|poisoned| {
+            let mut state = poisoned.into_inner();
+            state.fault(BarrierError::Unavailable);
+            state
+        });
+        state.taint(BarrierError::UnattributedNativeOperation);
+        if state.closed_round.is_some() {
+            return Err(BarrierError::AdmissionClosed);
+        }
+        Ok(())
+    }
+
     /// Only the native owner of a closure can admit draining native work while
     /// closed. Complete this after the actual native SQL commit / buffer ACK.
     /// It does not certify that a renderer submitted all of its drafts.
@@ -528,8 +577,10 @@ impl WindowBarrier {
         state.operations.insert(
             id,
             Operation {
-                label: window.label.clone(),
-                incarnation: window.incarnation,
+                owner: OperationOwner::Window {
+                    label: window.label.clone(),
+                    incarnation: window.incarnation,
+                },
                 checkpoint,
             },
         );
@@ -611,11 +662,17 @@ impl NativeOperation {
             return Err(state.taint(BarrierError::FailedNativeOperation));
         }
         state.healthy()?;
+        let OperationOwner::Window { label, incarnation } = operation.owner else {
+            for window in state.windows.values_mut() {
+                window.checkpoints = [None; 2];
+            }
+            return Ok(());
+        };
         let round = state.closed_round;
-        let Some(window) = state.windows.get_mut(&operation.label) else {
+        let Some(window) = state.windows.get_mut(&label) else {
             return Err(state.taint(BarrierError::UnfinishedNativeOperation));
         };
-        if window.incarnation != operation.incarnation {
+        if window.incarnation != incarnation {
             return Err(state.taint(BarrierError::UnfinishedNativeOperation));
         }
         match operation.checkpoint {
@@ -643,6 +700,103 @@ impl Drop for NativeOperation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_process_writer_needs_no_window_and_is_accounted_until_actual_settlement() {
+        let barrier = WindowBarrier::new();
+        let work = barrier.begin_process_write().unwrap();
+        let closed = barrier.close_admission().unwrap();
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        assert!(matches!(
+            barrier.begin_process_write(),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        work.finish(Ok::<_, ()>(())).unwrap();
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::EmptyWindowRoster)
+        ));
+        barrier.reopen_admission(closed).unwrap();
+        barrier
+            .begin_process_write()
+            .unwrap()
+            .finish(Ok::<_, ()>(()))
+            .unwrap();
+    }
+
+    #[test]
+    fn process_lifetime_is_not_released_or_tainted_by_a_consuming_windows_destruction() {
+        let barrier = WindowBarrier::new();
+        let window = live_window(&barrier, "consumer");
+        let work = barrier.begin_process_write().unwrap();
+        barrier.observe_destroyed(&window).unwrap();
+        let closed = barrier.close_admission().unwrap();
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        work.finish(Ok::<_, ()>(())).unwrap();
+        barrier.reopen_admission(closed).unwrap();
+        assert!(barrier.close_admission().is_ok());
+    }
+
+    #[test]
+    fn unqualified_admission_preserves_open_work_and_permanently_denies_qualification() {
+        let barrier = WindowBarrier::new();
+        let window = live_window(&barrier, "main");
+        barrier.admit_unqualified_write().unwrap();
+        assert!(matches!(
+            barrier.close_admission(),
+            Err(BarrierError::UnattributedNativeOperation)
+        ));
+        complete(
+            barrier
+                .begin_native_write(&window, NativeLane::Persistence)
+                .unwrap(),
+        );
+        barrier.admit_unqualified_write().unwrap();
+    }
+
+    #[test]
+    fn an_unqualified_writer_cannot_cross_an_existing_closure_even_when_qualification_is_tainted() {
+        let barrier = WindowBarrier::new();
+        live_window(&barrier, "main");
+        let closed = barrier.close_admission().unwrap();
+        assert!(matches!(
+            barrier.admit_unqualified_write(),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert!(barrier.prove_native_idle(&closed).is_err());
+        barrier.reopen_admission(closed).unwrap();
+        barrier.admit_unqualified_write().unwrap();
+        assert!(barrier.close_admission().is_err());
+    }
+
+    #[test]
+    fn poisoned_tracking_does_not_hide_a_closed_gate_or_disable_ordinary_open_work() {
+        for closed in [false, true] {
+            let barrier = WindowBarrier::new();
+            live_window(&barrier, "main");
+            let _closure = closed.then(|| barrier.close_admission().unwrap());
+            let poisoned = std::panic::catch_unwind(|| {
+                let _guard = barrier.state.lock().unwrap();
+                panic!("fixture tracking failure");
+            });
+            assert!(poisoned.is_err());
+            if closed {
+                assert!(matches!(
+                    barrier.admit_unqualified_write(),
+                    Err(BarrierError::AdmissionClosed)
+                ));
+            } else {
+                barrier.admit_unqualified_write().unwrap();
+            }
+            assert!(barrier.close_admission().is_err());
+        }
+    }
 
     fn complete(operation: NativeOperation) {
         operation.finish(Ok::<_, ()>(())).unwrap();

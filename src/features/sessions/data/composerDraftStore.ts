@@ -15,6 +15,11 @@ import {
   type ComposerDraft,
 } from "../model/draftPersistence";
 import { existingPaths, isPersistableId } from "./sessionStore";
+import {
+  rendererPersistenceDrain,
+  type PersistenceScope,
+  type PersistenceWork,
+} from "./persistenceDrain";
 
 /**
  * Unsent composer text survives a restart. The in-memory cache (draftCache.ts)
@@ -34,6 +39,8 @@ export const DRAFT_WRITE_DELAY_MS = 500;
 const HYDRATE_TIMEOUT_MS = 2_000;
 
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
+type ScheduledDraft = { wake(): void; promise: Promise<void> };
+const scheduled = new Map<string, ScheduledDraft>();
 const dirty = new Set<string>();
 const inFlight = new Map<string, Promise<void>>();
 /** What was last sent for each session, so an unchanged draft is not written twice. */
@@ -115,65 +122,183 @@ async function payloadFor(sessionId: string, snapshot: ComposerDraft): Promise<s
   return draft ? JSON.stringify(draft) : null;
 }
 
-async function write(sessionId: string): Promise<void> {
-  const timer = timers.get(sessionId);
-  if (timer) clearTimeout(timer);
-  timers.delete(sessionId);
-  const active = inFlight.get(sessionId);
-  if (active) {
-    await active;
-    return write(sessionId);
-  }
-  if (!isPersistableId(sessionId)) return;
-  const snapshot = composerDraftOf(sessionId);
-  const pending = (async () => {
-    const payload = await payloadFor(sessionId, snapshot);
-    const baseline = written.has(sessionId)
-      ? written.get(sessionId)
-      : listedSessions && !listedSessions.has(sessionId)
-        ? null
-        : undefined;
-    if (baseline === payload) {
-      notifyPersisted(sessionId, snapshot);
-      if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
-      return;
-    }
-    await invoke<void>("session_set_draft", {
-      sessionId,
-      draft: payload === null ? null : JSON.parse(payload),
+const failedDrafts = new Set<string>();
+const draftPersistence = rendererPersistenceDrain.reuseModuleProducer("composer-drafts", {
+  flush: (scope, work) => flushComposerDraftsStrict(scope, work),
+  wake: wakeScheduledDrafts,
+});
+
+function write(sessionId: string, parent?: PersistenceWork): Promise<void> {
+  return draftPersistence
+    .run(
+      [sessionId],
+      "draft",
+      async (work) => {
+        const active = inFlight.get(sessionId);
+        if (active) {
+          await active;
+          return write(sessionId, work);
+        }
+        if (!isPersistableId(sessionId)) return;
+        const snapshot = composerDraftOf(sessionId);
+        const pending = (async () => {
+          const payload = await payloadFor(sessionId, snapshot);
+          const baseline = written.has(sessionId)
+            ? written.get(sessionId)
+            : listedSessions && !listedSessions.has(sessionId)
+              ? null
+              : undefined;
+          if (baseline === payload && !failedDrafts.has(sessionId)) {
+            notifyPersisted(sessionId, snapshot);
+            if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
+            return;
+          }
+          await invoke<void>("session_set_draft", {
+            sessionId,
+            draft: payload === null ? null : JSON.parse(payload),
+          });
+          work.confirmRecovery();
+          failedDrafts.delete(sessionId);
+          written.set(sessionId, payload);
+          notifyPersisted(sessionId, snapshot);
+          if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
+        })();
+        inFlight.set(sessionId, pending);
+        try {
+          await pending;
+        } finally {
+          inFlight.delete(sessionId);
+        }
+      },
+      { parent },
+    )
+    .catch((error: unknown) => {
+      failedDrafts.add(sessionId);
+      throw error;
     });
-    written.set(sessionId, payload);
-    notifyPersisted(sessionId, snapshot);
-    if (sameDraft(snapshot, composerDraftOf(sessionId))) dirty.delete(sessionId);
-  })();
-  inFlight.set(sessionId, pending);
-  try {
-    await pending;
-  } finally {
-    inFlight.delete(sessionId);
-  }
 }
 
-function schedule(sessionId: string) {
+function schedule(sessionId: string, work?: PersistenceWork) {
   if (!isPersistableId(sessionId)) return;
+  draftPersistence.noteMutation([sessionId], work);
   dirty.add(sessionId);
-  const pending = timers.get(sessionId);
-  if (pending) clearTimeout(pending);
-  timers.set(
-    sessionId,
-    setTimeout(() => void write(sessionId).catch(() => {}), DRAFT_WRITE_DELAY_MS),
-  );
+  let slot = scheduled.get(sessionId);
+  if (!slot) {
+    let start: (() => void) | undefined;
+    let woken = false;
+    const accepted: ScheduledDraft = {
+      promise: Promise.resolve(),
+      wake: () => {
+        if (scheduled.get(sessionId) !== accepted) return;
+        const timer = timers.get(sessionId);
+        if (timer) clearTimeout(timer);
+        timers.delete(sessionId);
+        scheduled.delete(sessionId);
+        woken = true;
+        start?.();
+      },
+    };
+    scheduled.set(sessionId, accepted);
+    try {
+      // Own a descendant now, not an original parent token kept across500ms.
+      // Its accepted root survives until the actual spill and native row ACK.
+      accepted.promise = draftPersistence.run(
+        [sessionId],
+        "draft",
+        (descendant) =>
+          new Promise<void>((resolve, reject) => {
+            start = () => {
+              // Explicit flush historically starts attachment reads immediately.
+              // Wake the actual admitted job synchronously, not a later snapshot.
+              try {
+                void write(sessionId, descendant).then(resolve, reject);
+              } catch (error) {
+                reject(error);
+              }
+            };
+            if (woken) start();
+          }),
+        { parent: work },
+      );
+    } catch (error) {
+      scheduled.delete(sessionId);
+      throw error;
+    }
+    // Autosave remains best effort; explicit flush still receives this failure.
+    void accepted.promise.catch(() => {});
+    slot = accepted;
+  }
+  const timer = timers.get(sessionId);
+  if (timer) clearTimeout(timer);
+  timers.set(sessionId, setTimeout(slot.wake, DRAFT_WRITE_DELAY_MS));
+}
+
+function scheduledFor(scope: PersistenceScope): ScheduledDraft[] {
+  return [...scheduled]
+    .filter(([id]) => scope === "profile" || scope.includes(id))
+    .map(([, slot]) => slot);
+}
+
+function wakeScheduledDrafts(scope: PersistenceScope): void {
+  for (const slot of scheduledFor(scope)) slot.wake();
 }
 
 /** Drain scheduled and active writes. Failed drafts remain dirty for retry. */
 export async function flushComposerDrafts(): Promise<void> {
-  while (dirty.size || inFlight.size) {
-    const pending = [...new Set([...dirty, ...inFlight.keys()])];
+  await flushDraftBatch("profile");
+}
+
+function flushDraftBatch(scope: PersistenceScope, parent?: PersistenceWork): Promise<void> {
+  // Only join slots accepted before this batch. A later slot may be queued
+  // behind a new HMR module waiting on this batch; joining it would form a cycle.
+  const beforeBatch = scheduledFor(scope);
+  for (const slot of beforeBatch) slot.wake();
+  // This lease owns the loop's lifetime, not another profile-wide durable
+  // intent. Each write owns its exact session's sticky failure/commit receipt.
+  // Preserve the caller's rejection without duplicating a child failure onto
+  // unrelated sessions in the batch's conservative admission scope.
+  return draftPersistence
+    .run(
+      scope,
+      "flush",
+      async (work) => {
+        try {
+          const started = await Promise.allSettled(beforeBatch.map((slot) => slot.promise));
+          const failure = started.find((result) => result.status === "rejected");
+          if (failure?.status === "rejected") throw failure.reason;
+          await flushMatchingDrafts(scope, work);
+          return { ok: true as const };
+        } catch (error) {
+          return { ok: false as const, error };
+        }
+      },
+      { parent },
+    )
+    .then((result) => {
+      if (!result.ok) throw result.error;
+    });
+}
+
+async function flushMatchingDrafts(scope: PersistenceScope, work?: PersistenceWork): Promise<void> {
+  while (true) {
+    const pending = [...new Set([...dirty, ...inFlight.keys()])].filter(
+      (id) => scope === "profile" || scope.includes(id),
+    );
+    if (!pending.length) return;
     // Await every write even if one fails, so callers receive a real barrier.
-    const results = await Promise.allSettled(pending.map(write));
+    const results = await Promise.allSettled(pending.map((id) => write(id, work)));
     const failure = results.find((result) => result.status === "rejected");
     if (failure?.status === "rejected") throw failure.reason;
   }
+}
+
+/** Drains known draft producers only. Mounted composers/native proof are not covered. */
+export async function flushComposerDraftsStrict(
+  scope: PersistenceScope = "profile",
+  current?: PersistenceWork,
+): Promise<void> {
+  await flushDraftBatch(scope, current);
+  await draftPersistence.settle(scope, current);
 }
 
 function install() {
@@ -196,61 +321,90 @@ function install() {
  * that cannot be read costs that draft, never the launch.
  */
 export async function hydrateComposerDrafts(): Promise<void> {
-  const startedAt = composerDraftRevision();
-  listedSessions = null;
-  draftsLoaded = false;
-  try {
-    const timeout = new Promise<null>((resolve) =>
-      setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS),
-    );
-    const rows = await Promise.race([invoke<unknown>("session_list_drafts"), timeout]);
-    if (Array.isArray(rows)) {
-      listedSessions = new Set(
-        rows.flatMap((row) =>
-          row && typeof row === "object" && typeof row.sessionId === "string"
-            ? [row.sessionId]
-            : [],
-        ),
+  await draftPersistence.run("profile", "hydration", async (work) => {
+    const startedAt = composerDraftRevision();
+    listedSessions = null;
+    draftsLoaded = false;
+    try {
+      const timeout = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), HYDRATE_TIMEOUT_MS),
       );
-      const finished = await Promise.race([
-        Promise.all(rows.map((row) => hydrateRow(row, startedAt))).then(() => true),
+      const rows = await Promise.race([
+        draftPersistence.run(
+          "profile",
+          "draft-list",
+          async (read) => {
+            const result = await invoke<unknown>("session_list_drafts");
+            read.confirmRecovery();
+            return result;
+          },
+          { parent: work },
+        ),
         timeout,
       ]);
-      draftsLoaded = finished === true;
+      if (Array.isArray(rows)) {
+        listedSessions = new Set(
+          rows.flatMap((row) =>
+            row && typeof row === "object" && typeof row.sessionId === "string"
+              ? [row.sessionId]
+              : [],
+          ),
+        );
+        const finished = await Promise.race([
+          Promise.all(rows.map((row) => hydrateRow(row, startedAt, work))).then(() => true),
+          timeout,
+        ]);
+        draftsLoaded = finished === true;
+        if (draftsLoaded) work.confirmRecovery();
+      }
+    } catch (error) {
+      work.fail(error);
+      // Start with no saved drafts.
     }
-  } catch {
-    // Start with no saved drafts.
-  }
-  install();
+    install();
+  });
 }
 
-async function hydrateRow(row: unknown, startedAt: number): Promise<void> {
+async function hydrateRow(
+  row: unknown,
+  startedAt: number,
+  parent?: PersistenceWork,
+): Promise<void> {
   if (!row || typeof row !== "object") return;
   const { sessionId, draft } = row as { sessionId?: unknown; draft?: unknown };
   if (typeof sessionId !== "string" || !isPersistableId(sessionId)) return;
-  const restored = restoreDraft(draft);
-  if (!restored) return;
-  const settled = await settleRestoredDraft(restored, existingPaths).catch(() => ({
-    draft: restored,
-    dropped: [] as string[],
-  }));
-  if (!settled) return;
-  if (
-    restoreComposerDraft(
-      sessionId,
-      { ...settled.draft, notice: droppedAttachmentsNotice(settled.dropped) },
-      startedAt,
-    )
-  ) {
-    if (settled.dropped.length > 0) {
-      // The row still holds the dropped attachments: replace it, even if
-      // nothing is left of the draft.
-      written.set(sessionId, STALE);
-      schedule(sessionId);
-    } else {
-      // What is on disk is what was just loaded; the next change replaces it.
-      const persistable = persistableDraft(composerDraftOf(sessionId));
-      if (persistable) written.set(sessionId, JSON.stringify(persistable));
-    }
-  }
+  await draftPersistence.run(
+    [sessionId],
+    "draft-hydration",
+    async (work) => {
+      const restored = restoreDraft(draft);
+      if (!restored) return;
+      const settled = await settleRestoredDraft(restored, existingPaths).catch((error: unknown) => {
+        work.fail(error);
+        return { draft: restored, dropped: [] as string[] };
+      });
+      if (!settled) return;
+      if (
+        restoreComposerDraft(
+          sessionId,
+          { ...settled.draft, notice: droppedAttachmentsNotice(settled.dropped) },
+          startedAt,
+          work,
+        )
+      ) {
+        if (settled.dropped.length > 0) {
+          // The row still holds the dropped attachments: replace it, even if
+          // nothing is left of the draft.
+          written.set(sessionId, STALE);
+          schedule(sessionId, work);
+        } else {
+          // What is on disk is what was just loaded; the next change replaces it.
+          const persistable = persistableDraft(composerDraftOf(sessionId));
+          if (persistable) written.set(sessionId, JSON.stringify(persistable));
+        }
+      }
+      work.confirmRecovery();
+    },
+    { parent },
+  );
 }

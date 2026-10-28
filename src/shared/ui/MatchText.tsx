@@ -46,7 +46,7 @@ export function MatchText({ text, positions, active }: Props): ReactNode {
   if (cursor < text.length) runs.push({ text: text.slice(cursor), match: false });
   return runs.map((run, index) =>
     run.match ? (
-      <span key={index} className="text-accent">
+      <span key={index} data-match="" className="font-medium text-(--ui-tone-accent-fg)">
         {run.text}
       </span>
     ) : (

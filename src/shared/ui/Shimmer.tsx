@@ -8,6 +8,11 @@ export interface ShimmerProps {
   spread?: number;
 }
 
+/**
+ * Decorative working label. It carries text only; the adjacent status owns the live
+ * announcement, so do not wrap it in another live region. Its sweep, where a host
+ * surface adds one through `.shimmer-text`, must stop for reduced motion.
+ */
 function ShimmerComponent({
   children,
   as: Component = "span",

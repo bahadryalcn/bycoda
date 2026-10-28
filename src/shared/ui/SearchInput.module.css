@@ -1,7 +1,9 @@
 .input::-webkit-search-cancel-button {
   display: none;
 }
-/* Search controls render outside `.bycoda-arc` roots, so Arc spacing tokens carry fallbacks. */
+/* Search controls render outside `.bycoda-arc` roots, so Arc spacing tokens carry fallbacks.
+   The field frame uses the same roles as TextField and Select (resting boundary, hover, focus, invalid, read-only and
+   disabled); only the compact toolbar height is its own deliberate variant. */
 .input[data-search-appearance="field"],
 .group[data-search-appearance="field"] {
   box-sizing: border-box;
@@ -11,18 +13,55 @@
   block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: var(--space-3, 0.625rem);
-  border: 1px solid var(--ui-tone-neutral-border);
+  border: 1px solid var(--ui-control-border);
   border-radius: var(--ui-control-radius);
-  background: var(--ui-surface);
+  background: var(--ui-surface-muted);
   color: var(--ui-tone-neutral-fg);
   font-size: var(--ui-font-secondary);
+  transition: border-color var(--motion-feedback-duration, 120ms) var(--motion-ease-out, ease-out);
 }
 .input[data-search-appearance="field"]::placeholder {
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-muted);
+}
+@media (hover: hover) and (pointer: fine) {
+  .input[data-search-appearance="field"]:hover:not(
+      :disabled,
+      :focus-visible,
+      [readonly],
+      [aria-invalid="true"]
+    ),
+  .group[data-search-appearance="field"]:hover:not(
+      :has(.input:disabled, .input:focus-visible, .input[readonly], .input[aria-invalid="true"])
+    ) {
+    border-color: var(--ui-field-border-hover);
+  }
+}
+.input[data-search-appearance="field"]:focus-visible:not([aria-invalid="true"]),
+.group[data-search-appearance="field"]:has(.input:focus-visible):not(
+    :has(.input[aria-invalid="true"])
+  ) {
+  border-color: var(--ui-field-border-focus);
 }
 .input[data-search-appearance="field"][aria-invalid="true"],
 .group[data-search-appearance="field"]:has(.input[aria-invalid="true"]) {
-  border-color: var(--ui-tone-danger-border);
+  border-color: var(--ui-tone-danger-fg);
+}
+/* Read-only keeps normal ink and its resting boundary on a transparent frame (compare disabled, which dims). */
+.input[data-search-appearance="field"][readonly]:not(
+    :disabled,
+    [aria-invalid="true"],
+    :focus-visible
+  ),
+.group[data-search-appearance="field"]:has(.input[readonly]):not(
+    :has(.input:disabled, .input[aria-invalid="true"], .input:focus-visible)
+  ) {
+  background: transparent;
+}
+/* Form-size search aligns with md form controls and Buttons; compact stays the default. */
+.input[data-search-appearance="field"][data-search-size="md"],
+.group[data-search-appearance="field"][data-search-size="md"] {
+  min-block-size: var(--ui-control-height);
+  block-size: var(--ui-control-height);
 }
 .standalone:has(.input[data-search-appearance="field"]) {
   inline-size: 100%;
@@ -45,12 +84,14 @@
   outline: none;
 }
 .group[data-search-appearance="field"] .input::placeholder {
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-muted);
 }
 .input[data-search-appearance="field"]:disabled,
 .group[data-search-appearance="field"]:has(.input:disabled) {
   color: var(--ui-control-disabled-fg);
+  border-color: var(--ui-control-disabled-border);
   background: var(--ui-control-disabled-surface);
+  cursor: not-allowed;
 }
 
 .standalone {

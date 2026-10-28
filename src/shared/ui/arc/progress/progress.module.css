@@ -112,17 +112,29 @@
   block-size: 4px;
   border: 0;
 }
-.progress[data-indeterminate] .fill {
-  opacity: 0.5;
-  transform: none !important;
+/* Unknown amount: a short segment that moves, never a bar that looks full or half done.
+   At rest, under reduced motion or with decorative motion off, it stays as a still segment. */
+.unknown {
+  display: block;
+  inline-size: 36%;
+  block-size: 100%;
+  border-radius: inherit;
+  background: var(--progress-fill, var(--ui-tone-accent-solid));
+  transform: translateX(80%);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .progress[data-indeterminate] .fill {
-    animation: progress-wait var(--duration-slower, 1.8s) var(--ease-standard) 12;
+  .unknown {
+    animation: progress-wait var(--duration-slower, 1.6s) var(--ease-standard) 12;
+  }
+  :global(html[data-decorative-motion="off"]) .unknown {
+    animation: none;
   }
 }
 @keyframes progress-wait {
-  50% {
-    opacity: 1;
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(280%);
   }
 }

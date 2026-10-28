@@ -1,20 +1,78 @@
 /* Adapted official free Arc source; bycoda semantic theme owns presentation. */
-.root {
-  display: flex;
-  inline-size: 100%;
-  flex-direction: column;
-  align-items: center;
-  justify-content: safe center;
-  gap: var(--space-2);
-  padding: var(--space-10) var(--space-2);
-  text-align: center;
-  color: var(--text-secondary);
+@layer theme, base, components, utilities;
+
+/* Box layout is layered so consumer utilities can size or space the state. */
+@layer components {
+  .root {
+    display: flex;
+    inline-size: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: safe center;
+    gap: var(--space-2);
+    padding: var(--space-10) var(--space-2);
+    text-align: center;
+  }
+  .icon,
+  .glyph {
+    position: relative;
+    display: grid;
+    place-items: center;
+  }
+  .frame {
+    inline-size: 100%;
+    max-inline-size: 100%;
+  }
+  .copy {
+    display: flow-root;
+  }
+  .root p {
+    max-inline-size: 42ch;
+    margin-inline: auto;
+  }
+  .action {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
+  }
+
+  /* panel: a compact centred block inside a side panel or card. */
+  .root[data-context="panel"] {
+    padding: var(--space-6) var(--space-3);
+    gap: var(--space-1);
+  }
+  .root[data-context="panel"] .action {
+    gap: var(--space-2);
+    margin-block-start: var(--space-1);
+  }
+
+  /* list: a start-aligned row for a list without entries; the action trails or wraps below. */
+  .root[data-context="list"] {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    padding: var(--space-3);
+    gap: var(--space-2) var(--space-3);
+    text-align: start;
+  }
+  .root[data-context="list"] .frame {
+    flex: 1 1 12rem;
+    inline-size: auto;
+    min-inline-size: 0;
+  }
+  .root[data-context="list"] p {
+    max-inline-size: none;
+    margin-inline: 0;
+  }
+  .root[data-context="list"] .action {
+    justify-content: flex-start;
+  }
 }
-.icon,
-.glyph {
-  position: relative;
-  display: grid;
-  place-items: center;
+
+.root {
+  color: var(--text-secondary);
 }
 .icon {
   color: var(--text-muted);
@@ -23,40 +81,45 @@
   inline-size: 1.5rem;
   block-size: 1.5rem;
 }
-.frame {
-  inline-size: 100%;
-  max-inline-size: 100%;
+.root[data-context="panel"] .icon svg,
+.root[data-context="list"] .icon svg {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
 }
-.copy {
-  display: flow-root;
-}
+/* Heading and description use the shared type roles; page is one step larger than panel and list. */
 .root h3 {
   position: relative;
   margin: 0;
   color: var(--foreground);
-  font-size: var(--text-base);
+  font-size: var(--ui-font-body);
   font-weight: 500;
-  line-height: var(--leading-body);
+  line-height: var(--ui-leading-body);
 }
 .root p {
   position: relative;
-  max-inline-size: 42ch;
-  margin: 0 auto;
+  margin-block: 0;
   color: var(--text-secondary);
-  font-size: var(--text-sm);
-  line-height: var(--leading-body);
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+}
+.root[data-context="panel"] h3,
+.root[data-context="list"] h3 {
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
+}
+.root[data-context="panel"] p,
+.root[data-context="list"] p {
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
 }
 .root h3 + p {
-  margin-block-start: var(--space-2);
+  margin-block-start: var(--space-1);
 }
 .line {
   display: block;
   text-wrap: balance;
   overflow-wrap: anywhere;
 }
-.action {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-3);
+.root[data-context="list"] .line {
+  text-wrap: pretty;
 }

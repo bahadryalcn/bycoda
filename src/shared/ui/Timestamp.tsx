@@ -6,6 +6,7 @@ import { useToday } from "./arc/lib/use-today";
 /** Local calendar labels follow midnight, focus and resume through the shared day clock. */
 export function Timestamp({
   value,
+  className,
   ...props
 }: Omit<ComponentProps<"time">, "dateTime" | "children"> & { value: number }) {
   const t = useT();
@@ -29,7 +30,12 @@ export function Timestamp({
   const label = sameDay(today) ? t("Today") : sameDay(yesterday) ? t("Yesterday") : undefined;
   const clock = dateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(date);
   return (
-    <time title={full} {...props} dateTime={date.toISOString()}>
+    <time
+      title={full}
+      {...props}
+      className={className ? `tabular-nums ${className}` : "tabular-nums"}
+      dateTime={date.toISOString()}
+    >
       {label ? `${label} ${clock}` : full}
     </time>
   );

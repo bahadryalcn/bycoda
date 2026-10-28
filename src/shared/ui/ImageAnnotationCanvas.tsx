@@ -12,6 +12,8 @@ import {
   type ImageAnnotationPoint,
   type ImageAnnotationTool,
 } from "../lib/imageAnnotations";
+import { Button } from "./Button";
+import { AlertCircle } from "./icons";
 import "./ImageAnnotationCanvas.css";
 
 export type {
@@ -51,6 +53,12 @@ export function ImageAnnotationCanvas({
   const activePointer = useRef<number | undefined>(undefined);
   const [cursor, setCursor] = useState<ImageAnnotationPoint>({ x: 0.5, y: 0.5 });
   const [keyboard, setKeyboard] = useState(false);
+  // A frame that cannot load shows a readable fallback with Retry; drawing is off and the owner's draft is untouched.
+  // Keyed by source and attempt: a load error can arrive before effects run (WebKit), so a
+  // mount-time reset must not erase it, and a new source or Retry clears it implicitly.
+  const [attempt, setAttempt] = useState(0);
+  const [failure, setFailure] = useState<{ src: string; attempt: number }>();
+  const failed = failure?.src === src && failure.attempt === attempt;
   const descriptionId = useId();
   const annotationsRef = useRef(annotations);
   annotationsRef.current = annotations;
@@ -175,100 +183,126 @@ export function ImageAnnotationCanvas({
       ref={container}
       className={["image-annotation-canvas", className].filter(Boolean).join(" ")}
     >
-      <div
-        className="image-annotation-canvas-frame"
-        style={fit.width ? { width: fit.width, height: fit.height } : undefined}
-      >
-        <img
-          ref={image}
-          src={src}
-          alt={alt}
-          draggable={false}
-          onLoad={(event) =>
-            setNatural({
-              width: event.currentTarget.naturalWidth,
-              height: event.currentTarget.naturalHeight,
-            })
-          }
-        />
-        <svg
-          className="image-annotation-canvas-layer"
-          role="group"
-          aria-label={alt}
-          aria-describedby={descriptionId}
-          aria-disabled={disabled}
-          tabIndex={disabled ? -1 : 0}
-          viewBox={`0 0 ${width} ${height}`}
-          onKeyDown={keyDown}
-          onBlur={() => setKeyboard(false)}
-          onPointerDown={(event) => {
-            if (disabled || event.button !== 0 || activePointer.current !== undefined) return;
-            const point = pointerPoint(event);
-            if (!point) return;
-            event.preventDefault();
-            event.stopPropagation();
-            event.currentTarget.setPointerCapture?.(event.pointerId);
-            activePointer.current = event.pointerId;
-            setKeyboard(false);
-            begin(point);
-          }}
-          onPointerMove={(event) => {
-            if (activePointer.current !== event.pointerId || disabled) return;
-            const point = pointerPoint(event);
-            if (point) move(point);
-          }}
-          onPointerUp={(event) => {
-            if (activePointer.current !== event.pointerId) return;
-            const point = pointerPoint(event);
-            if (point) move(point);
-            activePointer.current = undefined;
-            finish();
-          }}
-          onPointerCancel={() => {
-            activePointer.current = undefined;
-            updateDraft(undefined);
-          }}
-          onLostPointerCapture={() => {
-            if (activePointer.current !== undefined) {
+      {failed ? (
+        <div role="alert" className="image-annotation-canvas-fallback">
+          <AlertCircle className="icon-md" aria-hidden />
+          <span>{t("Preview unavailable. Try again.")}</span>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              setAttempt((value) => value + 1);
+            }}
+          >
+            {t("Retry")}
+          </Button>
+        </div>
+      ) : (
+        <div
+          className="image-annotation-canvas-frame"
+          style={fit.width ? { width: fit.width, height: fit.height } : undefined}
+        >
+          <img
+            key={attempt}
+            ref={image}
+            src={src}
+            alt={alt}
+            draggable={false}
+            onError={() => setFailure({ src, attempt })}
+            onLoad={(event) =>
+              setNatural({
+                width: event.currentTarget.naturalWidth,
+                height: event.currentTarget.naturalHeight,
+              })
+            }
+          />
+          <svg
+            className="image-annotation-canvas-layer"
+            role="group"
+            aria-label={alt}
+            aria-describedby={descriptionId}
+            aria-disabled={disabled}
+            tabIndex={disabled ? -1 : 0}
+            viewBox={`0 0 ${width} ${height}`}
+            onKeyDown={keyDown}
+            onBlur={() => setKeyboard(false)}
+            onPointerDown={(event) => {
+              if (disabled || event.button !== 0 || activePointer.current !== undefined) return;
+              const point = pointerPoint(event);
+              if (!point) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.setPointerCapture?.(event.pointerId);
+              activePointer.current = event.pointerId;
+              setKeyboard(false);
+              begin(point);
+            }}
+            onPointerMove={(event) => {
+              if (activePointer.current !== event.pointerId || disabled) return;
+              const point = pointerPoint(event);
+              if (point) move(point);
+            }}
+            onPointerUp={(event) => {
+              if (activePointer.current !== event.pointerId) return;
+              const point = pointerPoint(event);
+              if (point) move(point);
+              activePointer.current = undefined;
+              finish();
+            }}
+            onPointerCancel={() => {
               activePointer.current = undefined;
               updateDraft(undefined);
-            }
-          }}
-        >
-          <g className="image-annotation-canvas-halo" strokeWidth={stroke * 2.4} aria-hidden="true">
-            {allMarks.map((mark) => (
-              <AnnotationMark
-                key={mark.id}
-                mark={mark}
-                width={width}
-                height={height}
-                stroke={stroke}
-                outline
-              />
-            ))}
-          </g>
-          <g className="image-annotation-canvas-marks" strokeWidth={stroke}>
-            {allMarks.map((mark) => (
-              <AnnotationMark
-                key={mark.id}
-                mark={mark}
-                width={width}
-                height={height}
-                stroke={stroke}
-              />
-            ))}
-            {keyboard && (
-              <g className="image-annotation-canvas-cursor">
-                <circle cx={cursor.x * width} cy={cursor.y * height} r={stroke * 3} />
-                <path
-                  d={`M${cursor.x * width - stroke * 5} ${cursor.y * height}h${stroke * 10}M${cursor.x * width} ${cursor.y * height - stroke * 5}v${stroke * 10}`}
+            }}
+            onLostPointerCapture={() => {
+              if (activePointer.current !== undefined) {
+                activePointer.current = undefined;
+                updateDraft(undefined);
+              }
+            }}
+          >
+            <g
+              className="image-annotation-canvas-halo"
+              strokeWidth={stroke * 2.4}
+              aria-hidden="true"
+            >
+              {allMarks.map((mark) => (
+                <AnnotationMark
+                  key={mark.id}
+                  mark={mark}
+                  width={width}
+                  height={height}
+                  stroke={stroke}
+                  outline
                 />
-              </g>
-            )}
-          </g>
-        </svg>
-      </div>
-      <span id={descriptionId} className="image-annotation-canvas-help">
+              ))}
+            </g>
+            <g className="image-annotation-canvas-marks" strokeWidth={stroke}>
+              {allMarks.map((mark) => (
+                <AnnotationMark
+                  key={mark.id}
+                  mark={mark}
+                  width={width}
+                  height={height}
+                  stroke={stroke}
+                />
+              ))}
+              {keyboard && (
+                <g className="image-annotation-canvas-cursor">
+                  <circle cx={cursor.x * width} cy={cursor.y * height} r={stroke * 3} />
+                  <path
+                    d={`M${cursor.x * width - stroke * 5} ${cursor.y * height}h${stroke * 10}M${cursor.x * width} ${cursor.y * height - stroke * 5}v${stroke * 10}`}
+                  />
+                </g>
+              )}
+            </g>
+          </svg>
+        </div>
+      )}
+      <span
+        id={descriptionId}
+        className="image-annotation-canvas-help"
+        data-visible={keyboard || undefined}
+      >
         {t(
           "Use arrow keys to move. Press Enter to start or finish a mark. Press Escape to cancel.",
         )}

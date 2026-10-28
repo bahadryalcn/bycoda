@@ -20,6 +20,7 @@ import type {
   AuthorityStatus,
   HostAuthorityJournal,
 } from "./authority-journal";
+import { authorityTargetHostSession, isNativeAuthorityTarget } from "./authority-journal";
 
 type Snapshot = AuthorityStage["normalizedSnapshot"];
 type Journal = Pick<
@@ -374,15 +375,16 @@ export class HostAuthorityCoordinator {
     const source = parseSource(snapshot.sourceJson);
     const converted = this.converter.convert(source, snapshot.fence);
     immutable(converted);
+    const hostSession = authorityTargetHostSession(converted);
     if (
-      converted.authorityGeneration !== undefined &&
-      converted.authorityGeneration !== snapshot.fence.generation
+      hostSession.authorityGeneration !== undefined &&
+      hostSession.authorityGeneration !== snapshot.fence.generation
     )
       throw new AuthorityCoordinatorBlockedError("Converted target authority generation changed");
-    const normalizedSnapshot = immutable({
-      ...converted,
-      authorityGeneration: snapshot.fence.generation,
-    });
+    const projected = { ...hostSession, authorityGeneration: snapshot.fence.generation };
+    const normalizedSnapshot = immutable(
+      isNativeAuthorityTarget(converted) ? { ...converted, hostSession: projected } : projected,
+    );
     if (Buffer.byteLength(JSON.stringify(normalizedSnapshot), "utf8") > MAX_BYTES)
       throw new AuthorityCoordinatorBlockedError(
         "Converted authority snapshot exceeds its byte limit",

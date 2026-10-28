@@ -7171,5 +7171,6 @@
   "Visual style": "Visueller Stil",
   "bycoda mark": "bycoda-Zeichen",
   "Wave": "Welle",
-  "Dots": "Punkte"
+  "Dots": "Punkte",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "Die ersten {p0} von {p1} Zeichen werden angezeigt. „Details kopieren“ enthält alles."
 }

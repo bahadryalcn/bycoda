@@ -227,11 +227,14 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
 
 #[tauri::command(async)]
 pub fn session_apply_delta(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     delta: SessionDelta,
 ) -> Result<Option<DeltaAck>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    apply(&conn, &delta)
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        apply(&conn, &delta)
+    })
 }
 
 #[derive(Serialize)]
@@ -416,13 +419,16 @@ fn read_legacy_window(
 #[tauri::command(async)]
 pub fn session_get_page(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     before: Option<usize>,
     revision: Option<i64>,
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
-    let _ = super::rewind::reconcile_pending_native(&app, &store, Some(&session_id));
+    let _ = crate::native_window_lifecycle::persistence_write(&window, || {
+        super::rewind::reconcile_pending_native(&app, &store, Some(&session_id))
+    });
     store.with_read_conn(|conn| {
         page_with_cache(
             conn,

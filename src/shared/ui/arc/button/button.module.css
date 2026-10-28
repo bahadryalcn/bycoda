@@ -19,8 +19,9 @@
 .button:is([aria-haspopup]:not([aria-haspopup="false"]), [data-state], [role="combobox"]) { transform: none !important; }
 /* Intrinsic label changes settle in one layout update; pending keeps that space. */
 .labelSlot { position: relative; display: inline-flex; min-width: 0; align-items: center; justify-content: center; transition: opacity var(--duration-fast) var(--ease-standard); }
-.labelContent { display: inline-flex; flex: none; align-items: center; }
-.labelPhase { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); white-space: nowrap; }
+/* Content may shrink inside a bounded control so a long text label can end in an ellipsis. */
+.labelContent { display: inline-flex; flex: 0 1 auto; min-width: 0; align-items: center; }
+.labelPhase { display: inline-flex; min-width: 0; max-width: 100%; align-items: center; justify-content: center; gap: var(--space-2); white-space: nowrap; }
 .labelPhase svg { flex: none; }
 .primary { color: var(--background); background: var(--foreground); border-color: var(--foreground); }
 .secondary { color: var(--foreground); background: var(--surface); border-color: var(--border); }

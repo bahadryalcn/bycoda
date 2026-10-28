@@ -16,6 +16,8 @@ export interface Segment {
   value: string;
   label: string;
   /** Optional content after the label, such as a badge. */ accessory?: ReactNode;
+  /** Unavailable option: stays visible, is skipped by arrow keys and cannot be chosen. */
+  disabled?: boolean;
 }
 export interface SegmentedControlProps {
   options: Segment[];
@@ -72,9 +74,12 @@ export default function SegmentedControl({
       first.current = false;
       return;
     }
+    // Measure from the track itself: offsetLeft would be relative to an outer positioned ancestor.
+    const offset =
+      button.getBoundingClientRect().left - node.getBoundingClientRect().left + node.scrollLeft;
     const room = 20,
-      start = button.offsetLeft - room,
-      end = button.offsetLeft + button.offsetWidth + room - node.clientWidth;
+      start = offset - room,
+      end = offset + button.offsetWidth + room - node.clientWidth;
     const left = node.scrollLeft > start ? start : node.scrollLeft < end ? end : node.scrollLeft;
     if (left !== node.scrollLeft)
       node.scrollTo({
@@ -85,29 +90,36 @@ export default function SegmentedControl({
   }, [value, reduced]);
 
   // Arrow keys, Home and End move the selection like a tab list; only the selected option is a tab stop.
+  // Disabled options stay in place but are skipped.
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.value === value),
   );
+  const enabled = options.flatMap((option, index) => (option.disabled ? [] : [index]));
+  // A disabled selection cannot take focus, so the first enabled option remains reachable.
+  const tabStop = options[selectedIndex]?.disabled ? (enabled[0] ?? selectedIndex) : selectedIndex;
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const currentIndex = options.findIndex(
       (option) => option.value === event.currentTarget.dataset.value,
     );
     const from = currentIndex < 0 ? selectedIndex : currentIndex;
-    const last = options.length - 1;
+    const step = (delta: 1 | -1) => {
+      for (let offset = 1; offset <= options.length; offset++) {
+        const index =
+          (((from + delta * offset) % options.length) + options.length) % options.length;
+        if (!options[index]?.disabled) return index;
+      }
+      return -1;
+    };
     const target =
       event.key === "ArrowRight" || event.key === "ArrowDown"
-        ? from === last
-          ? 0
-          : from + 1
+        ? step(1)
         : event.key === "ArrowLeft" || event.key === "ArrowUp"
-          ? from === 0
-            ? last
-            : from - 1
+          ? step(-1)
           : event.key === "Home"
-            ? 0
+            ? (enabled[0] ?? -1)
             : event.key === "End"
-              ? last
+              ? (enabled[enabled.length - 1] ?? -1)
               : -1;
     if (target < 0 || !options[target]) return;
     event.preventDefault();
@@ -141,7 +153,8 @@ export default function SegmentedControl({
               role={selectionRole === "radio" ? "radio" : undefined}
               aria-checked={selectionRole === "radio" ? value === option.value : undefined}
               aria-pressed={selectionRole === "pressed" ? value === option.value : undefined}
-              tabIndex={index === selectedIndex ? 0 : -1}
+              tabIndex={index === tabStop ? 0 : -1}
+              disabled={option.disabled}
               onClick={() => onValueChange(option.value)}
               onKeyDown={onKeyDown}
               onPointerEnter={onOptionIntent ? () => onOptionIntent(option.value) : undefined}

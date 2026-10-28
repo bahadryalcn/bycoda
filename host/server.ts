@@ -50,6 +50,8 @@ import { createHostGoalsService } from "./domains/goals/service";
 import { createHostSprintsService } from "./domains/sprints/service";
 import { createHostAutomationsService } from "./domains/automations/service";
 import { createHostStewardsService } from "./domains/stewards/service";
+import { createCrewImageCapabilityProbe } from "./domains/crews/image-capability";
+import { createHostCrewsService } from "./domains/crews/service";
 import {
   createDevServersService,
   type DevServerAction,
@@ -65,8 +67,22 @@ import {
 } from "./domains/sessions/queue-service";
 import { createHostDispatcher } from "./transport/dispatch";
 import { attachHostWebSocketTransport, HOST_WS_READ_CAPABILITY } from "./transport/ws/server";
-import { HostBulkTransfers, createHostBulkHandler, hostBulkDependencies, taskBulkDeleteKeys, noteBulkDeleteKeys, goalBulkDeleteKeys, automationBulkDeleteKeys, stewardBulkDeleteKeys } from "./transport/http/bulk";
+import {
+  HostBulkTransfers,
+  createHostBulkHandler,
+  hostBulkDependencies,
+  taskBulkDeleteKeys,
+  noteBulkDeleteKeys,
+  goalBulkDeleteKeys,
+  automationBulkDeleteKeys,
+  stewardBulkDeleteKeys,
+} from "./transport/http/bulk";
 import { HostSubscriptionHub } from "./transport/ws/subscriptions";
+import {
+  crewDefinitionBulkDeleteKeys,
+  crewAgentBulkDeleteKeys,
+  crewRunBulkDeleteKeys,
+} from "./transport/http/bulk";
 import { MobileTlsAuthority } from "./security/mobile-tls";
 import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
 import { McpHttp } from "./mcp-http";
@@ -136,7 +152,7 @@ import { DesktopSessions } from "./desktopSessions";
 import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
-import { HostDomainAuthorizationError } from "./domains/context";
+import { HostDomainAuthorizationError, type HostDomainContext } from "./domains/context";
 import { RunLeases } from "./run-lease";
 import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
 import { AdoptedChanges } from "./adoptedChanges";
@@ -288,10 +304,19 @@ const MAX_MEMOIZED_VIEWS = 4;
 /** Long-poll ticks may reuse a desktop database read this recent. */
 const WATCH_STAMP_MS = 200;
 
+export type HostPrivateControlHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+) => void;
+export type HostPrivateControl = {
+  lifecycle?: HostPrivateControlHandler;
+  nativeAuthorityBootstrap?: HostPrivateControlHandler & { close(): void | Promise<void> };
+};
+
 export async function createHostServer(
   engine: HostEngine,
   providers: RemoteProvider[],
-  lifecycle?: (request: IncomingMessage, response: ServerResponse) => void,
+  privateControl?: HostPrivateControlHandler | HostPrivateControl,
   automationsOverride?: HostAutomations,
   tasksOverride?: HostTasks,
   desktop = new DesktopSessions(),
@@ -301,6 +326,9 @@ export async function createHostServer(
   tunnelsOverride?: ExternalTunnels,
   terminalsOverride?: HostTerminals,
 ) {
+  const controls: HostPrivateControl | undefined =
+    typeof privateControl === "function" ? { lifecycle: privateControl } : privateControl;
+  const lifecycle = controls?.lifecycle;
   await engine.ready;
   const terminals = terminalsOverride ?? new HostTerminals();
   const runLeases = new RunLeases();
@@ -1169,26 +1197,17 @@ export async function createHostServer(
     undefined,
     featureSession,
   );
-  let imageCapability: { at: number; value: Promise<boolean> } | undefined;
+  const imageCapability = createCrewImageCapabilityProbe({
+    probe: (authorize) =>
+      probeNativeCodexImageCapability(join(featureDirectory, "crews"), authorize),
+  });
   const crews = new HostCrews(
     engine.store,
     engine,
     tasks,
     async (projectId) => await models(projectId),
     Date.now,
-    async (candidate, capability) => {
-      if (candidate.harness === "codex" && capability === "image-generation") {
-        if (!imageCapability || Date.now() - imageCapability.at > 60_000)
-          imageCapability = {
-            at: Date.now(),
-            value: probeNativeCodexImageCapability(join(featureDirectory, "crews")).then(
-              (result) => result.available,
-            ),
-          };
-        return imageCapability.value;
-      }
-      return undefined;
-    },
+    imageCapability,
   );
   const sessionListEpoch = randomUUID();
   const decoratedSummaries = new WeakMap<
@@ -1458,6 +1477,7 @@ export async function createHostServer(
         "transport.ws.tasks.v2",
         "transport.ws.goals.v2",
         "transport.ws.stewards.v2",
+        "transport.ws.crews.v2",
         "transport.ws.devServers.v2",
         "transport.ws.sprints.v2",
         "transport.ws.automations.v2",
@@ -1803,6 +1823,11 @@ export async function createHostServer(
   const sprintsService = createHostSprintsService({ sprints });
   const automationsService = createHostAutomationsService({ automations });
   const stewardsService = createHostStewardsService({ stewards });
+  const crewsService = createHostCrewsService({ crews });
+  const crewOperation =
+    (method: Parameters<typeof crewsService.call>[0]) =>
+    (params: Record<string, unknown>, context: HostDomainContext) =>
+      crewsService.call(method, params, context);
   const persistenceService = createHostPersistenceService({
     status: () => engine.store.db.persistenceHealth(),
     recover: (authorized) =>
@@ -1813,6 +1838,26 @@ export async function createHostServer(
     environment: environmentService,
     projects: projectsService,
     operations: {
+      "crews.list": crewOperation("crews.list"),
+      "crews.schema": crewOperation("crews.schema"),
+      "crews.inspect": crewOperation("crews.inspect"),
+      "crews.save": crewOperation("crews.save"),
+      "crews.delete": crewOperation("crews.delete"),
+      "crews.deleteRun": crewOperation("crews.deleteRun"),
+      "crews.agent.save": crewOperation("crews.agent.save"),
+      "crews.agent.delete": crewOperation("crews.agent.delete"),
+      "crews.start": crewOperation("crews.start"),
+      "crews.get": crewOperation("crews.get"),
+      "crews.assign": crewOperation("crews.assign"),
+      "crews.request": crewOperation("crews.request"),
+      "crews.resolve": crewOperation("crews.resolve"),
+      "crews.respond": crewOperation("crews.respond"),
+      "crews.answer": crewOperation("crews.answer"),
+      "crews.pause": crewOperation("crews.pause"),
+      "crews.stop": crewOperation("crews.stop"),
+      "crews.resume": crewOperation("crews.resume"),
+      "crews.accept": crewOperation("crews.accept"),
+      "crews.finish": crewOperation("crews.finish"),
       "sessions.list": sessionService.list,
       "sessions.page": sessionService.page,
       "sessions.sync": sessionService.sync,
@@ -1943,6 +1988,24 @@ export async function createHostServer(
     previousStewardDelete?.(steward);
   };
   stewards.onDelete = stewardDeleted;
+  const previousCrewDefinitionDeleted = crews.onDefinitionDeleted;
+  const crewDefinitionDeleted: NonNullable<typeof crews.onDefinitionDeleted> = (change) => {
+    for (const key of crewDefinitionBulkDeleteKeys(change)) bulkTransfers.invalidate(key);
+    return previousCrewDefinitionDeleted?.(change);
+  };
+  crews.onDefinitionDeleted = crewDefinitionDeleted;
+  const previousCrewAgentDeleted = crews.onAgentDeleted;
+  const crewAgentDeleted: NonNullable<typeof crews.onAgentDeleted> = (change) => {
+    for (const key of crewAgentBulkDeleteKeys(change)) bulkTransfers.invalidate(key);
+    return previousCrewAgentDeleted?.(change);
+  };
+  crews.onAgentDeleted = crewAgentDeleted;
+  const previousCrewRunDeleted = crews.onRunDeleted;
+  const crewRunDeleted: NonNullable<typeof crews.onRunDeleted> = (change) => {
+    for (const key of crewRunBulkDeleteKeys(change)) bulkTransfers.invalidate(key);
+    return previousCrewRunDeleted?.(change);
+  };
+  crews.onRunDeleted = crewRunDeleted;
   hostNotes.onDelete = (note) => {
     for (const key of noteBulkDeleteKeys(note)) bulkTransfers.invalidate(key);
   };
@@ -2054,6 +2117,10 @@ export async function createHostServer(
         if (webControl?.handle(request, response)) return;
         if (request.url === "/lifecycle" && lifecycle) {
           lifecycle(request, response);
+          return;
+        }
+        if (request.url === "/native-authority/bootstrap" && controls?.nativeAuthorityBootstrap) {
+          controls.nativeAuthorityBootstrap(request, response);
           return;
         }
         response.setHeader("Content-Type", "application/json");
@@ -4537,7 +4604,9 @@ export async function createHostServer(
                 case "crews.resume":
                 case "crews.accept":
                 case "crews.finish":
-                  result = await crews.call(input.method, params, String(params.projectId ?? ""));
+                  result = await crewsService.call(input.method, params, domainContext, {
+                    legacy: true,
+                  });
                   break;
                 // These cross-project planning routes belong only to paired owner
                 // dispatch. Project-scoped conversation tools have their own allowlist.
@@ -4900,9 +4969,12 @@ export async function createHostServer(
     subscriptions: subscriptionHub,
     bulk: bulkTransfers,
     bulkDependencies: async (method, params) => {
-      const cwd = method === "notes.list" && params.sessionId === undefined && typeof params.projectId === "string"
-        ? (await engine.store.project(params.projectId)).cwd
-        : undefined;
+      const cwd =
+        method === "notes.list" &&
+        params.sessionId === undefined &&
+        typeof params.projectId === "string"
+          ? (await engine.store.project(params.projectId)).cwd
+          : undefined;
       return hostBulkDependencies(method, params, cwd);
     },
     authenticate: async (token) =>
@@ -4965,14 +5037,21 @@ export async function createHostServer(
           pending.push(Promise.reject(error));
         }
       };
+      drain(() => controls?.nativeAuthorityBootstrap?.close());
       drain(async () => await websocket.close());
       drain(() => {
         unsubscribeChanges();
         unsubscribeAuthority();
         if (tasks.onDelete === taskDeleted) tasks.onDelete = previousTaskDelete;
         if (goals.onDelete === goalDeleted) goals.onDelete = previousGoalDelete;
-        if (automations.onDelete === automationDeleted) automations.onDelete = previousAutomationDelete;
+        if (automations.onDelete === automationDeleted)
+          automations.onDelete = previousAutomationDelete;
         if (stewards.onDelete === stewardDeleted) stewards.onDelete = previousStewardDelete;
+        if (crews.onDefinitionDeleted === crewDefinitionDeleted)
+          crews.onDefinitionDeleted = previousCrewDefinitionDeleted;
+        if (crews.onAgentDeleted === crewAgentDeleted)
+          crews.onAgentDeleted = previousCrewAgentDeleted;
+        if (crews.onRunDeleted === crewRunDeleted) crews.onRunDeleted = previousCrewRunDeleted;
         subscriptionHub.close();
         bulkTransfers.close();
       });

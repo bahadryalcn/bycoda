@@ -19,13 +19,14 @@
 import type { McpTag } from "./mcpPicker";
 import { canRestoreOver } from "./draftPersistence";
 import type { Attachment } from "./session";
+import { rendererPersistenceDrain, type PersistenceWork } from "../data/persistenceDrain";
 
 const drafts = new Map<string, string>();
 const mcpTags = new Map<string, McpTag[]>();
 const attachments = new Map<string, Attachment[]>();
 const modes = new Map<string, "save">();
 const notices = new Map<string, string>();
-const listeners = new Set<(sessionId: string) => void>();
+const listeners = new Set<(sessionId: string, work?: PersistenceWork) => void>();
 let revision = 0;
 const changedAt = new Map<string, number>();
 
@@ -35,14 +36,17 @@ export function composerDraftRevision(): number {
 }
 
 /** Called with the session id whenever its draft changes. Returns the unsubscribe. */
-export function subscribeComposerDrafts(listener: (sessionId: string) => void): () => void {
+export function subscribeComposerDrafts(
+  listener: (sessionId: string, work?: PersistenceWork) => void,
+): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
-function changed(sessionId: string) {
+function changed(sessionId: string, work?: PersistenceWork) {
+  rendererPersistenceDrain.noteMutation([sessionId], work);
   changedAt.set(sessionId, ++revision);
-  for (const listener of listeners) listener(sessionId);
+  for (const listener of listeners) listener(sessionId, work);
 }
 
 export function getComposerDraft(sessionId: string): string | undefined {
@@ -122,6 +126,7 @@ export function restoreComposerDraft(
     notice?: string;
   },
   startedAt = revision,
+  work?: PersistenceWork,
 ): boolean {
   if ((changedAt.get(sessionId) ?? 0) > startedAt) return false;
   if (
@@ -132,6 +137,7 @@ export function restoreComposerDraft(
   ) {
     return false;
   }
+  rendererPersistenceDrain.noteMutation([sessionId], work);
   if (saved.text) drafts.set(sessionId, saved.text);
   if (saved.mcpTags.length > 0) mcpTags.set(sessionId, saved.mcpTags);
   if (saved.attachments.length > 0) attachments.set(sessionId, saved.attachments);
@@ -161,11 +167,11 @@ export function hasUnsentComposerDraft(sessionId: string): boolean {
   return draft.text.trim().length > 0 || draft.attachments.length > 0;
 }
 
-export function clearComposerDraft(sessionId: string): void {
+export function clearComposerDraft(sessionId: string, work?: PersistenceWork): void {
   drafts.delete(sessionId);
   mcpTags.delete(sessionId);
   attachments.delete(sessionId);
   modes.delete(sessionId);
   notices.delete(sessionId);
-  changed(sessionId);
+  changed(sessionId, work);
 }

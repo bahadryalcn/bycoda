@@ -7171,5 +7171,6 @@
   "Visual style": "视觉样式",
   "bycoda mark": "bycoda 标志",
   "Wave": "波形",
-  "Dots": "圆点"
+  "Dots": "圆点",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "显示前 {p0} 个字符（共 {p1} 个）。“复制详情”包含全部内容。"
 }

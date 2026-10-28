@@ -12,7 +12,7 @@ import {
   type ReactNode,
 } from "react";
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from "motion/react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageOff } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./image-compare.module.css";
 
@@ -143,6 +143,8 @@ export function ImageCompare({
   const pressedHandle = useRef(false);
   const [dragging, setDragging] = useState(false);
   const [quiet, setQuiet] = useState(false);
+  // A side whose image fails to load shows a readable fallback instead of a blank or broken-icon pane.
+  const [failed, setFailed] = useState<[boolean, boolean]>([false, false]);
 
   // The divider is a committed position plus a catch-up offset: a press springs the offset to zero while the pointer moves the position
   // 1:1, so the divider glides to the finger and never trails it.
@@ -240,6 +242,37 @@ export function ImageCompare({
     measure();
     return () => observer.disconnect();
   }, [metrics]);
+
+  // Image and video errors do not bubble, so the frame listens in the capture phase.
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const track = (broken: boolean) => (event: Event) => {
+      const side = (event.target as Element | null)
+        ?.closest?.("[data-side]")
+        ?.getAttribute("data-side");
+      if (side !== "before" && side !== "after") return;
+      const index = side === "before" ? 0 : 1;
+      setFailed((current) =>
+        current[index] === broken
+          ? current
+          : (current.map((value, i) => (i === index ? broken : value)) as [boolean, boolean]),
+      );
+    };
+    const onError = track(true),
+      onLoad = track(false);
+    root.addEventListener("error", onError, true);
+    root.addEventListener("load", onLoad, true);
+    // An image that failed before the listener attached has already settled.
+    root.querySelectorAll("img").forEach((image) => {
+      if (image.complete && image.currentSrc && !image.naturalWidth)
+        image.dispatchEvent(new Event("error"));
+    });
+    return () => {
+      root.removeEventListener("error", onError, true);
+      root.removeEventListener("load", onLoad, true);
+    };
+  }, []);
 
   // A new orientation swings the divider a quarter turn about its pivot while the clip follows it.
   useEffect(() => {
@@ -439,9 +472,13 @@ export function ImageCompare({
         if (pressedHandle.current && latest.current !== 50) commit(50);
       }}
     >
-      <div className={styles.layer}>{after}</div>
-      <motion.div className={styles.layer} style={{ clipPath }}>
+      <div className={styles.layer} data-side="after">
+        {after}
+        {failed[1] ? <MediaFallback side="after" message={t("Preview unavailable")} /> : null}
+      </div>
+      <motion.div className={styles.layer} data-side="before" style={{ clipPath }}>
         {before}
+        {failed[0] ? <MediaFallback side="before" message={t("Preview unavailable")} /> : null}
       </motion.div>
       {labels && (
         <>
@@ -517,6 +554,15 @@ export function ImageCompare({
           </motion.div>
         </motion.span>
       </motion.div>
+    </div>
+  );
+}
+
+function MediaFallback({ message, side }: { message: string; side: "before" | "after" }) {
+  return (
+    <div className={styles.fallback} data-side={side} role="status">
+      <ImageOff size={20} strokeWidth={1.75} aria-hidden="true" />
+      <span>{message}</span>
     </div>
   );
 }

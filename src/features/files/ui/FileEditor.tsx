@@ -8,6 +8,9 @@ import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import type { Text } from "@codemirror/state";
+import { bindEditorDraftDocument } from "../data/editorDraftPersistence";
 import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
 
 import {
@@ -79,7 +82,7 @@ type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; me
 
 export function FileEditor({
   path,
-  documentId = path,
+  documentId: suppliedDocumentId,
   cwd,
   active,
   shown = true,
@@ -91,6 +94,8 @@ export function FileEditor({
   onOpenFile,
 }: Props) {
   useLocale();
+  const fallbackDocumentId = useRef(crypto.randomUUID());
+  const documentId = suppliedDocumentId ?? fallbackDocumentId.current;
   const shownRef = useRef(shown);
   shownRef.current = shown;
   /** Work skipped while hidden, replayed once on show. */
@@ -109,6 +114,15 @@ export function FileEditor({
   const [dirty, setDirty] = useState(false);
   const [diskConflict, setDiskConflict] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
+  const [recoveredText, setRecoveredText] = useState<string | undefined>();
+  const recoveryReviewRef = useRef(false);
+  const draftHandleRef = useRef<ReturnType<typeof bindEditorDraftDocument> | null>(null);
+  const [draftPersistence, setDraftPersistence] = useState<ReturnType<
+    ReturnType<typeof bindEditorDraftDocument>["observe"]
+  > | null>(null);
+  const [draftAction, setDraftAction] = useState<"restore" | "replace" | null>(null);
+  const draftActionRef = useRef(false);
+  const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
   const [gitBase, setGitBase] = useState<{
@@ -209,11 +223,46 @@ export function FileEditor({
   currentIdentity.current = { path, documentId };
   /** The file's text as last read or written; tells real disk changes from no-op events. */
   const diskTextRef = useRef<string | null>(null);
+  const draftBaselineRef = useRef<string | null>(null);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
   const loadedDocumentRef = useRef<{ id: string; reloadKey: number } | null>(null);
   const renderedDocumentRef = useRef<string | null>(null);
   onDirtyChangeRef.current = onDirtyChange;
+
+  useEffect(() => {
+    const handle = bindEditorDraftDocument({
+      documentId,
+      path,
+      origin: isRemoteProjectPath(path) ? "remote" : isTauri() ? "local-native" : "web",
+    });
+    draftHandleRef.current = handle;
+    const update = () => setDraftPersistence(handle.observe());
+    const unsubscribe = handle.subscribe(update);
+    update();
+    void handle.ready.then(update, update);
+    return () => {
+      unsubscribe();
+      if (draftHandleRef.current === handle) draftHandleRef.current = null;
+      // The manager still owns accepted captures and uncertain Native calls.
+      handle.dispose();
+    };
+  }, [documentId, path]);
+
+  const captureDraft = useCallback((text: string | Text) => {
+    // Remote files need their own Host-owned origin contract. A local window
+    // receipt must not accidentally stand in for that contract.
+    if (!isTauri() || isRemoteProjectPath(currentIdentity.current.path)) return;
+    const handle = draftHandleRef.current;
+    const baseline = draftBaselineRef.current;
+    if (!handle || baseline === null) return;
+    return handle.capture({
+      captureId: crypto.randomUUID(),
+      text,
+      diskBaseline: baseline,
+      eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
+    });
+  }, []);
 
   const applyDiskContent = useCallback((raw: string) => {
     // CodeMirror documents are LF-only; keep the editor in that convention
@@ -221,6 +270,7 @@ export function FileEditor({
     // into the LF document doubles every line (see editorDoc.ts).
     eolRef.current = detectLineEnding(raw);
     diskTextRef.current = raw;
+    draftBaselineRef.current = raw;
     const content = normalizeLineBreaks(raw);
     setLoadState((current) => {
       if (current.status === "ready" && current.content === content) {
@@ -254,6 +304,8 @@ export function FileEditor({
         pendingDiskRef.current = false;
         setDiskConflict(false);
         if (force && dirtyRef.current) {
+          setRecoveredText(undefined);
+          recoveryReviewRef.current = false;
           dirtyRef.current = false;
           setDirty(false);
           onDirtyChangeRef.current(path, false);
@@ -475,6 +527,9 @@ export function FileEditor({
 
   const save = useCallback(
     async (content: string) => {
+      // Capture this exact write before queueing or awaiting filesystem work.
+      const capture = captureDraft(content);
+      const draftHandle = draftHandleRef.current;
       const generation = ++saveGeneration.current;
       const allowedOverwrite = overwriteVersion.current;
       overwriteVersion.current = null;
@@ -494,7 +549,14 @@ export function FileEditor({
       });
       try {
         await operation;
+        if (capture && draftHandle) {
+          // Native reporting is independent of the completed filesystem write.
+          // A retry here must never repeat writeTextFile.
+          void draftHandle.reportSaved(capture).catch(() => {});
+        }
+        recoveryReviewRef.current = false;
         diskTextRef.current = serializedContent;
+        draftBaselineRef.current = serializedContent;
         pendingDiskRef.current = false;
         setDiskConflict(false);
         // Keep the reload prop at the saved baseline, so restoring the initial
@@ -515,7 +577,7 @@ export function FileEditor({
         throw error;
       }
     },
-    [cwd, path],
+    [cwd, path, captureDraft],
   );
 
   const stageGit = useCallback(
@@ -572,6 +634,63 @@ export function FileEditor({
   // Only previews read the draft; copying the whole text and re-rendering on
   // every keystroke is skipped while the source is what is on screen.
   const docChange = mode === "preview" ? setDraft : undefined;
+
+  const resolveDraft = async (decision: "restore" | "replace") => {
+    const handle = draftHandleRef.current;
+    const record = draftPersistence?.currentDraft;
+    if (!handle || !record || draftActionRef.current) return;
+    draftActionRef.current = true;
+    setDraftAction(decision);
+    setDraftActionError(null);
+    try {
+      if (decision === "restore" && dirtyRef.current) {
+        throw new Error(t("Keep or save your current edits before restoring this draft."));
+      }
+      handle.resolveInitialization({
+        decision,
+        revision: record.metadata.revision,
+        payloadDigest: record.metadata.payloadDigest,
+      });
+      if (decision === "restore") {
+        const payload = record.payload;
+        // Keep the original disk baseline distinct from the recovered document.
+        // A changed disk file still requires the existing overwrite choice.
+        draftBaselineRef.current = payload.diskBaseline;
+        pendingDiskRef.current = diskTextRef.current !== payload.diskBaseline;
+        if (pendingDiskRef.current) diskChangeVersion.current += 1;
+        setDiskConflict(pendingDiskRef.current);
+        eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        recoveryReviewRef.current = true;
+        setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
+        setDraft(payload.text);
+        setRecoveredText(payload.text);
+        setEditorRevision((value) => value + 1);
+        setMode("source");
+      } else if (dirtyRef.current) {
+        await handle.retry();
+      }
+    } catch (error) {
+      setDraftActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      draftActionRef.current = false;
+      setDraftAction(null);
+    }
+  };
+
+  const retryDraft = async () => {
+    if (draftActionRef.current) return;
+    draftActionRef.current = true;
+    setDraftAction("replace");
+    setDraftActionError(null);
+    try {
+      await draftHandleRef.current?.retry();
+    } catch (error) {
+      setDraftActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      draftActionRef.current = false;
+      setDraftAction(null);
+    }
+  };
 
   const relativePath = path.startsWith(`${cwd}/`) ? path.slice(cwd.length + 1) : path;
   const footerBlameReason = useInlineBlameUnavailableReason(cwd, path);
@@ -654,6 +773,58 @@ export function FileEditor({
 
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
+      {draftPersistence?.initializationDecisionRequired ? (
+        <div
+          role="status"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-content"
+        >
+          <span className="min-w-0 flex-1">
+            {t(
+              "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
+            )}
+          </span>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={dirty}
+            loading={draftAction === "restore"}
+            onClick={() => void resolveDraft("restore")}
+          >
+            {t("Restore draft")}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            loading={draftAction === "replace"}
+            disabled={draftAction === "restore"}
+            onClick={() => void resolveDraft("replace")}
+          >
+            {t("Use current document")}
+          </Button>
+        </div>
+      ) : null}
+      {draftActionError || (draftPersistence?.error && draftPersistence.phase !== "unsupported") ? (
+        <div
+          role="alert"
+          className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-danger"
+        >
+          <span className="min-w-0 flex-1 break-words">
+            {draftActionError ??
+              t("Draft recovery copy could not be confirmed. Keep this editor open.")}
+          </span>
+          {!draftPersistence?.initializationDecisionRequired &&
+          draftPersistence?.phase !== "stale-owner" ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={draftAction !== null}
+              onClick={() => void retryDraft()}
+            >
+              {t("Retry draft copy")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {diskConflict && (
         <div
           role="alert"
@@ -733,6 +904,7 @@ export function FileEditor({
                 cwd={cwd}
                 commentPath={relativePath}
                 value={loadState.content}
+                initialDraft={recoveredText}
                 showDiff={showDiff}
                 gitOriginal={gitOriginal}
                 active={active && mode === "source"}
@@ -741,9 +913,10 @@ export function FileEditor({
                 onErrorCountChange={errorCountChange}
                 onSave={save}
                 saveRequestRef={saveRequestRef}
-                canAutosave={() => !pendingDiskRef.current}
+                canAutosave={() => !pendingDiskRef.current && !recoveryReviewRef.current}
                 onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
                 onDocChange={docChange}
+                onDocumentChange={captureDraft}
                 onEdit={edited}
                 shown={shown && mode === "source"}
                 onOpenFile={onOpenFile}
@@ -758,6 +931,7 @@ export function FileEditor({
           cwd={cwd}
           commentPath={relativePath}
           value={loadState.content}
+          initialDraft={recoveredText}
           showDiff={showDiff}
           gitOriginal={gitOriginal}
           active={active}
@@ -766,9 +940,10 @@ export function FileEditor({
           onDirtyChange={dirtyChange}
           onErrorCountChange={errorCountChange}
           onSave={save}
+          onDocumentChange={captureDraft}
           onEdit={edited}
           shown={shown}
-          canAutosave={() => !pendingDiskRef.current}
+          canAutosave={() => !pendingDiskRef.current && !recoveryReviewRef.current}
           onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
           onOpenFile={onOpenFile}
         />

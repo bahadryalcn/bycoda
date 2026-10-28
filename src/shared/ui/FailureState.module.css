@@ -1,24 +1,46 @@
+@layer theme, base, components, utilities;
+
+/* Box layout is layered so a host surface can size or place the state with utilities. */
+@layer components {
+  .surface {
+    display: grid;
+    place-items: safe center;
+    flex: 1;
+    min-inline-size: 0;
+    min-block-size: 0;
+    overflow: auto;
+    padding: clamp(16px, 4vi, 32px);
+  }
+  .surface[data-fullscreen] {
+    block-size: 100dvh;
+  }
+  .content {
+    display: grid;
+    gap: 16px;
+    inline-size: min(100%, 32rem);
+    min-inline-size: 0;
+  }
+  .message {
+    display: grid;
+    gap: 8px;
+    min-inline-size: 0;
+  }
+  .actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .details {
+    display: grid;
+    gap: 8px;
+    min-inline-size: 0;
+  }
+}
+
 .surface {
-  display: grid;
-  place-items: safe center;
-  flex: 1;
-  min-inline-size: 0;
-  min-block-size: 0;
-  overflow: auto;
-  padding: clamp(16px, 4vi, 32px);
   background: var(--ui-surface);
   color: var(--color-content);
-}
-
-.surface[data-fullscreen] {
-  block-size: 100dvh;
-}
-
-.content {
-  display: grid;
-  gap: 16px;
-  inline-size: min(100%, 32rem);
-  min-inline-size: 0;
 }
 
 .title {
@@ -33,25 +55,16 @@
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);
   line-height: 1.6;
-}
-
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  overflow-wrap: anywhere;
 }
 
 .details {
-  display: grid;
-  gap: 12px;
-  min-inline-size: 0;
   font-size: var(--ui-font-caption);
 }
 
 .details pre {
   margin: 0;
-  padding: 16px;
+  padding: 12px 16px;
   max-block-size: min(32dvh, 16rem);
   overflow: auto;
   white-space: pre-wrap;
@@ -59,5 +72,23 @@
   border: 1px solid var(--color-stroke);
   border-radius: 8px;
   background: var(--ui-surface-muted);
+  font-family: var(--font-mono);
   font-size: inherit;
+  user-select: text;
+}
+
+/* The preview note states plainly that the text above is partial. */
+.meta {
+  margin: 0;
+  color: var(--ui-text-muted);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+
+.copyStatus {
+  min-inline-size: 0;
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  overflow-wrap: anywhere;
 }

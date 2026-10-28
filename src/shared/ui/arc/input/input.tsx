@@ -222,8 +222,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
   const controlId = id ?? generatedId;
   const hintId = description ? `${controlId}-description` : undefined;
   const errorId = error ? `${controlId}-error` : undefined;
+  // The error follows the control directly and is described first; the helper stays below it.
   const describedBy =
-    [props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined;
+    [props["aria-describedby"], errorId, hintId].filter(Boolean).join(" ") || undefined;
   const Control = clearable || props.type === "search" ? SearchInput : "input";
   const control = (
     <Control
@@ -254,8 +255,8 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
       ) : (
         control
       )}
-      <FieldMessage id={hintId} text={description} className={styles.description} />
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
+      <FieldMessage id={hintId} text={description} className={styles.description} />
     </div>
   );
 });

@@ -5,6 +5,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { Select, NativeSelect } from "./Select";
 import { Checkbox } from "./Checkbox";
 import { Switch } from "./Switch";
+import { SegmentedControl } from "./SegmentedControl";
 import { Slider } from "./Slider";
 
 it("opts into wrapping virtual choice navigation without changing clamped defaults", async () => {
@@ -194,4 +195,85 @@ it("keeps Slider live change separate from commit and submits its controlled val
   expect(change).toHaveBeenCalledExactlyOnceWith(6);
   expect(commit).toHaveBeenCalledExactlyOnceWith(6);
   expect(container.querySelector<HTMLInputElement>('input[name="volume"]')?.value).toBe("5");
+});
+
+it("keeps Checkbox a native, labelled, form-participating membership input", async () => {
+  const change = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(
+        "form",
+        null,
+        createElement(
+          "label",
+          null,
+          createElement(Checkbox, { name: "terms", value: "yes", onChange: change }),
+          createElement("span", null, "Accept terms"),
+        ),
+      ),
+    ),
+  );
+  const input = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+  expect(input.className).toContain("bycoda-arc-checkbox");
+  // Activating the label text toggles the input: the text is part of the hit area.
+  await act(async () => container.querySelector("span")!.click());
+  expect(input.checked).toBe(true);
+  expect(change).toHaveBeenCalledOnce();
+  expect(new FormData(container.querySelector("form")!).get("terms")).toBe("yes");
+  await act(async () =>
+    root.render(createElement(Checkbox, { indeterminate: true, disabled: true })),
+  );
+  const mixed = container.querySelector<HTMLInputElement>("input")!;
+  expect(mixed.indeterminate).toBe(true);
+  expect(mixed.getAttribute("aria-checked")).toBe("mixed");
+  expect(mixed.disabled).toBe(true);
+});
+
+it("skips disabled segments with arrow keys and keeps a reachable tab stop", async () => {
+  const change = vi.fn();
+  const options = [
+    { value: "a", label: "Alpha" },
+    { value: "b", label: "Beta", disabled: true },
+    { value: "c", label: "Gamma with a long localized label" },
+  ];
+  await act(async () =>
+    root.render(
+      createElement(SegmentedControl, {
+        options,
+        value: "a",
+        onValueChange: change,
+        label: "View",
+      }),
+    ),
+  );
+  const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>("button[data-value]"));
+  expect(buttons[1].disabled).toBe(true);
+  await act(async () => {
+    buttons[0].focus();
+    buttons[0].dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+  });
+  expect(change).toHaveBeenLastCalledWith("c");
+  await act(async () => {
+    buttons[2].dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true }));
+  });
+  expect(change).toHaveBeenLastCalledWith("a");
+  await act(async () => {
+    buttons[1].click();
+  });
+  expect(change).toHaveBeenCalledTimes(2);
+  // A disabled selection must not strand keyboard users without a tab stop.
+  await act(async () =>
+    root.render(
+      createElement(SegmentedControl, {
+        options,
+        value: "b",
+        onValueChange: change,
+        label: "View",
+      }),
+    ),
+  );
+  const stops = Array.from(
+    container.querySelectorAll<HTMLButtonElement>("button[data-value]"),
+  ).filter((button) => button.tabIndex === 0);
+  expect(stops.map((button) => button.dataset.value)).toEqual(["a"]);
 });

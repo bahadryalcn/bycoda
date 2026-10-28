@@ -45,6 +45,10 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   align?: "center" | "start" | "end";
   /** Structural item/tab content may form a record row instead of an inline action. */
   layout?: "inline" | "stacked" | "text" | "media";
+  /** Compact icon action inside a row, tab or card that owns the highlight
+   *  (`ActionHost`): about 20px, transparent overlay hover/press, secondary ink.
+   *  Prefer `InlineAction`, which also handles reveal and event isolation. */
+  inset?: boolean;
 };
 
 export type ButtonProps = CommonButtonProps &
@@ -97,6 +101,7 @@ export function Button({
   motion = "auto",
   layout,
   align,
+  inset = false,
   className,
   children,
   disabled,
@@ -121,10 +126,15 @@ export function Button({
   const resolvedTone: ButtonTone =
     tone === "error" ? "danger" : (tone ?? (variant === "danger" ? "danger" : "neutral"));
   const structural = variant === "item" || variant === "tab";
-  // Text actions retain their name and data while pending. An explicit loading
-  // contract reserves one icon slot, so the spinner never shifts nearby actions.
+  // A text action with a start icon swaps that icon for the spinner in the same slot.
+  // Without an icon nothing is reserved at rest (no empty gap); while pending, the
+  // label keeps its width and accessible name under a centered spinner instead.
   const inlineProgress =
-    loadingProp !== undefined && !iconOnly && !structural && layout !== "media";
+    loadingProp !== undefined &&
+    startIcon != null &&
+    !iconOnly &&
+    !structural &&
+    layout !== "media";
   const native =
     structural ||
     variant === "link" ||
@@ -155,6 +165,7 @@ export function Button({
     styles.control,
     styles[hierarchy],
     iconOnly ? styles.iconOnly : "",
+    inset ? styles.inset : "",
     fullWidth ? styles.fullWidth : "",
     className,
   ]
@@ -205,7 +216,8 @@ export function Button({
     "data-button-layout":
       structural || variant === "link" || layout === "media" ? layout : undefined,
     "data-button-size": size,
-    "data-button-align": align && align !== "center" ? align : undefined,
+    // Any explicit alignment is authoritative over structural (item/tab) defaults.
+    "data-button-align": align,
     // Controls that do not scale on press (native renderer, popup anchors) step their tone instead.
     "data-button-press": native ? "tone" : undefined,
     onClick: guard((event: MouseEvent<HTMLButtonElement>) => {
@@ -259,7 +271,11 @@ export function Button({
           {startIcon}
         </span>
       ) : null}
-      {children}
+      {typeof children === "string" || typeof children === "number" ? (
+        <span className={styles.label}>{children}</span>
+      ) : (
+        children
+      )}
       {endIcon != null ? (
         <span className={styles.icon} aria-hidden="true">
           {endIcon}

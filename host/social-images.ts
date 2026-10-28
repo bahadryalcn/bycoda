@@ -172,8 +172,21 @@ function comfyProgress(
 
 /** Only an installed, authenticated native ImageGen feature qualifies. CLI presence
  * and the system skill alone never advertise image support. All permission asks fail. */
-function codexImages(directory: string): SocialImageAdapter {
+class ImageProbeAuthorizationError extends Error {
+  constructor(readonly failure: unknown) {
+    super("Image capability authorization failed.");
+  }
+}
+
+function codexImages(directory: string, authorize?: () => Promise<void>): SocialImageAdapter {
   directory = join(directory, "image-workspace");
+  const checkAuthority = async () => {
+    try {
+      await authorize?.();
+    } catch (error) {
+      throw new ImageProbeAuthorizationError(error);
+    }
+  };
   async function connect<T>(
     work: (
       rpc: JsonRpcClient,
@@ -201,8 +214,11 @@ function codexImages(directory: string): SocialImageAdapter {
       () => rpc.close(new Error("ImageGen process exited.")),
     );
     try {
+      await checkAuthority();
       await mkdir(directory, { recursive: true, mode: 0o700 });
+      await checkAuthority();
       const binary = await resolveCodexBinary();
+      await checkAuthority();
       await spawnChild(
         id,
         binary.path,
@@ -210,11 +226,16 @@ function codexImages(directory: string): SocialImageAdapter {
         directory,
         { provider: "codex", id: "default" },
         "codex",
+        undefined,
+        undefined,
+        checkAuthority,
       );
+      await checkAuthority();
       await rpc.request("initialize", {
         clientInfo: { name: "bycoda-social-images", version: "1.0.0" },
         capabilities: { experimentalApi: true },
       });
+      await checkAuthority();
       await rpc.notify("initialized");
       return await work(rpc, (h) => {
         handler = h;
@@ -229,8 +250,11 @@ function codexImages(directory: string): SocialImageAdapter {
     async capability() {
       try {
         return await connect(async (rpc) => {
+          await checkAuthority();
           const f = await rpc.request<any>("config/feature/list", {});
+          await checkAuthority();
           const a = await rpc.request<any>("account/read", { refreshToken: false });
+          await checkAuthority();
           const enabled = (f.data ?? f.features ?? []).some(
             (x: any) => ["image_generation", "imagegen"].includes(x.name) && x.enabled === true,
           );
@@ -244,7 +268,8 @@ function codexImages(directory: string): SocialImageAdapter {
             models: enabled ? ["native-default"] : [],
           };
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof ImageProbeAuthorizationError) throw error.failure;
         return {
           provider: "codex",
           available: false,
@@ -354,8 +379,11 @@ function codexImages(directory: string): SocialImageAdapter {
 }
 
 /** Shared runtime probe. Calling this does not generate an image or enable a feature. */
-export async function probeNativeCodexImageCapability(directory: string) {
-  return codexImages(directory).capability();
+export async function probeNativeCodexImageCapability(
+  directory: string,
+  authorize?: () => Promise<void>,
+) {
+  return codexImages(directory, authorize).capability();
 }
 
 export function createSocialImageAdapters(

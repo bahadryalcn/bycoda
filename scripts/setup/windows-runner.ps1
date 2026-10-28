@@ -286,7 +286,9 @@ function New-ProfileFreeShim([string]$Executable) {
     $source = @'
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Text;
+using System.Threading.Tasks;
 class ProfileFreePowerShell {
   static string Quote(string arg) {
     var b = new StringBuilder("\""); int slashes = 0;
@@ -297,12 +299,32 @@ class ProfileFreePowerShell {
     }
     b.Append('\\', slashes * 2); return b.Append('"').ToString();
   }
+  static async Task ForwardInput(Process child) {
+    try {
+      using (var input = Console.OpenStandardInput()) {
+        await input.CopyToAsync(child.StandardInput.BaseStream).ConfigureAwait(false);
+      }
+    } catch (IOException) { } catch (ObjectDisposedException) { }
+    finally {
+      try { child.StandardInput.Close(); } catch (IOException) { } catch (InvalidOperationException) { }
+    }
+  }
   static int Main(string[] args) {
     var start = new ProcessStartInfo(@"__POWERSHELL__");
     var list = new StringBuilder("-NoLogo -NoProfile -NonInteractive ");
     foreach (string arg in args) list.Append(Quote(arg)).Append(' ');
     start.Arguments = list.ToString(); start.UseShellExecute = false; start.CreateNoWindow = true;
-    using (var child = Process.Start(start)) { child.WaitForExit(); return child.ExitCode; }
+    start.RedirectStandardOutput = true; start.RedirectStandardError = true; start.RedirectStandardInput = true;
+    using (var child = Process.Start(start)) {
+      // Copy bytes concurrently: preserve Unicode, stream live, and avoid either
+      // pipe filling while the other is read. Never buffer a complete job log.
+      var output = child.StandardOutput.BaseStream.CopyToAsync(Console.OpenStandardOutput());
+      var error = child.StandardError.BaseStream.CopyToAsync(Console.OpenStandardError());
+      // Forward EOF too, but never wait for an upstream input pipe after the
+      // child has exited (e.g. a workflow step which never reads standard input).
+      Task.Run(() => ForwardInput(child));
+      child.WaitForExit(); Task.WaitAll(output, error); return child.ExitCode;
+    }
   }
 }
 '@

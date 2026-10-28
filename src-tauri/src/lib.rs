@@ -43,9 +43,18 @@ mod macos_background;
 mod mcp;
 mod menu;
 mod mobile_pty;
+mod native_authority_channel;
+mod native_authority_bootstrap;
+mod native_authority_helper;
+mod native_authority_deployment;
+mod native_authority_peer;
+mod native_authority_pipe;
+mod native_authority_source;
+mod native_authority_runtime;
 mod native_language;
 mod native_workspace;
 mod native_window_lifecycle;
+mod native_editor_drafts;
 mod notes;
 mod notifications;
 mod pasteboard;
@@ -108,6 +117,12 @@ mod windows;
 mod windows_instance;
 mod worktree_lifecycle;
 mod worktrees;
+
+/// Headless private transport entrypoint. The executable checks this before any
+/// GUI, Store, provider, control server or process-reaping initialization.
+pub fn maybe_run_native_authority_helper() -> Option<i32> {
+    native_authority_helper::maybe_run()
+}
 
 // Phase 1 seam: spawn / kill harness children per bycoda thread.
 // Adapters own the protocol; this host only supervises processes.
@@ -427,6 +442,9 @@ pub fn run() {
                     let _ = window.set_shadow(true);
                 }
             }
+            if !package_smoke::active() {
+                native_authority_runtime::start(app.handle());
+            }
             Ok(())
         })
         .on_menu_event(|app, event| {
@@ -447,6 +465,12 @@ pub fn run() {
             worktrees::managed_worktree_removal_plan,
             worktrees::managed_worktree_removal_apply,
             native_workspace::managed_workspace_buffers,
+            native_editor_drafts::native_editor_draft_put,
+            native_editor_drafts::native_editor_draft_open,
+            native_editor_drafts::native_editor_draft_read_current,
+            native_editor_drafts::native_editor_draft_read_recovery,
+            native_editor_drafts::native_editor_draft_inventory,
+            native_editor_drafts::native_editor_draft_clear_saved,
             remote::remote_machines,
             server_inventory::server_inventory_list,
             termius_import::termius_import_preview,
@@ -1065,6 +1089,7 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            native_authority_runtime::shutdown(handle);
             let _ = native_workspace::retire_buffers(handle);
             ssh_window_lifecycle::shutdown();
             if let Some(state) = handle.try_state::<keep_awake::KeepAwakeState>() {

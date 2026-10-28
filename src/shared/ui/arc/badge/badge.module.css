@@ -98,7 +98,9 @@
   border-radius: var(--radius-pill);
   background: var(--badge-foreground);
 }
+/* A count is a filled number, not an outlined status: the label variant keeps the border. */
 .count {
+  border-color: transparent;
   justify-content: center;
   flex-shrink: 0;
   min-inline-size: 1.125rem;
@@ -107,6 +109,7 @@
   padding-inline: var(--space-1);
   line-height: 1;
   font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 .count.sm {
   min-inline-size: 1rem;

@@ -1,4 +1,10 @@
 {
+  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.": "Kayıtlı bir taslak var. Geri yükleme, dosyanın önceki disk sürümünü temel alır; kaydetmeden önce gözden geçirin.",
+  "Keep or save your current edits before restoring this draft.": "Bu taslağı geri yüklemeden önce mevcut değişikliklerinizi koruyun veya kaydedin.",
+  "Restore draft": "Taslağı geri yükle",
+  "Use current document": "Mevcut belgeyi kullan",
+  "Draft recovery copy could not be confirmed. Keep this editor open.": "Taslağın kurtarma kopyası doğrulanamadı. Bu editörü açık tutun.",
+  "Retry draft copy": "Taslak kopyasını yeniden dene",
   "AI takeover pending": "Yapay zekâ devralacak",
   "Independent AI completing blocked work": "Bağımsız yapay zekâ engellenen görevi tamamlıyor",
   "Waiting for your instructions": "Talimatlarınızı bekliyor",

@@ -212,7 +212,17 @@ node_modules are shared. Source fixtures do not establish live runner activation
 
 Actual operator evidence: temp/verification/2026-10-28-windows-runner/. Elevated
 Hyper-V creation, verified Windows ISO, new Gen2 VM and real guest boot/admin/OOBE
-proof passed. Evaluation activated for90 days. Guest tools/runner activation and
-delivered-source CI acceptance are tracked separately in that continuation report.
-Shared HEAD moved from d8bf868... to83053d6b... through concurrent work; this session
+proof passed. Evaluation activated for 90 days. All eight selected guest tools
+passed version checks; 182 verified Rust files were seeded without source ACLs.
+Runner `bycoda-windows-isolated-01` registered as GitHub runner 21 and was observed
+online, idle, under the real limited account's interactive session 1. Protected
+shell now forwards live stdout/stderr/stdin and preserves exit status. Actual
+limited-user package Verify, synthetic PR rejection/trusted-main admission and a
+real Rust/MSVC compile/run passed. Final protected runner SHA is
+8e84ce04f9a109094e8d86cdea79c720f0487201ef6989406afe6ebdae2395ab.
+One-time diagnostics were retired; VM autostart is StartIfRunning. None of this
+is a delivered-source GitHub workflow or product package/smoke acceptance.
+The repository opt-in is still absent/false pending approved main delivery and
+exact-source preflight; no overall CI speedup is claimed.
+Shared HEAD moved from d8bf868... through 83053d6b... and 43a5a8ea... to c03fa98d... through concurrent work; this session
 has not staged, committed, pushed or changed branches. Preserve concurrent edits.

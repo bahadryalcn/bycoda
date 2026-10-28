@@ -1,0 +1,50 @@
+/* Middle truncation without measuring: the head shrinks and ends in an ellipsis while the tail keeps its width. */
+.root {
+  position: relative;
+  display: flex;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  white-space: pre;
+  unicode-bidi: isolate;
+}
+.plain {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: pre;
+}
+/* Shrink weights: the head absorbs nearly all of the deficit until it is empty, then the tail
+   (factor 1, so the remaining deficit is not scaled down) shrinks inside itself. */
+.head {
+  flex: 0 1000 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tail {
+  display: flex;
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+/* When even the tail does not fit, its start ends in an ellipsis and its last characters stay visible. */
+.tailHead {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tailEnd {
+  flex: none;
+}
+/* The exact value stays readable to assistive technology while the split halves are decorative. */
+.full {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  user-select: none;
+  white-space: nowrap;
+}

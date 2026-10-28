@@ -2830,10 +2830,15 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
   const store = new HostStore(join(directory, "host.db"));
   let turn: SendTurnInput | undefined;
   let finish = () => {};
+  let providerStarted!: () => void;
+  const started = new Promise<void>((resolve) => {
+    providerStarted = resolve;
+  });
   const send = vi.fn((input: SendTurnInput) => {
     turn = input;
     return new Promise<void>((resolve) => {
       finish = resolve;
+      providerStarted();
     });
   });
   const engine = new HostEngine(store, {
@@ -2919,6 +2924,7 @@ async function setup(providers: RemoteProvider[] = ["codex"], includeClaude = fa
     first,
     second,
     send,
+    started,
     turn: () => turn!,
     finish: () => finish(),
   };
@@ -3399,7 +3405,10 @@ describe("shared queued messages", () => {
           sessionId,
           text: "busy",
         });
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+        // A durable command receipt precedes real checkpoint/provider startup.
+        // Join the fixture's actual entry, without polling/advancing the lease clock.
+        await s.started;
+        expect(s.send).toHaveBeenCalledOnce();
         await s.call("sessions.queue.change", {
           sessionId,
           clientId: "remote:mac",
@@ -3448,7 +3457,8 @@ describe("shared queued messages", () => {
           sessionId,
           text: "busy",
         });
-        await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+        await s.started;
+        expect(s.send).toHaveBeenCalledOnce();
         const clientId = "remote:old-mac";
         // No `leaseAware`: it asks to own the queue the way it always did.
         const published = await s.call("sessions.queue.change", {

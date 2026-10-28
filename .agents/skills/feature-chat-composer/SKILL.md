@@ -5,6 +5,34 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Host migration persistence foundation (2026-10-28)
+
+`sessions/data/persistenceDrain.ts`, `sessionStore.ts`, `composerDraftStore.ts`
+and `sessions/model/draftCache.ts` now retain actual accepted persistence work,
+sticky failures and target-aware observation. Scheduled draft work is admitted
+before its debounce and owns its lifetime through attachment spill and native
+row acknowledgement. Accepted clear/delete lineage crosses cache listeners;
+genuinely later edits still invalidate observation while preserving local data.
+Native void-null success is distinct from a transcript CAS that did not apply.
+
+New strict data flush APIs supplement legacy flushes. Legacy return/error/timing,
+empty clears, retries and separate workspace/in-flight chains remain preserved.
+HMR module reuse retains accepted jobs, failures and prior pending hooks in order;
+no forced reload, composer unmount or automatic profile-wide flush is introduced.
+
+Current evidence:296/296 source/fixture tests across22 files, normal Host/web
+tsc-rs, scoped formatting/diff; three unchanged lint warnings. Independent review
+found two lineage/timer issues, now fixed with red/green regressions under
+`temp/verification/2026-10-28-renderer-persistence-drain/`.
+
+This is not complete composer drain. Observations explicitly remain unqualified.
+Actual mounted DOM text/attachment refs/tags, pending paste/picker preparation,
+quick-composer producers, final provider-output application, native challenges and
+editor-buffer checkpoint receipts remain separate integrations. Cache mutation or
+a flush promise cannot certify unpublished component state. No UI, provider,
+permission, native execution default, live session or installation was changed
+by this source slice.
+
 ## V94 Edit from here integration (2026-10-27)
 
 T2 integration on `release/0.6.94`, starting at `c81d06971`. The owner's V94

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
+import { Alert } from "./Alert";
 import { Button } from "./Button";
 import { Modal } from "./Modal";
 
@@ -12,7 +13,9 @@ export type ConfirmRequest = {
   danger?: boolean;
   /**
    * Optional async work run on confirm. The dialog stays open with both buttons
-   * disabled until it settles; a rejection keeps the dialog open with the error.
+   * disabled until it settles; a rejection keeps the dialog open with the error
+   * and the confirming button live so the owner can retry. Escape, the close
+   * button and Cancel do nothing while the work is pending.
    */
   onConfirm?: () => void | Promise<void>;
 };
@@ -35,6 +38,8 @@ export function ConfirmDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  // State lags a double click inside one tick; the ref closes that window.
+  const inFlight = useRef(false);
   useEffect(
     () => () => {
       alive.current = false;
@@ -42,14 +47,16 @@ export function ConfirmDialog({
     [],
   );
   const confirm = async () => {
-    if (pending) return;
+    if (inFlight.current) return;
     if (!request.onConfirm) return onSettle(true);
+    inFlight.current = true;
     setPending(true);
     setError(null);
     try {
       await request.onConfirm();
       onSettle(true);
     } catch (cause) {
+      inFlight.current = false;
       if (!alive.current) return;
       setError(cause instanceof Error ? cause.message : String(cause));
       setPending(false);
@@ -86,9 +93,9 @@ export function ConfirmDialog({
       <div className="flex flex-col gap-2 px-4 py-3 text-ui-secondary break-words text-(--ui-text-secondary)">
         <p>{request.message}</p>
         {error ? (
-          <p role="alert" className="text-ui-caption text-danger">
+          <Alert tone="danger" role="alert" className="break-words">
             {error}
-          </p>
+          </Alert>
         ) : null}
       </div>
     </Modal>

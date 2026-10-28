@@ -12,6 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
+import { lockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
 import { cumulativeCssZoom } from "../lib/cssZoom";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
@@ -36,6 +37,23 @@ export type PopoverAnchor =
 
 export type PopoverDismissReason = "outside" | "escape";
 
+/**
+ * How a popover's content meets its height bound.
+ *
+ * - `"intrinsic"` (default): the content keeps its natural height. When the
+ *   bound (`maxHeight`, or the room left in the viewport) is smaller, the frame
+ *   clips it, so the content must scroll itself (DropdownMenu does) or be short.
+ * - `"scroll"`: the popover owns one vertical scroll region. The content region
+ *   is capped at the bound, scrolls on wheel, touch and keyboard, contains
+ *   overscroll (no page scroll chaining or rubber-band) and never reads as an
+ *   outside dismissal. Do not add a second `overflow-y-auto` rail inside it.
+ *   Needs `constrainHeight` (the default); content with nothing focusable inside
+ *   should pass `tabIndex={0}` so keyboard users can scroll it.
+ *
+ * `data-popover-flow` on the content element reflects the active mode.
+ */
+export type PopoverFlow = "intrinsic" | "scroll";
+
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
   side?: PopoverSide;
@@ -47,6 +65,8 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   maxHeight?: number;
   /** Defaults to true. Disable for intrinsic-height surfaces like context menus. */
   constrainHeight?: boolean;
+  /** Content flow inside the height bound. Defaults to `"intrinsic"`; see {@link PopoverFlow}. */
+  flow?: PopoverFlow;
   /** Defaults to `LAYER.popover`; a flyout off an open popover wants higher. */
   layer?: number;
   /** Drops the glass frame and keeps only placement and the content animation. */
@@ -75,6 +95,17 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
 
 const FRAME =
   "isolate overflow-hidden rounded-(--ui-radius-popup) border border-stroke shadow-(--ui-elevation-floating)";
+
+/** Inline so an opt-in scroll region wins over utility classes a consumer put on the content. */
+const SCROLL_STYLE: CSSProperties = { overflowY: "auto", overscrollBehavior: "contain" };
+
+/** Stops macOS rubber-band at the scroll edges of an opted-in scroll region. */
+function useScrollFlow(surface: { current: HTMLElement | null }, flow: PopoverFlow) {
+  useEffect(() => {
+    if (flow !== "scroll" || !surface.current) return;
+    return lockOverscroll(surface.current);
+  }, [flow, surface]);
+}
 
 /** Which corner the open animation grows from, so it reads as anchored. */
 function origin(side: PopoverSide, align: PopoverAlign): string {
@@ -161,9 +192,11 @@ function NativePopover({
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
+  flow = "intrinsic",
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
+  useScrollFlow(surface, flow);
   const overlayId = useOverlay(
     surface,
     false,
@@ -217,7 +250,12 @@ function NativePopover({
         if (typeof ref === "function") ref(el);
         else if (ref) ref.current = el;
       }}
-      style={{ maxHeight: maxHeight ?? 400, ...style }}
+      data-popover-flow={flow}
+      style={{
+        maxHeight: maxHeight ?? 400,
+        ...(flow === "scroll" ? SCROLL_STYLE : null),
+        ...style,
+      }}
       className={`relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
@@ -236,6 +274,7 @@ function WebPopover({
   minHeight,
   maxHeight,
   constrainHeight = true,
+  flow = "intrinsic",
   layer = LAYER.popover,
   bare = false,
   solid = false,
@@ -266,6 +305,8 @@ function WebPopover({
     passive,
   );
   const surface = useRef<HTMLDivElement | null>(null);
+  const scrolls = constrainHeight && flow === "scroll";
+  useScrollFlow(surface, scrolls ? "scroll" : "intrinsic");
   const [position, setPosition] = useState<PopoverPosition | null>(null);
   const anchorRef = useRef(anchor);
   anchorRef.current = anchor;
@@ -288,9 +329,15 @@ function WebPopover({
       width: rect.width / zoom,
       height: rect.height / zoom,
     };
+    // offsetWidth rounds a fractional width down; pinning that width wraps the
+    // last word of shrink-to-fit content (tooltips), so round the box up.
+    const naturalWidth = Math.max(
+      el.offsetWidth,
+      Math.ceil(el.getBoundingClientRect().width / zoom - 0.05),
+    );
     const next = placePopover(
       logicalAnchor,
-      { width: el.offsetWidth, height: el.offsetHeight },
+      { width: naturalWidth, height: el.offsetHeight },
       { width: window.innerWidth / zoom, height: window.innerHeight / zoom },
       { side, align, gap, padding, width, minHeight, maxHeight },
     );
@@ -325,13 +372,18 @@ function WebPopover({
     if (parentFrame)
       parentObserver.observe(parentFrame, { attributes: true, attributeFilter: ["style"] });
     window.addEventListener("resize", updatePlacement);
-    window.addEventListener("scroll", updatePlacement, true);
+    // Scrolling the popover's own content never moves its anchor.
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && frame.current?.contains(event.target)) return;
+      updatePlacement();
+    };
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       observer.disconnect();
       parentObserver.disconnect();
       cancelAnimationFrame(placementFrame);
       window.removeEventListener("resize", updatePlacement);
-      window.removeEventListener("scroll", updatePlacement, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [place]);
 
@@ -413,8 +465,10 @@ function WebPopover({
           else if (ref) ref.current = el;
         }}
         data-popover-side={position?.side ?? side}
+        data-popover-flow={scrolls ? "scroll" : "intrinsic"}
         style={{
           ...(contentMaxHeight != null ? { maxHeight: contentMaxHeight } : {}),
+          ...(scrolls ? SCROLL_STYLE : null),
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}

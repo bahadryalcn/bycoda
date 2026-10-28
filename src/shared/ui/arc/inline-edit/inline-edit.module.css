@@ -171,18 +171,17 @@ textarea.control {
     opacity: 1;
   }
 }
+/* While editing the frame is the shared field frame: the same focus border and surface role as TextField, border-only. */
 .root[data-editing] .frame {
-  border-color: var(--foreground);
-  background: var(--surface);
-  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-color: var(--ui-field-border-focus);
+  background: var(--ui-surface-muted);
 }
 .root[data-invalid] .frame {
   border-color: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--danger) 24%, transparent);
 }
 .root[data-flash="on"] .frame {
-  border-color: color-mix(in oklab, var(--danger) 30%, transparent);
-  background: color-mix(in oklab, var(--danger) 9%, transparent);
+  border-color: var(--ui-tone-danger-border);
+  background: var(--ui-tone-danger-subtle);
 }
 /* The wash leaves slowly, without any movement, once the message has been read. */
 .root[data-flash="off"] .frame {

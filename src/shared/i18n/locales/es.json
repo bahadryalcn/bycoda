@@ -7171,5 +7171,6 @@
   "Visual style": "Estilo visual",
   "bycoda mark": "Símbolo de bycoda",
   "Wave": "Onda",
-  "Dots": "Puntos"
+  "Dots": "Puntos",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "Se muestran los primeros {p0} de {p1} caracteres. «Copiar detalles» lo incluye todo."
 }

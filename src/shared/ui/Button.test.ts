@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import { act, createElement, createRef } from "react";
 import { createRoot } from "react-dom/client";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { Button, type ButtonProps } from "./Button";
+import { ButtonGroup } from "./ButtonGroup";
 import { SecondaryButton } from "./SecondaryButton";
 
 it("preserves legacy danger and error aliases while letting explicit intent win", async () => {
@@ -125,3 +128,146 @@ it.each(["auto", "none"] as const)(
     }
   },
 );
+
+it.each([
+  ["tab", "start"],
+  ["tab", "end"],
+  ["tab", "center"],
+  ["item", "end"],
+  ["item", "center"],
+  ["secondary", "start"],
+] as const)("exposes explicit %s alignment %s to the stylesheet", async (variant, align) => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(createElement(Button, { variant, align }, "Action")));
+    expect(container.querySelector("button")!.dataset.buttonAlign).toBe(align);
+    await act(async () => root.render(createElement(Button, { variant }, "Action")));
+    expect(container.querySelector("button")!.hasAttribute("data-button-align")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
+
+// jsdom does not resolve selector specificity, so the cascade contract is checked on the
+// parsed stylesheet: a structural alignment default may never reach an explicitly aligned
+// control, and explicit alignment rules must follow the structural defaults they override.
+it("keeps explicit alignment authoritative over structural item and tab defaults", () => {
+  const source = readFileSync(join(process.cwd(), "src/shared/ui/Button.module.css"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\s+/g, " ");
+  // Innermost blocks only: at-rule wrappers (@layer, @media) never match a declaration body.
+  const rules = Array.from(source.matchAll(/([^{}]+)\{([^{}]*)\}/g), (match, index) => ({
+    selector: match[1].trim(),
+    props: match[2].split(";").flatMap((decl) => decl.split(":")[0].trim() || []),
+    order: index,
+  }));
+  const structural = rules.filter(
+    (rule) =>
+      rule.props.includes("justify-content") &&
+      /\.(tab|item)/.test(rule.selector) &&
+      !rule.selector.includes("data-button-align="),
+  );
+  expect(structural.length).toBeGreaterThan(0);
+  for (const rule of structural) expect(rule.selector).toContain(":not([data-button-align");
+  const explicit = rules.filter((rule) =>
+    /^\.control\[data-button-align="\w+"\]$/.test(rule.selector),
+  );
+  expect(explicit.map((rule) => rule.selector)).toEqual([
+    '.control[data-button-align="center"]',
+    '.control[data-button-align="start"]',
+    '.control[data-button-align="end"]',
+  ]);
+  const lastStructural = Math.max(
+    ...rules
+      .filter((rule) => /\.(tab|item)/.test(rule.selector) && rule.props.includes("text-align"))
+      .map((rule) => rule.order),
+  );
+  for (const rule of explicit) expect(rule.order).toBeGreaterThan(lastStructural);
+  // The migrated `text-left` utility also outranks a tab's centering.
+  expect(structural.some((rule) => rule.selector.includes("text-left"))).toBe(true);
+});
+
+it("renders ButtonGroup as one labelled joined group of ordinary Buttons", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const first = vi.fn();
+  const second = vi.fn();
+  try {
+    await act(async () =>
+      root.render(
+        createElement(
+          ButtonGroup,
+          { "aria-label": "Review actions" },
+          createElement(Button, { onClick: first, motion: "none" }, "Approve"),
+          createElement(Button, { disabled: true, onClick: second, motion: "none" }, "Request"),
+          createElement(Button, { loading: true, motion: "none" }, "Merge"),
+        ),
+      ),
+    );
+    const group = container.querySelector<HTMLElement>('[role="group"]')!;
+    expect(group.getAttribute("aria-label")).toBe("Review actions");
+    expect(group.dataset.buttonGroup).toBe("joined");
+    expect(group.getAttribute("role")).not.toBe("radiogroup");
+    const [approve, request, merge] = Array.from(group.querySelectorAll("button"));
+    await act(async () => {
+      approve.click();
+      request.click();
+      merge.click();
+    });
+    expect(first).toHaveBeenCalledOnce();
+    expect(second).not.toHaveBeenCalled();
+    expect(request.disabled).toBe(true);
+    // Loading keeps focus and announces busy without disabling its neighbours.
+    expect(merge.getAttribute("aria-busy")).toBe("true");
+    expect(approve.getAttribute("aria-busy")).toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reserves a progress slot only for a start icon and keeps an icon-less label's name", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = (loading: boolean, icon: boolean) =>
+    createElement(
+      Button,
+      {
+        motion: "none",
+        loading,
+        startIcon: icon ? createElement("svg", { "data-icon": "" }) : undefined,
+      },
+      "Delete",
+    );
+  try {
+    // No icon, not loading: no empty slot before the label.
+    await act(async () => root.render(render(false, false)));
+    let button = container.querySelector("button")!;
+    expect(button.querySelector("[data-pending], [aria-hidden='true'] > span:empty")).toBeNull();
+    expect(button.firstElementChild?.firstElementChild?.textContent).toBe("Delete");
+    // No icon, loading: the label stays in place and named; a spinner overlays it.
+    await act(async () => root.render(render(true, false)));
+    button = container.querySelector("button")!;
+    expect(button.textContent).toContain("Delete");
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    // Start icon: the icon and the spinner share one slot.
+    await act(async () => root.render(render(false, true)));
+    button = container.querySelector("button")!;
+    const slot = button.querySelector("[data-icon]")!.closest("[aria-hidden='true']")!;
+    expect(slot.hasAttribute("data-pending")).toBe(false);
+    await act(async () => root.render(render(true, true)));
+    expect(slot.hasAttribute("data-pending")).toBe(true);
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

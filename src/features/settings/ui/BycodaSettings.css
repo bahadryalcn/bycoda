@@ -61,7 +61,8 @@
   flex-shrink: 0;
   width: 212px;
   padding: 18px 10px 24px;
-  border-inline-end: 1px solid var(--color-stroke);
+  background: var(--ui-surface-panel);
+  border-inline-end: 1px solid var(--ui-pane-border);
   overflow-y: auto;
   overscroll-behavior: contain;
 }

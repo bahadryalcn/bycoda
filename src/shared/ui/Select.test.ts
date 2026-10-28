@@ -104,3 +104,85 @@ it.each(["pointer", "keyboard"])(
     expect(change).not.toHaveBeenCalled();
   },
 );
+
+it("skips disabled options in keyboard navigation and never selects them", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Choice",
+        value: "a",
+        options: [
+          { value: "a", label: "Alpha" },
+          { value: "b", label: "Beta", disabled: true },
+          { value: "c", label: "Gamma" },
+          { value: "d", label: "Delta", disabled: true },
+        ],
+        onValueChange: change,
+      }),
+    ),
+  );
+  await act(async () => {
+    trigger().focus();
+    key(trigger(), "ArrowDown");
+  });
+  const rows = Array.from(menu()!.querySelectorAll<HTMLButtonElement>('[role="option"]'));
+  expect(rows.map((row) => row.disabled)).toEqual([false, true, false, true]);
+  expect(rows[1].getAttribute("aria-disabled")).toBe("true");
+  const activeLabel = () =>
+    menu()!.querySelector('[role="option"][data-highlighted]')?.textContent?.trim();
+  expect(activeLabel()).toBe("Alpha");
+  await act(async () => key(menu()!, "ArrowDown"));
+  expect(activeLabel()).toBe("Gamma");
+  expect(menu()!.getAttribute("aria-activedescendant")).toBe(rows[2].id);
+  await act(async () => key(menu()!, "ArrowDown"));
+  expect(activeLabel()).toBe("Gamma");
+  await act(async () => key(menu()!, "End"));
+  expect(activeLabel()).toBe("Gamma");
+  await act(async () => key(menu()!, "Home"));
+  expect(activeLabel()).toBe("Alpha");
+  await act(async () => rows[1].click());
+  expect(change).not.toHaveBeenCalled();
+  await act(async () => key(menu()!, "ArrowDown"));
+  await act(async () => key(menu()!, "Enter"));
+  expect(change).toHaveBeenCalledExactlyOnceWith("c");
+});
+
+it("keeps a committed disabled or missing value visible on the trigger", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Choice",
+        value: "b",
+        options: [
+          { value: "a", label: "Alpha" },
+          { value: "b", label: "Beta", disabled: true },
+        ],
+        onValueChange: change,
+      }),
+    ),
+  );
+  expect(trigger().textContent).toContain("Beta");
+  await act(async () =>
+    root.render(
+      createElement(Select, { label: "Choice", value: "gone", options, onValueChange: change }),
+    ),
+  );
+  expect(trigger().textContent).toContain("gone");
+});
+
+it("marks a trigger invalid through native aria and keeps disabled out of the tab order of a menu", async () => {
+  await act(async () =>
+    root.render(
+      createElement(Select, {
+        label: "Choice",
+        value: "a",
+        options,
+        "aria-invalid": true,
+        "aria-describedby": "choice-error",
+        onValueChange: change,
+      }),
+    ),
+  );
+  expect(trigger().getAttribute("aria-invalid")).toBe("true");
+  expect(trigger().getAttribute("aria-describedby")).toBe("choice-error");
+});

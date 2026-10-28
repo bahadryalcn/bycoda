@@ -22,6 +22,7 @@ import { motionTokens } from "../lib/motion-tokens";
 import styles from "./skeleton.module.css";
 
 export interface SkeletonProps {
+  /** Announced once, politely, while loading. Use one labelled placeholder per loading region, and `aria-hidden` for repeated or purely decorative shapes. */
   label?: string;
   lines?: number;
   avatar?: boolean;

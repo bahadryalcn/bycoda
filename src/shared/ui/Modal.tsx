@@ -17,6 +17,16 @@ const WIDTH: Record<ModalSize, string> = {
   lg: "w-[min(880px,calc(100vw-24px))]",
 };
 
+/**
+ * Header hierarchy follows task context with the existing props. Compact
+ * workbench dialogs (`sm`) and end sheets read as panes and use the title role;
+ * bounded-task dialogs (`md`, `lg`) use the heading role.
+ */
+const TITLE: Record<"compact" | "task", string> = {
+  compact: "text-ui-title font-medium text-content",
+  task: "text-ui-heading font-medium text-content",
+};
+
 const TOP: Record<ModalSize, string> = {
   sm: "top-[22%]",
   md: "top-[10%]",
@@ -74,6 +84,8 @@ export function ModalPanel({
   const uid = useId();
   const titleId = `${uid}-title`;
   const descriptionId = description ? `${uid}-desc` : undefined;
+  const sheet = placement === "end";
+  const titleClass = TITLE[sheet || size === "sm" ? "compact" : "task"];
 
   return (
     <OverlayMenuLayer.Provider value={LAYER.dialogPopover}>
@@ -99,19 +111,22 @@ export function ModalPanel({
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden border border-stroke shadow-(--ui-elevation-floating) ${placement === "end" ? "h-full rounded-none" : `rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            className={`relative isolate flex flex-col overflow-hidden border-stroke shadow-(--ui-elevation-floating) ${sheet ? "h-full rounded-none border-s" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
           >
-            <GlassBackdrop className="bg-background-base" />
+            {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
+            <GlassBackdrop />
             <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
               <header
                 className={
                   minimalHeader
                     ? "absolute top-3 right-3 z-[2]"
-                    : "flex shrink-0 items-start gap-2 px-4 pt-3"
+                    : sheet
+                      ? "flex shrink-0 items-start gap-2 border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
+                      : "flex shrink-0 items-start gap-2 px-4 pt-3"
                 }
               >
                 <div className={minimalHeader ? "sr-only" : "min-w-0 flex-1 pt-0.5"}>
-                  <h2 id={titleId} className="text-xl font-medium leading-tight text-content">
+                  <h2 id={titleId} className={titleClass}>
                     {title}
                   </h2>
                   {description ? (

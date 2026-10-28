@@ -44,17 +44,83 @@ export const ComboboxList = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<
   },
 );
 
+/** A choice row for bycoda pickers (SearchableSelect, Select). The Combobox below keeps its own `option` row. */
 export const ComboboxItem = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<"button">>(
   function ComboboxItem({ className, ...props }, ref) {
     return (
       <button
         {...props}
         ref={ref}
-        className={[styles.option, className].filter(Boolean).join(" ")}
+        className={[styles.choice, className].filter(Boolean).join(" ")}
       />
     );
   },
 );
+
+/** Content of a choice row: check slot, optional icon, truncating label and an optional description beneath it. */
+export function ComboboxChoice({
+  selected,
+  icon,
+  label,
+  description,
+  descriptionId,
+  title,
+}: {
+  selected: boolean;
+  icon?: ReactNode;
+  label: ReactNode;
+  description?: string;
+  descriptionId?: string;
+  /** Full text for a label that may truncate. */
+  title?: string;
+}) {
+  return (
+    <>
+      <span className={styles.choiceCheck} aria-hidden="true">
+        {selected ? <Check size={12} strokeWidth={2} /> : null}
+      </span>
+      {icon ? <span className={styles.choiceIcon}>{icon}</span> : null}
+      <span className={styles.choiceBody} title={title}>
+        <span className={`${styles.choiceLabel} truncate`}>{label}</span>
+        {description ? (
+          <span
+            id={descriptionId}
+            className={`${styles.choiceDescription} bycoda-select-description`}
+          >
+            {description}
+          </span>
+        ) : null}
+      </span>
+    </>
+  );
+}
+
+/** Loading, failure or empty copy for a picker, with an optional recovery action. Failure is announced as an alert. */
+export function ComboboxStatus({
+  tone = "neutral",
+  empty = false,
+  children,
+  action,
+  className,
+}: {
+  tone?: "neutral" | "danger";
+  /** Centered copy for a list with nothing to show. */
+  empty?: boolean;
+  children: ReactNode;
+  action?: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      role={tone === "danger" ? "alert" : "status"}
+      data-tone={tone === "danger" ? "danger" : undefined}
+      className={[styles.status, empty && styles.statusEmpty, className].filter(Boolean).join(" ")}
+    >
+      <span className={styles.statusText}>{children}</span>
+      {action}
+    </div>
+  );
+}
 
 export interface ComboboxOption {
   value: string;

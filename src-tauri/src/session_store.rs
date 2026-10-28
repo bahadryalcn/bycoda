@@ -39,6 +39,8 @@ CREATE INDEX IF NOT EXISTS sessions_cwd_updated_idx
 "#;
 
 pub struct SessionStore {
+    /// Native construction identity, never a persisted store ID or IPC grant.
+    native_instance_id: uuid::Uuid,
     conn: Arc<Mutex<cohort::RegisteredConnection>>,
     read_conn: Mutex<Option<Connection>>,
     /// Query-only connection for the UI's list/get reads. Search holds
@@ -48,6 +50,7 @@ pub struct SessionStore {
     /// One search-index builder at a time: the startup pass and a search both
     /// run `content_search::sync_index`, and indexing a session twice is waste.
     search_index_lock: Mutex<()>,
+    native_writer_barrier: Option<window_barrier::WindowBarrier>,
     search_background_queued: AtomicBool,
     search_background_urgent: AtomicBool,
     search_background_query: Mutex<String>,
@@ -56,6 +59,10 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
+    pub(crate) fn native_instance_id(&self) -> uuid::Uuid {
+        self.native_instance_id
+    }
+
     pub fn open(path: PathBuf) -> Result<Self, String> {
         let admission = cohort::OpenAdmission::begin(&path)?;
         let path = admission.path().to_owned();
@@ -93,10 +100,12 @@ impl SessionStore {
         let read_conn = open_reader()?;
         let list_conn = open_reader()?;
         Ok(Self {
+            native_instance_id: uuid::Uuid::new_v4(),
             conn: Arc::new(Mutex::new(conn)),
             read_conn: Mutex::new(Some(read_conn)),
             list_conn: Mutex::new(Some(list_conn)),
             search_index_lock: Mutex::new(()),
+            native_writer_barrier: None,
             search_background_queued: AtomicBool::new(false),
             search_background_urgent: AtomicBool::new(false),
             search_background_query: Mutex::new(String::new()),
@@ -113,10 +122,12 @@ impl SessionStore {
         migrate(&conn).map_err(|e| e.to_string())?;
         crate::ssh_group_defaults::migrate(&conn)?;
         Ok(Self {
+            native_instance_id: uuid::Uuid::new_v4(),
             conn: Arc::new(Mutex::new(cohort::RegisteredConnection::in_memory(conn))),
             read_conn: Mutex::new(None),
             list_conn: Mutex::new(None),
             search_index_lock: Mutex::new(()),
+            native_writer_barrier: None,
             search_background_queued: AtomicBool::new(false),
             search_background_urgent: AtomicBool::new(false),
             search_background_query: Mutex::new(String::new()),
@@ -184,6 +195,32 @@ impl SessionStore {
             .map_err(|_| "Session store is locked".into())
     }
 
+    fn process_write_admission(
+        &self,
+    ) -> Result<crate::native_window_lifecycle::NativeWriteAdmission, window_barrier::BarrierError>
+    {
+        crate::native_window_lifecycle::admit_process_persistence(
+            self.native_writer_barrier.as_ref(),
+        )
+    }
+
+    fn reserve_search_index_work(&self, urgent: bool) -> Option<Arc<content_search::IndexWork>> {
+        if urgent {
+            self.search_background_urgent.store(true, Ordering::Release);
+        }
+        if self.search_background_queued.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        match content_search::IndexWork::new(self) {
+            Ok(work) => Some(work),
+            Err(_) => {
+                self.search_background_queued
+                    .store(false, Ordering::Release);
+                None
+            }
+        }
+    }
+
     #[allow(dead_code)] // Native-only inspection is not yet qualified migration input.
     pub(crate) fn inspect_writer_cohort(&self) -> Result<cohort::Inspection, String> {
         self.lock_conn()?.inspect()
@@ -194,7 +231,10 @@ pub fn init(app: &AppHandle) -> Result<(), String> {
     init_with(
         || app.path().app_data_dir().map_err(|e| e.to_string()),
         SessionStore::open,
-        |store| {
+        |mut store| {
+            store.native_writer_barrier = app
+                .try_state::<window_barrier::WindowBarrier>()
+                .map(|barrier| barrier.inner().clone());
             app.manage(store);
         },
     )?;
@@ -224,14 +264,10 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
     let Some(store) = app.try_state::<SessionStore>() else {
         return;
     };
-    if delay.is_zero() {
-        store
-            .search_background_urgent
-            .store(true, Ordering::Release);
-    }
-    if store.search_background_queued.swap(true, Ordering::AcqRel) {
+    let Some(work) = store.reserve_search_index_work(delay.is_zero()) else {
         return;
-    }
+    };
+    let worker_work = work.clone();
     let app = app.clone();
     let recovery_app = app.clone();
     let spawned = std::thread::Builder::new()
@@ -241,17 +277,13 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
                 // A user search wakes the already queued startup worker rather
                 // than waiting for its entire optional startup delay.
                 wait_for_search_index_start(delay, &store.search_background_urgent);
-                struct Reset<'a>(&'a AtomicBool);
-                impl Drop for Reset<'_> {
-                    fn drop(&mut self) {
-                        self.0.store(false, Ordering::Release);
-                    }
-                }
-                let _reset = Reset(&store.search_background_queued);
-                content_search::index_in_background(&store);
+                worker_work.run_queued(&store);
+            } else {
+                worker_work.not_started();
             }
         });
     if let Err(error) = spawned {
+        work.not_started();
         if let Some(store) = recovery_app.try_state::<SessionStore>() {
             store
                 .search_background_queued
@@ -459,39 +491,42 @@ pub struct SessionRecord {
 
 #[tauri::command(async)]
 pub fn session_upsert(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session: SessionUpsert,
     expected_updated_at: Option<i64>,
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
 ) -> Result<Option<SessionSummary>, String> {
-    validate_upsert(&session)?;
-    // Git lookups can spawn processes; never do that while holding the
-    // connection every other store command waits on.
-    let git = upsert_git_info(&session);
-    // `expectMissing` means "the row must not exist"; `expectedUpdatedAt` means
-    // "the row must still carry this stamp". Neither is the unguarded write.
-    let expected = if expect_missing == Some(true) {
-        Some(None)
-    } else {
-        expected_updated_at.map(Some)
-    };
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    if let Some(expected_revision) = expected_revision {
-        let revision: Option<i64> = conn
-            .query_row(
-                "SELECT revision FROM session_block_state WHERE session_id=?1",
-                [&session.id],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|e| e.to_string())?;
-        if revision != Some(expected_revision) {
-            return Ok(None);
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_upsert(&session)?;
+        // Git lookups can spawn processes; never do that while holding the
+        // connection every other store command waits on.
+        let git = upsert_git_info(&session);
+        // `expectMissing` means "the row must not exist"; `expectedUpdatedAt` means
+        // "the row must still carry this stamp". Neither is the unguarded write.
+        let expected = if expect_missing == Some(true) {
+            Some(None)
+        } else {
+            expected_updated_at.map(Some)
+        };
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        if let Some(expected_revision) = expected_revision {
+            let revision: Option<i64> = conn
+                .query_row(
+                    "SELECT revision FROM session_block_state WHERE session_id=?1",
+                    [&session.id],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(|e| e.to_string())?;
+            if revision != Some(expected_revision) {
+                return Ok(None);
+            }
         }
-    }
-    // `None` back means the precondition failed and nothing was written.
-    upsert_session_with_git(&conn, &session, git, expected).map_err(|e| e.to_string())
+        // `None` back means the precondition failed and nothing was written.
+        upsert_session_with_git(&conn, &session, git, expected).map_err(|e| e.to_string())
+    })
 }
 
 fn upsert_git_info(session: &SessionUpsert) -> crate::fs::GitInfo {
@@ -556,16 +591,19 @@ fn validate_upsert(session: &SessionUpsert) -> Result<(), String> {
 /// same transcript twice cannot overwrite a chat that was continued since.
 #[tauri::command(async)]
 pub fn session_import(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session: SessionUpsert,
 ) -> Result<Option<SessionSummary>, String> {
-    validate_upsert(&session)?;
-    let git = upsert_git_info(&session);
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
-        return Ok(None);
-    }
-    upsert_session_with_git(&conn, &session, git, None).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_upsert(&session)?;
+        let git = upsert_git_info(&session);
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        if import_already_stored(&conn, &session).map_err(|e| e.to_string())? {
+            return Ok(None);
+        }
+        upsert_session_with_git(&conn, &session, git, None).map_err(|e| e.to_string())
+    })
 }
 
 fn import_already_stored(conn: &Connection, session: &SessionUpsert) -> rusqlite::Result<bool> {
@@ -681,15 +719,18 @@ pub fn session_list_by_project(
 
 #[tauri::command(async)]
 pub fn session_rebase_project(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     from_cwd: String,
     to_cwd: String,
 ) -> Result<(), String> {
-    if from_cwd.trim().is_empty() || to_cwd.trim().is_empty() {
-        return Err("project paths are required".into());
-    }
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    rebase_project(&conn, &from_cwd, &to_cwd).map_err(|error| error.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        if from_cwd.trim().is_empty() || to_cwd.trim().is_empty() {
+            return Err("project paths are required".into());
+        }
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        rebase_project(&conn, &from_cwd, &to_cwd).map_err(|error| error.to_string())
+    })
 }
 
 fn rebase_project(conn: &Connection, from_cwd: &str, to_cwd: &str) -> rusqlite::Result<()> {
@@ -716,13 +757,16 @@ pub fn session_list_recent(
 #[tauri::command(async)]
 pub fn session_get(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
 ) -> Result<tauri::ipc::Response, String> {
     validate_id(&session_id, "session")?;
     // Reopening a conversation is the recovery entry after a crashed/unknown rewind.
     // Failed Host reads preserve the fence while the retained transcript remains readable.
-    let _ = rewind::reconcile_pending_native(&app, &store, Some(&session_id));
+    let _ = crate::native_window_lifecycle::persistence_write(&window, || {
+        rewind::reconcile_pending_native(&app, &store, Some(&session_id))
+    });
     store
         .with_read_conn(|conn| get_session_json(conn, &session_id).map_err(|e| e.to_string()))
         .map(tauri::ipc::Response::new)
@@ -928,63 +972,78 @@ pub fn cancel_session_search(search_owner: String) {
 
 #[tauri::command(async)]
 pub fn session_delete(
+    window: tauri::Window,
     app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
     mut image_paths: Vec<String>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let persisted_paths = get_session(&conn, &session_id)
-        .ok()
-        .flatten()
-        .map(|record| generated_image_paths(&record.blocks))
-        .unwrap_or_default();
-    image_paths.extend(persisted_paths);
-    delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
-    if !image_paths.is_empty() {
-        if let Err(error) = cleanup_unreferenced_generated_images(&conn, &image_paths, |paths| {
-            crate::fs::delete_generated_images_sync(&app, paths)
-        }) {
-            eprintln!("Generated image cleanup will need a retry: {error}");
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let persisted_paths = get_session(&conn, &session_id)
+            .ok()
+            .flatten()
+            .map(|record| generated_image_paths(&record.blocks))
+            .unwrap_or_default();
+        image_paths.extend(persisted_paths);
+        delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
+        if !image_paths.is_empty() {
+            if let Err(error) =
+                cleanup_unreferenced_generated_images(&conn, &image_paths, |paths| {
+                    crate::fs::delete_generated_images_sync(&app, paths)
+                })
+            {
+                eprintln!("Generated image cleanup will need a retry: {error}");
+            }
         }
-    }
-    drop(conn);
-    let _ = app.emit(crate::reminders::CHANGED, ());
-    Ok(())
+        drop(conn);
+        let _ = app.emit(crate::reminders::CHANGED, ());
+        Ok(())
+    })
 }
 
 #[tauri::command(async)]
 pub fn session_set_archived(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     archived: bool,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command(async)]
 pub fn session_set_pinned(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     pinned: bool,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command(async)]
 pub fn session_set_linked_work_item(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     linked_work_item: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_linked_work_item(&conn, &session_id, linked_work_item.as_ref()).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        set_linked_work_item(&conn, &session_id, linked_work_item.as_ref())
+            .map_err(|e| e.to_string())
+    })
 }
 
 const SESSION_QUEUE_MAX_BYTES: usize = 8_000_000;
@@ -994,13 +1053,16 @@ const SESSION_QUEUE_MAX_BYTES: usize = 8_000_000;
 /// touches the queue. An empty queue (`None`) deletes the row.
 #[tauri::command(async)]
 pub fn session_set_queue(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     queue: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_session_queue(&conn, &session_id, queue.as_ref())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        set_session_queue(&conn, &session_id, queue.as_ref())
+    })
 }
 
 #[tauri::command(async)]
@@ -1066,20 +1128,28 @@ const COMPOSER_DRAFT_MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 /// chat), so it has its own table and no foreign key. `None` deletes the row.
 #[tauri::command(async)]
 pub fn session_set_draft(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_id: String,
     draft: Option<Value>,
 ) -> Result<(), String> {
-    validate_id(&session_id, "session")?;
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    set_composer_draft(&conn, &session_id, draft.as_ref())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        validate_id(&session_id, "session")?;
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        set_composer_draft(&conn, &session_id, draft.as_ref())
+    })
 }
 
 /// Every saved draft, read once at launch so each composer can start from its own.
 #[tauri::command(async)]
-pub fn session_list_drafts(store: State<'_, SessionStore>) -> Result<Vec<Value>, String> {
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    list_composer_drafts(&conn).map_err(|e| e.to_string())
+pub fn session_list_drafts(
+    window: tauri::Window,
+    store: State<'_, SessionStore>,
+) -> Result<Vec<Value>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        list_composer_drafts(&conn).map_err(|e| e.to_string())
+    })
 }
 
 /// Strict, read-only inventory for remote attachment ownership. Ordinary draft
@@ -1268,17 +1338,20 @@ pub struct InFlightSession {
 
 #[tauri::command(async)]
 pub fn session_set_in_flight(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     sessions: Vec<InFlightSession>,
 ) -> Result<(), String> {
-    for session in &sessions {
-        validate_id(&session.session_id, "session")?;
-        if session.cwd.trim().is_empty() {
-            return Err("cwd is required".into());
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        for session in &sessions {
+            validate_id(&session.session_id, "session")?;
+            if session.cwd.trim().is_empty() {
+                return Err("cwd is required".into());
+            }
         }
-    }
-    let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    replace_in_flight(&mut conn, &sessions).map_err(|e| e.to_string())
+        let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        replace_in_flight(&mut conn, &sessions).map_err(|e| e.to_string())
+    })
 }
 
 /// Read the quit snapshot without clearing it. Vite/dev reloads must not
@@ -1294,10 +1367,13 @@ pub fn session_list_in_flight(
 /// Read and clear the quit snapshot so a restored window cannot take it twice.
 #[tauri::command(async)]
 pub fn session_take_in_flight(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
 ) -> Result<Vec<InFlightSession>, String> {
-    let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    take_in_flight(&mut conn).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let mut conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        take_in_flight(&mut conn).map_err(|e| e.to_string())
+    })
 }
 
 const WORKSPACE_SNAPSHOT_MAX_BYTES: usize = 2_000_000;
@@ -1311,28 +1387,30 @@ pub fn workspace_set_snapshot(
     store: State<'_, SessionStore>,
     mut snapshot: Value,
 ) -> Result<(), String> {
-    if !snapshot.is_object() {
-        return Err("workspace snapshot must be an object".into());
-    }
-    let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-    let owner = window.label() == "main";
-    let previous = if owner && snapshot.get("serversRestore").is_some() {
-        None
-    } else {
-        get_workspace_snapshot(&conn)
-            .map_err(|e| e.to_string())?
-            .map(|raw| {
-                serde_json::from_str::<Value>(&raw)
-                    .map_err(|_| "Invalid saved workspace snapshot".to_string())
-            })
-            .transpose()?
-    };
-    server_terminal_restore::merge(&mut snapshot, previous.as_ref(), owner)?;
-    let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
-    if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
-        return Err("workspace snapshot is too large".into());
-    }
-    set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        if !snapshot.is_object() {
+            return Err("workspace snapshot must be an object".into());
+        }
+        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
+        let owner = window.label() == "main";
+        let previous = if owner && snapshot.get("serversRestore").is_some() {
+            None
+        } else {
+            get_workspace_snapshot(&conn)
+                .map_err(|e| e.to_string())?
+                .map(|raw| {
+                    serde_json::from_str::<Value>(&raw)
+                        .map_err(|_| "Invalid saved workspace snapshot".to_string())
+                })
+                .transpose()?
+        };
+        server_terminal_restore::merge(&mut snapshot, previous.as_ref(), owner)?;
+        let json = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+        if json.len() > WORKSPACE_SNAPSHOT_MAX_BYTES {
+            return Err("workspace snapshot is too large".into());
+        }
+        set_workspace_snapshot(&conn, &json).map_err(|e| e.to_string())
+    })
 }
 
 #[tauri::command(async)]
@@ -1749,6 +1827,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     incremental::ensure_schema(conn)?;
     rewind::ensure_schema(conn)?;
     crate::native_workspace::ensure_schema(conn)?;
+    crate::native_editor_drafts::ensure_schema(conn)?;
     // Source-revision/dirty metadata requires all current session columns.
     // Only metadata is reconciled here; transcripts remain lazily indexed.
     content_search::ensure_schema(conn)?;

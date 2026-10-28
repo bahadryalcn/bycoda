@@ -2,7 +2,9 @@ import { QuestionForm } from "../../src/features/sessions/ui/QuestionForm";
 import { useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../src/shared/ui/Button";
+import { Checkbox } from "../../src/shared/ui/Checkbox";
 import { ControlSpecimen } from "../../src/shared/ui/ControlSpecimen";
+import { ControlStateMatrix, type ControlMatrixLayout } from "./arc-controls-matrix";
 import { NativeSearchableSelect } from "../../src/shared/ui/NativeSearchableSelect";
 import { Badge } from "../../src/shared/ui/Badge";
 import { Alert } from "../../src/shared/ui/Alert";
@@ -524,7 +526,44 @@ function Fixture() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<Fixture />);
+// ?view=matrix renders only the shared real-control state matrix (FIXTURE evidence, never
+// installed/native acceptance). Optional: &theme=light|dark and &layout=default|narrow|short.
+function MatrixFixture({ initialLayout }: { initialLayout: ControlMatrixLayout }) {
+  const [light, setLight] = useState(document.documentElement.classList.contains("theme-light"));
+  return (
+    <main className="h-full overflow-auto p-6 text-content">
+      <div className="mx-auto grid max-w-3xl gap-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-xl font-medium">bycoda control matrix</h1>
+          <Button
+            onClick={() => {
+              document.documentElement.classList.toggle("theme-light", !light);
+              setLight(!light);
+            }}
+          >
+            {light ? "Dark theme" : "Light theme"}
+          </Button>
+        </div>
+        <ControlStateMatrix initialLayout={initialLayout} />
+      </div>
+    </main>
+  );
+}
+
+const params = new URLSearchParams(location.search);
+if (params.get("theme")) {
+  document.documentElement.classList.toggle("theme-light", params.get("theme") === "light");
+}
+const layoutParam = params.get("layout");
+createRoot(document.getElementById("root")!).render(
+  params.get("view") === "matrix" ? (
+    <MatrixFixture
+      initialLayout={layoutParam === "narrow" || layoutParam === "short" ? layoutParam : "default"}
+    />
+  ) : (
+    <Fixture />
+  ),
+);
 
 function ButtonApiControls() {
   const [busy, setBusy] = useState(false);
@@ -681,9 +720,8 @@ function AdditionalControls() {
           setName(next);
         }}
       />
-      <label>
-        <input
-          type="checkbox"
+      <label className="flex items-center gap-2">
+        <Checkbox
           checked={failSave}
           onChange={(event) => setFailSave(event.currentTarget.checked)}
         />

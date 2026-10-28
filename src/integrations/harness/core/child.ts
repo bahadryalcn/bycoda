@@ -123,7 +123,17 @@ const sseBuffer = new Map<string, Buffered>();
 const ownedChildren = new Set<string>();
 const ownedSse = new Set<string>();
 const livePid = new Map<string, number>();
-const pendingExit = new Map<string, Array<{ code: number | null; pid: number; reason?: string }>>();
+type ChildExit = { code: number | null; pid: number; reason?: string };
+const pendingExit = new Map<string, ChildExit[]>();
+type GuardedSpawnAttempt = { generation: number; invoking: boolean; exits: ChildExit[] };
+type GuardedSpawnGroup = {
+  latest: number;
+  published: number;
+  attempts: Set<GuardedSpawnAttempt>;
+};
+// Only restrictive in-process starts use this state. Retiring the group also
+// fences work still awaiting its grant/bridges, without restoring a killed PID.
+const guardedSpawns = new Map<string, GuardedSpawnGroup>();
 
 /** True when this exit belongs to the child we currently have spawned. */
 export function isCurrentChildExit(
@@ -246,7 +256,14 @@ function ensureBridge() {
           else handler(code);
           return;
         }
-        if (currentPid != null) return;
+        let buffered = false;
+        for (const attempt of guardedSpawns.get(sessionId)?.attempts ?? []) {
+          if (!attempt.invoking) continue;
+          attempt.exits.push({ code, pid, reason });
+          if (attempt.exits.length > 8) attempt.exits.splice(0, attempt.exits.length - 8);
+          buffered = true;
+        }
+        if (buffered || currentPid != null) return;
         const exits = pendingExit.get(sessionId) ?? [];
         exits.push({ code, pid, reason });
         if (exits.length > 8) exits.splice(0, exits.length - 8);
@@ -297,6 +314,7 @@ function teardownBridge() {
   ownedSse.clear();
   livePid.clear();
   pendingExit.clear();
+  guardedSpawns.clear();
   void pending?.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
 }
 
@@ -356,6 +374,7 @@ export function watchChild(
 }
 
 export function unwatchChild(sessionId: string) {
+  guardedSpawns.delete(sessionId);
   lineHandlers.delete(sessionId);
   exitHandlers.delete(sessionId);
   lineBuffer.delete(sessionId);
@@ -394,46 +413,109 @@ export async function spawnChild(
   binaryProvider?: ConfigurableBinaryProvider,
   genericAcpId?: string,
   authority?: NativeAuthorityScope,
+  beforeSpawn?: () => Promise<void>,
 ): Promise<void> {
-  livePid.delete(sessionId);
-  pendingExit.delete(sessionId);
-  ownedChildren.add(sessionId);
-  const binaryPath = binaryProvider ? runtimeProviderBinaryPath(binaryProvider) : undefined;
-  let launchArgs = args;
-  if (binaryProvider === "claude" || binaryProvider === "codex") {
-    const [social, logs, conversation] = await Promise.all([
-      socialBridge(sessionId),
-      runtimeLogsBridge(sessionId),
-      conversationToolsBridge(sessionId),
-    ]);
-    launchArgs = runtimeLogsSpawnArgs(
-      binaryProvider,
-      socialSpawnArgs(binaryProvider, args, social),
-      logs,
-    );
-    launchArgs = conversationToolsSpawnArgs(binaryProvider, launchArgs, conversation);
+  const group = beforeSpawn
+    ? (guardedSpawns.get(sessionId) ?? {
+        latest: 0,
+        published: 0,
+        attempts: new Set<GuardedSpawnAttempt>(),
+      })
+    : undefined;
+  const attempt: GuardedSpawnAttempt | undefined = group
+    ? { generation: 0, invoking: false, exits: [] }
+    : undefined;
+  const checkGuarded = () => {
+    if (guardedSpawns.get(sessionId) !== group) throw new Error("Provider startup cancelled");
+  };
+  if (group && attempt) {
+    guardedSpawns.set(sessionId, group);
+    group.attempts.add(attempt);
+  } else {
+    // Preserve the ordinary spawn path. Its newer start retires only pending
+    // restrictive attempts, which must never overwrite its eventual PID.
+    guardedSpawns.delete(sessionId);
+    livePid.delete(sessionId);
+    pendingExit.delete(sessionId);
+    ownedChildren.add(sessionId);
   }
-  const pid = await invoke<number>("harness_spawn", {
-    sessionId,
-    command,
-    args: launchArgs,
-    cwd,
-    account,
-    binaryProvider,
-    binaryPath,
-    genericAcpId,
-    ...nativeAuthorityArgs(authority),
-  });
-  if (typeof pid !== "number" || pid <= 0) return;
-  livePid.set(sessionId, pid);
-  const exits = pendingExit.get(sessionId);
-  pendingExit.delete(sessionId);
-  const exited = exits?.find((event) => event.pid === pid);
-  if (!exited) return;
-  livePid.delete(sessionId);
-  const handler = exitHandlers.get(sessionId);
-  if (exited.reason) handler?.(exited.code, exited.reason);
-  else handler?.(exited.code);
+  try {
+    if (beforeSpawn && group && attempt) {
+      await beforeSpawn();
+      checkGuarded();
+      if (!Number.isSafeInteger(group.latest + 1))
+        throw new Error("Provider startup generation exhausted");
+      attempt.generation = ++group.latest;
+    }
+    const binaryPath = binaryProvider ? runtimeProviderBinaryPath(binaryProvider) : undefined;
+    let launchArgs = args;
+    if (binaryProvider === "claude" || binaryProvider === "codex") {
+      const [social, logs, conversation] = await Promise.all([
+        socialBridge(sessionId),
+        runtimeLogsBridge(sessionId),
+        conversationToolsBridge(sessionId),
+      ]);
+      launchArgs = runtimeLogsSpawnArgs(
+        binaryProvider,
+        socialSpawnArgs(binaryProvider, args, social),
+        logs,
+      );
+      launchArgs = conversationToolsSpawnArgs(binaryProvider, launchArgs, conversation);
+    }
+    if (beforeSpawn && group && attempt) {
+      await beforeSpawn();
+      checkGuarded();
+      if (group.latest !== attempt.generation) throw new Error("Provider startup cancelled");
+      // The backend can still deny after its own asynchronous preparation.
+      // Keep the incumbent's exit routing until an actual PID is returned.
+      attempt.invoking = true;
+      ownedChildren.add(sessionId);
+    }
+    const pid = await invoke<number>("harness_spawn", {
+      sessionId,
+      command,
+      args: launchArgs,
+      cwd,
+      account,
+      binaryProvider,
+      binaryPath,
+      genericAcpId,
+      ...nativeAuthorityArgs(authority),
+      // Functions are in-process restrictions, never desktop IPC/wire arguments.
+      ...(backend && beforeSpawn ? { beforeSpawn } : {}),
+    });
+    if (typeof pid !== "number" || pid <= 0) return;
+    if (group && attempt) {
+      if (guardedSpawns.get(sessionId) !== group || attempt.generation < group.published) return;
+      // A newer failed request does not discard an already accepted older PID.
+      // A newer successful request, kill or unwatch cannot be overwritten.
+      group.published = attempt.generation;
+      livePid.set(sessionId, pid);
+      pendingExit.delete(sessionId);
+      const exited = attempt.exits.find((event) => event.pid === pid);
+      if (!exited) return;
+      livePid.delete(sessionId);
+      const handler = exitHandlers.get(sessionId);
+      if (exited.reason) handler?.(exited.code, exited.reason);
+      else handler?.(exited.code);
+      return;
+    }
+    livePid.set(sessionId, pid);
+    const exits = pendingExit.get(sessionId);
+    pendingExit.delete(sessionId);
+    const exited = exits?.find((event) => event.pid === pid);
+    if (!exited) return;
+    livePid.delete(sessionId);
+    const handler = exitHandlers.get(sessionId);
+    if (exited.reason) handler?.(exited.code, exited.reason);
+    else handler?.(exited.code);
+  } finally {
+    if (group && attempt) {
+      group.attempts.delete(attempt);
+      if (!group.attempts.size && guardedSpawns.get(sessionId) === group)
+        guardedSpawns.delete(sessionId);
+    }
+  }
 }
 
 export function writeChild(
@@ -463,6 +545,7 @@ export function killAllChildren(): Promise<void> {
   ownedSse.clear();
   livePid.clear();
   pendingExit.clear();
+  guardedSpawns.clear();
   return invoke("harness_kill_all");
 }
 

@@ -204,3 +204,67 @@ it("does not expire while dismissal is disabled by an operation", async () => {
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps a danger notice until dismissed by default, even with no duration", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.useFakeTimers();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onDismiss = vi.fn();
+  try {
+    act(() =>
+      root.render(createElement(TransientNotice, { tone: "danger", message: "Failed", onDismiss })),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("Failed");
+    // Other tones keep their expiry.
+    act(() => root.render(createElement(TransientNotice, { message: "Saved", onDismiss })));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7000);
+    });
+    expect(onDismiss).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("places the action under the message and blocks a second activation while pending", () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const onClick = vi.fn();
+  const notice = (pending: boolean) =>
+    createElement(TransientNotice, {
+      tone: "danger",
+      title: "Update failed",
+      message: "The feed returned 503",
+      action: { label: "Retry", onClick, pending },
+      onDismiss: vi.fn(),
+    });
+  try {
+    act(() => root.render(notice(true)));
+    const alert = document.querySelector('[role="alert"]')!;
+    const text = alert.textContent ?? "";
+    expect(text.indexOf("Update failed")).toBeLessThan(text.indexOf("The feed returned 503"));
+    expect(text.indexOf("The feed returned 503")).toBeLessThan(text.indexOf("Retry"));
+    const retry = [...alert.querySelectorAll("button")].find((b) => b.textContent === "Retry")!;
+    expect(retry.getAttribute("aria-busy")).toBe("true");
+    act(() => retry.click());
+    expect(onClick).not.toHaveBeenCalled();
+    act(() => root.render(notice(false)));
+    act(() => retry.click());
+    expect(onClick).toHaveBeenCalledOnce();
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

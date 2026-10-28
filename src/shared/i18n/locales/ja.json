@@ -7171,5 +7171,6 @@
   "Visual style": "ビジュアルスタイル",
   "bycoda mark": "bycoda マーク",
   "Wave": "ウェーブ",
-  "Dots": "ドット"
+  "Dots": "ドット",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "{p1} 文字中、先頭の {p0} 文字を表示しています。「詳細をコピー」にはすべて含まれます。"
 }

@@ -1,5 +1,8 @@
 .field {
   display: grid;
+  /* Label, control and message keep their own heights when a grid or flex parent
+     stretches the field to a taller neighbour (e.g. one with helper text). */
+  align-content: start;
   min-width: 0;
 }
 .control {
@@ -65,6 +68,13 @@
   opacity: var(--ui-disabled-opacity, 0.5);
   background: var(--surface-muted);
 }
+/* Read-only keeps normal ink and stays selectable, on a quiet transparent frame that keeps its resting
+   boundary (readable in both themes) and has no hover cue. Resolving the frame roles on the
+   input itself wins over the field owner's hover and resting rules without a specificity contest; focus is unchanged. */
+.input[readonly]:not(:disabled) {
+  --surface: transparent;
+  --ui-field-border-hover: var(--ui-control-border);
+}
 /* The row's space is padding inside the clipped slot, so the height animates from a true zero. */
 .messageSlot {
   display: grid;
@@ -78,7 +88,7 @@
   line-height: var(--leading-body);
 }
 .description {
-  color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .error {
   color: var(--danger);

@@ -172,3 +172,101 @@
     transition: none;
   }
 }
+
+/* Option rows for SearchableSelect and Select. One row grammar: a check slot, an optional icon, a truncating label with its
+   description beneath. Keyboard-active and selected are separate: the active row carries the selected surface, a selected row
+   that is not active keeps only its check and medium weight. Written here, unlayered, so it is not shadowed by utilities. */
+.choice {
+  display: flex;
+  box-sizing: border-box;
+  inline-size: 100%;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  border: 0;
+  border-radius: calc(var(--ui-radius-popup) - 5px);
+  padding-block: 0;
+  padding-inline: 0.5rem;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  text-align: start;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition:
+    background-color 80ms var(--ease-standard),
+    color 80ms var(--ease-standard);
+}
+.choice[aria-selected="true"]:not([data-highlighted]) {
+  --ui-surface-selected: transparent;
+}
+.choice:disabled,
+.choice[aria-disabled="true"] {
+  --ui-surface-hover: transparent;
+  --ui-surface-selected: transparent;
+  opacity: var(--ui-disabled-opacity, 0.5);
+  cursor: not-allowed;
+}
+.choiceCheck,
+.choiceIcon {
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+.choiceCheck {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+  color: var(--foreground);
+}
+.choiceIcon {
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
+}
+.choiceBody {
+  min-inline-size: 0;
+  flex: 1;
+}
+.choiceLabel {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.choice[aria-selected="true"] .choiceLabel {
+  font-weight: 500;
+}
+.choiceDescription {
+  display: block;
+  overflow-wrap: anywhere;
+}
+/* Loading, failure and empty states sit beside the list, never inside it, so the committed rows stay available. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: var(--space-2) 0.5rem;
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+}
+.status[data-tone="danger"] {
+  color: var(--danger);
+}
+.statusText {
+  min-inline-size: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.statusEmpty {
+  justify-content: center;
+  padding-block: var(--space-3);
+  text-align: center;
+}
+@media (prefers-reduced-motion: reduce) {
+  .choice {
+    transition: none;
+  }
+}

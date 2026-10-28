@@ -259,7 +259,7 @@ describe("file picker command mode", () => {
       button.textContent?.includes("Reload bycoda"),
     )!;
     expect(reload).not.toBeUndefined();
-    expect(reload.querySelectorAll(".text-accent")).toHaveLength(3);
+    expect(reload.querySelectorAll("[data-match]")).toHaveLength(3);
 
     inputText(input, "> missing");
     expect(dialog.textContent).toContain("No matching commands");

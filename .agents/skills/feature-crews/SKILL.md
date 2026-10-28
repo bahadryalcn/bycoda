@@ -411,6 +411,37 @@ Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
 
+## Host HTTP/WS source integration, 2026-10-28
+
+The paired-owner Crew RPCs now share `host/domains/crews/service.ts`, the existing
+`HostCrews` owner and 20 closed schemas in
+`src/shared/model/host-contracts/crews.ts`. Schema artifact `3a32bdd78645` has
+131 methods overall; `transport.ws.crews.v2` advertises only this routed cohort.
+No wire/schema version, local execution default or migration gate was promoted.
+
+Preserve all 20 branches, including stateful default-bootstrapping `list`, optional
+definition revision versus required run-deletion revision, raw mutation results
+versus redacted read views, library scope and snapshots retained after deletion.
+Paired calls pass no conversation principal; scoped tools keep their native
+binding. Never obtain a principal from payload fields. Accepted create/send IDs
+survive late revocation through owned SQL-only recovery with concurrent pause,
+Stop and configuration edits preserved. Caller cancellation does not own already
+accepted child work. Existing request fingerprints are not rewritten.
+
+Image-capability inspection may prepare a real native app-server. Its authority
+checks follow asynchronous setup and the actual headless spawn; the optional
+in-process restriction is never serialized into Tauri/JSON. Cache only completed
+public evidence and serialize waiting probes without sharing a caller's failed
+grant. No image generation or social publishing was authorized by this change.
+
+Source/fixture evidence is under
+`temp/verification/2026-10-28-crew-authority/`,
+`temp/local/2026-10-28-crews-review/` and
+`temp/verification/2026-10-28-crews-native-mobile-contract/`.
+Current native broker52/remote47, mobile47 and normal compiler checks are source
+evidence; they do not establish installed, actual-provider or device acceptance.
+The complete Host/runtime ledger owns remaining migration and parity gates.
+
 ## Appearance ambient-crew dependency, 2026-10-27
 
 `temp/local/2026-10-27-settings-appearance-audit/` covers Appearance's decorative

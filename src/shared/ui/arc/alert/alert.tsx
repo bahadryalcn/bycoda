@@ -16,13 +16,7 @@ import {
   type TargetAndTransition,
   type Transition,
 } from "motion/react";
-import {
-  Check,
-  AlertCircle as InfoCircle,
-  AlertCircle as WarningTriangle,
-  CircleX as XmarkCircle,
-  X,
-} from "../../icons";
+import { Check, AlertCircle as WarningCircle, CircleX as XmarkCircle, Info, X } from "../../icons";
 import { Button } from "../../Button";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./alert.module.css";
@@ -40,10 +34,15 @@ export interface AlertProps extends HTMLAttributes<HTMLDivElement> {
   onDismiss?: () => void;
   /** Compact one-line form without card chrome, for in-row errors and warnings. The icon keeps the tone readable without colour. */
   inline?: boolean;
+  /** Recovery or follow-up controls, such as Retry. Rendered under the copy so they wrap at any width; the caller keeps the operation. */
+  action?: ReactNode;
+  /** Accessible name of the dismiss control. Defaults to `Dismiss` plus the title. */
+  dismissLabel?: string;
 }
 type AlertBoxProps = Omit<AlertProps, "open"> & { reduce: boolean | null; animateIcon?: boolean };
 
-const icons = { info: InfoCircle, success: Check, warning: WarningTriangle, danger: XmarkCircle };
+/** Each tone has its own glyph, so the tone is never carried by colour alone. */
+const icons = { info: Info, success: Check, warning: WarningCircle, danger: XmarkCircle };
 const exitFast: Transition = {
   duration: motionTokens.duration.fast,
   ease: [...motionTokens.ease.standard],
@@ -152,6 +151,8 @@ function AlertBox({
   inline = false,
   icon,
   role,
+  action,
+  dismissLabel,
   ...props
 }: AlertBoxProps) {
   const Icon = icons[tone];
@@ -226,6 +227,7 @@ function AlertBox({
             </motion.div>
           )}
         </AnimatePresence>
+        {action ? <div className={styles.action}>{action}</div> : null}
       </HeightFrame>
       {onDismiss && (
         <Button
@@ -233,7 +235,7 @@ function AlertBox({
           variant="ghost"
           size="sm"
           iconOnly
-          label={`Dismiss: ${title ?? ""}`}
+          label={dismissLabel ?? (title ? `Dismiss: ${title}` : "Dismiss")}
           onClick={onDismiss}
         >
           <X width={16} height={16} strokeWidth={1.75} aria-hidden="true" />

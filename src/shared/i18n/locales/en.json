@@ -1,4 +1,10 @@
 {
+  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.": "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.",
+  "Keep or save your current edits before restoring this draft.": "Keep or save your current edits before restoring this draft.",
+  "Restore draft": "Restore draft",
+  "Use current document": "Use current document",
+  "Draft recovery copy could not be confirmed. Keep this editor open.": "Draft recovery copy could not be confirmed. Keep this editor open.",
+  "Retry draft copy": "Retry draft copy",
   "Exact Git rewind (experimental)": "Exact Git rewind (experimental)",
   "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.",
   "The local Host is unavailable. Reconnect and retry.": "The local Host is unavailable. Reconnect and retry.",
@@ -8063,5 +8069,6 @@
   "Visual style": "Visual style",
   "bycoda mark": "bycoda mark",
   "Wave": "Wave",
-  "Dots": "Dots"
+  "Dots": "Dots",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "Showing the first {p0} of {p1} characters. Copy details includes all of it."
 }

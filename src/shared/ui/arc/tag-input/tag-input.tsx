@@ -16,6 +16,8 @@ export interface TagInputProps {
   onValueChange?: (value: string[]) => void;
   placeholder?: string;
   description?: string;
+  /** Local validation message. It precedes the helper, marks the field invalid and is announced as an alert. */
+  error?: string;
   id?: string;
   className?: string;
   /** Native draft-input props. `name` serializes draft text, not committed tags. */
@@ -78,16 +80,38 @@ function MotionText({ text }: { text: string }) {
 }
 
 /** Helper copy: the row opens its height on a spring, then the words settle in. */
-function FieldMessage({ id, text, className }: { id?: string; text?: string; className?: string }) {
+function FieldMessage({
+  id,
+  text,
+  className,
+  alert,
+}: {
+  id?: string;
+  text?: string;
+  className?: string;
+  alert?: boolean;
+}) {
   return (
     <AnimatePresence initial={false}>
-      {text ? <MessageRow key="message" id={id} text={text} className={className} /> : null}
+      {text ? (
+        <MessageRow key="message" id={id} text={text} className={className} alert={alert} />
+      ) : null}
     </AnimatePresence>
   );
 }
 
 /** The row tracks the measured copy, so a longer message that wraps opens its next line instead of snapping. */
-function MessageRow({ id, text, className }: { id?: string; text: string; className?: string }) {
+function MessageRow({
+  id,
+  text,
+  className,
+  alert,
+}: {
+  id?: string;
+  text: string;
+  className?: string;
+  alert?: boolean;
+}) {
   const reduced = useReducedMotion();
   const copyRef = useRef<HTMLSpanElement>(null);
   const [height, setHeight] = useState<number | "auto">("auto");
@@ -129,6 +153,7 @@ function MessageRow({ id, text, className }: { id?: string; text: string; classN
         ref={copyRef}
         id={id}
         className={className}
+        role={alert ? "alert" : undefined}
         initial={reduced ? false : { y: "0.35em", filter: `blur(${motionTokens.blur.soft}px)` }}
         animate={{ y: 0, filter: "blur(0px)" }}
         transition={{
@@ -154,6 +179,7 @@ export function TagInput({
   onValueChange,
   placeholder = "Add a tag",
   description,
+  error,
   id,
   className,
   inputProps,
@@ -169,6 +195,7 @@ export function TagInput({
   const generatedId = useId();
   const inputId = id ?? generatedId;
   const hintId = description ? `${inputId}-description` : undefined;
+  const errorId = error ? `${inputId}-error` : undefined;
   const [internal, setInternal] = useState(defaultValue);
   const [draft, setDraft] = useState("");
   const [picked, setPicked] = useState<string | null>(null);
@@ -321,6 +348,9 @@ export function TagInput({
       <motion.div
         ref={scope}
         className={styles.control}
+        data-invalid={error ? "" : undefined}
+        data-disabled={inputProps?.disabled ? "" : undefined}
+        data-readonly={inputProps?.readOnly && !inputProps?.disabled ? "" : undefined}
         data-ui-focus-group
         initial={false}
         animate={{ height }}
@@ -470,8 +500,10 @@ export function TagInput({
               }
             }}
             placeholder={placeholder}
+            aria-invalid={error ? true : inputProps?.["aria-invalid"]}
             aria-describedby={
-              [inputProps?.["aria-describedby"], hintId].filter(Boolean).join(" ") || undefined
+              [inputProps?.["aria-describedby"], errorId, hintId].filter(Boolean).join(" ") ||
+              undefined
             }
           />
         </div>
@@ -479,6 +511,7 @@ export function TagInput({
       <span className={styles.srOnly} aria-live="polite">
         {notice}
       </span>
+      <FieldMessage id={errorId} text={error} className={styles.error} alert />
       <FieldMessage id={hintId} text={description} className={styles.hint} />
     </div>
   );

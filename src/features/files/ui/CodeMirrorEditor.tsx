@@ -9,10 +9,10 @@ import {
   Compartment,
   countColumn,
   EditorSelection,
+  EditorState,
   Prec,
   StateField,
   Transaction,
-  type EditorState,
   type Extension,
   type Text,
 } from "@codemirror/state";
@@ -150,7 +150,7 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
   useEffect(() => {
     if (hasConflictMarkers(props.value)) setMerge(true);
   }, [props.value]);
-  return merge ? (
+  return merge && props.initialDraft === undefined ? (
     <MergeConflictEditor
       path={props.path}
       cwd={props.cwd}
@@ -159,6 +159,7 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
       onSave={onSave}
       onDirtyChange={onDirtyChange}
       canSave={props.canAutosave}
+      onDocumentChange={props.onDocumentChange}
       saveRequestRef={saveRequestRef}
       onOpenFile={props.onOpenFile}
     />
@@ -177,6 +178,7 @@ function StandardCodeMirrorEditor({
   cwd,
   commentPath,
   value,
+  initialDraft,
   showDiff,
   gitOriginal,
   active,
@@ -187,6 +189,7 @@ function StandardCodeMirrorEditor({
   canAutosave,
   onStageGit,
   onDocChange,
+  onDocumentChange,
   onEdit,
   shown = true,
   saveRequestRef,
@@ -197,6 +200,8 @@ function StandardCodeMirrorEditor({
   cwd: string;
   commentPath: string;
   value: string;
+  /** Recovered edits start dirty against value, which remains the disk baseline. */
+  initialDraft?: string;
   showDiff: boolean;
   gitOriginal: string | null;
   active: boolean;
@@ -208,6 +213,8 @@ function StandardCodeMirrorEditor({
   onStageGit?: (contents: string) => Promise<void>;
   /** Receives the whole text after each change: pass it only while it is shown. */
   onDocChange?: (content: string) => void;
+  /** Admits the actual immutable document before deferred persistence starts. */
+  onDocumentChange?: (document: Text) => void;
   /** Cheap per-change notice that copies no text. */
   onEdit?: () => void;
   /** False while covered by another tab: git refreshes wait until it is shown. */
@@ -232,6 +239,7 @@ function StandardCodeMirrorEditor({
   const onStageGitRef = useRef(onStageGit);
   const canStage = onStageGit !== undefined;
   const onDocChangeRef = useRef(onDocChange);
+  const onDocumentChangeRef = useRef(onDocumentChange);
   const onEditRef = useRef(onEdit);
   const shownRef = useRef(shown);
   shownRef.current = shown;
@@ -239,6 +247,7 @@ function StandardCodeMirrorEditor({
   const onOpenFileRef = useRef(onOpenFile);
   onOpenFileRef.current = onOpenFile;
   const valueRef = useRef(value);
+  const initialDraftRef = useRef(initialDraft);
   const navigationTokenRef = useRef<number | undefined>(undefined);
   const pendingNavigationRef = useRef<EditorNavigationRequest | null>(null);
   const gitOriginalRef = useRef(gitOriginal);
@@ -310,6 +319,7 @@ function StandardCodeMirrorEditor({
   onStageGitRef.current = onStageGit;
   onDocChangeRef.current = onDocChange;
   onEditRef.current = onEdit;
+  onDocumentChangeRef.current = onDocumentChange;
   valueRef.current = value;
   gitOriginalRef.current = gitOriginal;
 
@@ -607,6 +617,7 @@ function StandardCodeMirrorEditor({
         if (update.transactions.some((tr) => tr.annotation(diskReload))) {
           return;
         }
+        onDocumentChangeRef.current?.(update.state.doc);
         markDirty();
         scheduleAutosave();
       }),
@@ -626,7 +637,7 @@ function StandardCodeMirrorEditor({
       }),
     ];
     // Path and layout changes rebuild extensions, while the document identity stays intact.
-    const initialDoc = carry?.doc ?? valueRef.current;
+    const initialDoc = carry?.doc ?? initialDraftRef.current ?? valueRef.current;
     let leftView: EditorView | null = null;
     if (splitDiff) {
       split = createSplitDiff({
@@ -659,8 +670,11 @@ function StandardCodeMirrorEditor({
     if (carry?.saved) {
       savedDocumentRef.current = carry.saved;
     } else {
-      savedDocumentRef.current = view.state.doc;
-      dirtyRef.current = false;
+      savedDocumentRef.current =
+        initialDraftRef.current === undefined
+          ? view.state.doc
+          : EditorState.create({ doc: valueRef.current }).doc;
+      markDirty();
     }
     viewRef.current = view;
     setConflictCount(conflictBlocks(view.state).length);

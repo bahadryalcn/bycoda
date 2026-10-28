@@ -27,15 +27,21 @@ function offscreenObserver(): IntersectionObserver | null {
 }
 
 /**
- * Decorative working signal. The enclosing status owns its accessible label.
+ * Working signal, decorative by default: the enclosing status owns its accessible
+ * label, so there is one live signal. Pass `label` only when nothing else near it
+ * announces the activity; it then becomes a polite status with hidden text.
+ * Under reduced motion or with decorative motion off the bars stay visible and still.
  * Only the root animates (opacity): animated SVG children and per-bar
  * animations kept the main thread rendering every frame, see the CSS module.
  * The root pauses while it is outside the viewport (shared observer).
  */
 export function WorkingIndicator({
   className = "inline-block w-3.5 shrink-0",
+  label,
 }: {
   className?: string;
+  /** Announces the activity politely. Omit it when a nearby status already does. */
+  label?: string;
 }) {
   const root = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -49,8 +55,14 @@ export function WorkingIndicator({
     };
   }, []);
   return (
-    <span ref={root} aria-hidden="true" className={`${styles.indicator} ${className}`}>
-      <span className={styles.grid}>
+    <span
+      ref={root}
+      aria-hidden={label ? undefined : "true"}
+      role={label ? "status" : undefined}
+      className={`${styles.indicator} ${className}`}
+    >
+      {label ? <span className="sr-only">{label}</span> : null}
+      <span className={styles.grid} aria-hidden={label ? "true" : undefined}>
         {BARS.map((x) => (
           <span key={x} className={styles.bar} style={{ left: `${((x - 1.3) / 24) * 100}%` }} />
         ))}

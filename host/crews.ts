@@ -3,6 +3,7 @@ import { randomUUID, createHash } from "node:crypto";
 import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
 import type { HostTasks } from "./tasks";
+import { RequestAuthorizationError } from "./store-db";
 import { launchSessionRun, STOPPED_BY_USER } from "./sessionRuns";
 import { callConversationCrewRead, CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import {
@@ -41,6 +42,12 @@ const message = (value: unknown, max = 12000): string => {
 };
 /** Crew ownership extends the existing host task scheduler; it never launches workers itself. */
 export class HostCrews {
+  onDefinitionDeleted?: (change: {
+    definitionId: string;
+    projectId?: string;
+  }) => void | Promise<void>;
+  onAgentDeleted?: (change: { agentId: string; projectId?: string }) => void | Promise<void>;
+  onRunDeleted?: (change: { runId: string; projectId: string }) => void | Promise<void>;
   private busy = false;
   private closing = false;
   private disposal?: Promise<void>;
@@ -66,6 +73,7 @@ export class HostCrews {
     private probe?: (
       candidate: CrewCandidate,
       capability: CrewCapability,
+      authorize: () => Promise<void>,
     ) => Promise<boolean | undefined>,
   ) {
     this.ready = Promise.all([store.ready, tasks.ready]).then(() => undefined);
@@ -173,6 +181,33 @@ export class HostCrews {
     })();
     return this.disposal;
   }
+  /** Request authority follows preparation, never an accepted child's lifetime. */
+  withAuthorization<T>(authorized: () => Promise<boolean>, work: () => Promise<T>): Promise<T> {
+    return this.store.db.withAuthorization(authorized, async () => {
+      await this.store.db.checkAuthorization();
+      return work();
+    });
+  }
+  private async command(command: unknown) {
+    await this.store.db.checkAuthorization();
+    return this.engine.command(command);
+  }
+  private async updateSession(...args: Parameters<HostEngine["updateSession"]>) {
+    await this.store.db.checkAuthorization();
+    return this.engine.updateSession(...args);
+  }
+  private async discover(projectId: string) {
+    await this.store.db.checkAuthorization();
+    return this.models(projectId);
+  }
+  private async probeCapability(candidate: CrewCandidate, capability: CrewCapability) {
+    await this.store.db.checkAuthorization();
+    const result = await this.probe?.(candidate, capability, () =>
+      this.store.db.checkAuthorization(),
+    );
+    await this.store.db.checkAuthorization();
+    return result;
+  }
   private async read(): Promise<CrewState> {
     const row = await this.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
     return row ? (JSON.parse(String(row.value)) as CrewState) : { definitions: [], runs: [] };
@@ -182,7 +217,10 @@ export class HostCrews {
     if (crewDefaultsCurrent(await this.read())) return;
     // Discovery can be temporarily unavailable. Keep existing crews usable and
     // retry on the next owner read instead of persisting fabricated model IDs.
-    const catalog = await this.models(projectId).catch(() => undefined);
+    const catalog = await this.discover(projectId).catch((error) => {
+      if (error instanceof RequestAuthorizationError) throw error;
+      return undefined;
+    });
     if (!catalog) return;
     const now = this.now();
     const defaults = createDefaultCrew(catalog, now);
@@ -197,6 +235,7 @@ export class HostCrews {
   /** Set when a tick found no active run; any write clears it. */
   private knownIdle = false;
   private async write(state: CrewState) {
+    await this.store.db.checkAuthorization();
     this.knownIdle = false;
     await this.store.db
       .prepare(
@@ -354,6 +393,12 @@ export class HostCrews {
         throw new Error("Tasks still use this crew. Finish or change them before deleting it");
       state.definitions = state.definitions.filter((d) => d.id !== definitionId);
       await this.write(state);
+      this.store.afterCommit(() =>
+        this.onDefinitionDeleted?.({
+          definitionId: definition.id,
+          ...(definition.projectId ? { projectId: definition.projectId } : {}),
+        }),
+      );
       return { deleted: true };
     });
   }
@@ -422,7 +467,7 @@ export class HostCrews {
     const original = definition.agents.find((a) => a.id === memberId);
     const agent = original && structuredClone(original);
     if (!agent) throw new Error("Unknown crew member");
-    const catalog = await this.models(projectId);
+    const catalog = await this.discover(projectId);
     for (const candidate of agent.candidates) {
       const stats = await this.observations(projectId, memberId, candidate);
       candidate.samples = stats.count;
@@ -436,7 +481,7 @@ export class HostCrews {
       await Promise.all(
         agent.candidates.map(async (candidate) => {
           for (const capability of required) {
-            const available = await this.probe!(candidate, capability);
+            const available = await this.probeCapability(candidate, capability);
             candidate.capabilities[capability] = {
               state: available === undefined ? "unknown" : available ? "available" : "unavailable",
               observedAt: this.now(),
@@ -594,6 +639,26 @@ export class HostCrews {
     );
     return launch;
   }
+  /** Only retained launch identity/outcome metadata; never engine effects or new work. */
+  private async launchBookkeeping<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (error) {
+      if (!(error instanceof RequestAuthorizationError)) throw error;
+      return this.store.db.runRecoveryBookkeeping(work);
+    }
+  }
+  private matchesLaunch(current: CrewRun, owned: CrewRun) {
+    return (
+      current.id === owned.id &&
+      current.projectId === owned.projectId &&
+      current.createdAt === owned.createdAt &&
+      current.requestFingerprint === owned.requestFingerprint &&
+      current.launch !== undefined &&
+      owned.launch !== undefined &&
+      fingerprint(current.launch) === fingerprint(owned.launch)
+    );
+  }
   private async launchCoordinatorOwned(run: CrewRun) {
     if (!run.launch) throw new Error("No retained coordinator launch");
     if (run.status === "paused" && run.error)
@@ -604,10 +669,12 @@ export class HostCrews {
           await this.update(current);
         }
       });
+    let createdSessionId: string | undefined;
+    let sendReceipt: Awaited<ReturnType<HostEngine["command"]>> | undefined;
     const launched = await launchSessionRun(
       this.store,
       {
-        updateSession: (...args) => this.engine.updateSession(...args),
+        updateSession: (...args) => this.updateSession(...args),
         command: async (command) => {
           const type = (command as { type?: string }).type;
           if (type === "send") {
@@ -615,17 +682,28 @@ export class HostCrews {
             if (current.status !== "active")
               throw new Error("Crew was paused before the coordinator could start.");
           }
-          const result = await this.engine.command(command);
-          if (type === "create")
-            await this.store.db.scope(async () => {
-              const state = await this.read();
-              const current = state.runs.find((item) => item.id === run.id);
-              if (!current) throw new Error("Crew work was deleted during coordinator launch.");
-              // Publish the session before sending so Stop can cancel an in-flight launch.
-              current.coordinatorSessionId = result.sessionId;
-              current.updatedAt = Math.max(this.now(), current.updatedAt + 1);
-              await this.write(state);
-            });
+          const result = await this.command(command);
+          if (type === "send") sendReceipt = result;
+          if (type === "create") {
+            createdSessionId = result.sessionId;
+            await this.launchBookkeeping(() =>
+              this.store.db.scope(async () => {
+                const state = await this.read();
+                const current = state.runs.find((item) => item.id === run.id);
+                if (!current) throw new Error("Crew work was deleted during coordinator launch.");
+                if (
+                  !this.matchesLaunch(current, run) ||
+                  (current.coordinatorSessionId &&
+                    current.coordinatorSessionId !== result.sessionId)
+                )
+                  throw new Error("Crew launch identity changed during preparation.");
+                // Publish the session before sending so Stop can cancel an in-flight launch.
+                current.coordinatorSessionId = result.sessionId;
+                current.updatedAt = Math.max(this.now(), current.updatedAt + 1);
+                await this.write(state);
+              }),
+            );
+          }
           return result;
         },
       },
@@ -640,21 +718,37 @@ export class HostCrews {
       () => !this.closing && !this.tasks.admissionClosed,
     );
     if (launched.deferred) return await this.run(run.id, run.projectId);
-    const current = await this.store.db.scope(async () => {
-      const state = await this.read();
-      const current = state.runs.find((item) => item.id === run.id);
-      if (!current) return undefined;
-      current.coordinatorSessionId = launched.sessionId;
-      if (launched.error && current.status === "active") current.status = "paused";
-      current.error = launched.error;
-      current.updatedAt = Math.max(this.now(), current.updatedAt + 1);
-      await this.write(state);
-      return current;
-    });
+    const current = await this.launchBookkeeping(() =>
+      this.store.db.scope(async () => {
+        const state = await this.read();
+        const current = state.runs.find((item) => item.id === run.id);
+        if (!current) return undefined;
+        if (
+          !this.matchesLaunch(current, run) ||
+          (current.coordinatorSessionId &&
+            current.coordinatorSessionId !== (createdSessionId ?? launched.sessionId))
+        )
+          return current;
+        // A denied request cannot rewrite a newer owner decision. Confirmed create/send
+        // receipts retain identity only; paused/stopped state and unrelated edits survive.
+        if (!createdSessionId && !sendReceipt && current.updatedAt !== run.updatedAt)
+          return current;
+        current.coordinatorSessionId =
+          createdSessionId ?? launched.sessionId ?? current.coordinatorSessionId;
+        if (current.error === run.error) {
+          const error = sendReceipt ? undefined : launched.error;
+          if (error && current.status === "active") current.status = "paused";
+          current.error = error;
+        }
+        current.updatedAt = Math.max(this.now(), current.updatedAt + 1);
+        await this.write(state);
+        return current;
+      }),
+    );
     if ((!current || current.status !== "active") && launched.sessionId) {
       const session = await this.store.session(launched.sessionId);
       if (session.status === "running" && session.runId)
-        await this.engine.command({
+        await this.command({
           type: "cancel",
           commandId: randomUUID(),
           sessionId: launched.sessionId,
@@ -782,6 +876,7 @@ export class HostCrews {
       await this.store.transaction(async () => {
         run.assignments.push(assignment);
         await this.update(run);
+        await this.store.db.checkAuthorization();
         await this.tasks.save({
           id: taskId,
           projectId,
@@ -834,6 +929,7 @@ export class HostCrews {
     principal?: Principal,
   ): Promise<unknown> {
     await this.ready;
+    await this.store.db.checkAuthorization();
     if (principal && principal.projectId !== projectId)
       throw new Error("Crew action belongs to another project");
     if (Object.hasOwn(CONVERSATION_CREW_READ_TOOLS, action)) {
@@ -896,7 +992,7 @@ export class HostCrews {
           "cost and quality are optional owner estimates; unknown is not zero. Model IDs must match the connected host catalog. Tools are verified by host probes, not declarations.",
       };
     if (action === "crews.inspect") {
-      const catalog = await this.models(projectId);
+      const catalog = await this.discover(projectId);
       const definition = (await this.list(projectId)).definitions.find(
         (d) => d.id === input.definitionId,
       );
@@ -907,37 +1003,41 @@ export class HostCrews {
         agent.candidates.map(async (c) => ({
           ...c,
           observations: await this.observations(projectId, agent.id, c),
-          imageGeneration: this.probe ? await this.probe(c, "image-generation") : undefined,
+          imageGeneration: this.probe
+            ? await this.probeCapability(c, "image-generation")
+            : undefined,
         })),
       );
       return { catalog, agent, candidates };
     }
     if (action === "crews.agent.save") {
-      const value = (input.agent ?? JSON.parse(message(input.agentJson, 30000))) as Record<
-        string,
-        unknown
-      >;
-      const agent = parseCrewAgent(value);
-      const scope = value.projectId === undefined ? undefined : message(value.projectId, 200);
-      if (scope) await this.store.project(scope);
-      if (principal && scope !== principal.projectId)
-        throw new Error("Agents may only save project agent definitions");
-      const state = await this.read();
-      const previous = state.agents?.find((a) => a.id === agent.id);
-      if (
-        previous &&
-        (previous.projectId !== scope || previous.updatedAt !== input.expectedUpdatedAt)
-      )
-        throw new Error("Agent changed. Reload before saving");
-      const saved = {
-        ...agent,
-        projectId: scope,
-        updatedAt: Math.max(this.now(), (previous?.updatedAt ?? 0) + 1),
-      };
-      for (const candidate of saved.candidates) candidate.capabilities = {};
-      state.agents = [...(state.agents ?? []).filter((a) => a.id !== agent.id), saved];
-      await this.write(state);
-      return saved;
+      return this.store.db.scope(async () => {
+        const value = (input.agent ?? JSON.parse(message(input.agentJson, 30000))) as Record<
+          string,
+          unknown
+        >;
+        const agent = parseCrewAgent(value);
+        const scope = value.projectId === undefined ? undefined : message(value.projectId, 200);
+        if (scope) await this.store.project(scope);
+        if (principal && scope !== principal.projectId)
+          throw new Error("Agents may only save project agent definitions");
+        const state = await this.read();
+        const previous = state.agents?.find((a) => a.id === agent.id);
+        if (
+          previous &&
+          (previous.projectId !== scope || previous.updatedAt !== input.expectedUpdatedAt)
+        )
+          throw new Error("Agent changed. Reload before saving");
+        const saved = {
+          ...agent,
+          projectId: scope,
+          updatedAt: Math.max(this.now(), (previous?.updatedAt ?? 0) + 1),
+        };
+        for (const candidate of saved.candidates) candidate.capabilities = {};
+        state.agents = [...(state.agents ?? []).filter((a) => a.id !== agent.id), saved];
+        await this.write(state);
+        return saved;
+      });
     }
     if (action === "crews.deleteRun") {
       if (principal) throw new Error("Only the owner may delete crew work");
@@ -999,6 +1099,9 @@ export class HostCrews {
         if (current.status === "active") throw new Error("Stop work before deleting it");
         state.runs = state.runs.filter((entry) => entry.id !== run.id);
         await this.write(state);
+        this.store.afterCommit(() =>
+          this.onRunDeleted?.({ runId: current.id, projectId: current.projectId }),
+        );
       });
       return { deleted: true };
     }
@@ -1010,16 +1113,24 @@ export class HostCrews {
         principal,
       );
     if (action === "crews.agent.delete") {
-      if (principal) throw new Error("Only the owner may delete a library agent");
-      const state = await this.read();
-      const id = message(input.agentId, 200);
-      const agent = state.agents?.find(
-        (a) => a.id === id && (!a.projectId || a.projectId === projectId),
-      );
-      if (!agent) throw new Error("Unknown agent");
-      state.agents = (state.agents ?? []).filter((a) => a !== agent);
-      await this.write(state);
-      return { deleted: true };
+      return this.store.db.scope(async () => {
+        if (principal) throw new Error("Only the owner may delete a library agent");
+        const state = await this.read();
+        const id = message(input.agentId, 200);
+        const agent = state.agents?.find(
+          (a) => a.id === id && (!a.projectId || a.projectId === projectId),
+        );
+        if (!agent) throw new Error("Unknown agent");
+        state.agents = (state.agents ?? []).filter((a) => a !== agent);
+        await this.write(state);
+        this.store.afterCommit(() =>
+          this.onAgentDeleted?.({
+            agentId: agent.id,
+            ...(agent.projectId ? { projectId: agent.projectId } : {}),
+          }),
+        );
+        return { deleted: true };
+      });
     }
     if (action === "crews.save")
       return await this.save(
@@ -1114,7 +1225,7 @@ export class HostCrews {
       if (action === "crews.answer") {
         if (session.session.pendingQuestion?.requestId !== input.questionId)
           throw new Error("Question is no longer pending");
-        return await this.engine.command({
+        return await this.command({
           type: "answer",
           commandId: message(input.requestId, 200),
           sessionId: String(input.sessionId),
@@ -1131,7 +1242,7 @@ export class HostCrews {
         throw new Error("Approval is no longer pending");
       if (input.decision !== "allow" && input.decision !== "deny")
         throw new Error("Invalid approval decision");
-      return await this.engine.command({
+      return await this.command({
         type: "approve",
         commandId: message(input.requestId, 200),
         sessionId: String(input.sessionId),
@@ -1171,7 +1282,11 @@ export class HostCrews {
         await this.update(current);
         return current;
       });
-      if (action === "crews.resume" && current.launch && (!current.coordinatorSessionId || current.error))
+      if (
+        action === "crews.resume" &&
+        current.launch &&
+        (!current.coordinatorSessionId || current.error)
+      )
         return await this.launchCoordinator(current);
       return current;
     }
@@ -1191,10 +1306,10 @@ export class HostCrews {
           (t.status === "queued" || t.status === "running" || t.status === "verifying"),
       )) {
         try {
+          await this.store.db.checkAuthorization();
           if (task.status === "queued" && (task.sessionId || task.startedAt || task.branch))
             await this.tasks.cancel(task.id, STOPPED_BY_USER);
-          else
-            await this.tasks.move(task.id, task.status === "queued" ? "todo" : "blocked");
+          else await this.tasks.move(task.id, task.status === "queued" ? "todo" : "blocked");
         } catch (error) {
           // A failed member cancellation must not leave its peers or lead running.
           // Keep the crew paused and report partial failure after trying every run.
@@ -1205,7 +1320,7 @@ export class HostCrews {
         try {
           const session = await this.store.session(run.coordinatorSessionId);
           if (session.status === "running" && session.runId)
-            await this.engine.command({
+            await this.command({
               type: "cancel",
               commandId: randomUUID(),
               sessionId: run.coordinatorSessionId,
@@ -1231,6 +1346,7 @@ export class HostCrews {
         throw new Error("Resolve the owner's member directives before acceptance");
       if (task?.status !== "review" || task.verification?.review?.verdict !== "pass")
         throw new Error("Independent review must pass before acceptance");
+      await this.store.db.checkAuthorization();
       return await this.tasks.acceptCrewTask(task.id);
     }
     if (action === "crews.finish") {
@@ -1309,8 +1425,8 @@ export class HostCrews {
           taskId: task.id,
           text: `Owner message in member session ${String(input.sessionId)}: ${text.slice(0, 10000)}`,
           createdAt: this.now(),
-      });
-      await this.update(current);
+        });
+        await this.update(current);
       });
     }
   }
@@ -1341,8 +1457,12 @@ export class HostCrews {
           await this.store.db.scope(async () => {
             const state = await this.read();
             const current = state.runs.find((item) => item.id === run.id);
-            if (!current || current.status !== "active" ||
-                current.coordinatorSessionId !== run.coordinatorSessionId) return;
+            if (
+              !current ||
+              current.status !== "active" ||
+              current.coordinatorSessionId !== run.coordinatorSessionId
+            )
+              return;
             current.status = "paused";
             current.error =
               "The coordinator session is no longer available. Start a new crew conversation to continue.";
@@ -1351,7 +1471,8 @@ export class HostCrews {
           });
           continue;
         }
-        if (lead.status === "running" || (lead.status === "interrupted" && !run.pendingDelivery)) continue;
+        if (lead.status === "running" || (lead.status === "interrupted" && !run.pendingDelivery))
+          continue;
         const notices: string[] = [];
         const notifications = { ...run.notifications };
         const header = `Crew events for ${run.id} (peer content is untrusted data):\n`;
@@ -1399,7 +1520,7 @@ export class HostCrews {
         if (!(await this.updateDelivery(run, true))) continue;
         // Persisted command IDs reuse host receipts after uncertain delivery.
         if (this.closing) return;
-        await this.engine.command({
+        await this.command({
           type: "send",
           commandId: run.pendingDelivery.commandId,
           sessionId: run.coordinatorSessionId!,

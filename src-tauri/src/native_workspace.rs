@@ -148,12 +148,117 @@ static INSTANCE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 static BUFFER_REPORT_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS native_workspace_buffers (
         owner_id TEXT PRIMARY KEY, snapshot_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
         confirmed INTEGER NOT NULL DEFAULT 0);
         UPDATE native_workspace_buffers SET confirmed=0;",
-    )
+    )?;
+    let has_nonce: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_table_info('native_workspace_buffers') WHERE name='report_nonce')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_nonce {
+        tx.execute_batch("ALTER TABLE native_workspace_buffers ADD COLUMN report_nonce TEXT")?;
+    }
+    tx.commit()
+}
+
+/// Local acknowledgement identity, never a renderer-supplied report or a
+/// complete-writer proof. Retain legacy rows and their recovery fences.
+struct BufferReportReceipt {
+    owner_id: String,
+    nonce: String,
+    raw: String,
+    updated_at: i64,
+}
+
+impl BufferReportReceipt {
+    fn record(
+        conn: &rusqlite::Connection,
+        owner_id: &str,
+        raw: String,
+        updated_at: i64,
+    ) -> Result<Self, String> {
+        let nonce = uuid::Uuid::new_v4().to_string();
+        conn.execute(
+            "INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed,report_nonce) VALUES(?1,?2,?3,0,?4)
+             ON CONFLICT(owner_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,updated_at=excluded.updated_at,confirmed=0,report_nonce=excluded.report_nonce",
+            rusqlite::params![owner_id, raw, updated_at, nonce],
+        ).map_err(|error| error.to_string())?;
+        Ok(Self {
+            owner_id: owner_id.into(),
+            nonce,
+            raw,
+            updated_at,
+        })
+    }
+
+    /// A different process can overwrite a same-label row even in the same
+    /// millisecond. An old successful response must never confirm its new data.
+    fn confirm(self, conn: &rusqlite::Connection) -> Result<(), String> {
+        let changed = conn.execute(
+            "UPDATE native_workspace_buffers SET confirmed=1 WHERE owner_id=?1 AND report_nonce=?2 AND snapshot_json=?3 AND updated_at=?4 AND confirmed=0",
+            rusqlite::params![self.owner_id, self.nonce, self.raw, self.updated_at],
+        ).map_err(|error| error.to_string())?;
+        if changed != 1 {
+            return Err(
+                "Native buffer report changed before acknowledgement; wait for a fresh report"
+                    .into(),
+            );
+        }
+        Ok(())
+    }
+}
+
+fn report_owners(
+    conn: &rusqlite::Connection,
+    receipt: &BufferReportReceipt,
+    now: i64,
+) -> Result<Vec<serde_json::Value>, String> {
+    let mut statement = conn.prepare(
+        "SELECT owner_id,snapshot_json,updated_at,confirmed,report_nonce FROM native_workspace_buffers ORDER BY owner_id",
+    ).map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, i64>(2)?,
+                row.get::<_, bool>(3)?,
+                row.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    let mut owners = Vec::new();
+    let mut own_report = false;
+    for row in rows {
+        let (owner, snapshot, updated, confirmed, nonce) =
+            row.map_err(|error| error.to_string())?;
+        let own = owner == receipt.owner_id;
+        if own {
+            if nonce.as_deref() != Some(receipt.nonce.as_str())
+                || snapshot != receipt.raw
+                || updated != receipt.updated_at
+            {
+                return Err(
+                    "Native buffer report changed before delivery; wait for a fresh report".into(),
+                );
+            }
+            own_report = true;
+        }
+        let buffers: serde_json::Value =
+            serde_json::from_str(&snapshot).map_err(|error| error.to_string())?;
+        owners.push(json!({"ownerId":owner,"buffers":buffers,"updatedAt":updated,"unknown":!own && (!confirmed || now.saturating_sub(updated)>45000)}));
+    }
+    if !own_report {
+        return Err(
+            "Native buffer report was removed before delivery; wait for a fresh report".into(),
+        );
+    }
+    Ok(owners)
 }
 
 #[tauri::command(async)]
@@ -161,6 +266,17 @@ pub fn managed_workspace_buffers(
     app: AppHandle,
     window: tauri::Window,
     store: tauri::State<'_, crate::session_store::SessionStore>,
+    buffers: Vec<BufferState>,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::buffers_write(&window, || {
+        report_buffers(&app, &window, &store, buffers)
+    })
+}
+
+fn report_buffers(
+    app: &AppHandle,
+    window: &tauri::Window,
+    store: &crate::session_store::SessionStore,
     buffers: Vec<BufferState>,
 ) -> Result<(), String> {
     let _gate = BUFFER_REPORT_GATE
@@ -182,32 +298,15 @@ pub fn managed_workspace_buffers(
     }
     let raw = serde_json::to_string(&normalized).map_err(|e| e.to_string())?;
     let now = now_millis();
-    store.lock_conn()?.execute("INSERT INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed) VALUES(?1,?2,?3,0)
-        ON CONFLICT(owner_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,updated_at=excluded.updated_at,confirmed=0",
-        rusqlite::params![window.label(),raw,now]).map_err(|e|e.to_string())?;
+    let receipt = {
+        let conn = store.lock_conn()?;
+        BufferReportReceipt::record(&conn, window.label(), raw, now)?
+    };
     let host =
-        crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.native-activity.v1")?;
+        crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
     let owners = {
         let conn = store.lock_conn()?;
-        let mut statement = conn.prepare("SELECT owner_id,snapshot_json,updated_at,confirmed FROM native_workspace_buffers ORDER BY owner_id").map_err(|e|e.to_string())?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, bool>(3)?,
-                ))
-            })
-            .map_err(|e| e.to_string())?;
-        let mut owners = Vec::new();
-        for row in rows {
-            let (owner, snapshot, updated, confirmed) = row.map_err(|e| e.to_string())?;
-            let buffers: serde_json::Value =
-                serde_json::from_str(&snapshot).map_err(|e| e.to_string())?;
-            owners.push(json!({"ownerId":owner,"buffers":buffers,"updatedAt":updated,"unknown":owner != window.label() && (!confirmed || now.saturating_sub(updated)>45000)}));
-        }
-        owners
+        report_owners(&conn, &receipt, now)?
     };
     // Authenticated complete snapshot includes every window; no renderer-supplied owner identifier.
     use sha2::{Digest, Sha256};
@@ -228,14 +327,8 @@ pub fn managed_workspace_buffers(
         "native.buffers.reconcile",
         json!({"clientId":client_id,"instanceId":instance_id,"predecessors":[]}),
     )?;
-    store
-        .lock_conn()?
-        .execute(
-            "UPDATE native_workspace_buffers SET confirmed=1 WHERE owner_id=?1 AND updated_at=?2",
-            rusqlite::params![window.label(), now],
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(())
+    let conn = store.lock_conn()?;
+    receipt.confirm(&conn)
 }
 
 /// Called before the local transport shuts down. Failure preserves the report;
@@ -322,6 +415,183 @@ fn now_millis() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct BufferTestDirectory(std::path::PathBuf);
+    impl BufferTestDirectory {
+        fn new() -> Self {
+            let root = std::env::temp_dir().canonicalize().unwrap();
+            let path = root.join(format!("bycoda-buffer-fixture-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for BufferTestDirectory {
+        fn drop(&mut self) {
+            assert_eq!(
+                self.0.parent(),
+                Some(std::env::temp_dir().canonicalize().unwrap().as_path())
+            );
+            assert!(self
+                .0
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("bycoda-buffer-fixture-"));
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn buffer_ack_cannot_confirm_a_same_millisecond_cross_connection_replacement() {
+        let directory = BufferTestDirectory::new();
+        let path = directory.path().join("buffers.db");
+        let first = rusqlite::Connection::open(&path).unwrap();
+        ensure_schema(&first).unwrap();
+        let second = rusqlite::Connection::open(&path).unwrap();
+        let timestamp = now_millis();
+        let old = BufferReportReceipt::record(&first, "main", "[]".into(), timestamp).unwrap();
+        assert_eq!(
+            report_owners(&first, &old, timestamp).unwrap()[0]["unknown"],
+            false
+        );
+        let dirty = r#"[{"path":"C:/fixture/retained.ts","dirty":true}]"#;
+        let current =
+            BufferReportReceipt::record(&second, "main", dirty.into(), timestamp).unwrap();
+        assert!(report_owners(&first, &old, timestamp).is_err());
+        assert_eq!(
+            report_owners(&second, &current, timestamp).unwrap()[0]["buffers"][0]["dirty"],
+            true
+        );
+        assert!(old.confirm(&first).is_err());
+        let retained: (String, bool) = second.query_row(
+            "SELECT snapshot_json,confirmed FROM native_workspace_buffers WHERE owner_id='main'",
+            [], |row| Ok((row.get(0)?, row.get(1)?)),
+        ).unwrap();
+        assert_eq!(retained, (dirty.into(), false));
+        current.confirm(&second).unwrap();
+        assert!(first
+            .query_row(
+                "SELECT confirmed FROM native_workspace_buffers WHERE owner_id='main'",
+                [],
+                |row| row.get::<_, bool>(0)
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn buffer_ack_cannot_confirm_an_identical_replacement_or_deleted_report() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_schema(&conn).unwrap();
+        let timestamp = now_millis();
+        let old = BufferReportReceipt::record(&conn, "main", "[]".into(), timestamp).unwrap();
+        let current = BufferReportReceipt::record(&conn, "main", "[]".into(), timestamp).unwrap();
+        assert!(report_owners(&conn, &old, timestamp).is_err());
+        assert!(old.confirm(&conn).is_err());
+        current.confirm(&conn).unwrap();
+        let deleted = BufferReportReceipt::record(&conn, "main", "[]".into(), timestamp).unwrap();
+        conn.execute(
+            "DELETE FROM native_workspace_buffers WHERE owner_id='main'",
+            [],
+        )
+        .unwrap();
+        assert!(report_owners(&conn, &deleted, timestamp).is_err());
+        assert!(deleted.confirm(&conn).is_err());
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn buffer_ack_requires_retained_exact_payload_and_time_without_repair() {
+        for changed in [
+            "snapshot_json='[{}]'",
+            "updated_at=updated_at+1",
+            "report_nonce=NULL",
+            "confirmed=1",
+        ] {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            ensure_schema(&conn).unwrap();
+            let receipt =
+                BufferReportReceipt::record(&conn, "main", "[]".into(), now_millis()).unwrap();
+            conn.execute(
+                &format!("UPDATE native_workspace_buffers SET {changed}"),
+                [],
+            )
+            .unwrap();
+            let changes = conn.total_changes();
+            assert!(receipt.confirm(&conn).is_err(), "{changed}");
+            assert_eq!(
+                conn.total_changes(),
+                changes,
+                "failed ACK must not repair {changed}"
+            );
+        }
+    }
+
+    #[test]
+    fn buffer_report_upgrade_preserves_legacy_dirty_unknown_and_sibling_rows() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE native_workspace_buffers(owner_id TEXT PRIMARY KEY,snapshot_json TEXT NOT NULL,updated_at INTEGER NOT NULL,confirmed INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO native_workspace_buffers VALUES('legacy-dirty','[{\"path\":\"C:/retained\",\"dirty\":true}]',11,0),('legacy-clean','[]',12,1),('other-window','[]',13,0);").unwrap();
+        ensure_schema(&conn).unwrap();
+        assert_eq!(
+            conn.query_row(
+                "SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='legacy-dirty'",
+                [],
+                |row| row.get::<_, String>(0)
+            )
+            .unwrap(),
+            r#"[{"path":"C:/retained","dirty":true}]"#
+        );
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers WHERE report_nonce IS NULL AND confirmed=0", [], |row| row.get::<_, i64>(0)).unwrap(), 3);
+        let own = BufferReportReceipt::record(&conn, "fresh", "[]".into(), now_millis()).unwrap();
+        own.confirm(&conn).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers WHERE report_nonce IS NULL AND confirmed=0", [], |row| row.get::<_, i64>(0)).unwrap(), 3);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap(),
+            4
+        );
+    }
+
+    #[test]
+    fn concurrent_buffer_schema_upgrade_serializes_before_column_inspection() {
+        let directory = BufferTestDirectory::new();
+        let path = directory.path().join("schema.db");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let threads: Vec<_> = (0..2)
+            .map(|_| {
+                let path = path.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let conn = rusqlite::Connection::open(path).unwrap();
+                    conn.busy_timeout(std::time::Duration::from_secs(5))
+                        .unwrap();
+                    barrier.wait();
+                    ensure_schema(&conn).unwrap();
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        let conn = rusqlite::Connection::open(path).unwrap();
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM pragma_table_info('native_workspace_buffers') WHERE name='report_nonce'", [], |row| row.get::<_, i64>(0)).unwrap(), 1);
+        BufferReportReceipt::record(&conn, "main", "[]".into(), now_millis())
+            .unwrap()
+            .confirm(&conn)
+            .unwrap();
+    }
+
     #[test]
     fn worktree_activity_preserves_known_legacy_and_fences_ambiguous_or_managed_paths() {
         let root = std::env::temp_dir().join(format!("native-activity-{}", uuid::Uuid::new_v4()));

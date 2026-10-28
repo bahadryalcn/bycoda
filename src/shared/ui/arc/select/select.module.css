@@ -33,21 +33,48 @@
 }
 @media (hover: hover) and (pointer: fine) {
   .trigger:hover:not([data-disabled]) {
-    border-color: var(--border-strong);
+    border-color: var(--ui-field-border-hover);
     background: var(--surface-muted);
   }
 }
 .trigger:active:not([data-disabled]),
 .trigger[data-state="open"] {
-  border-color: var(--border-strong);
+  border-color: var(--ui-field-border-hover);
   background: var(--surface-muted);
 }
 .trigger:focus-visible {
-  border-color: var(--border-strong);
+  border-color: var(--ui-field-border-focus);
 }
 .trigger[data-disabled] {
   opacity: var(--ui-disabled-opacity, 0.5);
   cursor: not-allowed;
+}
+
+/* bycoda field frame for choice triggers. The shared owner's `.bycoda-arc.bycoda-arc-select` frame (0,2,0) sets the border
+   shorthand, so these states are written one class stronger. Focus matches the text fields: the border and a contained
+   outline on the same role, danger when invalid. Disabled dims through its semantic pair, never opacity twice. */
+.trigger:global(.bycoda-arc.bycoda-arc-select):focus-visible {
+  border-color: var(--ui-field-border-focus);
+  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
+  outline-offset: -1px;
+}
+.trigger:global(.bycoda-arc-select)[aria-invalid="true"],
+.trigger:global(.bycoda-arc-select)[aria-invalid="true"]:hover:not([data-disabled]) {
+  border-color: var(--danger);
+}
+.trigger:global(.bycoda-arc.bycoda-arc-select)[aria-invalid="true"]:focus-visible {
+  outline-color: var(--danger);
+}
+.trigger:global(.bycoda-arc-select)[data-disabled] {
+  opacity: 1;
+  border-color: var(--ui-control-disabled-border);
+}
+/* A placeholder is a muted role, a committed value keeps the trigger's ink. */
+.trigger [data-placeholder] {
+  color: var(--ui-text-muted);
+}
+.trigger[data-disabled] [data-placeholder] {
+  color: inherit;
 }
 .valueText {
   position: relative;

@@ -20,19 +20,29 @@ type SearchInputProps = ComponentPropsWithoutRef<"input"> & {
   focusOwner?: "input" | "group" | "menu";
   /** A bordered common field, or an unframed input inside a composite/menu owner. */
   appearance?: "bare" | "field";
+  /** Field height: `sm` is the compact toolbar/filter height (default), `md` matches form
+   *  controls and `size="md"` Buttons. The native `size` attribute keeps its meaning. */
+  fieldSize?: SearchFieldSize;
 };
+
+export type SearchFieldSize = "sm" | "md";
 
 /** The bordered container owns the search field's single focus indicator. */
 export const SearchInputGroup = forwardRef<
   HTMLDivElement,
-  ComponentPropsWithoutRef<"div"> & { appearance?: "bare" | "field" }
->(function SearchInputGroup({ appearance = "bare", className, ...props }, ref) {
+  ComponentPropsWithoutRef<"div"> & {
+    appearance?: "bare" | "field";
+    /** Same heights as `SearchInput.fieldSize`; the group owns the frame. */
+    size?: SearchFieldSize;
+  }
+>(function SearchInputGroup({ appearance = "bare", size, className, ...props }, ref) {
   return (
     <div
       {...props}
       ref={ref}
       data-ui-focus-group=""
       data-search-appearance={appearance}
+      data-search-size={size === "md" ? "md" : undefined}
       className={[styles.group, className].filter(Boolean).join(" ")}
     />
   );
@@ -47,6 +57,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
     className,
     clearable = true,
     focusOwner,
+    fieldSize,
     onChange,
     ...props
   },
@@ -87,6 +98,7 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         {...props}
         data-ui-focus={focus}
         data-search-appearance={appearance}
+        data-search-size={fieldSize === "md" ? "md" : undefined}
         onChange={(event) => {
           if (props.value === undefined) setUncontrolledValue(event.target.value);
           onChange?.(event);

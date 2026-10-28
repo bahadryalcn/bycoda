@@ -1,4 +1,10 @@
 {
+  "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.": "Kayıtlı bir taslak var. Geri yükleme, dosyanın önceki disk sürümünü temel alır; kaydetmeden önce gözden geçirin.",
+  "Keep or save your current edits before restoring this draft.": "Bu taslağı geri yüklemeden önce mevcut değişikliklerinizi koruyun veya kaydedin.",
+  "Restore draft": "Taslağı geri yükle",
+  "Use current document": "Mevcut belgeyi kullan",
+  "Draft recovery copy could not be confirmed. Keep this editor open.": "Taslağın kurtarma kopyası doğrulanamadı. Bu editörü açık tutun.",
+  "Retry draft copy": "Taslak kopyasını yeniden dene",
   "Exact Git rewind (experimental)": "Tam Git geri sarma (deneysel)",
   "Off by default. Captures complete Git trees for exact rewind. Applies to new turns on this computer's Host.": "Varsayılan olarak kapalıdır. Tam geri sarma için Git ağaçlarının tamamını kaydeder. Bu bilgisayarın Host'undaki yeni turlara uygulanır.",
   "The local Host is unavailable. Reconnect and retry.": "Yerel Host kullanılamıyor. Yeniden bağlanıp tekrar deneyin.",
@@ -8063,5 +8069,6 @@
   "Visual style": "Görsel stil",
   "bycoda mark": "bycoda simgesi",
   "Wave": "Dalga",
-  "Dots": "Noktalar"
+  "Dots": "Noktalar",
+  "Showing the first {p0} of {p1} characters. Copy details includes all of it.": "İlk {p0} / {p1} karakter gösteriliyor. Ayrıntıları kopyala tamamını içerir."
 }

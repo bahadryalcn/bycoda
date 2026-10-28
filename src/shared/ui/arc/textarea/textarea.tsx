@@ -226,11 +226,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         className={[styles.control, className].filter(Boolean).join(" ")}
         aria-invalid={error ? true : props["aria-invalid"]}
         aria-describedby={
-          [props["aria-describedby"], hintId, errorId].filter(Boolean).join(" ") || undefined
+          [props["aria-describedby"], errorId, hintId].filter(Boolean).join(" ") || undefined
         }
       />
-      <FieldMessage id={hintId} text={description} className={styles.hint} />
       <FieldMessage id={errorId} text={error} className={styles.error} alert />
+      <FieldMessage id={hintId} text={description} className={styles.hint} />
     </div>
   );
 });

@@ -40,15 +40,21 @@ it("keeps point/anchor context actions, disabled gate and submenu keyboard owner
       ),
     );
     const menu = document.querySelector<HTMLElement>('[role="menu"][aria-label="File commands"]')!;
-    await act(async () =>
-      menu.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })),
-    );
-    expect(pick).not.toHaveBeenCalled();
-    await act(async () =>
-      menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })),
-    );
+    // The keyboard highlight starts on the first enabled row and never lands on a disabled one.
+    const disabled = document.querySelector<HTMLButtonElement>('button[data-menu-index="0"]')!;
     const more = document.querySelector<HTMLButtonElement>('button[data-menu-index="1"]')!;
-    expect(more.getAttribute("data-button-selected")).toBe("true");
+    expect(disabled.disabled).toBe(true);
+    expect(disabled.getAttribute("data-highlighted")).toBeNull();
+    expect(more.getAttribute("data-highlighted")).toBe("true");
+    expect(menu.getAttribute("aria-activedescendant")).toBe(more.id);
+    await act(async () => disabled.click());
+    expect(pick).not.toHaveBeenCalled();
+    for (const key of ["ArrowDown", "ArrowUp", "Home", "End"])
+      await act(async () =>
+        menu.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })),
+      );
+    expect(more.getAttribute("data-highlighted")).toBe("true");
+    expect(disabled.getAttribute("data-highlighted")).toBeNull();
     await act(async () =>
       menu.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true })),
     );

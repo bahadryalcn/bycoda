@@ -22,4 +22,5 @@ export * from "./dev-servers";
 export * from "./sprints";
 export * from "./automations";
 export * from "./stewards";
+export * from "./crews";
 export { default as HOST_CONTRACT_FIXTURES } from "./fixtures.json";

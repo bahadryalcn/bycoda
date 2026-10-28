@@ -757,11 +757,18 @@ fn index_session(
     if !may_continue(deadline, keep_going) {
         return Ok(false);
     }
-    let conn = store.lock_conn()?;
-    write_index(
-        &conn, id, updated_at, version, &blocks, deadline, keep_going,
-    )
-    .map_err(es)
+    let admission = match store.process_write_admission() {
+        Ok(admission) => admission,
+        Err(super::window_barrier::BarrierError::AdmissionClosed) => return Ok(false),
+        Err(error) => return Err(error.to_string()),
+    };
+    admission.finish((|| {
+        let conn = store.lock_conn()?;
+        write_index(
+            &conn, id, updated_at, version, &blocks, deadline, keep_going,
+        )
+        .map_err(es)
+    })())
 }
 
 /// Brings the index up to date, newest sessions first, until `deadline` passes
@@ -827,9 +834,60 @@ fn source_version(store: &SessionStore) -> Result<i64, String> {
     })
 }
 
+pub(super) struct IndexWork {
+    admission: std::sync::Mutex<Option<crate::native_window_lifecycle::NativeWriteAdmission>>,
+}
+
+impl IndexWork {
+    pub(super) fn new(
+        store: &SessionStore,
+    ) -> Result<std::sync::Arc<Self>, super::window_barrier::BarrierError> {
+        Ok(std::sync::Arc::new(Self {
+            admission: std::sync::Mutex::new(Some(store.process_write_admission()?)),
+        }))
+    }
+    fn take(&self) -> Option<crate::native_window_lifecycle::NativeWriteAdmission> {
+        self.admission
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+    }
+    pub(super) fn not_started(&self) {
+        if let Some(admission) = self.take() {
+            let _ = admission.finish(Ok::<_, ()>(()));
+        }
+    }
+    #[cfg(test)]
+    pub(super) fn run(&self, store: &SessionStore) {
+        if let Some(admission) = self.take() {
+            let _ = admission.finish(index_in_background_owned(store));
+        }
+    }
+    pub(super) fn run_queued(&self, store: &SessionStore) {
+        let Some(admission) = self.take() else {
+            return;
+        };
+        struct Reset<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for Reset<'_> {
+            fn drop(&mut self) {
+                self.0.store(false, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let _reset = Reset(&store.search_background_queued);
+        let _ = admission.finish(index_in_background_owned(store));
+    }
+}
+
+#[cfg(test)]
 pub(super) fn index_in_background(store: &SessionStore) {
+    if let Ok(work) = IndexWork::new(store) {
+        work.run(store);
+    }
+}
+
+fn index_in_background_owned(store: &SessionStore) -> Result<(), String> {
     let Ok(_guard) = store.search_index_lock.lock() else {
-        return;
+        return Err("Session search index owner is locked".into());
     };
     let version = source_version(store).unwrap_or(-1);
     let query = store
@@ -846,16 +904,17 @@ pub(super) fn index_in_background(store: &SessionStore) {
         .search_background_error
         .lock()
         .unwrap_or_else(|error| error.into_inner());
-    if let Err(error) = result {
+    if let Err(error) = &result {
         eprintln!("session search index: {error}");
         *failure = Some(IndexFailure {
             version,
             query,
-            message: error,
+            message: error.clone(),
         });
     } else {
         *failure = None;
     }
+    result.map(|_| ())
 }
 
 // --- searching --------------------------------------------------------------
@@ -1180,6 +1239,231 @@ fn run_search(
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::Ordering;
+
+    fn process_fixture() -> (
+        std::sync::Arc<SessionStore>,
+        super::super::window_barrier::WindowBarrier,
+    ) {
+        let mut store = SessionStore::open_in_memory().unwrap();
+        let barrier = super::super::window_barrier::WindowBarrier::new();
+        store.native_writer_barrier = Some(barrier.clone());
+        {
+            let conn = store.lock_conn().unwrap();
+            insert_session(
+                &conn,
+                "process-index",
+                "/fixture",
+                "Index",
+                &json!([message("user", "user", "retained searchable transcript")]),
+            );
+        }
+        (std::sync::Arc::new(store), barrier)
+    }
+
+    #[test]
+    fn queued_index_lifetime_survives_the_requester_and_closed_gate_defers_actual_writes() {
+        use super::super::window_barrier::BarrierError;
+        let (store, barrier) = process_fixture();
+        let work = store.reserve_search_index_work(false).unwrap();
+        assert!(store.reserve_search_index_work(true).is_none());
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_store = store.clone();
+        let worker_work = work.clone();
+        let worker = std::thread::spawn(move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            worker_work.run_queued(&worker_store);
+        });
+        drop(work); // The initiating request no longer owns the accepted job.
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let closed = barrier.close_admission().unwrap();
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        let conn = store.lock_conn().unwrap();
+        assert_eq!(pending_count(&conn).unwrap(), 1);
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM session_search_index", [], |row| row
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+            0
+        );
+        drop(conn);
+        assert!(store.search_background_error.lock().unwrap().is_none());
+        assert!(!store.search_background_queued.load(Ordering::Acquire));
+        assert!(store.reserve_search_index_work(false).is_none());
+        assert!(!store.search_background_queued.load(Ordering::Acquire));
+        barrier.reopen_admission(closed).unwrap();
+        store
+            .reserve_search_index_work(false)
+            .unwrap()
+            .run_queued(&store);
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 0);
+        assert!(barrier.close_admission().is_ok());
+    }
+
+    #[test]
+    fn closure_during_transcript_read_cannot_commit_a_later_fts_write() {
+        use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+        let (store, barrier) = process_fixture();
+        let work = IndexWork::new(&store).unwrap();
+        let closed = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let observed = closed.clone();
+        let native = barrier.clone();
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(Some(move |context: AuthContext<'_>| {
+                if matches!(
+                    context.action,
+                    AuthAction::Read {
+                        table_name: "sessions",
+                        column_name: "blocks_json"
+                    }
+                ) {
+                    let mut closed = observed.lock().unwrap();
+                    if closed.is_none() {
+                        *closed = Some(native.close_admission().unwrap());
+                    }
+                }
+                Authorization::Allow
+            }))
+            .unwrap();
+        work.run(&store);
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+            .unwrap();
+        assert!(closed.lock().unwrap().is_some());
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 1);
+        assert!(store.search_background_error.lock().unwrap().is_none());
+        barrier
+            .reopen_admission(closed.lock().unwrap().take().unwrap())
+            .unwrap();
+        index_in_background(&store);
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 0);
+    }
+
+    #[test]
+    fn already_admitted_fts_transaction_remains_pending_until_its_actual_commit_settles() {
+        use super::super::window_barrier::BarrierError;
+        use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+        let (store, barrier) = process_fixture();
+        let work = IndexWork::new(&store).unwrap();
+        let closed = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let observed = closed.clone();
+        let native = barrier.clone();
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(Some(move |context: AuthContext<'_>| {
+                if matches!(
+                    context.action,
+                    AuthAction::Insert {
+                        table_name: "session_search_index"
+                    }
+                ) {
+                    let mut closed = observed.lock().unwrap();
+                    if closed.is_none() {
+                        let proof = native.close_admission().unwrap();
+                        assert!(matches!(
+                            native.prove_native_idle(&proof),
+                            Err(BarrierError::PendingNativeOperations)
+                        ));
+                        *closed = Some(proof);
+                    }
+                }
+                Authorization::Allow
+            }))
+            .unwrap();
+        work.run(&store);
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+            .unwrap();
+        assert!(closed.lock().unwrap().is_some());
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 0);
+        assert!(matches!(
+            barrier.prove_native_idle(closed.lock().unwrap().as_ref().unwrap()),
+            Err(BarrierError::EmptyWindowRoster)
+        ));
+    }
+
+    #[test]
+    fn known_unstarted_queue_failure_releases_its_lease_without_a_fake_abandonment() {
+        use super::super::window_barrier::BarrierError;
+        let (store, barrier) = process_fixture();
+        let work = store.reserve_search_index_work(false).unwrap();
+        let closed = barrier.close_admission().unwrap();
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        work.not_started(); // The same path used when std::thread::Builder::spawn returns Err.
+        assert!(matches!(
+            barrier.prove_native_idle(&closed),
+            Err(BarrierError::EmptyWindowRoster)
+        ));
+        work.run(&store); // Taking the retained job again cannot start or replay it.
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 1);
+        barrier.reopen_admission(closed).unwrap();
+        assert!(barrier.close_admission().is_ok());
+    }
+
+    #[test]
+    fn a_duplicate_runner_cannot_clear_the_live_sql_workers_coalescing_flag() {
+        use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+        let (store, _barrier) = process_fixture();
+        let work = store.reserve_search_index_work(false).unwrap();
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let paused = std::sync::atomic::AtomicBool::new(false);
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(Some(move |context: AuthContext<'_>| {
+                if matches!(
+                    context.action,
+                    AuthAction::Read {
+                        table_name: "session_search_revision",
+                        column_name: "version"
+                    }
+                ) && !paused.swap(true, Ordering::AcqRel)
+                {
+                    entered_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                }
+                Authorization::Allow
+            }))
+            .unwrap();
+        let worker_store = store.clone();
+        let worker_work = work.clone();
+        let worker = std::thread::spawn(move || worker_work.run_queued(&worker_store));
+        entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        work.run_queued(&store);
+        let remained_busy = store.search_background_queued.load(Ordering::Acquire);
+        let coalesced = store.reserve_search_index_work(false).is_none();
+        release_tx.send(()).unwrap();
+        worker.join().unwrap();
+        store
+            .lock_conn()
+            .unwrap()
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+            .unwrap();
+        assert!(remained_busy);
+        assert!(coalesced);
+        assert!(!store.search_background_queued.load(Ordering::Acquire));
+        assert_eq!(pending_count(&store.lock_conn().unwrap()).unwrap(), 0);
+    }
 
     fn insert_session(conn: &Connection, id: &str, cwd: &str, title: &str, blocks: &Value) {
         insert_session_at(conn, id, cwd, title, blocks, 1_000);

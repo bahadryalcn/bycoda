@@ -1,5 +1,84 @@
 import { expect, test } from "@playwright/test";
 
+test("native draft fixture retains actual source edits and retries storage without writing the file", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/file-save.html?native-draft&draft-error");
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  const editor = page.locator(".cm-content:visible");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Recovery-only edit");
+  await expect(page.getByRole("alert")).toContainText("Draft recovery copy could not be confirmed");
+  await expect(page.getByLabel("Disk writes")).toHaveText("0");
+  await page.evaluate(() => {
+    (window as unknown as { fileSaveFixture: { failDrafts: boolean } }).fileSaveFixture.failDrafts =
+      false;
+  });
+  await page.getByRole("button", { name: "Retry draft copy", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              fileSaveFixture: { nativeDraft: { payload: { text: string } } | null };
+            }
+          ).fileSaveFixture.nativeDraft?.payload.text,
+      ),
+    )
+    .toContain("Recovery-only edit");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByLabel("Disk writes")).toHaveText("0");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByLabel("Disk writes")).toContainText("1: ");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as unknown as { fileSaveFixture: { draftReports: unknown[] } }).fileSaveFixture
+            .draftReports.length,
+      ),
+    )
+    .toBe(1);
+});
+
+for (const width of [1280, 800]) {
+  for (const light of [false, true]) {
+    test(`native draft initialization preserves disk and restores dirty text ${width} ${light ? "light" : "dark"}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: 800 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(
+        `/tests/browser/file-save.html?native-draft&restore-draft${light ? "&light" : ""}`,
+      );
+      await expect(page.getByRole("button", { name: "Restore draft", exact: true })).toBeVisible();
+      await expect(page.getByLabel("Disk writes")).toHaveText("0");
+      await page.screenshot({
+        path: info.outputPath(`draft-choice-${width}-${light ? "light" : "dark"}.png`),
+      });
+      await page.getByRole("button", { name: "Restore draft", exact: true }).click();
+      await expect(page.locator(".cm-content:visible")).toContainText("Saved recovery text");
+      await expect(page.locator("footer [role=status]")).toContainText("Unsaved changes");
+      await expect(page.getByRole("tab", { name: "notes.md", exact: true })).toHaveAttribute(
+        "title",
+        /Unsaved changes/,
+      );
+      await expect(page.getByLabel("Disk writes")).toHaveText("0");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+        true,
+      );
+      await page.screenshot({
+        path: info.outputPath(`draft-restored-${width}-${light ? "light" : "dark"}.png`),
+      });
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByLabel("Disk writes")).toContainText("1: # Recovered notes");
+      await expect(page.locator("footer [role=status]")).toHaveText("Saved");
+    });
+  }
+}
+
 test("same-name file tabs keep independent drafts and expose their full path from the keyboard", async ({
   page,
 }, info) => {

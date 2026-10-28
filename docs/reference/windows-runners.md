@@ -162,7 +162,10 @@ the native property.
 The initial implementation preflight had zero runners and no ordinary-process
 Hyper-V access. The owner subsequently authorized creating a new VM; elevated
 access was verified, Windows was installed/booted and the evaluation activated.
-Actual setup/registration/online/cutover status is recorded separately under
+The dedicated `bycoda-windows-ci` guest was created with eight virtual CPUs,
+4–12GiB dynamic memory and a 160GiB dynamic disk. Its runner is registered as
+`bycoda-windows-isolated-01`; real registration, online status, limited interactive
+session and local runtime acceptance are recorded separately under
 `temp/verification/2026-10-28-windows-runner/`. Never infer active migration from
 source preparation, a verified ZIP, an installed OS or a startup task.
 Live preflight and full CI still require delivered exact source.

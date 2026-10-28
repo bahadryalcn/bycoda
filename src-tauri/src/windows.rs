@@ -35,7 +35,7 @@ fn managed_job() -> io::Result<&'static OwnedHandle> {
         .map_err(|code| io::Error::from_raw_os_error(*code))
 }
 
-fn create_job() -> io::Result<OwnedHandle> {
+pub(crate) fn create_job() -> io::Result<OwnedHandle> {
     unsafe {
         let raw = CreateJobObjectW(std::ptr::null(), std::ptr::null());
         if raw.is_null() {
@@ -96,7 +96,7 @@ pub(crate) fn spawn_managed(
     Ok(child)
 }
 
-fn resume_child(pid: u32) -> io::Result<()> {
+pub(crate) fn resume_child(pid: u32) -> io::Result<()> {
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
     use windows_sys::Win32::System::{
         Diagnostics::ToolHelp::{

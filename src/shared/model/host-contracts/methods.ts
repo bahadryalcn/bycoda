@@ -9,6 +9,7 @@ import * as devDto from "./dev-servers";
 import * as sprintsDto from "./sprints";
 import * as automationsDto from "./automations";
 import * as stewardsDto from "./stewards";
+import { CREWS_RPC_SCHEMAS } from "./crews";
 import { HostPersistenceParamsSchema, HostPersistenceStatusSchema } from "./persistence";
 import {
   HostTerminalSchema,
@@ -220,7 +221,37 @@ const workflowOperation = (
 });
 
 /** A schema inventory, not an advertisement of routed or authorized capability. */
+const crewOperation = (method: keyof typeof CREWS_RPC_SCHEMAS): HostRpcMethodDefinition => ({
+  ...workflowOperation(
+    "transport.ws.crews.v2",
+    CREWS_RPC_SCHEMAS[method].params,
+    CREWS_RPC_SCHEMAS[method].result,
+    method === "crews.schema" || method === "crews.inspect" || method === "crews.get",
+  ),
+  cost: method === "crews.stop" ? "control" : "read",
+});
+
 export const HOST_RPC_METHODS = Object.freeze({
+  "crews.list": crewOperation("crews.list"),
+  "crews.schema": crewOperation("crews.schema"),
+  "crews.inspect": crewOperation("crews.inspect"),
+  "crews.save": crewOperation("crews.save"),
+  "crews.delete": crewOperation("crews.delete"),
+  "crews.deleteRun": crewOperation("crews.deleteRun"),
+  "crews.agent.save": crewOperation("crews.agent.save"),
+  "crews.agent.delete": crewOperation("crews.agent.delete"),
+  "crews.start": crewOperation("crews.start"),
+  "crews.get": crewOperation("crews.get"),
+  "crews.assign": crewOperation("crews.assign"),
+  "crews.request": crewOperation("crews.request"),
+  "crews.resolve": crewOperation("crews.resolve"),
+  "crews.respond": crewOperation("crews.respond"),
+  "crews.answer": crewOperation("crews.answer"),
+  "crews.pause": crewOperation("crews.pause"),
+  "crews.stop": crewOperation("crews.stop"),
+  "crews.resume": crewOperation("crews.resume"),
+  "crews.accept": crewOperation("crews.accept"),
+  "crews.finish": crewOperation("crews.finish"),
   "connection.hello": control(ConnectionHelloParamsSchema, ConnectionHelloResultSchema),
   "connection.probe": control(ConnectionProbeParamsSchema, ConnectionProbeResultSchema),
   "subscriptions.open": {
@@ -439,20 +470,30 @@ export const HOST_RPC_METHODS = Object.freeze({
   "goals.cancel": goalOperation(goalsDto.GoalsIdParamsSchema, goalsDto.HostGoalSchema),
   "goals.delete": goalOperation(goalsDto.GoalsDeleteParamsSchema, goalsDto.GoalsDeleteResultSchema),
   "stewards.list": workflowOperation(
-    "transport.ws.stewards.v2", stewardsDto.StewardsEmptyParamsSchema,
-    stewardsDto.StewardsListResultSchema, true,
+    "transport.ws.stewards.v2",
+    stewardsDto.StewardsEmptyParamsSchema,
+    stewardsDto.StewardsListResultSchema,
+    true,
   ),
   "stewards.save": workflowOperation(
-    "transport.ws.stewards.v2", stewardsDto.StewardsSaveParamsSchema, stewardsDto.HostStewardSchema,
+    "transport.ws.stewards.v2",
+    stewardsDto.StewardsSaveParamsSchema,
+    stewardsDto.HostStewardSchema,
   ),
   "stewards.delete": workflowOperation(
-    "transport.ws.stewards.v2", stewardsDto.StewardsIdParamsSchema, stewardsDto.StewardsDeleteResultSchema,
+    "transport.ws.stewards.v2",
+    stewardsDto.StewardsIdParamsSchema,
+    stewardsDto.StewardsDeleteResultSchema,
   ),
   "stewards.runNow": workflowOperation(
-    "transport.ws.stewards.v2", stewardsDto.StewardsIdParamsSchema, stewardsDto.HostStewardSchema,
+    "transport.ws.stewards.v2",
+    stewardsDto.StewardsIdParamsSchema,
+    stewardsDto.HostStewardSchema,
   ),
   "stewards.decline": workflowOperation(
-    "transport.ws.stewards.v2", stewardsDto.StewardsDeclineParamsSchema, stewardsDto.StewardsDeclineResultSchema,
+    "transport.ws.stewards.v2",
+    stewardsDto.StewardsDeclineParamsSchema,
+    stewardsDto.StewardsDeclineResultSchema,
   ),
   "tasks.snapshotWithCursor": taskOperation(
     tasksDto.TasksEmptyParamsSchema,

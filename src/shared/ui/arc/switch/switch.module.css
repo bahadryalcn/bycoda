@@ -69,11 +69,42 @@
     background: var(--control-track-hover);
   }
 }
-.switch:focus-visible {
+/* The ring belongs to the track, not to the label: it frames what toggles. The doubled
+   class outranks the shared control focus rule that targets the whole button. */
+.switch.switch:focus-visible {
   outline: none;
+}
+.switch:focus-visible .track {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: var(--ui-focus-offset);
 }
 .label {
   line-height: var(--leading-body);
+  text-align: start;
+}
+@media (forced-colors: active) {
+  /* Backgrounds are replaced in high contrast; keep the on/off state legible. */
+  .track {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .thumb {
+    background: ButtonText;
+  }
+  .switch[data-state="checked"] .track::before {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .switch[data-state="checked"] .thumb {
+    forced-color-adjust: none;
+    background: HighlightText;
+  }
+  .switch:disabled .track {
+    outline-color: GrayText;
+  }
+  .switch:disabled .thumb {
+    background: GrayText;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .track,

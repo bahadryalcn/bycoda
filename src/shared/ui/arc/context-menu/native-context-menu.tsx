@@ -1,4 +1,3 @@
-import { Button } from "../../Button";
 import { TextField } from "../../TextField";
 import {
   useEffect,
@@ -12,6 +11,11 @@ import {
 import { LAYER } from "../../../lib/layers";
 import { Check, ChevronRight } from "../../icons";
 import { Popover } from "../../Popover";
+import {
+  contextMenuDestructiveClassName,
+  contextMenuRowClassName,
+  contextMenuSlotClassName as slot,
+} from "./context-menu";
 
 type MenuAction = {
   icon?: ReactNode;
@@ -59,14 +63,16 @@ export type ContextMenuProps = (
 
 const MENU_WIDTH = 228;
 
+/** First enabled action at or after `start`; the keyboard never highlights a disabled row. */
 function itemIndexAt(items: ContextMenuItem[], start: number, dir: 1 | -1): number {
   let i = start;
   while (i >= 0 && i < items.length) {
     const item = items[i];
-    if (item?.kind === "item") return i;
+    if (item?.kind === "item" && !item.disabled) return i;
     i += dir;
   }
-  return start;
+  const first = items.findIndex((item) => item.kind === "item");
+  return first < 0 ? 0 : first;
 }
 
 export function NativeContextMenu({
@@ -93,6 +99,8 @@ export function NativeContextMenu({
   const submenuRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [active, setActive] = useState(() => itemIndexAt(items, 0, 1));
+  // One leading icon slot per menu level, so rows without an icon keep the label column.
+  const mainHasIcons = items.some((item) => item.kind === "item" && item.icon != null);
   const [submenu, setSubmenu] = useState<{
     index: number;
     anchor: HTMLButtonElement;
@@ -112,6 +120,8 @@ export function NativeContextMenu({
               item.label.toLocaleLowerCase().includes(submenuQuery.trim().toLocaleLowerCase())),
         )
       : undefined;
+
+  const submenuHasIcons = !!submenuItems?.some((item) => item.kind === "item" && item.icon != null);
 
   useEffect(() => {
     setSubmenuQuery("");
@@ -155,9 +165,31 @@ export function NativeContextMenu({
     [items],
   );
 
+  // Only keyboard moves scroll the highlighted row into view; hovering never shifts the list.
+  const keyboardMove = useRef(false);
+  useEffect(() => {
+    if (!keyboardMove.current) return;
+    keyboardMove.current = false;
+    menuRef.current
+      ?.querySelector(`[data-menu-index="${active}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+  }, [active]);
+
   const move = (dir: 1 | -1) => {
-    const from = ids.findIndex((item) => item.index === active);
-    const next = ids[(from + dir + ids.length) % ids.length];
+    keyboardMove.current = true;
+    const enabled = ids.filter((item) => !item.disabled);
+    if (!enabled.length) return;
+    const from = enabled.findIndex((item) => item.index === active);
+    const next =
+      from < 0
+        ? enabled[dir === 1 ? 0 : enabled.length - 1]
+        : enabled[(from + dir + enabled.length) % enabled.length];
+    if (next) setActive(next.index);
+  };
+  const edge = (end: boolean) => {
+    keyboardMove.current = true;
+    const enabled = ids.filter((item) => !item.disabled);
+    const next = enabled[end ? enabled.length - 1 : 0];
     if (next) setActive(next.index);
   };
 
@@ -189,10 +221,18 @@ export function NativeContextMenu({
                   ? 0
                   : submenuItems.length - 1
                 : (next + direction + submenuItems.length) % submenuItems.length;
-            if (submenuItems[next]?.kind === "item") return next;
+            const candidate = submenuItems[next];
+            if (candidate?.kind === "item" && !candidate.disabled) return next;
           }
           return current;
         });
+      } else if (e.key === "Home" || e.key === "End") {
+        e.preventDefault();
+        const enabled = submenuItems
+          .map((item, index) => ({ item, index }))
+          .filter(({ item }) => item.kind === "item" && !item.disabled);
+        const target = enabled[e.key === "Home" ? 0 : enabled.length - 1];
+        if (target) setSubmenuActive(target.index);
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         const item = submenuItems[submenuActive];
@@ -208,6 +248,11 @@ export function NativeContextMenu({
     if (e.key === "ArrowUp") {
       e.preventDefault();
       move(-1);
+      return;
+    }
+    if (e.key === "Home" || e.key === "End") {
+      e.preventDefault();
+      edge(e.key === "End");
       return;
     }
     if (e.key === "Enter" || e.key === " " || e.key === "ArrowRight") {
@@ -236,21 +281,21 @@ export function NativeContextMenu({
     },
     index: number,
     inSubmenu = false,
+    reserveIcon = false,
   ) => {
     const highlighted = index === (inSubmenu ? submenuActive : active);
     const hasSubmenu = !!item.submenu?.length;
     return (
-      <Button
-        variant="item"
-        selected={highlighted}
-        motion="none"
+      <button
         key={item.id}
         id={`${menuId}-${inSubmenu ? "sub-" : ""}${index}`}
         data-menu-index={index}
         data-highlighted={highlighted || undefined}
         data-danger={item.danger || undefined}
+        data-described={item.description ? "true" : undefined}
         type="button"
         role={item.checked == null ? "menuitem" : "menuitemcheckbox"}
+        tabIndex={-1}
         aria-checked={item.checked}
         aria-label={item.description ? item.label : undefined}
         aria-description={item.description}
@@ -258,10 +303,11 @@ export function NativeContextMenu({
         aria-expanded={hasSubmenu ? submenu?.index === index : undefined}
         aria-controls={hasSubmenu && submenu?.index === index ? `${menuId}-submenu` : undefined}
         disabled={item.disabled}
-        title={item.title ?? item.label}
+        title={item.title}
         onMouseDown={(e) => e.preventDefault()}
         onMouseEnter={(e) => {
           cancelClose();
+          keyboardMove.current = false;
           if (inSubmenu) {
             setSubmenuActive(index);
             if (!submenuSearch) submenuRef.current?.focus();
@@ -288,32 +334,38 @@ export function NativeContextMenu({
             onPick(item.id);
           }
         }}
-        className={`   ${rowClassName ?? ""}  flex  ${item.description ? "" : "h-7"}  w-full items-center gap-3 text-left  ${
-          item.disabled ? "" : item.danger ? (highlighted ? "" : "") : highlighted ? "" : ""
-        }   `}
+        className={[
+          "bycoda-arc",
+          contextMenuRowClassName,
+          item.danger ? contextMenuDestructiveClassName : "",
+          rowClassName ?? "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
       >
-        {item.icon ? (
-          <span className="flex size-4 shrink-0 items-center justify-center">{item.icon}</span>
+        {item.icon || reserveIcon ? (
+          <span className={slot.icon} aria-hidden="true">
+            {item.icon}
+          </span>
         ) : null}
-        <span className="min-w-0 flex-1">
-          <span className="block truncate leading-[var(--leading-body)]">{item.label}</span>
-          {item.description ? (
-            <span className="mt-1 block text-[11px] leading-snug text-[var(--ui-text-secondary)]">
-              {item.description}
-            </span>
-          ) : null}
+        <span className={slot.copy}>
+          <span className={slot.label}>{item.label}</span>
+          {item.description ? <span className={slot.description}>{item.description}</span> : null}
         </span>
         {hasSubmenu ? (
-          <ChevronRight
-            className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]"
-            strokeWidth={1.75}
-          />
+          <span className={slot.trailing} aria-hidden="true">
+            <ChevronRight data-branch-indicator strokeWidth={1.75} />
+          </span>
         ) : item.checked ? (
-          <Check className="size-3.5 shrink-0" strokeWidth={2.25} />
+          <span className={slot.trailing} aria-hidden="true">
+            <Check strokeWidth={2.25} />
+          </span>
         ) : item.shortcut ? (
-          <span className="shrink-0 text-[11px] text-[var(--ui-text-muted)]">{item.shortcut}</span>
+          <span className={`${slot.trailing} ${slot.shortcut}`} aria-hidden="true">
+            {item.shortcut}
+          </span>
         ) : null}
-      </Button>
+      </button>
     );
   };
 
@@ -354,20 +406,14 @@ export function NativeContextMenu({
         {header ? (
           <>
             {header}
-            <div role="separator" className="my-1 h-px bg-[var(--ui-surface-muted)]" />
+            <div role="separator" className={slot.separator} />
           </>
         ) : null}
         {items.map((item, index) => {
           if (item.kind === "sep") {
-            return (
-              <div
-                key={`sep-${index}`}
-                role="separator"
-                className="my-1 h-px bg-[var(--ui-surface-muted)]"
-              />
-            );
+            return <div key={`sep-${index}`} role="separator" className={slot.separator} />;
           }
-          return renderItem(item, index);
+          return renderItem(item, index, false, mainHasIcons);
         })}
       </Popover>
       {submenu && submenuItems && submenuItem?.kind === "item" ? (
@@ -406,7 +452,7 @@ export function NativeContextMenu({
           className="overflow-y-auto overscroll-none p-1"
         >
           {submenuSearch ? (
-            <div className="sticky top-0 z-10 bg-[var(--ui-surface)] pb-1">
+            <div className="sticky top-0 z-10 bg-(--ui-surface-raised) pb-1">
               <TextField
                 ref={searchRef}
                 label={submenuSearch.placeholder}
@@ -428,13 +474,9 @@ export function NativeContextMenu({
           ) : null}
           {submenuItems.map((item, index) =>
             item.kind === "sep" ? (
-              <div
-                key={`sep-${index}`}
-                role="separator"
-                className="my-1 h-px bg-[var(--ui-surface-muted)]"
-              />
+              <div key={`sep-${index}`} role="separator" className={slot.separator} />
             ) : (
-              renderItem(item, index, true)
+              renderItem(item, index, true, submenuHasIcons)
             ),
           )}
         </Popover>

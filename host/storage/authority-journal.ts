@@ -14,6 +14,12 @@ import {
 } from "../../src/shared/model/host-contracts/schemas";
 import type { HostSession } from "../../src/features/connections/model/protocol";
 import type { HostStore } from "../store";
+import {
+  createNativeSnapshotConverter,
+  validateNativeMigrationTarget,
+  projectNativeMigrationHostSession,
+  type NativeMigrationTarget,
+} from "./native-snapshot-converter";
 
 const ScopeSchema = z.strictObject({
   environmentId: IdentifierSchema,
@@ -31,10 +37,19 @@ export type AuthorityRequestContext = z.infer<typeof ContextSchema>;
 export type AuthorityStage = {
   fence: NativeFenceEvidence;
   sourceJson: string;
-  normalizedSnapshot: HostSession;
+  normalizedSnapshot: HostSession | NativeMigrationTarget;
   converterVersion: string;
   targetDigest: string;
 };
+/** The target envelope is journal-private; normal session rows contain only its projection. */
+export function isNativeAuthorityTarget(value: unknown): value is NativeMigrationTarget {
+  return !!value && typeof value === "object" && Object.hasOwn(value, "kind");
+}
+export function authorityTargetHostSession(
+  value: AuthorityStage["normalizedSnapshot"],
+): HostSession {
+  return isNativeAuthorityTarget(value) ? projectNativeMigrationHostSession(value) : value;
+}
 export type AuthorityStatus = {
   phase: "prepared" | "staged" | "host-active" | "aborted";
   fence: NativeFenceEvidence;
@@ -44,6 +59,7 @@ export type AuthorityStatus = {
   converterVersion?: string;
 };
 type JournalRow = {
+  generation: number;
   phase: AuthorityStatus["phase"];
   evidence: string;
   decision: string | null;
@@ -83,6 +99,39 @@ function contains(actual: unknown, expected: unknown): boolean {
       )
     );
   return actual === expected;
+}
+
+function checkedTarget(
+  value: unknown,
+  sourceJson: string,
+  fence: NativeFenceEvidence,
+  converterVersion: string,
+): AuthorityStage["normalizedSnapshot"] {
+  const json = JsonValueSchema.parse(value);
+  const source = JsonValueSchema.parse(JSON.parse(sourceJson));
+  const hasPrivateNativeState =
+    !!source &&
+    typeof source === "object" &&
+    !Array.isArray(source) &&
+    ["clientOwnedQueue", "clientOwnedDraftJson", "retainedNativeRows"].some((key) =>
+      Object.hasOwn(source, key),
+    );
+  if (!isNativeAuthorityTarget(json)) {
+    if (hasPrivateNativeState)
+      throw new Error("Native source requires a private preservation target.");
+    return json as unknown as HostSession;
+  }
+  const target = validateNativeMigrationTarget(json);
+  const converter = createNativeSnapshotConverter({
+    projectId: target.hostSession.projectId,
+    expectedCwd: target.hostSession.session.cwd,
+  });
+  if (
+    converterVersion !== converter.version ||
+    canonical(converter.convert(source, fence)) !== canonical(target)
+  )
+    throw new Error("Native migration target changed its source preservation.");
+  return target;
 }
 
 /** Host-side journal only: trusted native IPC/challenge verification is mandatory. */
@@ -196,6 +245,17 @@ export class HostAuthorityJournal {
         : decision.authorityGeneration <= fence.generation)
     )
       throw new Error("Stored authority decision integrity verification failed.");
+    if (
+      row.target_digest &&
+      (!row.source_json ||
+        !row.target_json ||
+        !row.converter_version ||
+        Buffer.byteLength(row.source_json, "utf8") > MAX_SOURCE_BYTES ||
+        Buffer.byteLength(row.target_json, "utf8") > MAX_SOURCE_BYTES ||
+        sha256(row.source_json) !== fence.sourceDigest ||
+        sha256(row.target_json) !== row.target_digest)
+    )
+      throw new Error("Stored authority snapshot integrity verification failed.");
     return decision;
   }
   private async exists(sessionId: string): Promise<boolean> {
@@ -205,7 +265,11 @@ export class HostAuthorityJournal {
   }
   private async matching(fence: NativeFenceEvidence): Promise<JournalRow> {
     const row = await this.row(fence);
-    if (!row || row.evidence !== JSON.stringify(fence))
+    if (
+      !row ||
+      Number(row.generation) !== fence.generation ||
+      row.evidence !== JSON.stringify(fence)
+    )
       throw new Error("Authority migration evidence is missing or conflicts with its frozen body.");
     return row;
   }
@@ -217,6 +281,27 @@ export class HostAuthorityJournal {
     return this.options.store.db.scope(async () => {
       const row = await this.row(scope);
       return row ? this.statusOf(row) : undefined;
+    });
+  }
+  /** Trusted recovery read. Requires fresh native verification; never a session DTO/RPC. */
+  async readNativePreservation(
+    raw: NativeFenceEvidence,
+    context: AuthorityRequestContext,
+  ): Promise<NativeMigrationTarget["nativePreservation"] | undefined> {
+    const fence = await this.verified(raw, context);
+    await this.ready;
+    return this.options.store.transaction(async () => {
+      const row = await this.matching(fence);
+      if (row.phase !== "host-active" || !row.decision)
+        throw new Error("Native preservation requires a committed Host target.");
+      this.readDecision(row, fence);
+      const target = checkedTarget(
+        JSON.parse(row.target_json!),
+        row.source_json!,
+        fence,
+        row.converter_version!,
+      );
+      return isNativeAuthorityTarget(target) ? target.nativePreservation : undefined;
     });
   }
   async prepare(
@@ -286,7 +371,13 @@ export class HostAuthorityJournal {
       throw new Error("Source snapshot bytes or digest do not match the native fence.");
     IdentifierSchema.parse(input.converterVersion);
     const source = JsonValueSchema.parse(JSON.parse(input.sourceJson)) as Record<string, unknown>;
-    const normalized = JsonValueSchema.parse(input.normalizedSnapshot) as unknown as HostSession;
+    const target = checkedTarget(
+      input.normalizedSnapshot,
+      input.sourceJson,
+      fence,
+      input.converterVersion,
+    );
+    const normalized = authorityTargetHostSession(target);
     const native = (source?.id === fence.sessionId ? source : source?.session) as
       | Record<string, unknown>
       | undefined;
@@ -334,7 +425,7 @@ export class HostAuthorityJournal {
         canonical((normalized.session as unknown as Record<string, unknown>)[key])
       )
         throw new Error("Normalized snapshot changed protected source conversation fields.");
-    const targetJson = JSON.stringify(normalized),
+    const targetJson = JSON.stringify(target),
       targetDigest = sha256(targetJson);
     if (Buffer.byteLength(targetJson, "utf8") > MAX_SOURCE_BYTES)
       throw new Error("Normalized snapshot exceeds the migration size limit.");
@@ -430,7 +521,12 @@ export class HostAuthorityJournal {
         installation = {
           fence: Object.freeze(NativeFenceEvidenceSchema.parse(fence)),
           sourceJson: row.source_json!,
-          normalizedSnapshot: JSON.parse(row.target_json!),
+          normalizedSnapshot: checkedTarget(
+            JSON.parse(row.target_json!),
+            row.source_json!,
+            fence,
+            row.converter_version!,
+          ),
           converterVersion: row.converter_version!,
           targetDigest: row.target_digest!,
         };
@@ -462,10 +558,35 @@ export class HostAuthorityJournal {
           decision.authorityGeneration,
           () => this.options.installTarget(installation!, Object.freeze(decision)),
         );
+        const retained = await this.matching(fence);
+        this.readDecision(retained, fence);
+        if (
+          retained.phase !== "host-active" ||
+          retained.acknowledged !== row.acknowledged ||
+          retained.generation !== row.generation ||
+          retained.evidence !== row.evidence ||
+          retained.decision !== JSON.stringify(decision) ||
+          retained.target_json !== row.target_json ||
+          retained.source_json !== row.source_json ||
+          retained.converter_version !== row.converter_version
+        )
+          throw new Error("Target installer changed immutable migration storage.");
+        const installedHead = await this.options.store.db
+          .prepare(
+            "SELECT migration_id,generation,phase FROM host_authority_heads WHERE environment_id=? AND session_id=?",
+          )
+          .get(fence.environmentId, fence.sessionId);
+        if (
+          !installedHead ||
+          installedHead.migration_id !== fence.migrationId ||
+          Number(installedHead.generation) !== decision.authorityGeneration ||
+          installedHead.phase !== "host-active"
+        )
+          throw new Error("Target installer changed the authority head.");
         const installed = await this.options.store.session(fence.sessionId);
         if (
           installed.authorityGeneration !== decision.authorityGeneration ||
-          !contains(installed, JSON.parse(row.target_json!))
+          !contains(installed, authorityTargetHostSession(JSON.parse(row.target_json!)))
         )
           throw new Error("Target installer did not persist the staged conversation.");
       }
@@ -474,7 +595,11 @@ export class HostAuthorityJournal {
         authorityGeneration: decision.authorityGeneration,
         phase,
         ...(row.target_json
-          ? { projectId: (JSON.parse(row.target_json) as HostSession).projectId }
+          ? {
+              projectId: authorityTargetHostSession(
+                JSON.parse(row.target_json) as AuthorityStage["normalizedSnapshot"],
+              ).projectId,
+            }
           : {}),
       });
       return decision;

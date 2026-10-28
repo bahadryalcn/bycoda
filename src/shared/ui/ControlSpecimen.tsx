@@ -19,7 +19,11 @@ import { TagInput } from "./TagInput";
 import { NativeSearchableSelect } from "./NativeSearchableSelect";
 import { Checkbox } from "./Checkbox";
 
-/** Local-only control samples. Appearance and browser checks share these adapters. */
+/**
+ * Local-only control samples shared by browser fixtures. This is a development reference
+ * (see tests/browser/arc-controls.tsx); no production route imports it, and it must not be
+ * added to normal settings.
+ */
 export function ControlSpecimen({ expanded = false }: { expanded?: boolean }) {
   const t = useT();
   const [enabled, setEnabled] = useState(false);

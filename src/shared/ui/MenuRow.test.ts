@@ -67,3 +67,21 @@ it("keeps disabled native rows discoverable without executing them", async () =>
   expect(pick).not.toHaveBeenCalled();
   expect(row.title).toBe("Save before transfer");
 });
+
+it("marks destructive rows and keeps description rows in the same row primitive", async () => {
+  await act(async () =>
+    root.render(
+      createElement(MenuRow, {
+        destructive: true,
+        "data-described": "true",
+        role: "menuitem",
+        children: "Delete project",
+      }),
+    ),
+  );
+  const row = host.querySelector("button")!;
+  expect(row.className).toContain(menuRowClassName);
+  expect(row.className).toContain("bycoda-arc");
+  expect(row.className).toMatch(/destructive/);
+  expect(row.dataset.described).toBe("true");
+});

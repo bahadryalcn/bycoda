@@ -9,9 +9,42 @@ import {
   type ReactNode,
   type Ref,
 } from "react";
-import { Check, ChevronDown } from "./icons";
+import { ChevronDown } from "./icons";
 import { Popover } from "./Popover";
 import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
+import { ComboboxChoice } from "./arc/combobox/combobox";
+
+export type SelectChoice = {
+  value: string;
+  label: string;
+  icon?: ReactNode;
+  /** Shown but not choosable and skipped by keyboard navigation; a committed disabled value stays visible. */
+  disabled?: boolean;
+};
+
+/** Next choosable index from `from` in `step` direction; wraps only when asked, otherwise stays put at an end. */
+function nextEnabled(options: readonly SelectChoice[], from: number, step: 1 | -1, loop: boolean) {
+  const count = options.length;
+  for (let offset = 1; offset <= count; offset++) {
+    const raw = from + step * offset;
+    const index = loop ? ((raw % count) + count) % count : raw;
+    if (index < 0 || index >= count) return from;
+    if (!options[index]?.disabled) return index;
+  }
+  return from;
+}
+const firstEnabled = (options: readonly SelectChoice[]) =>
+  options.findIndex((option) => !option.disabled);
+const lastEnabled = (options: readonly SelectChoice[]) => {
+  for (let index = options.length - 1; index >= 0; index--)
+    if (!options[index]!.disabled) return index;
+  return -1;
+};
+/** The committed option when choosable, otherwise the first choosable one (-1 when none). */
+const initialActive = (options: readonly SelectChoice[], value: string) => {
+  const index = options.findIndex((option) => option.value === value);
+  return index >= 0 && !options[index]!.disabled ? index : firstEnabled(options);
+};
 
 /** Native form owner for FormData, required validation and uncontrolled defaults. */
 export function NativeSelect({ className, ...props }: ComponentPropsWithRef<"select">) {
@@ -29,7 +62,7 @@ export type SelectProps = Omit<
 > & {
   label: string;
   value: string;
-  options: { value: string; label: string; icon?: ReactNode }[];
+  options: SelectChoice[];
   onValueChange: (value: string) => void;
   onOpen?: () => void;
   /** Opt in when the existing choice owner wraps at the first/last option. */
@@ -54,12 +87,7 @@ export function Select({
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const expanded = open && !disabled;
-  const [active, setActive] = useState(() =>
-    Math.max(
-      0,
-      options.findIndex((option) => option.value === value),
-    ),
-  );
+  const [active, setActive] = useState(() => initialActive(options, value));
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
@@ -73,12 +101,7 @@ export function Select({
 
   useEffect(() => {
     if (!open) return;
-    setActive(
-      Math.max(
-        0,
-        options.findIndex((option) => option.value === value),
-      ),
-    );
+    setActive(initialActive(options, value));
   }, [open, value, options]);
 
   useEffect(() => {
@@ -88,6 +111,7 @@ export function Select({
 
   const pick = (next: string) => {
     if (disabled || trigger.current?.matches(":disabled")) return;
+    if (options.find((option) => option.value === next)?.disabled) return;
     onValueChange(next);
     setOpen(false);
     trigger.current?.focus();
@@ -100,30 +124,22 @@ export function Select({
     }
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setActive((i) =>
-        loopNavigation && options.length
-          ? (i + 1) % options.length
-          : Math.min(options.length - 1, i + 1),
-      );
+      setActive((i) => nextEnabled(options, i, 1, loopNavigation));
       return;
     }
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      setActive((i) =>
-        loopNavigation && options.length
-          ? (i - 1 + options.length) % options.length
-          : Math.max(0, i - 1),
-      );
+      setActive((i) => nextEnabled(options, i, -1, loopNavigation));
       return;
     }
     if (e.key === "Home") {
       e.preventDefault();
-      setActive(0);
+      setActive(firstEnabled(options));
       return;
     }
     if (e.key === "End") {
       e.preventDefault();
-      setActive(options.length - 1);
+      setActive(lastEnabled(options));
       return;
     }
     if (e.key === "Tab") {
@@ -173,7 +189,11 @@ export function Select({
         }}
         className={["bycoda-arc bycoda-arc-select", className].filter(Boolean).join(" ")}
       >
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span
+          className="flex min-w-0 flex-1 items-center gap-1.5"
+          data-placeholder={selected || value ? undefined : ""}
+          title={selected?.label ?? value}
+        >
           {selected?.icon ? (
             <span className="grid size-4 shrink-0 place-items-center">{selected.icon}</span>
           ) : null}
@@ -216,17 +236,22 @@ export function Select({
                 role="option"
                 tabIndex={-1}
                 aria-selected={isSelected}
+                aria-disabled={option.disabled || undefined}
+                disabled={option.disabled}
                 data-highlighted={highlighted || undefined}
                 onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setActive(index)}
+                onMouseEnter={() => {
+                  if (!option.disabled) setActive(index);
+                }}
                 onClick={() => pick(option.value)}
-                className="bycoda-arc-select-option flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[12px]"
+                className="bycoda-arc-select-option h-8"
               >
-                {option.icon ? (
-                  <span className="grid size-4 shrink-0 place-items-center">{option.icon}</span>
-                ) : null}
-                <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                {isSelected ? <Check className="size-3.5 shrink-0" strokeWidth={2.25} /> : null}
+                <ComboboxChoice
+                  selected={isSelected}
+                  icon={option.icon}
+                  label={option.label}
+                  title={option.label}
+                />
               </SelectOption>
             );
           })}

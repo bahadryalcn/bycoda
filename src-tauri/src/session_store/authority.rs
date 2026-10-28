@@ -33,7 +33,7 @@ pub(crate) struct QuiesceCancellation {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct NativeFence {
     pub protocol: u64,
     pub migration_id: String,
@@ -1186,8 +1186,19 @@ pub(crate) struct HostDecision {
     committed_at: u64,
     decision_digest: String,
     phase: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "present_target_digest",
+        skip_serializing_if = "Option::is_none"
+    )]
     target_digest: Option<String>,
+}
+
+fn present_target_digest<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    // The closed Host schema permits absence, never an explicit JSON null.
+    <String as serde::Deserialize>::deserialize(deserializer).map(Some)
 }
 
 pub(crate) trait AuthenticatedHostDecisionPort {
@@ -1229,7 +1240,238 @@ fn decision_digest(decision: &HostDecision) -> Result<String, String> {
         .as_bytes()))
 }
 
+fn parse_host_decision(raw: &str) -> Result<HostDecision, String> {
+    if raw.len() > 16_384 {
+        return Err("NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into());
+    }
+    serde_json::from_str(raw).map_err(|_| "NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into())
+}
+
+fn validate_host_decision(decision: &HostDecision, fence: &NativeFence) -> Result<(), String> {
+    for value in [
+        &decision.environment_id,
+        &decision.session_id,
+        &decision.migration_id,
+        &decision.source_profile_id,
+        &decision.source_store_id,
+        &decision.receipt_id,
+    ] {
+        identifier(value)?;
+    }
+    if decision.protocol != 2
+        || decision.min_writer_protocol < fence.min_writer_protocol
+        || decision.min_writer_protocol > WRITER_PROTOCOL
+        || decision.committed_at > MAX_SAFE
+        || decision.authority_generation > MAX_SAFE
+        || decision.environment_id != fence.environment_id
+        || decision.session_id != fence.session_id
+        || decision.migration_id != fence.migration_id
+        || decision.source_profile_id != fence.source_profile_id
+        || decision.source_store_id != fence.source_store_id
+        || decision.source_generation != fence.generation
+        || decision.source_revision != fence.source_revision
+        || decision.source_digest != fence.source_digest
+        || decision.evidence_digest != fence.evidence_digest
+        || !digest(&decision.decision_digest)
+        || decision
+            .target_digest
+            .as_ref()
+            .is_some_and(|value| !digest(value))
+        || !((decision.phase == "host-active"
+            && decision.target_digest.is_some()
+            && decision.authority_generation == fence.generation)
+            || (decision.phase == "aborted" && decision.authority_generation > fence.generation))
+        || decision_digest(decision)? != decision.decision_digest
+    {
+        return Err("NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into());
+    }
+    Ok(())
+}
+
+/// Caller holds one SQL snapshot (or the applying transaction). A checksum alone
+/// is not application evidence: the actual journal, floor and store must agree.
+fn applied_host_decision(
+    conn: &Connection,
+    migration_id: &str,
+    expected_decision_digest: &str,
+    fence: &NativeFence,
+) -> Result<String, String> {
+    let invalid = "NATIVE_AUTHORITY_DECISION_NOT_APPLIED";
+    if !digest(expected_decision_digest) || migration_id != fence.migration_id {
+        return Err(invalid.into());
+    }
+    let (phase, generation, raw): (String, i64, Option<String>) = conn
+        .query_row(
+            "SELECT phase,generation,host_decision_json FROM native_authority_journal WHERE migration_id=?1",
+            [migration_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .map_err(|error| error.to_string())?;
+    let raw = raw.ok_or(invalid)?;
+    let decision = parse_host_decision(&raw)?;
+    validate_host_decision(&decision, fence)?;
+    let ids = identity(conn)?;
+    let current = read_state(conn, &fence.session_id)?.ok_or(invalid)?;
+    require_supported_writer(&current)?;
+    let active = decision.phase == "host-active";
+    if decision.decision_digest != expected_decision_digest
+        || ids.source_store_id != decision.source_store_id
+        || ids.source_profile_id != decision.source_profile_id
+        || phase != if active { "HOST" } else { "ABORTED" }
+        || u64::try_from(generation).ok() != Some(decision.authority_generation)
+        || current.environment_id != decision.environment_id
+        || current.session_id != decision.session_id
+        || current.migration_id != decision.migration_id
+        || current.generation != decision.authority_generation
+        || current.min_writer_protocol != decision.min_writer_protocol
+        || current.source_digest.as_ref() != Some(&decision.source_digest)
+        || current.host_receipt_id.as_ref() != Some(&decision.receipt_id)
+        || if active {
+            !matches!(current.phase.as_str(), "HOST" | "CACHE")
+        } else {
+            current.phase != "NATIVE"
+        }
+    {
+        return Err(invalid.into());
+    }
+    Ok(raw)
+}
+
 impl SessionStore {
+    /// Read an existing retained transfer in one SQL snapshot. This is disclosure
+    /// only: no idle proof, writer qualification, floor change or decision apply.
+    pub(crate) fn authority_retained_snapshot(
+        &self,
+        environment_id: &str,
+        session_id: &str,
+        migration_id: &str,
+        expected: &StoreIdentity,
+    ) -> Result<Option<SourceSnapshot>, String> {
+        for value in [
+            environment_id,
+            session_id,
+            migration_id,
+            &expected.source_store_id,
+            &expected.source_profile_id,
+        ] {
+            identifier(value)?;
+        }
+        let conn = self.lock_conn()?;
+        let tx = Transaction::new_unchecked(&conn, TransactionBehavior::Deferred)
+            .map_err(|error| error.to_string())?;
+        if identity(&tx)? != *expected {
+            return Err("NATIVE_AUTHORITY_SOURCE_CHANGED".into());
+        }
+        // Evaluate byte limits and scope in SQL before any snapshot/fence String
+        // is materialized. A present partial/corrupt row is never an absent row.
+        let bounded: Option<i64> = tx.query_row(
+            "SELECT COALESCE(typeof(fence_json)='text' AND typeof(snapshot_json)='text'
+              AND length(CAST(fence_json AS BLOB)) BETWEEN 1 AND 16384
+              AND length(CAST(snapshot_json AS BLOB)) BETWEEN 1 AND 33554432
+              AND environment_id=?2 AND session_id=?3 AND source_store_id=?4 AND source_profile_id=?5
+              AND typeof(inventory_digest)='text' AND length(CAST(inventory_digest AS BLOB))=64
+              AND typeof(buffers_digest)='text' AND length(CAST(buffers_digest AS BLOB))=64
+              AND typeof(source_digest)='text' AND length(CAST(source_digest AS BLOB))=64,0)
+             FROM native_authority_journal WHERE migration_id=?1",
+            params![migration_id, environment_id, session_id, expected.source_store_id, expected.source_profile_id],
+            |row| row.get(0),
+        ).optional().map_err(|error| error.to_string())?;
+        let retained = match bounded {
+            None => None,
+            Some(1) => {
+                let snapshot = source_snapshot(&tx, migration_id)?;
+                if snapshot.fence.environment_id != environment_id
+                    || snapshot.fence.session_id != session_id
+                    || snapshot.fence.migration_id != migration_id
+                    || snapshot.fence.source_store_id != expected.source_store_id
+                    || snapshot.fence.source_profile_id != expected.source_profile_id
+                {
+                    return Err("NATIVE_AUTHORITY_RETAINED_SCOPE_CHANGED".into());
+                }
+                Some(snapshot)
+            }
+            _ => return Err("NATIVE_AUTHORITY_RETAINED_UNAVAILABLE".into()),
+        };
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(retained)
+    }
+
+    /// Isolated fixture only; never a production cohort/actor qualification.
+    #[cfg(test)]
+    pub(crate) fn authority_test_retained_snapshot(
+        &self,
+        environment_id: &str,
+        session_id: &str,
+        migration_id: &str,
+        text: &str,
+    ) -> Result<SourceSnapshot, String> {
+        self.authority_test_retained_snapshot_at(
+            environment_id,
+            session_id,
+            migration_id,
+            text,
+            ".",
+            false,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn authority_test_retained_snapshot_at(
+        &self,
+        environment_id: &str,
+        session_id: &str,
+        migration_id: &str,
+        text: &str,
+        cwd: &str,
+        include_client_state: bool,
+    ) -> Result<SourceSnapshot, String> {
+        let session: SessionUpsert = serde_json::from_value(json!({
+            "id":session_id,"cwd":cwd,"harness":"codex","model":"fixture","modelSettings":{},
+            "runtimeMode":"supervised","title":"retained fixture",
+            "blocks":[{"id":"user.retained","role":"user","text":text}],
+        }))
+        .map_err(|error| error.to_string())?;
+        {
+            let conn = self.lock_conn()?;
+            upsert_session_with_git(&conn, &session, crate::fs::GitInfo::default(), None)
+                .map_err(|error| error.to_string())?;
+            if include_client_state {
+                set_session_queue(
+                    &conn,
+                    session_id,
+                    Some(&json!([{
+                        "id":"native-client-only", "text":"Native private queued prompt", "attachments":[]
+                    }])),
+                )?;
+                set_composer_draft(
+                    &conn,
+                    session_id,
+                    Some(&json!({
+                        "text":"Native private unsent draft", "mcpTags":[], "attachments":[]
+                    })),
+                )?;
+            }
+        }
+        self.authority_begin_quiesce(environment_id, session_id, migration_id, 0)?;
+        let inventory = {
+            let conn = self.lock_conn()?;
+            WriterInventory::Complete {
+                identity: identity(&conn)?,
+                protocols: vec![WRITER_PROTOCOL],
+                observation_digest: sha(b"isolated retained source fixture qualification only"),
+                buffers_digest: buffers_digest(&conn, session_id)?,
+            }
+        };
+        let proof = self.authority_verify_idle(
+            environment_id,
+            session_id,
+            migration_id,
+            &crate::harness::HarnessHost::new(),
+            inventory,
+        )?;
+        self.authority_fence_source(proof)
+    }
+
     pub(crate) fn authority_snapshot(&self, migration_id: &str) -> Result<SourceSnapshot, String> {
         source_snapshot(&*(self.lock_conn()?), migration_id)
     }
@@ -1240,50 +1482,9 @@ impl SessionStore {
         raw: &str,
         port: &impl AuthenticatedHostDecisionPort,
     ) -> Result<VerifiedHostDecision, String> {
-        if raw.len() > 16_384 {
-            return Err("NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into());
-        }
-        let decision: HostDecision =
-            serde_json::from_str(raw).map_err(|_| "NATIVE_AUTHORITY_INVALID_HOST_RECEIPT")?;
+        let decision = parse_host_decision(raw)?;
         let fence = self.authority_snapshot(migration_id)?.fence;
-        for value in [
-            &decision.environment_id,
-            &decision.session_id,
-            &decision.migration_id,
-            &decision.source_profile_id,
-            &decision.source_store_id,
-            &decision.receipt_id,
-        ] {
-            identifier(value)?;
-        }
-        if decision.protocol != 2
-            || decision.min_writer_protocol < fence.min_writer_protocol
-            || decision.min_writer_protocol > WRITER_PROTOCOL
-            || decision.committed_at > MAX_SAFE
-            || decision.authority_generation > MAX_SAFE
-            || decision.environment_id != fence.environment_id
-            || decision.session_id != fence.session_id
-            || decision.migration_id != fence.migration_id
-            || decision.source_profile_id != fence.source_profile_id
-            || decision.source_store_id != fence.source_store_id
-            || decision.source_generation != fence.generation
-            || decision.source_revision != fence.source_revision
-            || decision.source_digest != fence.source_digest
-            || decision.evidence_digest != fence.evidence_digest
-            || !digest(&decision.decision_digest)
-            || decision
-                .target_digest
-                .as_ref()
-                .is_some_and(|value| !digest(value))
-            || !((decision.phase == "host-active"
-                && decision.target_digest.is_some()
-                && decision.authority_generation == fence.generation)
-                || (decision.phase == "aborted"
-                    && decision.authority_generation > fence.generation))
-            || decision_digest(&decision)? != decision.decision_digest
-        {
-            return Err("NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into());
-        }
+        validate_host_decision(&decision, &fence)?;
         port.verify_actor_and_challenge(&fence, raw)?;
         Ok(VerifiedHostDecision {
             decision,
@@ -1322,6 +1523,12 @@ impl SessionStore {
                 && current.host_receipt_id.as_ref() == Some(&decision.receipt_id)
                 && (current.phase == phase || (phase == "HOST" && current.phase == "CACHE"))
             {
+                applied_host_decision(
+                    tx,
+                    &decision.migration_id,
+                    &decision.decision_digest,
+                    &retained.fence,
+                )?;
                 return Ok(current);
             }
             if current.phase != "FENCED" || current.generation != decision.source_generation {
@@ -1335,6 +1542,28 @@ impl SessionStore {
                 params![if phase=="HOST" {"HOST"} else {"ABORTED"},decision.authority_generation as i64,proof.raw,now_millis(),decision.migration_id]).map_err(|error|error.to_string())?;
             read_state(tx, &decision.session_id)?.ok_or_else(|| "NATIVE_AUTHORITY_CAS".into())
         })
+    }
+
+    /// Read durable application evidence only. No IPC endpoint or actor grant is
+    /// installed here; the authenticated native channel must own disclosure.
+    /// Returning the persisted bytes never applies a submitted decision again.
+    pub(crate) fn authority_applied_host_decision(
+        &self,
+        migration_id: &str,
+        expected_decision_digest: &str,
+    ) -> Result<String, String> {
+        identifier(migration_id)?;
+        if !digest(expected_decision_digest) {
+            return Err("NATIVE_AUTHORITY_INVALID_HOST_RECEIPT".into());
+        }
+        let conn = self.lock_conn()?;
+        let tx = Transaction::new_unchecked(&conn, TransactionBehavior::Deferred)
+            .map_err(|error| error.to_string())?;
+        let retained = source_snapshot(&tx, migration_id)?;
+        let raw =
+            applied_host_decision(&tx, migration_id, expected_decision_digest, &retained.fence)?;
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(raw)
     }
 
     pub(crate) fn authority_apply_projection(

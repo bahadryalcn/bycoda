@@ -90,12 +90,39 @@ screen records EXP-02/DT-01/SEL-04/SEL-08/CMD-03 stay independently scoped. Real
 contrast/native/reader/installed acceptance remains unverified; implementing owners
 must supply proof. Claims API unavailable; concurrent Button/Badge work preserved.
 
+## Delivered core-control implementation (Session 2, 2026-10-28)
+
+Uncommitted on main over 83053d6b8 (shared checkout); no commit/build/install.
+
+- Actions (CMP-02/03, UIF-01): explicit `align` beats tab/item defaults; 14/16px
+  icon slots; string labels truncate inside bounded containers; ButtonGroup and
+  SplitButton share seams, end radii, unclipped focus and independent gates.
+- Choices (CMP-06, UIF-05): drawn native Checkbox (on/mixed/invalid/disabled/forced
+  colors); Radio, Checkbox and Switch share `--control-on`; `Segment.disabled`.
+- Fields (CMP-01/04, UIF-02/03): one frame/focus owner; error before helper in
+  aria-describedby; read-only distinct from disabled; fields no longer stretch in
+  grids; `SearchInputGroup size` / `SearchInput fieldSize` `sm|md`.
+- Select/SearchableSelect (CMP-05, UIF-04, T3UI-03): option `disabled` with keyboard
+  skip; `loading/error/onRetry/noOptionsLabel`; framed value chips. No MultiSelect and
+  no windowing (no consumer above a few hundred options). CreateWorktreeDialog is
+  wired to loading/error.
+- Rows/tabs/text (CMP-08, UIF-09/10/19, T3UI-01): drop target is an accent edge,
+  distinct from selection; TreeRow slots; TabLabel `truncate="middle"` and
+  TabDirtyDot; new MiddleTruncate; MatchText weight plus accent ink and `data-match`.
+- T3UI-05: no wizard (2 Stepper consumers). T3UI-08: mobile does not import src/shared/ui.
+- Reference (CMP-07, UIF-20): fixture matrix tests/browser/arc-controls-matrix.tsx
+  (`arc-controls.html?view=matrix`) with specs in arc-controls.spec.ts.
+  Evidence, requests and open items: temp/local/2026-10-28-shared-controls-impl/
+  (handoff-A..D.md, REQUESTS.md, INVENTORY-CONSUMERS.md) and
+  temp/verification/2026-10-28-shared-controls-impl/. Fixture captures are not
+  installed/native acceptance. Feature adoption (FileTree, tab strips, path consumers,
+  async pickers) stays with owning sessions.
+
 ## Committed handoff references
 
 No new commit/build/install/release. Local brief:
 temp/local/2026-10-28-shared-components-redesign/{AUDIT.md,REDESIGN.md,INVENTORY.md}.
 Source baseline/hash and focused checks are evidence only, not installed inclusion.
-No user behavior changed by this documentation addition.
 
 ## Proposals and ownership
 
@@ -107,3 +134,27 @@ shared browser fixture have a single writer, Session2; Session5 supplies scenari
 through its own files/handoff. Sessions3/4/6 consume, not restyle shared primitives.
 UIF01–15/20 are immediate priority; UIF16–19 remain explicit follow-up delivery
 with existing capabilities preserved, not blanket rewrites or silently accepted.
+
+## Session 5 overlay/feedback/media delivery, 2026-10-28 (uncommitted)
+
+Owner, 2026-10-28, Session 5 overlays conversation, exact quote:
+
+> Bu bir uygulama görevidir; yalnızca audit veya dokümantasyonla bitirme. Mevcut componentlerin görünümünü ve etkileşimlerini gerçekten iyileştir.
+
+Delivered in the shared checkout (main, uncommitted, fixture-verified only):
+UIF-11 one compact/described menu row and role-based states for DropdownMenu,
+native ContextMenu, MenuRow and the Arc menu (CMP-09/14); UIF-12 raised Modal
+surface, compact/task title hierarchy and pane-style end sheet (CMP-11), explicit
+Popover `flow` (CMP-10), ConfirmDialog in-flight guard and Alert failure, InfoPopover
+focus/Escape return; UIF-13 Alert action slot, Badge count/dot grammar, sticky
+danger TransientNotice with pending action, labelled WorkingIndicator; UIF-14
+EmptyState `context`, FailureState full-copy/manual fallback/pending retry
+(CMP-12/13), RecoveryBoundary reset keys; UIF-15 moving unknown progress, no early
+100%, reduced/decorative-off motion; UIF-18 theme-independent ImageCompare chrome
+(styling-architecture F6), lightbox zoom/compare/retry and annotation fallback.
+Fixtures: `tests/browser/overlay-{popups,menus,feedback,media}.*` (suite
+`overlays`). Handoff, consumer inventory and open requests:
+`temp/local/2026-10-28-session5-overlays/`. Open: dark raised-plane hover/pressed
+role (Session 1), Button reserved spinner slot (Session 2), EmptyState `context`
+and Popover `flow` adoption by consumers, real native popup windows, touch devices,
+screen readers and installed inclusion.

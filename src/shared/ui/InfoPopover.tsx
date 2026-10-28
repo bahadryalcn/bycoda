@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useT } from "../i18n";
 import { Button } from "./Button";
 import { Popover } from "./Popover";
@@ -24,6 +24,7 @@ export function InfoPopover({
   const t = useT();
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
+  const contentId = useId();
   const name = label ?? t("Help");
   return (
     <>
@@ -38,18 +39,22 @@ export function InfoPopover({
         className={className}
         aria-expanded={open}
         aria-haspopup="dialog"
+        aria-controls={open ? contentId : undefined}
         onClick={() => setOpen((current) => !current)}
       >
         <Info aria-hidden className="icon-sm" strokeWidth={1.75} />
       </Button>
       {open ? (
         <Popover
+          id={contentId}
           anchor={anchor}
           width={width}
           role="dialog"
           aria-label={name}
+          tabIndex={-1}
+          autoFocus
           onDismiss={() => setOpen(false)}
-          className="flex flex-col gap-2 p-3 text-ui-caption text-(--ui-text-secondary)"
+          className="flex flex-col gap-2 p-3 text-ui-secondary text-(--ui-text-secondary)"
         >
           {children}
         </Popover>

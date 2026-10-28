@@ -137,3 +137,37 @@ it("keeps inline quota labels readable at zero and full capacity without a compl
     expect(bar.querySelector("svg")).toBeNull();
   }
 });
+
+it("never reports completion early: near-full is below 100 and any progress is above 0", async () => {
+  await act(async () =>
+    root.render(createElement(Progress, { label: "Copying", value: 99.6, showValue: true })),
+  );
+  const bar = node.querySelector('[role="progressbar"]')!;
+  expect(bar.getAttribute("aria-valuetext")).toBe("99%");
+  expect(bar.hasAttribute("data-complete")).toBe(false);
+  expect(bar.querySelector("svg")).toBeNull();
+  await act(async () =>
+    root.render(
+      createElement(Progress, { label: "Copying", value: 0.2, max: 100, showValue: true }),
+    ),
+  );
+  expect(bar.getAttribute("aria-valuetext")).toBe("1%");
+  await act(async () =>
+    root.render(createElement(Progress, { label: "Copying", value: 100, showValue: true })),
+  );
+  expect(bar.getAttribute("aria-valuetext")).toBe("100%");
+  expect(bar.hasAttribute("data-complete")).toBe(true);
+});
+
+it("marks unknown progress busy and draws no determinate fill", async () => {
+  await act(async () => root.render(createElement(Progress, { label: "Preparing" })));
+  const bar = node.querySelector('[role="progressbar"]')!;
+  expect(bar.getAttribute("aria-busy")).toBe("true");
+  expect(bar.hasAttribute("aria-valuenow")).toBe(false);
+  expect(bar.querySelector('[class*="unknown"]')).not.toBeNull();
+  expect(bar.querySelector('[class*="fill"]')).toBeNull();
+  await act(async () => root.render(createElement(Progress, { label: "Preparing", value: 0 })));
+  expect(bar.getAttribute("aria-busy")).toBeNull();
+  expect(bar.querySelector('[class*="unknown"]')).toBeNull();
+  expect(bar.querySelector('[class*="fill"]')).not.toBeNull();
+});
