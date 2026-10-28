@@ -49,6 +49,7 @@ import { createHostTasksService } from "./domains/tasks/service";
 import { createHostGoalsService } from "./domains/goals/service";
 import { createHostSprintsService } from "./domains/sprints/service";
 import { createHostAutomationsService } from "./domains/automations/service";
+import { createHostStewardsService } from "./domains/stewards/service";
 import {
   createDevServersService,
   type DevServerAction,
@@ -64,7 +65,7 @@ import {
 } from "./domains/sessions/queue-service";
 import { createHostDispatcher } from "./transport/dispatch";
 import { attachHostWebSocketTransport, HOST_WS_READ_CAPABILITY } from "./transport/ws/server";
-import { HostBulkTransfers, createHostBulkHandler, hostBulkDependencies, taskBulkDeleteKeys, noteBulkDeleteKeys, goalBulkDeleteKeys, automationBulkDeleteKeys } from "./transport/http/bulk";
+import { HostBulkTransfers, createHostBulkHandler, hostBulkDependencies, taskBulkDeleteKeys, noteBulkDeleteKeys, goalBulkDeleteKeys, automationBulkDeleteKeys, stewardBulkDeleteKeys } from "./transport/http/bulk";
 import { HostSubscriptionHub } from "./transport/ws/subscriptions";
 import { MobileTlsAuthority } from "./security/mobile-tls";
 import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
@@ -1456,6 +1457,7 @@ export async function createHostServer(
         "transport.ws.notes.v2",
         "transport.ws.tasks.v2",
         "transport.ws.goals.v2",
+        "transport.ws.stewards.v2",
         "transport.ws.devServers.v2",
         "transport.ws.sprints.v2",
         "transport.ws.automations.v2",
@@ -1800,6 +1802,7 @@ export async function createHostServer(
   });
   const sprintsService = createHostSprintsService({ sprints });
   const automationsService = createHostAutomationsService({ automations });
+  const stewardsService = createHostStewardsService({ stewards });
   const persistenceService = createHostPersistenceService({
     status: () => engine.store.db.persistenceHealth(),
     recover: (authorized) =>
@@ -1869,6 +1872,11 @@ export async function createHostServer(
       "goals.replan": goalsService.replan,
       "goals.cancel": goalsService.cancel,
       "goals.delete": goalsService.delete,
+      "stewards.list": stewardsService.list,
+      "stewards.save": stewardsService.save,
+      "stewards.delete": stewardsService.delete,
+      "stewards.runNow": stewardsService.runNow,
+      "stewards.decline": stewardsService.decline,
       "tasks.snapshotWithCursor": tasksService.snapshotWithCursor,
       "tasks.events": tasksService.events,
       "tasks.list": tasksService.list,
@@ -1929,6 +1937,12 @@ export async function createHostServer(
     previousAutomationDelete?.(automation);
   };
   automations.onDelete = automationDeleted;
+  const previousStewardDelete = stewards.onDelete;
+  const stewardDeleted: NonNullable<typeof stewards.onDelete> = (steward) => {
+    for (const key of stewardBulkDeleteKeys(steward)) bulkTransfers.invalidate(key);
+    previousStewardDelete?.(steward);
+  };
+  stewards.onDelete = stewardDeleted;
   hostNotes.onDelete = (note) => {
     for (const key of noteBulkDeleteKeys(note)) bulkTransfers.invalidate(key);
   };
@@ -4645,21 +4659,19 @@ export async function createHostServer(
                   void tasks.tick();
                   break;
                 case "stewards.list":
-                  result = await stewards.list();
+                  result = await stewardsService.list(params, domainContext, { legacy: true });
                   break;
                 case "stewards.save":
-                  result = await stewards.save(params.steward);
+                  result = await stewardsService.save(params, domainContext, { legacy: true });
                   break;
                 case "stewards.delete":
-                  await stewards.delete(String(params.stewardId ?? ""));
-                  result = { deleted: true };
+                  result = await stewardsService.delete(params, domainContext, { legacy: true });
                   break;
                 case "stewards.runNow":
-                  result = await stewards.runNow(String(params.stewardId ?? ""));
+                  result = await stewardsService.runNow(params, domainContext, { legacy: true });
                   break;
                 case "stewards.decline":
-                  await stewards.decline(String(params.taskId ?? ""));
-                  result = { declined: true };
+                  result = await stewardsService.decline(params, domainContext, { legacy: true });
                   break;
                 case "attachments.claim":
                   await attachmentOwnership.claim(token, params);
@@ -4960,6 +4972,7 @@ export async function createHostServer(
         if (tasks.onDelete === taskDeleted) tasks.onDelete = previousTaskDelete;
         if (goals.onDelete === goalDeleted) goals.onDelete = previousGoalDelete;
         if (automations.onDelete === automationDeleted) automations.onDelete = previousAutomationDelete;
+        if (stewards.onDelete === stewardDeleted) stewards.onDelete = previousStewardDelete;
         subscriptionHub.close();
         bulkTransfers.close();
       });

@@ -8,6 +8,14 @@ export class HostDomainAuthorizationError extends Error {
   }
 }
 
+/** Safe domain outcome only; diagnostic storage/provider causes remain local. */
+export class HostDomainOutcomeError extends Error {
+  constructor(message: string, readonly delivery: "accepted" | "unknown", options?: ErrorOptions) {
+    super(message, options);
+    this.name = "HostDomainOutcomeError";
+  }
+}
+
 /** Authenticated request capabilities supplied by transport composition. */
 export interface HostDomainContext {
   authorized(): Promise<boolean>;

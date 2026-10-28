@@ -229,6 +229,12 @@ export function hostBulkDependencies(
       return item("task", params.taskId);
     case "goals.list":
       return ["goals:all"];
+    case "stewards.list":
+      return ["stewards:all"];
+    case "stewards.save":
+      return item("steward", (params.steward as Record<string, unknown> | undefined)?.id);
+    case "stewards.runNow":
+      return item("steward", params.stewardId);
     case "goals.create":
       return item("goal", (params.goal as Record<string, unknown> | undefined)?.id);
     case "goals.finalReview.recheck":
@@ -287,6 +293,10 @@ export function noteBulkDeleteKeys(note: {
 
 export function goalBulkDeleteKeys(goal: { id: string }): readonly string[] {
   return [`goal:${goal.id}`, "goals:all"];
+}
+
+export function stewardBulkDeleteKeys(steward: { id: string }): readonly string[] {
+  return [`steward:${steward.id}`, "stewards:all"];
 }
 
 export function automationBulkDeleteKeys(automation: { id: string }): readonly string[] {

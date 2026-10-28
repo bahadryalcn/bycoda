@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createEnvironmentService } from "../domains/environment/service";
 import { createProjectsService } from "../domains/projects/service";
+import { HostDomainOutcomeError } from "../domains/context";
+import { RpcErrorSchema } from "../../src/shared/model/host-contracts";
 import {
   createHostReadDispatcher,
   HostDispatchError,
@@ -48,6 +50,76 @@ function fixture() {
   };
   return { dispatch, environment, projects, snapshot, list, sourceProjects, authorized, context };
 }
+
+describe("effectful domain failure outcomes", () => {
+  it("carries a verified committed domain outcome without exposing private causes", async () => {
+    const { context } = fixture();
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          throw new HostDomainOutcomeError("The note was deleted. Refresh its state.", "accepted", {
+            cause: new Error("private/path?token=secret"),
+          });
+        },
+      },
+    });
+    const error = await dispatch
+      .dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, context)
+      .catch((cause) => cause);
+    const wire = RpcErrorSchema.parse({ code: -32603, message: error.message, data: error.details });
+    expect(wire.data).toEqual({ category: "unavailable", retryable: false, delivery: "accepted" });
+    expect(JSON.stringify(wire)).not.toMatch(/private|secret|commandId|operationId/);
+  });
+
+  it("rechecks authorization before disclosing a committed outcome", async () => {
+    const { context } = fixture();
+    let permitted = true;
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          permitted = false;
+          throw new HostDomainOutcomeError("The note was deleted.", "accepted");
+        },
+      },
+    });
+    await expect(dispatch.dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, {
+      ...context, authorized: async () => permitted,
+    })).rejects.toMatchObject({ code: "unauthorized" });
+  });
+
+  it("preserves uncertainty after a non-command service has performed its effect", async () => {
+    const { context } = fixture();
+    let effects = 0;
+    const dispatch = createHostReadDispatcher({
+      environmentId: "fixture-host",
+      environment: { describe: async () => descriptor },
+      projects: { list: async () => [] },
+      operations: {
+        "notes.delete": async () => {
+          effects++;
+          throw new Error("private committed operation diagnostic");
+        },
+      },
+    });
+    const error = await dispatch
+      .dispatch("notes.delete", { id: "note", expectedUpdatedAt: 1 }, context)
+      .catch((cause) => cause);
+    expect(effects).toBe(1);
+    expect(error).toMatchObject({
+      code: "service-unavailable",
+      details: { category: "unavailable", retryable: false, delivery: "unknown" },
+    });
+    expect(error.message).not.toContain("private");
+    expect(error.details).not.toHaveProperty("commandId");
+    expect(error.details).not.toHaveProperty("operationId");
+  });
+});
 
 describe("environment and projects domain reads", () => {
   it("preserves complete descriptor metadata and legacy provider fallback", async () => {

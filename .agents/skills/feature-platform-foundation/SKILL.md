@@ -193,3 +193,26 @@ Node script fixtures 162/162, updater Python 68/68, core 13/13, offline eval 30/
 normal desktop/core types, Host boundaries 47 files/headless 851 inputs and workflow
 lint passed. These counts belong to their named checks and are not all-product
 runtime acceptance. Installed/public-release inclusion remains unknown.
+
+## Windows local execution continuation (2026-10-28)
+
+Owner decisions in the same version/structure conversation: "tamam bunuda yapalım"
+(approve proposed heavy Windows self-hosted execution), then "yok ama kurabilirsin yetki veriyorum"
+(authorize creating a dedicated VM). This affects CI infrastructure, not deferred
+product accounts/company deployment. T2 scope includes routing, immutable machine
+admission, protected runner/profile/cache roots, VM/tools/session helpers and
+reviewed packaging paths. See docs/reference/windows-runners.md.
+
+CI Host six Windows shards and native checks, reusable desktop packaging and
+release-cache support explicit opt-in; PRs stay hosted. Shared queue max retains
+pending siblings, existing exact-source Check/signature/smoke gates stay required.
+The machine-owned hook rejects untrusted jobs before steps; labels/YAML are only
+routing. Clean checkouts retain dedicated external caches; no owner credentials or
+node_modules are shared. Source fixtures do not establish live runner activation.
+
+Actual operator evidence: temp/verification/2026-10-28-windows-runner/. Elevated
+Hyper-V creation, verified Windows ISO, new Gen2 VM and real guest boot/admin/OOBE
+proof passed. Evaluation activated for90 days. Guest tools/runner activation and
+delivered-source CI acceptance are tracked separately in that continuation report.
+Shared HEAD moved from d8bf868... to83053d6b... through concurrent work; this session
+has not staged, committed, pushed or changed branches. Preserve concurrent edits.

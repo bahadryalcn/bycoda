@@ -27,7 +27,12 @@ pub(super) fn ensure_schema(conn: &Connection) -> rusqlite::Result<()> {
             FROM (SELECT block_json FROM session_blocks b WHERE b.session_id=s.id ORDER BY ordinal)), '[]')
           ELSE s.blocks_json END AS blocks_json".to_string()
     } else { format!("s.\"{}\"", name.replace('"', "\"\"")) }).collect::<Vec<_>>().join(",");
-    conn.execute_batch(&format!("DROP VIEW IF EXISTS session_transcripts; CREATE VIEW session_transcripts AS SELECT {select} FROM sessions s;"))
+    // Startup callers are outside migrate_versions' transaction. Keep the old
+    // view committed for already-open WAL readers until its replacement commits;
+    // an unsuccessful CREATE must roll back the DROP as well.
+    let tx = rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)?;
+    tx.execute_batch(&format!("DROP VIEW IF EXISTS session_transcripts; CREATE VIEW session_transcripts AS SELECT {select} FROM sessions s;"))?;
+    tx.commit()
 }
 
 /// `raw` holds the compact JSON of each element of `blocks`, in order.
@@ -528,6 +533,10 @@ fn page_with_cache(
         revision,
     }))
 }
+
+#[cfg(test)]
+#[path = "incremental_view_tests.rs"]
+mod view_tests;
 
 #[cfg(test)]
 mod tests {

@@ -76,7 +76,7 @@ function Test-Protected([string]$Path, [switch]$Ancestors) {
         $write = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
         # Creating an unrelated sibling on C:\ is harmless; replacing this child's
         # ancestor is not. Do not require changing the system drive's normal ACL.
-        if ($cursor -ne [IO.Path]::GetFullPath($Path)) { $write = [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership }
+        if ($cursor -ne [IO.Path]::GetFullPath($Path)) { $write = [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership }
         foreach ($ace in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
             if ($ace.AccessControlType -eq 'Allow' -and ((Get-EffectiveFileRights $ace) -band $write) -and $ace.IdentityReference.Value -notin @($AdminSid, $SystemSid, $TrustedInstallerSid)) { return $false }
         }
@@ -116,10 +116,32 @@ function Test-OwnedWritableRoot([string]$Path, [string]$RunnerSid) {
 }
 
 function Get-Sha([string]$Path) { return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash.ToLowerInvariant() }
+function Test-PrivateEgressRanges([string[]]$Addresses) {
+    # NetSecurity renders these five IPv4 CIDRs as dotted masks. Accept only
+    # their exact equivalents and the seven canonical policy spellings; never
+    # interpret Any, aliases, arbitrary masks, broader or narrower prefixes.
+    if (-not $Addresses -or $Addresses.Count -gt 64) { return $false }
+    $aliases = @{}
+    foreach ($required in $PrivateRanges) { $aliases[$required] = $required }
+    $aliases['10.0.0.0/255.0.0.0'] = '10.0.0.0/8'
+    $aliases['172.16.0.0/255.240.0.0'] = '172.16.0.0/12'
+    $aliases['192.168.0.0/255.255.0.0'] = '192.168.0.0/16'
+    $aliases['169.254.0.0/255.255.0.0'] = '169.254.0.0/16'
+    $aliases['100.64.0.0/255.192.0.0'] = '100.64.0.0/10'
+    $seen = @{}
+    foreach ($address in $Addresses) {
+        if ([string]::IsNullOrEmpty($address) -or -not $aliases.ContainsKey($address)) { return $false }
+        $seen[$aliases[$address]] = $true
+    }
+    return $seen.Count -eq $PrivateRanges.Count
+}
+
 function Read-JsonFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
-    if ((Get-Item -LiteralPath $Path).Length -gt 4194304) { throw 'Configuration exceeds size bound.' }
-    return Get-Content -Raw -LiteralPath $Path | ConvertFrom-Json -AsHashtable
+    if ((Get-Item -Force -LiteralPath $Path).Length -gt 4194304) { throw 'Configuration exceeds size bound.' }
+    # Hidden GitHub configuration needs Force for metadata only. Get-Content
+    # -Force also requests WriteAttributes, which the runner intentionally lacks.
+    return [IO.File]::ReadAllText($Path) | ConvertFrom-Json -AsHashtable
 }
 function Write-JsonFile([string]$Path, $Value) { [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false)) }
 
@@ -173,14 +195,14 @@ function Get-RunnerFacts {
     }
     $policy = Read-JsonFile $PolicyPath
     $trusted = $false; $hashes = $false; $shim = $false
-    if ($policy -and (Test-Protected $Root) -and (Test-Protected $Control -Ancestors) -and (Test-Protected $PolicyPath)) {
+    if ($policy -and (Test-Protected $Root -Ancestors) -and (Test-Protected $Control -Ancestors) -and (Test-Protected $PolicyPath -Ancestors)) {
         $trusted = $true; $hashes = $true
         foreach ($required in @('control\node.exe', 'control\windows-runner.ps1', 'control\windows-runner-model.mjs', 'control\windows-runner-trust.mjs', 'control\shell\pwsh.exe', 'control\pre-job.ps1', 'agent\bin\Runner.Listener.exe')) {
             if (-not $policy.files.ContainsKey($required)) { $hashes = $false }
         }
         foreach ($entry in $policy.files.GetEnumerator()) {
             $full = [IO.Path]::GetFullPath((Join-Path $Root $entry.Key))
-            if (-not $full.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Protected $full) -or (Get-Sha $full) -ne $entry.Value) { $hashes = $false }
+            if (-not $full.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Protected $full -Ancestors) -or (Get-Sha $full) -ne $entry.Value) { $hashes = $false }
         }
         $shim = $hashes -and $policy.profilesDisabledByShim -eq $true
     }
@@ -200,7 +222,7 @@ function Get-RunnerFacts {
     $privateBlocked = $false
     if ($rule -and $rule.Enabled -eq 'True' -and $rule.Direction -eq 'Outbound' -and $rule.Action -eq 'Block' -and $rule.Profile -eq 'Any') {
         $remote = @($rule | Get-NetFirewallAddressFilter | ForEach-Object RemoteAddress)
-        $privateBlocked = @($PrivateRanges | Where-Object { $_ -notin $remote }).Count -eq 0 -and @(Get-NetFirewallProfile | Where-Object Enabled -ne True).Count -eq 0 -and (Get-Service MpsSvc).Status -eq 'Running'
+        $privateBlocked = (Test-PrivateEgressRanges $remote) -and @(Get-NetFirewallProfile | Where-Object Enabled -ne True).Count -eq 0 -and (Get-Service MpsSvc).Status -eq 'Running'
     }
     $runner = Read-JsonFile "$Agent\.runner"
     $registered = $null -ne $runner
@@ -210,7 +232,7 @@ function Get-RunnerFacts {
     # registered repository/pin inspected here. Review migrations while stopped.
     foreach ($unexpected in @('.runner_migrated', '.credentials_migrated')) { if (Test-Path -LiteralPath "$Agent\$unexpected") { $configProtected = $false } }
     foreach ($name in @('.runner', '.credentials', '.credentials_rsaparams', '.env', '.path')) {
-        if (Test-Path -LiteralPath "$Agent\$name") { $configProtected = $configProtected -and (Test-Protected "$Agent\$name") }
+        if (Test-Path -LiteralPath "$Agent\$name") { $configProtected = $configProtected -and (Test-Protected "$Agent\$name" -Ancestors) }
     }
     $matching = $registered -and $runner.agentName -eq 'bycoda-windows-isolated-01' -and $runner.gitHubUrl.TrimEnd('/') -eq 'https://github.com/bahadryalcn/bycoda' -and $runner.workFolder -eq $Work -and $runner.disableUpdate -eq $true
     $listenerVersion = if ($hashes -and (Test-Path -LiteralPath "$Agent\bin\Runner.Listener.exe")) { (Invoke-CleanTool "$Agent\bin\Runner.Listener.exe" @('--version')).output.Trim() } else { '' }

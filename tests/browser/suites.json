@@ -364,6 +364,43 @@
       ]
     },
     {
+      "id": "overlays",
+      "config": "tests/browser/playwright.overlays.config.ts",
+      "files": [
+        "overlay-popups.spec.ts",
+        "overlay-menus.spec.ts",
+        "overlay-feedback.spec.ts",
+        "overlay-media.spec.ts"
+      ],
+      "fixture": {
+        "config": "tests/browser/vite.overlays.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/overlay-popups.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": [
+            "overlay-popups.spec.ts",
+            "overlay-menus.spec.ts",
+            "overlay-feedback.spec.ts",
+            "overlay-media.spec.ts"
+          ]
+        },
+        {
+          "name": "webkit",
+          "browser": "webkit",
+          "files": [
+            "overlay-popups.spec.ts",
+            "overlay-menus.spec.ts",
+            "overlay-feedback.spec.ts",
+            "overlay-media.spec.ts"
+          ]
+        }
+      ]
+    },
+    {
       "id": "host-tools",
       "config": "tests/browser/playwright.host-tools.config.ts",
       "files": ["host-tools.e2e.ts", "tools-workspace-resize.e2e.ts"],

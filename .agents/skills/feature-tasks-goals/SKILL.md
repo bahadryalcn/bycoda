@@ -164,3 +164,34 @@ Committed inventory baseline: `f26ac112404e326478adb687c23ca9cc032acfef`. See `d
 Inventory delivery: `4454ce32` on `bycoda/wt-model/s7` commits this code-backed
 card and the worktree-first documentation. This reference establishes inventory
 delivery only; product/runtime acceptance remains as described above.
+
+## Stewards Host/WS source follow-up (2026-10-28)
+
+Coordinated W02/W07 sub-scope in the shared main checkout; this subsection is an
+implementation record, not a live feature claim or transport availability stamp.
+
+- `src/shared/model/host-contracts/stewards.ts` inventories the five actual RPCs:
+  list, save, delete, runNow and decline. Finite closed input/result schemas retain
+  all declared run/configuration metadata and complete expectedConfiguration
+  snapshots used by the mobile editor. Named model settings remain string-valued;
+  undeclared candidate/null fields are rejected. Desktop/mobile producers remain
+  unchanged, with legacy owner parsing/defaults/coercions preserved by the service.
+- `host/domains/stewards/service.ts` shares these operations across transports.
+  Owner list is a pure SELECT/sort; proposal settlement and scheduled starts remain
+  in the separate tick. Proposed capability is `transport.ws.stewards.v2`; list is
+  a retry-safe query, and the four mutations are wait-only with no automatic retry.
+  Registry/manifest/server composition is owned by the parent integration slice.
+- `host/stewards.ts` checks request authority at SQL/provider/workspace boundaries.
+  A pending run is recorded before external preparation; actual create/send IDs
+  update only matching run metadata without replacing concurrent configuration or
+  resurrecting a deleted row. Accepted provider work survives creator revocation
+  or waiter cancellation. Denied preparation retains confirmed resource identities
+  for later system-owned cleanup, and cleanup refuses unrelated workspaces.
+  Actual committed deletion publishes onDelete while preserving proposal tasks.
+- Focused source checks passed: 18 new DTO/actual-owner/service cases, two existing
+  managed-worktree/shutdown cases, and normal Host tsc-rs. The DTO exporter accepted
+  all schemas as deterministic draft-2020-12 JSON Schema. No app/native build,
+  installed/live Host, physical-device, power-loss or release acceptance is claimed.
+
+Observed HEAD `43a5a8ea3`; this follow-up remains uncommitted and is excluded from
+that commit. Existing staged/dirty work was preserved.

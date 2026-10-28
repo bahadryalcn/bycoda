@@ -40,6 +40,15 @@ foreach($case in @(@('O:BAG:BAD:(A;;GRGX;;;BU)(A;OICIIO;GA;;;CO)',$true),@('O:BA
   if((Test-Protected "$Control\ordinary") -ne $case[1]){throw 'Effective generic/inherited ACL decision was wrong'}
 }
 Remove-Item Function:Get-Acl
+# A leaf's read-only ACL is insufficient if an ancestor can be renamed.
+# Give its parent DELETE and the grandparent ADD_SUBDIRECTORY in memory only.
+function Get-Acl {param($LiteralPath)
+  $acl=[Security.AccessControl.DirectorySecurity]::new()
+  $sddl=if($LiteralPath -eq $Control){'O:BAG:BAD:(A;;SD;;;AU)'}elseif($LiteralPath -eq (Split-Path -Parent $Control)){'O:BAG:BAD:(A;;0x00000004;;;AU)'}else{'O:BAG:BAD:(A;;GRGX;;;BU)'}
+  $acl.SetSecurityDescriptorSddlForm($sddl);return $acl
+}
+if(Test-Protected "$Control\ordinary" -Ancestors){throw 'Read-only leaf accepted behind a deletable/replaceable ancestor'}
+Remove-Item Function:Get-Acl
 if(Test-NoReparse 'C:\tmp\file:stream'){throw 'ADS path accepted'}
 if(Test-NoReparse '\\server\share'){throw 'UNC path accepted'}
 New-Item -ItemType Junction -Path "$Control\linked" -Target "$Control\ordinary"|Out-Null

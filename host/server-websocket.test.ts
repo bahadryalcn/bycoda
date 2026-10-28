@@ -160,6 +160,43 @@ async function setup(provider: Partial<HostProvider> = {}, terminals?: HostTermi
 }
 
 describe("Host HTTP/WS read composition", () => {
+  it("shares Steward configuration and declined proposals through the same HTTP/WS owners", async () => {
+    const host = await setup();
+    const socket = await host.ready();
+    const description = await host.http("environment.describe");
+    expect(description.capabilities).toContain("transport.ws.stewards.v2");
+    const input = {
+      id: "steward-composition", projectId: host.project.id, enabled: false,
+      harness: "codex", model: "codex:test", modelSettings: {}, runtimeMode: "auto",
+      focus: "Preserve the source", maxProposals: 5, maxOpen: 10,
+      autoStart: false, autoMerge: false, isolate: false,
+      scheduleKind: "daily", minute: 0, time: "09:00", dayOfWeek: 1,
+    };
+    const saved = await host.http("stewards.save", { steward: input });
+    expect((await host.rpc(socket, "stewards.list")).result).toEqual([saved]);
+    const edited = await host.rpc(socket, "stewards.save", {
+      steward: { ...saved, focus: "Retain full metadata", expectedConfiguration: saved },
+    });
+    expect(edited.error).toBeUndefined();
+    expect((await host.http("stewards.list"))[0]).toEqual(edited.result);
+    await host.http("tasks.save", { task: {
+      id: "steward-proposal", projectId: host.project.id, title: "Retain this suggestion",
+      prompt: "Only a source fixture", harness: "codex", model: "codex:test",
+      runtimeMode: "auto", modelSettings: {}, source: "steward", stewardId: input.id,
+      isolate: false, status: "todo",
+    } });
+    const declined = await host.rpc(socket, "stewards.decline", { taskId: "steward-proposal" });
+    expect(declined.error).toBeUndefined();
+    expect(declined.result).toEqual({ declined: true });
+    expect((await host.http("stewards.list"))[0].declined).toHaveLength(1);
+    expect(await host.http("tasks.list")).toEqual([]);
+    const missing = await host.rpc(socket, "stewards.runNow", { stewardId: "absent-steward" });
+    expect(missing.error.code).not.toBe(RPC_ERROR_CODES.methodNotFound);
+    expect((await host.rpc(socket, "stewards.delete", { stewardId: input.id })).result)
+      .toEqual({ deleted: true });
+    expect(await host.http("stewards.list")).toEqual([]);
+  });
+
   it("reconciles retained HTTP Sprint receipts through WS without repeating a metadata effect", async () => {
     const host = await setup();
     const socket = await host.ready();

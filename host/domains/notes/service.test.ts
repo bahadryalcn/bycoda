@@ -39,6 +39,20 @@ const input = {
   sourceCwd: "/project",
   sourceSessionId: "session",
 };
+it("preserves a committed deletion when its worker notification fails", async () => {
+  const f = fixture();
+  const saved = await f.service.upsert({ note: input, expectedUpdatedAt: 0 }, f.context);
+  f.notes.onDelete = () => { throw new Error("private callback diagnostic"); };
+  const error = await f.service
+    .delete({ id: input.id, expectedUpdatedAt: saved.updatedAt }, f.context)
+    .catch((cause) => cause);
+  expect(error).toMatchObject({ name: "HostDomainOutcomeError", delivery: "accepted" });
+  expect(error.message).toContain("note was deleted");
+  expect(error.message).not.toContain("private");
+  expect(await f.notes.get(input.id)).toBeNull();
+  expect((await f.service.list({}, f.context)).total).toBe(0);
+});
+
 it("delegates full storage CAS and preview scoped reads", async () => {
   const f = fixture();
   const saved = await f.service.upsert({ note: input, expectedUpdatedAt: 0 }, f.context);

@@ -2683,6 +2683,7 @@ mod tests {
             "transport.ws.files.v2",
             "transport.ws.queue.v2",
             "transport.ws.streams.v2",
+            "transport.ws.stewards.v2",
             "transport.ws.read.v2",
             "transport.ws.v2",
         ] {

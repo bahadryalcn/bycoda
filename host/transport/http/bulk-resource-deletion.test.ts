@@ -14,6 +14,8 @@ import { createHostServer } from "../../server";
 import { HostStore } from "../../store";
 import { parseHostGoal } from "../../../src/features/tasks/model/hostGoals";
 import { parseHostTask } from "../../../src/features/tasks/model/hostTasks";
+import { parseHostSteward } from "../../../src/features/tasks/model/hostStewards";
+import { HostStewardSchema } from "../../../src/shared/model/host-contracts/stewards";
 import { HostGoalSchema } from "../../../src/shared/model/host-contracts/goals";
 import {
   BulkDescriptorSchema,
@@ -276,6 +278,36 @@ async function seedAutomations(
     );
   return saved[0]!;
 }
+
+it.each(["HTTP", "WS"] as const)(
+  "purges a retained Steward list after committed %s deletion", async (transport) => {
+    const host = await setup();
+    await host.server.stewards.ready;
+    for (let i = 0; i < 5; i++) {
+      const input = parseHostSteward({
+        id: `steward-${i}`, projectId: host.project.id, enabled: false,
+        harness: "codex", model: "codex:test", modelSettings: {}, runtimeMode: "auto",
+        focus: "Retain source", maxProposals: 5, maxOpen: 10,
+        autoStart: false, isolate: false, scheduleKind: "daily", minute: 0,
+        time: "09:00", dayOfWeek: 1,
+      });
+      const steward = HostStewardSchema.parse({
+        ...input, declined: [], nextRunAt: 1, createdAt: 1, updatedAt: 1,
+        lastRunStatus: "failed", lastRunError: "private-steward-".repeat(18_000),
+      });
+      await host.store.db.prepare("INSERT INTO stewards(id,value) VALUES(?,?)")
+        .run(steward.id, JSON.stringify(steward));
+    }
+    const read = await host.retain("stewards.list", {});
+    const removed = await (transport === "HTTP" ? host.http : host.rpc)("stewards.delete", {
+      stewardId: "steward-0",
+    });
+    expect(removed.error).toBeUndefined();
+    expect(removed.result).toEqual({ deleted: true });
+    expect(await host.server.stewards.list()).toHaveLength(4);
+    expect((await read()).status).toBe(404);
+  },
+);
 
 it.each([
   ["goals", "HTTP"],

@@ -110,17 +110,38 @@ function Assert-ActualGuest([string]$VmUuid) {
 
 function Get-GuestSha([string]$Path) { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 function Write-GuestJson([string]$Path, $Value) { [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 30), [Text.UTF8Encoding]::new($false)) }
-function Assert-GuestProtected([string]$Path, [string]$RunnerSid) {
-    if (-not (Test-GuestNoReparse $Path)) { throw 'Protected guest state traverses a reparse point.' }
-    $acl = Get-Acl -LiteralPath $Path
-    $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
+function Get-GuestEffectiveFileRights($Rule) {
+    # InheritOnly applies to descendants, never this object. Existing children
+    # retain their own effective ACLs; do not confuse a Creator Owner template
+    # on a parent with permission to mutate that parent.
+    if ($Rule.PropagationFlags -band [Security.AccessControl.PropagationFlags]::InheritOnly) { return [long]0 }
+    [long]$raw = $Rule.FileSystemRights
+    if ($raw -lt 0) { $raw += 4294967296 }
+    [long]$mapped = $raw -band 0x0fffffff
+    # Windows FILE_GENERIC_READ/WRITE/EXECUTE and FILE_ALL_ACCESS (winnt.h).
+    if ($raw -band 0x80000000L) { $mapped = $mapped -bor 0x120089 }
+    if ($raw -band 0x40000000L) { $mapped = $mapped -bor 0x120116 }
+    if ($raw -band 0x20000000L) { $mapped = $mapped -bor 0x1200a0 }
+    if ($raw -band 0x10000000L) { $mapped = $mapped -bor 0x1f01ff }
+    return $mapped
+}
+function Assert-GuestAcl($Acl, [string]$RunnerSid) {
+    $owner = $Acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
     if ($owner -notin @('S-1-5-32-544','S-1-5-18')) { throw 'Guest state must be Administrators/SYSTEM owned.' }
-    $write = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Modify -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+    # Modify contains read/execute bits. Only actual mutation rights belong here.
+    $write = [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+    $authority = [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
     $writers = @('S-1-5-32-544','S-1-5-18')
     if ($RunnerSid) { $writers += $RunnerSid }
-    foreach ($ace in $acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
-        if ($ace.AccessControlType -eq 'Allow' -and ($ace.FileSystemRights -band $write) -and $ace.IdentityReference.Value -notin $writers) { throw 'Unexpected principal can mutate guest state.' }
+    foreach ($ace in $Acl.GetAccessRules($true,$true,[Security.Principal.SecurityIdentifier])) {
+        $effective = Get-GuestEffectiveFileRights $ace
+        if ($ace.AccessControlType -eq 'Allow' -and ($effective -band $write) -and $ace.IdentityReference.Value -notin $writers) { throw 'Unexpected principal can mutate guest state.' }
+        if ($RunnerSid -and $ace.AccessControlType -eq 'Allow' -and $ace.IdentityReference.Value -eq $RunnerSid -and ($effective -band $authority)) { throw 'Runner may not change cache permissions or ownership.' }
     }
+}
+function Assert-GuestProtected([string]$Path, [string]$RunnerSid) {
+    if (-not (Test-GuestNoReparse $Path)) { throw 'Protected guest state traverses a reparse point.' }
+    Assert-GuestAcl (Get-Acl -LiteralPath $Path) $RunnerSid
 }
 function Protect-BootstrapRoot {
     $acl = [Security.AccessControl.DirectorySecurity]::new()
@@ -201,6 +222,8 @@ function Invoke-GuestProcess([string]$File, [string[]]$Arguments, [int]$TimeoutS
     $info.EnvironmentVariables['CARGO_HOME'] = $CargoHome
     $info.EnvironmentVariables['RUSTUP_HOME'] = $RustupHome
     $info.EnvironmentVariables['RUSTUP_AUTO_INSTALL'] = '0'
+    # Exact Rustup 1.29.2 setting (the newer main branch uses a different name).
+    $info.EnvironmentVariables['RUSTUP_HARDLINK_PROXIES'] = '1'
     if ($LogPrefix) { $info.EnvironmentVariables['TEMP'] = Split-Path -Parent $LogPrefix; $info.EnvironmentVariables['TMP'] = Split-Path -Parent $LogPrefix }
     $process = [Diagnostics.Process]::new(); $process.StartInfo = $info
     $evidence = [ordered]@{schemaVersion=1;file=$File;arguments=$info.Arguments;pid=$null;startedAt=[DateTime]::UtcNow.ToString('o');completedAt=$null;timeoutSeconds=$TimeoutSeconds;status='starting';exitCode=$null;error=$null}
@@ -266,11 +289,67 @@ function Save-GuestArtifact($Tool, [string]$RunRoot) {
     return $destination
 }
 
+function Get-GuestRustProxyPlan([string]$Bin, [string]$ExpectedSha256) {
+    # Read-only, separately testable validation. Production always supplies the
+    # fixed guest Cargo bin and the pinned official rustup-init digest.
+    # https://github.com/rust-lang/rustup/blob/1.29.2/src/lib.rs (TOOLS/DUP_TOOLS)
+    if ($ExpectedSha256 -cnotmatch '^[a-f0-9]{64}$' -or -not (Test-GuestNoReparse $Bin) -or -not (Test-Path -LiteralPath $Bin -PathType Container)) { throw 'Rust proxy bin must be a regular bounded directory.' }
+    $rustup = Join-Path $Bin 'rustup.exe'
+    if (-not (Test-GuestNoReparse $rustup) -or -not (Test-Path -LiteralPath $rustup -PathType Leaf) -or (Get-GuestSha $rustup) -cne $ExpectedSha256) { throw 'Rustup proxy target differs from the pinned official bootstrap.' }
+    $names = @('rustc.exe','rustdoc.exe','cargo.exe','rust-lldb.exe','rust-gdb.exe','rust-gdbgui.exe','rls.exe','cargo-clippy.exe','clippy-driver.exe','cargo-miri.exe','rust-analyzer.exe','rustfmt.exe','cargo-fmt.exe')
+    $entries = @(Get-ChildItem -Force -LiteralPath $Bin)
+    if ($entries.Count -gt 64) { throw 'Rust proxy bin exceeds entry bound.' }
+    $links = @()
+    foreach ($entry in $entries) {
+        if ($entry.PSIsContainer) { throw 'Unexpected directory/junction in Rust proxy bin.' }
+        if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+            if ($entry.Name -cnotin $names -or $entry.LinkType -cne 'SymbolicLink') { throw 'Unknown Rust proxy reparse point.' }
+            $targets = @($entry.Target)
+            if ($targets.Count -ne 1 -or $targets[0] -cne 'rustup.exe') { throw 'Rust proxy must point only to relative rustup.exe in the same bin.' }
+            if ((Get-GuestSha $entry.FullName) -cne $ExpectedSha256) { throw 'Rust symbolic proxy bytes differ from the pinned target.' }
+            $links += [pscustomobject]@{name=$entry.Name;path=$entry.FullName;target='rustup.exe';sha256=$ExpectedSha256}
+        } elseif ($entry.Name -cin $names) {
+            if ($entry.Length -le 0 -or $entry.Length -gt 33554432 -or (Get-GuestSha $entry.FullName) -cne $ExpectedSha256) { throw 'Existing regular Rust proxy differs from pinned rustup.' }
+        }
+    }
+    return [pscustomobject]@{bin=[IO.Path]::GetFullPath($Bin);rustup=$rustup;sha256=$ExpectedSha256;links=@($links);needsNormalization=($links.Count -gt 0)}
+}
+
+function Normalize-GuestRustProxies([string]$VmUuid, [string]$RunRoot) {
+    # The only mutation entrypoint uses actual facts and fixed production roots.
+    # There is no CLI fixture/root/hash override and no general symlink allowance.
+    [void](Assert-ActualGuest $VmUuid)
+    $bin = "$CargoHome\bin"
+    if (-not (Test-Path -LiteralPath $bin)) { return }
+    if (-not (Test-GuestNoReparse $RunRoot) -or -not (Test-Path -LiteralPath $RunRoot -PathType Container) -or -not [IO.Path]::GetFullPath($RunRoot).StartsWith("$StateRoot\runs\",[StringComparison]::OrdinalIgnoreCase)) { throw 'Rust normalization evidence must stay in the owned guest run.' }
+    $tool = Get-GuestToolManifest | Where-Object id -eq 'rust'
+    $plan = Get-GuestRustProxyPlan $bin $tool.sha256
+    $converted = @()
+    foreach ($link in $plan.links) {
+        # Revalidate every link immediately before unlinking only that link.
+        $current = Get-GuestRustProxyPlan $bin $tool.sha256
+        if (@($current.links | Where-Object {$_.name -ceq $link.name}).Count -ne 1) { throw 'Rust proxy changed during normalization.' }
+        [IO.File]::Delete($link.path)
+        New-Item -ItemType HardLink -Path $link.path -Target $plan.rustup | Out-Null
+        if (-not (Test-GuestNoReparse $link.path) -or (Get-GuestSha $link.path) -cne $tool.sha256) { throw 'Rust hardlink normalization verification failed.' }
+        $converted += $link.name
+    }
+    $after = Get-GuestRustProxyPlan $bin $tool.sha256
+    if ($after.needsNormalization) { throw 'Rust symbolic proxies remain after normalization.' }
+    Write-GuestJson "$RunRoot\rust-proxy-normalization.json" ([ordered]@{schemaVersion=1;evidence='known-rustup-proxy-hardlinks';status='passed';vmUuid=$VmUuid;rustupSha256=$tool.sha256;converted=$converted;completedAt=[DateTime]::UtcNow.ToString('o')})
+}
+
 function Get-GuestToolState($Tool) {
     $version = $null; $location = $null
     $paths = @{node='C:\Program Files\nodejs\node.exe';powershell='C:\Program Files\PowerShell\7\pwsh.exe';git='C:\Program Files\Git\cmd\git.exe';python='C:\Program Files\Python314\python.exe';rust="$CargoHome\bin\rustc.exe";pnpm="$ToolsRoot\pnpm\12.15.0\pnpm.exe"}
     if ($paths.ContainsKey($Tool.id)) {
         $location = $paths[$Tool.id]
+        if ($Tool.id -eq 'rust' -and (Test-Path -LiteralPath "$CargoHome\bin")) {
+            $proxies = Get-GuestRustProxyPlan "$CargoHome\bin" $Tool.sha256
+            if ($proxies.needsNormalization) {
+                return [pscustomobject]@{id='rust';path=$location;present=(Test-Path -LiteralPath $location -PathType Leaf);version=$null;compatible=$false;needsNormalization=$true;diagnostic='Known Rustup 1.29.2 symbolic proxies require guarded Install normalization; no Rust executable was run.'}
+            }
+        }
         if (Test-Path -LiteralPath $location -PathType Leaf) {
             $arguments = @('--version')
             if ($Tool.id -eq 'powershell') { $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-Command','$PSVersionTable.PSVersion.ToString()') }
@@ -359,6 +438,30 @@ function Get-GuestRustInventory {
     return @($files | Sort-Object path)
 }
 
+function Get-GuestInventoryIndex([object[]]$Files) {
+    if (-not $Files -or $Files.Count -gt 50000) { throw 'Rust seed inventory exceeds entry bound or is empty.' }
+    $index = [Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
+    [long]$total = 0
+    foreach ($entry in $Files) {
+        if ($entry.path -isnot [string] -or $entry.path.Length -gt 1024 -or $entry.path -cnotmatch '^(cargo|rustup)/[^\\:\x00-\x1f]+$' -or @($entry.path.Split('/') | Where-Object {$_ -in @('','.','..')}).Count -or $entry.sha256 -isnot [string] -or $entry.sha256 -cnotmatch '^[a-f0-9]{64}$' -or ($entry.bytes -isnot [int] -and $entry.bytes -isnot [long]) -or $entry.bytes -lt 0 -or $entry.bytes -gt 536870912) { throw 'Malformed Rust seed inventory entry.' }
+        if ($index.ContainsKey($entry.path)) { throw 'Duplicate exact Rust seed inventory path.' }
+        $total += $entry.bytes
+        if ($total -gt 17179869184) { throw 'Rust seed inventory exceeds byte bound.' }
+        $index.Add($entry.path,$entry)
+    }
+    return ,$index
+}
+function Assert-GuestInventorySame([object[]]$Current, [object[]]$Recorded) {
+    # PS5.1/PS7 and cultures can sort punctuation differently. File identity is
+    # the exact path + integer byte count + SHA256, never serialized row order.
+    $actual = Get-GuestInventoryIndex $Current
+    $expected = Get-GuestInventoryIndex $Recorded
+    if ($actual.Count -ne $expected.Count) { throw 'Rust seed inventory has missing or additional paths.' }
+    foreach ($file in $expected.Keys) {
+        if (-not $actual.ContainsKey($file) -or $actual[$file].bytes -ne $expected[$file].bytes -or $actual[$file].sha256 -cne $expected[$file].sha256) { throw 'Rust seed hashes, bytes or exact paths changed after verified installation.' }
+    }
+}
+
 function Invoke-GuestInstall([string]$VmUuid) {
     $facts = Assert-ActualGuest $VmUuid
     $manifest = @(Get-GuestToolManifest); Assert-GuestManifest $manifest
@@ -367,6 +470,7 @@ function Invoke-GuestInstall([string]$VmUuid) {
     try {
         foreach ($tool in $manifest) {
             if (($tool.id -eq 'python' -and -not $IncludePython) -or ($tool.id -eq 'pnpm' -and -not $IncludePnpm)) { continue }
+            if ($tool.id -eq 'rust') { Normalize-GuestRustProxies $VmUuid $run }
             $before = Get-GuestToolState $tool
             if ($before.present -and -not $before.compatible) { throw "Existing $($tool.id) version $($before.version) is incompatible; refusing implicit replacement." }
             $action='reused'; $exitCode=0
@@ -375,6 +479,7 @@ function Invoke-GuestInstall([string]$VmUuid) {
                 $result = Install-GuestTool $tool $artifact $run
                 $exitCode=$result.exitCode; $action='installed'
                 if ($exitCode -eq 3010) { $receipt.rebootRequired=$true }
+                if ($tool.id -eq 'rust') { Normalize-GuestRustProxies $VmUuid $run }
             }
             $after = Get-GuestToolState $tool
             $receipt.tools += [pscustomobject]@{id=$tool.id;action=$action;expectedVersion=$tool.version;sha256=$tool.sha256;downloadUrl=$tool.url;exitCode=$exitCode;observed=$after}
@@ -404,7 +509,7 @@ function Invoke-GuestSeed([string]$VmUuid) {
         Assert-GuestProtected $destination $policy.runnerSid
     }
     $current = @(Get-GuestRustInventory)
-    if (($current | ConvertTo-Json -Depth 5 -Compress) -cne ($seed.files | ConvertTo-Json -Depth 5 -Compress)) { throw 'Rust seed hashes changed after verified installation.' }
+    Assert-GuestInventorySame $current @($seed.files)
     foreach ($entry in $current) {
         $parts = $entry.path.Split('/',2)
         $destination = if ($parts[0] -eq 'cargo') {'C:\bycoda-actions\cache\cargo-home'} else {'C:\bycoda-actions\cache\rustup-home'}
@@ -425,7 +530,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             $facts=Get-GuestFacts; $denials=@(Get-GuestDenials $facts $ExpectedVmUuid)
             $manifest=@(Get-GuestToolManifest); Assert-GuestManifest $manifest
             $states=@()
-            if ($denials.Count -eq 0) { foreach ($tool in $manifest) { try { $states += Get-GuestToolState $tool } catch { $states += [pscustomobject]@{id=$tool.id;error=$_.Exception.Message} } } }
+            if ($denials.Count -eq 0) { foreach ($tool in $manifest) { try { $states += Get-GuestToolState $tool } catch { $states += [pscustomobject]@{id=$tool.id;compatible=$false;untrustedPath=$true;error=$_.Exception.Message} } } }
             [ordered]@{schemaVersion=1;mode='Plan';readOnly=$true;allowedInstall=($denials.Count -eq 0);denials=$denials;facts=$facts;bootstrapRoot=$BootstrapRoot;stateRoot=$StateRoot;rustHomes=@($CargoHome,$RustupHome);toolManifest=$manifest;toolStates=$states;pythonOptIn=[bool]$IncludePython;pnpmOptIn=[bool]$IncludePnpm;runnerRegistration=$false;automaticRestart=$false} | ConvertTo-Json -Depth 15
         } elseif ($Mode -eq 'Install') { Invoke-GuestInstall $ExpectedVmUuid | ConvertTo-Json -Depth 20 }
         else { Invoke-GuestSeed $ExpectedVmUuid | ConvertTo-Json -Depth 20 }

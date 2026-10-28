@@ -50,7 +50,7 @@ function Assert-AdminProtected([string]$Path) {
         $owner = $acl.GetOwner([Security.Principal.SecurityIdentifier]).Value
         $trusted = @('S-1-5-18', 'S-1-5-32-544', 'S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464')
         if ($owner -notin $trusted) { throw 'Guest prerequisite owner is not administrator/SYSTEM' }
-        $rights = [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
+        $rights = [Security.AccessControl.FileSystemRights]::Delete -bor [Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor [Security.AccessControl.FileSystemRights]::ChangePermissions -bor [Security.AccessControl.FileSystemRights]::TakeOwnership
         if ($cursor -eq $initial) { $rights = $rights -bor [Security.AccessControl.FileSystemRights]::Write -bor [Security.AccessControl.FileSystemRights]::Delete }
         foreach ($ace in $acl.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier])) {
             if ($ace.AccessControlType -eq 'Allow' -and ((Get-EffectiveSessionRights $ace) -band $rights) -and $ace.IdentityReference.Value -notin $trusted) { throw 'Guest prerequisite is writable or replaceable by an untrusted identity' }
@@ -261,9 +261,9 @@ public static class BycodaGuestProfile {
 '@
         }
         Assert-RegularPath "C:\Users\$accountName"
-        $profilePath = [Text.StringBuilder]::new(1024)
-        $result = [BycodaGuestProfile]::CreateProfile($user.SID.Value, $accountName, $profilePath, 1024)
-        if ($result -ne 0 -or $profilePath.ToString() -ne "C:\Users\$accountName") { throw 'Windows did not create the expected real runner profile' }
+        $profilePath = [Text.StringBuilder]::new(260)
+        $result = [BycodaGuestProfile]::CreateProfile($user.SID.Value, $accountName, $profilePath, 260)
+        if ($result -ne 0 -or $profilePath.ToString() -ne "C:\Users\$accountName") { throw ('Windows did not create the expected real runner profile; HRESULT={0}, path={1}' -f $result, $profilePath.ToString()) }
     } elseif ($profile.LocalPath -ne "C:\Users\$accountName" -or $profile.Special) { throw 'Unexpected existing runner profile' }
     Assert-RegularPath "C:\Users\$accountName"
     Initialize-LsaInterop

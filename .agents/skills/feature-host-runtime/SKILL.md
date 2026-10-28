@@ -99,11 +99,18 @@ Latest source registry: 1a682d66bdd7 (106 methods). Work-domain integration234/2
 including full HTTP119; later planning-domain composition37/37; separate owner
 Goals81, Sprints26 and Automations40; Native broker52/remote47 plus scoped Clippy;
 mobile103 plus normal typecheck. Counts overlap and are not an aggregate total.
-Normal Host/web tsc-rs, neutral/domain boundaries (47 files), actual in-memory
-headless bundle (851 inputs, zero UI/React/CSS) and hygiene passed on 2026-10-28.
+Normal Host/web tsc-rs, neutral/domain boundaries (48 files), actual in-memory
+headless bundle (852 inputs, zero UI/React/CSS) and hygiene passed on 2026-10-28.
 Rewind63 and file/checkpoint109 remain separate earlier focused evidence.
 Notes4 methods additionally use the same storage worker/CAS/commit grant through
 HTTP and WS; original outer expectedUpdatedAt remains required by its storage owner.
+Task/Note/Goal/Automation retained bulk copies now fence actual committed
+deletions before old descriptors or late captures can disclose removed rows;
+Automation's existing run cascade is included. Final24 bulk plus7 worker cases
+passed. Verified post-commit Note outcome and conservative unknown mutation
+delivery passed39 domain/dispatcher/worker cases; shared policy/client contracts
+passed105 across eight suites. Counts overlap. Already downloaded client copies
+and remaining resource families are separate qualification work.
 Native/mobile final follow-up and older full frontend evidence are recorded in
 the local IMPLEMENTATION ledger. No fixture count proves installed acceptance.
 

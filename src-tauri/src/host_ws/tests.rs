@@ -273,32 +273,37 @@ fn negotiated_method_inventory_cannot_bypass_its_required_capability() {
 }
 
 #[test]
-fn a_session_only_host_negotiates_its_family_without_a_generic_read_capability() {
-    let server = Server::spawn(|listener| async move {
-        let mut socket = accept(&listener).await;
-        hello_capabilities(
-            &mut socket,
-            &["sessions.list"],
-            "host.1",
-            vec!["transport.ws.sessions.v2".into()],
-        )
-        .await;
-        let request = next(&mut socket).await;
-        assert_eq!(request["method"], "sessions.list");
-        result(&mut socket, &request, json!([])).await;
-    });
-    let broker = HostWsBroker::default();
-    let reply = broker
-        .request(
-            &server.route(),
-            "window.subset",
+fn a_family_only_host_negotiates_without_a_generic_read_capability() {
+    for (capability, method, params) in [
+        (
+            "transport.ws.sessions.v2",
             "sessions.list",
             json!({"projectId":"project.1"}),
-            RequestOptions::default(),
-        )
-        .unwrap();
-    assert_eq!(reply.result, json!([]));
-    broker.shutdown();
+        ),
+        ("transport.ws.stewards.v2", "stewards.list", json!({})),
+    ] {
+        assert!(HostWsBroker::supports_ws_capability(capability));
+        assert!(HostWsBroker::supports_params(method, &params));
+        let server = Server::spawn(move |listener| async move {
+            let mut socket = accept(&listener).await;
+            hello_capabilities(&mut socket, &[method], "host.1", vec![capability.into()]).await;
+            let request = next(&mut socket).await;
+            assert_eq!(request["method"], method);
+            result(&mut socket, &request, json!([])).await;
+        });
+        let broker = HostWsBroker::default();
+        let reply = broker
+            .request(
+                &server.route(),
+                "window.subset",
+                method,
+                params,
+                RequestOptions::default(),
+            )
+            .unwrap();
+        assert_eq!(reply.result, json!([]));
+        broker.shutdown();
+    }
 }
 
 fn union_snapshot(receiver: &mpsc::Receiver<NativeEvent>, logical: &str, sequence: u64) -> Value {

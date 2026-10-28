@@ -67,6 +67,7 @@ impl SessionStore {
         // Registration freezes exclude new opens, not writes by a registered
         // live actor. The connection now owns its kernel lease independently.
         drop(admission);
+        let _initialization = conn.initialization()?;
         // NORMAL in WAL mode survives an app crash; only an OS crash or power
         // loss can drop the last commits (never corrupts), and skips a WAL
         // fsync on every autocommit write. The size limit truncates the WAL

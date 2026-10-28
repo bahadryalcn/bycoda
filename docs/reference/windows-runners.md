@@ -63,6 +63,48 @@ before claiming a speedup.
 
 ## Setup and first execution
 
+### Creating the dedicated guest
+
+`scripts/setup/windows-vm.ps1` provides readonly Plan/Status and elevated Create
+for the fixed new `bycoda-windows-ci` Hyper-V VM under
+`G:\BycodaCI\VMs\bycoda-windows-ci`. It verifies official ISO bytes, available host
+memory, fixed owned paths and the existing Default Switch. It refuses existing or
+unknown VM/disks, uses a new dynamic VHDX with scoped offline UEFI boot files,
+and leaves host boot/network/restart policy alone. Resources are 8 virtual CPUs,
+8GiB startup RAM, 4–12GiB dynamic RAM and 160GiB maximum dynamic disk.
+
+Create consumes a private one-use password file for the new BycodaAdmin guest
+account. Broadly readable delivery files must first be handed off through a
+protected administrator-owned file; do not weaken the ACL check. The controller
+credential is DPAPI-encrypted and Admin/SYSTEM-protected outside the guest.
+Remove the owned sensitive Panther answer file after guest OOBE completes.
+The official Windows Enterprise evaluation is 90 days; verify activation/remaining
+time in the guest and arrange a licensed image for continued use.
+
+The initial guest may have Restricted script execution. Configure RemoteSigned
+only in the explicitly verified new guest before running reviewed setup scripts;
+do not change the host's policy or use a generic execution-policy bypass.
+Use PowerShell Direct with the controller credential; no mapped owner drive,
+clipboard, personal profile or PAT is needed. Disable guest file-copy integration
+and select public DNS before the runner's private-network egress block is applied.
+
+`windows-vm-guest.ps1 -Mode Plan|Install -ExpectedVmUuid <guest-CIM-UUID>` installs
+hash-pinned tools in the actual elevated guest. That UUID is the guest's
+`Win32_ComputerSystemProduct.UUID`, not Hyper-V's VM ID. Optional Python/pnpm
+installation is explicit. Installers run hidden with time/size bounds, quiet MSI
+syntax and recorded exit/version checks; 3010 means a guest restart is needed.
+
+Then use `windows-vm-session.ps1 -Mode CreateAccount -ExpectedVmUuid <UUID>` to
+create the nonadministrator account and real Windows profile. Its generated
+password remains in the guest's protected LSA secret and is never returned.
+Run runner Prepare, guest-tools SeedRunnerCache, then runner Register.
+Session EnableRunnerSession creates the limited interactive logon task and
+LSA-based autologon only after protected registration is verified. Restart only
+the owned guest and verify the real listener is online. A scheduled task is not
+a running agent.
+
+### Preparing and activating the agent
+
 Use the maintained setup helper; Plan/Status do not register or start an agent:
 
 ```powershell
@@ -117,12 +159,13 @@ validated queue scalars, then checks remaining YAML/expressions with actionlint.
 It does not broadly suppress lint errors. Retire the bridge when upstream supports
 the native property.
 
-Implementation preflight: zero registered runners. The official v2.338.2 Windows
-x64 ZIP was downloaded/SHA256-verified, without registration or launch on the
-owner's account. This session is nonadministrator, Hyper-V management is denied
-and Windows Sandbox is absent. Actual guest preparation, registration, live
-preflight and exact-source hosted acceptance require the dedicated guest and
-delivered source. Source preparation is not active migration.
+The initial implementation preflight had zero runners and no ordinary-process
+Hyper-V access. The owner subsequently authorized creating a new VM; elevated
+access was verified, Windows was installed/booted and the evaluation activated.
+Actual setup/registration/online/cutover status is recorded separately under
+`temp/verification/2026-10-28-windows-runner/`. Never infer active migration from
+source preparation, a verified ZIP, an installed OS or a startup task.
+Live preflight and full CI still require delivered exact source.
 
 Primary contracts: [self-hosted runners](https://docs.github.com/en/actions/concepts/runners/self-hosted-runners),
 [runner security](https://docs.github.com/en/actions/reference/security/secure-use),

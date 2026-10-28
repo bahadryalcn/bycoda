@@ -74,12 +74,17 @@ impl StoreBinding {
             .canonical_path
             .parent()
             .ok_or("Native writer database has no parent")?;
-        let hash = Sha256::digest(
+        let mut hash = Sha256::new();
+        for part in [
             self.canonical_path
                 .to_str()
-                .ok_or("Native writer database path is invalid")?
-                .as_bytes(),
-        );
+                .ok_or("Native writer database path is invalid")?,
+            self.physical_file_id.as_str(),
+        ] {
+            hash.update((part.len() as u64).to_be_bytes());
+            hash.update(part.as_bytes());
+        }
+        let hash = hash.finalize();
         Ok(parent.join(format!(".bycoda-writers-{hash:x}")))
     }
     fn key(&self) -> String {
@@ -198,7 +203,11 @@ impl Gate {
         }
         Ok(())
     }
-    fn scan(&self, binding: &StoreBinding) -> Result<Vec<(PathBuf, Observation)>, String> {
+    fn scan(
+        &self,
+        binding: &StoreBinding,
+        recover: bool,
+    ) -> Result<Vec<(PathBuf, Observation)>, String> {
         self.verify()?;
         binding.verify()?;
         let directory = self
@@ -214,6 +223,18 @@ impl Gate {
                 continue;
             }
             let path = entry.path();
+            if entry.file_name() == "initialization.lock" {
+                let file = os::safe_file(&path, false, false)?;
+                if file
+                    .metadata()
+                    .map_err(|_| "Native writer initialization metadata is unavailable")?
+                    .len()
+                    != 0
+                {
+                    return Err("Native writer initialization lock is corrupt".into());
+                }
+                continue;
+            }
             let filename = path
                 .file_stem()
                 .and_then(|name| name.to_str())
@@ -235,10 +256,12 @@ impl Gate {
         names.sort_by(|left, right| left.0.cmp(&right.0));
         let mut result = Vec::new();
         for (filename, files) in names {
-            if files != 3 {
-                return Err("Native writer participant publication is incomplete".into());
-            }
             let path = directory.join(format!("{filename}.json"));
+            if files & 2 == 0 {
+                return Err(
+                    "Native writer participant lease is missing; publication is incomplete".into(),
+                );
+            }
             // Windows byte-range locks are mandatory for reads too. Keep the
             // kernel lease separate from immutable participant metadata.
             let lease_file = os::safe_file(&path.with_extension("lease"), false, false)?;
@@ -257,6 +280,13 @@ impl Gate {
                     return Err("Native writer lease state is unknown".into())
                 }
             };
+            if files & 1 == 0 {
+                if recover && lease == LeaseState::Unleased {
+                    self.retire(binding, &path, None, lease_file)?;
+                    continue;
+                }
+                return Err("Native writer participant publication is incomplete".into());
+            }
             let file = os::safe_file(&path, false, false)?;
             let mut bytes = Vec::new();
             (&file)
@@ -266,8 +296,18 @@ impl Gate {
             if bytes.len() > MAX_RECORD_BYTES {
                 return Err("Native writer participant metadata exceeds its bound".into());
             }
-            let record: ActorRecord = serde_json::from_slice(&bytes)
-                .map_err(|_| "Native writer participant metadata is invalid or incomplete")?;
+            let record: ActorRecord = match serde_json::from_slice(&bytes) {
+                Ok(record) => record,
+                Err(_) if recover && lease == LeaseState::Unleased && interrupted_json(&bytes) => {
+                    self.retire(binding, &path, Some(file), lease_file)?;
+                    continue;
+                }
+                Err(_) => {
+                    return Err(
+                        "Native writer participant metadata is invalid or incomplete".into(),
+                    )
+                }
+            };
             if record.protocol != 1
                 || record.registration_id != filename
                 || uuid::Uuid::parse_str(&record.actor_id).is_err()
@@ -276,6 +316,10 @@ impl Gate {
                 || record.binding != *binding
             {
                 return Err("Native writer participant identity or binding is unknown".into());
+            }
+            if recover && lease == LeaseState::Unleased {
+                self.retire(binding, &path, Some(file), lease_file)?;
+                continue;
             }
             result.push((
                 path,
@@ -286,6 +330,72 @@ impl Gate {
             ));
         }
         Ok(result)
+    }
+
+    /// Only a safe, held exclusive kernel probe authorizes retirement. JSON is
+    /// removed first; the zero-length UUID lease remains a recovery witness if
+    /// the process exits before the final removal. This never infers PID death.
+    fn retire(
+        &self,
+        binding: &StoreBinding,
+        path: &Path,
+        metadata: Option<File>,
+        lease: File,
+    ) -> Result<(), String> {
+        self.verify()?;
+        binding.verify()?;
+        if let Some(metadata) = metadata {
+            let expected = os::file_identity(&metadata)?.0;
+            drop(metadata);
+            let current = os::safe_file(path, false, false)?;
+            if os::file_identity(&current)?.0 != expected {
+                return Err("Native writer participant changed during retirement".into());
+            }
+            drop(current);
+            std::fs::remove_file(path)
+                .map_err(|_| "Native writer unleased record cannot be retired")?;
+            #[cfg(test)]
+            crash_checkpoint("after-retirement-json");
+        }
+        let expected = os::file_identity(&lease)?.0;
+        drop(lease);
+        let lease_path = path.with_extension("lease");
+        let current = os::safe_file(&lease_path, false, false)?;
+        if os::file_identity(&current)?.0 != expected
+            || current
+                .metadata()
+                .map_err(|_| "Native writer lease metadata is unavailable")?
+                .len()
+                != 0
+        {
+            return Err("Native writer lease changed during retirement".into());
+        }
+        drop(current);
+        std::fs::remove_file(lease_path)
+            .map_err(|_| "Native writer unleased lease cannot be retired".to_owned())
+    }
+}
+
+// An interrupted native write is a prefix of JSON, including a cut inside the
+// final UTF-8 character. Complete foreign JSON, oversized data and other syntax
+// corruption are not recoverable registration prefixes.
+fn interrupted_json(bytes: &[u8]) -> bool {
+    const HEADER: &[u8] = b"{\"protocol\":1,\"actor_id\":";
+    if !bytes.starts_with(HEADER) && !HEADER.starts_with(bytes) {
+        return false;
+    }
+    let prefix = match std::str::from_utf8(bytes) {
+        Ok(_) => bytes,
+        Err(error) if error.error_len().is_none() => &bytes[..error.valid_up_to()],
+        Err(_) => return false,
+    };
+    serde_json::from_slice::<serde_json::Value>(prefix).is_err_and(|error| error.is_eof())
+}
+
+#[cfg(test)]
+fn crash_checkpoint(stage: &str) {
+    if std::env::var("BYCODA_COHORT_CRASH_STAGE").as_deref() == Ok(stage) {
+        std::process::exit(73);
     }
 }
 
@@ -300,7 +410,7 @@ impl Inspection {
         let binding = StoreBinding::resolve(path, false)?;
         let gate = Gate::acquire(&binding)?;
         let actors = gate
-            .scan(&binding)?
+            .scan(&binding, false)?
             .into_iter()
             .map(|(_, actor)| actor)
             .collect();
@@ -341,7 +451,7 @@ impl OpenAdmission {
         let gate = Gate::acquire(&binding)?;
         // Always take the cross-process gate BEFORE cache lookup. An existing
         // local registration never permits a reopen through an inspection.
-        let actors = gate.scan(&binding)?;
+        let actors = gate.scan(&binding, true)?;
         let mut cached = registrations()
             .lock()
             .map_err(|_| "Native writer registration cache is unavailable")?;
@@ -357,20 +467,7 @@ impl OpenAdmission {
         if cached.len() >= MAX_ACTORS {
             return Err("Native writer registration store bound exceeded".into());
         }
-        let mut live = 0;
-        for (path, actor) in actors {
-            if actor.lease == LeaseState::Unleased {
-                // The exclusive probe proved this record has no kernel lease,
-                // not that its PID is dead. Never prune unknown/corrupt records.
-                std::fs::remove_file(&path)
-                    .map_err(|_| "Native writer unleased record cannot be retired")?;
-                std::fs::remove_file(path.with_extension("lease"))
-                    .map_err(|_| "Native writer unleased lease cannot be retired")?;
-            } else {
-                live += 1;
-            }
-        }
-        if live >= MAX_ACTORS {
+        if actors.len() >= MAX_ACTORS {
             return Err("Native writer participant bound exceeded".into());
         }
         let actor = native_actor()?;
@@ -398,7 +495,16 @@ impl OpenAdmission {
         lease
             .try_lock()
             .map_err(|_| "Native writer cannot acquire its participant lease")?;
+        #[cfg(test)]
+        crash_checkpoint("after-lease-created");
         let mut file = os::safe_file(&path, true, true)?;
+        #[cfg(test)]
+        if std::env::var("BYCODA_COHORT_CRASH_STAGE").as_deref() == Ok("partial-metadata") {
+            file.write_all(&bytes[..bytes.len() / 2])
+                .and_then(|_| file.sync_all())
+                .map_err(|_| "Native writer registration cannot be persisted")?;
+            crash_checkpoint("partial-metadata");
+        }
         file.write_all(&bytes)
             .and_then(|_| file.sync_all())
             .map_err(|_| "Native writer registration cannot be persisted")?;
@@ -427,6 +533,13 @@ pub(crate) struct RegisteredConnection {
     connection: Connection,
     registration: Option<Arc<Registration>>,
 }
+
+/// DDL initialization is serialized separately from registration. Waiting actors
+/// already hold their writer leases; inspection must not treat them as idle.
+pub(super) struct Initialization {
+    _file: File,
+}
+
 impl RegisteredConnection {
     pub(super) fn new(connection: Connection, registration: Arc<Registration>) -> Self {
         Self {
@@ -447,6 +560,47 @@ impl RegisteredConnection {
             .as_ref()
             .ok_or("In-memory stores have no physical writer cohort")?;
         Inspection::begin(&registration.record.binding.canonical_path)
+    }
+    pub(super) fn initialization(&self) -> Result<Initialization, String> {
+        let registration = self
+            .registration
+            .as_ref()
+            .ok_or("In-memory stores have no physical initialization lock")?;
+        let binding = &registration.record.binding;
+        binding.verify()?;
+        let path = binding.registry()?.join("initialization.lock");
+        let file = os::safe_file(&path, true, false)?;
+        if file
+            .metadata()
+            .map_err(|_| "Native writer initialization metadata is unavailable")?
+            .len()
+            != 0
+        {
+            return Err("Native writer initialization lock is corrupt".into());
+        }
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            match file.try_lock() {
+                Ok(()) => break,
+                Err(TryLockError::WouldBlock) if Instant::now() < until => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(TryLockError::WouldBlock) => {
+                    return Err(
+                        "Native writer initialization is busy; retry after startup finishes".into(),
+                    )
+                }
+                Err(TryLockError::Error(_)) => {
+                    return Err("Native writer initialization lock is unavailable".into())
+                }
+            }
+        }
+        let current = os::safe_file(&path, false, false)?;
+        if os::file_identity(&current)?.0 != os::file_identity(&file)?.0 {
+            return Err("Native writer initialization lock changed".into());
+        }
+        binding.verify()?;
+        Ok(Initialization { _file: file })
     }
 }
 impl Deref for RegisteredConnection {

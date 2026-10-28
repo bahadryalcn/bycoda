@@ -1,11 +1,2 @@
-/** Match native admission semantics; retry policy and method-name prefixes do not establish effects. */
-export function hostRpcHasEffect(method: string, kind: string): boolean {
-  return (
-    kind !== "query" &&
-    kind !== "subscription" &&
-    !(
-      kind === "control" &&
-      ["connection.hello", "connection.probe", "requests.cancel"].includes(method)
-    )
-  );
-}
+/** Compatibility import; Host and clients share the neutral admission policy. */
+export { hostRpcHasEffect } from "../../model/host-contracts/effects";

@@ -1,5 +1,5 @@
 import * as dto from "../../../src/shared/model/host-contracts/notes";
-import { assertDomainAuthority, type HostDomainContext } from "../context";
+import { assertDomainAuthority, HostDomainOutcomeError, type HostDomainContext } from "../context";
 
 export interface HostNotesServicePorts {
   session(id: string): Promise<{ projectId: string; session: { id: string } }>;
@@ -99,12 +99,28 @@ export function createHostNotesService(ports: HostNotesServicePorts) {
       const params = (
         options.legacy ? dto.NotesDeleteParamsSchema.strip() : dto.NotesDeleteParamsSchema
       ).parse(raw);
-      const result = await ports.notes.delete(
-        params.id,
-        params.expectedUpdatedAt,
-        undefined,
-        authorize(context),
-      );
+      let result;
+      try {
+        result = await ports.notes.delete(
+          params.id,
+          params.expectedUpdatedAt,
+          undefined,
+          authorize(context),
+        );
+      } catch (cause) {
+        if (
+          cause instanceof Error &&
+          "code" in cause && cause.code === "NOTES_DELETE_NOTIFICATION_FAILED" &&
+          "committed" in cause && cause.committed === true
+        ) {
+          throw new HostDomainOutcomeError(
+            "The note was deleted, but its update notification failed. Refresh before continuing.",
+            "accepted",
+            { cause },
+          );
+        }
+        throw cause;
+      }
       await assertDomainAuthority(context);
       return dto.NotesDeleteResultSchema.parse(result);
     },

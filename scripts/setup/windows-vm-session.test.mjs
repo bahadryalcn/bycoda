@@ -56,7 +56,7 @@ $profileSource=$ast.FindAll({param($n) $n -is [System.Management.Automation.Lang
 Add-Type -TypeDefinition $profileSource.Value
 $interop=[BycodaGuestProfile].GetMethod('CreateProfile').GetCustomAttributes([Runtime.InteropServices.DllImportAttribute],$false)[0]
 if(-not $interop.ExactSpelling -or $interop.CharSet -ne [Runtime.InteropServices.CharSet]::Unicode){throw 'CreateProfile must bind exact Unicode native signature'}
-if(([Text.StringBuilder]::new(1024)).Capacity -ne 1024){throw 'PS5.1 StringBuilder constructor binding failed'}
+if(([Text.StringBuilder]::new(260)).Capacity -ne 260){throw 'PS5.1 StringBuilder constructor binding failed'}
 # Set-Acl is mocked: constructor binding/owner/rights are examined in memory.
 function Set-Acl {param($LiteralPath,$AclObject) $script:captured=$AclObject}
 foreach($target in @($env:BYCODA_SESSION_FIXTURE,$env:BYCODA_SESSION_SOURCE)) {
@@ -72,6 +72,13 @@ $script:acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:(A;;GRGX;;;BU)(A;OICIIO;GA;
 Assert-AdminProtected $env:BYCODA_SESSION_FIXTURE
 $script:acl.SetSecurityDescriptorSddlForm('O:BAG:BAD:(A;;GW;;;AU)')
 $denied=$false;try{Assert-AdminProtected $env:BYCODA_SESSION_FIXTURE}catch{$denied=$true};if(-not $denied){throw 'Generic write ACL accepted'}
+Remove-Item Function:Get-Acl
+function Get-Acl {param($LiteralPath)
+  $acl=[Security.AccessControl.DirectorySecurity]::new()
+  $sddl=if($LiteralPath -eq (Split-Path -Parent $env:BYCODA_SESSION_FIXTURE)){'O:BAG:BAD:(A;;SD;;;AU)'}else{'O:BAG:BAD:(A;;GRGX;;;BU)'}
+  $acl.SetSecurityDescriptorSddlForm($sddl);return $acl
+}
+$denied=$false;try{Assert-AdminProtected $env:BYCODA_SESSION_FIXTURE}catch{$denied=$true};if(-not $denied){throw 'Read-only session prerequisite accepted behind deletable ancestor'}
 Remove-Item Function:Get-Acl
 $computer=[pscustomobject]@{Name='BUILDGUEST';Manufacturer='Microsoft Corporation';Model='Virtual Machine';HypervisorPresent=$true}
 $uuid='11111111-2222-3333-4444-555555555555'

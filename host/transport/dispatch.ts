@@ -8,7 +8,8 @@ import type {
   EnvironmentReadOptions,
 } from "../domains/environment/service";
 import type { ProjectsReadOptions } from "../domains/projects/service";
-import { HostDomainAuthorizationError, type HostDomainContext } from "../domains/context";
+import { HostDomainAuthorizationError, HostDomainOutcomeError, type HostDomainContext } from "../domains/context";
+import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
 
 export type HostDispatchErrorCode =
   | "unauthorized"
@@ -200,6 +201,14 @@ export function createHostDispatcher(services: HostServices) {
       } catch (cause) {
         assertNotCancelled(context.signal);
         if (cause instanceof HostDispatchError) throw cause;
+        if (cause instanceof HostDomainOutcomeError) {
+          await authorize(context, services.environmentId);
+          throw new HostDispatchError("service-unavailable", cause.message, { cause }, {
+            category: "unavailable",
+            retryable: false,
+            delivery: cause.delivery,
+          });
+        }
         if (cause instanceof HostDomainAuthorizationError)
           throw new HostDispatchError(
             "unauthorized",
@@ -228,6 +237,20 @@ export function createHostDispatcher(services: HostServices) {
             },
           );
         }
+        if (hostRpcHasEffect(method, definition.kind))
+          throw new HostDispatchError(
+            "service-unavailable",
+            "The Host operation could not be confirmed. Refresh its state before retrying.",
+            { cause },
+            {
+              category: "unavailable",
+              retryable: false,
+              delivery: "unknown",
+              ...(definition.kind === "command" && typeof params.commandId === "string"
+                ? { commandId: params.commandId }
+                : {}),
+            },
+          );
         throw new HostDispatchError("service-unavailable", "Host read could not be completed.", {
           cause,
         });

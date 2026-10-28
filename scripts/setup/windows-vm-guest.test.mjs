@@ -1,7 +1,17 @@
 /** Offline bootstrap contracts; no download, installer, VM creation or account mutation. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -226,6 +236,224 @@ $result.stdout
       ),
     );
     assert.deepEqual(observed, ["with space", 'quote"inside', "C:\\ends\\"]);
+  },
+);
+
+test(
+  "Rust proxy inspection accepts regular same-byte hardlinks and rejects wrong hashes/ancestor junctions",
+  windows,
+  (t) => {
+    const fixture = mkdtempSync(path.join(tmpdir(), "bycoda-guest-rust-proxy-test-"));
+    t.after(() => rmSync(fixture, { recursive: true, force: true }));
+    const bin = path.join(fixture, "bin");
+    mkdirSync(bin);
+    writeFileSync(path.join(bin, "rustup.exe"), "harmless fixture, never executed");
+    linkSync(path.join(bin, "rustup.exe"), path.join(bin, "rustc.exe"));
+    symlinkSync(bin, path.join(fixture, "ancestor-junction"), "junction");
+    assert.equal(
+      powershell(
+        String.raw`
+$ErrorActionPreference='Stop'
+. $env:BYCODA_TEST_GUEST_HELPER
+$bin=Join-Path $env:BYCODA_TEST_TEMP 'bin'; $hash=Get-GuestSha (Join-Path $bin 'rustup.exe')
+$plan=Get-GuestRustProxyPlan $bin $hash
+if ($plan.needsNormalization -or @($plan.links).Count) {throw 'Regular hardlink rejected.'}
+foreach ($probe in @('wrong-hash','ancestor-junction','different-regular-proxy')) {
+  $rejected=$false
+  try {
+    if ($probe -eq 'wrong-hash') {Get-GuestRustProxyPlan $bin ('0'*64) | Out-Null}
+    elseif ($probe -eq 'ancestor-junction') {Get-GuestRustProxyPlan (Join-Path $env:BYCODA_TEST_TEMP 'ancestor-junction') $hash | Out-Null}
+    else {[IO.File]::WriteAllText((Join-Path $bin 'cargo.exe'),'different regular executable'); Get-GuestRustProxyPlan $bin $hash | Out-Null}
+  } catch {$rejected=$true}
+  if (-not $rejected) {throw 'Unsafe Rust fixture accepted.'}
+}
+'regular-rust-proxy-fixtures-passed'
+`,
+        { BYCODA_TEST_TEMP: fixture },
+      ),
+      "regular-rust-proxy-fixtures-passed",
+    );
+  },
+);
+
+test("Rust symbolic proxy Plan is read-only and never executes the proxy fixture", windows, (t) => {
+  const fixture = mkdtempSync(path.join(tmpdir(), "bycoda-guest-rust-proxy-test-"));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const bin = path.join(fixture, "bin");
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, "rustup.exe"), "harmless fixture, never executed");
+  try {
+    symlinkSync("rustup.exe", path.join(bin, "rustc.exe"), "file");
+  } catch (error) {
+    if (error.code === "EPERM") {
+      t.skip(
+        "This test account cannot create Windows file symbolic links; regular hardlink/junction checks still run.",
+      );
+      return;
+    }
+    throw error;
+  }
+  const actual = JSON.parse(
+    powershell(
+      String.raw`
+$ErrorActionPreference='Stop'
+. $env:BYCODA_TEST_GUEST_HELPER
+$CargoHome=$env:BYCODA_TEST_TEMP; $bin=Join-Path $CargoHome 'bin'; $hash=Get-GuestSha (Join-Path $bin 'rustup.exe')
+$before=(Get-Item -Force -LiteralPath (Join-Path $bin 'rustc.exe')).Target
+$plan=Get-GuestRustProxyPlan $bin $hash
+$state=Get-GuestToolState ([pscustomobject]@{id='rust';version='1.99.1';sha256=$hash})
+$after=(Get-Item -Force -LiteralPath (Join-Path $bin 'rustc.exe')).Target
+if (-not $plan.needsNormalization -or @($plan.links).Count -ne 1 -or $state.compatible -or -not $state.needsNormalization) {throw 'Symbolic proxy was falsely accepted as runnable.'}
+@{state=$state;targetBefore=@($before);targetAfter=@($after);strictProcessPathAllowed=(Test-GuestNoReparse (Join-Path $bin 'rustc.exe'))} | ConvertTo-Json -Depth 5
+`,
+      { BYCODA_TEST_TEMP: fixture },
+    ),
+  );
+  assert.equal(actual.state.compatible, false);
+  assert.equal(actual.state.needsNormalization, true);
+  assert.equal(actual.strictProcessPathAllowed, false);
+  assert.deepEqual(actual.targetBefore, ["rustup.exe"]);
+  assert.deepEqual(actual.targetAfter, ["rustup.exe"]);
+});
+
+test(
+  "Rust proxy validation rejects unknown, absolute and escaping symbolic links before normalization",
+  windows,
+  (t) => {
+    const fixture = mkdtempSync(path.join(tmpdir(), "bycoda-guest-rust-proxy-test-"));
+    t.after(() => rmSync(fixture, { recursive: true, force: true }));
+    const root = path.join(fixture, "cases");
+    mkdirSync(root);
+    try {
+      for (const name of ["unknown", "absolute", "escape"]) {
+        const bin = path.join(root, name);
+        mkdirSync(bin);
+        writeFileSync(path.join(bin, "rustup.exe"), "same harmless bytes");
+        const target =
+          name === "absolute"
+            ? path.join(bin, "rustup.exe")
+            : name === "escape"
+              ? "../outside.exe"
+              : "rustup.exe";
+        const proxy = name === "unknown" ? "unexpected.exe" : "rustc.exe";
+        symlinkSync(target, path.join(bin, proxy), "file");
+      }
+    } catch (error) {
+      if (error.code === "EPERM") {
+        t.skip(
+          "This test account cannot create Windows file symbolic links; regular hardlink/junction checks still run.",
+        );
+        return;
+      }
+      throw error;
+    }
+    writeFileSync(path.join(root, "outside.exe"), "same harmless bytes");
+    assert.equal(
+      powershell(
+        String.raw`
+$ErrorActionPreference='Stop'
+. $env:BYCODA_TEST_GUEST_HELPER
+foreach ($name in @('unknown','absolute','escape')) {
+  $bin=Join-Path $env:BYCODA_TEST_TEMP "cases\$name"; $hash=Get-GuestSha (Join-Path $bin 'rustup.exe')
+  $rejected=$false; try {Get-GuestRustProxyPlan $bin $hash | Out-Null} catch {$rejected=$true}
+  if (-not $rejected) {throw 'Unsafe Rust link accepted.'}
+}
+'unsafe-rust-links-rejected'
+`,
+        { BYCODA_TEST_TEMP: fixture },
+      ),
+      "unsafe-rust-links-rejected",
+    );
+  },
+);
+
+test(
+  "guest ACL checks allow effective RX but reject generic write, delete-child and cache authority grants",
+  windows,
+  () => {
+    assert.equal(
+      powershell(String.raw`
+$ErrorActionPreference='Stop'
+. $env:BYCODA_TEST_GUEST_HELPER
+$runner='S-1-5-21-1-2-3-1002'
+$base='O:BAG:BAD:P(A;;FA;;;BA)(A;;FA;;;SY)'
+function Check-Descriptor([string]$Extra,[bool]$Expected,[string]$AllowedRunner) {
+  $acl=[Security.AccessControl.DirectorySecurity]::new()
+  $acl.SetSecurityDescriptorSddlForm($base+$Extra)
+  $allowed=$true; try {Assert-GuestAcl $acl $AllowedRunner} catch {$allowed=$false}
+  if ($allowed -ne $Expected) {throw "Incorrect effective ACL decision: $Extra"}
+}
+# Protected control remains readable by the runner; read bits are not mutation.
+Check-Descriptor "(A;;0x1200a9;;;$runner)" $true
+Check-Descriptor "(A;;GRGX;;;$runner)" $true
+Check-Descriptor '(A;;GR;;;WD)' $true
+Check-Descriptor '(A;OICIIO;GA;;;CO)' $true
+# Actual mutation bits and generic write/all must not disappear in enum mapping.
+foreach ($rights in @('GW','GA','0x2','0x4','0x10','0x100','0x40','0x10000','0x40000','0x80000')) {
+  Check-Descriptor "(A;;$rights;;;WD)" $false
+}
+# Only this policy-bound runner may write its cache; no cache DACL/owner authority.
+Check-Descriptor "(A;;GW;;;$runner)" $false
+Check-Descriptor "(A;;GW;;;$runner)" $true $runner
+Check-Descriptor "(A;;0x1301bf;;;$runner)" $true $runner
+Check-Descriptor '(A;;GW;;;S-1-5-21-1-2-3-9999)' $false $runner
+Check-Descriptor "(A;;0x40000;;;$runner)" $false $runner
+Check-Descriptor "(A;;0x80000;;;$runner)" $false $runner
+Check-Descriptor "(A;;GA;;;$runner)" $false $runner
+$unowned=[Security.AccessControl.DirectorySecurity]::new()
+$unowned.SetSecurityDescriptorSddlForm('O:WDG:BAD:P(A;;FR;;;WD)')
+$rejected=$false; try {Assert-GuestAcl $unowned} catch {$rejected=$true}
+if (-not $rejected) {throw 'Untrusted owner accepted.'}
+'guest-acl-fixtures-passed'
+`),
+      "guest-acl-fixtures-passed",
+    );
+  },
+);
+
+test(
+  "Rust seed identity compares unique exact paths, bytes and hashes independently of serialization order",
+  windows,
+  () => {
+    assert.equal(
+      powershell(String.raw`
+$ErrorActionPreference='Stop'
+. $env:BYCODA_TEST_GUEST_HELPER
+$recorded=@(
+  [pscustomobject]@{path='cargo/bin/cargo.exe';bytes=[long]10;sha256=('a'*64)},
+  [pscustomobject]@{path='cargo/bin/cargo-clippy.exe';bytes=[int]20;sha256=('b'*64)},
+  [pscustomobject]@{path='rustup/settings.toml';bytes=[long]0;sha256=('c'*64)}
+)
+# Reverse the rows and reorder descriptor keys, as independently serialized receipts may.
+$permuted=@(
+  [pscustomobject][ordered]@{sha256=('c'*64);bytes=[int]0;path='rustup/settings.toml'},
+  [pscustomobject][ordered]@{bytes=[long]20;path='cargo/bin/cargo-clippy.exe';sha256=('b'*64)},
+  [pscustomobject][ordered]@{sha256=('a'*64);path='cargo/bin/cargo.exe';bytes=[int]10}
+)
+Assert-GuestInventorySame $recorded $recorded
+Assert-GuestInventorySame $permuted $recorded
+foreach ($mutation in @('duplicate-current','duplicate-recorded','bytes','hash','missing','additional','case','malformed','empty','oversized')) {
+  $current=$recorded | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+  $expected=$recorded | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+  switch ($mutation) {
+    'duplicate-current' {$current += $current[0]}
+    'duplicate-recorded' {$expected += $expected[0]}
+    'bytes' {$current[0].bytes=11}
+    'hash' {$current[0].sha256='d'*64}
+    'missing' {$current=$current[0..1]}
+    'additional' {$current += [pscustomobject]@{path='cargo/bin/extra.exe';bytes=1;sha256=('a'*64)}}
+    'case' {$current[0].path='cargo/bin/CARGO.exe'}
+    'malformed' {$current[0].path='cargo/../outside'}
+    'empty' {$current=@();$expected=@()}
+    'oversized' {$current=New-Object object[] 50001}
+  }
+  $rejected=$false; try {Assert-GuestInventorySame $current $expected} catch {$rejected=$true}
+  if (-not $rejected) {throw "Changed/invalid inventory accepted: $mutation"}
+}
+'semantic-rust-inventory-fixtures-passed'
+`),
+      "semantic-rust-inventory-fixtures-passed",
+    );
   },
 );
 

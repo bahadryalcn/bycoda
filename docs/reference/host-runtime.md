@@ -148,6 +148,21 @@ Sprint receipts compare JSON object content without changing persisted receipt
 bytes. Automation compensation retains confirmed send IDs and retries only
 cleanup of its own acquired activity.
 
+Task, Note, Goal and Automation bulk results register internal resource
+dependencies before their owners capture data. Actual committed deletion retires
+both retained descriptors and late pending captures, including Automation run
+copies removed by its existing cascade. Failed/rolled-back deletion leaves
+unrelated copies usable. Notes uses its own worker's actual commit rather than
+an unrelated HostDB transaction. This does not erase content already downloaded
+by a client or change the owners' retained history contracts.
+
+A failed post-commit Note notification settles its original worker wait and
+does not repeat deletion. The domain reports the verified committed outcome;
+transport rechecks the grant before disclosing it. Other unclassified effectful
+failures carry unknown delivery with no synthetic receipt or operation ID.
+Host and clients share effect classification in neutral `effects.ts`; method
+retry policy and read-like names never establish whether an operation has effects.
+
 The canonical WS method `goals.finalReview.recheck` maps to the original HTTP
 spelling. Aliases are generated registry metadata and never broaden the wire
 method grammar. Before acquiring a native socket, clients check the negotiated
