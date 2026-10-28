@@ -8,6 +8,7 @@ import * as goalsDto from "./goals";
 import * as devDto from "./dev-servers";
 import * as sprintsDto from "./sprints";
 import * as automationsDto from "./automations";
+import * as stewardsDto from "./stewards";
 import { HostPersistenceParamsSchema, HostPersistenceStatusSchema } from "./persistence";
 import {
   HostTerminalSchema,
@@ -437,6 +438,22 @@ export const HOST_RPC_METHODS = Object.freeze({
   "goals.replan": goalOperation(goalsDto.GoalsReplanParamsSchema, goalsDto.HostGoalSchema),
   "goals.cancel": goalOperation(goalsDto.GoalsIdParamsSchema, goalsDto.HostGoalSchema),
   "goals.delete": goalOperation(goalsDto.GoalsDeleteParamsSchema, goalsDto.GoalsDeleteResultSchema),
+  "stewards.list": workflowOperation(
+    "transport.ws.stewards.v2", stewardsDto.StewardsEmptyParamsSchema,
+    stewardsDto.StewardsListResultSchema, true,
+  ),
+  "stewards.save": workflowOperation(
+    "transport.ws.stewards.v2", stewardsDto.StewardsSaveParamsSchema, stewardsDto.HostStewardSchema,
+  ),
+  "stewards.delete": workflowOperation(
+    "transport.ws.stewards.v2", stewardsDto.StewardsIdParamsSchema, stewardsDto.StewardsDeleteResultSchema,
+  ),
+  "stewards.runNow": workflowOperation(
+    "transport.ws.stewards.v2", stewardsDto.StewardsIdParamsSchema, stewardsDto.HostStewardSchema,
+  ),
+  "stewards.decline": workflowOperation(
+    "transport.ws.stewards.v2", stewardsDto.StewardsDeclineParamsSchema, stewardsDto.StewardsDeclineResultSchema,
+  ),
   "tasks.snapshotWithCursor": taskOperation(
     tasksDto.TasksEmptyParamsSchema,
     tasksDto.TasksSnapshotResultSchema,

@@ -24,7 +24,11 @@ export function CreateWorktreeDialog({
   onCancel: () => void;
 }) {
   const locale = useLocale();
-  const { branches } = useProjectBranchesState(baseCwd, true);
+  const { branches, settled } = useProjectBranchesState(baseCwd, true);
+  // The picker only presents the lookup: git is still answering, or answered without a branch list.
+  const branchLoading = !settled;
+  const branchError =
+    settled && !branches ? t("Couldn’t load branches for this project.") : undefined;
   const [name, setName] = useState("");
   const [base, setBase] = useState("HEAD");
   const [existing, setExisting] = useState(false);
@@ -115,6 +119,9 @@ export function CreateWorktreeDialog({
               value={name}
               disabled={busy}
               options={localBranches}
+              loading={branchLoading}
+              loadingLabel={t("Loading branches…")}
+              error={branchError}
               onChange={setName}
               placeholder={t("Choose a branch…")}
               searchPlaceholder="Search local branches…"
@@ -144,6 +151,9 @@ export function CreateWorktreeDialog({
               value={base}
               disabled={busy}
               options={baseOptions}
+              loading={branchLoading}
+              loadingLabel={t("Loading branches…")}
+              error={branchError}
               onChange={setBase}
               searchPlaceholder="Search branches and refs…"
               layer={LAYER.dialogPopover}

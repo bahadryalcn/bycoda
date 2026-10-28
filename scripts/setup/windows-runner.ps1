@@ -139,8 +139,6 @@ function Test-PrivateEgressRanges([string[]]$Addresses) {
 function Read-JsonFile([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     if ((Get-Item -Force -LiteralPath $Path).Length -gt 4194304) { throw 'Configuration exceeds size bound.' }
-    # Hidden GitHub configuration needs Force for metadata only. Get-Content
-    # -Force also requests WriteAttributes, which the runner intentionally lacks.
     return [IO.File]::ReadAllText($Path) | ConvertFrom-Json -AsHashtable
 }
 function Write-JsonFile([string]$Path, $Value) { [IO.File]::WriteAllText($Path, ($Value | ConvertTo-Json -Depth 20), [Text.UTF8Encoding]::new($false)) }

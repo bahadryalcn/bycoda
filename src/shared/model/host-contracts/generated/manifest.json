@@ -12201,6 +12201,568 @@
       "retry": "never",
       "scope": "device"
     },
+    "stewards.decline": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "taskId": { "type": "string" } },
+        "required": ["taskId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.stewards.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "declined": { "const": true, "type": "boolean" } },
+        "required": ["declined"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "stewards.delete": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "stewardId": { "type": "string" } },
+        "required": ["stewardId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.stewards.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "deleted": { "const": true, "type": "boolean" } },
+        "required": ["deleted"],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "stewards.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.stewards.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "autoMerge": { "type": "boolean" },
+            "autoStart": { "type": "boolean" },
+            "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+            "declined": { "items": { "type": "string" }, "type": "array" },
+            "deliveryApprovalRequired": { "type": "boolean" },
+            "enabled": { "type": "boolean" },
+            "focus": { "type": "string" },
+            "harness": {
+              "enum": [
+                "codex",
+                "claude",
+                "cursor",
+                "grok",
+                "opencode",
+                "pi",
+                "omp",
+                "fx",
+                "hermes",
+                "antigravity",
+                "acp"
+              ],
+              "type": "string"
+            },
+            "id": { "type": "string" },
+            "isolate": { "type": "boolean" },
+            "lastProposed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "lastRunError": { "type": "string" },
+            "lastRunStatus": {
+              "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+              "type": "string"
+            },
+            "lastSessionId": { "type": "string" },
+            "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+            "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+            "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+            "model": { "type": "string" },
+            "modelSettings": {
+              "additionalProperties": { "type": "string" },
+              "propertyNames": { "type": "string" },
+              "type": "object"
+            },
+            "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "projectId": { "type": "string" },
+            "run": {
+              "additionalProperties": false,
+              "properties": {
+                "activityId": { "type": "string" },
+                "branch": { "type": "string" },
+                "error": { "type": "string" },
+                "runId": { "type": "string" },
+                "sessionId": { "type": "string" },
+                "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "workspaceId": { "type": "string" },
+                "worktreeCwd": { "type": "string" }
+              },
+              "required": ["startedAt"],
+              "type": "object"
+            },
+            "runtimeMode": {
+              "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+              "type": "string"
+            },
+            "scheduleKind": { "enum": ["hourly", "daily", "weekdays", "weekly"], "type": "string" },
+            "time": { "type": "string" },
+            "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+          },
+          "required": [
+            "scheduleKind",
+            "minute",
+            "time",
+            "dayOfWeek",
+            "id",
+            "projectId",
+            "enabled",
+            "harness",
+            "model",
+            "modelSettings",
+            "runtimeMode",
+            "focus",
+            "maxProposals",
+            "maxOpen",
+            "autoStart",
+            "nextRunAt",
+            "declined",
+            "createdAt",
+            "updatedAt"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "stewards.runNow": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": { "stewardId": { "type": "string" } },
+        "required": ["stewardId"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.stewards.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "autoMerge": { "type": "boolean" },
+          "autoStart": { "type": "boolean" },
+          "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+          "declined": { "items": { "type": "string" }, "type": "array" },
+          "deliveryApprovalRequired": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "focus": { "type": "string" },
+          "harness": {
+            "enum": [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp"
+            ],
+            "type": "string"
+          },
+          "id": { "type": "string" },
+          "isolate": { "type": "boolean" },
+          "lastProposed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "lastRunError": { "type": "string" },
+          "lastRunStatus": {
+            "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+            "type": "string"
+          },
+          "lastSessionId": { "type": "string" },
+          "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+          "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+          "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+          "model": { "type": "string" },
+          "modelSettings": {
+            "additionalProperties": { "type": "string" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "projectId": { "type": "string" },
+          "run": {
+            "additionalProperties": false,
+            "properties": {
+              "activityId": { "type": "string" },
+              "branch": { "type": "string" },
+              "error": { "type": "string" },
+              "runId": { "type": "string" },
+              "sessionId": { "type": "string" },
+              "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "workspaceId": { "type": "string" },
+              "worktreeCwd": { "type": "string" }
+            },
+            "required": ["startedAt"],
+            "type": "object"
+          },
+          "runtimeMode": {
+            "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+            "type": "string"
+          },
+          "scheduleKind": { "enum": ["hourly", "daily", "weekdays", "weekly"], "type": "string" },
+          "time": { "type": "string" },
+          "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": [
+          "scheduleKind",
+          "minute",
+          "time",
+          "dayOfWeek",
+          "id",
+          "projectId",
+          "enabled",
+          "harness",
+          "model",
+          "modelSettings",
+          "runtimeMode",
+          "focus",
+          "maxProposals",
+          "maxOpen",
+          "autoStart",
+          "nextRunAt",
+          "declined",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
+    "stewards.save": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "wait-only",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "control",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "steward": {
+            "additionalProperties": false,
+            "properties": {
+              "autoMerge": { "type": "boolean" },
+              "autoStart": { "type": "boolean" },
+              "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+              "declined": { "items": { "type": "string" }, "type": "array" },
+              "deliveryApprovalRequired": { "type": "boolean" },
+              "enabled": { "type": "boolean" },
+              "expectedConfiguration": {
+                "additionalProperties": false,
+                "properties": {
+                  "autoMerge": { "type": "boolean" },
+                  "autoStart": { "type": "boolean" },
+                  "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+                  "declined": { "items": { "type": "string" }, "type": "array" },
+                  "deliveryApprovalRequired": { "type": "boolean" },
+                  "enabled": { "type": "boolean" },
+                  "focus": { "type": "string" },
+                  "harness": {
+                    "enum": [
+                      "codex",
+                      "claude",
+                      "cursor",
+                      "grok",
+                      "opencode",
+                      "pi",
+                      "omp",
+                      "fx",
+                      "hermes",
+                      "antigravity",
+                      "acp"
+                    ],
+                    "type": "string"
+                  },
+                  "id": { "type": "string" },
+                  "isolate": { "type": "boolean" },
+                  "lastProposed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "lastRunError": { "type": "string" },
+                  "lastRunStatus": {
+                    "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+                    "type": "string"
+                  },
+                  "lastSessionId": { "type": "string" },
+                  "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+                  "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+                  "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                  "model": { "type": "string" },
+                  "modelSettings": {
+                    "additionalProperties": { "type": "string" },
+                    "propertyNames": { "type": "string" },
+                    "type": "object"
+                  },
+                  "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "projectId": { "type": "string" },
+                  "run": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "activityId": { "type": "string" },
+                      "branch": { "type": "string" },
+                      "error": { "type": "string" },
+                      "runId": { "type": "string" },
+                      "sessionId": { "type": "string" },
+                      "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                      "workspaceId": { "type": "string" },
+                      "worktreeCwd": { "type": "string" }
+                    },
+                    "required": ["startedAt"],
+                    "type": "object"
+                  },
+                  "runtimeMode": {
+                    "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                    "type": "string"
+                  },
+                  "scheduleKind": {
+                    "enum": ["hourly", "daily", "weekdays", "weekly"],
+                    "type": "string"
+                  },
+                  "time": { "type": "string" },
+                  "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                },
+                "required": [
+                  "scheduleKind",
+                  "time",
+                  "id",
+                  "projectId",
+                  "harness",
+                  "model",
+                  "runtimeMode"
+                ],
+                "type": "object"
+              },
+              "focus": { "type": "string" },
+              "harness": {
+                "enum": [
+                  "codex",
+                  "claude",
+                  "cursor",
+                  "grok",
+                  "opencode",
+                  "pi",
+                  "omp",
+                  "fx",
+                  "hermes",
+                  "antigravity",
+                  "acp"
+                ],
+                "type": "string"
+              },
+              "id": { "type": "string" },
+              "isolate": { "type": "boolean" },
+              "lastProposed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "lastRunError": { "type": "string" },
+              "lastRunStatus": {
+                "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+                "type": "string"
+              },
+              "lastSessionId": { "type": "string" },
+              "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+              "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+              "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+              "model": { "type": "string" },
+              "modelSettings": {
+                "additionalProperties": { "type": "string" },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
+              "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "projectId": { "type": "string" },
+              "run": {
+                "additionalProperties": false,
+                "properties": {
+                  "activityId": { "type": "string" },
+                  "branch": { "type": "string" },
+                  "error": { "type": "string" },
+                  "runId": { "type": "string" },
+                  "sessionId": { "type": "string" },
+                  "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "workspaceId": { "type": "string" },
+                  "worktreeCwd": { "type": "string" }
+                },
+                "required": ["startedAt"],
+                "type": "object"
+              },
+              "runtimeMode": {
+                "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                "type": "string"
+              },
+              "scheduleKind": {
+                "enum": ["hourly", "daily", "weekdays", "weekly"],
+                "type": "string"
+              },
+              "time": { "type": "string" },
+              "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": [
+              "scheduleKind",
+              "time",
+              "id",
+              "projectId",
+              "harness",
+              "model",
+              "runtimeMode"
+            ],
+            "type": "object"
+          }
+        },
+        "required": ["steward"],
+        "type": "object"
+      },
+      "requiredCapability": "transport.ws.stewards.v2",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "autoMerge": { "type": "boolean" },
+          "autoStart": { "type": "boolean" },
+          "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+          "declined": { "items": { "type": "string" }, "type": "array" },
+          "deliveryApprovalRequired": { "type": "boolean" },
+          "enabled": { "type": "boolean" },
+          "focus": { "type": "string" },
+          "harness": {
+            "enum": [
+              "codex",
+              "claude",
+              "cursor",
+              "grok",
+              "opencode",
+              "pi",
+              "omp",
+              "fx",
+              "hermes",
+              "antigravity",
+              "acp"
+            ],
+            "type": "string"
+          },
+          "id": { "type": "string" },
+          "isolate": { "type": "boolean" },
+          "lastProposed": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "lastRunError": { "type": "string" },
+          "lastRunStatus": {
+            "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+            "type": "string"
+          },
+          "lastSessionId": { "type": "string" },
+          "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+          "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+          "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+          "model": { "type": "string" },
+          "modelSettings": {
+            "additionalProperties": { "type": "string" },
+            "propertyNames": { "type": "string" },
+            "type": "object"
+          },
+          "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "projectId": { "type": "string" },
+          "run": {
+            "additionalProperties": false,
+            "properties": {
+              "activityId": { "type": "string" },
+              "branch": { "type": "string" },
+              "error": { "type": "string" },
+              "runId": { "type": "string" },
+              "sessionId": { "type": "string" },
+              "startedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "workspaceId": { "type": "string" },
+              "worktreeCwd": { "type": "string" }
+            },
+            "required": ["startedAt"],
+            "type": "object"
+          },
+          "runtimeMode": {
+            "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+            "type": "string"
+          },
+          "scheduleKind": { "enum": ["hourly", "daily", "weekdays", "weekly"], "type": "string" },
+          "time": { "type": "string" },
+          "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+        },
+        "required": [
+          "scheduleKind",
+          "minute",
+          "time",
+          "dayOfWeek",
+          "id",
+          "projectId",
+          "enabled",
+          "harness",
+          "model",
+          "modelSettings",
+          "runtimeMode",
+          "focus",
+          "maxProposals",
+          "maxOpen",
+          "autoStart",
+          "nextRunAt",
+          "declined",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "retry": "never",
+      "scope": "device"
+    },
     "subscriptions.ack": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -23747,6 +24309,299 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "stewards.list", "type": "string" },
+            "params": { "additionalProperties": false, "properties": {}, "type": "object" }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "stewards.save", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "steward": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "autoMerge": { "type": "boolean" },
+                    "autoStart": { "type": "boolean" },
+                    "createdAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+                    "declined": { "items": { "type": "string" }, "type": "array" },
+                    "deliveryApprovalRequired": { "type": "boolean" },
+                    "enabled": { "type": "boolean" },
+                    "expectedConfiguration": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "autoMerge": { "type": "boolean" },
+                        "autoStart": { "type": "boolean" },
+                        "createdAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "dayOfWeek": { "maximum": 6, "minimum": 0, "type": "integer" },
+                        "declined": { "items": { "type": "string" }, "type": "array" },
+                        "deliveryApprovalRequired": { "type": "boolean" },
+                        "enabled": { "type": "boolean" },
+                        "focus": { "type": "string" },
+                        "harness": {
+                          "enum": [
+                            "codex",
+                            "claude",
+                            "cursor",
+                            "grok",
+                            "opencode",
+                            "pi",
+                            "omp",
+                            "fx",
+                            "hermes",
+                            "antigravity",
+                            "acp"
+                          ],
+                          "type": "string"
+                        },
+                        "id": { "type": "string" },
+                        "isolate": { "type": "boolean" },
+                        "lastProposed": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "lastRunAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "lastRunError": { "type": "string" },
+                        "lastRunStatus": {
+                          "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+                          "type": "string"
+                        },
+                        "lastSessionId": { "type": "string" },
+                        "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+                        "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+                        "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                        "model": { "type": "string" },
+                        "modelSettings": {
+                          "additionalProperties": { "type": "string" },
+                          "propertyNames": { "type": "string" },
+                          "type": "object"
+                        },
+                        "nextRunAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "projectId": { "type": "string" },
+                        "run": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "activityId": { "type": "string" },
+                            "branch": { "type": "string" },
+                            "error": { "type": "string" },
+                            "runId": { "type": "string" },
+                            "sessionId": { "type": "string" },
+                            "startedAt": {
+                              "maximum": 9007199254740991,
+                              "minimum": 0,
+                              "type": "integer"
+                            },
+                            "workspaceId": { "type": "string" },
+                            "worktreeCwd": { "type": "string" }
+                          },
+                          "required": ["startedAt"],
+                          "type": "object"
+                        },
+                        "runtimeMode": {
+                          "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                          "type": "string"
+                        },
+                        "scheduleKind": {
+                          "enum": ["hourly", "daily", "weekdays", "weekly"],
+                          "type": "string"
+                        },
+                        "time": { "type": "string" },
+                        "updatedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "scheduleKind",
+                        "time",
+                        "id",
+                        "projectId",
+                        "harness",
+                        "model",
+                        "runtimeMode"
+                      ],
+                      "type": "object"
+                    },
+                    "focus": { "type": "string" },
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "id": { "type": "string" },
+                    "isolate": { "type": "boolean" },
+                    "lastProposed": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "lastRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "lastRunError": { "type": "string" },
+                    "lastRunStatus": {
+                      "enum": ["running", "succeeded", "failed", "skipped", "cancelled"],
+                      "type": "string"
+                    },
+                    "lastSessionId": { "type": "string" },
+                    "maxOpen": { "maximum": 30, "minimum": 1, "type": "integer" },
+                    "maxProposals": { "maximum": 10, "minimum": 1, "type": "integer" },
+                    "minute": { "maximum": 59, "minimum": 0, "type": "integer" },
+                    "model": { "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    },
+                    "nextRunAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                    "projectId": { "type": "string" },
+                    "run": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "activityId": { "type": "string" },
+                        "branch": { "type": "string" },
+                        "error": { "type": "string" },
+                        "runId": { "type": "string" },
+                        "sessionId": { "type": "string" },
+                        "startedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "workspaceId": { "type": "string" },
+                        "worktreeCwd": { "type": "string" }
+                      },
+                      "required": ["startedAt"],
+                      "type": "object"
+                    },
+                    "runtimeMode": {
+                      "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                      "type": "string"
+                    },
+                    "scheduleKind": {
+                      "enum": ["hourly", "daily", "weekdays", "weekly"],
+                      "type": "string"
+                    },
+                    "time": { "type": "string" },
+                    "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+                  },
+                  "required": [
+                    "scheduleKind",
+                    "time",
+                    "id",
+                    "projectId",
+                    "harness",
+                    "model",
+                    "runtimeMode"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": ["steward"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "stewards.delete", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "stewardId": { "type": "string" } },
+              "required": ["stewardId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "stewards.runNow", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "stewardId": { "type": "string" } },
+              "required": ["stewardId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "stewards.decline", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": { "taskId": { "type": "string" } },
+              "required": ["taskId"],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "tasks.snapshotWithCursor", "type": "string" },
             "params": { "additionalProperties": false, "properties": {}, "type": "object" }
           },
@@ -30131,5 +30986,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "1a682d66bdd721c69d342603280ec6a21965f37ce9bd06836cc39004dcdb0dd7"
+  "schemaHash": "5ab70ed7d60bc3db16f7383c79f35c9046624147093b3ecd93d10ffbdd00ee9d"
 }

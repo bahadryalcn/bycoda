@@ -1,4 +1,5 @@
 export * from "./policy";
+export * from "./effects";
 export * from "./schemas";
 export * from "./methods";
 export * from "./manifest";
@@ -20,4 +21,5 @@ export * from "./aliases";
 export * from "./dev-servers";
 export * from "./sprints";
 export * from "./automations";
+export * from "./stewards";
 export { default as HOST_CONTRACT_FIXTURES } from "./fixtures.json";
