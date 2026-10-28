@@ -1,6 +1,6 @@
 import { useId, useImperativeHandle, useLayoutEffect, useRef, useState } from "react";
 import { useT } from "../i18n";
-import { Button } from "./Button";
+import { InlineAction } from "./ActionHost";
 import { Eye, EyeOff } from "./icons";
 import { TextField, type TextFieldProps } from "./TextField";
 
@@ -44,10 +44,8 @@ export function PasswordField({ ref, id, messages, disabled, ...props }: Passwor
       type={visible ? "text" : "password"}
       data-reveal={toggled ? (visible ? "shown" : "hidden") : undefined}
       endAdornment={
-        <Button
-          type="button"
-          variant="ghost"
-          iconOnly
+        <InlineAction
+          reveal="always"
           label={
             visible
               ? (messages?.hidePassword ?? t("Hide password"))
@@ -70,7 +68,7 @@ export function PasswordField({ ref, id, messages, disabled, ...props }: Passwor
           }}
         >
           {visible ? <EyeOff /> : <Eye />}
-        </Button>
+        </InlineAction>
       }
     />
   );

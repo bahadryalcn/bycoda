@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ActivityHeatmap, BarChart, DonutChart, LineChart } from "../../../shared/ui/Charts";
 import { ChevronLeft, ChevronRight } from "../../../shared/ui/icons";
 import { Select } from "../../../shared/ui/Select";
+import { Checkbox } from "../../../shared/ui/Checkbox";
 import {
   bucketStart,
   effectiveResolution,
@@ -22,6 +23,7 @@ import {
   formatMetric,
   formatMetricTick,
   formatUsagePercent,
+  metricNames,
   PagedUsageTable,
 } from "./UsageCharts";
 
@@ -45,6 +47,7 @@ export function UsageTrend({
 }) {
   useLocale();
   const [active, setActive] = useState<string | null>(null);
+  const [singleSeries, setSingleSeries] = useState<ReadonlySet<string> | null>(null);
   const point = buckets.find((bucket) => bucket.key === active);
   const format = (value: number) =>
     percent ? formatUsagePercent(value) : formatMetric(value, metric);
@@ -81,13 +84,33 @@ export function UsageTrend({
         <h3>{t("Usage over time")}</h3>
         <Button
           variant="ghost"
-          disabled={!point}
-          onClick={() => point && onSelect({ start: point.start, end: point.end })}
+          disabled={!point && buckets.length !== 1}
+          onClick={() => {
+            const interval = point ?? (buckets.length === 1 ? buckets[0] : undefined);
+            if (interval) onSelect({ start: interval.start, end: interval.end });
+          }}
         >
           {t("Select interval")}
         </Button>
       </div>
-      <LineChart
+      {buckets.length === 1 ? (
+        <div className="usage-single-period">
+          <p className="usage-muted">{formatBucket(buckets[0].start, resolution)} – {formatBucket(buckets[0].end, resolution)}</p>
+          {series.map((item) => <p key={item.key}>
+            <label className="flex min-w-0 items-center gap-2">
+            <Checkbox aria-label={item.label} checked={singleSeries === null || singleSeries.has(item.key)} onChange={(event) => {
+              const checked = event.currentTarget.checked;
+              setSingleSeries((previous) => {
+                const next = new Set(previous ?? series.map((entry) => entry.key));
+                if (checked) next.add(item.key); else next.delete(item.key);
+                return next;
+              });
+            }} />{item.label}
+            </label>
+            <strong hidden={singleSeries !== null && !singleSeries.has(item.key)}>{format(data[0]?.values[item.key] ?? 0)}</strong>
+          </p>)}
+        </div>
+      ) : <LineChart
         label={t("Usage over time")}
         data={series.length ? data : []}
         emptyLabel={t("No usage recorded in this period.")}
@@ -105,7 +128,7 @@ export function UsageTrend({
         onActiveChange={(_, datum) => {
           if (datum) setActive(datum.key);
         }}
-      />
+      />}
       <details>
         <summary>{t("Show as table")}</summary>
         <PagedUsageTable
@@ -334,9 +357,10 @@ export function TimeDistribution({
         </div>
         <div
           className="usage-week-grid"
+          data-single-day={dates.length === 1 || undefined}
           role="grid"
           aria-label={t("Day and hour activity")}
-          style={{ gridTemplateColumns: `3.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
+          style={{ gridTemplateColumns: dates.length === 1 ? "repeat(2, minmax(0, 1fr))" : `3.5rem repeat(${dates.length}, minmax(0, 1fr))` }}
         >
           <div role="row" className="usage-week-row">
             <span role="columnheader">{t("Time")}</span>
@@ -388,7 +412,9 @@ export function TimeDistribution({
                       })
                     }
                     onKeyDown={(event) => {
-                      const delta = {
+                      const delta = dates.length === 1 ? {
+                        ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [-2, 0], ArrowDown: [2, 0],
+                      }[event.key] : {
                         ArrowLeft: [0, -1],
                         ArrowRight: [0, 1],
                         ArrowUp: [-1, 0],
@@ -443,7 +469,7 @@ export function TimeDistribution({
             />
           </div>
           <BarChart
-            label={t("Hour of day")}
+            label={`${t(intervalMode === "clock" ? "Hour of day" : "Usage over time")} · ${t(metricNames[metric])}`}
             period={`${dateLabel(window.start)} – ${dateLabel(window.end - 1)}`}
             data={intervalMode === "clock" ? hours : intervalBars}
             height={190}

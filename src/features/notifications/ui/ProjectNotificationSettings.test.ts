@@ -54,7 +54,7 @@ afterEach(() => {
 
 function checkbox(label: string): HTMLInputElement | HTMLButtonElement {
   const input = container.querySelector<HTMLInputElement | HTMLButtonElement>(
-    `input[aria-label="${label}"], button[role="switch"][aria-label="${label}"]`,
+    `input[aria-label="${label}"], input[aria-label^="${label} ("], button[role="switch"][aria-label="${label}"], button[role="switch"][aria-label^="${label} ("]`,
   );
   expect(input, `Missing membership control: ${label}`).not.toBeNull();
   return input!;
@@ -67,7 +67,7 @@ function checked(control: HTMLInputElement | HTMLButtonElement) {
 
 function categoriesButton(project: string): HTMLButtonElement {
   return container.querySelector<HTMLButtonElement>(
-    `button[aria-label="Notification categories for ${project}"]`,
+    `button[aria-label^="Notification categories for ${project} ("]`,
   )!;
 }
 
@@ -134,7 +134,7 @@ it("offers only issue notifications for a Linear project", async () => {
   act(() => categoriesButton("Roadmap").click());
   const issue = checkbox("Issues and Linear tasks for Roadmap");
   expect(
-    issue.closest("fieldset")?.querySelectorAll('[role="switch"][aria-label$=" for Roadmap"]'),
+    issue.closest("fieldset")?.querySelectorAll('[role="switch"][aria-label*=" for Roadmap ("]'),
   ).toHaveLength(1);
   act(() => issue.click());
   expect(loadNotificationPreferences()["linear:project:roadmap"]?.disabled).toEqual(["issues"]);

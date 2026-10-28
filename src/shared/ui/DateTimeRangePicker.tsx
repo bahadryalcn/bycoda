@@ -16,12 +16,14 @@ export function DateTimeRangePicker({
   label = t("Date and time range"),
   minDate,
   maxDate,
+  disabled = false,
 }: {
   value: DateTimeRange;
   onChange: (range: DateTimeRange) => void;
   label?: string;
   minDate?: Date;
   maxDate?: Date;
+  disabled?: boolean;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -54,14 +56,15 @@ export function DateTimeRangePicker({
         aria-label={label}
         aria-haspopup="dialog"
         aria-expanded={open}
+        disabled={disabled}
         onClick={() => {
           setStart(toLocalDateTime(value.start));
           setEnd(toLocalDateTime(value.end));
           setOpen(!open);
         }}
       >
-        <Clock className="size-3.5" />
-        <span>
+        <Clock className="size-(--ui-icon-sm)" />
+        <span className="date-time-range-value">
           {format(value.start)} – {format(value.end)}
         </span>
       </Button>

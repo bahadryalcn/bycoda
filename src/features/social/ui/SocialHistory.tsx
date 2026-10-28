@@ -6,10 +6,9 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
-import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import type { SocialJob, SocialSnapshot } from "../model/social";
@@ -40,6 +39,31 @@ const jobKinds: Record<SocialJob["kind"], string> = {
   },
 };
 const PAGE_SIZE = 30;
+export type SocialHistoryAccountIntent = { accountId: string; token: number };
+
+/** Mirrors the currently shipped Host guard; the Host still authorizes cancellation. */
+export function socialJobCancellation(job: SocialJob) {
+  const submitted = Boolean(job.preparation?.youtubeVideoId || job.preparation?.tiktokPublishId ||
+    job.preparation?.snapchatMedia?.spotlightId || job.preparation?.facebookReel?.stage === "submitted");
+  return {
+    allowed: job.status === "queued" && !submitted,
+    reason: submitted || job.status === "running"
+      ? t("A dispatched send cannot be recalled. Stop the account to prevent later sends.")
+      : job.status !== "queued" ? t("Only queued jobs can be cancelled.") : "",
+  };
+}
+
+function processing(job: SocialJob) {
+  return job.status === "queued" && !socialJobCancellation(job).allowed;
+}
+
+function JobState({ job }: { job: SocialJob }) {
+  return <span className="flex flex-wrap items-center gap-1">
+    <StatusBadge status={job.status} label={processing(job) ? t("Platform processing") : job.status === "succeeded" ? t("Dispatch accepted") : undefined} />
+    {job.delivery ? <StatusBadge status={job.delivery.status === "failed" ? "failed" : job.delivery.status === "delivered" || job.delivery.status === "read" ? "succeeded" : "info"}
+      label={{ accepted: t("Delivery unconfirmed"), sent: t("Sent; delivery unconfirmed"), delivered: t("Delivered"), read: t("Read"), failed: t("Delivery failed") }[job.delivery.status]} /> : null}
+  </span>;
+}
 export function socialJobExplanation(job: SocialJob): string {
   if (job.status === "succeeded" && job.delivery) {
     return {
@@ -62,7 +86,7 @@ export function socialJobExplanation(job: SocialJob): string {
     return t("Sending failed. Check the detail and retry this target if needed.");
   if (
     job.status === "queued" &&
-    (job.preparation?.youtubeVideoId || job.preparation?.tiktokPublishId)
+    processing(job)
   )
     return t(
       "The platform accepted the video and is processing it. Publication is not yet confirmed.",
@@ -80,7 +104,7 @@ function resultUrl(value?: string) {
   }
 }
 
-export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) {
+export function SocialHistory({ snapshot, client, run, onFilterChange, accountIntent }: Props & { accountIntent?: SocialHistoryAccountIntent }) {
   useLocale();
   const waiting = snapshot.jobCounts
     ? (snapshot.jobCounts.queued ?? 0) + (snapshot.jobCounts.running ?? 0)
@@ -101,7 +125,7 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
             {snapshot.jobCounts?.succeeded ??
               snapshot.jobs.filter((job) => job.status === "succeeded").length}
           </strong>
-          <span>{statuses.succeeded}</span>
+          <span>{t("Dispatch accepted")}</span>
         </div>
         <div>
           <strong>{waiting}</strong>
@@ -119,6 +143,11 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
           <span>{statuses.cancelled}</span>
         </div>
       </div>
+      {snapshot.jobs.some((job) => job.delivery?.status === "failed") ? (
+        <Notice kind="error" title={t("Delivery failures in loaded records: {p0}", { p0: snapshot.jobs.filter((job) => job.delivery?.status === "failed").length })}>
+          {t("A delivery failure does not queue another send. Check the platform result before taking action.")}
+        </Notice>
+      ) : null}
       {!snapshot.sendingEnabled || snapshot.stopped || !snapshot.hostOnline ? (
         <Notice
           kind="warning"
@@ -133,7 +162,7 @@ export function SocialHistory({ snapshot, client, run, onFilterChange }: Props) 
           {t("Queued jobs are kept. Manage sending controls in Automations.")}
         </Notice>
       ) : null}
-      <JobHistory snapshot={snapshot} client={client} run={run} onFilterChange={onFilterChange} />
+      <JobHistory snapshot={snapshot} client={client} run={run} onFilterChange={onFilterChange} accountIntent={accountIntent} />
     </div>
   );
 }
@@ -144,14 +173,15 @@ export function JobHistory({
   run,
   jobs = snapshot.jobs,
   onFilterChange,
+  accountIntent,
 }: {
   snapshot: SocialSnapshot;
   client: SocialClient;
   run: Run;
   jobs?: SocialJob[];
   onFilterChange?: Props["onFilterChange"];
+  accountIntent?: SocialHistoryAccountIntent;
 }) {
-  const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
@@ -162,6 +192,13 @@ export function JobHistory({
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [since, setSince] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!accountIntent) return;
+    setAccountId(accountIntent.accountId);
+    setPage(0);
+    setSelectedId(null);
+  }, [accountIntent?.accountId, accountIntent?.token]);
   const hostFiltered = useSocialWorkspaceFilter(
     snapshot,
     "jobs",
@@ -192,6 +229,8 @@ export function JobHistory({
     })
     .sort((a, b) => b.createdAt - a.createdAt || b.scheduledAt - a.scheduledAt);
   const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1));
+  const shown = onFilterChange && snapshot.pages ? filtered : filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const selected = (selectedId ? jobs.find((job) => job.id === selectedId) : shown[0]) ?? null;
   const reset = () => {
     setQuery("");
     setStatus("");
@@ -201,7 +240,7 @@ export function JobHistory({
     setPage(0);
   };
   return (
-    <div className="social-job-list">
+    <div className="social-job-list @container/history">
       <div className="social-list-tools social-history-filters">
         <label className="social-history-search">
           {t("Search jobs")}
@@ -313,122 +352,40 @@ export function JobHistory({
           </Button>
         ) : null}
       </p>
-      {filtered.length ? (
-        <div className="social-history-records">
-          {(onFilterChange && snapshot.pages
-            ? filtered
-            : filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
-          ).map((job) => {
-            const account = snapshot.accounts.find((item) => item.id === job.accountId);
-            const campaign = campaigns.find((item) => item.id === job.campaignId);
-            const contact = contacts.find((item) => item.id === job.contactId);
-            const link = resultUrl(job.url);
-            return (
-              <article key={job.id} className="social-history-record" data-status={job.status}>
-                <div className="social-record-heading">
-                  <div>
-                    <strong>
-                      {jobKinds[job.kind]} · {campaign?.name ?? contact?.name ?? t("Conversation")}
-                    </strong>
-                    <p className="social-inline-meta">
-                      {account?.name ?? t("Account removed")}
-                      {account ? ` · ${names[account.platform]}` : ""}
-                    </p>
-                  </div>
-                  <StatusBadge status={job.status} />
-                </div>
-                <p className="social-job-explanation">{socialJobExplanation(job)}</p>
-                <p className="social-history-excerpt">{job.payload.text}</p>
-                <details className="social-history-metadata">
-                  <summary>{t("Job details")}</summary>
-                  <div className="social-inline-meta">
-                    <span>{t("Created {p0}", { p0: time(job.createdAt) })}</span>
-                    {job.dispatchedAt ? (
-                      <span>{t("Send started {p0}", { p0: time(job.dispatchedAt) })}</span>
-                    ) : null}
-                    {job.attempts ? <span>{t("{p0} attempts", { p0: job.attempts })}</span> : null}
-                  </div>
-                </details>
-                {job.error && job.status !== "cancelled" ? (
-                  <details className="social-job-error">
-                    <summary>{t("Result detail")}</summary>
-                    <p>{job.error}</p>
-                  </details>
-                ) : null}
-                {job.visibility ? (
-                  <p className="social-muted">
-                    {t("Video: {p0}", {
-                      p0:
-                        job.visibility === "public"
-                          ? t("Public")
-                          : job.visibility === "private"
-                            ? t("Private")
-                            : t("Unlisted"),
-                    })}
-                  </p>
-                ) : null}
-                <div className="social-actions">
-                  {link ? (
-                    <a className="social-result-link" href={link} target="_blank" rel="noreferrer">
-                      {t("Open on platform")}
-                    </a>
-                  ) : null}
-                  {job.status === "failed" ? (
-                    <>
-                      <Badge variant="label" appearance="outline">
-                        {account
-                          ? `${account.name} · ${names[account.platform]}`
-                          : t("Account removed")}
-                      </Badge>
-                      <Button
-                        loading={pendingUi.is(`job.retry:${job.id}`)}
-                        disabled={socialLocked}
-                        variant="secondary"
-                        type="button"
-                        onClick={() =>
-                          void pendingUi.run(`job.retry:${job.id}`, () =>
-                            run(
-                              () => client.request("jobs.retry", { id: job.id }),
-                              t("Failed target was queued again."),
-                            ),
-                          )
-                        }
-                      >
-                        {t("Retry this target")}
-                      </Button>
-                    </>
-                  ) : null}
-                  {job.status === "queued" &&
-                  !job.preparation?.youtubeVideoId &&
-                  !job.preparation?.tiktokPublishId ? (
-                    <Button
-                      loading={pendingUi.is(`job.cancel:${job.id}`)}
-                      disabled={socialLocked}
-                      variant="danger"
-                      type="button"
-                      className="ml-auto"
-                      onClick={() =>
-                        void pendingUi.run(`job.cancel:${job.id}`, () =>
-                          run(
-                            () => client.request("jobs.cancel", { id: job.id }),
-                            t("Queued job cancelled."),
-                          ),
-                        )
-                      }
-                    >
-                      {t("Cancel job")}
-                    </Button>
-                  ) : null}
-                </div>
-              </article>
-            );
-          })}
+      {filtered.length || selected ? (
+        <div className="grid min-w-0 grid-cols-1 gap-3 @min-[760px]/history:grid-cols-[minmax(15rem,0.85fr)_minmax(0,1.4fr)]" data-social-history-workspace>
+          <div className="flex min-w-0 flex-col gap-1" aria-label={t("Activity records")}>
+            {!shown.length ? <Empty title={t("No jobs match these filters")}><Button variant="link" onClick={reset}>{t("Clear filters")}</Button></Empty> : null}
+            {shown.map((job) => {
+              const account = snapshot.accounts.find((item) => item.id === job.accountId);
+              const campaign = campaigns.find((item) => item.id === job.campaignId);
+              const contact = contacts.find((item) => item.id === job.contactId);
+              const title = campaign?.name || contact?.name || job.payload.recipientId || jobKinds[job.kind];
+              return <article key={job.id} className="social-history-record min-w-0" data-status={job.status}>
+                <Button variant="item" layout="stacked" selected={selected?.id === job.id}
+                  aria-current={selected?.id === job.id ? "true" : undefined}
+                  title={`${jobKinds[job.kind]} · ${title}`} onClick={() => setSelectedId(job.id)} className="w-full min-w-0">
+                  <span className="line-clamp-1 min-w-0 text-ui-secondary font-medium">{title}</span>
+                  <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{job.payload.text || jobKinds[job.kind]}</span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
+                    <span className="min-w-0 truncate">{account?.name ?? t("Account removed")}{account ? ` · ${names[account.platform]}` : ""}</span>
+                    <time dateTime={new Date(job.createdAt).toISOString()} title={time(job.createdAt)}>{t("Created {p0}", { p0: time(job.createdAt) })}</time>
+                  </span>
+                  <JobState job={job} />
+                  {job.status === "review" || job.delivery?.status === "failed" ? <span className="text-ui-caption text-(--ui-tone-warning-fg)">{socialJobExplanation(job)}</span> : null}
+                </Button>
+              </article>;
+            })}
+          </div>
+          {selected ? <JobDetail job={selected} snapshot={snapshot} client={client} run={run}
+            outsideFilters={!filtered.some((job) => job.id === selected.id)} onClearFilters={reset} /> : (
+            <Empty>{t("Select an activity record to inspect its result.")}</Empty>
+          )}
         </div>
       ) : (
         <Empty title={jobs.length ? t("No jobs match these filters") : t("Nothing sent yet")}>
-          {jobs.length
-            ? t("Clear the filters to see other jobs.")
-            : t("Scheduled posts, messages and replies will appear here with their results.")}
+          {jobs.length ? t("Clear the filters to see other jobs.") : t("Scheduled posts, messages and replies will appear here with their results.")}
+          {jobs.length ? <Button variant="ghost" onClick={reset}>{t("Clear filters")}</Button> : null}
         </Empty>
       )}
       {!onFilterChange && filtered.length > PAGE_SIZE ? (
@@ -456,4 +413,85 @@ export function JobHistory({
       ) : null}
     </div>
   );
+}
+
+function JobDetail({ job, snapshot, client, run, outsideFilters, onClearFilters }: {
+  job: SocialJob;
+  snapshot: SocialSnapshot;
+  client: SocialClient;
+  run: Run;
+  outsideFilters: boolean;
+  onClearFilters: () => void;
+}) {
+  useLocale();
+  const pendingUi = useSocialPending();
+  const socialLocked = useSocialContext(SocialLockContext);
+  const [actionError, setActionError] = useState<{ id: string; message: string } | null>(null);
+  const account = snapshot.accounts.find((item) => item.id === job.accountId);
+  const contacts = socialRows(snapshot.contacts, snapshot.related?.contacts);
+  const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
+  const contact = contacts.find((item) => item.id === job.contactId);
+  const campaign = campaigns.find((item) => item.id === job.campaignId);
+  const link = resultUrl(job.url);
+  const cancellation = socialJobCancellation(job);
+  const technical = Boolean(job.dispatchedAt || job.attempts || job.platformId || job.delivery?.code !== undefined || job.payload.youtube || job.payload.tiktok || job.payload.facebook || job.payload.snapchat);
+  const errorSummary = job.error && job.error.length > 320 ? `${job.error.slice(0, 320)}…` : job.error;
+  const perform = (action: "jobs.retry" | "jobs.cancel", key: string, message: string) => {
+    setActionError(null);
+    return pendingUi.run(key, () => run(async () => {
+      try { return await client.request(action, { id: job.id }); }
+      catch (reason) {
+        setActionError({ id: job.id, message: reason instanceof Error ? reason.message : String(reason) });
+        throw reason;
+      }
+    }, message));
+  };
+  return <section className="flex min-w-0 flex-col gap-3 border-l border-(--ui-tone-neutral-border) pl-3" aria-label={t("Activity result")} data-social-job-detail data-job-id={job.id}>
+    <header className="flex min-w-0 flex-col gap-1">
+      <h3 className="wrap-anywhere text-ui-title font-medium">{campaign?.name || contact?.name || job.payload.recipientId || jobKinds[job.kind]}</h3>
+      <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{jobKinds[job.kind]} · {account?.name ?? t("Account removed")}{account ? ` · ${names[account.platform]}` : ""}</p>
+      <JobState job={job} />
+      <time className="text-ui-caption text-(--ui-text-secondary)" dateTime={new Date(job.createdAt).toISOString()}>{t("Created {p0}", { p0: time(job.createdAt) })}</time>
+      {job.status === "queued" && !processing(job) ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Scheduled send: {p0}", { p0: time(job.scheduledAt) })}</p> : null}
+      {job.delivery ? <time className="text-ui-caption text-(--ui-text-secondary)" dateTime={new Date(job.delivery.at).toISOString()}>{t("Latest delivery update: {p0}", { p0: time(job.delivery.at) })}</time> : null}
+    </header>
+    {outsideFilters ? <Notice kind="info">{t("This result is outside the current filters.")} <Button variant="link" onClick={onClearFilters}>{t("Clear filters")}</Button></Notice> : null}
+    <p className="wrap-anywhere text-ui-secondary">{socialJobExplanation(job)}</p>
+    {job.error && job.status !== "cancelled" ? <Notice kind={job.status === "failed" || job.delivery?.status === "failed" ? "error" : "warning"}><p className="whitespace-pre-wrap wrap-anywhere">{errorSummary}</p>
+      {job.error.length > 320 ? <details><summary>{t("Show full error")}</summary><p className="mt-2 whitespace-pre-wrap wrap-anywhere">{job.error}</p></details> : null}
+    </Notice> : null}
+    <div className="whitespace-pre-wrap wrap-anywhere text-ui-body" data-social-job-content>{job.payload.text}</div>
+    {job.payload.link ? <p className="wrap-anywhere text-ui-caption">{t("Link")}: {resultUrl(job.payload.link) ? <a href={resultUrl(job.payload.link)} target="_blank" rel="noreferrer">{job.payload.link}</a> : job.payload.link}</p> : null}
+    {job.payload.media.length ? <ul className="flex min-w-0 flex-col gap-2" aria-label={t("Media")}>
+      {job.payload.media.map((media, index) => <li key={`${index}:${media.uploadId || media.url}`} className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">
+        <span className="font-medium">{t(media.kind === "image" ? "Image" : media.kind === "video" ? "Video" : "Document")}{media.title ? ` · ${media.title}` : ""}</span>
+        {media.alt ? <p>{t("Description")}: {media.alt}</p> : null}
+        {media.url ? <p>{resultUrl(media.url) ? <a href={resultUrl(media.url)} target="_blank" rel="noreferrer">{media.url}</a> : media.url}</p> : null}
+        {media.uploadId ? <p>{t("Upload")}: {media.uploadId}</p> : null}
+      </li>)}
+    </ul> : null}
+    {job.visibility ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Video: {p0}", { p0: job.visibility === "public" ? t("Public") : job.visibility === "private" ? t("Private") : t("Unlisted") })}</p> : null}
+    {job.payload.recipientId || job.payload.threadId || job.payload.postId || job.payload.objectPostId ? <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-caption">
+      {[[t("Recipient"), job.payload.recipientId], [t("Conversation"), job.payload.threadId], [t("Post"), job.payload.postId || job.payload.objectPostId]].map(([label, value]) => value ? <div key={label} className="contents"><dt className="text-(--ui-text-secondary)">{label}</dt><dd className="wrap-anywhere">{value}</dd></div> : null)}
+    </dl> : null}
+    {technical ? <details className="text-ui-caption text-(--ui-text-secondary)">
+      <summary>{t("Technical details")}</summary>
+      <div className="mt-2 flex min-w-0 flex-col gap-1">
+        {job.dispatchedAt ? <span>{t("Send started {p0}", { p0: time(job.dispatchedAt) })}</span> : null}
+        {job.attempts ? <span>{t("{p0} attempts", { p0: job.attempts })}</span> : null}
+        {job.platformId ? <span className="wrap-anywhere">{t("Platform reference")}: {job.platformId}</span> : null}
+        {job.delivery?.code !== undefined ? <span>{t("Delivery code")}: {job.delivery.code}</span> : null}
+        {job.payload.youtube || job.payload.tiktok || job.payload.facebook || job.payload.snapchat ? <pre className="max-w-full overflow-auto whitespace-pre-wrap wrap-anywhere">{JSON.stringify({ youtube: job.payload.youtube, tiktok: job.payload.tiktok, facebook: job.payload.facebook, snapchat: job.payload.snapchat }, null, 2)}</pre> : null}
+      </div>
+    </details> : null}
+    {actionError?.id === job.id ? <Notice kind="error">{actionError.message}</Notice> : null}
+    <div className="flex flex-wrap items-center gap-2">
+      {link ? <a className="social-result-link" href={link} target="_blank" rel="noreferrer">{t("Open on platform")}</a> : null}
+      {job.status === "failed" ? <Button variant="secondary" loading={pendingUi.is(`job.retry:${job.id}`)} disabled={socialLocked}
+        onClick={() => void perform("jobs.retry", `job.retry:${job.id}`, t("Failed target was queued again."))}>{t("Retry this target")}</Button> : null}
+      {cancellation.allowed ? <Button variant="danger" loading={pendingUi.is(`job.cancel:${job.id}`)} disabled={socialLocked}
+        onClick={() => void perform("jobs.cancel", `job.cancel:${job.id}`, t("Queued job cancelled."))}>{t("Cancel job")}</Button> : null}
+    </div>
+    {cancellation.reason && (job.status === "queued" || job.status === "running") ? <p className="text-ui-caption text-(--ui-text-secondary)">{cancellation.reason}</p> : null}
+  </section>;
 }

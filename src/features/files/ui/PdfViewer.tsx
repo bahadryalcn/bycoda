@@ -90,7 +90,7 @@ export default function PdfViewer({
     );
   if (!doc) {
     return (
-      <div className="grid h-full place-items-center text-ui-caption text-[var(--ui-text-muted)]">
+      <div role="status" className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)">
         {t("Loading PDF…")}
       </div>
     );
@@ -290,10 +290,10 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-stroke px-3 text-ui-micro text-[var(--ui-text-secondary)]">
+      <div className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <TextField
           hideLabel
-          label=""
+          label={t("Page number")}
           aria-label={t("Page number")}
           fieldClassName="w-10 shrink-0"
           value={pageInput}
@@ -326,7 +326,6 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
             endGesture();
             changeZoom("fit");
           }}
-          className={""}
         >
           {t("Fit width")}
         </Button>
@@ -334,6 +333,9 @@ function PdfPages({ doc, trailing }: { doc: PDFDocumentProxy; trailing?: ReactNo
       </div>
       <div
         ref={scrollRef}
+        tabIndex={0}
+        role="region"
+        aria-label={t("PDF preview")}
         className="min-h-0 flex-1 overflow-auto overscroll-contain bg-(--ui-surface-muted) py-3"
         style={{ overflowAnchor: "none" }}
       >

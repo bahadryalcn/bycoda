@@ -2,13 +2,20 @@
    State grammar: selected = tinted fill, hover/pressed = neutral fill, keyboard focus = inset ring,
    drop destination = inset accent frame (never a fill, so it stays distinct from selection),
    cut/dragging = dimmed content. */
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .row {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
 .row {
   position: relative;
   display: flex;
   align-items: center;
   gap: 4px;
-  inline-size: 100%;
-  min-inline-size: 0;
   block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: calc(8px + var(--tree-row-depth, 0) * 12px) 8px;
@@ -53,6 +60,14 @@
 .row[data-tree-cut],
 .row[data-explorer-dragging] {
   opacity: 0.5;
+}
+/* In an ActionHost (row + inline actions) the host paints hover, keyboard focus and
+   selection, so the row and its actions read as one item. A drop destination keeps
+   its own frame and fill. */
+:global([data-action-host]) > .row:not([data-tree-drop-target]),
+:global([data-action-host]) > .row:not([aria-selected="true"]):not(:disabled):hover,
+:global([data-action-host]) > .row:not(:disabled):active {
+  background: transparent;
 }
 /* The destination must stay legible even if the row itself is cut or being dragged. */
 .row[data-tree-drop-target] {

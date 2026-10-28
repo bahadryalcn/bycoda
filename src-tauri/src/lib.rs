@@ -13,7 +13,6 @@ pub mod control_cli;
 mod conversation_tools_bridge;
 mod cursor_store;
 mod debug_profile;
-mod package_smoke;
 mod desktop_inbox_review;
 mod external_editor;
 mod file_access;
@@ -43,20 +42,23 @@ mod macos_background;
 mod mcp;
 mod menu;
 mod mobile_pty;
-mod native_authority_channel;
 mod native_authority_bootstrap;
-mod native_authority_helper;
+mod native_authority_channel;
+mod native_authority_checkpoint;
 mod native_authority_deployment;
+mod native_authority_helper;
 mod native_authority_peer;
 mod native_authority_pipe;
-mod native_authority_source;
 mod native_authority_runtime;
-mod native_language;
-mod native_workspace;
-mod native_window_lifecycle;
+mod native_authority_source;
 mod native_editor_drafts;
+mod native_language;
+mod native_provider_output;
+mod native_window_lifecycle;
+mod native_workspace;
 mod notes;
 mod notifications;
+mod package_smoke;
 mod pasteboard;
 mod pi_usage;
 mod project_logo;
@@ -66,6 +68,8 @@ mod pty;
 mod pty_runtime_logs;
 #[cfg(target_os = "macos")]
 mod quick_composer;
+#[cfg(any(target_os = "macos", test))]
+mod quick_native;
 mod rate_limits;
 mod reminders;
 mod remote;
@@ -456,6 +460,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             package_smoke::package_smoke_dom_proof,
             build_info::build_identity,
+            native_authority_checkpoint::native_renderer_checkpoint,
+            native_authority_checkpoint::native_renderer_checkpoint_status,
             session_store::rewind::managed_turn_begin,
             session_store::rewind::managed_turn_end,
             session_store::rewind::managed_rewind_plan,
@@ -465,6 +471,12 @@ pub fn run() {
             worktrees::managed_worktree_removal_plan,
             worktrees::managed_worktree_removal_apply,
             native_workspace::managed_workspace_buffers,
+            native_workspace::managed_workspace_buffer_recovery_list,
+            native_workspace::managed_workspace_buffer_recovery_read,
+            native_workspace::managed_workspace_buffer_recovery_status,
+            native_workspace::managed_workspace_host_buffer_recovery_list,
+            native_workspace::managed_workspace_host_buffer_recovery_read,
+            native_workspace::managed_workspace_host_buffer_recovery_status,
             native_editor_drafts::native_editor_draft_put,
             native_editor_drafts::native_editor_draft_open,
             native_editor_drafts::native_editor_draft_read_current,
@@ -944,6 +956,12 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_submit,
             #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_launch_scope,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_submit_intent,
+            #[cfg(target_os = "macos")]
+            quick_composer::quick_composer_submit_status,
+            #[cfg(target_os = "macos")]
             quick_composer::quick_composer_take,
             #[cfg(target_os = "macos")]
             quick_composer::quick_composer_ack,
@@ -1089,6 +1107,9 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            if let Some(host) = handle.try_state::<harness::HarnessHost>() {
+                host.shutdown_provider_output();
+            }
             native_authority_runtime::shutdown(handle);
             let _ = native_workspace::retire_buffers(handle);
             ssh_window_lifecycle::shutdown();

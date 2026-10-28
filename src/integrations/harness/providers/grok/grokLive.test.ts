@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const sent: string[] = [];
@@ -233,4 +234,20 @@ describe("grok live turn sequence", () => {
     await compact;
     await stopGrokSession("t4");
   });
+});
+
+
+it("retains grok completion lineage from the real RPC response across its await",async()=>{
+ sent.length=0;const sessionId="grok-causal-response";const events:HarnessEvent[]=[];
+ const done=sendGrokTurn({sessionId,cwd:"/repo",model:"grok:grok-4.6",runtimeMode:"supervised",text:"hi",attachments:[],onEvent:event=>{captureNativeOutputEvent(sessionId,event);events.push(event);}});
+ await handshake();
+ await waitFor(()=>parse().some(m=>m.method==="session/prompt"),"prompt");
+ const prompt=parse().find(m=>m.method==="session/prompt")!;
+ const line=JSON.stringify({jsonrpc:"2.0",id:prompt.id,result:{stopReason:"end_turn"}});
+ const inspect=nativeOutputFrame(sessionId,line,()=>onLine!(line));
+ expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+ await done;const event=events.find(e=>e.type==="message.completed")!;
+ expect(getNativeOutputEventOrigin(event)).not.toBeNull();
+ expect(inspect()).toMatchObject({pendingCausalWork:0,applicationThrough:null});
+ await stopGrokSession(sessionId);
 });

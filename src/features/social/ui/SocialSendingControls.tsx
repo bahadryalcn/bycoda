@@ -4,28 +4,31 @@ import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Notice, StatusBadge, type Props } from "./socialShared";
 
-export function SocialSendingControls({ snapshot, client, run }: Props) {
+export function SocialSendingControls({ snapshot, client, run, executorLabel }: Props & { executorLabel?: string }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
+  const operation = useRef(false);
   const execute = async (key: string, action: () => Promise<unknown>, message: string) => {
-    if (pending) return;
+    if (operation.current) return;
+    operation.current = true;
     setPending(key);
     try {
       await run(action, message);
     } finally {
+      operation.current = false;
       setPending(null);
     }
   };
   return (
     <section className="social-sending-controls" aria-label={t("Sending controls")}>
       <header className="social-section-heading">
-        <h2>{t("Sending controls")}</h2>
+        <div className="min-w-0"><h2>{t("Sending on this computer")}</h2>{executorLabel ? <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{executorLabel}</p> : null}</div>
         <StatusBadge
           status={snapshot.stopped ? "paused" : snapshot.sendingEnabled ? "active" : "draft"}
           label={
@@ -37,14 +40,9 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           }
         />
       </header>
-      <Notice
-        kind={snapshot.stopped || !snapshot.sendingEnabled ? "warning" : "success"}
-        title={snapshot.stopped ? t("Pending jobs are kept") : t("Approval is required to send")}
-      >
-        {snapshot.stopped
-          ? t("Resume sending when you are ready.")
-          : t("Drafts are never sent. Only content you approve and active rules can send.")}
-      </Notice>
+      <p className="text-ui-caption text-(--ui-text-secondary)">
+        {snapshot.stopped ? t("Pending jobs are kept") : t("Drafts are never sent. Only content you approve and active rules can send.")}
+      </p>
       {!snapshot.hostOnline ? (
         <Notice kind="warning" title={t("Cannot reach the sending service")}>
           {t("Check the selected computer's connection to manage operations.")}
@@ -101,37 +99,6 @@ export function SocialSendingControls({ snapshot, client, run }: Props) {
           }
         >
           {snapshot.stopped ? t("Resume sending") : t("Stop all sending")}
-        </Button>
-      </div>
-      <div className="social-setting-row">
-        <div>
-          <h3>{t("Auto-refresh inbox")}</h3>
-          <p className="social-muted">
-            {t("Only accounts with message and comment read access are refreshed.")}
-          </p>
-          <StatusBadge
-            status={snapshot.pollingEnabled ? "active" : "paused"}
-            label={snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")}
-          />
-        </div>
-        <Button
-          variant="secondary"
-          type="button"
-          loading={pendingUi.is("inbox.toggle-refresh")}
-          disabled={socialLocked || !!pending}
-          onClick={() =>
-            void pendingUi.run("inbox.toggle-refresh", () =>
-              execute(
-                "polling",
-                () => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }),
-                snapshot.pollingEnabled
-                  ? t("Inbox auto-refresh turned off.")
-                  : t("Auto-refresh turned on for permitted accounts."),
-              ),
-            )
-          }
-        >
-          {snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
         </Button>
       </div>
     </section>

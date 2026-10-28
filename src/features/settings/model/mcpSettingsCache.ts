@@ -77,7 +77,8 @@ async function fetchMcpSettings(cwd: string): Promise<McpSettingsSnapshot> {
     }));
     return { servers, error: "", claudeError: "" };
   } catch (cause) {
-    return { servers: [], error: String(cause), claudeError: "" };
+    const previous = snapshots.get(cwd);
+    return { servers: previous?.servers ?? [], error: String(cause), claudeError: previous?.claudeError ?? "" };
   }
 }
 

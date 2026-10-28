@@ -61,7 +61,7 @@ describe("UnifiedDiffView layouts", () => {
 
   async function chooseLayout(label: string) {
     await act(async () => toggle().click());
-    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]')].find(
       (node) => node.textContent?.includes(label),
     )!;
     await act(async () => option.click());
@@ -69,12 +69,12 @@ describe("UnifiedDiffView layouts", () => {
 
   it("flips every diff through the shared toggle and preference", async () => {
     await render(model(lines("a", "b", "c"), lines("a", "B", "c")));
-    expect(toggle().textContent).toContain("Automatic");
+    expect(toggle().getAttribute("aria-label")).toContain("Automatic");
     expect(localStorage.getItem("bycoda.diffLayout")).toBeNull();
 
     await chooseLayout("Side-by-side view");
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("split");
-    expect(toggle().textContent).toContain("Side-by-side view");
+    expect(toggle().getAttribute("aria-label")).toContain("Side-by-side view");
 
     await chooseLayout("Inline");
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("inline");

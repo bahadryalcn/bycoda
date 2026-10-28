@@ -4,6 +4,7 @@ import {
   composerDraftRevision,
   restoreComposerDraft,
   subscribeComposerDrafts,
+  setComposerDraftSnapshot,
 } from "../model/draftCache";
 import {
   droppedAttachmentsNotice,
@@ -299,6 +300,21 @@ export async function flushComposerDraftsStrict(
 ): Promise<void> {
   await flushDraftBatch(scope, current);
   await draftPersistence.settle(scope, current);
+}
+
+/** Mounted closure/accepted preparation capture; ordinary serializer policy is unchanged. */
+export async function persistMountedComposerDraft(
+  sessionId: string,
+  snapshot: ComposerDraft,
+  parent: PersistenceWork,
+): Promise<void> {
+  if (!isPersistableId(sessionId))
+    throw new Error("This composer has no persistable session identity");
+  setComposerDraftSnapshot(sessionId, snapshot, parent);
+  // A mounted producer can precede hydration/listener installation. Never treat
+  // the absence of that listener as an acknowledgement of unpublished bytes.
+  dirty.add(sessionId);
+  await flushComposerDraftsStrict([sessionId], parent);
 }
 
 function install() {

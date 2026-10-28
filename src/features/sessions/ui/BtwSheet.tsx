@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -489,13 +490,10 @@ export function BtwSheet({
                 const selected = tab.id === activeTabId;
                 const label = compactQuestion(tab.question);
                 return (
-                  <div
+                  <ActionHost
                     key={tab.id}
-                    className={`group flex h-7 max-w-[15rem] shrink-0 items-center rounded-md transition-colors ${
-                      selected
-                        ? "bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg)"
-                        : "text-(--ui-text-secondary) hover:bg-(--ui-surface-raised) hover:text-(--ui-text-secondary)"
-                    }`}
+                    selected={selected}
+                    className="flex h-7 max-w-[15rem] shrink-0 items-center rounded-md"
                   >
                     <Button
                       variant="tab"
@@ -536,25 +534,18 @@ export function BtwSheet({
                       ) : null}
                       <span className="truncate">{label}</span>
                     </Button>
-                    <Button
-                      className={`mr-1 shrink-0 focus-visible:opacity-100 ${selected ? "" : "opacity-0 group-hover:opacity-100"}`}
-                      selected={selected}
-                      tabIndex={selected ? 0 : -1}
-                      iconOnly
+                    <InlineAction
+                      className="mr-1 shrink-0"
                       label={
                         tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
                       }
-                      variant="ghost"
                       type="button"
-                      aria-label={
-                        tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
-                      }
                       title={tab.thread ? t("Delete") : t("Discard")}
                       onClick={() => btw.closeTab(tab)}
                     >
                       <X className="size-3" strokeWidth={1.75} />
-                    </Button>
-                  </div>
+                    </InlineAction>
+                  </ActionHost>
                 );
               })}
             </div>

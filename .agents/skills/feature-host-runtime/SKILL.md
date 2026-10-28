@@ -5,6 +5,37 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Current source continuation, 2026-10-28
+
+`src-tauri/src/native_provider_output.rs` and actual Harness readers now retain
+per-stream sequence/framed digests, reader EOF, process/SSE settlement and actual
+terminal enqueue. A distinct notice gate orders concurrent state enqueues.
+`src/integrations/harness/core/nativeOutputDelivery.ts` tracks received/delivered
+items and actual synchronous event application. Deferred provider application
+and FULL SQL durability remain unverified; applicationThrough stays null.
+Late EOF does not reconcile an earlier held authority admission.
+
+Host-held list/read/status retain original authenticated capabilities. Native
+`native_workspace/recovery_bridge.rs` selects the actual desktop profile's
+loopback Host, checks original raw bytes and closed projections, and rejects
+saved-route retirement/replacement during the request. Generic selected-remote
+and mobile ingress deny these three Native-profile operations. The Native wrapper
+still uses HTTP compatibility; all WebSocket control paths are not finished.
+
+`BufferRecoveryReports` exposes on-demand local/Host sources in the existing
+recovery dialog. Both reuse `BufferReportRecoveryView`; Host data uses
+`hostBufferRecovery` and `useHostBufferRecovery`, with exact opaque cursor/context,
+privacy ABA rejection and bounded actual jobs. Matching copies remain a search
+aid. No edited text, report disposition, deletion or authority is inferred.
+
+Quick Native owns actual capture/popup work lifetimes and in-memory launch
+scope/sequence receipts. Ambiguous submissions reconcile by status without replay;
+older acknowledgements preserve newer prompt/IME/attachments. Unknown/invalid
+screenshot process probes preserve files. Raw crash durability, profile reference
+retirement, real macOS handlers and controller/actor completion remain open.
+All observations stay unqualified. Current evidence and full26 scope:
+`temp/verification/2026-10-28-provider-output/ROOT-CONTINUATION-README.md`.
+
 ## Purpose and scope
 
 Maintain one execution/history authority per `(environmentId, sessionId)` while
@@ -275,6 +306,33 @@ behavior/ports, with no layout redesign or screenshot acceptance claimed.
 
 ## Handoff identity
 
+### Local editor producer/recovery increment (2026-10-28)
+
+T2 sub-scope: actual standard/inline/split CodeMirror updates, merge result text,
+Markdown/SVG/HTML Source/Preview saves, renderer queue, current-owner recovery
+choice, Native foreign-owner read and save lineage. `files/data/editorDraftPersistence.ts`
+owns local Native serialization; `FileEditor.tsx` supplies original disk baseline,
+EOL and exact filesystem-save capture. `CodeMirrorEditor.tsx` admits immutable
+documents at the actual update boundary. Native retains physical-window ownership.
+The sixth local command `native_editor_draft_read_recovery` reads an exact
+same-profile source revision/hash without deleting or retiring it.
+
+All observations remain `qualified:false`. Current-owner restoration starts dirty
+against its retained baseline, requires reviewed manual save and preserves the
+existing changed-disk overwrite gate. Copy retry never repeats a file write.
+Initialization decisions preserve accepted edits and exact CAS; disposed bindings
+cannot admit new work. Global foreign/previous-incarnation recovery UI and opening
+separate new documents, rich merge decisions, remote/web contracts, native
+filesystem receipts and legacy Host/native buffer reconciliation remain required.
+Do not infer complete writer coverage or migration readiness from this increment.
+
+Evidence: `temp/verification/2026-10-28-editor-producer/README.md` and Native
+editor `RECOVERY-READ.md`. Browser evidence uses mock IPC/storage; Native tests
+use isolated Store/window fixtures. Guide: `docs/guides/editor-draft-recovery.md`.
+Shared Button and local status/error rows preserve pending/retry feedback. Live
+feature-claim APIs remain unavailable; dirty source/index was preserved, with no
+exclusive reservation asserted.
+
 Baseline `0a42b1ab4fd891ccec5ca0fa238d7356b396b13c`; observed HEAD
 `c03fa98d4819494a53ebfa61ff74320105bd05fc`, branch main (2026-10-28). Other
 writers' commits now include portions of prior source; this session did not stage
@@ -287,3 +345,114 @@ Full26-group source references/current evidence: `CURRENT-STATUS.md` in that dir
 Evidence: `temp/verification/2026-10-27-host-runtime-foundation/`.
 W00-W11 details are engineering proposals implementing the quoted owner direction;
 no new cloud/account dependency or operation authority is implied.
+
+### Local editor recovery continuation, 2026-10-28
+
+The general recovery entry now includes bounded local Native file-copy inventory,
+including previous window incarnations. Exact source reads prepare a separate
+current-owner row before opening a permanent tab; same-path tabs and source rows
+are preserved. Pending or uncertain preparation retries the same target identity.
+Locked/hidden and unknown locked origins are concealed, including after awaits.
+Workspace snapshots retain only the exact target locator, never editor text.
+Restored editors stay dirty and require reviewed manual save; changed/missing disk,
+watcher conflict, newer accepted edits, rename and child replacement retain their
+existing ownership. Native save reports remain retained statements, not FS proof.
+
+Source evidence: `temp/verification/2026-10-28-editor-recovery/README.md`:
+204 source tests and21 Chromium scenarios; Native/disk browser boundaries are
+fixtures. Normal web/Host tsc-rs passed. Headless864/domain53/schema131 passed;
+one unrelated concurrent Crew roster expectation failed (7 passed/1 failed).
+This is uncommitted source in the shared main checkout; no installed inclusion,
+package, release or operational migration promotion is asserted.
+
+This supersedes the earlier claim that a general previous-incarnation file list
+and separate-document opener are absent. Legacy `native_workspace_buffers`/Host
+reconciliation, mounted composer/provider/native checkpoint closure, target-aware
+barriers, rich merge decisions, remote/web editor contracts, Native FS receipts,
+supported actor/port composition and two-store recovery remain required. All
+observations remain `qualified:false`, coverage Unknown. Full26 scope is retained.
+
+### Session-aware Native admission and legacy report retention, 2026-10-28
+
+`session_store/window_target_barrier.rs` uses the same native operation owner,
+capacity and physical Window roster as the profile barrier. A private exact
+session/round/roster closure rejects target writes while8 explicitly scoped native
+mutation commands permit unrelated session rows. Shared state, delete's cross-
+session/filesystem work, both read-triggered rewind effects and process FTS remain
+in the shared lane. Both target checkpoint lanes and all overlapping actual work
+must settle; this primitive is not mounted producer or supported actor coverage.
+
+`workspace_buffer_report` captures physical native owner plus Buffers admission
+atomically before report serialization/SQL/Host settlement. Unattributed open
+work remains usable and taints qualification; closed gates reject it. Pasted-file
+writes now own Buffers admission before worker scheduling through write/access
+grant, with file-byte sync. Temp paths are not durable profile blob receipts.
+
+`native_workspace/buffer_reports.rs` adds exact immutable path/dirty history,
+raw-body dedup, monotonic revisions and held projections in the SAME legacy-readable
+table. Prefix/provenance collision, SQL replacement/delete/rename, obsolete trigger
+reopen, rollback and corrupt/oversized sources retain their guards. Three local
+read-only recovery IPCs are registered, without plaintext restoration or any
+held-source retirement. Metadata remains append-only; bounded disclosure is not
+globally bounded storage. Renderer/Host reconciliation remains separate work.
+
+Evidence: `temp/verification/2026-10-28-target-barrier/README.md`:308 Native
+cases passed/5 ignored fixtures; includes50 barrier,24 lifecycle and23 report
+cases, not additive. Workspace/all-targets Clippy with warnings denied passed.
+Earlier red regressions remain. All results stay unqualified; no migration,
+default/support floor, installed/platform/provider acceptance or fence promotion.
+
+### Final Composer/Host source continuation, 2026-10-28
+
+Mounted standard Composer now retains full DOM/ref/tag state, accepts preparation
+before awaits, closes actual completion handlers and preserves selected paths/
+created skill identity through read/Native ACK retry. Genuine resets reject stale
+intents. Parent-aware atomic cache/native flush preserves newer owners and explicit
+clears. QuickComposer/parent selectors/provider/full raw/native challenge coverage
+is still missing; these APIs are internal and unqualified.
+
+Host buffer ownership now lives in `host/native-buffer-reports.ts` with separate
+clock/catalog modules; process activity handlers retain their owner. Exact native
+codec and Host raw source identities are separate, original opaque capability
+objects remain intact, and legacy held guards are old-readable. Read-only recovery
+APIs are internal; actual user dispositions/legacy UI remain open. Bounded read/
+page work and dedup do not cap append-only history storage; retention/scaling and
+long-lived Native report delivery remain implementation gaps before promotion.
+
+Root current combined evidence:425 frontend/35 files,47 Host/2 files,308 Native/
+5 ignored, normal web/Host tsc-rs, all-targets Clippy, schema131/headless867/domain53.
+Independent final Composer10/Host6 source reviews have0 remaining concrete findings;
+initial red evidence remains. A separate concurrent Crew roster check remains7/1
+red; no full-repository green claim. Exact evidence, full26 scope/readiness and
+build inclusion are in
+`temp/verification/2026-10-28-target-barrier/ROOT-CONTINUATION-README.md`.
+No commit/package/install/release/live migration or operational qualification.
+
+### Native SQL challenges and lossless report retention, 2026-10-28
+
+`native_authority_checkpoint.rs` is attached to the natively selected Store and
+authenticated channel lifetime. A private controller round consumes exact closed
+target admission; physical Window resources receive a bounded expiring challenge.
+The two registered consume/status IPCs cannot begin a round. Barrier validation
+and the bounded FULL SQL receipt transaction share a lock scope; immutable exact
+transcript/draft/queue receipts recover a lost reply using the same nonce. The
+receipt structurally remains qualified:false with provider output unsealed.
+It does not persist the full mounted raw state or qualify actor/Host verifier
+ports, cohort completeness, provider application, a support floor or migration.
+
+Host report retention now has `native-buffer-archive.ts` for bounded lossless
+template/receipt decoding and exact original-byte reconstruction, including BOM,
+with old-v1 fallback. Fresh owner authorization, immutable sources and old-readable
+holds remain intact. Root55/3 Host tests and Native21 checkpoint tests with normal
+scoped Clippy passed; their independent final source reviews have0 findings.
+The measured200-owner/1600-buffer fixture grows12931.25 bytes per extra heartbeat;
+storage and receipt-file count are still append-only/unbounded. This is no global
+retention cap, RSS guarantee or public Host recovery route.
+
+The new renderer UI inspects only local Native path/dirty history and can find
+matching modern file copies. Host-held inspection, exact dispositions/reconciliation
+and compatible bounded Native forwarding remain open. Current acceptance/source
+identity and full26 gates are in
+`temp/verification/2026-10-28-legacy-recovery-ui/ROOT-CONTINUATION-README.md`.
+These source/SQL/component fixtures do not establish installed GUI, macOS,
+physical device, real provider or operational migration/default acceptance.

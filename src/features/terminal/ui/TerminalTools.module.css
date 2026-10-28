@@ -37,9 +37,6 @@
   justify-content: start;
   text-align: start;
 }
-.option[aria-selected="true"] {
-  background: var(--ui-surface-selected);
-}
 .text {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -52,7 +49,8 @@
 }
 .hint {
   color: var(--ui-text-muted);
-  font-size: 11px;
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
   padding: 4px;
 }
 

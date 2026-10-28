@@ -45,17 +45,19 @@ export function loadSoundsEnabled(): boolean {
   }
 }
 
-export function saveSoundsEnabled(value: boolean) {
+export function saveSoundsEnabled(value: boolean): boolean {
   const resuming = value && !loadSoundsEnabled();
   try {
-    localStorage.setItem(KEY, value ? "1" : "0");
     if (resuming) localStorage.setItem(ENABLED_AT_KEY, String(Date.now()));
+    localStorage.setItem(KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    applySoundEngine();
+    return false;
   }
   applySoundEngine();
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<boolean>(SOUNDS_CHANGE_EVENT, { detail: value }));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent<boolean>(SOUNDS_CHANGE_EVENT, { detail: value }));
+  return true;
 }
 
 function applySoundEngine() {

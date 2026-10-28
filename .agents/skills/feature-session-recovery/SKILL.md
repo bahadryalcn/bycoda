@@ -5,6 +5,20 @@ description: Recovered sessions dialog/rail, attention/status verification, sear
 
 # Recovered sessions
 
+## H4 source implementation, 2026-10-28
+
+Recovery UI/model/action delivery for RS-U/RS-D records is tracked in
+`temp/local/2026-10-28-search-recovery-impl/handoff.json`. Baseline
+`4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`, shared `main`, uncommitted packet.
+Current-work/draft/layout owners, recovery journal/held IDs, remote identity and
+lock revalidation remain authoritative. Opening is navigation without turn
+submission; removal is reference maintenance, not history deletion. Handoff
+distinguishes partial opens, acknowledgment/dismissal-save failures and read
+verification states. Test edilmedi under RULES.md: no real restore/removal,
+fixture, screenshot or native persistence acceptance was run. Exact source,
+fast typecheck and dependencies are in handoff. Guide:
+`docs/guides/search-and-recovery.md`.
+
 Reopen saved conversation tabs or their prior chat splits with understandable
 status and exact identity, preserving history, running work and recovery journal.
 Keywords: Recovered sessions, previous sessions, restore previous layout, recovery
@@ -149,3 +163,73 @@ redesign above complete. Owner request/source is quoted in
 Focused unit/type and browser evidence: `temp/verification/2026-10-27-badges/`.
 Current source is uncommitted; installed source inclusion remains unknown and
 native/Host recovery lifecycle acceptance is outside this presentation sub-scope.
+
+### Local file-copy recovery continuation, 2026-10-28
+
+`WorkspaceRecoveryDialog` composes the existing conversation panel and a bounded
+local Native file-copy catalog through the shared Modal. It also works without a
+conversation journal. `EditorDraftRecoverySection` owns unsaved/all-copy filtering,
+search, refresh and per-copy pending/error/retry. Original file copies are never
+cleared by conversation maintenance. Live project locks are rechecked before and
+after preparation and inside tab insertion; concealed origins do not enter counts.
+
+`useEditorDraftRecovery` retains preparation identity across unknown acknowledgments
+and failed opens. `useOpenRecoveredEditorDraft` opens a separate permanent tab,
+preserves same-path edits and uses a standalone file's parent folder when no known
+project applies. Workspace layout stores an exact locator, without text/baseline.
+The source row is retained even if its original window is still running.
+
+Evidence: `temp/verification/2026-10-28-editor-recovery/README.md`;204 source
+tests and21 browser scenarios, including12 opened/reviewed light/dark1280/800
+captures for catalog, error and opened copy. Browser Native/disk data is fake;
+installed Native, screen-reader and actual cross-restart acceptance remain
+unverified. Legacy Native/Host buffer reconciliation is separate unfinished work.
+All observations remain unqualified; no fence/default/history promotion occurs.
+
+### Earlier local report inspection, 2026-10-28
+
+The desktop recovery entry remains reachable at zero conversation and modern-copy
+count. `WorkspaceRecoveryDialog` adds Earlier file reports with explicit bounded
+metadata paging, page-local filters/search, exact-source inspection and local
+pending/error/retry. Uninspectable records remain visible; no report is resolved
+or deleted. `LegacyBufferRecoverySection` says that path/dirty reports contain no
+edited text and links to matching modern recovery copies without releasing the
+earlier report. The existing file-copy/new-tab/manual-save behavior is preserved.
+
+`legacyBufferRecovery` uses only the existing local Native IPCs; source tuples,
+original raw UTF-8 digest/byte charge and projected file records are checked.
+`useLegacyBufferRecovery` owns bounded requests through actual settlement and
+uses a synchronous group-lock snapshot identity before/after awaits. Privacy ABA
+without an intermediate React render rejects both pending lists and reads; the
+matching-copy action and retained selection recheck that identity. Reports with
+unknown project origin are concealed whenever a group is locked or hidden.
+
+Current evidence: `temp/verification/2026-10-28-legacy-recovery-ui/README.md`,
+14 service/controller tests, independent two-case privacy ABA red/green proof,
+27 Chromium recovery/save scenarios and light/dark1280/800 captures. Independent
+source review closed two concrete findings with0 remaining. Native/disk browser
+effects are fake. Host-held report UI, exact user dispositions/reconciliation,
+installed Native, screen-reader and actual cross-profile/restart acceptance
+remain separate. Main baseline4de508dea, uncommitted source hashes in the current
+checkpoint; no install, release, live conversion or source retirement.
+
+### Host-held report inspection continuation, 2026-10-28
+
+Earlier file reports now has This computer / Host reports sources, composed by
+`src/app/workspace/layout/BufferRecoveryReports.tsx`. Both reuse
+`BufferReportRecoveryView.tsx`. Host data uses the Native-selected profile bridge
+through `hostBufferRecovery` and `useHostBufferRecovery`; no selected project/server
+or mobile fallback is used. Lists and reads remain explicit.
+
+An empty page may retain an opaque next cursor. Partial reports remain usable;
+failed reads retain the row and retry. Privacy/source/unmount invalidation rejects
+late results, including lock/unlock ABA. Original raw bytes/context/source are
+checked before exposing paths. Matching copies remain a name filter. Held reports
+are neither settled nor deleted and contain no edited text.
+
+Root36 Chromium recovery/save cases passed, including nine Host cases; all68
+final captures were reviewed (44 exactly match previously opened captures).
+Native/Host/disk browser
+effects are synthetic. Actual OS IPC, screen-reader, physical-device/provider and
+installed/restart acceptance remain unverified. Evidence:
+`temp/verification/2026-10-28-host-recovery-ui/` and the current full26 report.

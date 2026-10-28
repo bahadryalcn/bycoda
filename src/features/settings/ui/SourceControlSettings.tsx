@@ -1,4 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   loadDiffViewer,
@@ -6,7 +7,7 @@ import {
   subscribeDiffViewer,
   type DiffViewer,
 } from "../model/settings";
-import { Group, Row, Segmented } from "./settingsControls";
+import { Group, Row, Segmented, SettingsFeedback } from "./settingsControls";
 import { GitGenerationModelControl } from "../../source-control/ui/GitGenerationSettings";
 import {
   saveDefaultGitGenerationChoice,
@@ -18,13 +19,20 @@ export function SourceControlSettings() {
   useLocale();
   const gitGenerationChoice = useDefaultGitGenerationChoice();
   const [diffViewer, setDiffViewer] = useStoredPreferenceState(loadDiffViewer, subscribeDiffViewer);
+  const [diffError, setDiffError] = useState(false);
   const onDiffViewer = (next: DiffViewer) => {
     saveDiffViewer(next);
-    setDiffViewer(next);
+    const saved = loadDiffViewer();
+    setDiffViewer(saved);
+    setDiffError(saved !== next);
   };
   return (
     <>
-      <Group title={t("Commit and pull request generation")} layout="full">
+      <Group
+        title={t("Commit and pull request generation")}
+        layout="full"
+        scope={t("Used across projects unless a project has its own generation selection.")}
+      >
         <Row
           id="git-generation-default"
           label={t("Model")}
@@ -32,7 +40,7 @@ export function SourceControlSettings() {
         >
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {!gitGenerationChoice && (
-              <span className="text-[var(--ui-text-secondary)]">{t("Automatic")}</span>
+              <span className="text-ui-secondary text-(--ui-text-secondary)">{t("Automatic")}</span>
             )}
             <GitGenerationModelControl
               choice={gitGenerationChoice}
@@ -51,6 +59,7 @@ export function SourceControlSettings() {
           id="diff-view"
           label={t("Diff view")}
           description={t("Review changes in the editor or together in one unified view.")}
+          feedback={diffError ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
         >
           <Segmented
             label={t("Diff view")}

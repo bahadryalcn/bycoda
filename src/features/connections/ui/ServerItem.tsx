@@ -2,6 +2,7 @@ import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { MoreHorizontal, Server, Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
@@ -30,7 +31,7 @@ type ServerItemProps = {
   onMenu: (at: ServerMenuAt) => void;
 };
 
-/** One inventory entry, rendered as a dense list row or a card. The whole entry is one button. */
+/** One inventory entry with an explicit details target and shared inline actions. */
 export function ServerItem({
   server,
   address,
@@ -64,9 +65,12 @@ export function ServerItem({
   const tags = server.metadata.tags;
   const groupTags = [group, ...tags].filter(Boolean).join(" · ");
   const status = server.machine ? (
-    <MachineStatus machine={server.machine} compact={!cards} />
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="text-xs text-(--ui-text-muted)">Host</span>
+      <MachineStatus machine={server.machine} compact={!cards} />
+    </span>
   ) : (
-    <Badge size="sm">SSH</Badge>
+    <span className="text-xs text-(--ui-text-muted)">SSH</span>
   );
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0 text-(--ui-text-muted)" />
@@ -115,161 +119,159 @@ export function ServerItem({
       data-checked={checked || undefined}
       data-selection-mode={selectionMode || undefined}
     >
-      {onCheck && selectionMode ? (
-        <label className="server-selection">
-          <Checkbox
-            aria-label={t("Select {p0}", { p0: server.name })}
-            checked={checked}
-            disabled={busy}
-            onChange={(event) => onCheck(event.target.checked)}
-          />
-        </label>
-      ) : null}
-      <Button
-        variant="item"
-        selected={selectionMode ? checked : selected}
-        aria-pressed={selectionMode ? checked : selected}
-        disabled={busy}
-        motion="none"
-        data-server-row={server.id}
-        aria-keyshortcuts={canConnect && !selectionMode ? "Enter" : undefined}
-        aria-description={
-          canConnect && !selectionMode
-            ? t("Double-click or press Enter to connect via SSH. Space shows details.")
-            : undefined
-        }
-        className={
-          cards
-            ? "server-identity h-auto min-w-0 flex-1 flex-col items-stretch gap-0 p-0 text-left"
-            : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
-        }
-        onPointerDown={(event) => {
-          cancelPress();
-          held.current = false;
-          if (event.button !== 0 || !event.isPrimary || busy || !onCheck) return;
-          origin.current = { x: event.clientX, y: event.clientY };
-          press.current = setTimeout(() => {
-            held.current = true;
-            check.current?.(true);
-          }, 500);
-        }}
-        onPointerMove={(event) => {
-          if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8)
-            cancelPress();
-        }}
-        onPointerUp={cancelPress}
-        onPointerCancel={cancelPress}
-        onPointerLeave={cancelPress}
-        onDragStart={cancelPress}
-        onClick={(event) => {
-          if (held.current && event.detail !== 0) {
-            held.current = false;
-            return;
-          }
-          if (selectionMode) onCheck?.(!checked);
-          else onSelect();
-        }}
-        onContextMenu={onContextMenu}
-        onDoubleClick={(event) => {
-          if (
-            !canConnect ||
-            selectionMode ||
-            held.current ||
-            event.button !== 0 ||
-            event.ctrlKey ||
-            event.metaKey ||
-            event.altKey ||
-            event.shiftKey
-          )
-            return;
-          onConnect();
-        }}
-        onKeyDown={onKeyDown}
-      >
-        {cards ? (
-          <>
-            {accentBar}
-            <span className="flex min-w-0 flex-col gap-2 p-3">
-              <span className="flex min-w-0 items-center gap-2">
-                <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
-                <span title={server.name} className="min-w-0 flex-1 truncate font-medium">
-                  {server.name}
-                </span>
-                {favorite}
-              </span>
-              <span
-                title={address}
-                className={`text-xs text-(--ui-text-muted) ${selected ? "break-all whitespace-normal" : "truncate"}`}
-              >
-                {address}
-              </span>
-              <span className="flex min-w-0 items-center justify-between gap-2">
-                <span className="flex min-w-0 flex-wrap gap-1">
-                  {group ? <Badge size="sm">{group}</Badge> : null}
-                  {tags.slice(0, MAX_CARD_TAGS).map((tag) => (
-                    <Badge key={tag} size="sm">
-                      {tag}
-                    </Badge>
-                  ))}
-                  {tags.length > MAX_CARD_TAGS ? (
-                    <Badge size="sm">+{tags.length - MAX_CARD_TAGS}</Badge>
-                  ) : null}
-                </span>
-                <span className="flex shrink-0 items-center">{status}</span>
-              </span>
-            </span>
-          </>
-        ) : (
-          <>
-            {accentBar}
-            <span className="min-w-0 flex-1">
-              <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
-                {server.name}
-              </span>
-              <span
-                title={address}
-                className={`block min-w-0 flex-1 text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
-              >
-                {address}
-              </span>
-            </span>
-            {groupTags ? (
-              <span
-                title={groupTags}
-                className="server-group min-w-0 truncate text-xs text-(--ui-text-muted)"
-              >
-                {groupTags}
-              </span>
-            ) : null}
-            <span className="server-row-status flex shrink-0 items-center gap-2">
-              {favorite}
-              {status}
-            </span>
-          </>
-        )}
-      </Button>
-      <div className="server-row-actions">
-        {canConnect ? (
-          <Button
-            variant="secondary"
-            disabled={busy}
-            iconOnly
-            label={t("Connect to {p0}", { p0: server.name })}
-            onClick={onConnect}
-          >
-            <Terminal aria-hidden className="icon-sm" />
-          </Button>
+      <ActionHost selected={selectionMode ? checked : selected} className="w-full min-w-0 flex-wrap">
+        {onCheck && selectionMode ? (
+          <label className="server-selection">
+            <Checkbox
+              aria-label={t("Select {p0}", { p0: server.name })}
+              checked={checked}
+              disabled={busy}
+              onChange={(event) => onCheck(event.target.checked)}
+            />
+          </label>
         ) : null}
         <Button
-          variant="ghost"
+          variant="item"
+          selected={selectionMode ? checked : selected}
+          aria-pressed={selectionMode ? checked : selected}
           disabled={busy}
-          iconOnly
-          label={t("Actions for {p0}", { p0: server.name })}
-          onClick={(event) => onMenu(event.currentTarget)}
+          motion="none"
+          data-server-row={server.id}
+          aria-keyshortcuts={canConnect && !selectionMode ? "Enter" : undefined}
+          aria-description={
+            canConnect && !selectionMode
+              ? t("Double-click or press Enter to connect via SSH. Space shows details.")
+              : undefined
+          }
+          className={
+            cards
+              ? "server-identity h-auto min-w-0 basis-full flex-1 flex-col items-stretch gap-0 p-0 text-left"
+              : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
+          }
+          onPointerDown={(event) => {
+            cancelPress();
+            held.current = false;
+            if (event.button !== 0 || !event.isPrimary || busy || !onCheck) return;
+            origin.current = { x: event.clientX, y: event.clientY };
+            press.current = setTimeout(() => {
+              held.current = true;
+              check.current?.(true);
+            }, 500);
+          }}
+          onPointerMove={(event) => {
+            if (Math.hypot(event.clientX - origin.current.x, event.clientY - origin.current.y) > 8)
+              cancelPress();
+          }}
+          onPointerUp={cancelPress}
+          onPointerCancel={cancelPress}
+          onPointerLeave={cancelPress}
+          onDragStart={cancelPress}
+          onClick={(event) => {
+            if (held.current && event.detail !== 0) {
+              held.current = false;
+              return;
+            }
+            if (selectionMode) onCheck?.(!checked);
+            else onSelect();
+          }}
+          onContextMenu={onContextMenu}
+          onDoubleClick={(event) => {
+            if (
+              !canConnect ||
+              selectionMode ||
+              held.current ||
+              event.button !== 0 ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.altKey ||
+              event.shiftKey
+            )
+              return;
+            onConnect();
+          }}
+          onKeyDown={onKeyDown}
         >
-          <MoreHorizontal aria-hidden className="icon-sm" />
+          {cards ? (
+            <>
+              {accentBar}
+              <span className="flex min-w-0 flex-col gap-2 p-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
+                  <span title={server.name} className="min-w-0 flex-1 truncate font-medium">
+                    {server.name}
+                  </span>
+                  {favorite}
+                </span>
+                <span
+                  title={address}
+                  className={`text-xs text-(--ui-text-muted) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+                >
+                  {address}
+                </span>
+                <span className="flex min-w-0 items-center justify-between gap-2">
+                  <span className="flex min-w-0 flex-wrap gap-1">
+                    {group ? <Badge size="sm">{group}</Badge> : null}
+                    {tags.slice(0, MAX_CARD_TAGS).map((tag) => (
+                      <Badge key={tag} size="sm">
+                        {tag}
+                      </Badge>
+                    ))}
+                    {tags.length > MAX_CARD_TAGS ? (
+                      <Badge size="sm">+{tags.length - MAX_CARD_TAGS}</Badge>
+                    ) : null}
+                  </span>
+                  <span className="flex shrink-0 items-center">{status}</span>
+                </span>
+              </span>
+            </>
+          ) : (
+            <>
+              {accentBar}
+              <span className="min-w-0 flex-1">
+                <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
+                  {server.name}
+                </span>
+                <span
+                  title={address}
+                  className={`block min-w-0 flex-1 text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+                >
+                  {address}
+                </span>
+                {groupTags ? (
+                  <span title={groupTags} className="block truncate text-xs text-(--ui-text-muted)">
+                    {groupTags}
+                  </span>
+                ) : null}
+              </span>
+              <span className="server-row-status flex shrink-0 items-center gap-2">
+                {favorite}
+                {status}
+              </span>
+            </>
+          )}
         </Button>
-      </div>
+        <div className="server-row-actions">
+          {canConnect ? (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              startIcon={<Terminal aria-hidden className="icon-sm" />}
+              aria-label={t("Connect to {p0}", { p0: server.name })}
+              onClick={onConnect}
+            >
+              {t("Connect")}
+            </Button>
+          ) : null}
+          <InlineAction
+            reveal="always"
+            disabled={busy}
+            label={t("Actions for {p0}", { p0: server.name })}
+            onClick={(event) => onMenu(event.currentTarget)}
+          >
+            <MoreHorizontal aria-hidden className="icon-sm" />
+          </InlineAction>
+        </div>
+      </ActionHost>
     </li>
   );
 }

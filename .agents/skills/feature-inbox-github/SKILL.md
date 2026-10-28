@@ -148,3 +148,58 @@ actual product acceptance. Screenshot/build inclusion UNKNOWN; owner build stamp
 absent. Live claims API, installed/provider and physical mobile evidence absent.
 No source test, build, install, release or live GitHub operation run for this
 documentation-only extension. Update user guides when behavior is delivered.
+
+## H7 implementation, 2026-10-28 (supersedes audit-only status for this scope)
+
+Owner request in session `28955f17-306b-4eee-b0e0-99d148ba36c3`, exact quote:
+"Inbox'taki GitHub ve Jira ekranlarını yeniden tasarım belgelerine göre uygula."
+Package: `2026-10-28-inbox-impl`; shared dirty main baseline
+`c03fa98d4819494a53ebfa61ff74320105bd05fc`, uncommitted. No immutable delivery
+commit, build, installation or release is claimed.
+
+- InboxView/Presentation/MiniCard: title-first rows, visible type/lifecycle,
+  separate unread/selection, repository identity, label overflow count and
+  full-label access through record details/accessibility. PR kind choice stays
+  direct; growing filters retain the named popover, persisted IDs and reset.
+  Counts/search/bulk-read name their loaded selected-provider scope. Filters
+  keep the selected allowed record and show an outside-filter notice rather
+  than silently retargeting a public-comment composer.
+- InboxDetail/Comments/PrActions/PrOverview: compact title/lifecycle header,
+  separate agent working folder/public-comment consequence, subdued Reopen,
+  full-width Code and Code-local context/branch controls. Comment/reply drafts
+  use existing window-lifetime retained state, scoped by project/checkout/record
+  and reply; this is not disk persistence or a bounded new draft database.
+  Active comment requests remain guarded across composer remounts. A confirmed
+  comment followed by failed refresh has a read-only retry; failed writes retain
+  the originating draft. Native PR uncertain-write/read-back ambiguity remains
+  an explicit dependency, not solved by UI copy.
+- githubTasks: repository/kind source receipts live with their final query cache.
+  Partial failures name the source and retain only its cached rows; successful
+  sources remove missing rows. Targeted retry reuses healthy GitHub receipts and
+  does not reread other providers. Cache generations, concurrency, read gate and
+  provider error boundaries remain. New regression definitions are unexecuted.
+- InboxPrDiff: shared searchable file selector above six files, complete path/
+  rename/churn options and repeatable focus requests. Stable file identity and
+  revision/range fold identity replace context/revision remounts. No shared
+  viewer clone or saved layout override. Unknown HEAD remains unknown.
+- InboxPrChecks/Evidence/Repair: compact outcome and checked revision beside
+  saved-results/error/retry state; cached rows remain readable, stale repair
+  remains blocked. Long annotation and repair names wrap. Existing checks hook
+  epochs, coalescing and polling authority are unchanged.
+
+Dependencies: H5 owns UnifiedDiffView's missing toolbar-content slot, long path
+geometry, old/new labels, exact copy/zoom and measured diff contrast. H3 owns
+Inbox settings. Native/Host/mobile true GitHub continuation/remote search and
+PR mutation receipts are not fabricated by this desktop implementation.
+
+Every audit record is **test edilmedi** under the overnight RULES.md. No suite,
+fixture, dev server or screenshot was run. The single permitted compiler stage
+was `pnpm exec tsc-rs --noEmit --fast`, because `check:web:fast` also runs Vitest.
+It reported three Inbox diagnostics (two Array.at uses and one duplicate prop),
+corrected afterward, plus an out-of-scope shared shortcut-recorder unused `t`.
+It was not rerun; no clean compiler pass is claimed. Morning acceptance must
+exercise all GH-H/L/R records, exact-target draft/pending navigation, partial
+repository recovery, Code context/focus and stale checks in light/dark at
+1280/800/narrow widths. Full record ledger, file fingerprints and exact blockers:
+`temp/local/2026-10-28-inbox-impl/handoff.json`. Live claims API unavailable;
+project sessions inspected, native subagents used with exclusive file ownership.

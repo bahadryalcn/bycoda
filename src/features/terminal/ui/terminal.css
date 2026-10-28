@@ -65,7 +65,7 @@
   inset-inline: -4px;
 }
 .terminal-sidebar-sash:focus-visible {
-  outline: var(--ui-focus-width) solid var(--color-accent);
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
   outline-offset: 0;
 }
 .terminal-sidebar-sash[data-dragging]::after,
@@ -92,40 +92,11 @@
   align-items: center;
   gap: 6px;
   text-align: start;
-  padding-inline-end: calc(var(--control-height-sm) + 6px);
   cursor: pointer;
-}
-.terminal-list-row:has(.terminal-row-actions > :nth-child(2)) .terminal-list-item {
-  padding-inline-end: calc(var(--control-height-sm) * 2 + 6px);
 }
 .terminal-row-actions {
-  position: absolute;
-  inset-inline-end: 3px;
   display: flex;
-  opacity: 0;
-  pointer-events: none;
-}
-.terminal-row-actions button {
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-}
-.terminal-list-row:focus-within .terminal-row-actions,
-.terminal-list-row:has([aria-selected="true"]) .terminal-row-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: hover) and (pointer: fine) {
-  .terminal-list-row:hover .terminal-row-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-@media (hover: none), (pointer: coarse) {
-  .terminal-row-actions {
-    opacity: 1;
-    pointer-events: auto;
-  }
+  flex-shrink: 0;
 }
 .terminal-canvas {
   display: grid;

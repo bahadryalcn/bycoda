@@ -10,7 +10,7 @@ export function PrivacyStartupSettings() {
   const privacy = useGroupLock();
   const maskEmails = useMaskEmails();
   return (
-    <Group title={t("Privacy")}>
+    <Group title={t("Privacy")} layout="full" scope={t("Applies to this computer.")}>
       <Row
         id="start-in-privacy-mode"
         label={t("Start in privacy mode")}

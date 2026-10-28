@@ -16,6 +16,7 @@ import {
   Heading as LucideHeading,
   Italic as LucideItalic,
   Link as LucideLink,
+  Link2 as LucideLink2,
   ListOrdered as LucideListNumbered,
   Lightbulb as LucideAiIdea,
   CaseSensitive as LucideCaseSensitive,
@@ -28,6 +29,7 @@ import {
   ChevronRight as LucideChevronRight,
   CornerDownRight as LucideCornerDownRight,
   ChevronUp as LucideChevronUp,
+  ChevronsDownUp as LucideChevronsDownUp,
   ChevronsUpDown as LucideChevronsUpDown,
   CircleAlert as LucideCircleAlert,
   CircleDashed as LucideCircleDashed,
@@ -134,6 +136,13 @@ import {
 export type IconProps = LucideProps & { title?: string };
 export type IconComponent = ReturnType<typeof wrap>;
 
+/**
+ * Defaults are a contract, not an accident. `size = 24` is the lucide grid: Button, MorphSelect and other CSS size icons through
+ * `svg[viewBox="0 0 24 24"]` or `.icon > svg` rules, and a bare icon with no size, class or CSS keeps its natural size.
+ * `strokeWidth = 1.75` mirrors the `--ui-icon-stroke` theme token. It stays a presentation attribute on purpose: an inline
+ * `style="stroke-width: var(--ui-icon-stroke)"` would outrank every stylesheet override, and attributes cannot hold `var()`.
+ * Pass `size`/`strokeWidth` (or style the glyph from CSS) to change either; the icon scale tokens are `--ui-icon-xs..lg`.
+ */
 function wrap(Icon: LucideIcon, name: string) {
   const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaIcon(
     { size = 24, strokeWidth = 1.75, title, children, ...props },
@@ -176,6 +185,7 @@ export const CodeBlock = wrap(LucideCodeBlock, "CodeBlock");
 export const Heading = wrap(LucideHeading, "Heading");
 export const Italic = wrap(LucideItalic, "Italic");
 export const Link = wrap(LucideLink, "Link");
+export const Link2 = wrap(LucideLink2, "Link2");
 export const ListNumbered = wrap(LucideListNumbered, "ListNumbered");
 export const AiIdea = wrap(LucideAiIdea, "AiIdea");
 export const CaseSensitive = wrap(LucideCaseSensitive, "CaseSensitive");
@@ -188,6 +198,7 @@ export const ChevronLeft = wrap(LucideChevronLeft, "ChevronLeft");
 export const ChevronRight = wrap(LucideChevronRight, "ChevronRight");
 export const CornerDownRight = wrap(LucideCornerDownRight, "CornerDownRight");
 export const ChevronUp = wrap(LucideChevronUp, "ChevronUp");
+export const ChevronsDownUp = wrap(LucideChevronsDownUp, "ChevronsDownUp");
 export const ChevronsUpDown = wrap(LucideChevronsUpDown, "ChevronsUpDown");
 export const CircleAlert = wrap(LucideCircleAlert, "CircleAlert");
 export const CircleDashed = wrap(LucideCircleDashed, "CircleDashed");

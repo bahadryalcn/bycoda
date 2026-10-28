@@ -69,6 +69,11 @@ export type CrewDefinition = {
   policy: CrewPolicy;
   updatedAt: number;
 };
+/**
+ * `crews.list` clips each message to this many characters (host/crews.ts) and omits
+ * `launch`. A message at the limit may be incomplete; the run view must say so.
+ */
+export const CREW_LIST_MESSAGE_LIMIT = 1000;
 export type CrewMessage = {
   id: string;
   from: string;

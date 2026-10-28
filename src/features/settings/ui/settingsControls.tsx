@@ -23,6 +23,9 @@ import { playCue } from "../model/sounds";
 import { useDecorativeMotionPreference } from "../model/decorativeMotion";
 import { t, useLocale } from "../../../shared/i18n";
 
+// Reusable settings rows also appear in feature dialogs before SettingsView loads.
+import "./BycodaSettings.css";
+
 export const settingDomId = (id: string) => `setting-${id}`;
 
 /** The row or group Settings just jumped to, so it can flash where you landed. */
@@ -84,26 +87,27 @@ export function SettingsFeedback({
           role={state === "error" ? "alert" : "status"}
           aria-live={state === "error" ? "assertive" : "polite"}
           aria-atomic="true"
+          action={action}
         >
           {children}
         </Alert>
       )}
-      {action}
+      {state === "empty" && presentation === "inset" ? action : null}
     </div>
   );
 }
 
-/** Help text (description, scope, dependency): behind the info control and, for assistive tech, in the description id. */
-function SettingHelpText({
-  description,
+/** Essential scope and dependencies stay visible beside the setting. */
+function SettingContext({
   scope,
   dependency,
-}: SettingDetails & { description?: string }) {
+}: Pick<SettingDetails, "scope" | "dependency">) {
   return (
     <>
-      {description ? <p className="settings-description">{description}</p> : null}
-      {scope ? <p className="settings-description">{scope}</p> : null}
-      {dependency ? <p className="settings-description">{dependency}</p> : null}
+      {scope ? <div className="settings-description settings-scope">{scope}</div> : null}
+      {dependency ? (
+        <div className="settings-description settings-dependency">{dependency}</div>
+      ) : null}
     </>
   );
 }
@@ -267,8 +271,8 @@ export function PageHeader({
   automaticSave?: boolean;
 }) {
   return (
-    <header className="flex items-center gap-1 pb-4">
-      <h1 className="text-ui-heading font-medium text-content">{title}</h1>
+    <header className="settings-page-header">
+      <h1 className="settings-page-title">{title}</h1>
       <SettingsPageHelp description={description} automaticSave={automaticSave} />
     </header>
   );
@@ -324,8 +328,8 @@ export function Group({
   const flash = id != null && revealed === id;
   const headingId = useId();
   const descriptionId = useId();
-  const hasInfo = Boolean(description || scope || dependency);
-  const hasDescription = Boolean(hasInfo || persistence);
+  const hasInfo = Boolean(description);
+  const hasDescription = Boolean(description || scope || dependency || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
   return (
@@ -337,37 +341,34 @@ export function Group({
       tabIndex={-1}
       aria-labelledby={headingId}
       aria-describedby={hasDescription ? descriptionId : undefined}
-      className="settings-group pt-8 first:pt-0"
+      className="settings-group"
     >
-      <div className="settings-group-heading flex flex-wrap items-start gap-4 pb-2.5">
-        <div className="settings-group-title min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <h2 id={headingId} className="text-ui-secondary font-medium text-content">
+      <div className="settings-group-heading">
+        <div className="settings-group-title">
+          <div className="settings-title-line">
+            <h2 id={headingId} className="settings-section-title">
               {title}
             </h2>
             {hasInfo ? (
               <InfoPopover className="shrink-0">
-                <SettingHelpText description={description} scope={scope} dependency={dependency} />
+                <p>{description}</p>
               </InfoPopover>
             ) : null}
           </div>
           <div id={descriptionId}>
             {hasInfo ? (
-              <span className="sr-only">
-                <SettingHelpText description={description} scope={scope} dependency={dependency} />
-              </span>
+              <p className="sr-only">{description}</p>
             ) : null}
+            <SettingContext scope={scope} dependency={dependency} />
             <SettingDescriptionText persistence={persistence} />
             <SettingStatus persistence={persistence} />
           </div>
         </div>
-        {action ? <div className="shrink-0 pb-0.5">{action}</div> : null}
+        {action ? <div className="settings-group-action">{action}</div> : null}
       </div>
       <div
         ref={controls}
-        className={`settings-group-content overflow-hidden rounded-xl border bg-(--ui-surface) transition-colors ${
-          flash ? "border-(--ui-border-accent)" : "border-stroke"
-        }`}
+        className="settings-group-content"
       >
         {children}
         {feedback ? <div className="settings-group-feedback">{feedback}</div> : null}
@@ -399,8 +400,8 @@ export function Row({
   const flash = id != null && revealed === id;
   const labelId = useId();
   const descriptionId = useId();
-  const hasInfo = Boolean(description || scope || dependency);
-  const hasDescription = Boolean(hasInfo || persistence);
+  const hasInfo = Boolean(description);
+  const hasDescription = Boolean(description || scope || dependency || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
   return (
@@ -409,37 +410,34 @@ export function Row({
       data-setting-id={id}
       data-revealed={flash || undefined}
       tabIndex={-1}
-      className={`settings-row flex items-start gap-6 border-b border-stroke px-4 py-3.5 transition-colors last:border-b-0 ${
-        flash ? "bg-(--ui-surface-selected)" : ""
-      }`}
+      className="settings-row"
     >
-      <div className="settings-row-label min-w-0 flex-1">
-        <div className="flex items-center gap-1">
+      <div className="settings-row-label">
+        <div className="settings-title-line">
           {controlId ? (
             <label
               id={labelId}
               htmlFor={controlId}
-              className="text-ui-secondary font-medium text-content"
+              className="settings-row-title"
             >
               {label}
             </label>
           ) : (
-            <div id={labelId} className="text-ui-secondary font-medium text-content">
+            <div id={labelId} className="settings-row-title">
               {label}
             </div>
           )}
           {hasInfo ? (
             <InfoPopover className="shrink-0">
-              <SettingHelpText description={description} scope={scope} dependency={dependency} />
+              <p>{description}</p>
             </InfoPopover>
           ) : null}
         </div>
         <div id={descriptionId}>
           {hasInfo ? (
-            <span className="sr-only">
-              <SettingHelpText description={description} scope={scope} dependency={dependency} />
-            </span>
+            <p className="sr-only">{description}</p>
           ) : null}
+          <SettingContext scope={scope} dependency={dependency} />
           <SettingDescriptionText persistence={persistence} />
           <SettingStatus persistence={persistence} />
         </div>
@@ -449,7 +447,7 @@ export function Row({
         role={children ? "group" : undefined}
         aria-labelledby={children ? labelId : undefined}
         aria-describedby={hasDescription ? descriptionId : undefined}
-        className="settings-row-control flex min-w-0 max-w-[60%] shrink-0 flex-wrap items-center justify-end gap-2"
+        className="settings-row-control"
       >
         {children}
       </div>

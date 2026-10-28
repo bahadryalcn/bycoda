@@ -171,7 +171,7 @@ export function ExpandableCard({
           onClick={() => toggle(!expanded)}
         >
           <span className={styles.copy}>
-            <strong>{title}</strong>
+            <span className={styles.title}>{title}</span>
             {description && (
               <span className={styles.description}>
                 <RollingText text={description} reduced={reduceMotion} />
@@ -184,7 +184,7 @@ export function ExpandableCard({
             animate={{ rotate: expanded ? 180 : 0 }}
             transition={reduceMotion ? still : boxTransition(expanded, hold)}
           >
-            <NavArrowDown width={18} height={18} aria-hidden="true" />
+            <NavArrowDown aria-hidden="true" />
           </motion.span>
         </button>
         {/* The panel stays mounted so a second click mid-animation reverses from where it is; inert keeps closed details out of reach. */}

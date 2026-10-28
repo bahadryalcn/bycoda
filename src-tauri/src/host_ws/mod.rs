@@ -34,6 +34,14 @@ pub type EventSink = Arc<dyn Fn(NativeEvent) + Send + Sync>;
 // compatibility decision conservative for every legal caller request ID;
 // generated-envelope boundary tests prevent this reservation drifting silently.
 const MAX_REQUEST_ID_BYTES: usize = 200;
+fn native_profile_recovery(method: &str) -> bool {
+    matches!(
+        method,
+        "native.buffers.recovery.list"
+            | "native.buffers.recovery.read"
+            | "native.buffers.recovery.status"
+    )
+}
 
 #[derive(Serialize)]
 struct BorrowedRequestEnvelope<'a> {
@@ -637,7 +645,9 @@ impl HostWsBroker {
     pub fn supports_method(method: &str) -> bool {
         Contracts::get().is_ok_and(|contracts| {
             let method = contracts.wire_method(method);
-            method != "connection.hello" && contracts.methods.contains_key(method)
+            method != "connection.hello"
+                && !native_profile_recovery(method)
+                && contracts.methods.contains_key(method)
         })
     }
 
@@ -658,6 +668,7 @@ impl HostWsBroker {
         Contracts::get().is_ok_and(|contracts| {
             let method = contracts.wire_method(method);
             method != "connection.hello"
+                && !native_profile_recovery(method)
                 && contracts
                     .methods
                     .get(method)
@@ -768,6 +779,9 @@ impl HostWsBroker {
             WsFailure::local("RPC_WS_SCHEMA", "Native Host contracts are unavailable")
         })?;
         let method = contracts.wire_method(method);
+        if native_profile_recovery(method) {
+            return Err(WsFailure::unsupported());
+        }
         let Some(descriptor) = contracts.methods.get(method) else {
             return Err(WsFailure::unsupported());
         };

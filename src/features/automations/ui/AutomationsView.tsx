@@ -3,6 +3,7 @@ import "./automations.css";
 import { AutomationAssistant } from "./AutomationAssistant";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
@@ -2434,7 +2435,7 @@ export function TriggerRow({
       : 0;
 
   return (
-    <div className="group flex min-h-10 items-center gap-2.5 py-1">
+    <ActionHost className="-mx-2 min-h-10 gap-2.5 px-2 py-1">
       <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
         {trigger.kind === "time" ? (
@@ -2453,18 +2454,10 @@ export function TriggerRow({
           />
         )}
       </div>
-      <Button
-        type="button"
-        aria-label={t("Remove trigger")}
-        onClick={onRemove}
-        variant="ghost"
-        iconOnly
-        className="opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
-        label={t("Remove trigger")}
-      >
-        <X className="icon-sm" />
-      </Button>
-    </div>
+      <InlineAction label={t("Remove trigger")} onClick={onRemove}>
+        <X />
+      </InlineAction>
+    </ActionHost>
   );
 }
 

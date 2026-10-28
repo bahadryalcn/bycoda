@@ -5,7 +5,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ComponentPropsWithRef, KeyboardEvent, MouseEvent } from "react";
 import { AnimatePresence, motion, useAnimate, useReducedMotion } from "motion/react";
 import { X as Xmark } from "../../icons";
-import { Button } from "../../Button";
+import { InlineAction } from "../../ActionHost";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./tag-input.module.css";
 
@@ -442,17 +442,14 @@ export function TagInput({
                 }
               >
                 <span className={styles.tagLabel}>{formatTag(tag)}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
-                  type="button"
+                <InlineAction
+                  reveal="always"
                   disabled={inputProps?.disabled}
                   onClick={() => remove(tag)}
                   label={removeLabel(tag)}
                 >
-                  <Xmark width={14} height={14} aria-hidden="true" />
-                </Button>
+                  <Xmark aria-hidden="true" />
+                </InlineAction>
               </motion.span>
             ))}
           </AnimatePresence>

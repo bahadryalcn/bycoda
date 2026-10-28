@@ -125,6 +125,7 @@ describe("child bridge", () => {
       .mockResolvedValueOnce(vi.fn())
       .mockResolvedValueOnce(vi.fn())
       .mockResolvedValueOnce(vi.fn())
+      .mockResolvedValueOnce(vi.fn())
       .mockResolvedValueOnce(vi.fn());
     const child = await loadChild();
     const releaseApp = child.startHarnessBridge();
@@ -415,4 +416,27 @@ describe("child bridge", () => {
     expect(lines).toEqual([]);
     release();
   });
+});
+
+it("forwards an explicit logical locator after the existing guard slot without altering ordinary payloads",async()=>{
+ installResolvedListeners();const child=await loadChild();mocks.invoke.mockResolvedValue(42);
+ const guard=vi.fn(async()=>{});
+ await child.spawnChild("logical#1","agent",[],"/tmp",undefined,undefined,undefined,undefined,guard,"logical");
+ expect(guard).toHaveBeenCalledTimes(2);
+ expect(mocks.invoke).toHaveBeenCalledWith("harness_spawn",expect.objectContaining({sessionId:"logical#1",logicalSessionId:"logical"}));
+ expect(mocks.invoke.mock.calls.find(([command])=>command==="harness_spawn")?.[1]).not.toHaveProperty("beforeSpawn");
+ await child.openHarnessSse("logical#2","http://127.0.0.1:1/event",undefined,undefined,"logical");
+ expect(mocks.invoke).toHaveBeenLastCalledWith("harness_sse_open",expect.objectContaining({sessionId:"logical#2",logicalSessionId:"logical"}));
+ await child.spawnChild("ordinary","agent",[],"/tmp");
+ expect(mocks.invoke.mock.calls.find(([command,args])=>command==="harness_spawn"&&args.sessionId==="ordinary")?.[1]).not.toHaveProperty("logicalSessionId");
+});
+
+it("retains an actual Native write IPC promise when its caller stops waiting",async()=>{
+ installResolvedListeners();const child=await loadChild();
+ const {nativeOutputFrame}=await import("./nativeOutputDelivery.testSupport");
+ const held=deferred<void>();mocks.invoke.mockImplementation(command=>command==="harness_write"?held.promise:Promise.resolve());
+ let actual!:Promise<void>;const inspect=nativeOutputFrame("child-write-causal","input",()=>{actual=child.writeChild("child-write-causal","reply");});
+ expect(inspect().pendingCausalWork).toBe(1);
+ await Promise.race([actual,Promise.resolve("waiter cancelled")]);expect(inspect().pendingCausalWork).toBe(1);
+ held.resolve();await actual;expect(inspect().pendingCausalWork).toBe(0);
 });

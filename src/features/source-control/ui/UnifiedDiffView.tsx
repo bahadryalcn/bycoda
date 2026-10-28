@@ -1,5 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
-import "./UnifiedDiffView.css";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { t, useLocale } from "../../../shared/i18n/git";
 import {
@@ -327,13 +328,14 @@ export function UnifiedDiffView({
       }
     >
       <div
-        className={`flex h-8 shrink-0 items-center gap-3 border-b border-stroke px-3 text-ui-caption`}
+        className="flex min-h-8 min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-3 py-px text-ui-caption"
       >
-        <span className="text-[var(--ui-text-secondary)]">{fileLabel}</span>
+        <span className="shrink-0 text-(--ui-text-secondary)">{fileLabel}</span>
         <DiffCounts additions={additions} deletions={deletions} />
-        <span className="ml-auto flex items-center gap-0.5">
+        <span role="group" aria-label={t("Diff view")} className="ml-auto flex shrink-0 items-center gap-0.5">
           <DiffLayoutToggle className="mr-0.5" />
           <Button
+            size="sm"
             iconOnly
             label={t("Expand all files")}
             variant="ghost"
@@ -346,6 +348,7 @@ export function UnifiedDiffView({
             <UnfoldVertical className="icon-sm" strokeWidth={1.75} />
           </Button>
           <Button
+            size="sm"
             iconOnly
             label={t("Collapse all files")}
             variant="ghost"
@@ -458,10 +461,6 @@ const FileSection = memo(function FileSection({
   useLocale();
   const Chevron = expanded ? ChevronDown : ChevronRight;
   const name = basename(file.path);
-  // Keep the file name readable: the directory is what truncates, not the name.
-  const labelSplit = file.label === file.path ? file.label.lastIndexOf("/") : -1;
-  const fileDir = labelSplit >= 0 ? file.label.slice(0, labelSplit + 1) : "";
-  const fileName = labelSplit >= 0 ? file.label.slice(labelSplit + 1) : file.label;
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
   const [highlightReady, setHighlightReady] = useState(false);
@@ -528,7 +527,10 @@ const FileSection = memo(function FileSection({
           : ""
       } ${focused ? "bg-[var(--ui-surface-hover)]" : ""}`}
     >
-      <header
+      <ActionHost
+        role="group"
+        aria-label={file.label}
+        selected={focused}
         className={`${
           fileLayout === "stacked" ? "sticky top-0 z-30 " : ""
         } flex items-center gap-2 bg-[var(--ui-surface)] px-3 py-1.5 ${
@@ -545,24 +547,15 @@ const FileSection = memo(function FileSection({
         >
           <Chevron className="icon-sm shrink-0 text-[var(--ui-text-muted)]" strokeWidth={1.75} />
           <FileTypeIcon name={name} isDir={false} size={16} />
-          <span
-            className="flex min-w-0 flex-1 font-mono text-ui-caption text-[var(--color-content)]"
-            title={file.label}
-          >
-            {fileDir ? (
-              <span className="min-w-0 truncate text-[var(--ui-text-muted)]">{fileDir}</span>
-            ) : null}
-            <span className={fileDir ? "shrink-0 font-medium" : "min-w-0 truncate font-medium"}>
-              {fileName}
-            </span>
-          </span>
+          <MiddleTruncate mode="path" className="min-w-0 flex-1 font-mono text-ui-caption font-medium text-(--color-content)">
+            {file.label}
+          </MiddleTruncate>
           <DiffCounts additions={file.additions} deletions={file.deletions} />
         </Button>
         {file.canDiscard && onDiscardFile ? (
-          <Button
-            iconOnly
+          <InlineAction
+            reveal="always"
             label={t("Discard file")}
-            variant="ghost"
             motion="none"
             type="button"
             title={t("Discard file")}
@@ -571,13 +564,12 @@ const FileSection = memo(function FileSection({
             onClick={() => onDiscardFile(file.id)}
           >
             <Undo2 className="icon-sm" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
         ) : null}
         {file.canStage && onStageFile ? (
-          <Button
-            iconOnly
+          <InlineAction
+            reveal="always"
             label={t("Stage file")}
-            variant="ghost"
             motion="none"
             type="button"
             title={t("Stage file")}
@@ -586,9 +578,9 @@ const FileSection = memo(function FileSection({
             onClick={() => onStageFile(file.id)}
           >
             <Plus className="icon-sm" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
         ) : null}
-      </header>
+      </ActionHost>
       {expanded ? (
         <SurfaceSelection context={`@${file.path}`} contentVersion={file.blocks}>
           <FileBody
@@ -817,11 +809,23 @@ function VirtualRows({
     (point: { x: number; y: number } | null) => {
       const body = bodyRef.current;
       const mark = (next: DiffHover | null) => {
-        if (hover.current?.key === next?.key && hover.current?.side === next?.side) return;
+        const syncActions = (node: HTMLElement) => {
+          for (const action of node.querySelectorAll<HTMLElement>("[data-gutter-action]")) {
+            const pointerSelected = node.dataset.pointerRow === "true" &&
+              (action.dataset.gutterAction === "stage" || node.dataset.pointerHover === "true");
+            action.toggleAttribute("data-selected", action.dataset.retainedAction === "true" || pointerSelected);
+          }
+        };
+        if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
+          // A comment draft may have closed since the last pointer movement.
+          for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) syncActions(node);
+          return;
+        }
         hover.current = next;
         for (const node of body?.querySelectorAll<HTMLElement>('[data-pointer-row="true"]') ?? []) {
           node.dataset.pointerRow = "false";
           node.dataset.pointerHover = "false";
+          syncActions(node);
         }
         if (!next || !body) return;
         for (const node of body.querySelectorAll<HTMLElement>(
@@ -830,6 +834,7 @@ function VirtualRows({
           node.dataset.pointerRow = "true";
           node.dataset.pointerHover =
             !splitRows || node.dataset.diffSide === next.side ? "true" : "false";
+          syncActions(node);
         }
       };
       const clear = () => mark(null);
@@ -1287,6 +1292,8 @@ function FoldBar({
   return (
     <div className="flex items-center gap-1 bg-[var(--ui-surface-muted)] px-2" style={FOLD_HEIGHT}>
       <Button
+        size="sm"
+        inset
         iconOnly
         label={t("Expand unmodified lines upward")}
         variant="ghost"
@@ -1299,6 +1306,8 @@ function FoldBar({
         <ChevronUp className="size-3" strokeWidth={2} />
       </Button>
       <Button
+        size="sm"
+        inset
         iconOnly
         label={t("Expand unmodified lines downward")}
         variant="ghost"
@@ -1311,6 +1320,8 @@ function FoldBar({
         <ChevronDown className="size-3" strokeWidth={2} />
       </Button>
       <Button
+        size="sm"
+        inset
         variant="ghost"
         motion="none"
         type="button"
@@ -1399,10 +1410,14 @@ const DiffLineRow = memo(function DiffLineRow({
           {number ?? ""}
         </span>
         {onComment ? (
-          <Button
-            iconOnly
+          <ActionHost
+            selected={hovered || commenting}
+            data-gutter-action="comment"
+            data-retained-action={hovered || commenting ? "true" : "false"}
+            className="absolute top-0.5 left-0.5 z-10"
+          >
+          <InlineAction
             label={`Comment on line ${number ?? ""}`.trim()}
-            variant="ghost"
             motion="none"
             type="button"
             title={`Comment on line ${number ?? ""}`.trim()}
@@ -1414,16 +1429,20 @@ const DiffLineRow = memo(function DiffLineRow({
                 event.currentTarget.getBoundingClientRect(),
               )
             }
-            className={`diff-hover-comment absolute top-0.5 left-0.5 z-10 grid size-4 place-items-center transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
-              hovered || commenting ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
           >
             <MessageSquarePlus className="icon-xs" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
+          </ActionHost>
         ) : null}
         {onStage ? (
-          <Button
-            variant="ghost"
+          <ActionHost
+            selected={stageVisible}
+            data-gutter-action="stage"
+            data-retained-action={stageVisible ? "true" : "false"}
+            className="absolute top-0.5 left-full z-10 ml-0.5"
+          >
+          <InlineAction
+            label={t("Stage hunk")}
             motion="none"
             type="button"
             title={t("Stage hunk")}
@@ -1431,12 +1450,10 @@ const DiffLineRow = memo(function DiffLineRow({
             onClick={() => {
               if (fileId !== undefined && stagePos !== undefined) onStage(fileId, stagePos);
             }}
-            className={`diff-hover-stage absolute top-0.5 left-full z-10 ml-0.5 grid size-4 place-items-center focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100 ${
-              stageVisible ? "opacity-100" : "pointer-events-none opacity-0"
-            }`}
           >
             <Plus className="icon-xs" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
+          </ActionHost>
         ) : null}
       </div>
     );

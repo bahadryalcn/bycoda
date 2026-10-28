@@ -199,10 +199,51 @@ function dropMacScreenshotTwins(files: File[]): File[] {
   return files.filter((file) => !unnamedTiff(file));
 }
 
-export async function pickAttachments(): Promise<Attachment[]> {
-  const paths = await pickFilePaths();
+/** Own one chooser's successful selection across downstream inspection retries.
+ * Constructing this token has no native effect; read starts inside admission.
+ * It is a local locator, never a filesystem access or persistence receipt.
+ */
+export function retainAttachmentPickerSelection() {
+  let selected: readonly string[] | undefined;
+  let pending: Promise<readonly string[]> | undefined;
+  let failure: Error | undefined;
+  return Object.freeze({
+    read(): Promise<readonly string[]> {
+      if (failure) return Promise.reject(failure);
+      if (selected) return Promise.resolve(selected);
+      if (pending) return pending;
+      const actual = pickFilePaths().then((paths) => {
+        const selection = paths ?? [];
+        if (
+          selection.length > 4096 ||
+          selection.reduce((bytes, path) => bytes + path.length * 2, 0) > 1024 * 1024
+        ) {
+          failure = new Error("The selected file paths exceed retained attachment capacity.");
+          throw failure;
+        }
+        selected = Object.freeze([...selection]);
+        return selected;
+      });
+      pending = actual;
+      void actual.then(
+        () => {
+          pending = undefined;
+        },
+        () => {
+          pending = undefined;
+        },
+      );
+      return actual;
+    },
+  });
+}
+
+export async function pickAttachments(
+  selection?: ReturnType<typeof retainAttachmentPickerSelection>,
+): Promise<Attachment[]> {
+  const paths = selection ? await selection.read() : await pickFilePaths();
   if (!paths?.length) return [];
-  return attachmentsFromPaths(paths);
+  return attachmentsFromPaths([...paths]);
 }
 
 export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[]> {

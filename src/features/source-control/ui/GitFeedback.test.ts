@@ -44,7 +44,7 @@ it("shows the original failure output and routes worktree recovery to the same m
     );
     expect(document.querySelector("pre")).toBeNull();
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    await click("Git operation failed");
+    await click("Details");
     expect(document.querySelector('[role="dialog"]')).not.toBeNull();
     expect(document.querySelector("pre")?.textContent).toBe(detail);
     await act(async () =>
@@ -73,7 +73,7 @@ it("keeps the original output when copying fails", async () => {
   await act(async () =>
     root.render(createElement(GitFeedback, { title: "Failed", detail: "original output" })),
   );
-  await click("Failed");
+  await click("Details");
   await act(async () =>
     [...document.querySelectorAll("button")]
       .find((button) => button.textContent === "Copy output")!
@@ -97,7 +97,7 @@ it("saves the full diagnostic to notes and adds it to the chat draft", async () 
         }),
       ),
     );
-    await click("Failed");
+    await click("Details");
     await click("Add to notes");
     const text = "Failed\n\nremote://host/repo\n\nfatal: index.lock exists\nsecond line";
     expect(createNote).toHaveBeenCalledWith({
@@ -120,10 +120,40 @@ it("shows note failures without losing the diagnostic and allows retry", async (
   await act(async () =>
     root.render(createElement(GitFeedback, { title: "Failed", detail: "output" })),
   );
-  await click("Failed");
+  await click("Details");
   await click("Add to notes");
   expect(document.body.textContent).toContain("Notes unavailable");
   expect(document.querySelector("pre")?.textContent).toBe("output");
   await click("Add to notes");
   expect(document.body.textContent).toContain("Saved");
+});
+
+it("does not attach an older copy completion to a replacement diagnostic", async () => {
+  let resolveCopy!: () => void;
+  vi.mocked(copyText).mockImplementationOnce(() => new Promise<void>((resolve) => { resolveCopy = resolve; }));
+  await act(async () => root.render(createElement(GitFeedback, { title: "First", detail: "old output", cwd: "/first" })));
+  await click("Details");
+  await click("Copy output");
+  await act(async () => root.render(createElement(GitFeedback, { title: "Second", detail: "new output", cwd: "/second" })));
+  await click("Details");
+  await act(async () => resolveCopy());
+  expect(document.querySelector("pre")?.textContent).toBe("new output");
+  expect(document.body.textContent).not.toContain("Copied");
+  expect(document.body.textContent).toContain("Copy output");
+});
+
+it("does not attach an old note failure when the original diagnostic returns", async () => {
+  let rejectNote!: (reason: Error) => void;
+  vi.mocked(createNote).mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectNote = reject; }));
+  const first = { title: "First", detail: "old output", cwd: "/first" };
+  await act(async () => root.render(createElement(GitFeedback, first)));
+  await click("Details");
+  await click("Add to notes");
+  await act(async () => root.render(createElement(GitFeedback, { title: "Second", detail: "new output" })));
+  await act(async () => root.render(createElement(GitFeedback, first)));
+  await click("Details");
+  await act(async () => rejectNote(new Error("Old notes failure")));
+  expect(document.querySelector("pre")?.textContent).toBe("old output");
+  expect(document.body.textContent).not.toContain("Old notes failure");
+  expect(document.querySelector('button[aria-busy="true"]')).toBeNull();
 });

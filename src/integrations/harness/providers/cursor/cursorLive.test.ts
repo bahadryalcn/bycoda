@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: string[] = [];
@@ -73,7 +74,7 @@ async function startTurn(sessionId: string) {
     runtimeMode: "supervised",
     text: "explore the codebase",
     attachments: [],
-    onEvent: (event) => events.push(event),
+    onEvent: (event) => { captureNativeOutputEvent(sessionId, event); events.push(event); },
   });
 
   await waitFor(() => !!outboundRequest("initialize"), "initialize");
@@ -689,8 +690,27 @@ it("Cursor çıkışı bekleyen onayı çözer ve kapalı pipe hatasını yakala
       () => events.some((event) => event.type === "approval.resolved"),
       "approval cleanup",
     );
-    expect(warning).toHaveBeenCalledWith("[bycoda] cursor server request failed");
+    await waitFor(() => warning.mock.calls.some(([message]) => message === "[bycoda] cursor server request failed"), "actual request settlement");
   } finally {
     warning.mockRestore();
   }
+});
+
+it("owns timer-backed stored-tool enrichment before its actual file read settles", async () => {
+ const {events,promptId,turn}=await startTurn("cursor-causal");
+ let release!:(value:Array<{toolCallId:string;toolName:string;args:unknown}>)=>void;
+ stores.tools.mockImplementationOnce(()=>new Promise(resolve=>{release=resolve;}));
+ const line=JSON.stringify({method:"session/update",params:{sessionId:"cursor_1",update:{sessionUpdate:"tool_call",toolCallId:"causal-tool",kind:"read",status:"in_progress"}}});
+ const inspect=nativeOutputFrame("cursor-causal",line,()=>onLine!(line));
+ expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+ await waitFor(()=>!!release,"actual stored-tool read");
+ const original=events.find(e=>e.type==="tool.started"||e.type==="tool.updated")!;
+ const origin=getNativeOutputEventOrigin(original);expect(origin).not.toBeNull();
+ release([{toolCallId:"causal-tool",toolName:"read_file",args:{path:"/repo/causal.ts"}}]);
+ await waitFor(()=>events.some(e=>e.type==="tool.updated"&&e.preview?.path==="/repo/causal.ts"),"causal stored tool result");
+ const enriched=events.find(e=>e.type==="tool.updated"&&e.preview?.path==="/repo/causal.ts")!;
+ expect(getNativeOutputEventOrigin(enriched)).toBe(origin);
+ expect(inspect().unavailableReason).toBe("additional-input-unsealed");
+ reply(promptId,{stopReason:"end_turn"});await turn;
+ await vi.waitFor(()=>expect(inspect().pendingCausalWork).toBe(0));
 });

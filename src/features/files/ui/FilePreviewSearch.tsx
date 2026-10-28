@@ -153,7 +153,9 @@ export function FilePreviewSearch({
   useLocale();
   const rootRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
+  const previewOwnerRef = useRef<HTMLElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const focusFrameRef = useRef<number | null>(null);
   const activeRef = useRef(active);
   const openRef = useRef(false);
   const matchesRef = useRef<Range[]>([]);
@@ -176,12 +178,26 @@ export function FilePreviewSearch({
   activeRef.current = active;
   openRef.current = open;
 
+  useLayoutEffect(() => {
+    // Accessible names are translated; find and keyboard recovery share the
+    // actual document scroll owner instead of looking up its English label.
+    previewOwnerRef.current = contentRef.current?.querySelector<HTMLElement>(".markdown-preview") ?? contentRef.current;
+  }, [active, contentVersion]);
+
+  const cancelFocus = useCallback(() => {
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = null;
+  }, []);
+
   const focusInput = useCallback(() => {
-    requestAnimationFrame(() => {
+    cancelFocus();
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
+      if (!activeRef.current || !openRef.current) return;
       inputRef.current?.focus();
       inputRef.current?.select();
     });
-  }, []);
+  }, [cancelFocus]);
 
   const openSearch = useCallback(() => {
     openRef.current = true;
@@ -191,13 +207,16 @@ export function FilePreviewSearch({
   }, [focusInput]);
 
   const closeSearch = useCallback(() => {
+    cancelFocus();
     openRef.current = false;
     setOpen(false);
     clearHighlights(ownerRef.current);
-    requestAnimationFrame(() => {
-      rootRef.current?.querySelector<HTMLElement>('[aria-label="Markdown preview"]')?.focus();
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
+      if (!activeRef.current) return;
+      previewOwnerRef.current?.focus({ preventScroll: true });
     });
-  }, []);
+  }, [cancelFocus]);
 
   const step = useCallback((delta: number) => {
     const matches = matchesRef.current;
@@ -206,7 +225,7 @@ export function FilePreviewSearch({
     currentRef.current = next;
     setCurrent(next);
     paintHighlights(ownerRef.current, matches, next);
-    revealRange(matches[next], contentRef.current);
+    revealRange(matches[next], previewOwnerRef.current);
   }, []);
 
   useLayoutEffect(() => {
@@ -227,10 +246,11 @@ export function FilePreviewSearch({
 
   useLayoutEffect(() => {
     if (active) return;
+    cancelFocus();
     openRef.current = false;
     setOpen(false);
     clearHighlights(ownerRef.current);
-  }, [active]);
+  }, [active, cancelFocus]);
 
   useEffect(() => {
     if (!open || !contentRef.current) return;
@@ -295,7 +315,7 @@ export function FilePreviewSearch({
       setResult({ capped: search.capped, invalid: search.invalid, timedOut: search.timedOut });
       paintHighlights(ownerRef.current, search.matches, nextCurrent);
       if (revealRef.current && nextCurrent >= 0) {
-        revealRange(search.matches[nextCurrent], root);
+        revealRange(search.matches[nextCurrent], previewOwnerRef.current);
       }
       revealRef.current = false;
     });
@@ -307,9 +327,10 @@ export function FilePreviewSearch({
 
   useEffect(
     () => () => {
+      cancelFocus();
       clearHighlights(ownerRef.current);
     },
-    [],
+    [cancelFocus],
   );
 
   const updateQuery = (value: string) => {
@@ -365,7 +386,7 @@ export function FilePreviewSearch({
         <div
           role="search"
           aria-label={t("Find in preview")}
-          className="relative z-30 flex h-8 shrink-0 items-center gap-1 border-b border-stroke px-2 py-1 text-content"
+          className="relative z-30 flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-1 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 py-1 text-content"
           onKeyDown={onKeyDown}
         >
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
@@ -386,7 +407,7 @@ export function FilePreviewSearch({
             />
             <span
               aria-live="polite"
-              className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-[11px] tabular-nums text-ellipsis whitespace-nowrap ${
+              className={`w-[13ch] shrink-0 overflow-hidden pl-2 text-right font-mono text-ui-caption tabular-nums text-ellipsis whitespace-nowrap ${
                 (query && total === 0) || result.invalid
                   ? "text-danger"
                   : "text-[var(--ui-text-muted)]"
@@ -434,7 +455,7 @@ export function FilePreviewSearch({
           </FindButton>
         </div>
       ) : null}
-      <div ref={contentRef} className="min-h-0 flex-1">
+      <div ref={contentRef} tabIndex={-1} className="min-h-0 min-w-0 flex-1">
         {children}
       </div>
     </div>
@@ -455,6 +476,7 @@ function FindToggle({
   useLocale();
   return (
     <Button
+      size="sm"
       variant="ghost"
       motion="none"
       type="button"
@@ -463,7 +485,7 @@ function FindToggle({
       aria-pressed={pressed}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className={" grid size-6 shrink-0 place-items-center font-mono "}
+      className="shrink-0 font-mono"
     >
       {label}
     </Button>
@@ -486,6 +508,9 @@ function FindButton({
   useLocale();
   return (
     <Button
+      size="sm"
+      iconOnly
+      label={label}
       variant="ghost"
       motion="none"
       type="button"
@@ -494,7 +519,7 @@ function FindButton({
       disabled={disabled}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
-      className="grid size-6 shrink-0 place-items-center"
+      className="shrink-0"
     >
       {children}
     </Button>
@@ -597,7 +622,7 @@ function revealRange(range: Range, root: HTMLElement | null) {
   const rangeWithRect = range as Range & {
     getBoundingClientRect?: () => DOMRect;
   };
-  const scroller = root.querySelector<HTMLElement>(".markdown-preview") ?? root;
+  const scroller = root;
   const rangeRect = rangeWithRect.getBoundingClientRect?.();
   if (rangeRect) {
     const scrollerRect = scroller.getBoundingClientRect();

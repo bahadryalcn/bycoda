@@ -7,6 +7,7 @@ import { useWorktreeFocus, type WorktreeFocus } from "../model/worktreeFocus";
 import { createWorktree } from "../model/worktrees";
 import { pathKey, prettyCwd } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import {
   Check,
   ChevronsUpDown,
@@ -53,7 +54,7 @@ export function SidebarWorktreeSwitcher({
   const search = useRef<HTMLInputElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const focus = useWorktreeFocus(cwd);
-  const { data, error, refresh } = useProjectWorktrees(cwd);
+  const { data, error, loading, refresh } = useProjectWorktrees(cwd);
   // The project folder is the default, unfocused entry; missing worktrees
   // cannot be opened, so they are left out.
   const main = data?.worktrees.find((tree) => tree.isMain);
@@ -184,7 +185,7 @@ export function SidebarWorktreeSwitcher({
         }}
         className="-ml-1.5 flex h-6.5 min-w-0 max-w-full items-center gap-2 leading-tight"
       >
-        <span className="min-w-0 truncate">{title}</span>
+        <MiddleTruncate mode="text">{title}</MiddleTruncate>
         {pending || creating ? (
           <Loader
             aria-label={creating ? t("Creating worktree") : t("Switching working copy")}
@@ -224,6 +225,7 @@ export function SidebarWorktreeSwitcher({
                 setCreationError(undefined);
               }}
               onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
                   setActive(
@@ -282,10 +284,10 @@ export function SidebarWorktreeSwitcher({
                     <FolderTree className="size-3.5 shrink-0 text-[var(--ui-text-secondary)]" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[12px]">{tree.label}</span>
-                    <span className="block truncate text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                    <MiddleTruncate mode="text" className="text-ui-body">{tree.label}</MiddleTruncate>
+                    <MiddleTruncate mode="path" className="text-ui-caption text-(--ui-text-secondary)">
                       {tree.detail}
-                    </span>
+                    </MiddleTruncate>
                   </span>
                   <OpenTabs stats={tabStats?.get(pathKey(tree.path))} />
                   {selected ? <Check className="size-3.5 shrink-0" /> : null}
@@ -299,9 +301,16 @@ export function SidebarWorktreeSwitcher({
             ) : null}
           </div>
           {creationError || switchError || error ? (
-            <p role="alert" className="px-2 py-2 text-[11px] text-danger">
-              {creationError || switchError || error}
-            </p>
+            <div className="flex shrink-0 items-start gap-2 px-2 py-2 text-ui-caption">
+              <p role="alert" className="min-w-0 flex-1 break-words text-(--ui-tone-danger-fg)">
+                {creationError || switchError || error}
+              </p>
+              {error ? (
+                <Button size="sm" variant="ghost" loading={loading} disabled={creating || pending} onClick={() => void refresh()}>
+                  {t("Retry")}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
           {canCreate ? (
             <div className="shrink-0 border-t border-stroke p-1.5">

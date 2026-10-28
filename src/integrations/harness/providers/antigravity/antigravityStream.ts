@@ -171,7 +171,7 @@ async function ensureLive(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await spawnChild(childKey, path, args, input.cwd, undefined, "antigravity");
+    await spawnChild(childKey, path, args, input.cwd, undefined, "antigravity", undefined, undefined, undefined, input.nativeOutputSessionId);
     await Promise.race([
       readiness,
       new Promise<never>((_, reject) => {

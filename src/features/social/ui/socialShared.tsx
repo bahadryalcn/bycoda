@@ -41,6 +41,12 @@ export const youtubeDefaults = {
   containsSyntheticMedia: false,
 };
 export const statuses: Record<string, string> = {
+  get scheduled() {
+    return t("Scheduled");
+  },
+  get checked() {
+    return t("Checked");
+  },
   get queued() {
     return t("Queued");
   },
@@ -48,7 +54,7 @@ export const statuses: Record<string, string> = {
     return t("Sending");
   },
   get succeeded() {
-    return t("Sent");
+    return t("Dispatch accepted");
   },
   get failed() {
     return t("Failed");
@@ -131,7 +137,7 @@ export const operations: Record<string, string> = {
     return t("Live events");
   },
   get poll() {
-    return t("Refresh via API");
+    return t("Refresh inbox");
   },
 };
 export const time = (value: number) => new Date(value).toLocaleString(getLocale());
@@ -192,7 +198,7 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
       ? "error"
       : ["review", "warning", "unsupported", "disconnected", "partial", "skipped"].includes(status)
         ? "warning"
-        : ["queued", "pending", "draft", "info"].includes(status)
+        : ["queued", "scheduled", "checked", "pending", "draft", "info"].includes(status)
           ? "info"
           : ["running", "loading"].includes(status)
             ? "loading"
@@ -214,10 +220,12 @@ export function Empty({
   children,
   title = "",
   icon: Icon,
+  action,
 }: {
   children: ReactNode;
   title?: string;
   icon?: typeof Plus;
+  action?: ReactNode;
 }) {
   return (
     <EmptyState
@@ -226,6 +234,7 @@ export function Empty({
       title={title}
       icon={Icon ? <Icon aria-hidden="true" /> : null}
       description={children}
+      action={action}
     />
   );
 }
@@ -254,15 +263,19 @@ export function Composer({
   editing = false,
   description,
   onOpen,
+  openRequest = 0,
 }: {
   title: string;
   children: ReactNode;
   editing?: boolean | number;
   description?: string;
   onOpen?: () => void;
+  /** A local task entry opens the existing parked form; it never submits it. */
+  openRequest?: number;
 }) {
   const socialLocked = useSocialContext(SocialLockContext);
   const [open, setOpen] = useState(false);
+  const handledOpenRequest = useRef(0);
   const [slot, setSlot] = useState<ComposerSlot>({ element: null, parent: null, layer: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
   const stash = useRef<HTMLDivElement>(null);
@@ -283,6 +296,12 @@ export function Composer({
   useEffect(() => {
     if (editing) setOpen(true);
   }, [editing]);
+  useEffect(() => {
+    if (openRequest > 0 && openRequest !== handledOpenRequest.current && !socialLocked) {
+      handledOpenRequest.current = openRequest;
+      setOpen(true);
+    }
+  }, [openRequest, socialLocked]);
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) opened.current?.();
@@ -369,4 +388,5 @@ export type Props = {
   initialProject?: string;
   run: Run;
   onFilterChange?: (collection: SocialCollection, filter: SocialCollectionFilter) => void;
+  onOpenContent?: (projectId?: string) => void;
 };

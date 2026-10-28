@@ -306,7 +306,7 @@ export function GithubPrActions({
       ) : null}
       {state === "closed" ? (
         <Button
-          variant="secondary"
+          variant="ghost"
           type="button"
           disabled={busy}
           onClick={(event) => askToRun("reopen", event.currentTarget)}

@@ -1,10 +1,29 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External layout: callers can size or align the tray with Tailwind utilities; the tray's surface and the shared highlight
+   below stay unlayered. Actions keep the shared Button skin. */
+@layer components {
+  .group {
+    min-inline-size: 0;
+    flex-wrap: nowrap;
+  }
+  .vertical {
+    inline-size: 100%;
+  }
+  .separator {
+    align-self: center;
+  }
+  .vertical .item[data-icon-only] {
+    align-self: center;
+  }
+}
+
 /* Arc's measured tray/highlight geometry; actions keep the shared Button skin. */
 .group {
   position: relative;
   isolation: isolate;
   display: inline-flex;
-  min-inline-size: 0;
-  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
@@ -22,7 +41,6 @@
   border: 1px solid var(--color-stroke);
 }
 .vertical {
-  inline-size: 100%;
   flex-direction: column;
   align-items: stretch;
 }
@@ -49,9 +67,6 @@
 .vertical .item:not([data-icon-only]) {
   justify-content: flex-start;
 }
-.vertical .item[data-icon-only] {
-  align-self: center;
-}
 .slot {
   position: relative;
   display: inline-grid;
@@ -74,8 +89,8 @@
 }
 .iconSpace {
   display: block;
-  inline-size: 1rem;
-  block-size: 1rem;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
   flex: none;
 }
 .phase {
@@ -89,9 +104,9 @@
   flex: none;
 }
 .icon svg {
-  inline-size: 1rem;
-  block-size: 1rem;
-  stroke-width: 1.75;
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
+  stroke-width: var(--ui-icon-stroke);
 }
 .text {
   display: block;
@@ -100,7 +115,6 @@
 }
 .separator {
   flex: none;
-  align-self: center;
   inline-size: 1px;
   block-size: calc(var(--fbg-h) * 0.5);
   background: var(--color-stroke);
@@ -108,6 +122,13 @@
 .vertical .separator {
   inline-size: 50%;
   block-size: 1px;
+}
+/* The moving highlight is a background; forced colors need an edge to follow focus and hover. */
+@media (forced-colors: active) {
+  .highlight {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .highlight {

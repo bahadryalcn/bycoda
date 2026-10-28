@@ -53,7 +53,7 @@ independent palette, new shortcut or shell-profile edit was selected.
 
 ## Critical source finding and preservation
 
-TerminalView currently selects minimumContrastRatio 1/4.5 and transparent/opaque
+At the audit baseline, TerminalView selected minimumContrastRatio 1/4.5 and transparent/opaque
 canvas by optional lineHeight prop presence. Project dock, FilePane and dedicated
 tool omit it; SSH passes it. Actual typography still comes from preferences.
 Separate rendering/contrast policy from typography and resolve effective shared
@@ -182,3 +182,67 @@ Update user guides when behavior is delivered, not for this proposal alone.
 Six Host pipe-shell RPCs now share host/domains/terminals/service.ts and neutral terminals.ts DTOs across HTTP/WS. Existing process ownership, per-device creation receipts, UTF8 bounds and workspace activity remain authoritative. PTY/SSH/control-lease migration and installed acceptance remain separate.
 
 Source only, uncommitted; no build/install/release stamp. Current full checklist and overlapping evidence: feature-host-runtime/SKILL.md and the local IMPLEMENTATION ledger.
+
+## H3 Terminal Settings consumer implementation, 2026-10-28
+
+Settings-only scope: `src/features/settings/ui/TerminalSettings.tsx` and its CSS.
+One local chooser now covers local-sync sessions; the remote collection excludes
+the duplicate local-sync editor. Inventory loading/failure is distinct from empty.
+Machine profile rows rebind on endpoint/environment changes, provide read refresh,
+guard duplicate saves and require authoritative read-back after uncertain writes.
+Missing-shell fallback remains visible. Available shells have a separate reveal
+target and collapsed optional details; help remains available as readable text.
+No terminal runtime, PTY, Host, native or mobile model was changed by H3.
+TS-03..06 persistence/cache authority and TS-12 fixture ownership remain named
+dependencies in `temp/local/2026-10-28-settings-pages-a/workspace.json`.
+
+Test edilmedi under the nightly owner rule. Morning fixture/native shell-profile,
+uncertain-write, identity-change, search/reveal, keyboard/density and light/dark
+1280/800/narrow acceptance remains pending. No build/install/release.
+
+## H5 readability implementation, 2026-10-28
+
+Owner continuation in session `11a29e09-1ce7-412e-b34c-309f94174bd5`:
+"Terminal okunabilirliği onarım planını uygula. Audit'i tekrarlama."
+Source baseline observed on shared main: `4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`.
+Three native workers plus root source review; preserve preceding H3 and H5 changes.
+
+| Record | Source delivery | Acceptance / remaining scope |
+| --- | --- | --- |
+| TT-C01 | TerminalView and terminalRenderingPolicy resolve actual CSS background stacks; normal target 4.5 is independent of lineHeight; transparent canvas retains reference RGB. | Unknown image/filter/opacity backdrops preserve glass with ratio 1 and unresolved marker; not certified. |
+| TT-C02/03 | Upstream per-glyph correction handles normal ANSI, indexed, RGB and inverse on known canvases; palette background meaning retained. | Offline math only; dim and background-glyph exemptions remain. |
+| TT-C04 | Cursor and OSC use shared focus role and resolved canvas reference. | Base contrast improved; fixed cursor still has weak pairings against some ANSI backgrounds. |
+| TT-C05 / SEL-02/04 | Shared opaque text-selection contrast pair for active/inactive; explicit selected foreground; shared focus search borders. Sash focus was delivered in H5-1. | WebGL selection blends explicit cell backgrounds; later real selection/copy and DOM/WebGL checks required. |
+| TT-R01 | Existing saved font/size/weight/spacing and no-respawn paths retained. | Default/saved font, DPI and physical screen acceptance pending; no default reset. |
+| TT-R02 | TerminalTools displays current scoped size and resets to saved size via TerminalView owner. | Local/SSH zoom/reset without respawn requires morning tests. |
+| TT-R03 | H3 already added actual terminal typography preview at AppearancePreviews.tsx:523. | H3 dependency: ANSI and long-line examples still absent; H5 did not edit Settings. |
+| TT-R04 | Reduced-motion media listener disables cursor blinking and cleans up. | Shell-selected cursor and actual renderers need acceptance. |
+| TT-R05 | SearchAddon result events supply current/count or bounded result notice; no shell input. | Output/resize/theme/keyboard interaction pending. |
+| TT-R06 | Existing geometry retained. | Padded SSH content-box reproduction deferred by night rule; no unproven grid adjustment. |
+
+`ProjectTerminalDock.tsx` now uses shared ActionHost/InlineAction for split/close;
+terminal.css no longer overlays separate action highlights. Existing close, focus,
+drag and reorder controllers remain authoritative. No Host/native/adapter changes.
+
+Six new policy tests and relevant view/tools regressions are written but **test
+edilmedi**. No browser, fixtures, screenshots, dev servers or live SSH were run.
+One `pnpm exec tsc-rs --noEmit --fast` returned two out-of-scope errors:
+files/editor/editorSurfaceVisibility.ts:7 and shared/ui/arc/shortcut-recorder at
+line 929. No terminal diagnostics at the frozen production source snapshot.
+
+Explicitly requested offline numerical analysis adapted the audit contrast-math
+helper. Default light/dark plain text: 12.21/16.40; raw ANSI below 4.5: 14/2,
+modeled corrected: 0/0. Two synthetic violet themes also model 0 after correction.
+Cursor/base: 6.16/13.31 defaults, 8.00/8.90 custom; active/inactive selection:
+9.15 defaults, 5.70 custom. These are mathematical models, not glyph pixels or
+runtime acceptance. Default cursor has 14/16 weak ANSI-background pairings;
+custom has 5/16 and 15/16. No universal colored-cell cursor claim.
+
+Per-record source/check/dependency handoff and hashes:
+`temp/local/2026-10-28-terminal-readability-impl/handoff.json`.
+Math: `temp/verification/2026-10-28-terminal-readability-impl/contrast-nominal.json`.
+User guide: `docs/guides/terminal.md`. Morning matrices include actual light/dark
+1280/800/narrow, custom accents, selection/search/copy, WebGL/fallback, reduced
+motion, retained scrollback, exact bytes and typography without replacing PTYs.
+Installed/native/live SSH/source inclusion remains UNKNOWN; no build/install,
+commit, branch change, release or canonical TODO update. REVIEW is not closure.

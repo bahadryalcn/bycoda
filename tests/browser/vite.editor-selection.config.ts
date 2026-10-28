@@ -11,6 +11,7 @@ export default defineConfig({
       input: [
         "tests/browser/editor-selection.html",
         "tests/browser/file-save.html",
+        "tests/browser/editor-recovery.html",
         "tests/browser/file-tree.html",
       ],
     },

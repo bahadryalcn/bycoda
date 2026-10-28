@@ -5,7 +5,7 @@ const captures = "temp/verification/2026-10-26-device-panel";
 
 async function ready(page: Page, detached = true, theme = "dark") {
   await page.goto(`${fixture}?${detached ? "detached=1&" : ""}theme=${theme}`);
-  await page.getByRole("button", { name: "Boot", exact: true }).click();
+  await page.getByRole("button", { name: /^Start (emulator|simulator)$/ }).click();
   await expect(page.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
 }
 
@@ -184,7 +184,7 @@ test("right dock retains a usable screen and annotation tools at 360px", async (
   const dock = page.locator(".tools-workspace-dock");
   await expect(dock).toBeVisible();
   expect((await dock.boundingBox())!.width).toBeCloseTo(360, 0);
-  const boot = dock.getByRole("button", { name: "Boot", exact: true });
+  const boot = dock.getByRole("button", { name: /^Start (emulator|simulator)$/ });
   if (await boot.isVisible()) await boot.click();
   const image = dock.getByRole("img", { name: "Current device screen", exact: true });
   await expect(image).toBeVisible();

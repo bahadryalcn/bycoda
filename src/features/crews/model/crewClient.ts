@@ -24,6 +24,13 @@ import {
   type SavedCrewAgent,
 } from "./crew";
 
+/**
+ * A run as `crews.list` returns it. The list is deliberately lightweight: `launch`
+ * and `pendingDelivery` are omitted, member instructions are blank, message text
+ * is clipped (`CREW_LIST_MESSAGE_LIMIT`) and `title` is the request's first line.
+ * Code that needs the full request must treat it as unavailable.
+ * `definition` is the team snapshot taken when the work started.
+ */
 export type CrewRunView = CrewRun & {
   tasks: HostTask[];
   coordinatorStatus?: "idle" | "running" | "interrupted";

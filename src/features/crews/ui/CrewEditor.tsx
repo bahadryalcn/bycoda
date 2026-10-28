@@ -3,13 +3,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
-import { NumberField } from "../../../shared/ui/NumberField";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Select } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
-import { ChevronLeft, Plus, Trash2 } from "../../../shared/ui/icons";
-import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ChevronLeft, ChevronRight, Plus, Trash2 } from "../../../shared/ui/icons";
 import {
   defaultCrewPolicy,
   type CrewAgent,
@@ -25,16 +22,15 @@ import {
   type CrewAppearance,
 } from "../model/crewAppearance";
 import {
-  COST_LEVELS,
-  QUALITY_LEVELS,
-  candidateLabel,
   catalogCandidate,
   catalogModels,
   crewRosterIssues,
   crewRosterValid,
   libraryGroups,
   libraryUpdate,
+  memberDraftStarted,
   memberFromLibrary,
+  memberModelSummary,
   newCrewMember,
   saveLibraryProfile,
   type CrewRosterIssues,
@@ -43,6 +39,8 @@ import { CrewAppearancePicker } from "./CrewAppearancePicker";
 import { CrewDeleteButton } from "./CrewDeleteButton";
 import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 import { CrewMemberPicker, type MemberPickerMode } from "./CrewMemberPicker";
+import { CrewRoleIcon } from "./CrewRoleIcon";
+import { CrewWorkingSettings } from "./CrewWorkingSettings";
 
 // Like note drafts, these survive closing the dialog for the lifetime of this window.
 // Host + project identity prevents a draft leaking into another connection.
@@ -223,9 +221,15 @@ function ConnectedCrewEditor({
   const [addIssues, setAddIssues] = useState(false);
   const body = useRef<HTMLFieldSetElement>(null);
   const [bulkModel, setBulkModel] = useState("");
-  // Add members page.
+  const [bulkApplied, setBulkApplied] = useState<number | null>(null);
+  // Add members page. Picks and the unfinished new-member draft live here, not in the
+  // page, so Back and a later Add keep them until the owner deliberately adds or
+  // discards them (CR-E01).
   const [addMode, setAddMode] = useState<MemberPickerMode>(data.agents.length ? "library" : "new");
   const [picked, setPicked] = useState<string[]>([]);
+  // The add slot the current picks were made in. Retained picks keep that slot's
+  // responsibility, so reopening a different role slot never restamps them.
+  const [pickedFor, setPickedFor] = useState<CrewRole | undefined>(undefined);
   const [newMember, setNewMember] = useState<CrewAgent>(() => blankMember(data));
   const [saveNewToLibrary, setSaveNewToLibrary] = useState(false);
   const [newMemberScope, setNewMemberScope] = useState<"project" | "global">("project");
@@ -314,6 +318,11 @@ function ConnectedCrewEditor({
   const policy = policyErrors(draft.policy);
   const policyValid = !policy.maxParallel && !policy.maxAssignments && !policy.maxRunMinutes;
   const valid = crewRosterValid(issues) && policyValid;
+  // Picks of profiles that still exist, and whether anything unfinished is being kept.
+  const livePicked = picked.filter((id) => data.agents.some((agent) => agent.id === id));
+  const newMemberStarted = memberDraftStarted(newMember);
+  const unfinishedAdditions = livePicked.length > 0 || newMemberStarted;
+  const unfinishedNote = t("Unfinished additions are kept until you add or discard them.");
   const update = (patch: Partial<CrewDefinition>) => {
     setDraft({ ...draft, ...patch });
     setNotice("");
@@ -334,12 +343,21 @@ function ConnectedCrewEditor({
       drafts,
     });
   };
+  /** Deliberately drops the library picks and the unfinished new-member draft. */
+  const resetAdditions = () => {
+    setPicked([]);
+    setNewMember(blankMember(data));
+    setSaveNewToLibrary(false);
+    setAddIssues(false);
+  };
   const discard = () => {
     forgetDraft(draft.id);
     setDraft(
       latest ? structuredClone(latest) : emptyCrew(data, draft.projectId ? "project" : "global"),
     );
     if (!latest) setDraftLook({});
+    resetAdditions();
+    setBulkApplied(null);
     setPage({ kind: "team" });
     setShowIssues(false);
     setError("");
@@ -358,6 +376,7 @@ function ConnectedCrewEditor({
       if (isNew) saveCrewAppearance(definition.id, draftLook);
       forgetDraft(draft.id);
       setDraft(definition);
+      setBulkApplied(null);
       setShowIssues(false);
       setNotice(t("Saved"));
       if (thenStart && onStart) onStart(definition.id);
@@ -365,19 +384,26 @@ function ConnectedCrewEditor({
   };
   const openAdd = (role?: CrewRole) => {
     setAddIssues(false);
-    setPicked([]);
-    setNewMember(blankMember(data, role));
-    setSaveNewToLibrary(false);
-    setAddMode(data.agents.length ? "library" : "new");
+    // Unfinished picks and a started new-member draft are kept. A role slot only gives
+    // the draft that responsibility; an untouched draft starts fresh for the slot.
+    setNewMember((current) =>
+      !memberDraftStarted(current)
+        ? blankMember(data, role)
+        : role && current.role !== role
+          ? { ...current, role }
+          : current,
+    );
+    setAddMode((mode) => (data.agents.length ? mode : "new"));
     setPage({ kind: "add", role });
   };
-  const addPicked = (role?: CrewRole) => {
+  const addPicked = () => {
     if (addMode === "library") {
-      const added = picked.flatMap((id) => {
+      const added = livePicked.flatMap((id) => {
         const saved = data.agents.find((agent) => agent.id === id);
-        return saved ? [memberFromLibrary(saved, role)] : [];
+        return saved ? [memberFromLibrary(saved, pickedFor)] : [];
       });
       update({ agents: [...draft.agents, ...added] });
+      setPicked([]);
       setPage({ kind: "team" });
       return;
     }
@@ -401,6 +427,10 @@ function ConnectedCrewEditor({
         };
       }
       update({ agents: [...draft.agents, added] });
+      // Added deliberately: the draft is done, the next Add starts fresh.
+      setNewMember(blankMember(data));
+      setSaveNewToLibrary(false);
+      setAddIssues(false);
       setPage({ kind: "team" });
     });
   };
@@ -413,12 +443,6 @@ function ConnectedCrewEditor({
     setPage({ kind: "member", id: agent.id });
   };
 
-  const fixed = draft.agents.filter((agent) => agent.selection === "fixed");
-  const modelOptions = catalogModels(data.catalog).map((model) => ({
-    value: `${model.harness}/${model.id}`,
-    label: model.name,
-    description: model.harness,
-  }));
   const scopeLabel = draft.projectId ? t("This project") : t("All projects on this host");
   const groupNames = libraryGroups(data.agents);
 
@@ -513,21 +537,20 @@ function ConnectedCrewEditor({
             )}
           </p>
           <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              startIcon={<Plus className="icon-sm" />}
-              onClick={() => openAdd()}
-            >
+            <Button variant="secondary" startIcon={<Plus />} onClick={() => openAdd()}>
               {t("Add members")}
             </Button>
             <Button
               variant="secondary"
-              disabled={!modelOptions.length}
+              disabled={!catalogModels(data.catalog).length}
               onClick={() => update({ agents: starterRoster(data) })}
             >
               {t("Use starter roster")}
             </Button>
           </div>
+          {unfinishedAdditions ? (
+            <p className="text-ui-caption text-(--ui-text-secondary)">{unfinishedNote}</p>
+          ) : null}
         </div>
       ) : (
         sections.map((section) => {
@@ -538,19 +561,19 @@ function ConnectedCrewEditor({
               aria-label={section.title}
               className="flex min-w-0 flex-col gap-1.5"
             >
-              <div className="flex min-w-0 items-baseline gap-2">
+              <div className="flex min-w-0 items-center gap-2">
                 <h4 className="text-ui-body font-medium" title={section.hint}>
                   {section.title}
                 </h4>
                 <span className="min-w-0 flex-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
-                  {members.length || ""}
+                  {members.length}
                 </span>
                 {members.length > 0 &&
                 (section.role === "specialist" || section.role === "advisor") ? (
                   <Button
                     variant="ghost"
                     size="sm"
-                    startIcon={<Plus className="icon-sm" />}
+                    startIcon={<Plus />}
                     onClick={() => openAdd(section.role)}
                   >
                     {t("Add")}
@@ -566,62 +589,70 @@ function ConnectedCrewEditor({
                 <ul className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">
                   {members.map((agent) => {
                     const problem = issues.members[agent.id];
-                    const detail =
-                      agent.groups?.join(", ") || agent.instructions.split(/\r?\n/)[0]?.trim();
+                    const summary =
+                      problem === "model"
+                        ? t("Choose a model")
+                        : problem === "name"
+                          ? t("Add a name")
+                          : memberModelSummary(data.catalog, agent);
+                    const groups = agent.groups?.join(", ");
+                    const instruction = agent.instructions.split(/\r?\n/)[0]?.trim();
                     return (
-                      <li key={agent.id} className="flex min-w-0 items-center gap-1">
-                        <Button
-                          variant="item"
-                          motion="none"
-                          className="min-w-0 flex-1"
-                          data-member-row={agent.id}
-                          onClick={() => openMember(agent)}
-                          title={[
-                            agent.name,
-                            detail,
-                            candidateLabel(data.catalog, agent.candidates[0]),
-                          ]
-                            .filter(Boolean)
-                            .join("\n")}
-                        >
-                          <span className="min-w-0 flex-1 text-start">
-                            <span className="block truncate text-ui-body font-medium">
-                              {agent.name || t("Unnamed member")}
-                            </span>
-                            {detail ? (
-                              <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
-                                {detail}
-                              </span>
-                            ) : null}
-                          </span>
-                          <span
-                            className={`max-w-[38%] shrink-0 truncate text-ui-caption ${problem ? "text-danger" : "text-(--ui-text-secondary)"}`}
+                      <li key={agent.id} className="min-w-0">
+                        <ActionHost>
+                          <Button
+                            variant="item"
+                            motion="none"
+                            className="min-w-0 flex-1"
+                            data-member-row={agent.id}
+                            startIcon={
+                              <CrewRoleIcon
+                                role={agent.role}
+                                className="icon-xs shrink-0 text-(--ui-text-secondary)"
+                              />
+                            }
+                            endIcon={<ChevronRight className="text-(--ui-text-secondary)" />}
+                            onClick={() => openMember(agent)}
+                            title={[
+                              agent.name || t("Unnamed member"),
+                              `${roleLabel(agent.role)} · ${summary}`,
+                              groups,
+                              instruction,
+                            ]
+                              .filter(Boolean)
+                              .join("\n")}
                           >
-                            {problem === "model"
-                              ? t("Choose a model")
-                              : problem === "name"
-                                ? t("Add a name")
-                                : `${agent.selection === "automatic" ? `${t("Automatic")} · ` : ""}${candidateLabel(data.catalog, agent.candidates[0])}`}
-                          </span>
-                          <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
-                            {t("Edit")}
-                          </span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          iconOnly
-                          label={t("Remove {p0} from crew", {
-                            p0: agent.name || t("member"),
-                          })}
-                          className="shrink-0"
-                          onClick={() =>
-                            update({
-                              agents: draft.agents.filter((a) => a.id !== agent.id),
-                            })
-                          }
-                        >
-                          <Trash2 className="icon-sm" />
-                        </Button>
+                            <span className="min-w-0 flex-1 text-start">
+                              <span className="block truncate text-ui-body font-medium">
+                                {agent.name || t("Unnamed member")}
+                              </span>
+                              <span className="flex min-w-0 items-baseline gap-1 text-ui-caption text-(--ui-text-secondary)">
+                                <span className="shrink-0">{roleLabel(agent.role)}</span>
+                                <span aria-hidden="true">·</span>
+                                <span
+                                  className={`min-w-0 truncate ${problem ? "text-danger" : ""}`}
+                                >
+                                  {[summary, groups].filter(Boolean).join(" · ")}
+                                </span>
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                              {t("Edit")}
+                            </span>
+                          </Button>
+                          <InlineAction
+                            label={t("Remove {p0} from crew", {
+                              p0: agent.name || t("member"),
+                            })}
+                            onClick={() =>
+                              update({
+                                agents: draft.agents.filter((a) => a.id !== agent.id),
+                              })
+                            }
+                          >
+                            <Trash2 aria-hidden />
+                          </InlineAction>
+                        </ActionHost>
                       </li>
                     );
                   })}
@@ -630,7 +661,7 @@ function ConnectedCrewEditor({
                 <Button
                   variant="secondary"
                   className="self-start"
-                  startIcon={<Plus className="icon-sm" />}
+                  startIcon={<Plus />}
                   onClick={() => openAdd(section.role)}
                 >
                   {section.role === "coordinator"
@@ -709,286 +740,107 @@ function ConnectedCrewEditor({
     />
   ) : null;
 
-  const automatic = draft.agents.filter((agent) => agent.selection === "automatic").length;
-  const levelSelect = (
-    key: "maxEstimatedCost" | "minimumQuality",
-    label: string,
-    levels: readonly number[],
-    names: string[],
-  ) => {
-    const current = draft.policy[key];
-    return (
-      <Select
-        label={label}
-        value={current === undefined ? "" : String(current)}
-        options={[
-          { value: "", label: t("Any") },
-          ...levels.map((level, index) => ({ value: String(level), label: names[index]! })),
-          ...(current !== undefined && !levels.includes(current)
-            ? [{ value: String(current), label: t("Custom ({p0})", { p0: current }) }]
-            : []),
-        ]}
-        onValueChange={(value) => updatePolicy({ [key]: value ? Number(value) : undefined })}
-      />
-    );
-  };
   const settings = (
-    <div className="flex min-w-0 flex-col gap-4">
-      <Group title={t("Appearance")}>
-        <Row label={t("Crew")}>
-          <CrewAppearancePicker
-            crewId={draft.id}
-            look={look}
-            onChange={setLook}
-            disabled={pending}
-          />
-        </Row>
-      </Group>
-      <Group
-        title={t("Automatic model choice")}
-        description={
-          automatic === 1
-            ? t("Used by the member set to Automatic.")
-            : automatic
-              ? t("Used by {p0} members set to Automatic.", { p0: automatic })
-              : t("No member chooses its model automatically. These apply once one does.")
-        }
-      >
-        <Row
-          label={t("Priority")}
-          description={
-            draft.policy.preset === "economy"
-              ? t("Prefers models you rated cheaper.")
-              : draft.policy.preset === "quality"
-                ? t("Prefers models you rated higher quality.")
-                : t("Weighs cost and quality equally.")
-          }
-        >
-          <SegmentedControl
-            label={t("Priority")}
-            value={draft.policy.preset}
-            options={[
-              { value: "economy", label: t("Economy") },
-              { value: "balanced", label: t("Balanced") },
-              { value: "quality", label: t("Quality") },
-            ]}
-            onValueChange={(preset) =>
-              updatePolicy({
-                preset: preset as CrewPolicy["preset"],
-                costWeight: undefined,
-                qualityWeight: undefined,
-              })
-            }
-          />
-        </Row>
-        {draft.policy.costWeight !== undefined || draft.policy.qualityWeight !== undefined ? (
-          <p className="px-3 pb-2 text-ui-caption text-(--ui-text-secondary)">
-            {t("Custom weights are active. Choose a preset to reset them.")}
-          </p>
-        ) : null}
-        <Row
-          label={t("Highest cost allowed")}
-          description={t("Models rated above this cost are skipped.")}
-        >
-          {levelSelect("maxEstimatedCost", t("Highest cost allowed"), COST_LEVELS, [
-            t("Low"),
-            t("Medium"),
-            t("High"),
-          ])}
-        </Row>
-        <Row
-          label={t("Lowest quality allowed")}
-          description={t("Models rated below this quality are skipped.")}
-        >
-          {levelSelect("minimumQuality", t("Lowest quality allowed"), QUALITY_LEVELS, [
-            t("Basic"),
-            t("Good"),
-            t("Best"),
-          ])}
-        </Row>
-        <Row
-          label={t("Use models without a cost rating")}
-          description={t("When off, only models you rated for cost can be chosen.")}
-        >
-          <Toggle
-            label={t("Use models without a cost rating")}
-            on={draft.policy.allowUnknownCost}
-            onChange={(value) => updatePolicy({ allowUnknownCost: value })}
-          />
-        </Row>
-      </Group>
-      {fixed.length ? (
-        <Group title={t("Models")}>
-          <Row
-            label={t("Same model for every fixed member")}
-            description={t("Replaces the model of {p0} members with a fixed model.", {
-              p0: fixed.length,
-            })}
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <SearchableSelect
-                label={t("Same model for every fixed member")}
-                options={modelOptions}
-                value={bulkModel}
-                placeholder={t("Choose a model")}
-                onChange={setBulkModel}
-              />
-              <Button
-                variant="secondary"
-                disabled={!bulkModel}
-                onClick={() => {
-                  const next = catalogCandidate(data.catalog, bulkModel);
-                  if (!next) return;
-                  update({
-                    agents: draft.agents.map((agent) =>
-                      agent.selection === "fixed"
-                        ? {
-                            ...agent,
-                            candidates: [
-                              agent.candidates.find((c) => c.id === next.id) ?? next,
-                              ...agent.candidates.filter((c) => c.id !== next.id),
-                            ],
-                          }
-                        : agent,
-                    ),
-                  });
-                  setBulkModel("");
-                }}
-              >
-                {t("Apply")}
-              </Button>
-            </div>
-          </Row>
-        </Group>
-      ) : null}
-      <Group title={t("Limits")}>
-        <Row
-          label={t("Members working at once")}
-          description={t("How many assignments can run at the same time.")}
-        >
-          <NumberField
-            hideLabel
-            label={t("Members working at once")}
-            min={1}
-            max={4}
-            value={draft.policy.maxParallel}
-            error={policy.maxParallel || undefined}
-            onChange={(e) => updatePolicy({ maxParallel: Number(e.target.value) })}
-          />
-        </Row>
-        <Row
-          label={t("Assignments per job")}
-          description={t("The most assignments the coordinator can hand out for one job.")}
-        >
-          <NumberField
-            hideLabel
-            label={t("Assignments per job")}
-            min={1}
-            max={20}
-            value={draft.policy.maxAssignments}
-            error={policy.maxAssignments || undefined}
-            onChange={(e) => updatePolicy({ maxAssignments: Number(e.target.value) })}
-          />
-        </Row>
-        <Row
-          label={t("Minutes per assignment")}
-          description={t("An assignment running longer than this is stopped.")}
-        >
-          <NumberField
-            hideLabel
-            label={t("Minutes per assignment")}
-            min={1}
-            max={240}
-            value={draft.policy.maxRunMinutes}
-            error={policy.maxRunMinutes || undefined}
-            onChange={(e) => updatePolicy({ maxRunMinutes: Number(e.target.value) })}
-          />
-        </Row>
-      </Group>
-      <Group title={t("Permissions")}>
-        <Row
-          label={t("Coordinator answers permission requests")}
-          description={t(
-            "When a member asks to run a tool, the coordinator decides instead of you.",
-          )}
-        >
-          <Toggle
-            label={t("Coordinator answers permission requests")}
-            on={draft.policy.delegateApprovals === true}
-            onChange={(value) => updatePolicy({ delegateApprovals: value })}
-          />
-        </Row>
-        <Row
-          label={t("Allow provider sub-agents")}
-          description={t("Members may start their provider's own helper agents.")}
-        >
-          <Toggle
-            label={t("Allow provider sub-agents")}
-            on={draft.policy.allowSubagents}
-            onChange={(value) => updatePolicy({ allowSubagents: value })}
-          />
-        </Row>
-      </Group>
-      {latest ? (
-        <div className="flex flex-col gap-4 border-t border-(--ui-tone-neutral-border) pt-3">
-          <Button
-            variant="ghost"
-            className="self-start"
-            disabled={pending}
-            onClick={() => {
-              const id = crypto.randomUUID();
-              setDraftLook(loadCrewAppearances()[draft.id] ?? {});
-              setDraft({
-                ...structuredClone(draft),
-                id,
-                name: draft.projectId ? draft.name : t("{p0} copy", { p0: draft.name }),
-                projectId: draft.projectId ? undefined : data.project.id,
-                updatedAt: 0,
-              });
-              setPage({ kind: "team" });
-            }}
-          >
-            {draft.projectId ? t("Copy to all projects") : t("Copy to this project")}
-          </Button>
-          <div className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-3 empty:hidden">
-            <CrewDeleteButton
-              state={state}
-              crew={latest}
+    <CrewWorkingSettings
+      catalog={data.catalog}
+      agents={draft.agents}
+      policy={draft.policy}
+      errors={policy}
+      onPolicyChange={updatePolicy}
+      onAgentsChange={(agents) => update({ agents })}
+      bulkModel={bulkModel}
+      onBulkModelChange={setBulkModel}
+      bulkApplied={bulkApplied}
+      onBulkApplied={setBulkApplied}
+      appearance={
+        <CrewAppearancePicker crewId={draft.id} look={look} onChange={setLook} disabled={pending} />
+      }
+      appearanceSavedNow={!isNew}
+      maintenance={
+        latest ? (
+          <div className="flex flex-col gap-3 border-t border-(--ui-tone-neutral-border) pt-3">
+            <Button
+              variant="ghost"
+              className="self-start"
               disabled={pending}
-              onPendingChange={(busy) => {
-                gate.current = busy;
-                setPendingAction(busy ? "delete" : null);
+              onClick={() => {
+                const id = crypto.randomUUID();
+                setDraftLook(loadCrewAppearances()[draft.id] ?? {});
+                setDraft({
+                  ...structuredClone(draft),
+                  id,
+                  name: draft.projectId ? draft.name : t("{p0} copy", { p0: draft.name }),
+                  projectId: draft.projectId ? undefined : data.project.id,
+                  updatedAt: 0,
+                });
+                setPage({ kind: "team" });
               }}
-              onDeleted={() => {
-                forgetDraft(latest.id);
-                onClose();
-              }}
-            />
+            >
+              {draft.projectId ? t("Copy to all projects") : t("Copy to this project")}
+            </Button>
+            <div className="flex flex-col gap-2 empty:hidden">
+              <CrewDeleteButton
+                state={state}
+                crew={latest}
+                disabled={pending}
+                onPendingChange={(busy) => {
+                  gate.current = busy;
+                  setPendingAction(busy ? "delete" : null);
+                }}
+                onDeleted={() => {
+                  forgetDraft(latest.id);
+                  onClose();
+                }}
+              />
+            </div>
           </div>
-        </div>
-      ) : null}
-    </div>
+        ) : null
+      }
+    />
   );
 
   const footer =
     page.kind === "add" ? (
       <>
-        <span role="status" className="min-w-0 break-words text-ui-caption text-danger">
+        <div role="status" className="flex min-w-0 flex-col gap-0.5">
           {addMode === "new" &&
           addIssues &&
-          (!newMember.name.trim() || !newMember.candidates.length)
-            ? t("Every member needs a name and a model.")
-            : ""}
-        </span>
+          (!newMember.name.trim() || !newMember.candidates.length) ? (
+            <span className="min-w-0 break-words text-ui-caption text-danger">
+              {t("Every member needs a name and a model.")}
+            </span>
+          ) : null}
+          {addMode === "library" && livePicked.length ? (
+            // The picker names the picks and what its filter hides; the add keeps every pick.
+            <span className="min-w-0 break-words text-ui-caption text-(--ui-text-secondary)">
+              {t("Adds all {p0} picked members, including any the filter hides.", {
+                p0: livePicked.length,
+              })}
+            </span>
+          ) : null}
+        </div>
         <div className="flex min-w-0 flex-wrap justify-end gap-2">
+          {addMode === "new" && newMemberStarted ? (
+            <Button
+              variant="ghost"
+              disabled={pending}
+              onClick={() => {
+                setNewMember(blankMember(data, page.role));
+                setSaveNewToLibrary(false);
+                setAddIssues(false);
+              }}
+            >
+              {t("Discard draft")}
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             loading={pendingAction === "add"}
-            disabled={pending || (addMode === "library" && !picked.length)}
-            onClick={() => addPicked(page.role)}
+            disabled={pending || (addMode === "library" && !livePicked.length)}
+            onClick={addPicked}
           >
             {addMode === "library"
-              ? t("Add {p0} members", { p0: picked.length })
+              ? t("Add {p0} members", { p0: livePicked.length })
               : t("Add to crew")}
           </Button>
         </div>
@@ -1086,6 +938,7 @@ function ConnectedCrewEditor({
                   if (!latest) return;
                   forgetDraft(latest.id);
                   setDraft(structuredClone(latest));
+                  setBulkApplied(null);
                   setPage({ kind: "team" });
                 }}
               >
@@ -1103,7 +956,7 @@ function ConnectedCrewEditor({
                 label={t("Back to team")}
                 onClick={() => setPage({ kind: "team" })}
               >
-                <ChevronLeft className="icon-md" />
+                <ChevronLeft />
               </Button>
               <h3
                 tabIndex={-1}
@@ -1119,7 +972,10 @@ function ConnectedCrewEditor({
               mode={addMode}
               onModeChange={setAddMode}
               selected={picked}
-              onSelectedChange={setPicked}
+              onSelectedChange={(next) => {
+                if (!picked.length && next.length) setPickedFor(page.role);
+                setPicked(next);
+              }}
               draft={newMember}
               onDraftChange={(patch) => setNewMember((current) => ({ ...current, ...patch }))}
               role={page.role}
@@ -1139,18 +995,23 @@ function ConnectedCrewEditor({
                 label={t("Back to team")}
                 onClick={() => setPage({ kind: "team", focus: page.id })}
               >
-                <ChevronLeft className="icon-md" />
+                <ChevronLeft />
               </Button>
               <h3
                 tabIndex={-1}
                 data-page-heading
-                className="min-w-0 truncate text-ui-title font-medium outline-none"
+                className="min-w-0 break-words text-ui-title font-medium outline-none"
               >
                 {selectedMember?.name || t("Unnamed member")}
               </h3>
-              <span className="text-ui-caption text-(--ui-text-secondary)">
-                {selectedMember ? roleLabel(selectedMember.role) : ""}
-              </span>
+              {selectedMember ? (
+                <span className="flex min-w-0 flex-wrap items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+                  <CrewRoleIcon role={selectedMember.role} />
+                  {roleLabel(selectedMember.role)}
+                  {" · "}
+                  {memberModelSummary(data.catalog, selectedMember)}
+                </span>
+              ) : null}
             </div>
             {memberPage}
           </>
@@ -1173,13 +1034,24 @@ function ConnectedCrewEditor({
                 }
               />
               {page.kind === "team" && draft.agents.length ? (
-                <Button
-                  variant="secondary"
-                  startIcon={<Plus className="icon-sm" />}
-                  onClick={() => openAdd()}
-                >
-                  {t("Add members")}
-                </Button>
+                <div className="flex min-w-0 items-center gap-2">
+                  {unfinishedAdditions ? (
+                    <span
+                      className="min-w-0 truncate text-ui-caption text-(--ui-text-secondary)"
+                      title={unfinishedNote}
+                    >
+                      {unfinishedNote}
+                    </span>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    className="shrink-0"
+                    startIcon={<Plus />}
+                    onClick={() => openAdd()}
+                  >
+                    {t("Add members")}
+                  </Button>
+                </div>
               ) : null}
             </div>
             {page.kind === "settings" ? settings : roster}
@@ -1335,7 +1207,7 @@ function MemberPage({
         variant="ghost"
         tone="danger"
         className="self-start"
-        startIcon={<Trash2 className="icon-sm" />}
+        startIcon={<Trash2 />}
         onClick={onRemove}
       >
         {t("Remove from crew")}

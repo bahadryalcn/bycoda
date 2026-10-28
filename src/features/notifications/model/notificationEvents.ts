@@ -67,12 +67,12 @@ export function loadNotificationEvents(): Record<NotificationEventSetting, boole
   return events;
 }
 
-export function saveNotificationEvent(id: NotificationEventSetting, value: boolean) {
+export function saveNotificationEvent(id: NotificationEventSetting, value: boolean): boolean {
   try {
     localStorage.setItem(KEY, JSON.stringify({ ...loadNotificationEvents(), [id]: value }));
   } catch {
-    // private mode / quota
+    return false;
   }
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new Event(NOTIFICATION_EVENTS_CHANGE));
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(NOTIFICATION_EVENTS_CHANGE));
+  return true;
 }

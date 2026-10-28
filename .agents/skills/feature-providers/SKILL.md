@@ -5,6 +5,34 @@ description: "Providers Settings inventory for model discovery and enable policy
 
 # Providers, models, accounts and CLI lifecycle
 
+## H3 settings implementation, 2026-10-28 (uncommitted)
+
+Provider Settings now uses shared Settings topic/row presentation, without page-local
+Group/Row skins. Default scope is searchable and visible; a deliberate project-wide
+new-conversation-default reset returns to global inheritance while preserving provider
+visibility and accounts. Machine-wide accounts/models stay labelled independently.
+Model enable management is searchable and explains the last-enabled guard without
+changing supported all-off/fallback policy. Existing options/defaults/permissions remain.
+
+Account identity/usage refresh is scoped to the selected provider. Provider navigation is
+locked while an account editor/operation owns state; pending registration is aborted on
+component unmount. Existing native authentication/cleanup/removal protections remain.
+Binary inspection/picker/save callbacks now have generation ownership across dismissal,
+provider change and unmount, preventing a closed modal from saving a late result.
+
+CLI updates form one attention-first list. A new available release takes precedence over
+an old update success; successful outcomes are not repeated. Verified installed CLI version
+is separate from catalog refresh: a thrown refresh failure no longer turns verified CLI
+installation into failure, and the notice does not claim catalog refresh was verified.
+No adapters, release/update gates, actual credentials or installed CLIs were changed.
+
+Delivery: `temp/local/2026-10-28-settings-pages-b/providers.json` has per-PR/IS changes,
+remaining dependencies and morning checks. **test edilmedi** under the overnight rule:
+no test/compiler/server/capture/build/install/live provider action ran in this worker.
+Sessions-model durable-write outcomes and swallowed registry catalog errors remain
+cross-owner follow-up. Actual icons, native auth/update/path and installed inclusion
+remain unverified. Changes are in the shared dirty checkout, not committed or released.
+
 Make provider/model choices understandable and manageable while preserving
 supported capabilities, saved-session identity, credentials and operation gates.
 Keywords: Providers, models, enable/disable, hidden/default, catalog, CLI detected,

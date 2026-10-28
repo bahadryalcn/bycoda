@@ -10,7 +10,11 @@ export class HostDomainAuthorizationError extends Error {
 
 /** Safe domain outcome only; diagnostic storage/provider causes remain local. */
 export class HostDomainOutcomeError extends Error {
-  constructor(message: string, readonly delivery: "accepted" | "unknown", options?: ErrorOptions) {
+  constructor(
+    message: string,
+    readonly delivery: "accepted" | "unknown",
+    options?: ErrorOptions,
+  ) {
     super(message, options);
     this.name = "HostDomainOutcomeError";
   }
@@ -18,6 +22,11 @@ export class HostDomainOutcomeError extends Error {
 
 /** Authenticated request capabilities supplied by transport composition. */
 export interface HostDomainContext {
+  /** Native-profile owner port captured by authenticated transport, never wire data. */
+  nativeBufferRecovery?(
+    operation: import("../../src/shared/model/host-contracts/native-buffer-recovery").NativeBufferRecoveryOperation,
+    params: Record<string, unknown>,
+  ): Promise<unknown>;
   authorized(): Promise<boolean>;
   /** Opaque authenticated identity; never a bearer credential. */
   readonly principalId?: string;

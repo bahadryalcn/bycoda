@@ -15,6 +15,7 @@ mod content_search;
 pub(crate) mod incremental;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
+pub(crate) mod row_identity;
 pub mod usage;
 pub(crate) mod window_barrier;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
@@ -498,7 +499,7 @@ pub fn session_upsert(
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
 ) -> Result<Option<SessionSummary>, String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session.id, || {
         validate_upsert(&session)?;
         // Git lookups can spawn processes; never do that while holding the
         // connection every other store command waits on.
@@ -595,7 +596,7 @@ pub fn session_import(
     store: State<'_, SessionStore>,
     session: SessionUpsert,
 ) -> Result<Option<SessionSummary>, String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session.id, || {
         validate_upsert(&session)?;
         let git = upsert_git_info(&session);
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
@@ -764,6 +765,8 @@ pub fn session_get(
     validate_id(&session_id, "session")?;
     // Reopening a conversation is the recovery entry after a crashed/unknown rewind.
     // Failed Host reads preserve the fence while the retained transcript remains readable.
+    // Recovery can resume shared workspace-file rewind effects. Keep that work
+    // in the shared lane; a closed gate still permits the retained read below.
     let _ = crate::native_window_lifecycle::persistence_write(&window, || {
         rewind::reconcile_pending_native(&app, &store, Some(&session_id))
     });
@@ -978,6 +981,8 @@ pub fn session_delete(
     session_id: String,
     mut image_paths: Vec<String>,
 ) -> Result<(), String> {
+    // Also cleans shared generated-image files. Keep the entire operation in
+    // the shared lane rather than acquiring another barrier under the SQL lock.
     crate::native_window_lifecycle::persistence_write(&window, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
@@ -1010,7 +1015,7 @@ pub fn session_set_archived(
     session_id: String,
     archived: bool,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         set_archived(&conn, &session_id, archived).map_err(|e| e.to_string())
@@ -1024,7 +1029,7 @@ pub fn session_set_pinned(
     session_id: String,
     pinned: bool,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         set_pinned(&conn, &session_id, pinned).map_err(|e| e.to_string())
@@ -1038,7 +1043,7 @@ pub fn session_set_linked_work_item(
     session_id: String,
     linked_work_item: Option<Value>,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         set_linked_work_item(&conn, &session_id, linked_work_item.as_ref())
@@ -1058,7 +1063,7 @@ pub fn session_set_queue(
     session_id: String,
     queue: Option<Value>,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         set_session_queue(&conn, &session_id, queue.as_ref())
@@ -1133,7 +1138,7 @@ pub fn session_set_draft(
     session_id: String,
     draft: Option<Value>,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &session_id, || {
         validate_id(&session_id, "session")?;
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         set_composer_draft(&conn, &session_id, draft.as_ref())
@@ -1832,6 +1837,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Only metadata is reconciled here; transcripts remain lazily indexed.
     content_search::ensure_schema(conn)?;
     authority::ensure_schema(conn)?;
+    row_identity::ensure_schema(conn)?;
     Ok(())
 }
 

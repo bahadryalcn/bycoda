@@ -4,6 +4,12 @@
 .inbox-detail-back {
   display: none;
 }
+/* The board remains mounted while narrow detail is open, retaining scroll and
+   expanded planning groups. Wide layout retains an independent reading pane. */
+.inbox-jira-layout > .jira-board-detail {
+  min-width: 0;
+  width: min(42%, 38rem);
+}
 @container inbox (max-width: 44rem) {
   .inbox-list-detail > .inbox-list-panel {
     /* Keep the desktop resize preference intact while filling a single-column view. */
@@ -17,5 +23,14 @@
   }
   .inbox-detail-back {
     display: block;
+  }
+  .inbox-jira-layout[data-detail-open="true"] > :not(.jira-board-detail) {
+    display: none;
+  }
+  .inbox-jira-layout > .jira-board-detail {
+    width: 100%;
+    max-width: none;
+    flex: 1;
+    border-inline-start: 0;
   }
 }

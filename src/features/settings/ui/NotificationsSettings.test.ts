@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { NotificationAlerts } from "./NotificationsSettings";
 import { NOTIFICATION_EVENT_SETTINGS } from "../../notifications/model/notificationEvents";
+import { saveNotificationsEnabled } from "../../notifications/model/notifications";
 
 const permission = vi.hoisted(() => ({ value: "denied" }));
 vi.mock("../../../platform/tauri/platform", () => ({ IS_WIN: true, IS_MAC: false }));
@@ -29,6 +30,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
   permission.value = "denied";
+  vi.mocked(saveNotificationsEnabled).mockReset().mockReturnValue(true);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -91,4 +93,36 @@ it("preserves event choices when desktop delivery is paused and resumed", async 
   await act(async () => delivery.click());
   expect(finished.disabled).toBe(false);
   expect(finished.getAttribute("aria-checked")).toBe("false");
+});
+
+it("retains a valid non-hour schedule value instead of snapping it to a listed hour", async () => {
+  localStorage.setItem("bycoda.notifications.dailySummary.time", "09:35");
+  await act(async () => root.render(createElement(NotificationAlerts)));
+  expect(container.querySelector('[aria-label^="Daily summary time:"]')?.textContent).toContain("09:35");
+  expect(localStorage.getItem("bycoda.notifications.dailySummary.time")).toBe("09:35");
+});
+
+it("keeps a rejected preference unchanged and retries beside its initiating control", async () => {
+  vi.mocked(saveNotificationsEnabled).mockReturnValueOnce(false).mockReturnValue(true);
+  await act(async () => root.render(createElement(NotificationAlerts)));
+  const delivery = container.querySelector<HTMLButtonElement>('[aria-label="Desktop notifications"]')!;
+  const row = delivery.closest(".settings-row")!;
+  await act(async () => delivery.click());
+  expect(delivery.getAttribute("aria-checked")).toBe("false");
+  expect(row.querySelector('[role="alert"]')?.textContent).toContain("Could not save changes");
+  const retry = [...row.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Retry")!;
+  await act(async () => retry.click());
+  expect(delivery.getAttribute("aria-checked")).toBe("true");
+  expect(row.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("offers read-only recovery for unavailable permission status", async () => {
+  permission.value = "unavailable";
+  await act(async () => root.render(createElement(NotificationAlerts)));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status unavailable");
+  permission.value = "granted";
+  const refresh = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent?.trim() === "Refresh")!;
+  await act(async () => refresh.click());
+  expect(container.textContent).toContain("System permission granted");
+  expect(saveNotificationsEnabled).not.toHaveBeenCalled();
 });

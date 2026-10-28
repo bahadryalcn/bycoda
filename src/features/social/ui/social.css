@@ -43,7 +43,7 @@
 .social-heading h1 {
   margin: 0;
   font-size: var(--ui-font-heading);
-  font-weight: 560;
+  font-weight: 500;
   line-height: 1.4;
 }
 .social-header-controls {
@@ -214,7 +214,7 @@
   cursor: pointer;
   color: var(--color-active);
   padding: 10px 0;
-  font-weight: 600;
+  font-weight: 500;
 }
 .social-create > form {
   margin-block-start: 6px;
@@ -234,7 +234,7 @@
 
 .social-view h2 {
   font-size: var(--ui-font-title);
-  font-weight: 600;
+  font-weight: 500;
   margin-block: 0 0.875rem;
   line-height: 1.5;
 }
@@ -246,7 +246,7 @@
 }
 .social-view h3 {
   font-size: var(--ui-font-secondary);
-  font-weight: 600;
+  font-weight: 500;
   margin-block: 0.875rem 0.5rem;
 }
 .social-view p {
@@ -338,7 +338,7 @@
 }
 .social-form summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 500;
 }
 .social-actions {
   display: flex;
@@ -418,7 +418,7 @@
 }
 .social-variant legend {
   padding: 0 6px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .social-preview {
   border: 1px solid var(--color-stroke);
@@ -596,7 +596,7 @@
 }
 .social-settings > summary {
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 500;
 }
 .social-settings > section {
   padding-block-start: 8px;

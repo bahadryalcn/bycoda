@@ -43,3 +43,14 @@ describe("PiRpc.request", () => {
     rpc.close();
   });
 });
+
+it("retains the actual async Pi response consumer after a close signal",async()=>{
+ const api=await import("../../core/nativeOutputDelivery");const {nativeOutputFrame}=await import("../../core/nativeOutputDelivery.testSupport");
+ mocks.writeChild.mockResolvedValue(undefined);const rpc=new PiRpc("pi-response-causal",vi.fn());const held=deferred<void>();const event={};
+ const actual=rpc.request({type:"get_session_stats"},15000,async(value,work)=>{await held.promise;api.nativeOutputSink(work,()=>api.captureNativeOutputEvent("pi-response-causal",event))();return value;});
+ const line=JSON.stringify({type:"response",id:"mc_1",command:"get_session_stats",success:true,data:{}});
+ const inspect=nativeOutputFrame("pi-response-causal",line,()=>rpc.pushLine(line));
+ await Promise.resolve();rpc.close();expect(inspect().pendingCausalWork).toBe(1);
+ held.resolve();await actual;expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
+ expect(inspect()).toMatchObject({pendingCausalWork:0,unavailableReason:"pi-client-closed",applicationThrough:null});
+});

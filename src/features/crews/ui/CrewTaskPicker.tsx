@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Alert } from "../../../shared/ui/Alert";
+import { Button } from "../../../shared/ui/Button";
+import { RefreshCw } from "../../../shared/ui/icons";
 import { useProjectCrews } from "../model/crewClient";
 
 /** Shared by task creation and editing; selecting a crew never starts it. */
@@ -25,6 +27,8 @@ export function CrewTaskPicker({
   const available = crews.data?.machine.id === machineId && crews.data?.taskExecutionSupported;
   const definitions = available ? crews.data!.definitions : [];
   const valid = !value || definitions.some((definition) => definition.id === value);
+  // A saved crew cannot be judged missing while the host is still answering or failed to.
+  const loading = !!value && !crews.data && !crews.error && crews.isFetching;
   useEffect(() => onValidityChange(valid), [valid, onValidityChange]);
   return (
     <div className="flex min-w-0 flex-col gap-2">
@@ -42,7 +46,27 @@ export function CrewTaskPicker({
         ]}
         onChange={(id) => onChange(id || undefined)}
       />
-      {value && !valid && (
+      {loading && (
+        <p className="text-ui-caption text-(--ui-text-secondary)">{t("Loading crews…")}</p>
+      )}
+      {crews.error && (
+        <Alert
+          tone="warning"
+          action={
+            <Button
+              variant="ghost"
+              startIcon={<RefreshCw className="icon-sm" />}
+              loading={crews.isFetching}
+              onClick={() => void crews.refetch()}
+            >
+              {t("Retry")}
+            </Button>
+          }
+        >
+          {crews.error.message}
+        </Alert>
+      )}
+      {value && !valid && !loading && !crews.error && (
         <Alert tone="warning">{t("Connect an updated host and choose an available crew.")}</Alert>
       )}
       {value && valid && (

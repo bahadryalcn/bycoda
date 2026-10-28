@@ -46,6 +46,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
     { account: string; success: boolean; reason?: string }[]
   >([]);
   const [syncing, setSyncing] = useState(false);
+  const [pollingPending, setPollingPending] = useState(false);
   const summary = snapshot.threads.find((item) => item.id === selected);
   const detail = useSocialHistoryPage<SocialThread>(
     client,
@@ -130,6 +131,17 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           <h2>
             {t("Inbox")} <small>{threads.length}</small>
           </h2>
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pb-2 text-ui-caption">
+            <StatusBadge status={snapshot.pollingEnabled ? "active" : "paused"} label={snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")} />
+            <Button variant="ghost" loading={pollingPending} disabled={socialLocked || pollingPending || !snapshot.hostOnline}
+              onClick={() => void pendingUi.run("inbox.toggle-refresh", async () => {
+                setPollingPending(true);
+                try { await run(() => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }), snapshot.pollingEnabled ? t("Inbox auto-refresh turned off.") : t("Auto-refresh turned on for permitted accounts.")); }
+                finally { setPollingPending(false); }
+              })}>
+              {snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
+            </Button>
+          </div>
           <div className="social-list-tools">
             <label>
               {t("Find a conversation")}
@@ -345,12 +357,18 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                       : t("No messages yet")
                 }
                 icon={InboxIcon}
+              action={<div className="mt-2 flex flex-wrap gap-2">
+                  {snapshot.threads.length ? <Button variant="ghost" onClick={() => { setQuery(""); setAccountFilter(""); setKindFilter(""); }}>{t("Clear filters")}</Button> : syncAccounts.length ? (
+                    <Button loading={syncing} disabled={socialLocked || !snapshot.hostOnline} onClick={() => void synchronize()}>{t("Refresh inbox")}</Button>
+                  ) : null}
+                </div>}
               >
                 {snapshot.threads.length
                   ? t("Change the search or filters.")
                   : syncAccounts.length
-                    ? t("Use the refresh button to fetch new messages and comments.")
+                    ? t("Refresh messages and comments from eligible accounts.")
                     : t("Connect an account with inbox access in the Accounts section.")}
+                
               </Empty>
             )}
           </div>
@@ -377,8 +395,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 </Composer>
               </div>
               <p className="social-muted">
-                {thread.kind === "message" ? t("Direct message") : t("Comment")} · {account?.name} ·{" "}
-                {account ? names[account.platform] : ""}
+                {account ? `${account.name} · ${names[account.platform]} · ` : ""}
+                {thread.kind === "message" ? t("Direct message") : t("Comment")}
                 {account?.connection !== "browser" && thread.replyUntil
                   ? ` · ${t("Reply deadline {p0}", { p0: time(thread.replyUntil) })}`
                   : ""}
@@ -430,7 +448,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
                 {detail.loading ? (
                   <Notice kind="loading" title={t("Loading conversation history")} />
                 ) : null}
-                {detail.error ? <Notice kind="error">{detail.error}</Notice> : null}
+                {detail.error ? <Notice kind="error">{detail.error}<Button variant="link" loading={detail.loading} onClick={detail.retry}>{t("Retry loading history")}</Button></Notice> : null}
                 {(!summary?.eventsPreview || detail.value ? thread.events : []).map((event) => (
                   <article
                     key={event.id}
@@ -459,11 +477,7 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               ) : null}
               <details
                 className="social-settings social-thread-history"
-                open={snapshot.jobs.some((job) =>
-                  snapshot.drafts.some(
-                    (draft) => draft.id === job.draftId && draft.threadId === thread.id,
-                  ),
-                )}
+
               >
                 <summary>{t("Send history")}</summary>
                 <JobList snapshot={snapshot} client={client} run={run} thread={thread} />

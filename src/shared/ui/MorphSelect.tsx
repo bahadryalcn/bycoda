@@ -24,6 +24,7 @@ export function MorphSelect({
   options,
   onChange,
   disabled = false,
+  readOnly = false,
   searchable = false,
   onClose,
   triggerProps,
@@ -33,11 +34,21 @@ export function MorphSelect({
   options: MorphSelectItem[];
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Shows the value without opening the list. Use `disabled` when the value should read as unavailable. */
+  readOnly?: boolean;
   searchable?: boolean | "auto";
   onClose?: () => void;
   triggerProps?: Pick<
     ComponentPropsWithRef<"button">,
-    "ref" | "onMouseDown" | "title" | "aria-label" | "onFocus" | "onBlur"
+    | "ref"
+    | "onMouseDown"
+    | "title"
+    | "aria-label"
+    | "aria-invalid"
+    | "aria-describedby"
+    | "aria-required"
+    | "onFocus"
+    | "onBlur"
   >;
 }) {
   const t = useT();
@@ -51,8 +62,8 @@ export function MorphSelect({
     }
   }, [open, onClose]);
   useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
+    if (disabled || readOnly) setOpen(false);
+  }, [disabled, readOnly]);
   const close = () => {
     restore.current = true;
     setOpen(false);
@@ -69,6 +80,7 @@ export function MorphSelect({
         items={options}
         onValueChange={(next) => onChange(next)}
         disabled={disabled}
+        readOnly={readOnly}
         open={open}
         onOpenChange={setOpen}
         searchable={searchable}

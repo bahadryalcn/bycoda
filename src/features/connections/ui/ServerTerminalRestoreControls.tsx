@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Switch } from "../../../shared/ui/Switch";
 import { Button } from "../../../shared/ui/Button";
 import { t } from "../../../shared/i18n";
@@ -14,7 +14,7 @@ import { ServerTerminalRestorePreview } from "./ServerTerminalRestorePreview";
 function PendingServerTabs({
   onConnect,
 }: {
-  onConnect: (server: ServerRecord, replacingPendingId?: string) => void;
+  onConnect: (server: ServerRecord, replacingPendingId?: string) => void | Promise<void>;
 }) {
   const state = useServerTerminalRestoreState();
   const inventory = useServerInventory();
@@ -24,6 +24,7 @@ function PendingServerTabs({
       {inventory.error ? (
         <p className="text-xs text-(--ui-tone-danger-fg)" role="alert">
           {t("Couldn’t load saved SSH tabs.")}
+          <Button size="sm" variant="ghost" loading={inventory.loading} onClick={inventory.refresh}>{t("Retry")}</Button>
         </p>
       ) : null}
       <ServerTerminalRestorePreview
@@ -36,7 +37,7 @@ function PendingServerTabs({
         inventoryReady={inventory.loaded && !inventory.error && !inventory.loading}
         onRemove={serverTerminalRestoreState.remove}
         onConnect={(tab, server) => {
-          onConnect(server, tab.tabId);
+          return onConnect(server, tab.tabId);
         }}
       />
     </div>
@@ -46,15 +47,23 @@ function PendingServerTabs({
 export function ServerTerminalRestoreControls({
   openTabs,
   onConnect,
+  compact = false,
 }: {
+  compact?: boolean;
   openTabs: readonly ServerTerminalRestoreTab[];
-  onConnect: (server: ServerRecord, replacingPendingId?: string) => void;
+  onConnect: (server: ServerRecord, replacingPendingId?: string) => void | Promise<void>;
 }) {
   const state = useServerTerminalRestoreState();
   const [loading, setLoading] = useState(false);
+  const [expanded, setExpanded] = useState(!compact);
+  useEffect(() => setExpanded(!compact), [compact]);
   if (!state.owner) return null;
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t border-stroke px-4 py-2 text-xs">
+    <details className="shrink-0 border-t border-stroke px-3 text-ui-caption" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary className="cursor-pointer py-1 text-(--ui-text-secondary)">
+        {t("Saved SSH tabs")}{state.pending.length ? ` (${state.pending.length})` : ""}{state.loadFailed ? ` · ${t("Failed")}` : ""}
+      </summary>
+      <div className="flex flex-col gap-2 py-2">
       <div className="flex items-center gap-2 text-(--ui-text-muted)">
         <Switch
           label={t("Remember saved SSH tabs")}
@@ -63,6 +72,7 @@ export function ServerTerminalRestoreControls({
           onCheckedChange={(checked) => serverTerminalRestoreState.setEnabled(checked, openTabs)}
         />
       </div>
+      {!state.pending.length ? <p className="text-(--ui-text-muted)">{t("Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.")}</p> : null}
       {state.loadFailed ? (
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-(--ui-tone-danger-fg)" role="alert">
@@ -94,6 +104,7 @@ export function ServerTerminalRestoreControls({
         </div>
       ) : null}
       {state.pending.length ? <PendingServerTabs onConnect={onConnect} /> : null}
-    </div>
+      </div>
+    </details>
   );
 }

@@ -18,21 +18,26 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
   const optionsRef = useRef(options);
   optionsRef.current = options;
   const [retryTick, setRetryTick] = useState(0);
+  const retryIndexKey = useRef<string | null>(null);
   const [state, setState] = useState({
     key: "",
     result: EMPTY,
     error: null as string | null,
     loading: false,
+    attempt: 0,
   });
-  const retry = useCallback(() => setRetryTick((value) => value + 1), []);
+  const retry = useCallback(() => {
+    retryIndexKey.current = key;
+    setRetryTick((value) => value + 1);
+  }, [key]);
 
   useEffect(() => {
+    if (retryIndexKey.current !== key) retryIndexKey.current = null;
     if (!enabled || !optionsRef.current.query.trim()) return;
     let cancelled = false;
     let owner: string | null = null;
     let timer: ReturnType<typeof setTimeout>;
     const requestOptions = optionsRef.current;
-    let retryIndex = retryTick > 0;
     const run = async () => {
       const searchOwner = crypto.randomUUID();
       owner = searchOwner;
@@ -41,17 +46,24 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
         result: previous.key === key ? previous.result : EMPTY,
         error: null,
         loading: true,
+        attempt: retryTick,
       }));
       try {
-        const retryCurrentIndex = retryIndex;
-        retryIndex = false;
+        const retryCurrentIndex = retryIndexKey.current === key;
+        if (retryCurrentIndex) retryIndexKey.current = null;
         const result = await searchSessionContent({
           ...requestOptions,
           searchOwner,
           ...(retryCurrentIndex ? { retryIndex: true } : {}),
         });
         if (cancelled) return;
-        setState({ key, result, error: result.indexError ?? null, loading: false });
+        setState({
+          key,
+          result,
+          error: result.indexError ?? null,
+          loading: false,
+          attempt: retryTick,
+        });
         if (result.pending > 0 && !result.indexError) timer = setTimeout(() => void run(), 2000);
       } catch (reason) {
         if (cancelled) return;
@@ -60,6 +72,7 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
           result: previous.key === key ? previous.result : EMPTY,
           error: reason instanceof Error ? reason.message : String(reason),
           loading: false,
+          attempt: retryTick,
         }));
       } finally {
         if (owner === searchOwner) owner = null;
@@ -78,7 +91,7 @@ export function useConversationSearch(enabled: boolean, options: Options, revisi
   return {
     result: current ? state.result : EMPTY,
     error: current ? state.error : null,
-    loading: active && (!current || state.loading),
+    loading: active && (!current || state.attempt !== retryTick || state.loading),
     retry,
   };
 }

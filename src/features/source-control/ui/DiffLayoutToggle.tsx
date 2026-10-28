@@ -1,16 +1,19 @@
-import { Select } from "../../../shared/ui/Select";
+import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { Popover } from "../../../shared/ui/Popover";
+import { FileDiff, LayoutGrid, SplitSquare } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useState, useSyncExternalStore, type RefObject } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type RefObject } from "react";
 import {
-  loadDiffLayout,
-  saveDiffLayout,
-  subscribeDiffLayout,
-  type DiffLayout,
-} from "../../settings/model/settings";
+  loadDiffLayoutPreference,
+  saveDiffLayoutPreference,
+  subscribeDiffLayoutPreference,
+} from "../model/diffLayout";
+import type { DiffLayout } from "../../settings/model/settings";
 
 /** The diff layout preference, shared by every diff surface. */
 export function useDiffLayout(): DiffLayout {
-  return useSyncExternalStore(subscribeDiffLayout, loadDiffLayout, loadDiffLayout);
+  return useSyncExternalStore(subscribeDiffLayoutPreference, loadDiffLayoutPreference, loadDiffLayoutPreference);
 }
 
 export const DIFF_INLINE_BREAKPOINT = 900;
@@ -40,21 +43,71 @@ export function useResponsiveDiffLayout(
   return preference === "auto" ? automatic : preference;
 }
 
-/** Three stable layout choices use the shared keyboard-accessible Select. */
+/** Compact saved preference; Automatic still follows the actual surface width. */
 export function DiffLayoutToggle({ className = "" }: { className?: string }) {
   useLocale();
   const preference = useDiffLayout();
+  const anchor = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState<DiffLayout>();
+  const choices = [
+    { value: "auto" as const, label: t("Automatic"), Icon: LayoutGrid },
+    { value: "inline" as const, label: t("Inline"), Icon: FileDiff },
+    { value: "split" as const, label: t("Side-by-side view"), Icon: SplitSquare },
+  ];
+  const current = choices.find((choice) => choice.value === preference)!;
+  const label = `${t("Diff view")}: ${current.label}`;
+  const pick = (value: DiffLayout) => {
+    setFailed(saveDiffLayoutPreference(value) ? undefined : value);
+    setOpen(false);
+  };
   return (
-    <Select
-      label={t("Diff view")}
-      value={preference}
-      options={[
-        { value: "auto", label: t("Automatic") },
-        { value: "inline", label: t("Inline") },
-        { value: "split", label: t("Side-by-side view") },
-      ]}
-      onValueChange={(value) => saveDiffLayout(value as DiffLayout)}
-      className={`min-w-0 shrink-0 ${className}`}
-    />
+    <>
+      <Button
+        ref={anchor}
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={label}
+        tooltip={label}
+        motion="none"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => { setFailed(undefined); setOpen((value) => !value); }}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+          event.preventDefault();
+          setFailed(undefined);
+          setOpen(true);
+        }}
+        className={`min-w-0 shrink-0 ${className}`}
+      >
+        <current.Icon className="icon-sm" />
+      </Button>
+      {open ? (
+        <DropdownMenu
+          anchor={anchor}
+          label={t("Diff view")}
+          returnFocusRef={anchor}
+          items={choices.map(({ value, label, Icon }) => ({
+            kind: "item", id: value, label, icon: <Icon className="icon-sm" />,
+            checked: preference === value, selectionRole: "radio",
+          }))}
+          onPick={(id) => { if (id === "auto" || id === "inline" || id === "split") pick(id); }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+      {failed !== undefined ? (
+        <Popover anchor={anchor} role="dialog" aria-label={t("Diff view")} onDismiss={() => setFailed(undefined)} autoFocus>
+          <div className="flex flex-col gap-2 p-3 text-ui-secondary">
+            <p role="alert">{t("Could not save changes")}</p>
+            <div className="flex justify-end gap-1">
+              <Button size="sm" variant="ghost" onClick={() => setFailed(undefined)}>{t("Cancel")}</Button>
+              <Button size="sm" onClick={() => pick(failed)}>{t("Retry")}</Button>
+            </div>
+          </div>
+        </Popover>
+      ) : null}
+    </>
   );
 }

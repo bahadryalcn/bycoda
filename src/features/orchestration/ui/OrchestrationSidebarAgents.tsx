@@ -10,7 +10,7 @@ import { HARNESS_TITLE } from "../../sessions/model/session";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { OrchestrationActions, OrchestrationWorkers } from "./OrchestrationActions";
 import { Check, ChevronDown, ChevronRight, CircleAlert } from "../../../shared/ui/icons";
-import { TerminalSpinner } from "../../sessions/ui/TerminalSpinner";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 
 export function OrchestrationSidebarAgents({
   leadId,
@@ -156,7 +156,7 @@ export function OrchestrationSidebarAgents({
                   task.status === "interrupted" ? (
                     <CircleAlert className="icon-xs" strokeWidth={1.75} />
                   ) : working ? (
-                    <TerminalSpinner className="inline-block w-3 select-none text-center text-ui-micro leading-none text-(--ui-tone-accent-fg)" />
+                    <WorkingIndicator />
                   ) : task.status === "completed" ? (
                     <Check className="icon-xs" strokeWidth={2.25} />
                   ) : null}

@@ -1,4 +1,12 @@
 {
+  "Recovered work": "Kurtarılacak çalışmalar",
+  "File drafts": "Dosya taslakları",
+  "File recovery copies": "Dosya kurtarma kopyaları",
+  "Open copy in new tab": "Kopyayı yeni sekmede aç",
+  "Save reported": "Kaydedildiği bildirildi",
+  "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.": "Kaydedilmemiş ayrı bir dosya sekmesi açılır. Özgün kurtarma kopyası korunur; siz kaydetmeden diske yazılmaz.",
+  "Open the latest copy again from Recovery. Newer edits may still be pending.": "En güncel kopyayı Kurtarma bölümünden yeniden açın. Daha yeni değişikliklerin kaydı sürüyor olabilir.",
+  "The disk version could not be verified. Reload reads it again; overwrite writes the recovered draft.": "Diskteki sürüm doğrulanamadı. Yeniden yükleme dosyayı tekrar okur; üzerine yazma kurtarılan taslağı kaydeder.",
   "A saved draft is available. Restoring keeps its original disk baseline; review it before saving.": "Kayıtlı bir taslak var. Geri yükleme, dosyanın önceki disk sürümünü temel alır; kaydetmeden önce gözden geçirin.",
   "Keep or save your current edits before restoring this draft.": "Bu taslağı geri yüklemeden önce mevcut değişikliklerinizi koruyun veya kaydedin.",
   "Restore draft": "Taslağı geri yükle",

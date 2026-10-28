@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { t, useLocale } from "../../../shared/i18n";
 import { CircleAlert, GitCompare, GripVertical, Terminal, X } from "../../../shared/ui/icons";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
@@ -541,7 +542,8 @@ export function SurfaceTabs({
           const agent = isAgentTab(file) ? file.agent : null;
           const { label, iconName, tooltip } = surfaceTabPresentation(file);
           const tab = (
-            <div
+            <ActionHost
+              selected={active}
               ref={(el) => {
                 if (closing) return;
                 setTabNode(file.id, el);
@@ -679,11 +681,12 @@ export function SurfaceTabs({
                   {label}
                 </TabLabel>
                 {errors ? <CircleAlert aria-hidden className="icon-xs shrink-0 text-danger" /> : null}
+                {dirty ? (
+                  <span className="size-2 shrink-0 rounded-full bg-(--ui-text-secondary)" aria-label={t("Unsaved changes")} />
+                ) : null}
               </Button>
-              <Button
-                iconOnly
+              <InlineAction
                 label={t("Close {p0}", { p0: label })}
-                variant="ghost"
                 motion="none"
                 type="button"
                 title={t("Close {p0}", { p0: label })}
@@ -695,16 +698,11 @@ export function SurfaceTabs({
                   event.stopPropagation();
                   onCloseFile(file.id);
                 }}
-                className={`absolute end-1 inset-y-0 my-auto grid size-5 place-items-center ${active || dirty ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-visible:opacity-100"}`}
+                className="absolute end-1 inset-y-0 my-auto"
               >
-                {dirty ? (
-                  <>
-                    <span className="size-2 rounded-full bg-[var(--ui-text-secondary)] group-hover:hidden group-focus-within:hidden" aria-label={t("Unsaved changes")} />
-                    <X className="hidden size-3 group-hover:block group-focus-within:block" strokeWidth={1.75} />
-                  </>
-                ) : <X className="size-3" strokeWidth={1.75} />}
-              </Button>
-            </div>
+                <X className="size-3" strokeWidth={1.75} />
+              </InlineAction>
+            </ActionHost>
           );
           return closing || opening ? (
             <TabWidthMotion

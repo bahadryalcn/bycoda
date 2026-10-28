@@ -1,26 +1,43 @@
 import { Badge } from "../../shared/ui/Badge";
 import { Button } from "../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useT } from "../../shared/i18n";
-import { useState } from "react";
-import { Check, Clock } from "../../shared/ui/icons";
+import { useRef, useState, useSyncExternalStore } from "react";
+import { Trash2, Clock } from "../../shared/ui/icons";
+import {
+  getRecoverySaveFailure,
+  subscribeRecoverySaveFailure,
+} from "../../features/workspace/model/sessionRecovery";
 import "./session-recovery.css";
 
 export function SessionRecoveryControl({
   count,
   onOpen,
   onClear,
+  allowEmpty = false,
+  includeFiles = false,
 }: {
   count: number;
   onOpen: () => void;
   onClear?: () => Promise<void>;
+  allowEmpty?: boolean;
+  includeFiles?: boolean;
 }) {
   const t = useT();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(false);
-  if (!count) return null;
-  const label = t("Recovered sessions");
+  const pendingRef = useRef(false);
+  const saveFailure = useSyncExternalStore(
+    subscribeRecoverySaveFailure,
+    getRecoverySaveFailure,
+    getRecoverySaveFailure,
+  );
+  if (!count && !saveFailure && !allowEmpty) return null;
+  const label = includeFiles ? t("Recovered work") : t("Recovered sessions");
+  const clearLabel = includeFiles ? t("Clear conversation recovery list") : t("Clear list");
   const clear = async () => {
-    if (!onClear || pending) return;
+    if (!onClear || pendingRef.current) return;
+    pendingRef.current = true;
     setPending(true);
     setError(false);
     try {
@@ -28,11 +45,12 @@ export function SessionRecoveryControl({
     } catch {
       setError(true);
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   };
   return (
-    <div className="recovery-rail-row group" aria-busy={pending}>
+    <ActionHost className="recovery-rail-row" aria-busy={pending}>
       <Button
         variant="item"
         motion="none"
@@ -47,39 +65,66 @@ export function SessionRecoveryControl({
         <span className="recovery-rail-label min-w-0 flex-1 truncate @max-[140px]/rail:hidden [[data-compact-project-rail]_&]:hidden">
           {label}
         </span>
-        <Badge
-          variant="count"
-          size="sm"
-          tone="accent"
-          appearance="subtle"
-          max={99}
-          className="recovery-rail-count"
-          aria-hidden="true"
-        >
-          {count}
-        </Badge>
+        {count > 0 ? (
+          <Badge
+            variant="count"
+            size="sm"
+            tone="accent"
+            appearance="subtle"
+            max={99}
+            className="recovery-rail-count"
+            aria-hidden="true"
+          >
+            {count}
+          </Badge>
+        ) : null}
       </Button>
-      {onClear ? (
-        <Button
-          iconOnly
-          label={t("Clear list")}
-          variant="ghost"
+      {onClear && count > 0 ? (
+        <InlineAction
+          label={clearLabel}
           motion="none"
           type="button"
-          className={`recovery-rail-clear recovery-remove ${pending ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"}`}
-          title={t("Clear list")}
-          aria-label={t("Clear list")}
+          className="recovery-rail-clear recovery-remove"
+          reveal={pending || error ? "always" : "interaction"}
+          title={clearLabel}
+          aria-label={clearLabel}
           loading={pending}
           onClick={() => void clear()}
         >
-          <Check className="size-3.5" aria-hidden="true" />
-        </Button>
+          <Trash2 className="size-3.5" aria-hidden="true" />
+        </InlineAction>
       ) : null}
       {error ? (
         <span role="alert" className="recovery-rail-error text-xs text-danger">
           {t("Could not update the recovery list. Try again.")}
         </span>
       ) : null}
-    </div>
+      {saveFailure ? (
+        <span
+          role="alert"
+          className="recovery-rail-error flex flex-wrap items-center gap-1 text-ui-caption text-danger"
+        >
+          {t("Recovery dismissal was not saved.")}
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={pending}
+            onClick={async () => {
+              if (pendingRef.current) return;
+              pendingRef.current = true;
+              setPending(true);
+              try {
+                await saveFailure.retry();
+              } finally {
+                pendingRef.current = false;
+                setPending(false);
+              }
+            }}
+          >
+            {t("Retry")}
+          </Button>
+        </span>
+      ) : null}
+    </ActionHost>
   );
 }

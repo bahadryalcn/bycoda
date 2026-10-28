@@ -1,6 +1,17 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
 import { configureGeneratedImageStorage } from "./generatedImages";
+import {
+  deliverNativeOutputItem,
+  discardNativeOutputItems,
+  invalidateNativeOutputDelivery,
+  invalidateNativeOutputSession,
+  observeNativeOutputBatch,
+  observeNativeOutputState,
+  captureNativeOutputWork,
+  trackNativeOutputWork,
+  type NativeOutputItem,
+} from "./nativeOutputDelivery";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
 import { runtimeLogsBridge, runtimeLogsSpawnArgs } from "./runtimeLogsBridge";
 import { conversationToolsBridge, conversationToolsSpawnArgs } from "./conversationToolsBridge";
@@ -92,17 +103,18 @@ function listen<T>(event: string, handler: (event: { payload: T }) => void): Pro
   return label ? tauriListen(event, handler, { target: label }) : tauriListen(event, handler);
 }
 
-type LinePayload = { sessionId: string; line: string };
-type LinesPayload = { sessionId: string; lines: string[] };
-type SseBatchPayload = { sessionId: string; data: string[] };
+type LinePayload = { sessionId: string; line: string; nativeOutput?: unknown };
+type LinesPayload = { sessionId: string; lines: string[]; nativeOutput?: unknown };
+type SseBatchPayload = { sessionId: string; data: string[]; nativeOutput?: unknown };
 type ExitPayload = {
   sessionId: string;
   code: number | null;
   pid?: number;
   reason?: string;
+  nativeOutputState?: unknown;
 };
-type SsePayload = { sessionId: string; data: string };
-type SseEndPayload = { sessionId: string; error?: string | null };
+type SsePayload = { sessionId: string; data: string; nativeOutput?: unknown };
+type SseEndPayload = { sessionId: string; error?: string | null; nativeOutputState?: unknown };
 
 type LineHandler = (line: string) => void;
 type ExitHandler = (code: number | null, reason?: string) => void;
@@ -147,7 +159,7 @@ export function isCurrentChildExit(
 
 /** Output held for a child nobody watches yet. The byte bound is the real
  * limit; the item bound only keeps many tiny lines from piling up. */
-type Buffered = { items: string[]; bytes: number };
+type Buffered = { items: string[]; bytes: number; nativeItems?: (NativeOutputItem | null)[] };
 
 const MAX_BUFFERED = 1000;
 // UTF-16 code units, which is close enough to bytes for a memory bound.
@@ -164,10 +176,13 @@ export function pushBounded(
   sessionId: string,
   items: readonly string[],
   maxBytes = MAX_BUFFERED_BYTES,
+  nativeItems?: readonly NativeOutputItem[],
 ) {
   const queued = map.get(sessionId) ?? { items: [], bytes: 0 };
-  for (const item of items) {
+  if (nativeItems && !queued.nativeItems) queued.nativeItems = queued.items.map(() => null);
+  for (const [index, item] of items.entries()) {
     queued.items.push(item);
+    queued.nativeItems?.push(nativeItems?.[index] ?? null);
     queued.bytes += item.length;
   }
   let drop = Math.max(0, queued.items.length - MAX_BUFFERED);
@@ -178,6 +193,8 @@ export function pushBounded(
     drop += 1;
   }
   if (drop > 0) {
+    if (queued.nativeItems)
+      discardNativeOutputItems(queued.nativeItems.splice(0, drop), "buffer-dropped");
     queued.items.splice(0, drop);
     queued.bytes = kept;
   }
@@ -185,27 +202,39 @@ export function pushBounded(
 }
 
 // The desktop emits batches; a headless host still emits one line per event.
-function deliverStdout(sessionId: string, lines: readonly string[]) {
+function deliverStdout(sessionId: string, lines: readonly string[], metadata?: unknown) {
+  const nativeItems = observeNativeOutputBatch(sessionId, "stdout", lines, metadata);
   const handler = lineHandlers.get(sessionId);
   if (handler) {
-    for (const line of lines) handler(line);
+    for (const [index, line] of lines.entries())
+      deliverNativeOutputItem(nativeItems?.[index], () => handler(line));
     return;
   }
-  if (ownedChildren.has(sessionId)) pushBounded(lineBuffer, sessionId, lines);
+  if (ownedChildren.has(sessionId))
+    pushBounded(lineBuffer, sessionId, lines, MAX_BUFFERED_BYTES, nativeItems);
+  else if (nativeItems) discardNativeOutputItems(nativeItems, "unowned-buffer");
 }
 
-function deliverStderr(sessionId: string, lines: readonly string[]) {
+function deliverStderr(sessionId: string, lines: readonly string[], metadata?: unknown) {
+  const nativeItems = observeNativeOutputBatch(sessionId, "stderr", lines, metadata);
   const handler = stderrHandlers.get(sessionId);
-  if (handler) for (const line of lines) handler(line);
+  if (handler)
+    for (const [index, line] of lines.entries())
+      deliverNativeOutputItem(nativeItems?.[index], () => handler(line));
+  if (!handler && nativeItems) discardNativeOutputItems(nativeItems, "unwatched-stderr");
 }
 
-function deliverSse(sessionId: string, data: readonly string[]) {
+function deliverSse(sessionId: string, data: readonly string[], metadata?: unknown) {
+  const nativeItems = observeNativeOutputBatch(sessionId, "sse", data, metadata);
   const handler = sseHandlers.get(sessionId);
   if (handler) {
-    for (const item of data) handler(item);
+    for (const [index, item] of data.entries())
+      deliverNativeOutputItem(nativeItems?.[index], () => handler(item));
     return;
   }
-  if (ownedSse.has(sessionId)) pushBounded(sseBuffer, sessionId, data);
+  if (ownedSse.has(sessionId))
+    pushBounded(sseBuffer, sessionId, data, MAX_BUFFERED_BYTES, nativeItems);
+  else if (nativeItems) discardNativeOutputItems(nativeItems, "unowned-buffer");
 }
 
 function ensureBridge() {
@@ -226,26 +255,27 @@ function ensureBridge() {
   const installation = Promise.all([
     register(
       listen<LinesPayload>("harness-stdout-lines", (event) => {
-        deliverStdout(event.payload.sessionId, event.payload.lines);
+        deliverStdout(event.payload.sessionId, event.payload.lines, event.payload.nativeOutput);
       }),
     ),
     register(
       listen<LinePayload>("harness-stdout", (event) => {
-        deliverStdout(event.payload.sessionId, [event.payload.line]);
+        deliverStdout(event.payload.sessionId, [event.payload.line], event.payload.nativeOutput);
       }),
     ),
     register(
       listen<LinesPayload>("harness-stderr-lines", (event) => {
-        deliverStderr(event.payload.sessionId, event.payload.lines);
+        deliverStderr(event.payload.sessionId, event.payload.lines, event.payload.nativeOutput);
       }),
     ),
     register(
       listen<LinePayload>("harness-stderr", (event) => {
-        deliverStderr(event.payload.sessionId, [event.payload.line]);
+        deliverStderr(event.payload.sessionId, [event.payload.line], event.payload.nativeOutput);
       }),
     ),
     register(
       listen<ExitPayload>("harness-exit", (event) => {
+        observeNativeOutputState(event.payload.sessionId, event.payload.nativeOutputState);
         const { sessionId, code, pid, reason } = event.payload;
         const handler = exitHandlers.get(sessionId);
         if (!handler || pid == null || pid <= 0) return;
@@ -272,18 +302,24 @@ function ensureBridge() {
     ),
     register(
       listen<SseBatchPayload>("harness-sse-batch", (event) => {
-        deliverSse(event.payload.sessionId, event.payload.data);
+        deliverSse(event.payload.sessionId, event.payload.data, event.payload.nativeOutput);
       }),
     ),
     register(
       listen<SsePayload>("harness-sse", (event) => {
-        deliverSse(event.payload.sessionId, [event.payload.data]);
+        deliverSse(event.payload.sessionId, [event.payload.data], event.payload.nativeOutput);
       }),
     ),
     register(
       listen<SseEndPayload>("harness-sse-end", (event) => {
+        observeNativeOutputState(event.payload.sessionId, event.payload.nativeOutputState);
         const { sessionId, error } = event.payload;
         sseEndHandlers.get(sessionId)?.(error ?? undefined);
+      }),
+    ),
+    register(
+      listen<{ sessionId: string; nativeOutputState: unknown }>("harness-output-state", (event) => {
+        observeNativeOutputState(event.payload.sessionId, event.payload.nativeOutputState);
       }),
     ),
   ]).catch((error: unknown) => {
@@ -300,6 +336,7 @@ function ensureBridge() {
 }
 
 function teardownBridge() {
+  invalidateNativeOutputDelivery("bridge-teardown");
   const pending = bridge;
   bridge = null;
   bridgeAttempt = null;
@@ -370,10 +407,13 @@ export function watchChild(
   lineHandlers.set(sessionId, onLine);
   exitHandlers.set(sessionId, onExit);
   if (onStderr) stderrHandlers.set(sessionId, onStderr);
-  if (queued) for (const line of queued.items) onLine(line);
+  if (queued)
+    for (const [index, line] of queued.items.entries())
+      deliverNativeOutputItem(queued.nativeItems?.[index] ?? undefined, () => onLine(line));
 }
 
 export function unwatchChild(sessionId: string) {
+  invalidateNativeOutputSession(sessionId, "child-unwatched");
   guardedSpawns.delete(sessionId);
   lineHandlers.delete(sessionId);
   exitHandlers.delete(sessionId);
@@ -388,10 +428,13 @@ export function watchSse(sessionId: string, onData: SseHandler, onEnd?: SseEndHa
   sseBuffer.delete(sessionId);
   sseHandlers.set(sessionId, onData);
   if (onEnd) sseEndHandlers.set(sessionId, onEnd);
-  if (queued) for (const item of queued.items) onData(item);
+  if (queued)
+    for (const [index, item] of queued.items.entries())
+      deliverNativeOutputItem(queued.nativeItems?.[index] ?? undefined, () => onData(item));
 }
 
 export function unwatchSse(sessionId: string) {
+  invalidateNativeOutputSession(sessionId, "sse-unwatched");
   sseHandlers.delete(sessionId);
   sseEndHandlers.delete(sessionId);
   sseBuffer.delete(sessionId);
@@ -414,6 +457,7 @@ export async function spawnChild(
   genericAcpId?: string,
   authority?: NativeAuthorityScope,
   beforeSpawn?: () => Promise<void>,
+  logicalSessionId?: string,
 ): Promise<void> {
   const group = beforeSpawn
     ? (guardedSpawns.get(sessionId) ?? {
@@ -480,6 +524,7 @@ export async function spawnChild(
       binaryProvider,
       binaryPath,
       genericAcpId,
+      ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
       ...nativeAuthorityArgs(authority),
       // Functions are in-process restrictions, never desktop IPC/wire arguments.
       ...(backend && beforeSpawn ? { beforeSpawn } : {}),
@@ -523,7 +568,10 @@ export function writeChild(
   line: string,
   authority?: NativeAuthorityScope,
 ): Promise<void> {
-  return invoke("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) });
+  const work = captureNativeOutputWork();
+  try {
+    return trackNativeOutputWork(invoke<void>("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) }), work);
+  } catch (error) { work?.fail("child-write-rejected"); throw error; }
 }
 
 export function killChild(sessionId: string): Promise<void> {
@@ -534,6 +582,9 @@ export function killChild(sessionId: string): Promise<void> {
 }
 
 export function killAllChildren(): Promise<void> {
+  // A naturally ended child can still have undelivered buffered output here.
+  // Native kill_all cannot cancel that already-removed lifetime for us.
+  invalidateNativeOutputDelivery("children-reset");
   lineHandlers.clear();
   exitHandlers.clear();
   lineBuffer.clear();
@@ -650,7 +701,9 @@ export function harnessHttp(input: {
   authorityEnvironmentId?: string;
   authorityGeneration?: number;
 }): Promise<{ status: number; body: string }> {
-  return invoke("harness_http", input);
+  const work = captureNativeOutputWork({ additionalInput: true });
+  try { return trackNativeOutputWork(invoke<{status:number;body:string}>("harness_http", input), work); }
+  catch (error) { work?.fail("child-http-rejected"); throw error; }
 }
 
 export function openHarnessSse(
@@ -658,9 +711,10 @@ export function openHarnessSse(
   url: string,
   headers?: Record<string, string>,
   authority?: NativeAuthorityScope,
+  logicalSessionId?: string,
 ): Promise<void> {
   ownedSse.add(sessionId);
-  return invoke("harness_sse_open", { sessionId, url, headers, ...nativeAuthorityArgs(authority) });
+  return invoke("harness_sse_open", { sessionId, url, headers, ...nativeAuthorityArgs(authority), ...(logicalSessionId === undefined ? {} : { logicalSessionId }) });
 }
 
 export function closeHarnessSse(sessionId: string): Promise<void> {

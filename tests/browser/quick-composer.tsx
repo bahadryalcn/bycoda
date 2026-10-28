@@ -2,6 +2,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { QuickComposer } from "../../src/features/quick-composer/ui/QuickComposer";
+import { quickNativeReply } from "../../src/features/quick-composer/model/nativeQuickLaunch.fixture";
 import { setHarnessModels, saveLastModelChoice } from "../../src/features/sessions/model/models";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { languageReady } from "../../src/shared/i18n";
@@ -56,7 +57,8 @@ const controls = {
   finish: () => {},
   pickWorkspace: async (mode: "current" | "worktree") => {
     const call = calls.filter((entry) => entry.command === "quick_git_open").at(-1);
-    const request = (call?.args as { request: { id: string; choice: { cwd: string } } }).request;
+    if (!call?.args) throw new Error("Fixture workspace picker was not opened");
+    const request = (call.args as { request: { id: string; choice: { cwd: string } } }).request;
     await emit("quick_git_result", {
       id: request.id,
       choice: { cwd: request.choice.cwd, mode },
@@ -65,6 +67,7 @@ const controls = {
   },
 };
 Object.assign(window, { quickFixtureCalls: calls, quickFixture: controls });
+let nextSequence = 1;
 mockIPC(
   async (command, args) => {
     calls.push({ command, args });
@@ -107,7 +110,11 @@ mockIPC(
           },
         };
     }
-    if (command === "quick_composer_submit") {
+    if (command === "quick_composer_launch_scope")
+      return { ...quickNativeReply(command, args), nextSequence };
+    if (command === "quick_composer_submit_status") return quickNativeReply(command, args);
+    if (command === "quick_composer_submit_intent") {
+      nextSequence = Math.max(nextSequence, Number(args.submission.sequence) + 1);
       if (controls.hold)
         await new Promise<void>((resolve) => {
           controls.finish = resolve;
@@ -118,7 +125,7 @@ mockIPC(
           "The owning computer is unavailable. Reconnect it and retry this draft without losing the selected model, permissions or attachments. " +
             "Diagnostic context ".repeat(12),
         );
-      return null;
+      return quickNativeReply(command, args);
     }
     return null;
   },

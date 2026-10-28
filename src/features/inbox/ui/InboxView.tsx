@@ -4,6 +4,7 @@ import "./InboxView.css";
 import { Badge } from "../../../shared/ui/Badge";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
@@ -85,6 +86,7 @@ import {
   resolveInboxSource,
   saveInboxConnections,
   saveInboxSource,
+  DEFAULT_INBOX_FILTERS,
   visibleInboxSources,
   INBOX_SOURCE_LABELS,
   isTrackerSource,
@@ -270,6 +272,7 @@ export function InboxView({
   const queryClient = useQueryClient();
   const queryVisible = useQueryVisible();
   const forceRead = useRef(false);
+  const retryFailedRead = useRef(false);
   const [items, setItems] = useState<InboxItem[]>(
     () => peekInboxForRail(recents, cwd)?.items ?? [],
   );
@@ -282,9 +285,10 @@ export function InboxView({
     () => peekInboxForRail(recents, cwd)?.errors ?? {},
   );
   const [refresh, setRefresh] = useState(0);
-  const requestRefresh = (action: "toolbar" | "retry") => {
+  const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
     refreshActionRef.current = action;
+    retryFailedRead.current = retryFailedOnly;
     setRefreshAction(action);
     setRefresh((value) => value + 1);
   };
@@ -294,6 +298,13 @@ export function InboxView({
     "list",
   );
   const [boardIssue, setBoardIssue] = useState<JiraBoardIssue | null>(null);
+  const boardIssueOrigin = useRef<HTMLElement | null>(null);
+  const closeBoardIssue = () => {
+    setBoardIssue(null);
+    requestAnimationFrame(() => {
+      if (boardIssueOrigin.current?.isConnected) boardIssueOrigin.current.focus();
+    });
+  };
   const [jiraAutomaticSync, setJiraAutomaticSync] = useState(jiraBackgroundSyncEnabled);
   useEffect(() => {
     const reload = () => setRefresh((value) => value + 1);
@@ -552,10 +563,13 @@ export function InboxView({
     queryFn: async ({ signal }) => {
       const force = forceRead.current;
       forceRead.current = false;
+      const retryFailedOnly = retryFailedRead.current;
+      retryFailedRead.current = false;
       const cached = peekInboxList(projects, fetchQuery);
       try {
         return await listInboxItems(projects, fetchQuery, {
           force,
+          retryFailedOnly,
           onProgress: (result) => {
             if (!signal.aborted) queryClient.setQueryData(inboxQueryKey, result);
           },
@@ -720,13 +734,19 @@ export function InboxView({
     [inboxSeenTick, sourceEntries],
   );
 
-  const searchNarrowed = searchInput.trim().length > 0;
-  const narrowedByUser = searchNarrowed || filtersActive;
   const sourceError = providerErrors[source] ?? null;
 
-  const selectedByKey = visibleItems.find((item) => inboxItemKey(item) === selectedKey);
+  // Local filters cannot retarget an open public-comment composer. Resolve the
+  // selected identity from allowed loaded data before considering a default.
+  const allowedItems = sourceAvailable ? filterCodeHostScopes(
+    items.filter((item) => item.provider === source),
+    codeScopes.provider, codeScopes.scopes, codeScopes.hidden,
+  ) : [];
+  const selectedByKey = allowedItems.find((item) => inboxItemKey(item) === selectedKey)
+    ?? visibleItems.find((item) => inboxItemKey(item) === selectedKey);
   const waitingForTarget = !!targetSelectionKey && selectedKey === targetSelectionKey;
-  const selected = selectedByKey ?? (waitingForTarget ? null : visibleItems[0]) ?? null;
+  const selected = selectedByKey ?? (waitingForTarget || selectedKey ? null : visibleItems[0]) ?? null;
+  const selectedOutsideFilters = !!selected && !visibleItems.some((entry) => inboxItemKey(entry) === inboxItemKey(selected));
   const updateInboxItem = useCallback((next: InboxItem) => {
     const key = inboxItemKey(next);
     setItems((current) => current.map((entry) => (inboxItemKey(entry) === key ? next : entry)));
@@ -773,7 +793,8 @@ export function InboxView({
   useEffect(() => {
     if (loading) return;
     if (!selected) {
-      if (!targetSelectionKey) setSelectedKey(null);
+      // An unavailable identity must not silently become the first remaining
+      // result. A deliberate row selection is required after removal.
       return;
     }
     const key = inboxItemKey(selected);
@@ -796,6 +817,8 @@ export function InboxView({
 
   const onSourceChange = (next: InboxSource) => {
     setDetailOpen(false);
+    setSelectedKey(null);
+    setBoardIssue(null);
     setSource(next);
     if (!pullRequestsOnly) saveInboxSource(next);
   };
@@ -852,6 +875,20 @@ export function InboxView({
           </Button>
         ) : null}
       </div>
+      {source === "jira" ? (
+        <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-1">
+          <span className="text-ui-caption text-(--ui-text-secondary)">{t("Jira view")}</span>
+          <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
+            onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
+            options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
+        </div>
+      ) : !pullRequestsOnly && source === "github" ? (
+        <div className="flex shrink-0 items-center px-2 py-1">
+          <SegmentedControl label={t("Type")} value={activeFilters.hiddenKinds.length >= 2 ? "" : activeFilters.hiddenKinds.length === 0 ? "all" : activeFilters.hiddenKinds.includes("issue") ? "pr" : "issue"}
+            onValueChange={(next) => onFiltersChange({ ...activeFilters, hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"] })}
+            options={[{ value: "all", label: t("All") }, { value: "pr", label: t("Pull requests") }, { value: "issue", label: t("Issues") }]} />
+        </div>
+      ) : null}
       {noSourcesConnected ? null : (
         <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
@@ -860,17 +897,17 @@ export function InboxView({
               focusOwner="group"
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={pullRequestsOnly ? t("Search pull requests") : t("Filter inbox")}
-              aria-label={pullRequestsOnly ? t("Search pull requests") : t("Filter inbox")}
+              placeholder={t("Filter loaded items")}
+              aria-label={t("Filter loaded items")}
               spellCheck={false}
               autoComplete="off"
             />
           </SearchInputGroup>
           <span
             className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)"
-            title={t("{p0} items", { p0: visibleItems.length })}
+            title={t("{p0} loaded", { p0: visibleItems.length })}
           >
-            {visibleItems.length}
+            {t("{p0} loaded", { p0: visibleItems.length })}
           </span>
           {pullRequestsOnly ? (
             <>
@@ -934,11 +971,11 @@ export function InboxView({
           </Button>
           <Button
             iconOnly
-            label={t("Mark all as read")}
+            label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
             variant="ghost"
             type="button"
-            title={t("Mark all as read")}
-            aria-label={t("Mark all as read")}
+            title={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
+            aria-label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
             disabled={!sourceHasUnseen}
             onClick={() => {
               setFailedReadItem(null);
@@ -982,8 +1019,10 @@ export function InboxView({
         </Alert>
       ) : null}
       {sourceError && visibleItems.length > 0 ? (
-        <Alert tone="warning" role="alert">
-          {sourceError}
+        <Alert tone="warning" role="alert" action={
+          <Button loading={refreshAction === "retry"} disabled={refreshAction === "toolbar"} onClick={() => requestRefresh("retry", source === "github")}>{t("Retry")}</Button>
+        }>
+          <span className="whitespace-pre-wrap wrap-anywhere">{sourceError}</span>
         </Alert>
       ) : null}
       <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
@@ -1013,15 +1052,15 @@ export function InboxView({
                 type="button"
                 loading={refreshAction === "retry"}
                 disabled={refreshAction === "toolbar"}
-                onClick={() => requestRefresh("retry")}
+                onClick={() => requestRefresh("retry", source === "github")}
               >
                 {t("Refresh")}
               </Button>
             }
           />
         ) : loading && items.length === 0 ? (
-          <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-            <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
+          <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-secondary text-(--ui-text-secondary)">
+            <WorkingIndicator size="md" />{t("Loading...")}
           </div>
         ) : pullRequestsOnly && visibleItems.length === 0 ? (
           <EmptyState
@@ -1029,40 +1068,16 @@ export function InboxView({
             description={
               projects.length === 0
                 ? t("Add a project to see its repository's pull requests.")
-                : narrowedByUser
-                  ? t("No pull requests match these filters.")
-                  : t("No pull requests in this workspace.")
+                : t("No loaded items match these filters.")
             }
           />
         ) : visibleItems.length === 0 ? (
           <EmptyState
             icon={<Inbox aria-hidden="true" />}
             description={
-              narrowedByUser
-                ? searchNarrowed
-                  ? isTrackerSource(source)
-                    ? t("No matching {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
-                    : source === "gitlab"
-                      ? t("No matching issues or merge requests")
-                      : t("No matching issues or pull requests")
-                  : isTrackerSource(source)
-                    ? t("No {p0} issues match these filters", { p0: INBOX_SOURCE_LABELS[source] })
-                    : source === "gitlab" || source === "azuredevops"
-                      ? activeFilters.assignedToMe
-                        ? t("Nothing needs your attention")
-                        : source === "gitlab"
-                          ? t("No GitLab items match these filters")
-                          : t("No ADO items match these filters")
-                      : t("No issues or pull requests match these filters")
-                : isTrackerSource(source)
-                  ? t("No {p0} issues", { p0: INBOX_SOURCE_LABELS[source] })
-                  : source === "gitlab"
-                    ? projects.length === 0
-                      ? t("Open a project to fill the inbox")
-                      : t("No matching issues or merge requests")
-                    : projects.length === 0
-                      ? t("Open a project to fill the inbox")
-                      : t("No matching issues or pull requests")
+              !isTrackerSource(source) && projects.length === 0
+                ? t("Open a project to fill the inbox")
+                : t("No loaded items match these filters.")
             }
           />
         ) : (
@@ -1090,7 +1105,11 @@ export function InboxView({
                 </li>
               );
             })}
-            {hasMoreItems ? <li ref={loadMoreRef} aria-hidden className="h-px list-none" /> : null}
+            {hasMoreItems ? (
+              <li ref={loadMoreRef} className="list-none">
+                <Button fullWidth onClick={() => setListLimit((current) => current + LIST_PAGE_SIZE)}>{t("Load more items")}</Button>
+              </li>
+            ) : null}
           </ul>
         )}
       </div>
@@ -1164,20 +1183,8 @@ export function InboxView({
         {IS_MAC ? null : <WindowControls />}
       </div>
 
-      {source === "jira" || (pullRequestsOnly && projects.length === 0 && onOpenProject) ? (
+      {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
         <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-          {source === "jira" ? (
-            <SegmentedControl
-              label={t("Jira view")}
-              selectionRole="pressed"
-              value={jiraView}
-              onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
-              options={[
-                { value: "list", label: t("List") },
-                { value: "board", label: t("Board") },
-              ]}
-            />
-          ) : null}
           {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
             <Button variant="ghost" type="button" onClick={() => void onOpenProject()}>
               {t("Add project")}
@@ -1202,25 +1209,39 @@ export function InboxView({
               />
             ))}
           </div>
-          <div className="flex min-h-0 min-w-0 flex-1">
+          <div className="flex shrink-0 items-center gap-2 px-3 py-1">
+            <span className="text-ui-caption text-(--ui-text-secondary)">{t("Jira view")}</span>
+            <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
+              onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
+              options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
+          </div>
+          <div className="inbox-jira-layout flex min-h-0 min-w-0 flex-1" data-detail-open={!!boardIssue}>
             <JiraBoardView
               revision={refresh}
-              onSelect={setBoardIssue}
+              selectedIssueId={boardIssue?.id}
+              onSelect={(issue) => {
+                boardIssueOrigin.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+                setBoardIssue(issue);
+              }}
+              onScopeChanged={() => setBoardIssue(null)}
               onChanged={() => setRefresh((value) => value + 1)}
               onIssuesLoaded={(issues) =>
                 setBoardIssue((old) =>
-                  old ? (issues.find((issue) => issue.id === old.id) ?? null) : null,
+                  old ? (issues.find((issue) => issue.id === old.id) ?? old) : null,
                 )
               }
             />
             {boardIssue ? (
-              <aside className="jira-board-detail" aria-label={boardIssue.identifier}>
+              <aside className="jira-board-detail" aria-label={boardIssue.identifier}
+                onKeyDown={(event) => { if (event.key === "Escape" && !hasActiveOverlay()) { event.preventDefault(); closeBoardIssue(); } }}>
                 <Button
                   variant="ghost"
                   type="button"
                   className="jira-board-detail-close"
-                  onClick={() => setBoardIssue(null)}
+                  autoFocus
+                  onClick={closeBoardIssue}
                 >
+                  <ChevronLeft className="icon-sm" aria-hidden="true" />
                   {t("Close issue details")}
                 </Button>
                 <InboxDetailBody
@@ -1245,6 +1266,11 @@ export function InboxView({
         >
           {list}
           <div className="inbox-detail-pane flex min-h-0 min-w-0 flex-1 flex-col">
+            {selectedOutsideFilters ? (
+              <Alert tone="info" role="status" action={<Button onClick={() => { setSearchInput(""); onFiltersChange(DEFAULT_INBOX_FILTERS); }}>{t("Clear filters")}</Button>}>
+                {t("Outside current filters")}
+              </Alert>
+            ) : null}
             <div className="inbox-detail-back shrink-0 border-b border-(--ui-tone-neutral-border) px-2 py-1">
               <Button variant="ghost" onClick={() => setDetailOpen(false)}>
                 <ChevronLeft className="icon-sm" aria-hidden="true" />
@@ -1536,18 +1562,22 @@ const InboxCard = memo(function InboxCard({
       type="button"
       title={item.title}
       aria-current={active ? "true" : undefined}
+      selected={active}
       aria-label={`${status.label} ${kindLabel.toLowerCase()} ${inboxItemRef(
         item,
-      )}: ${item.title}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
+      )}: ${item.title}, ${source}${attentionLabel ? `, ${attentionLabel}` : ""}${unseen ? ", new" : ""}${item.labels.length ? `, ${item.labels.map((label) => label.name).join(", ")}` : ""}${relatedSessionCount > 0 ? `, ${relatedSessionCount} related ${relatedSessionCount === 1 ? "thread" : "threads"}` : ""}`}
       onClick={() => onSelect(item)}
       onMouseEnter={() => prefetchInboxItem(item)}
       onFocus={() => prefetchInboxItem(item)}
     >
+      <span className={`min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug text-(--ui-tone-neutral-fg) ${unseen ? "font-medium" : "font-normal"}`}>
+        {item.title}
+      </span>
       <span className="flex min-w-0 items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
           <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
-            {inboxItemRef(item)}
+            {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
             {attentionLabel ? ` · ${attentionLabel}` : ""}
           </span>
         </span>
@@ -1578,15 +1608,6 @@ const InboxCard = memo(function InboxCard({
           </span>
         ) : null}
       </span>
-      <span
-        className={`mbs-1 min-w-0 line-clamp-2 wrap-anywhere text-ui-secondary leading-snug ${
-          unseen
-            ? "font-medium text-(--ui-tone-neutral-fg)"
-            : "font-normal text-(--ui-text-secondary)"
-        }`}
-      >
-        {item.title}
-      </span>
       <span className="mt-1 flex min-w-0 items-center gap-2">
         <span className="flex min-w-0 flex-1 items-center gap-1.5 text-ui-micro text-(--ui-text-secondary)">
           {tracker || !item.projectPath ? null : logoPath ? (
@@ -1607,9 +1628,10 @@ const InboxCard = memo(function InboxCard({
         </span>
         {item.labels.length > 0 ? (
           <span className="flex min-w-0 max-w-[45%] items-center gap-1 overflow-hidden">
-            {item.labels.slice(0, 2).map((label) => (
+            {item.labels.slice(0, 1).map((label) => (
               <InboxLabel key={label.name} label={label} compact />
             ))}
+            {item.labels.length > 1 ? <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">+{item.labels.length - 1}</span> : null}
           </span>
         ) : null}
       </span>

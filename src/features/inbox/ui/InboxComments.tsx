@@ -1,13 +1,16 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
+  useSyncExternalStore,
   type FormEvent,
   type KeyboardEvent,
   type ReactNode,
@@ -230,6 +233,20 @@ export function InboxComments({
   );
 }
 
+// Keep only active writes here. A remounted composer must not submit the same
+// originating draft again while its first provider request is still running.
+const pendingCommentDrafts = new Set<string>();
+const pendingCommentListeners = new Set<() => void>();
+function subscribePendingComments(listener: () => void) {
+  pendingCommentListeners.add(listener);
+  return () => { pendingCommentListeners.delete(listener); };
+}
+function setCommentPending(key: string, pending: boolean) {
+  if (pending) pendingCommentDrafts.add(key);
+  else pendingCommentDrafts.delete(key);
+  for (const listener of pendingCommentListeners) listener();
+}
+
 export function InboxCommentForm({
   replyTo,
   posting,
@@ -237,7 +254,10 @@ export function InboxCommentForm({
   onCancelReply,
   onSubmit,
   target,
+  draftKey,
 }: {
+  /** Window-lifetime draft, scoped by record and reply identity by the caller. */
+  draftKey?: string;
   /** Human-readable destination service, shown beside the submit action. */
   target?: string;
   replyTo: InboxReplyTarget | null;
@@ -247,9 +267,15 @@ export function InboxCommentForm({
   onSubmit: (body: string) => Promise<void>;
 }) {
   useLocale();
-  const [draft, setDraft] = useState("");
+  const localDraftId = useId();
+  const draftIdentity = `inbox:comment:${draftKey ?? localDraftId}`;
+  const [draft, setDraft] = useRetainedState(draftIdentity, "");
+  const pending = useSyncExternalStore(subscribePendingComments,
+    () => pendingCommentDrafts.has(draftIdentity), () => false);
+  const busy = posting || pending;
+  const submitting = useRef(false);
   const field = useRef<HTMLTextAreaElement>(null);
-  const canPost = draft.trim().length > 0 && !posting;
+  const canPost = draft.trim().length > 0 && !busy;
 
   useEffect(() => {
     if (!replyTo) return;
@@ -265,12 +291,17 @@ export function InboxCommentForm({
 
   const submit = async () => {
     const body = draft.trim();
-    if (!body || posting) return;
+    if (!body || busy || submitting.current || pendingCommentDrafts.has(draftIdentity)) return;
+    submitting.current = true;
+    setCommentPending(draftIdentity, true);
     try {
       await onSubmit(body);
       setDraft("");
     } catch {
       // Parent keeps the error next to the button.
+    } finally {
+      submitting.current = false;
+      setCommentPending(draftIdentity, false);
     }
   };
 
@@ -303,7 +334,7 @@ export function InboxCommentForm({
             type="button"
             title={t("Cancel reply")}
             aria-label={t("Cancel reply")}
-            disabled={posting}
+            disabled={busy}
             onClick={onCancelReply}
             className="shrink-0"
           >
@@ -318,7 +349,7 @@ export function InboxCommentForm({
           ref={field}
           rows={2}
           value={draft}
-          disabled={posting}
+          disabled={busy}
           placeholder={
             replyTo
               ? t("Write a reply ({p0}↩)", { p0: MOD })
@@ -340,7 +371,7 @@ export function InboxCommentForm({
             size="sm"
             type="submit"
             disabled={!canPost}
-            loading={posting}
+            loading={busy}
             loadingLabel={t("Posting...")}
             className="shrink-0"
           >

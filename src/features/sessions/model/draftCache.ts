@@ -161,6 +161,31 @@ export function composerDraftOf(sessionId: string): {
   };
 }
 
+/** Publish one mounted capture without a transient clear or four unrelated admissions. */
+export function setComposerDraftSnapshot(
+  sessionId: string,
+  snapshot: ReturnType<typeof composerDraftOf>,
+  work?: PersistenceWork,
+): void {
+  const before = composerDraftOf(sessionId);
+  if (
+    before.text === snapshot.text &&
+    before.mode === snapshot.mode &&
+    before.mcpTags === snapshot.mcpTags &&
+    before.attachments === snapshot.attachments
+  )
+    return;
+  if (snapshot.text) drafts.set(sessionId, snapshot.text);
+  else drafts.delete(sessionId);
+  if (snapshot.mcpTags.length) mcpTags.set(sessionId, snapshot.mcpTags);
+  else mcpTags.delete(sessionId);
+  if (snapshot.attachments.length) attachments.set(sessionId, snapshot.attachments);
+  else attachments.delete(sessionId);
+  if (snapshot.mode) modes.set(sessionId, snapshot.mode);
+  else modes.delete(sessionId);
+  changed(sessionId, work);
+}
+
 /** Typed text or an attachment that has not been sent. Whitespace alone is not a message. */
 export function hasUnsentComposerDraft(sessionId: string): boolean {
   const draft = composerDraftOf(sessionId);

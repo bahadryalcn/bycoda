@@ -8,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n/git";
 import { pathKey } from "../../../shared/lib/paths";
 import { checkoutOptionLabel, sessionCheckout } from "../model/checkoutSelection";
 import type { Worktree } from "../model/worktrees";
+import { Button } from "../../../shared/ui/Button";
 
 type Props = {
   repositoryPaths?: readonly string[];
@@ -39,10 +40,34 @@ export function SourceControl({
   onOpenCommit,
 }: Props) {
   useLocale();
-  const { data, error, refresh } = useProjectWorktrees(
+  const { data, error, loading, refresh } = useProjectWorktrees(
     cwd,
     enabled && !repositoryPaths?.length && !!onOpenRepository,
   );
+  const discoveryNotice = error ? (
+    <div className="flex shrink-0 items-start gap-2 border-b border-stroke px-2 py-1 text-ui-caption">
+      <div className="min-w-0 flex-1 text-(--ui-text-secondary)">
+        <p role="status">
+          {data
+            ? t("Could not refresh worktrees. Showing the last available list.")
+            : `${t("Worktrees")} · ${t("Unavailable")}`}
+        </p>
+        <details>
+          <summary className="cursor-pointer">{t("Details")}</summary>
+          <p className="max-h-32 overflow-y-auto break-all">{error}</p>
+        </details>
+      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={loading}
+        disabled={!enabled}
+        onClick={() => void refresh()}
+      >
+        {t("Retry")}
+      </Button>
+    </div>
+  ) : null;
   const checkouts = (() => {
     const paths: string[] = [];
     const labels: Record<string, string> = {};
@@ -64,14 +89,7 @@ export function SourceControl({
   if (!repositoryPaths?.length && onOpenRepository && checkouts.paths.length > 1)
     return (
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-clip">
-        {error ? (
-          <p
-            role="status"
-            className="shrink-0 border-b border-stroke px-2 py-1 text-[11px] text-[var(--ui-text-secondary)]"
-          >
-            {t("Could not refresh worktrees. Showing the last available list.")}
-          </p>
-        ) : null}
+        {discoveryNotice}
         <WorkspaceSourceControl
           key={cwd}
           cwd={cwd}
@@ -102,18 +120,21 @@ export function SourceControl({
     );
   if (onOpenRepository)
     return (
-      <WorkspaceSourceControl
-        key={cwd}
-        cwd={cwd}
-        paths={[cwd]}
-        singleRepository
-        enabled={enabled}
-        textHarness={textHarness}
-        selectedPath={selectedPath}
-        selectedKind={selectedKind}
-        selectedSha={selectedSha}
-        onOpen={onOpenRepository}
-      />
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-clip">
+        {discoveryNotice}
+        <WorkspaceSourceControl
+          key={cwd}
+          cwd={cwd}
+          paths={[cwd]}
+          singleRepository
+          enabled={enabled}
+          textHarness={textHarness}
+          selectedPath={selectedPath}
+          selectedKind={selectedKind}
+          selectedSha={selectedSha}
+          onOpen={onOpenRepository}
+        />
+      </div>
     );
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">

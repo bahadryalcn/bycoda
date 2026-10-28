@@ -1,5 +1,5 @@
 import { SettingsFeedback } from "./settingsControls";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   configureFileAccess,
@@ -12,34 +12,63 @@ import { Button } from "../../../shared/ui/Button";
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
   const [mode, setMode] = useState<FileAccessMode | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<"read" | "configure" | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => {
-    let active = true;
-    void getFileAccessMode().then(
-      (value) => {
-        if (active) setMode(value);
-      },
-      (reason) => {
-        if (active) setError(String(reason));
-      },
-    );
-    return () => {
-      active = false;
-    };
+  const [statusUnavailable, setStatusUnavailable] = useState(false);
+  const active = useRef(false);
+  const operation = useRef(false);
+  const refresh = useCallback(async () => {
+    if (operation.current) return;
+    operation.current = true;
+    setPending("read");
+    try {
+      const value = await getFileAccessMode();
+      if (active.current) {
+        setMode(value);
+        setError("");
+        setStatusUnavailable(false);
+      }
+    } catch (reason) {
+      if (active.current) { setError(String(reason)); setStatusUnavailable(true); }
+    } finally {
+      operation.current = false;
+      if (active.current) setPending(null);
+    }
   }, []);
+  useEffect(() => {
+    active.current = true;
+    const onFocus = () => void refresh();
+    void refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active.current = false;
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [refresh]);
   const review = async () => {
-    if (busy) return;
-    setBusy(true);
+    if (operation.current) return;
+    operation.current = true;
+    setPending("configure");
     setError("");
     try {
-      setMode(await configureFileAccess(true));
+      const value = await configureFileAccess(true);
+      if (active.current) { setMode(value); setStatusUnavailable(false); }
     } catch (reason) {
-      setError(String(reason));
+      // Native consent may have persisted before a later step failed. Read back
+      // independently; rejection must not imply that access stayed unchanged.
+      try {
+        const value = await getFileAccessMode();
+        if (active.current) { setMode(value); setStatusUnavailable(false); }
+      } catch {
+        if (active.current) setStatusUnavailable(true);
+      }
+      if (active.current) setError(String(reason));
     } finally {
-      setBusy(false);
+      operation.current = false;
+      if (active.current) setPending(null);
     }
   };
+  const modeLabel = mode === "all-files" ? t("All files allowed") : mode === "selected-folders" ? t("Selected folders only") : t("Not configured");
   const content = (
     <>
       <Row
@@ -47,31 +76,44 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         label={t("File access")}
         feedback={
           error ? (
-            <SettingsFeedback state="error">{error}</SettingsFeedback>
-          ) : busy ? (
-            <SettingsFeedback state="loading">{t("Waiting for approval…")}</SettingsFeedback>
+            <SettingsFeedback
+              state="error"
+              action={<Button onClick={() => void refresh()} disabled={pending !== null}>{t("Retry")}</Button>}
+            >
+              <p>{t("Could not confirm the file access operation. Refresh the status before trying again.")}</p>
+              {error}
+            </SettingsFeedback>
+          ) : pending ? (
+            <SettingsFeedback state="loading">
+              {pending === "configure" ? t("Waiting for approval…") : t("Loading…")}
+            </SettingsFeedback>
           ) : null
         }
       >
         <span role="status" aria-live="polite">
-          {mode === null
+          {statusUnavailable ? t("Status unavailable") : mode === null
             ? error
               ? t("Status unavailable")
               : t("Loading…")
-            : mode === "all-files"
-              ? t("All files allowed")
-              : mode === "selected-folders"
-                ? t("Selected folders only")
-                : t("Not configured")}
+            : modeLabel}
         </span>
-        <Button loading={busy} disabled={mode === null && !error} onClick={() => void review()}>
-          {busy ? t("Waiting for approval…") : t("Change file access")}
+        {statusUnavailable && mode !== null ? <span>{t("Last known access: {p0}", { p0: modeLabel })}</span> : null}
+        <Button
+          loading={pending === "configure"}
+          disabled={pending !== null || mode === null || statusUnavailable}
+          onClick={() => void review()}
+        >
+          {t("Change file access")}
+        </Button>
+        <Button variant="ghost" loading={pending === "read"} disabled={pending !== null} onClick={() => void refresh()}>
+          {t("Refresh")}
         </Button>
       </Row>
       <AdvancedSettings
         id="file-access-permissions"
         settingIds={["file-access-permissions"]}
         title={t("Files, projects and skills")}
+        defaultOpen={false}
       >
         <p className="privacy-inline-note">
           {t("Scope: this computer. Remote hosts manage their own file access.")}
@@ -79,7 +121,7 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
         <Row
           label={t("Separate permissions")}
           description={t(
-            "File access allows the app to read files. Agent approval rules still control commands and tools. Change file access opens the native consent flow; the saved status updates after it completes.",
+            "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Agent approval rules still control commands and tools. Change file access opens the native consent flow.",
           )}
         />
       </AdvancedSettings>

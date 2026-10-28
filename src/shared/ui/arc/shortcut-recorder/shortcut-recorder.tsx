@@ -15,7 +15,9 @@ import {
 import type { HTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import type { Variants } from "motion/react";
-import { RotateCcw, Search, X } from "lucide-react";
+import { Button } from "../../Button";
+import { RotateCcw, Search, X } from "../../icons";
+import { SearchInput, SearchInputGroup } from "../../SearchInput";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./shortcut-recorder.module.css";
 
@@ -580,7 +582,7 @@ export function ShortcutRecorder({
     const bare = !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
     if (bare && event.key === "Escape") {
       stop();
-      setAnnouncement("Recording canceled");
+      setAnnouncement(t("Recording canceled"));
       return;
     }
     if (bare && (event.key === "Backspace" || event.key === "Delete")) {
@@ -696,7 +698,7 @@ export function ShortcutRecorder({
           }}
         >
           <span className={styles.srOnly}>
-            {recording ? "Recording" : shown ? spoken(shown) : placeholder}
+            {recording ? t("Press keys") : shown ? spoken(shown) : placeholder}
           </span>
           <span className={styles.row} aria-hidden="true">
             {recording && <span className={styles.dot} data-reduced={reduced || undefined} />}
@@ -752,40 +754,52 @@ export function ShortcutRecorder({
           <span className={styles.actions}>
             <AnimatePresence initial={false}>
               {canReset && (
-                <motion.button
+                <motion.span
                   key="reset"
-                  type="button"
-                  className={styles.action}
-                  aria-label={`Reset to ${restoreTo ? formatShortcut(restoreTo, platform).spoken : "none"}`}
-                  onClick={() => {
-                    commit(restoreTo ?? null);
-                    buttonRef.current?.focus();
-                  }}
+                  className={styles.actionSlot}
                   initial={{ opacity: 0, scale: 0.6 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
                   transition={reduced ? { duration: 0 } : motionTokens.spring.snappy}
                 >
-                  <RotateCcw size={16} strokeWidth={1.75} aria-hidden="true" />
-                </motion.button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    motion="none"
+                    label={`Reset to ${restoreTo ? formatShortcut(restoreTo, platform).spoken : "none"}`}
+                    onClick={() => {
+                      commit(restoreTo ?? null);
+                      buttonRef.current?.focus();
+                    }}
+                  >
+                    <RotateCcw aria-hidden="true" />
+                  </Button>
+                </motion.span>
               )}
               {canClear && (
-                <motion.button
+                <motion.span
                   key="clear"
-                  type="button"
-                  className={styles.action}
-                  aria-label={t("Clear shortcut")}
-                  onClick={() => {
-                    commit(null);
-                    buttonRef.current?.focus();
-                  }}
+                  className={styles.actionSlot}
                   initial={{ opacity: 0, scale: 0.6 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
                   transition={reduced ? { duration: 0 } : motionTokens.spring.snappy}
                 >
-                  <X size={16} strokeWidth={1.75} aria-hidden="true" />
-                </motion.button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    iconOnly
+                    motion="none"
+                    label={t("Clear shortcut")}
+                    onClick={() => {
+                      commit(null);
+                      buttonRef.current?.focus();
+                    }}
+                  >
+                    <X aria-hidden="true" />
+                  </Button>
+                </motion.span>
               )}
             </AnimatePresence>
           </span>
@@ -833,9 +847,11 @@ export function ShortcutRecorder({
                   <span className={styles.messageText}>{message.body}</span>
                   {pending && (
                     <span className={styles.messageActions}>
-                      <button
-                        type="button"
-                        className={styles.link}
+                      <Button
+                        variant="ghost"
+                        tone="warning"
+                        size="sm"
+                        motion="none"
                         onClick={() => {
                           const taken = pending;
                           commit(taken.shortcut, taken.reserved ? undefined : taken.conflict);
@@ -843,11 +859,11 @@ export function ShortcutRecorder({
                         }}
                       >
                         {t("Use anyway")}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.link}
-                        data-quiet=""
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        motion="none"
                         onClick={() => {
                           setPending(null);
                           setAnnouncement(t("Cancelled"));
@@ -855,7 +871,7 @@ export function ShortcutRecorder({
                         }}
                       >
                         {t("Cancel")}
-                      </button>
+                      </Button>
                     </span>
                   )}
                 </motion.div>
@@ -910,7 +926,7 @@ export function ShortcutList({
   platform: platformProp,
   className,
 }: ShortcutListProps) {
-  const t = useT();
+  useT();
   const reduced = useReducedFlag();
   const platform = usePlatform(platformProp);
   const held = usePressedKeys(highlightPressed);
@@ -964,10 +980,11 @@ export function ShortcutList({
   return (
     <section className={[styles.list, className].filter(Boolean).join(" ")} aria-label={label}>
       {searchable && (
-        <div className={styles.searchRow}>
-          <Search className={styles.searchIcon} size={16} strokeWidth={1.75} aria-hidden="true" />
-          <input
+        <SearchInputGroup appearance="field" className={styles.searchRow}>
+          <Search className={styles.searchIcon} aria-hidden="true" />
+          <SearchInput
             ref={searchRef}
+            focusOwner="group"
             className={styles.search}
             type="search"
             placeholder={searchPlaceholder}
@@ -986,27 +1003,7 @@ export function ShortcutList({
           <span className={styles.count} aria-live="polite">
             {query ? `${total} ${total === 1 ? "match" : "matches"}` : ""}
           </span>
-          <AnimatePresence initial={false}>
-            {query && (
-              <motion.button
-                key="clear"
-                type="button"
-                className={styles.clear}
-                aria-label={t("Clear search")}
-                onClick={() => {
-                  setQuery("");
-                  searchRef.current?.focus();
-                }}
-                initial={{ opacity: 0, scale: 0.6 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.1 } }}
-                transition={reduced ? { duration: 0 } : motionTokens.spring.snappy}
-              >
-                <X size={14} strokeWidth={1.75} aria-hidden="true" />
-              </motion.button>
-            )}
-          </AnimatePresence>
-        </div>
+        </SearchInputGroup>
       )}
 
       <div className={styles.groups}>

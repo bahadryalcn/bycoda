@@ -1,5 +1,13 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import {
+  readAppearanceSaveIssues,
+  retryAppearanceSave,
+  subscribeAppearanceSaveIssues,
+} from "../model/appearancePersistence";
+import { Button } from "../../../shared/ui/Button";
+import { SettingsFeedback } from "./settingsControls";
+import { t, useLocale } from "../../../shared/i18n";
 import {
   LIVE_BACKGROUND_DEFAULT,
   LIVE_BACKGROUND_INTENSITY_DEFAULT,
@@ -10,6 +18,8 @@ import {
   APPEARANCE_DEFAULTS,
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
+  appearancePreferencesReadUnavailable,
+  normalizeAppearancePreferences,
   saveAppearancePreferences,
   type AppearancePreferences,
 } from "../model/appearancePreferences";
@@ -78,6 +88,7 @@ import {
   syncNativeGlass,
   loadShowExcludedFiles,
   saveShowExcludedFiles,
+  subscribeShowExcludedFiles,
   SIDEBAR_BLUR_DEFAULT,
   SIDEBAR_OPACITY_DEFAULT,
   MAIN_OPACITY_DEFAULT,
@@ -118,13 +129,61 @@ export function useAppearanceSettings(
   onControlledCollapsedProjectRailModeChange?: (mode: CollapsedProjectRailMode) => void,
 ) {
   const [preferences, setPreferences] = useState(loadAppearancePreferences);
+  const preferencesBase = useRef(preferences);
+  const preferencesDraft = useRef<AppearancePreferences | null>(null);
+  const [preferencesDirty, setPreferencesDirty] = useState(false);
+  const [preferencesUnavailable, setPreferencesUnavailable] = useState(
+    appearancePreferencesReadUnavailable,
+  );
+  const receivePreferences = useCallback((current: AppearancePreferences) => {
+    const draft = preferencesDraft.current;
+    const edits = draft
+      ? Object.entries(draft).filter(
+          ([key, value]) => value !== preferencesBase.current[key as keyof AppearancePreferences],
+        )
+      : [];
+    const unresolved = edits.some(
+      ([key, value]) => current[key as keyof AppearancePreferences] !== value,
+    );
+    const next = unresolved
+      ? normalizeAppearancePreferences({ ...current, ...Object.fromEntries(edits) })
+      : current;
+    preferencesDraft.current = unresolved ? next : null;
+    preferencesBase.current = current;
+    setPreferencesDirty(unresolved);
+    setPreferences(next);
+  }, []);
+  const retryPreferenceRead = useCallback(() => {
+    const current = loadAppearancePreferences();
+    const unavailable = appearancePreferencesReadUnavailable();
+    setPreferencesUnavailable(unavailable);
+    if (!unavailable) receivePreferences(current);
+  }, [receivePreferences]);
   useEffect(() => {
-    const sync = () => setPreferences(loadAppearancePreferences());
+    const sync = () => {
+      const current = loadAppearancePreferences();
+      setPreferencesUnavailable(appearancePreferencesReadUnavailable());
+      if (!appearancePreferencesReadUnavailable()) receivePreferences(current);
+    };
     window.addEventListener(APPEARANCE_PREFERENCES_EVENT, sync);
     return () => window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, sync);
-  }, []);
+  }, [receivePreferences]);
   const onPreferences = useCallback((next: AppearancePreferences) => {
-    setPreferences(saveAppearancePreferences(next));
+    try {
+      const saved = saveAppearancePreferences(next, preferencesBase.current);
+      preferencesBase.current = saved;
+      preferencesDraft.current = null;
+      setPreferencesDirty(false);
+      setPreferences(saved);
+      setPreferencesUnavailable(false);
+    } catch {
+      // Keep the editable draft; the DOM keeps the last durably saved appearance.
+      const draft = normalizeAppearancePreferences(next);
+      preferencesDraft.current = draft;
+      setPreferences(draft);
+      setPreferencesDirty(true);
+      setPreferencesUnavailable(appearancePreferencesReadUnavailable());
+    }
   }, []);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [accentColor, setAccentColor] = useState(loadAccentColor);
@@ -161,6 +220,10 @@ export function useAppearanceSettings(
   const [bodyGlass, setBodyGlass] = useState(loadBodyGlass);
   const [windowGlass, setWindowGlass] = useState(loadWindowGlass);
   const [showExcludedFiles, setShowExcludedFiles] = useState(loadShowExcludedFiles);
+  useEffect(
+    () => subscribeShowExcludedFiles(() => setShowExcludedFiles(loadShowExcludedFiles())),
+    [],
+  );
   const [chatBackgroundPath, setChatBackgroundPath] = useState(loadChatBackgroundPath);
   const [chatBackgroundEmptyOpacity, setChatBackgroundEmptyOpacity] = useState(
     loadChatBackgroundEmptyOpacity,
@@ -176,6 +239,10 @@ export function useAppearanceSettings(
     loadNewThreadBackgroundEffect,
   );
   const [chatBackgroundBusy, setChatBackgroundBusy] = useState(false);
+  const [chatBackgroundOperation, setChatBackgroundOperation] = useState<
+    "choose" | "remove" | null
+  >(null);
+  const chatBackgroundPending = useRef(false);
   const [chatBackgroundError, setChatBackgroundError] = useState<string | null>(null);
   const [uiScale, setUiScale] = useState(loadUiScale);
   const [storedCollapsedProjectRailMode, setStoredCollapsedProjectRailMode] =
@@ -244,11 +311,14 @@ export function useAppearanceSettings(
 
   const onShowExcludedFiles = useCallback((next: boolean) => {
     saveShowExcludedFiles(next);
-    setShowExcludedFiles(next);
+    setShowExcludedFiles(loadShowExcludedFiles());
   }, []);
 
   const onChooseChatBackground = useCallback(async () => {
+    if (chatBackgroundPending.current) return;
+    chatBackgroundPending.current = true;
     setChatBackgroundBusy(true);
+    setChatBackgroundOperation("choose");
     setChatBackgroundError(null);
     try {
       const path = await pickAndSaveChatBackground();
@@ -259,12 +329,17 @@ export function useAppearanceSettings(
     } catch (error) {
       setChatBackgroundError(error instanceof Error ? error.message : String(error));
     } finally {
+      chatBackgroundPending.current = false;
       setChatBackgroundBusy(false);
+      setChatBackgroundOperation(null);
     }
   }, []);
 
   const onClearChatBackground = useCallback(async () => {
+    if (chatBackgroundPending.current) return;
+    chatBackgroundPending.current = true;
     setChatBackgroundBusy(true);
+    setChatBackgroundOperation("remove");
     setChatBackgroundError(null);
     try {
       await removeChatBackground();
@@ -274,7 +349,9 @@ export function useAppearanceSettings(
     } catch (error) {
       setChatBackgroundError(error instanceof Error ? error.message : String(error));
     } finally {
+      chatBackgroundPending.current = false;
       setChatBackgroundBusy(false);
+      setChatBackgroundOperation(null);
     }
   }, []);
 
@@ -380,6 +457,9 @@ export function useAppearanceSettings(
   ]);
 
   return {
+    preferencesUnavailable,
+    preferencesDirty,
+    retryPreferenceRead,
     preferences,
     onPreferences,
     themePreference,
@@ -401,6 +481,7 @@ export function useAppearanceSettings(
     chatBackgroundBlur,
     newThreadBackgroundEffect,
     chatBackgroundBusy,
+    chatBackgroundOperation,
     chatBackgroundError,
     uiScale,
     collapsedProjectRailMode,
@@ -426,4 +507,30 @@ export function useAppearanceSettings(
     onCollapsedProjectRailMode,
     restoreDefaults,
   };
+}
+
+/** Feedback stays in the owning Appearance topic; each retry targets only failed writes there. */
+export function AppearanceSaveFeedback({ settingIds }: { settingIds: readonly string[] }) {
+  useLocale();
+  const all = useSyncExternalStore(
+    subscribeAppearanceSaveIssues,
+    readAppearanceSaveIssues,
+    readAppearanceSaveIssues,
+  );
+  const issues = all.filter((issue) => settingIds.includes(issue.settingId));
+  if (!issues.length) return null;
+  return (
+    <SettingsFeedback
+      state="error"
+      action={
+        <Button onClick={() => issues.forEach((issue) => retryAppearanceSave(issue.key))}>
+          {t("Retry save")}
+        </Button>
+      }
+    >
+      {issues.some((issue) => issue.applied)
+        ? t("Applied in this window, but could not save. Retry before closing the app.")
+        : t("Could not save changes. Your previous appearance remains active.")}
+    </SettingsFeedback>
+  );
 }

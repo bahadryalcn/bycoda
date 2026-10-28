@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { afterEach, expect, it } from "vitest";
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -81,6 +82,12 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
       now: () => clock,
     });
   service = compose();
+  const storeInstance = randomUUID(),
+    windowIncarnation = randomUUID();
+  const ownerKey = createHash("sha256")
+    .update(`${storeInstance}:${windowIncarnation}`)
+    .digest("hex");
+  let reportVersion = 0;
   const report = (
     dirty: boolean,
     clientId = "client",
@@ -91,10 +98,23 @@ async function fixture(linkedAncestor = false, exactGitRewind = true) {
     processId: 1234,
     owners: [
       {
-        ownerId: "main",
+        ownerId: `physical:v2:${ownerKey}`,
         updatedAt: clock,
         unknown: false,
         buffers: [{ path: join(path, "source.txt"), dirty }],
+        source: {
+          version: 2,
+          sourceStoreId: "test-source-store",
+          sourceProfileId: "test-source-profile",
+          storeInstance,
+          windowIncarnation,
+          kind: "physical",
+          reportVersion: ++reportVersion,
+          reportNonce: randomUUID(),
+          snapshotDigest: createHash("sha256")
+            .update(JSON.stringify([{ path: join(path, "source.txt"), dirty }]))
+            .digest("hex"),
+        },
       },
     ],
   });
@@ -269,6 +289,9 @@ it("requires fresh reports after Host restart and canonicalizes new files throug
   try {
     const report = f.report(true);
     report.owners[0].buffers[0].path = join(alias, "new-file.txt");
+    report.owners[0].source!.snapshotDigest = createHash("sha256")
+      .update(JSON.stringify(report.owners[0].buffers))
+      .digest("hex");
     await f.service.updateBuffers(report, owner);
     expect(await f.service.probe("workspace")).toHaveLength(1);
     await expect(

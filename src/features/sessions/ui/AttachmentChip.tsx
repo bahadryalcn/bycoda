@@ -1,3 +1,4 @@
+import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { Link, X } from "../../../shared/ui/icons";
@@ -194,14 +195,14 @@ export function AttachmentChip({
             ) : null}
           </>
         )}
-        {onRemove ? (
+        {onRemove && image ? (
           <Button
             motion="none"
-            className={image ? "absolute right-0.5 top-0.5 z-10 shrink-0" : "shrink-0"}
+            className="absolute right-0.5 top-0.5 z-10 shrink-0"
             iconOnly
             label={t("Remove {p0}", { p0: attachment.name })}
-            variant={image ? "secondary" : "ghost"}
-            shape={image ? "pill" : "default"}
+            variant="secondary"
+            shape="pill"
             type="button"
             title={t("Remove")}
             aria-label={t("Remove {p0}", { p0: attachment.name })}
@@ -212,6 +213,17 @@ export function AttachmentChip({
           >
             <X className="size-3" strokeWidth={2} />
           </Button>
+        ) : null}
+        {onRemove && !image ? (
+          <InlineAction
+            reveal="always"
+            className="shrink-0"
+            label={t("Remove {p0}", { p0: attachment.name })}
+            type="button"
+            onClick={onRemove}
+          >
+            <X className="size-3" strokeWidth={2} />
+          </InlineAction>
         ) : null}
       </div>
       {attachment.browserAnnotation ? (

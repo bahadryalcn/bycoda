@@ -37,7 +37,7 @@ export function PreviewSelection({
   const { selection, dismissSelection } = useTranscriptSelection(root, active);
   useEffect(dismissSelection, [contentVersion, path, dismissSelection]);
   return (
-    <div ref={setRoot} className="h-full min-h-0" data-selectable-agent-response={path}>
+    <div ref={setRoot} className="h-full min-h-0 min-w-0" data-selectable-agent-response={path}>
       {children}
       <PreviewSelectionMenu
         selection={active ? selection : null}

@@ -31,6 +31,7 @@ import type { Transition, Variants } from "motion/react";
 import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { motionTokens } from "../lib/motion-tokens";
 import { useToday } from "../lib/use-today";
+import { Button } from "../../Button";
 import { useOverlay } from "../../overlay";
 import { cumulativeCssZoom } from "../../../lib/cssZoom";
 import styles from "./date-range-picker.module.css";
@@ -76,6 +77,12 @@ export interface DateRangePickerProps {
   boundary?: () => HTMLElement | null;
   /** Reserve the expanded panel's height inside a scrolling form or popover. */
   expandInFlow?: boolean;
+  /** The trigger dims and cannot open. */
+  disabled?: boolean;
+  /** The trigger shows its value on a quiet frame and cannot open, but is still focusable. */
+  readOnly?: boolean;
+  /** The trigger takes the danger frame. The field owner supplies the message. */
+  invalid?: boolean;
   className?: string;
 }
 
@@ -559,6 +566,9 @@ export function DateRangePicker({
   months = "auto",
   boundary,
   expandInFlow = false,
+  disabled = false,
+  readOnly = false,
+  invalid = false,
   className,
 }: DateRangePickerProps) {
   const t = useT();
@@ -788,7 +798,7 @@ export function DateRangePicker({
   };
 
   const openPanel = () => {
-    if (!today) return;
+    if (!today || disabled || readOnly) return;
     const layout = measureLayout();
     setCompact(layout.single);
     setPanelWidth(layout.width);
@@ -1010,6 +1020,9 @@ export function DateRangePicker({
       className={[styles.root, className].filter(Boolean).join(" ")}
       style={{ width: rootWidth, height: expandInFlow ? height : undefined }}
       data-open={open || undefined}
+      data-disabled={disabled || undefined}
+      data-readonly={(readOnly && !disabled) || undefined}
+      data-invalid={invalid || undefined}
       onKeyDown={onRootKey}
       onBlur={onRootBlur}
     >
@@ -1018,11 +1031,11 @@ export function DateRangePicker({
         ref={triggerRef}
         type="button"
         className={styles.trigger}
-        aria-haspopup="dialog"
-        aria-expanded={open}
+        aria-haspopup={readOnly ? undefined : "dialog"}
+        aria-expanded={readOnly ? undefined : open}
         aria-controls={open ? `${uid}-panel` : undefined}
         aria-label={`${label}: ${committedText}`}
-        disabled={!today}
+        disabled={!today || disabled}
         inert={open || undefined}
         onClick={openPanel}
       >
@@ -1219,17 +1232,12 @@ export function DateRangePicker({
                   animate="shown"
                   exit="gone"
                 >
-                  <button type="button" className={styles.ghost} onClick={() => close(true)}>
+                  <Button variant="ghost" onClick={() => close(true)}>
                     {t("Cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    className={styles.primary}
-                    onClick={apply}
-                    disabled={!allowedRange(applicable)}
-                  >
+                  </Button>
+                  <Button variant="primary" onClick={apply} disabled={!allowedRange(applicable)}>
                     {t("Apply")}
-                  </button>
+                  </Button>
                 </motion.div>
               </div>
               <p className={styles.srOnly} aria-live="polite">

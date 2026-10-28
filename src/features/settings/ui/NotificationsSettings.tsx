@@ -1,5 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -29,7 +29,7 @@ import {
 } from "../../notifications/model/notifications";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
-import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
+import { AdvancedSettings, Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
 
 export function NotificationAlerts() {
@@ -54,50 +54,77 @@ export function NotificationAlerts() {
     loadDailySummaryTime,
     subscribeDailySummary,
   );
-  const [permissionPending, setPermissionPending] = useState(false);
+  const [permissionPending, setPermissionPending] = useState<"probe" | "request" | null>(null);
   const [permissionError, setPermissionError] = useState(false);
+  const [failedSaves, setFailedSaves] = useState<Record<string, () => void>>({});
+  const permissionInFlight = useRef(false);
+  const active = useRef(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission>(
     cachedNotificationPermission,
   );
+  const checkPermission = useCallback(async (request = false) => {
+    if (permissionInFlight.current) return;
+    permissionInFlight.current = true;
+    setPermissionPending(request ? "request" : "probe");
+    setPermissionError(false);
+    try {
+      const permission = await (request ? requestNotificationPermission() : probeNotificationPermission());
+      if (active.current) {
+        setNotificationPermission(permission);
+        setPermissionError(permission === "unavailable");
+      }
+    } catch {
+      if (active.current) setPermissionError(true);
+    } finally {
+      permissionInFlight.current = false;
+      if (active.current) setPermissionPending(null);
+    }
+  }, []);
   useEffect(() => {
-    let active = true;
-    const refresh = () => {
-      void probeNotificationPermission().then(
-        (permission) => {
-          if (active) {
-            setNotificationPermission(permission);
-            setPermissionError(false);
-          }
-        },
-        () => {
-          if (active) setPermissionError(true);
-        },
-      );
-    };
+    active.current = true;
+    const refresh = () => void checkPermission();
     refresh();
     window.addEventListener("focus", refresh);
     return () => {
-      active = false;
+      active.current = false;
       window.removeEventListener("focus", refresh);
     };
-  }, [notificationsEnabled]);
+  }, [checkPermission]);
+  const commitPreference = (id: string, write: () => boolean | void, update: () => void): boolean => {
+    try {
+      if (write() === false) throw new Error("Preference was not persisted");
+      update();
+      setFailedSaves((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+      return true;
+    } catch {
+      setFailedSaves((current) => ({
+        ...current,
+        [id]: () => void commitPreference(id, write, update),
+      }));
+      return false;
+    }
+  };
+  const saveFeedback = (id: string) => failedSaves[id] ? (
+    <SettingsFeedback state="error" action={<Button onClick={failedSaves[id]}>{t("Retry")}</Button>}>
+      {t("Could not save changes")}
+    </SettingsFeedback>
+  ) : undefined;
   const onSoundsEnabled = (next: boolean) => {
-    saveSoundsEnabled(next);
-    setSoundsEnabled(next);
+    commitPreference("sounds", () => saveSoundsEnabled(next), () => setSoundsEnabled(next));
   };
   const onNotificationsEnabled = (next: boolean) => {
-    if (permissionPending) return;
-    saveNotificationsEnabled(next);
-    setNotificationsEnabled(next);
-    if (!next) return;
-    setPermissionPending(true);
-    setPermissionError(false);
-    void requestNotificationPermission()
-      .then(setNotificationPermission, () => setPermissionError(true))
-      .finally(() => setPermissionPending(false));
+    if (permissionInFlight.current) return;
+    commitPreference("notifications", () => saveNotificationsEnabled(next), () => {
+      setNotificationsEnabled(next);
+      if (next) void checkPermission(true);
+    });
   };
   return (
-    <div className="notification-alert-settings">
+    <div className="notification-alert-settings settings-topics">
       <Group
         title={t("Application alerts")}
         layout="full"
@@ -108,6 +135,7 @@ export function NotificationAlerts() {
           id="sounds"
           label={t("Sounds")}
           description={t("Play short sounds for project activity and updates.")}
+          feedback={saveFeedback("sounds")}
         >
           <Toggle label={t("Sounds")} on={soundsEnabled} onChange={onSoundsEnabled} />
         </Row>
@@ -117,17 +145,21 @@ export function NotificationAlerts() {
           description={t("Show alerts from other sessions or while {p0} is in the background.", {
             p0: PRODUCT_IDENTITY.displayName,
           })}
+          feedback={saveFeedback("notifications")}
         >
           <Toggle
             label={t("Desktop notifications")}
             on={notificationsEnabled}
             onChange={onNotificationsEnabled}
-            disabled={permissionPending}
+            disabled={permissionPending !== null}
           />
         </Row>
         <div className="notification-permission-status">
           {!permissionError && !permissionPending && notificationPermission === "granted" ? (
-            <p>{t("System permission granted")}</p>
+            <div className="notification-permission-message">
+              <p>{t("System permission granted")}</p>
+              <Button variant="ghost" onClick={() => void checkPermission()}>{t("Refresh")}</Button>
+            </div>
           ) : (
             <SettingsFeedback
               state={
@@ -139,17 +171,26 @@ export function NotificationAlerts() {
                       ? "success"
                       : "warning"
               }
+              action={
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button loading={permissionPending === "probe"} disabled={permissionPending !== null} onClick={() => void checkPermission()}>{t("Refresh")}</Button>
+                  {notificationsEnabled && notificationPermission === "prompt" ? (
+                    <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>{t("Request permission")}</Button>
+                  ) : null}
+                </div>
+              }
             >
               {permissionError ? (
                 t("Status unavailable")
               ) : permissionPending ? (
-                t("Waiting for approval…")
+                permissionPending === "request" ? t("Waiting for approval…") : t("Loading…")
               ) : (
                 <>
                   {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
                   {notificationPermission === "unsupported"
                     ? t("Not available on this platform")
                     : null}
+                  {notificationPermission === "unavailable" ? t("Status unavailable") : null}
                   {notificationPermission === "prompt"
                     ? t(
                         "System permission has not been granted yet. Enabling notifications requests permission.",
@@ -183,6 +224,7 @@ export function NotificationAlerts() {
             id={`notification-event-${event.id}`}
             label={event.label}
             description={event.description}
+            feedback={saveFeedback(event.id)}
             dependency={
               event.id === "taskbar" && !IS_WIN
                 ? t(
@@ -196,14 +238,13 @@ export function NotificationAlerts() {
               on={notificationEvents[event.id]}
               disabled={!notificationsEnabled || (event.id === "taskbar" && !IS_WIN)}
               onChange={(on) => {
-                saveNotificationEvent(event.id, on);
-                setNotificationEvents(loadNotificationEvents());
+                commitPreference(event.id, () => saveNotificationEvent(event.id, on), () => setNotificationEvents(loadNotificationEvents()));
               }}
             />
           </Row>
         ))}
       </Group>
-      <Group title={t("Daily summary")} layout="full">
+      <Group title={t("Daily summary")} layout="full" scope={t("Uses this computer’s local clock.")}>
         <Row
           dependency={
             !notificationsEnabled
@@ -217,18 +258,18 @@ export function NotificationAlerts() {
           id="daily-summary"
           label={t("Daily summary")}
           description={t("A daily overview of background tasks and goals across machines.")}
+          feedback={<>{saveFeedback("summary-enabled")}{saveFeedback("summary-time")}</>}
         >
           {
             <Select
               label={t("Daily summary time")}
               value={summaryTime}
-              options={DAILY_SUMMARY_TIMES.map((time) => ({
+              options={[...new Set([...DAILY_SUMMARY_TIMES, summaryTime])].sort().map((time) => ({
                 value: time,
                 label: time,
               }))}
               onChange={(time) => {
-                saveDailySummaryTime(time);
-                setSummaryTime(time);
+                commitPreference("summary-time", () => saveDailySummaryTime(time), () => setSummaryTime(time));
               }}
               disabled={!notificationsEnabled || !summaryEnabled}
             />
@@ -238,19 +279,17 @@ export function NotificationAlerts() {
             on={summaryEnabled}
             disabled={!notificationsEnabled}
             onChange={(on) => {
-              saveDailySummaryEnabled(on);
-              setSummaryEnabled(on);
+              commitPreference("summary-enabled", () => saveDailySummaryEnabled(on), () => setSummaryEnabled(on));
             }}
           />
         </Row>
-        <section className="notification-summary-help">
-          <h3>{t("Schedule details")}</h3>
+        <AdvancedSettings title={t("Schedule details")} defaultOpen={false}>
           <p>
             {t(
               "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
             )}
           </p>
-        </section>
+        </AdvancedSettings>
       </Group>
     </div>
   );
@@ -259,8 +298,10 @@ function NotificationsBlocked() {
   useLocale();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState(false);
+  const inFlight = useRef(false);
   const openSettings = async () => {
-    if (opening) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setOpening(true);
     setError(false);
     try {
@@ -268,6 +309,7 @@ function NotificationsBlocked() {
     } catch {
       setError(true);
     } finally {
+      inFlight.current = false;
       setOpening(false);
     }
   };

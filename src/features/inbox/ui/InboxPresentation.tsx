@@ -119,7 +119,10 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "completed"
     ) {
-      return { Icon: CheckCircle, className: "text-(--color-feature)", label };
+      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)", label: "Completed" };
+    }
+    if (item.provider === "github" && item.kind === "issue" && item.stateReason?.trim().toLowerCase() === "not_planned") {
+      return { Icon: CircleX, className: "text-(--ui-text-secondary)", label: "Not planned" };
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,

@@ -258,6 +258,7 @@ import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview"
 import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
@@ -2632,7 +2633,7 @@ function SidebarComponent({
 
   const workspaceHeader = (
     <div
-      className="flex h-10 shrink-0 select-none items-center gap-1 border-b border-stroke pl-3 pr-1.5"
+      className="flex h-10 shrink-0 select-none items-center gap-1 border-b border-(--ui-pane-border) pl-3 pr-1.5"
       data-tauri-drag-region="deep"
     >
       <div className="flex min-w-0 flex-1 items-center">
@@ -2664,7 +2665,7 @@ function SidebarComponent({
       }}
       ref={resize.setPaneRef}
       data-side-pane="workspace"
-      className="bycoda-sidebar body-glass sidebar-pane relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke pe-1.5"
+      className={`bycoda-sidebar body-glass sidebar-pane ${styles.pane} relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5`}
     >
       {railVisible ? (
         <>
@@ -2672,7 +2673,7 @@ function SidebarComponent({
           <div
             role="tablist"
             aria-label={t("Workspace")}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px border-b border-stroke"
+            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
           </div>
@@ -2681,7 +2682,7 @@ function SidebarComponent({
         <>
           {titleBarAbove ? null : (
             <div
-              className="flex h-10 shrink-0 select-none items-center border-b border-stroke pr-1.5"
+              className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-pane-border) pr-1.5"
               data-tauri-drag-region="deep"
             >
               {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
@@ -2725,7 +2726,7 @@ function SidebarComponent({
           <div
             role="tablist"
             aria-label={t("Workspace")}
-            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px overflow-visible border-b border-stroke"
+            className="bycoda-workspace-tabs flex shrink-0 items-center gap-px overflow-visible border-b border-(--ui-pane-border)"
           >
             {workspaceTabItems}
           </div>
@@ -4477,7 +4478,7 @@ function FolderRow({
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   return (
     <Button
-      selected={expanded || dropTarget}
+      selected={dropTarget}
       variant="item"
       motion="none"
       type="button"
@@ -4536,7 +4537,7 @@ function FolderRow({
       <span className="relative flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
         {busy ? (
           <span role="img" aria-label={t("Working")} title={t("Working")}>
-            <TerminalSpinner className="inline-block w-3 select-none text-center text-ui-micro leading-none text-active" />
+            <TerminalSpinner />
           </span>
         ) : null}
         {needsApproval ? (
@@ -5243,31 +5244,24 @@ const SessionCard = memo(function SessionCard({
   const actions = (
     <span data-session-row-actions className="relative flex shrink-0 items-center gap-px">
       {onArchive ? (
-        <Button
-          iconOnly
+        <InlineAction
           label={`${archiveLabel} ${title}`}
-          variant="ghost"
           motion="none"
           type="button"
           data-no-drag
           data-tauri-drag-region="false"
           title={archiveLabel}
           aria-label={`${archiveLabel} ${title}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             onArchive(session.id, !session.archived);
           }}
-          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Archive className="icon-xs shrink-0" strokeWidth={1.75} />
-        </Button>
+        </InlineAction>
       ) : null}
       {onDelete ? (
-        <Button
-          iconOnly
+        <InlineAction
           label={`Delete ${title}`}
-          variant="ghost"
           tone="danger"
           motion="none"
           type="button"
@@ -5275,15 +5269,12 @@ const SessionCard = memo(function SessionCard({
           data-tauri-drag-region="false"
           title={t("Delete")}
           aria-label={`Delete ${title}`}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
+          onClick={() => {
             onDelete(session.id);
           }}
-          className="pointer-events-none grid size-5 place-items-center opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
         >
           <Trash2 className="icon-xs shrink-0" strokeWidth={1.75} />
-        </Button>
+        </InlineAction>
       ) : null}
       {workItemBadge}
       {session.automationId ? (
@@ -5304,15 +5295,14 @@ const SessionCard = memo(function SessionCard({
           onMouseEnter={() => setOrchestrationTooltipOpen(true)}
           onMouseLeave={() => setOrchestrationTooltipOpen(false)}
         >
-          <Button
-            iconOnly
+          <InlineAction
+            reveal="always"
             label={t(
               orchestration.tasks.length === 1
                 ? "Orchestrator, {p0} subagent, {p2} done"
                 : "Orchestrator, {p0} subagents, {p2} done",
               { p0: orchestration.tasks.length, p2: orchestrationDone },
             )}
-            variant="ghost"
             motion="none"
             type="button"
             data-no-drag
@@ -5326,18 +5316,15 @@ const SessionCard = memo(function SessionCard({
               { p0: orchestration.tasks.length, p2: orchestrationDone },
             )}
             aria-describedby={orchestrationTooltipOpen ? orchestrationTooltipId : undefined}
-            onPointerDown={(event) => event.stopPropagation()}
             onFocus={() => setOrchestrationTooltipOpen(true)}
             onBlur={() => setOrchestrationTooltipOpen(false)}
             onClick={(event) => {
-              event.stopPropagation();
               setOrchestrationTooltipOpen(false);
               onSelect(session.id, event);
             }}
-            className="grid shrink-0 place-items-center"
           >
             <Share className="icon-xs" />
-          </Button>
+          </InlineAction>
         </div>
       ) : null}
     </span>
@@ -5349,7 +5336,8 @@ const SessionCard = memo(function SessionCard({
 
   return (
     <div className="group relative">
-      <div
+      <ActionHost
+        selected={isSelected || isActive}
         title={title}
         data-session-card={session.id}
         data-session-density={density}
@@ -5369,18 +5357,18 @@ const SessionCard = memo(function SessionCard({
           onSelect(session.id, event);
         }}
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
-        className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col rounded-md px-2.5 text-left ${cardPaddingY} ${
+        className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 rounded-md px-2.5 text-left ${cardPaddingY} ${
           dragging ? "opacity-40" : ""
         } ${draft && !dropTarget ? "border-dashed border-stroke" : "border-transparent"} ${
           dropTarget
             ? "text-content"
             : isSelected
-              ? "bg-(--ui-surface-selected) text-content"
+              ? "text-content"
               : pressing
                 ? "bg-(--ui-surface-pressed) text-content transition-colors duration-500 ease-linear"
                 : isActive
-                  ? "bg-selection text-content"
-                  : "text-(--ui-text-secondary) hover:bg-(--ui-surface-hover) hover:text-content"
+                  ? "text-content"
+                  : "text-(--ui-text-secondary) hover:text-content"
         }`}
       >
         {dropTarget ? (
@@ -5429,18 +5417,6 @@ const SessionCard = memo(function SessionCard({
             <span>{dropTarget ? t("Release to group") : t("Hold to group")}</span>
           </span>
         ) : null}
-        {density === "detailed"
-          ? metaLine(
-              <>
-                {modelLabel}
-                <span className="min-w-0 flex-1" />
-                <span className="flex shrink-0 items-center gap-1.5">
-                  {linkedUpdateDot}
-                  {status}
-                </span>
-              </>,
-            )
-          : null}
         {/* Actions sit beside the row's button, never inside it. */}
         <span className="relative flex min-h-5 min-w-0 items-center gap-1.5">
           <div
@@ -5489,6 +5465,18 @@ const SessionCard = memo(function SessionCard({
           </div>
           {compact ? actions : null}
         </span>
+        {density === "detailed"
+          ? metaLine(
+              <>
+                {modelLabel}
+                <span className="min-w-0 flex-1" />
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {linkedUpdateDot}
+                  {status}
+                </span>
+              </>,
+            )
+          : null}
         {density === "standard"
           ? metaLine(
               <>
@@ -5519,7 +5507,7 @@ const SessionCard = memo(function SessionCard({
         {orchestrationExpanded ? (
           <OrchestrationSidebarAgents leadId={session.id} summary={orchestration!} />
         ) : null}
-      </div>
+      </ActionHost>
       {orchestration && orchestrationTooltipOpen ? (
         <Popover
           anchor={orchestrationTooltipRootRef}

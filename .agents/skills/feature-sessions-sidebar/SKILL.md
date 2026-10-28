@@ -5,6 +5,19 @@ description: Sessions list and sidebar inventory for filtering, archive, pinning
 
 # Sessions list / sidebar
 
+## H4 sidebar source delivery, 2026-10-28
+
+Sidebar pane/header edges use shared semantic roles, detailed task titles lead
+metadata, and folder expansion no longer marks folders selected. Session row,
+recent pin and recovery clear actions consume ActionHost/InlineAction; recovery
+pending/error keeps its clear action revealed. Shared working indicators own
+their color/size. Existing density, drafts, selection, drag and operations retain
+their state owners. Uncommitted baseline
+`c03fa98d4819494a53ebfa61ff74320105bd05fc`; per-surface checklist and remaining
+H1 text-action/long-press dependencies:
+`temp/local/2026-10-28-h4-workbench/handoff.json`. Test edilmedi per RULES.md;
+native, keyboard and visual acceptance are pending the owner's morning checks.
+
 Find, organize and reopen conversations while preserving execution ownership and project/worktree context. Keywords: sidebar, sessions list, archive, pin, rename, delete, search, pagination, remote, recovery, worktree focus.
 
 Inventory inspected on 2026-10-26 at contracts baseline `f26ac112404e326478adb687c23ca9cc032acfef`. Paths are repository-relative. Re-run searches and inspect recent Git history before editing. This card is an acceptance inventory, not a concurrency lock: check live feature claims and session/workspace ownership across worktrees. `docs/reference/managed-workspaces.md` defines contracts; contract presence does not establish runtime capability.

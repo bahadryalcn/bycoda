@@ -1,5 +1,5 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   loadCrewGrowthEnabled,
@@ -7,6 +7,7 @@ import {
   subscribeCrewGrowthEnabled,
   loadCrewSceneEnabled,
   loadTabAnimationsEnabled,
+  subscribeTabAnimationsEnabled,
   saveCrewGrowthEnabled,
   saveCrewSceneEnabled,
   saveTabAnimationsEnabled,
@@ -19,10 +20,13 @@ import { Group, Row, Select, Toggle } from "./settingsControls";
 
 export function TabMotionSettings() {
   useLocale();
-  const [tabAnimationsEnabled, setTabAnimationsEnabled] = useState(loadTabAnimationsEnabled);
+  const [tabAnimationsEnabled, setTabAnimationsEnabled] = useStoredPreferenceState(
+    loadTabAnimationsEnabled,
+    subscribeTabAnimationsEnabled,
+  );
   const onTabAnimationsEnabled = (next: boolean) => {
     saveTabAnimationsEnabled(next);
-    setTabAnimationsEnabled(next);
+    setTabAnimationsEnabled(loadTabAnimationsEnabled());
   };
   return (
     <>
@@ -47,12 +51,18 @@ export function CrewSettings() {
   const crewTheme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   const characterTheme = crewTheme !== "classic";
   const growthLabel = characterTheme ? t("Color with context") : t("Grow with context");
-  const [crewSceneEnabled, setCrewSceneEnabled] = useStoredPreferenceState(loadCrewSceneEnabled, subscribeCrewSceneEnabled);
+  const [crewSceneEnabled, setCrewSceneEnabled] = useStoredPreferenceState(
+    loadCrewSceneEnabled,
+    subscribeCrewSceneEnabled,
+  );
   const onCrewSceneEnabled = (next: boolean) => {
     saveCrewSceneEnabled(next);
     setCrewSceneEnabled(next);
   };
-  const [crewGrowthEnabled, setCrewGrowthEnabled] = useStoredPreferenceState(loadCrewGrowthEnabled, subscribeCrewGrowthEnabled);
+  const [crewGrowthEnabled, setCrewGrowthEnabled] = useStoredPreferenceState(
+    loadCrewGrowthEnabled,
+    subscribeCrewGrowthEnabled,
+  );
   const onCrewGrowthEnabled = (next: boolean) => {
     saveCrewGrowthEnabled(next);
     setCrewGrowthEnabled(next);

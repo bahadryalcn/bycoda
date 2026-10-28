@@ -135,3 +135,30 @@ reviewed desktop families and native pattern are a first migration inventory,
 not whole-product completion. Exact briefs and main-plan Y:
 `temp/local/2026-10-27-settings-keybindings-audit/REDESIGN.md`,
 `temp/local/2026-10-27-workbench-audit/PLAN.md`.
+
+## H3 Settings pages A implementation, 2026-10-28
+
+Uncommitted Keybindings source now bounds the command/chord track and uses the
+shared Group/Row geometry without local row skins or density-token overrides.
+Filters show Category/Status labels, active values and truthful shown/total
+scope. Popup Reset filters remains filters-only; empty recovery explicitly clears
+search and filters. Existing retained state, reveal, recording/IME/modifier,
+Tab/Escape/blur, disable/reset and reservation policy are preserved.
+
+Quick composer now consumes root-written durable enabled/chord receipts and
+same-/sibling-window chord subscriptions. Editor and parent update without
+remounting active capture drafts. Failed persistence attempts restore previous
+storage/native state and refresh displayed values; original and rollback errors
+remain visible. Ordinary native/app saves also attempt rollback after partial
+native rejection and retain both failure causes. Native rollback is not atomic,
+and no native read-back operation is claimed. UI error context is localized;
+existing model validation detail remains an explicit localization dependency.
+
+Files: settings/ui/ShortcutSettings.tsx and ShortcutSettings.module.css;
+root owns the narrow settings.ts QuickComposer receipt/subscription edits.
+QuickComposerShortcutEditor regression source was added; **test edilmedi**.
+No tests/compiler/browser/native hotkey or owner preference operation was run by
+this writer. Root owns the final compiler. Shared recorder focus/keycap visuals
+and focus-triggered capture remain H1 contracts (KB-02/04); browser geometry and
+native partial-failure acceptance remain pending. Per-ID report and morning
+matrix: `temp/local/2026-10-28-settings-pages-a/personal.json`.

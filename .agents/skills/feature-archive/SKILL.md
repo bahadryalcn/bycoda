@@ -127,3 +127,22 @@ Audit/card ready for review, repair pending. Compact scoped collections and a
 truthful sidebar mode are proposals. No new bulk delete, remote authority or
 background sync inferred. No app source, real archive/open/restore/delete/filter,
 Host/native data call, build/install/release, index/branch change or commit.
+
+## H3 Archive Settings implementation, 2026-10-28 (uncommitted)
+
+ArchivePage uses bounded searchable project/conversation collections; all loaded
+records remain reachable. The sidebar archive-only preference is direct and
+accurately explained, patches the latest filter snapshot and reads back the result.
+Project rows reconcile sibling storage events and captured delete targets are
+removed/revalidated when no longer authorized. Restore/unarchive actions expose
+row pending/errors; a false delete/unarchive result no longer becomes completion.
+Shared confirmation and project-removal lifecycle/count/dirty safeguards remain.
+Conversation dates remain last activity and include year; scope and reveal IDs stay.
+
+Test edilmedi under the nightly owner rule. History read/error/completeness,
+project storage read/transaction outcomes and parent callback-result guarantees
+remain concrete owner dependencies. Large rendering/virtualization, lock races,
+local/sibling filters, cancellation/failure and themes/1280/800/narrow/keyboard/
+density need morning acceptance. See per-ID AR-01..11 handoff:
+`temp/local/2026-10-28-settings-pages-a/workspace.json`. No live data mutation,
+build/install/release or installed inclusion proof.

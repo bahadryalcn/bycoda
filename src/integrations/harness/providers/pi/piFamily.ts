@@ -1,3 +1,4 @@
+import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
@@ -1092,23 +1093,28 @@ function flushTurnError(flavor: PiFlavor, live: Live): void {
 }
 
 async function settleTurn(live: Live): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
   if (live.settling || live.cancelled || live.muteUpdates) return;
   if (!live.activeTurn && !live.turnDone) return;
   live.settling = true;
   const token = live.settleToken;
   try {
-    const stats = await live.rpc.request({ type: "get_session_stats" }, STATS_TIMEOUT_MS);
+    await live.rpc.request({ type: "get_session_stats" }, STATS_TIMEOUT_MS, (stats, work) => {
     if (live.settleToken === token && !live.cancelled) {
       const context = contextFromSessionStats(stats.data);
-      if (context) live.onEvent({ type: "context", ...context });
+      if (context) nativeOutputSink(work, () => live.onEvent({ type: "context", ...context }))();
     }
+    return stats;
+    });
   } catch {
     // meter stays on the last streamed usage
   }
   if (live.settleToken === token && !live.cancelled) {
-    finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+    nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
   }
   if (live.settleToken === token) live.settling = false;
+
+});
 }
 
 async function handleExtensionUi(
@@ -1117,16 +1123,18 @@ async function handleExtensionUi(
   live: Live,
   request: PiExtensionUiRequest,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   if (!needsExtensionUiReply(request)) {
     const text = request.title ? extensionUiTitle(request) : "";
     if (request.method === "setStatus" && request.statusKey)
-      live.onEvent({ type: "status", key: request.statusKey, text });
-    else if (text.trim()) live.onEvent({ type: "status", text });
+      emitNative({ type: "status", key: request.statusKey, text });
+    else if (text.trim()) emitNative({ type: "status", text });
     return;
   }
 
   if (live.cancelled || live.muteUpdates) {
-    await writeChild(sessionId, JSON.stringify(extensionUiResponse(request, "deny"))).catch(
+    await nativeOutputSink(outputWork, writeChild)(sessionId, JSON.stringify(extensionUiResponse(request, "deny"))).catch(
       () => undefined,
     );
     return;
@@ -1150,7 +1158,7 @@ async function handleExtensionUi(
                 value = request.options[Number(selected)];
             } else value = reply.custom?.[request.id];
           }
-          await writeChild(
+          await nativeOutputSink(outputWork, writeChild)(
             sessionId,
             JSON.stringify({
               type: "extension_ui_response",
@@ -1187,6 +1195,7 @@ async function handleExtensionUi(
         },
       ],
     };
+captureNativeOutputWorkEvent(outputWork, event);
     live.questions.get(uiId)!.event = event;
     showNextQueuedQuestion(live);
     const reply = await replyPromise;
@@ -1202,7 +1211,7 @@ async function handleExtensionUi(
         value = reply.custom?.[request.id];
       }
     }
-    live.onEvent({
+    emitNative({
       type: "question.resolved",
       requestId: uiId,
       decision:
@@ -1218,7 +1227,7 @@ async function handleExtensionUi(
   }
 
   const uiId = live.nextApprovalUiId++;
-  live.onEvent({
+  emitNative({
     type: "approval.requested",
     requestId: uiId,
     title: extensionUiTitle(request),
@@ -1228,10 +1237,12 @@ async function handleExtensionUi(
     live.approvals.set(uiId, { request, resolve });
   });
   live.approvals.delete(uiId);
-  live.onEvent({ type: "approval.resolved", requestId: uiId, decision });
-  await writeChild(sessionId, JSON.stringify(extensionUiResponse(request, decision))).catch(
+  emitNative({ type: "approval.resolved", requestId: uiId, decision });
+  await nativeOutputSink(outputWork, writeChild)(sessionId, JSON.stringify(extensionUiResponse(request, decision))).catch(
     () => undefined,
   );
+
+});
 }
 
 async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInput): Promise<void> {

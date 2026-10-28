@@ -5,6 +5,7 @@ import { useContext } from "react";
 import { NativePopupHost } from "../../../shared/ui/NativePopupHost";
 import type { ComponentPropsWithoutRef } from "react";
 import { ChevronDown, FolderTree, GitBranch } from "../../../shared/ui/icons";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 
 type Props = Omit<ComponentPropsWithoutRef<"button">, "children" | "className"> & {
   label: string;
@@ -35,7 +36,7 @@ export function GitPickerTrigger({
       className={"-ml-1.5 flex min-w-0 max-w-64 items-center gap-1.5"}
     >
       <Icon className="size-3.5 shrink-0" />
-      <span className="relative min-w-0 flex-1 truncate">
+      <span className="relative flex min-w-0 flex-1">
         {loading ? (
           <>
             {/* Reserve the same line box while the current branch loads. */}
@@ -43,7 +44,7 @@ export function GitPickerTrigger({
             <Skeleton label={t("Loading…")} lines={1} className="absolute inset-0" />
           </>
         ) : (
-          label
+          <MiddleTruncate mode="text">{label}</MiddleTruncate>
         )}
       </span>
       {worktree && (

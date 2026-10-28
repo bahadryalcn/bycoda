@@ -4,6 +4,9 @@ use serde_json::json;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
 
+pub(crate) mod buffer_reports;
+pub(crate) mod recovery_bridge;
+
 pub(crate) struct Activity {
     host: crate::remote::NativeWorkspaceTransport,
     id: String,
@@ -152,8 +155,7 @@ pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()>
     tx.execute_batch(
         "CREATE TABLE IF NOT EXISTS native_workspace_buffers (
         owner_id TEXT PRIMARY KEY, snapshot_json TEXT NOT NULL, updated_at INTEGER NOT NULL,
-        confirmed INTEGER NOT NULL DEFAULT 0);
-        UPDATE native_workspace_buffers SET confirmed=0;",
+        confirmed INTEGER NOT NULL DEFAULT 0);",
     )?;
     let has_nonce: bool = tx.query_row(
         "SELECT EXISTS(SELECT 1 FROM pragma_table_info('native_workspace_buffers') WHERE name='report_nonce')",
@@ -163,6 +165,8 @@ pub(crate) fn ensure_schema(conn: &rusqlite::Connection) -> rusqlite::Result<()>
     if !has_nonce {
         tx.execute_batch("ALTER TABLE native_workspace_buffers ADD COLUMN report_nonce TEXT")?;
     }
+    buffer_reports::install_schema(&tx)?;
+    tx.execute_batch("UPDATE native_workspace_buffers SET confirmed=0;")?;
     tx.commit()
 }
 
@@ -173,9 +177,12 @@ struct BufferReportReceipt {
     nonce: String,
     raw: String,
     updated_at: i64,
+    report_version: i64,
+    attributed: bool,
 }
 
 impl BufferReportReceipt {
+    #[cfg(test)]
     fn record(
         conn: &rusqlite::Connection,
         owner_id: &str,
@@ -188,20 +195,53 @@ impl BufferReportReceipt {
              ON CONFLICT(owner_id) DO UPDATE SET snapshot_json=excluded.snapshot_json,updated_at=excluded.updated_at,confirmed=0,report_nonce=excluded.report_nonce",
             rusqlite::params![owner_id, raw, updated_at, nonce],
         ).map_err(|error| error.to_string())?;
+        let report_version = buffer_reports::current_version(conn, owner_id)?;
         Ok(Self {
             owner_id: owner_id.into(),
             nonce,
             raw,
             updated_at,
+            report_version,
+            attributed: true,
+        })
+    }
+
+    fn record_owned(
+        conn: &rusqlite::Connection,
+        stamp: &buffer_reports::OwnerStamp,
+        raw: String,
+        updated_at: i64,
+    ) -> Result<Self, String> {
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let report_version = buffer_reports::record_owned(conn, stamp, &raw, updated_at, &nonce)?;
+        Ok(Self {
+            owner_id: stamp.id.clone(),
+            nonce,
+            raw,
+            updated_at,
+            report_version,
+            attributed: stamp.kind == "physical",
         })
     }
 
     /// A different process can overwrite a same-label row even in the same
     /// millisecond. An old successful response must never confirm its new data.
     fn confirm(self, conn: &rusqlite::Connection) -> Result<(), String> {
+        if !self.attributed {
+            // Host delivery does not attribute an unknown physical owner.
+            let matches: bool=conn.query_row("SELECT EXISTS(SELECT 1 FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id
+              WHERE b.owner_id=?1 AND b.report_nonce=?2 AND b.snapshot_json=?3 AND b.updated_at=?4 AND b.confirmed=0 AND i.current_version=?5)",
+              rusqlite::params![self.owner_id,self.nonce,self.raw,self.updated_at,self.report_version],|r|r.get(0)).map_err(|e|e.to_string())?;
+            return if matches {
+                Ok(())
+            } else {
+                Err("Native unattributed buffer report changed before acknowledgement".into())
+            };
+        }
         let changed = conn.execute(
-            "UPDATE native_workspace_buffers SET confirmed=1 WHERE owner_id=?1 AND report_nonce=?2 AND snapshot_json=?3 AND updated_at=?4 AND confirmed=0",
-            rusqlite::params![self.owner_id, self.nonce, self.raw, self.updated_at],
+            "UPDATE native_workspace_buffers SET confirmed=1 WHERE owner_id=?1 AND report_nonce=?2 AND snapshot_json=?3 AND updated_at=?4 AND confirmed=0
+             AND (SELECT current_version FROM native_workspace_buffer_identity WHERE owner_id=?1)=?5",
+            rusqlite::params![self.owner_id, self.nonce, self.raw, self.updated_at,self.report_version],
         ).map_err(|error| error.to_string())?;
         if changed != 1 {
             return Err(
@@ -219,7 +259,8 @@ fn report_owners(
     now: i64,
 ) -> Result<Vec<serde_json::Value>, String> {
     let mut statement = conn.prepare(
-        "SELECT owner_id,snapshot_json,updated_at,confirmed,report_nonce FROM native_workspace_buffers ORDER BY owner_id",
+        "SELECT b.owner_id,b.snapshot_json,b.updated_at,b.confirmed,b.report_nonce,i.current_version,i.kind,i.store_instance,i.incarnation
+         FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id ORDER BY b.owner_id",
     ).map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -229,19 +270,34 @@ fn report_owners(
                 row.get::<_, i64>(2)?,
                 row.get::<_, bool>(3)?,
                 row.get::<_, Option<String>>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, Option<String>>(7)?,
+                row.get::<_, Option<String>>(8)?,
             ))
         })
         .map_err(|error| error.to_string())?;
     let mut owners = Vec::new();
+    let source_identity = buffer_reports::identity(conn).ok();
     let mut own_report = false;
     for row in rows {
-        let (owner, snapshot, updated, confirmed, nonce) =
-            row.map_err(|error| error.to_string())?;
+        let (
+            owner,
+            snapshot,
+            updated,
+            confirmed,
+            nonce,
+            version,
+            kind,
+            store_instance,
+            incarnation,
+        ) = row.map_err(|error| error.to_string())?;
         let own = owner == receipt.owner_id;
         if own {
             if nonce.as_deref() != Some(receipt.nonce.as_str())
                 || snapshot != receipt.raw
                 || updated != receipt.updated_at
+                || version != receipt.report_version
             {
                 return Err(
                     "Native buffer report changed before delivery; wait for a fresh report".into(),
@@ -251,7 +307,13 @@ fn report_owners(
         }
         let buffers: serde_json::Value =
             serde_json::from_str(&snapshot).map_err(|error| error.to_string())?;
-        owners.push(json!({"ownerId":owner,"buffers":buffers,"updatedAt":updated,"unknown":!own && (!confirmed || now.saturating_sub(updated)>45000)}));
+        let mut output = json!({"ownerId":owner,"buffers":buffers,"updatedAt":updated,"unknown":(own && !receipt.attributed) || kind=="unattributed" || kind=="retained" || (!own && (!confirmed || now.saturating_sub(updated)>45000))});
+        if let Some((store, profile)) = &source_identity {
+            use sha2::{Digest, Sha256};
+            output["source"] = json!({"version":2,"sourceStoreId":store,"sourceProfileId":profile,"storeInstance":store_instance,"windowIncarnation":incarnation,"kind":kind,
+                "reportVersion":version,"reportNonce":nonce,"snapshotDigest":format!("{:x}",Sha256::digest(snapshot.as_bytes()))});
+        }
+        owners.push(output);
     }
     if !own_report {
         return Err(
@@ -268,8 +330,8 @@ pub fn managed_workspace_buffers(
     store: tauri::State<'_, crate::session_store::SessionStore>,
     buffers: Vec<BufferState>,
 ) -> Result<(), String> {
-    crate::native_window_lifecycle::buffers_write(&window, || {
-        report_buffers(&app, &window, &store, buffers)
+    crate::native_window_lifecycle::workspace_buffer_report(&window, &store, |owner| {
+        report_buffers(&app, &window, &store, buffers, owner)
     })
 }
 
@@ -278,6 +340,7 @@ fn report_buffers(
     window: &tauri::Window,
     store: &crate::session_store::SessionStore,
     buffers: Vec<BufferState>,
+    owner: Option<&crate::native_window_lifecycle::NativeBufferOwner>,
 ) -> Result<(), String> {
     let _gate = BUFFER_REPORT_GATE
         .lock()
@@ -300,7 +363,27 @@ fn report_buffers(
     let now = now_millis();
     let receipt = {
         let conn = store.lock_conn()?;
-        BufferReportReceipt::record(&conn, window.label(), raw, now)?
+        let stamp = match owner {
+            Some(owner) => buffer_reports::OwnerStamp {
+                id: format!("physical:v2:{}", owner.key()),
+                kind: "physical",
+                label: owner.label().into(),
+                store_instance: owner.store_instance().to_string(),
+                incarnation: Some(owner.incarnation().to_string()),
+            },
+            None => buffer_reports::OwnerStamp {
+                id: format!(
+                    "unattributed:v2:{}:{}",
+                    store.native_instance_id(),
+                    uuid::Uuid::new_v4()
+                ),
+                kind: "unattributed",
+                label: window.label().into(),
+                store_instance: store.native_instance_id().to_string(),
+                incarnation: None,
+            },
+        };
+        BufferReportReceipt::record_owned(&conn, &stamp, raw, now)?
     };
     let host =
         crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
@@ -329,6 +412,61 @@ fn report_buffers(
     )?;
     let conn = store.lock_conn()?;
     receipt.confirm(&conn)
+}
+
+#[tauri::command(async)]
+pub fn managed_workspace_buffer_recovery_list(
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    request: buffer_reports::ListRequest,
+) -> Result<buffer_reports::ReportPage, String> {
+    let conn = store.lock_conn()?;
+    buffer_reports::list(&conn, request)
+}
+
+#[tauri::command(async)]
+pub fn managed_workspace_host_buffer_recovery_list(
+    app: AppHandle,
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    request: recovery_bridge::ListRequest,
+    expected_context: Option<recovery_bridge::RecoveryContext>,
+) -> Result<recovery_bridge::RecoveryPage, String> {
+    recovery_bridge::list(&app, &store, request, expected_context)
+}
+
+#[tauri::command(async)]
+pub fn managed_workspace_host_buffer_recovery_read(
+    app: AppHandle,
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    source: recovery_bridge::RecoverySource,
+    expected_context: recovery_bridge::RecoveryContext,
+) -> Result<serde_json::Value, String> {
+    recovery_bridge::read(&app, &store, source, expected_context)
+}
+
+#[tauri::command(async)]
+pub fn managed_workspace_host_buffer_recovery_status(
+    app: AppHandle,
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    source: recovery_bridge::RecoverySource,
+    expected_context: recovery_bridge::RecoveryContext,
+) -> Result<serde_json::Value, String> {
+    recovery_bridge::status(&app, &store, source, expected_context)
+}
+#[tauri::command(async)]
+pub fn managed_workspace_buffer_recovery_read(
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    source: buffer_reports::ReportSource,
+) -> Result<buffer_reports::RetainedReport, String> {
+    let conn = store.lock_conn()?;
+    buffer_reports::read(&conn, source)
+}
+#[tauri::command(async)]
+pub fn managed_workspace_buffer_recovery_status(
+    store: tauri::State<'_, crate::session_store::SessionStore>,
+    source: buffer_reports::ReportSource,
+) -> Result<buffer_reports::ReportStatus, String> {
+    let conn = store.lock_conn()?;
+    buffer_reports::status(&conn, source)
 }
 
 /// Called before the local transport shuts down. Failure preserves the report;
@@ -500,12 +638,16 @@ mod tests {
         assert!(report_owners(&conn, &deleted, timestamp).is_err());
         assert!(deleted.confirm(&conn).is_err());
         assert_eq!(
-            conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers", [], |row| {
-                row.get::<_, i64>(0)
-            })
+            conn.query_row(
+                "SELECT COUNT(*) FROM native_workspace_buffers WHERE owner_id='main'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
             .unwrap(),
             0
         );
+        assert_eq!(conn.query_row("SELECT COUNT(*) FROM native_workspace_buffers b JOIN native_workspace_buffer_identity i ON i.owner_id=b.owner_id WHERE i.kind='retained' AND b.confirmed=0",[],|row|row.get::<_,i64>(0)).unwrap(),1,
+          "deleting the current report must preserve its unknown compatibility guard");
     }
 
     #[test]
@@ -665,20 +807,22 @@ mod tests {
         let path = root.join("file.ts");
         std::fs::write(&path, "retained").unwrap();
         assert!(assert_buffers_settled(&store, &root).is_err());
-        let insert = |dirty: bool, confirmed: bool, age: i64| {
+        // Each state is independent. Replacing a legacy row now deliberately
+        // retains the older unknown snapshot rather than washing its fence.
+        for (dirty, confirmed, age, expected) in [
+            (false, true, 0, true),
+            (true, true, 0, false),
+            (false, false, 0, false),
+            (false, true, 60000, false),
+        ] {
+            let store = crate::session_store::SessionStore::open_in_memory().unwrap();
             store.lock_conn().unwrap().execute("INSERT OR REPLACE INTO native_workspace_buffers(owner_id,snapshot_json,updated_at,confirmed) VALUES('main',?1,?2,?3)",
                 rusqlite::params![json!([{"path":crate::fs::path_to_js(&path),"dirty":dirty}]).to_string(),now_millis()-age,confirmed]).unwrap();
-        };
-        insert(false, true, 0);
-        assert!(assert_buffers_settled(&store, &root).is_ok());
-        insert(true, true, 0);
-        assert!(assert_buffers_settled(&store, &root).is_err());
-        insert(false, false, 0);
-        assert!(assert_buffers_settled(&store, &root).is_err());
-        insert(false, true, 60000);
-        assert!(assert_buffers_settled(&store, &root).is_err());
-        insert(true, true, 0);
-        assert!(assert_buffers_settled(&store, &root.join("sibling")).is_ok());
+            assert_eq!(assert_buffers_settled(&store, &root).is_ok(), expected);
+            if confirmed && age == 0 {
+                assert!(assert_buffers_settled(&store, &root.join("sibling")).is_ok());
+            }
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

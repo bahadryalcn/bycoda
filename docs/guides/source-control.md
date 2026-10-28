@@ -1,0 +1,34 @@
+# Source control review
+
+The Git panel reviews the repository or checkout selected in its target picker.
+The **Reviewing** path identifies that target. Workspace/session focus, the Git
+review target and the checkout where an agent executes are separate choices.
+When checkout discovery fails, the current panel remains available with local
+**Retry** and diagnostic details; a failed read does not establish an empty list.
+
+Changes retain staged and unstaged sections and the saved list/tree presentation.
+File rows expose the exact relative path and emphasize parent directories when
+basenames repeat. A partially staged path can appear in both sections, so filter
+results count staged and unstaged **entries**. Filtering changes the displayed list;
+**All** operations still affect the entire repository, including hidden entries.
+Selected-entry actions retain their own narrower scope and existing confirmations.
+
+The commit field retains its checkout draft. Message generation remains cancellable
+and allows staging. Commit variants are unavailable while generation is pending;
+if the draft or index changes, an obsolete generated result does not replace the
+current draft. The generation settings control shows effective provider/model,
+checkout override versus global/default selection, and provider-default account
+provenance in optional details. Account selection is resolved when generation runs.
+
+Remote actions distinguish incoming and outgoing commits and display their upstream
+destination. Existing publication, amend, conflict and destructive-operation gates
+remain in force. Diagnostic **Details** retains raw output and the checkout path,
+with explicit Copy, Notes and chat-draft actions. Replacing a diagnostic also replaces
+its local pending/result feedback; an older completion cannot mark a newer error saved.
+
+The diff toolbar's icon menu offers **Automatic**, **Inline** and **Side-by-side**.
+Automatic follows the available surface width at the existing 900px breakpoint;
+hidden zero-width surfaces retain their previous mode. Editor constraints can still
+prevent a saved split choice from being rendered. A failed preference save keeps the
+persisted selection and offers local retry. Diff consumers listen for changes from
+other windows without creating another preference store.

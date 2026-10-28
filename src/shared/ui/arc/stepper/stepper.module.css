@@ -1,7 +1,14 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    min-inline-size: 0;
+  }
+}
 .root {
   --marker: 1.75rem;
   --halo: 4px;
-  min-inline-size: 0;
   color: var(--color-content);
   font-family: var(--font-body);
   letter-spacing: var(--tracking-body);

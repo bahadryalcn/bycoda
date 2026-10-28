@@ -149,3 +149,56 @@ prior Notes repair records.
 Four paired Notes RPCs now share host/domains/notes/service.ts and neutral notes.ts DTOs across HTTP/WS. Existing session/project/note scope, global paired get, outer CAS token, finalizeSlug and worker commit grant remain authoritative. TempSQLite worker and loopback composition passed; no note data/UI/installed acceptance changed.
 
 Source only, uncommitted; no build/install/release stamp. Current full checklist and overlapping evidence: feature-host-runtime/SKILL.md and the local IMPLEMENTATION ledger.
+
+## H7 Notes implementation, 2026-10-28
+
+This supersedes audit-only delivery for N-L01–08/N-E01–10 without claiming
+runtime acceptance. Owner instruction in current session
+`28955f17-306b-4eee-b0e0-99d148ba36c3`, exact quote:
+"Notlar yeniden tasarımını uygula. Audit'i tekrarlama."
+Package `2026-10-28-notes-impl`; shared dirty main baseline
+`4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`, uncommitted. No delivery commit,
+build/install/release or installed-source inclusion is claimed.
+
+- Library: title-first rows, project context outside project grouping, honest
+  No preview and sort-corresponding Created/Updated date. One unique-note count,
+  named New note/selection, shared search, explicit Previous/Next and actual
+  grouped-row range. Full-body native search and stale guards remain. Deep
+  matches are named, not fabricated excerpts. Explicit Find reveals source
+  search and consumes its request; narrow Find preserves desktop Split.
+- Editor: Document is the new fallback; existing window-retained Source/Split
+  remain. Title leads; project and actual TagInput values share compact context.
+  Save/status stay direct; Add to chat is subordinate; Delete/slug/exact dates
+  use a named shared Popover. Delete confirmation, queued-save cancellation and
+  pending visibility remain explicit. Changed/saving/saved/failed/title-invalid
+  and recovery-copy states stay distinct.
+- Existing exact Markdown source-range editing is flattened into a continuous
+  page, not replaced by a rich-text/WYSIWYG engine. Read document ends editing
+  without saving. Shared ActionHost/InlineAction owns block actions; grouped
+  Text/Block/Insert retains every command. Both panes remain mounted hidden;
+  toolbar/image insertion target the visible active editor. Independent note/
+  pane scroll uses existing useRetainedScroll; Split retains its divider.
+- Save/conflict: CAS base/saved tokens, expectedUpdatedAt, serialized queue,
+  captured-field clearing and image ownership remain. Save as new note clears
+  only submitted fields/project still unchanged after the request; newer edits
+  survive. Global recovery retry stays visible/pending and guards duplicates.
+  Recovery remains app-session scoped, not restart-proof.
+
+H6 owns chat-only NoteMiniCard and SessionNotesPanel consumers; they were left
+unchanged. No Host/native/mobile/remote/global-theme/shared-hook change or real
+note operation was performed. Only missing English/Turkish keys were appended.
+
+Every record: **test edilmedi**. RULES.md forbids suites, fixture/dev servers
+and screenshots. One compiler stage ran: `pnpm exec tsc-rs --noEmit --fast`.
+The check:web:fast alias includes Vitest and was not used. Three Find iterator
+diagnostics were corrected afterward to read next()'s result. No rerun or clean
+final compiler pass is claimed. New helper/range tests are unexecuted.
+
+Morning acceptance: notes browser suite, focused NotesView/preview/library/
+window/save/image/context checks, light/dark 1280/800/narrow, complex/empty/long
+Markdown, keyboard/touch/IME/undo/caret, all commands/deep search, thousands of
+notes/tag duplicate pages, mode/scroll return, slow/failed/conflicted saves,
+copy recovery during editing and explicit chat attachment. Full 18-ID ledger,
+fingerprints and H6 dependencies: `temp/local/2026-10-28-notes-impl/handoff.json`.
+Live claims API unavailable; sessions and initially clean Notes sources inspected.
+Native subagents used with exclusive file ownership; no other session awaited.

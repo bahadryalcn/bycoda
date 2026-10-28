@@ -2,7 +2,7 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ColorPickerPopover } from "./ColorPickerPopover";
+import { ColorPickerPopover, ColorSwatchRow } from "./ColorPickerPopover";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -87,4 +87,47 @@ it("releases a drag when its owning picker unmounts", () => {
     window.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, clientX: 75 }));
   });
   expect(onChange).toHaveBeenCalledOnce();
+});
+
+it("marks the chosen swatch with a pressed state and a check glyph, not colour alone", () => {
+  const pick = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ColorSwatchRow, {
+        colors: ["#ff0000", "#00ff00", "#0000ff"],
+        labels: ["Red", "Green", "Blue"],
+        colorIndex: 1,
+        customColor: null,
+        customPickerOpen: false,
+        onPickIndex: pick,
+      }),
+    ),
+  );
+  const swatch = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  expect(swatch("Green").getAttribute("aria-pressed")).toBe("true");
+  expect(swatch("Green").querySelector("svg")).not.toBeNull();
+  expect(swatch("Red").getAttribute("aria-pressed")).toBe("false");
+  expect(swatch("Red").querySelector("svg")).toBeNull();
+  act(() => swatch("Blue").click());
+  expect(pick).toHaveBeenCalledExactlyOnceWith(2);
+});
+
+it("highlights the custom colour control while its picker is open and keeps the eyedropper glyph", () => {
+  act(() =>
+    root.render(
+      createElement(ColorSwatchRow, {
+        colors: ["#ff0000"],
+        colorIndex: 0,
+        customColor: null,
+        customPickerOpen: true,
+        onPickIndex: vi.fn(),
+        onToggleCustom: vi.fn(),
+      }),
+    ),
+  );
+  const custom = container.querySelector<HTMLButtonElement>('button[aria-label="Custom color"]')!;
+  expect(custom.getAttribute("aria-expanded")).toBe("true");
+  expect(custom.hasAttribute("data-selected")).toBe(true);
+  expect(custom.querySelector("svg")).not.toBeNull();
 });

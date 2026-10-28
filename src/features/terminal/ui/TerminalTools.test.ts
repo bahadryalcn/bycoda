@@ -22,6 +22,42 @@ beforeEach(() => {
   );
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it("shows the effective terminal size and resets only through its owner callback", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const reset = vi.fn();
+  const terminal = {
+    focus: vi.fn(),
+    input: vi.fn(),
+    paste: vi.fn(),
+    buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
+  } as unknown as Terminal;
+  try {
+    await act(async () => root.render(createElement(TerminalTools, {
+      terminal,
+      ready: true,
+      mode: null,
+      onModeChange: vi.fn(),
+      fontSize: 19,
+      savedFontSize: 13,
+      onResetFontSize: reset,
+    })));
+    await openTools(host);
+    expect(document.body.textContent).toContain("Terminal font size: 19px");
+    const button = [...document.querySelectorAll<HTMLButtonElement>("button")]
+      .find((node) => node.textContent === "Reset text size")!;
+    await act(async () => button.click());
+    expect(reset).toHaveBeenCalledOnce();
+    expect(terminal.input).not.toHaveBeenCalled();
+    expect(terminal.paste).not.toHaveBeenCalled();
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 async function openTools(host: HTMLElement) {
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Terminal · More actions"]')!.click(),

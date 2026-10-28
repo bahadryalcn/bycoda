@@ -171,6 +171,9 @@ import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 
 export const GIT_POLL_MS = ACTIVE_PROJECT_REFRESH_MS;
 
@@ -760,6 +763,10 @@ function ChangedFiles({
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const runtime = gitPanelRuntime(cwd);
   const generateAbortRef = runtime.generateAbort;
+  // Generation and staging may outlive/remount the visible panel; the checkout
+  // runtime owns both the observed identity and synchronous mutation revision.
+  const generationMutation = runtime.generationIndex;
+  generationMutation.identity = JSON.stringify([index?.branch, index?.head, index?.files]);
   // Generating reads the changes without touching the index, so it does not
   // take `busy` and files can be staged while it runs.
   const [generating, setGenerating] = useGitPanelState(cwd, "generating");
@@ -790,6 +797,11 @@ function ChangedFiles({
   } = usePrStatus(cwd, index?.branch, active && !!index?.remote);
   const staged = useMemo(() => files.filter((file) => file.staged), [files]);
   const unstaged = useMemo(() => files.filter((file) => file.unstaged), [files]);
+  const collisionNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const file of files) counts.set(basename(file.relative), (counts.get(basename(file.relative)) ?? 0) + 1);
+    return new Set([...counts].filter(([, count]) => count > 1).map(([name]) => name));
+  }, [files]);
   const visibleStaged = useMemo(
     () => staged.filter((file) => file.relative.toLowerCase().includes(deferredFileQuery)),
     [staged, deferredFileQuery],
@@ -887,12 +899,12 @@ function ChangedFiles({
     setView(changesView);
   };
 
-  const fail = (error: unknown) => {
+  const fail = (error: unknown, operation = "Git operation failed") => {
     const text = error instanceof Error ? error.message : String(error);
     setGitFeedback(cwd, {
       kind: "error",
       get title() {
-        return t("Git operation failed");
+        return t(operation);
       },
       detail: text,
     });
@@ -935,6 +947,7 @@ function ChangedFiles({
     if (queue.size === 0) setGitFeedback(cwd, null);
     queue.size += 1;
     queue.paths.push(file.path);
+    generationMutation.version++;
     setBusy(file.relative);
     setPending(ACTION_LABEL[action]);
     // The row moves at once; the reload below confirms it or puts it back.
@@ -946,7 +959,7 @@ function ChangedFiles({
         else if (action === "unstage") await gitUnstageFile(cwd, file.relative);
         else await gitDiscardFile(cwd, file.relative);
       } catch (error) {
-        fail(error);
+        fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
       }
     });
     queue.tail = task;
@@ -977,6 +990,7 @@ function ChangedFiles({
     if (queue.size === 0) setGitFeedback(cwd, null);
     queue.size += 1;
     queue.paths.push(...selectedFiles.map((file) => file.path));
+    generationMutation.version++;
     setBusy(action);
     setPending(ACTION_LABEL[action]);
     if (index) {
@@ -991,7 +1005,7 @@ function ChangedFiles({
         else if (action === "unstage") await gitUnstageFiles(cwd, paths);
         else await gitDiscardFiles(cwd, paths);
       } catch (error) {
-        fail(error);
+        fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
       }
     });
     queue.tail = task;
@@ -1024,6 +1038,7 @@ function ChangedFiles({
     setGitFeedback(cwd, null);
     setBusy(action);
     const discarded = action === "discard" ? unstaged.map((file) => file.path) : undefined;
+    generationMutation.version++;
     if (index) showOptimistic(applyIndexAction(index, action));
     try {
       if (action === "stage") await gitStageAll(cwd);
@@ -1032,7 +1047,7 @@ function ChangedFiles({
       onMutated(discarded, "index");
     } catch (error) {
       onMutated(discarded, "index");
-      fail(error);
+      fail(error, action === "stage" ? "Couldn’t stage changes" : action === "unstage" ? "Couldn’t unstage changes" : "Couldn’t discard changes");
     } finally {
       setBusy(null);
     }
@@ -1043,6 +1058,7 @@ function ChangedFiles({
     if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
     if (queue.size === 0) setGitFeedback(cwd, null);
     queue.size += 1;
+    generationMutation.version++;
     queue.paths.push(
       ...files.filter((file) => file.relative.startsWith(`${relative}/`)).map((file) => file.path),
     );
@@ -1054,7 +1070,7 @@ function ChangedFiles({
         if (action === "stage") await gitStageFile(cwd, relative);
         else await gitUnstageFile(cwd, relative);
       } catch (error) {
-        fail(error);
+        fail(error, action === "stage" ? "Couldn’t stage changes" : "Couldn’t unstage changes");
       }
     });
     queue.tail = task;
@@ -1068,8 +1084,11 @@ function ChangedFiles({
   };
 
   const generate = async () => {
-    if (!canGenerate || generateAbortRef.current) return;
+    if (!canGenerate || generateAbortRef.current || runtime.state.busy === "commit" || runtime.state.busy === "pr") return;
     const controller = new AbortController();
+    const draft = runtime.state.message;
+    const context = generationMutation.identity;
+    const mutation = generationMutation.version;
     generateAbortRef.current = controller;
     setGenerating(true);
     setGitFeedback(cwd, null);
@@ -1077,13 +1096,18 @@ function ChangedFiles({
       const generated = generationChoice
         ? await generateCommitMessage(cwd, textHarness, controller.signal, generationChoice)
         : await generateCommitMessage(cwd, textHarness, controller.signal);
-      if (!controller.signal.aborted) {
+      if (!controller.signal.aborted && generateAbortRef.current === controller) {
+        if (runtime.state.message !== draft || generationMutation.identity !== context ||
+            generationMutation.version !== mutation) {
+          setGitFeedback(cwd, { kind: "info", title: t("Draft or changes changed during generation. Generate again when ready.") });
+          return;
+        }
         if (!generated.trim())
           throw new Error("The provider returned an empty commit message. Retry generation.");
         setMessage(generated);
       }
     } catch (error) {
-      if (!controller.signal.aborted) fail(error);
+      if (!controller.signal.aborted) fail(error, "Couldn’t generate commit message");
     } finally {
       if (generateAbortRef.current === controller) {
         generateAbortRef.current = null;
@@ -1113,7 +1137,7 @@ function ChangedFiles({
         head: index?.head ?? null,
       });
     } catch (error) {
-      fail(error);
+      fail(error, "Couldn’t read commit message");
     }
   };
 
@@ -1131,6 +1155,7 @@ function ChangedFiles({
    */
   const commit = async (push: boolean, createPr = false, options?: CommitMenuOptions) => {
     const amending = options ? options.amend : amend;
+    if (runtime.state.generating || generateAbortRef.current) return;
     if (options ? busy : !canCommit) return;
     if (blockedMessage) return;
     if (!message.trim() && !amending) {
@@ -1145,7 +1170,7 @@ function ChangedFiles({
     // files the user did not stage.
     const stageAll =
       options?.scope === "all" || (options?.scope === "smart" && !amending && staged.length === 0);
-    if (gitPanelRuntime(cwd).state.busy) return;
+    if (runtime.state.busy || runtime.state.generating || generateAbortRef.current) return;
     setGitFeedback(cwd, null);
     setBusy(createPr ? "pr" : "commit");
     setPending("Committing…");
@@ -1186,7 +1211,7 @@ function ChangedFiles({
           retry: () =>
             retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
         });
-      else fail(error);
+      else fail(error, "Couldn’t commit changes");
       onMutated();
     } finally {
       setBusy(null);
@@ -1214,7 +1239,7 @@ function ChangedFiles({
       onMutated();
       reloadPr();
     } catch (error) {
-      fail(error);
+      fail(error, canPublish ? "Couldn’t publish branch" : "Couldn’t synchronize changes");
       onMutated();
     } finally {
       setBusy(null);
@@ -1326,8 +1351,8 @@ function ChangedFiles({
 
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
-      <div className="shrink-0 border-b border-stroke p-2">
-        <div className="relative">
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] items-start gap-1.5 border-b border-stroke p-2 @min-[30rem]/changes:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="relative min-w-0">
           <TextareaField
             label={t("Commit message")}
             hideLabel
@@ -1351,6 +1376,7 @@ function ChangedFiles({
             className={styles.message}
           />
           <div className={styles.generationActions}>
+            {generating ? <WorkingIndicator label={t("Generating message…")} /> : null}
             <Button
               variant="ghost"
               size="sm"
@@ -1366,19 +1392,9 @@ function ChangedFiles({
               }
               disabled={!generating && !canGenerate}
               onClick={() => (generating ? cancelGenerate() : void generate())}
-              className="group"
             >
               {generating ? (
-                <>
-                  <Loader
-                    className="size-3.5 animate-spin group-hover:hidden group-focus-visible:hidden"
-                    strokeWidth={1.75}
-                  />
-                  <X
-                    className="hidden size-3.5 group-hover:block group-focus-visible:block"
-                    strokeWidth={1.75}
-                  />
-                </>
+                <X className="size-3.5" strokeWidth={1.75} />
               ) : (
                 <WandSparkles className="size-3" strokeWidth={1} />
               )}
@@ -1395,7 +1411,7 @@ function ChangedFiles({
             )}
           </div>
         </div>
-        <div className="mt-1.5">
+        <div className="min-w-0">
           <SplitButton
             variant="primary"
             size="sm"
@@ -1442,7 +1458,7 @@ function ChangedFiles({
           <p
             role="alert"
             title={blockedMessage}
-            className="mt-1.5 text-[11px] leading-snug text-warning"
+            className="col-span-full text-ui-caption leading-snug text-warning"
           >
             {conflicts.length === 1
               ? t("Resolve the conflict before committing")
@@ -1599,6 +1615,7 @@ function ChangedFiles({
               <FileSection
                 title={t("Staged Changes")}
                 count={staged.length}
+                countLabel={deferredFileQuery ? `${visibleStaged.length} / ${staged.length}` : undefined}
                 headerExtra={fileFilter}
                 open={stagedExpanded}
                 onToggle={() => {
@@ -1627,6 +1644,7 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleStaged}
+                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="staged"
@@ -1645,6 +1663,7 @@ function ChangedFiles({
               <FileSection
                 title={t("Changes")}
                 count={unstaged.length}
+                countLabel={deferredFileQuery ? `${visibleUnstaged.length} / ${unstaged.length}` : undefined}
                 headerExtra={staged.length === 0 ? fileFilter : undefined}
                 open={changesExpanded}
                 onToggle={() => {
@@ -1682,6 +1701,7 @@ function ChangedFiles({
               >
                 <ChangeList
                   files={visibleUnstaged}
+                  collisionNames={collisionNames}
                   onOpenInEditor={onOpenInEditor}
                   view={view}
                   kind="unstaged"
@@ -1699,7 +1719,8 @@ function ChangedFiles({
             {deferredFileQuery ? (
               <p role="status" className="px-3 py-1 text-xs text-[var(--ui-text-secondary)]">
                 {visibleStaged.length + visibleUnstaged.length} / {staged.length + unstaged.length}{" "}
-                {t("files")}
+                {t("staged and unstaged entries")}
+                <span className="block">{t("All actions affect the entire repository, including hidden entries.")}</span>
               </p>
             ) : null}
           </>
@@ -1793,7 +1814,13 @@ function GitSyncActions({
   if (!canPublish && !canSync && !syncing && !showCreatePr && !showViewPr) return null;
 
   return (
-    <div className={styles.syncActions}>
+    <div className={`col-span-full ${styles.syncActions}`}>
+      <div className="col-span-full flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
+        <span>{t(canPublish ? "Publish Branch" : "Upstream")}</span>
+        <MiddleTruncate mode="path" className="min-w-0 flex-1">{dest}</MiddleTruncate>
+        {behind > 0 ? <span>{t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", { p0: behind })}</span> : null}
+        {ahead > 0 ? <span>{t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", { p0: ahead })}</span> : null}
+      </div>
       {canPublish ? (
         <Button
           variant="secondary"
@@ -1820,7 +1847,7 @@ function GitSyncActions({
           startIcon={<RefreshCw className="size-3.5 shrink-0" strokeWidth={1.75} />}
           onClick={onSync}
         >
-          <span className="min-w-0 truncate">{t("Sync Changes")}</span>
+          <span className="min-w-0 truncate">{t(behind > 0 && ahead > 0 ? "Sync Changes" : behind > 0 ? "Pull" : "Push")}</span>
           {behind > 0 ? (
             <Badge
               size="sm"
@@ -1884,6 +1911,7 @@ function GitSyncActions({
 export function FileSection({
   title,
   count,
+  countLabel,
   open,
   onToggle,
   view,
@@ -1894,6 +1922,7 @@ export function FileSection({
 }: {
   title: string;
   count: number;
+  countLabel?: string;
   open: boolean;
   onToggle: () => void;
   /** Without these there is no list/tree toggle: the section is always a list. */
@@ -1962,7 +1991,7 @@ export function FileSection({
             {title}
           </span>
           <Badge size="sm" className="ml-1 shrink-0 tabular-nums">
-            {count}
+            {countLabel ?? count}
           </Badge>
         </Button>
         {headerExtra}
@@ -2054,6 +2083,7 @@ async function remotePrContent(cwd: string) {
 type ChangeRowProps = {
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   files: GitChangedFile[];
+  collisionNames?: ReadonlySet<string>;
   view: ChangesView;
   kind: GitFileDiffKind;
   selected?: string;
@@ -2210,6 +2240,7 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
       <ChangeRow
         key={`${rest.kind}:${row.file.path}`}
         file={row.file}
+        collision={rest.collisionNames?.has(basename(row.file.relative))}
         active={isActive(row.file, rest.selected, rest.selectedKind, rest.kind)}
         busy={rest.busy === row.file.relative || !!rest.busy?.startsWith("folder:")}
         kind={rest.kind}
@@ -2252,6 +2283,11 @@ export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
   return (
     <ChangeSelectionCtx.Provider value={context}>
       <li className="list-none">
+        {selectedFiles.length > 1 ? (
+          <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+            {t("{p0} selected entries", { p0: selectedFiles.length })}
+          </p>
+        ) : null}
         <ul
           ref={listRef}
           style={virtualized ? { position: "relative", height: virtual.getTotalSize() } : undefined}
@@ -2338,9 +2374,9 @@ function ChangeDirRow({
   useLocale();
   return (
     <li style={style}>
-      <div
+      <ActionHost
         style={{ paddingLeft: 8 + depth * 12 }}
-        className="group flex h-7 w-full items-center gap-1 pr-2 leading-none text-content hover:bg-[var(--ui-surface-hover)]"
+        className="flex h-7 w-full items-center gap-1 pr-2 leading-none text-content"
       >
         <Button
           size="sm"
@@ -2360,11 +2396,11 @@ function ChangeDirRow({
             )}
           </span>
           <FileTypeIcon name={dir.name} isDir isOpen={open} size={16} />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-medium">{dir.name}</span>
+          <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">{dir.name}</MiddleTruncate>
         </Button>
-        <div className="hidden shrink-0 items-center group-focus-within:flex group-hover:flex pointer-coarse:flex">
-          <IconAction
-            title={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
+        <div className="flex shrink-0 items-center">
+          <InlineAction
+            label={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
               p1: dir.path,
             })}
             disabled={rest.busy !== null}
@@ -2375,7 +2411,7 @@ function ChangeDirRow({
             ) : (
               <Plus className="size-3.5" strokeWidth={1.75} />
             )}
-          </IconAction>
+          </InlineAction>
         </div>
         <span
           className={`grid w-3.5 shrink-0 place-items-center ${
@@ -2385,7 +2421,7 @@ function ChangeDirRow({
         >
           <span className="size-1.5 rounded-full bg-current" />
         </span>
-      </div>
+      </ActionHost>
     </li>
   );
 }
@@ -2449,6 +2485,7 @@ function sortChangeDir(dir: ChangeDir): string | null {
 
 const ChangeRow = memo(function ChangeRow({
   file,
+  collision = false,
   active,
   busy,
   kind,
@@ -2461,6 +2498,7 @@ const ChangeRow = memo(function ChangeRow({
   onAction,
 }: {
   file: GitChangedFile;
+  collision?: boolean;
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   active: boolean;
   busy: boolean;
@@ -2539,11 +2577,12 @@ const ChangeRow = memo(function ChangeRow({
         menuHandlers.onKeyDown(event);
       }}
     >
-      <div
+      <ActionHost
+        selected={selected}
         style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`group flex h-7 w-full items-center gap-1 pr-2 leading-none ${
+        className={`flex h-7 w-full items-center gap-1 pr-2 leading-none ${
           tree ? "" : "pl-2"
-        } ${selected ? "bg-selection text-content" : "text-content hover:bg-[var(--ui-surface-hover)]"}`}
+        } text-content`}
       >
         <Button
           size="sm"
@@ -2551,6 +2590,7 @@ const ChangeRow = memo(function ChangeRow({
           motion="none"
           type="button"
           title={file.relative}
+          aria-label={file.relative}
           data-git-file={file.path}
           onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
             event.currentTarget.focus({ preventScroll: true });
@@ -2566,59 +2606,47 @@ const ChangeRow = memo(function ChangeRow({
         >
           {tree ? <span className="size-4 shrink-0" /> : null}
           <FileTypeIcon name={name} isDir={false} size={16} />
-          <span className="min-w-0 flex-1 truncate">
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
             <span
-              className={`text-ui-secondary font-medium ${
+              className={`min-w-0 truncate ${collision && dir ? "max-w-[40%] shrink text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
                 file.status === "deleted" ? "line-through" : ""
               }`}
             >
               {name}
             </span>
             {dir ? (
-              <span className="ml-1.5 text-ui-micro text-[var(--ui-text-muted)] @max-[240px]/changes:hidden">
+              <MiddleTruncate mode="path" className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}>
                 {dir}
-              </span>
+              </MiddleTruncate>
             ) : null}
           </span>
         </Button>
         {busy ? (
-          <Loader
-            aria-label={t("Working")}
-            className="size-3.5 shrink-0 animate-spin text-[var(--ui-text-secondary)]"
-            strokeWidth={1.75}
-          />
+          <WorkingIndicator label={t("Working")} />
         ) : null}
         {/* Fixed-width slot so the row never shifts. Discard lives in the context menu and the section menu. */}
-        <div
-          className={`flex size-6 shrink-0 items-center justify-center ${
-            busy
-              ? "hidden"
-              : active
-                ? ""
-                : "opacity-0 group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
-          }`}
-        >
+        {!busy ? <div className="flex size-6 shrink-0 items-center justify-center">
           {kind === "staged" ? (
-            <IconAction
-              title={t("Unstage Changes")}
+            <InlineAction
+              label={t("Unstage Changes")}
               disabled={busy}
               onClick={() => perform("unstage")}
             >
               <Minus className="icon-sm" strokeWidth={1.75} />
-            </IconAction>
+            </InlineAction>
           ) : (
-            <IconAction title={t("Stage Changes")} disabled={busy} onClick={() => perform("stage")}>
+            <InlineAction label={t("Stage Changes")} disabled={busy} onClick={() => perform("stage")}>
               <Plus className="icon-sm" strokeWidth={1.75} />
-            </IconAction>
+            </InlineAction>
           )}
-        </div>
+        </div> : null}
         <span
           title={statusLabel(file.status)}
           className={`w-3.5 shrink-0 text-right font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
         >
           {statusLetter(file.status)}
         </span>
-      </div>
+      </ActionHost>
       {menu}
     </li>
   );

@@ -10,7 +10,7 @@ type Handlers = {
 // a scripted turn. `hang` leaves a turn open so it can be cancelled.
 const host = vi.hoisted(() => ({
   handlers: new Map<string, Handlers>(),
-  spawns: [] as { key: string; command: string; args: string[]; cwd: string }[],
+  spawns: [] as { key: string; command: string; args: string[]; cwd: string; logicalSessionId?: string }[],
   writes: [] as { key: string; text: string }[],
   killed: [] as string[],
   hang: false,
@@ -21,8 +21,8 @@ const host = vi.hoisted(() => ({
 }));
 
 vi.mock("../../core/child", () => ({
-  spawnChild: vi.fn(async (key: string, command: string, args: string[], cwd: string) => {
-    host.spawns.push({ key, command, args, cwd });
+  spawnChild: vi.fn(async (key: string, command: string, args: string[], cwd: string, _account?:unknown, _provider?:unknown, _generic?:unknown, _authority?:unknown, _guard?:unknown, logicalSessionId?:string) => {
+    host.spawns.push({ key, command, args, cwd, logicalSessionId });
     // agy opens a new conversation unless the resume id is one it knows.
     const at = args.indexOf("--conversation");
     const resumed = at >= 0 && args[at + 1] !== "lost" ? args[at + 1] : undefined;
@@ -133,6 +133,10 @@ beforeEach(async () => {
 });
 
 describe("antigravity stream-json transport", () => {
+  it("passes only an explicitly prepared logical hint to the generated route",async()=>{
+    await send(turn("hint",{nativeOutputSessionId:"s1"}).input);
+    expect(host.spawns[0].logicalSessionId).toBe("s1");
+  });
   it("spawns agy in the project folder and streams one turn", async () => {
     const { input, events } = turn("hello");
     await send(input);

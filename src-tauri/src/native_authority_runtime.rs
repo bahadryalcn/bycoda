@@ -53,10 +53,16 @@ impl Shared {
 struct NativeAuthorityRuntime {
     shared: Arc<Shared>,
     worker: Mutex<Option<JoinHandle<()>>>,
+    checkpoints: Mutex<Option<Arc<crate::native_authority_checkpoint::NativeRendererCheckpoints>>>,
 }
 impl NativeAuthorityRuntime {
     fn shutdown(&self) {
         self.shared.cancel();
+        if let Ok(checkpoints) = self.checkpoints.lock() {
+            if let Some(service) = checkpoints.as_ref() {
+                service.shutdown();
+            }
+        }
         if let Ok(mut slot) = self.worker.lock() {
             if let Some(worker) = slot.take() {
                 // A manager can be last released on the already-settled worker's
@@ -81,6 +87,7 @@ pub(crate) fn start(app: &tauri::AppHandle) {
         if !app.manage(NativeAuthorityRuntime {
             shared: shared.clone(),
             worker: Mutex::new(None),
+            checkpoints: Mutex::new(None),
         }) {
             return;
         }
@@ -111,6 +118,24 @@ pub(crate) fn shutdown(app: &tauri::AppHandle) {
     }
 }
 
+/// Only the actual selected-profile association installs this service. Merely
+/// having a Tauri Window cannot create a renderer checkpoint round/challenge.
+pub(crate) fn renderer_checkpoints(
+    app: &tauri::AppHandle,
+) -> Result<Arc<crate::native_authority_checkpoint::NativeRendererCheckpoints>, String> {
+    let runtime = app
+        .try_state::<NativeAuthorityRuntime>()
+        .ok_or("NATIVE_CHECKPOINT_SOURCE_UNAVAILABLE")?;
+    let checkpoints = runtime
+        .checkpoints
+        .lock()
+        .map_err(|_| "NATIVE_CHECKPOINT_SOURCE_UNAVAILABLE")?;
+    checkpoints
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "NATIVE_CHECKPOINT_SOURCE_UNAVAILABLE".into())
+}
+
 fn run(app: tauri::AppHandle, shared: Arc<Shared>) {
     let mut retry = Duration::from_secs(5);
     while !shared.stopping() {
@@ -133,6 +158,27 @@ fn associate(app: &tauri::AppHandle, shared: &Shared) -> Result<(), ()> {
         CapturedSourceBinding::capture_managed_store(app.clone(), &host.description.environment_id)
             .map_err(|_| ())?;
     let expected = binding.checked_source().map_err(|_| ())?;
+    let checkpoints = Arc::new(
+        crate::native_authority_checkpoint::NativeRendererCheckpoints::capture_managed(
+            app,
+            &host.description.environment_id,
+        )
+        .map_err(|_| ())?,
+    );
+    {
+        let runtime = app.try_state::<NativeAuthorityRuntime>().ok_or(())?;
+        let mut current = runtime.checkpoints.lock().map_err(|_| ())?;
+        if shared.stopping() {
+            return Err(());
+        }
+        if let Some(previous) = current.replace(checkpoints.clone()) {
+            previous.shutdown();
+        }
+    }
+    let _checkpoint_owner = CurrentCheckpoints {
+        app: app.clone(),
+        service: checkpoints,
+    };
     let profile = app.path().app_data_dir().map_err(|_| ())?;
     let deployment = crate::native_authority_deployment::provision(
         &host,
@@ -199,6 +245,26 @@ fn associate(app: &tauri::AppHandle, shared: &Shared) -> Result<(), ()> {
 
 struct CurrentEndpoint<'a> {
     shared: &'a Shared,
+}
+
+struct CurrentCheckpoints {
+    app: tauri::AppHandle,
+    service: Arc<crate::native_authority_checkpoint::NativeRendererCheckpoints>,
+}
+impl Drop for CurrentCheckpoints {
+    fn drop(&mut self) {
+        self.service.shutdown();
+        if let Some(runtime) = self.app.try_state::<NativeAuthorityRuntime>() {
+            if let Ok(mut current) = runtime.checkpoints.lock() {
+                if current
+                    .as_ref()
+                    .is_some_and(|service| Arc::ptr_eq(service, &self.service))
+                {
+                    *current = None;
+                }
+            }
+        }
+    }
 }
 impl Drop for CurrentEndpoint<'_> {
     fn drop(&mut self) {

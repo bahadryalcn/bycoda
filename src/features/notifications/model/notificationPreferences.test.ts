@@ -11,6 +11,26 @@ import {
 
 beforeEach(() => localStorage.clear());
 
+it("refuses to overwrite unreadable preferences while retaining the last known view", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  const known = loadNotificationPreferences();
+  localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+  expect(loadNotificationPreferences()).toEqual(known);
+  expect(() => updateNotificationPreferences(["other"], { disabled: [] })).toThrow();
+  expect(localStorage.getItem("bycoda.projectNotifications.v1")).toBe("{broken");
+});
+
+it("does not leak an unpersisted mutation into the retained notification view", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+  try {
+    expect(() => updateNotificationPreferences(["private"], { disabled: [] })).toThrow("quota");
+    expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);
+  } finally {
+    write.mockRestore();
+  }
+});
+
 it("temporarily silences the whole project and restores only its selected categories at expiry", () => {
   updateNotificationPreferences(["private"], {
     disabled: ["issues", "agentFinished", "agentInput"],

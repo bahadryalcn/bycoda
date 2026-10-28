@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Folder, FolderTree } from "../../../shared/ui/icons";
@@ -21,6 +21,8 @@ export function QuickWorkspaceControls({
   resolvedMode = value.mode ?? "current",
   resolvedBase,
   enabled,
+  canOpen,
+  prepare,
   onChange,
   onOpenChange,
   onClose,
@@ -30,6 +32,8 @@ export function QuickWorkspaceControls({
   resolvedMode?: WorkspaceMode;
   resolvedBase?: string;
   enabled: boolean;
+  canOpen?: () => boolean;
+  prepare?: (operation: () => Promise<unknown>) => Promise<unknown>;
   onChange: (choice: QuickWorkspace) => void;
   onOpenChange: (open: boolean) => void;
   onClose: () => void;
@@ -42,8 +46,10 @@ export function QuickWorkspaceControls({
   const toggleIntent = useRef<QuickGitKind | null>(null);
   const closedByTrigger = useRef<QuickGitKind | null>(null);
   const active = useRef<string | null>(null);
-  const props = useRef({ value, onChange, onOpenChange, onClose, onError });
-  props.current = { value, onChange, onOpenChange, onClose, onError };
+  const props = useRef({ value, onChange, onOpenChange, onClose, onError, canOpen });
+  useLayoutEffect(() => {
+    props.current = { value, onChange, onOpenChange, onClose, onError, canOpen };
+  });
   const cwd = value.tree?.path ?? value.cwd ?? "";
   const { branches, settled } = useProjectBranchesState(cwd, enabled && !!cwd);
   const base = value.base || resolvedBase || branches?.current || "HEAD";
@@ -73,7 +79,11 @@ export function QuickWorkspaceControls({
       activeKind.current = null;
       setOpen(null);
       props.current.onOpenChange(false);
-      if (payload.choice && payload.choice.cwd === props.current.value.cwd)
+      if (
+        payload.choice &&
+        payload.choice.cwd === props.current.value.cwd &&
+        (props.current.canOpen?.() ?? true)
+      )
         props.current.onChange(payload.choice);
       notifyGitChanged();
       if (payload.restoreFocus) props.current.onClose();
@@ -120,6 +130,7 @@ export function QuickWorkspaceControls({
       cancel();
       return;
     }
+    if (!enabled || (canOpen && !canOpen())) return;
     const id = crypto.randomUUID();
     const bounds = button.getBoundingClientRect();
     const request: QuickGitRequest = {
@@ -138,8 +149,10 @@ export function QuickWorkspaceControls({
     activeKind.current = kind;
     setOpen(kind);
     onOpenChange(true);
+    let actual: Promise<unknown> | undefined;
+    const open = () => (actual ??= invoke("quick_git_open", { request }));
     try {
-      await invoke("quick_git_open", { request });
+      await (prepare ? prepare(open) : open());
     } catch (error) {
       if (active.current !== id) return;
       active.current = null;

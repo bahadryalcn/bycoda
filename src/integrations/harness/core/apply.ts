@@ -37,6 +37,7 @@ import {
   capStepOutput,
 } from "../../../features/sessions/model/agentOutput";
 import { joinStreamText } from "./streamText";
+import { MAX_TOOL_DETAIL_CHARS } from "./toolDetailLimits";
 import { registerStreamingTextUpdate } from "../../../features/sessions/model/stableBlocks";
 import { registerBlockChanges } from "../../../features/sessions/model/blockChanges";
 import { taskListText } from "../../../features/sessions/model/taskList";
@@ -135,6 +136,7 @@ export function applyHarnessEvent(
         kind: event.kind,
         status: event.status,
         detail: event.detail,
+        ...(event.detailTruncated ? { detailTruncated: true } : {}),
         preview: event.preview,
         streaming:
           event.status !== "completed" && event.status !== "failed" && event.status !== "stopped",
@@ -1091,6 +1093,8 @@ function upsertTool(
     kind?: string;
     status?: string;
     detail?: string;
+    /** The provider already dropped part of `detail` before sending it. */
+    detailTruncated?: boolean;
     preview?: ToolPreview;
     streaming: boolean;
     agentModel?: string;
@@ -1101,7 +1105,9 @@ function upsertTool(
   const index = findToolIndex(session, patch);
   const prompt = capAgentPrompt(patch.agentPrompt);
   if (index < 0) {
-    const detail = capToolDetail(patch.detail);
+    const capped = capToolDetailMeta(patch.detail);
+    const detail = capped.detail;
+    const truncated = !!detail && (capped.truncated || patch.detailTruncated === true);
     const preview = fillPreview(patch.preview, detail, patch.kind, patch.title);
     const label = finalToolLabel(session, patch.kind, displayLabel(patch), preview);
     return appendBlock(session, {
@@ -1126,13 +1132,20 @@ function upsertTool(
         kind: patch.kind,
         status: patch.status,
         ...(detail ? { detail } : {}),
+        ...(truncated ? { outputTruncated: true } : {}),
         ...(preview ? { preview } : {}),
         ...(patch.background ? { background: true } : {}),
       },
     });
   }
   const prev = session.blocks[index];
-  const detail = capToolDetail(patch.detail) ?? prev.tool?.detail;
+  const capped = capToolDetailMeta(patch.detail);
+  const detail = capped.detail ?? prev.tool?.detail;
+  // A new detail replaces the old one, so its truncation state replaces too;
+  // an update without detail leaves the earlier text and its flag alone.
+  const truncated = capped.detail
+    ? capped.truncated || patch.detailTruncated === true
+    : prev.tool?.outputTruncated === true;
   const preview = fillPreview(
     mergeToolPreview(patch.preview, prev.tool?.preview),
     detail,
@@ -1155,6 +1168,7 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prompt || prev.agentRun?.prompt === prompt) &&
     (!prev.agentRun || prev.agentRun.name === agentName) &&
@@ -1186,6 +1200,7 @@ function upsertTool(
       kind,
       status,
       ...(detail ? { detail } : {}),
+      ...(detail && truncated ? { outputTruncated: true } : {}),
       ...(preview ? { preview } : {}),
       ...(prev.tool?.background ? { background: true } : {}),
       ...(prev.tool?.agentContext ? { agentContext: prev.tool.agentContext } : {}),
@@ -1231,7 +1246,16 @@ function endOpenAgentRun(block: Block, at: number): Block {
   return { ...block, agentRun: { ...block.agentRun, endedAt: at } };
 }
 
-const MAX_TOOL_DETAIL_CHARS = 8_000;
+export { MAX_TOOL_DETAIL_CHARS };
+
+/** Like `capToolDetail`, but says whether the cap dropped any text. */
+function capToolDetailMeta(value: string | undefined): { detail?: string; truncated: boolean } {
+  const text = value?.trim();
+  if (!text) return { truncated: false };
+  return text.length <= MAX_TOOL_DETAIL_CHARS
+    ? { detail: text, truncated: false }
+    : { detail: trimAndCapText(text, MAX_TOOL_DETAIL_CHARS), truncated: true };
+}
 
 function capToolDetail(value: string | undefined): string | undefined {
   return value ? trimAndCapText(value, MAX_TOOL_DETAIL_CHARS) || undefined : undefined;

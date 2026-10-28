@@ -231,7 +231,7 @@ pub fn session_apply_delta(
     store: State<'_, SessionStore>,
     delta: SessionDelta,
 ) -> Result<Option<DeltaAck>, String> {
-    crate::native_window_lifecycle::persistence_write(&window, || {
+    crate::native_window_lifecycle::session_persistence_write(&window, &delta.session.id, || {
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
         apply(&conn, &delta)
     })
@@ -426,6 +426,7 @@ pub fn session_get_page(
     revision: Option<i64>,
     limit: Option<usize>,
 ) -> Result<Option<TranscriptPage>, String> {
+    // Reconciliation can resume workspace-file effects, beyond this row's ID.
     let _ = crate::native_window_lifecycle::persistence_write(&window, || {
         super::rewind::reconcile_pending_native(&app, &store, Some(&session_id))
     });

@@ -21,6 +21,7 @@
   display: flex;
   flex: 1 1 180px;
   align-items: center;
+  gap: 12px;
   min-inline-size: 0;
   font-size: var(--ui-font-secondary);
 }
@@ -30,26 +31,6 @@
   white-space: nowrap;
   font-weight: 500;
   color: var(--color-content);
-}
-.port {
-  color: var(--ui-text-muted);
-}
-.key {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-inline-size: 0;
-  margin-inline-start: 16px;
-  color: var(--ui-text-muted);
-  font-size: var(--ui-font-caption);
-}
-.key > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.keyName {
-  max-inline-size: 180px;
 }
 .session :global(.bycoda-terminal-host) {
   padding: 12px 16px;

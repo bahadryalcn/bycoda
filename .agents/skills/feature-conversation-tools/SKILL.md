@@ -5,6 +5,16 @@ description: Conversation tools inventory for tool navigation, selected computer
 
 # Conversation tools
 
+## H4 shell integration boundary, 2026-10-28
+
+H4 changes shell pane edges and main/project menu consumers only; tool target,
+lease, Host, Devices, Logs and Servers/SSH lifecycle remain with existing owners.
+No tool RPC or permission gate changed. Source-only workbench handoff:
+`temp/local/2026-10-28-h4-workbench/handoff.json`, baseline
+`c03fa98d4819494a53ebfa61ff74320105bd05fc`, uncommitted. Test edilmedi under
+nightly RULES.md. This shell delivery does not close the Conversation tools
+redesign or prove live Host/device/native acceptance.
+
 ## Purpose and source identity
 
 Choose a computer/target, inspect or operate it deliberately, and understand the

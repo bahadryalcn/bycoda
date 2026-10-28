@@ -122,3 +122,26 @@ Repair summary restore/read/render/relock through Tasks/notification owners,
 with private-safe migration/recovery. No owner-data exposure was demonstrated;
 no real project/lock/summary was operated. See feature-notifications for scope,
 source anchors and unverified native/cache/privacy acceptance.
+
+## H3 Settings pages A implementation, 2026-10-28
+
+PrivacyStartupSettings keeps the existing launch/masking state and callbacks and
+adds explicit local-computer scope/full Group layout. FileAccessSettings now
+separates read-only Refresh/Retry from native consent, refreshes on window focus,
+serializes duplicate requests and reads back permissions after configure failure
+because native writes may have completed before a later error. Unknown status
+keeps consent changes disabled until refresh while labeling last-known access.
+Optional file scope/help is disclosed and remains searchable/revealable. Broad
+access help now states read/edit; selected-folder grants may be read-only and
+agent command/tool approval stays separate. No third Cancel/no-change native
+consent outcome is implied.
+
+Files: settings/ui/PrivacyStartupSettings.tsx, FileAccessSettings.tsx and its
+regression test source. **test edilmedi** under the owner night rule; no compiler,
+native dialog, password, owner setting or file-access operation was run by this
+writer. Root owns final compiler integration. PS-10/12 are proposed REVIEW;
+PS-11 retains its native acceptance boundary. H1 still owns GroupPrivacy.css's
+old page tracks/Group/Row skins and PS-02..09 group-lock/password/concealed-data/
+durability/cooldown repairs. H3 does not claim those are fixed or tested.
+Full per-ID dependencies and morning checks:
+`temp/local/2026-10-28-settings-pages-a/personal.json`.

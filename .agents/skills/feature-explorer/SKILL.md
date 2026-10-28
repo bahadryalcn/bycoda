@@ -5,6 +5,20 @@ description: Explorer file tree inventory for root/worktree identity, compact he
 
 # Explorer and file-tree management
 
+## H4 implementation packet, 2026-10-28
+
+Implementation and per-record review for EXP-01..09 are tracked in
+`temp/local/2026-10-28-explorer-content-impl/handoff.json`. The packet consumes
+existing shared controls and keeps Sidebar's keyed FileTree/root lifecycle,
+native filesystem permissions and cache/large-folder behavior. Prior native
+draft-persistence edits in files/data and editor consumers remain independently
+owned. Source baseline `4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`, shared `main`;
+no new commit is implied. User guide: `docs/guides/explorer-and-file-content.md`.
+Test edilmedi: nightly RULES.md defers all suites, fixtures, screenshots and
+native/remote operations. Consult the handoff for exact delivered scope, missing
+shared contracts and the single final fast typecheck result; no audit closure
+or installed acceptance follows from source implementation.
+
 ## Purpose and keywords
 
 Keep filesystem context, file reading and operation scope understandable in the

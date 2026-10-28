@@ -98,3 +98,20 @@ device run or product patch occurred. Diagram light728/dark390 is schematic only
 Audit/design ready; no app/preference/file/task/agent/note/Host/index/branch/build/
 install/release or commit changed. Baseline is context, not committed delivery.
 Update user guides and commit references when actual behavior is delivered.
+
+## H3 Settings implementation, 2026-10-28 (uncommitted)
+
+WorkspacePage now orders files/Explorer/editor, navigation tools/Working agents,
+macOS entry and this-computer experimental settings without equal stretched topic
+tracks. Notes consequences and Autosave's existing-dirty-buffer effect are visible.
+File-tab/format and Notes models subscribe to same/sibling changes; mounted
+controls read back synchronous saves and keep a local failure beside the setting.
+Quick-composer saved intent and native-registration error remain distinct.
+Shared Settings controls own row geometry; no editor, workspace lifecycle or Host
+operation was changed here. WS-01..08 evidence/dependencies are in
+`temp/local/2026-10-28-settings-pages-a/workspace.json`.
+
+Test edilmedi: nightly owner rule forbids tests, fixtures, servers and captures.
+Morning acceptance includes both themes/1280/800/narrow/density/keyboard, sibling
+preference events, storage failures, dirty-editor Autosave and macOS registration.
+Build/install/release and installed inclusion remain unverified.

@@ -110,13 +110,18 @@ function CheckAnnotation({
       : null;
   const location = `${annotation.path}${validLine ? `:${annotation.line}` : ""}`;
   const [messageTitle, ...messageLines] = annotation.message.split(/\r?\n/);
+  const levelLabel = annotation.level === "failure"
+    ? t("Failed")
+    : annotation.level === "warning"
+      ? t("Warning")
+      : annotation.level;
   const Mark = annotation.level === "failure" ? CircleX : AlertCircle;
   return (
     <div className="min-w-0 overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
       {annotation.path ? (
         <div className="flex min-w-0 items-center gap-1.5 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface-hover) px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
           <FileTypeIcon name={annotation.path} isDir={false} size={13} />
-          <span title={location} className="min-w-0 flex-1 truncate">
+          <span title={location} className="min-w-0 flex-1 break-all">
             {location}
           </span>
           {fileUrl ? (
@@ -143,7 +148,7 @@ function CheckAnnotation({
           {excerpt.map((line, index) => (
             <div
               key={index}
-              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle)/[0.06] text-(--ui-text-secondary)" : "border-transparent text-(--ui-text-secondary)"}`}
+              className={`flex min-w-max gap-4 border-l-2 pr-3 ${firstLine + index === annotation.line ? "border-(--ui-tone-danger-border) bg-(--ui-tone-danger-subtle) text-(--ui-tone-neutral-fg)" : "border-transparent text-(--ui-text-secondary)"}`}
             >
               <span className="w-8 shrink-0 select-none text-right tabular-nums text-(--ui-text-secondary)">
                 {firstLine + index}
@@ -162,7 +167,7 @@ function CheckAnnotation({
         />
         <div className="min-w-0 flex-1">
           <p className="max-h-32 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
-            {messageTitle}
+            {levelLabel ? <><span className="font-medium text-(--ui-tone-neutral-fg)">{levelLabel}</span>{" · "}</> : null}{messageTitle}
           </p>
           {messageLines.length ? (
             <pre className="mt-1.5 max-h-60 overflow-auto whitespace-pre-wrap break-words font-mono text-ui-micro leading-relaxed text-(--ui-text-secondary)">

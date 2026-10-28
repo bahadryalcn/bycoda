@@ -92,6 +92,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const closePreview = useRef<HTMLButtonElement>(null);
   const addSkillButton = useRef<HTMLButtonElement>(null);
   const [skills, setSkills] = useState<DiscoveredSkill[] | null>(null);
+  const [localLoading, setLocalLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const deletePending = useRef(false);
@@ -115,7 +116,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     return list;
   }, [connected, projectMachine, cwd]);
   const [machineLists, setMachineLists] = useState<
-    Record<string, { skills: DiscoveredSkill[] | null; error: string | null }>
+    Record<string, { skills: DiscoveredSkill[] | null; error: string | null; loading?: boolean }>
   >({});
   // The "Copy to ..." menu of a row on this computer, when several machines are connected.
   const [copyMenu, setCopyMenu] = useState<{
@@ -135,6 +136,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const [busy, setBusy] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const refreshScope = useRef("all");
+  const localScope = useRef(cwd);
+  const machineScopes = useRef(new Map<string, string>());
+  const policyScopes = useRef("");
+  const requestRefresh = (target = "all") => {
+    refreshScope.current = target;
+    setReload((value) => value + 1);
+  };
   const [disabledPaths, setDisabledPaths] = useState<string[]>(() => loadDisabledSkillPaths());
   const [policies, setPolicies] = useState<Record<string, SkillPolicy>>({});
   const [policyTarget, setPolicyTarget] = useState<string | null>(null);
@@ -142,17 +151,22 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const policyPending = useRef(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState("");
+  const [policyErrors, setPolicyErrors] = useState<Record<string, string>>({});
   // Path of the skill being copied to the other machine, if any.
   const [transferring, setTransferring] = useState<string | null>(null);
+  const transferPending = useRef(false);
   const [previewSkill, setPreviewSkill] = useState<DiscoveredSkill | null>(null);
   // The machine a previewed skill is read from; null for this computer.
   const [previewMachine, setPreviewMachine] = useState<Machine | null>(null);
   const [previewText, setPreviewText] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewRead, setPreviewRead] = useState(0);
   const [previewMode, setPreviewMode] = useMarkdownMode(`skill:${previewSkill?.path ?? ""}`);
   const previewOpen = previewSkill !== null;
   const [editing, setEditing] = useState(false);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [split, setSplit] = useState(false);
+  const [drafts, setDrafts] = useRetainedState<Record<string, string>>(`skills:${pathKey(cwd)}:drafts`, {});
+  const [draftBases, setDraftBases] = useRetainedState<Record<string, string>>(`skills:${pathKey(cwd)}:draft-bases`, {});
   const [saving, setSaving] = useState(false);
   const savePending = useRef(false);
   const editorView = useRef<EditorView | null>(null);
@@ -170,12 +184,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     setActionResult("");
     try {
       // Refuse to overwrite an edit made outside this screen since it was read.
-      if ((await readTextFile(path)) !== previewText)
+      if ((await readTextFile(path)) !== (draftBases[path] ?? previewText))
         throw new Error(
           t("SKILL.md changed on disk. Reopen the skill before saving; your draft is kept."),
         );
       await writeTextFile(path, content);
       setPreviewText(content);
+      setDraftBases((current) => ({ ...current, [path]: content }));
       setDrafts((current) => {
         if (current[path] !== content) return current;
         const next = { ...current };
@@ -185,7 +200,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       invalidateSkills();
       window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
       setActionResult(t("Skill saved."));
-      setReload((value) => value + 1);
+      requestRefresh("local");
     } catch (err) {
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -203,6 +218,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     setShowCreate(false);
     setActionsMenu(null);
     setEditing(trigger === "name" && !machine && canDeleteSkill(skill));
+    setSplit(false);
     previewOpener.current = `${trigger}:${skill.path}`;
     setPreviewMachine(machine);
     if (previewSkill?.path !== skill.path) {
@@ -271,12 +287,16 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [previewSkill, previewMachine]);
+  }, [previewSkill, previewMachine, previewRead]);
 
   useEffect(() => {
     let cancelled = false;
     const remote = isRemoteProjectPath(cwd);
-    setSkills(null);
+    const changedScope = localScope.current !== cwd;
+    localScope.current = cwd;
+    if (!changedScope && skills !== null && !localLoading && refreshScope.current !== "all" && refreshScope.current !== "local") return;
+    if (changedScope) setSkills(null);
+    setLocalLoading(true);
     setError(null);
     // This computer's own skills always; with a remote project, without the
     // project folder, which lives on the other machine.
@@ -289,7 +309,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       .catch((err: unknown) => {
         if (cancelled) return;
         setError(err instanceof Error ? err.message : String(err));
-      });
+      })
+      .finally(() => { if (!cancelled) setLocalLoading(false); });
     return () => {
       cancelled = true;
     };
@@ -301,15 +322,23 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     .join("\0");
   useEffect(() => {
     let cancelled = false;
-    setMachineLists({});
     for (const machine of machines) {
+      const changedScope = machineScopes.current.get(machine.environmentId) !== machine.cwd;
+      machineScopes.current.set(machine.environmentId, machine.cwd);
+      if (!changedScope && machineLists[machine.environmentId]?.skills && !machineLists[machine.environmentId]?.loading && refreshScope.current !== "all" && refreshScope.current !== machine.environmentId) continue;
+      setMachineLists((current) => ({ ...current, [machine.environmentId]: { skills: changedScope ? null : (current[machine.environmentId]?.skills ?? null), error: null, loading: true } }));
       const settle = (value: { skills: DiscoveredSkill[] | null; error: string | null }) => {
         if (!cancelled)
-          setMachineLists((current) => ({ ...current, [machine.environmentId]: value }));
+          setMachineLists((current) => ({ ...current, [machine.environmentId]: { ...value, loading: false } }));
       };
       listMachineSkills(machine.environmentId, machine.cwd)
         .then((skills) => settle({ skills, error: null }))
-        .catch((err: unknown) => settle({ skills: null, error: machineFailure(machine, err) }));
+        .catch((err: unknown) => {
+          if (!cancelled) setMachineLists((current) => ({
+            ...current,
+            [machine.environmentId]: { skills: current[machine.environmentId]?.skills ?? null, error: machineFailure(machine, err), loading: false },
+          }));
+        });
     }
     return () => {
       cancelled = true;
@@ -325,21 +354,29 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     };
     window.addEventListener(SKILLS_CHANGE_EVENT, onChange);
     window.addEventListener("storage", onChange);
-    const onFocus = () => setReload((value) => value + 1);
+    let focusFrame = 0;
+    const onFocus = () => {
+      if (focusFrame) return;
+      focusFrame = requestAnimationFrame(() => { focusFrame = 0; requestRefresh(); });
+    };
     window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener(SKILLS_CHANGE_EVENT, onChange);
       window.removeEventListener("storage", onChange);
       window.removeEventListener("focus", onFocus);
+      cancelAnimationFrame(focusFrame);
     };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const topologyChanged = policyScopes.current !== machinesKey;
+    policyScopes.current = machinesKey;
     const settle = (key: string, value: unknown) => {
       const policy = parseSkillPolicy(value);
       if (!cancelled) {
         setPolicies((current) => ({ ...current, [key]: policy }));
+        setPolicyErrors((current) => ({ ...current, [key]: "" }));
         if (key === "local") {
           cacheSkillPolicy(policy);
           setDisabledPaths(policy.disabledPaths);
@@ -347,19 +384,20 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         }
       }
     };
-    void getSkillPolicy("", loadDisabledSkillPaths())
+    if (topologyChanged || !policies.local || refreshScope.current === "all" || refreshScope.current === "local") void getSkillPolicy("", loadDisabledSkillPaths())
       .then((value) => settle("local", value))
       .catch((error: unknown) => {
-        if (!cancelled) setActionError(String(error));
+        if (!cancelled) setPolicyErrors((current) => ({ ...current, local: String(error) }));
       });
     for (const machine of machines) {
+      if (!topologyChanged && policies[machine.environmentId] && refreshScope.current !== "all" && refreshScope.current !== machine.environmentId) continue;
       void runMachineCommand(machine.environmentId, "skill_policy_get", {
         cwd: machine.cwd,
         legacyDisabledPaths: loadDisabledSkillPaths(),
       })
         .then((value) => settle(machine.environmentId, value))
         .catch((error: unknown) => {
-          if (!cancelled) setActionError(machineFailure(machine, error));
+          if (!cancelled) setPolicyErrors((current) => ({ ...current, [machine.environmentId]: machineFailure(machine, error) }));
         });
     }
     return () => {
@@ -411,6 +449,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           : await setSkillEnabled("", skill.name, enabled),
       );
       setPolicies((current) => ({ ...current, [machine?.environmentId ?? "local"]: policy }));
+      setPolicyErrors((current) => ({ ...current, [machine?.environmentId ?? "local"]: "" }));
       if (!machine) {
         cacheSkillPolicy(policy);
         setDisabledPaths(policy.disabledPaths);
@@ -420,7 +459,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       setActionError(null);
       setActionResult(t("Skill preference saved for all providers on this machine."));
     } catch (error) {
-      setActionError(`Could not save the skill preference. ${String(error)}`);
+      setPolicyErrors((current) => ({ ...current, [machine?.environmentId ?? "local"]: `Could not save the skill preference. ${String(error)}` }));
     } finally {
       policyPending.current = false;
       setPolicyTarget(null);
@@ -458,7 +497,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         invalidateSkills();
         window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
         setAdding(false);
-        setReload((value) => value + 1);
+        requestRefresh("local");
       })
       .catch((err: unknown) => {
         setCreateError(err instanceof Error ? err.message : String(err));
@@ -473,7 +512,12 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     from: Machine | null,
     to: Machine | null,
   ): Promise<void> => {
-    if (deletePending.current) return;
+    if (deletePending.current || transferPending.current || savePending.current) return;
+    if (drafts[skill.path] !== undefined) {
+      setActionError(t("Save or discard the draft before transferring."));
+      return;
+    }
+    transferPending.current = true;
     const targetName = to?.name ?? t("this computer");
     const move = {
       skill,
@@ -503,12 +547,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       setActionResult(
         t("Copied {p0} to personal skills on {p1}.", { p0: skill.name, p1: targetName }),
       );
-      setReload((value) => value + 1);
+      requestRefresh(to?.environmentId ?? "local");
     } catch (err) {
       setActionError(
-        `Could not copy ${skill.name} to ${targetName}. ${err instanceof Error ? err.message : String(err)}`,
+        `${t("Copy could not be confirmed for {p0} on {p1}. Check the target before trying again.", { p0: skill.name, p1: targetName })} ${err instanceof Error ? err.message : String(err)}`,
       );
+      requestRefresh(to?.environmentId ?? "local");
     } finally {
+      transferPending.current = false;
       setTransferring(null);
     }
   };
@@ -546,7 +592,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       setActionResult(
         t("Deleted {p0} from {p1}.", { p0: skill.name, p1: machine?.name ?? t("this computer") }),
       );
-      setReload((value) => value + 1);
+      requestRefresh(machine?.environmentId ?? "local");
     } catch (err) {
       setActionError(
         `Could not delete ${skill.name}. ${err instanceof Error ? err.message : String(err)}`,
@@ -582,7 +628,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             disabled={saving}
             onClick={() => onPreview(skill, "name", machine)}
           >
-            <span className={styles.truncate}>{skill.name}</span>
+            <span className={styles.skillName}>{skill.name}</span>
             {modified ? <span title={t("Draft")}>·</span> : null}
           </Button>
           {skill.modelInvocable === false || skill.userInvocable === false ? (
@@ -608,7 +654,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           {policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path]) ? (
             <LoaderCircle className="icon-xs animate-spin" aria-label={t("Saving…")} />
           ) : null}
-          {disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
+          {!policy && disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
         </div>
         <div className={styles.rowActions}>
           <Button
@@ -679,16 +725,14 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     shown: DiscoveredSkill[],
     failure: string | null,
     machine: Machine | null = null,
-  ) =>
-    failure ? (
-      <Alert tone="danger" role="alert">
-        {failure}
-      </Alert>
-    ) : all === null ? (
+  ) => (
+    <>
+    {failure ? <Alert tone="danger" role="alert" action={<Button onClick={() => requestRefresh(machine?.environmentId ?? "local")}>{t("Retry")}</Button>}>{failure}</Alert> : null}
+    {all === null ? (!failure ? (
       <Alert tone="info" role="status">
         {t("Loading skills…")}
       </Alert>
-    ) : shown.length === 0 ? (
+    ) : null) : shown.length === 0 ? (
       <p className={styles.message}>
         {all.length
           ? t("No matching skills")
@@ -698,7 +742,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       </p>
     ) : (
       shown.map((skill) => renderRow(skill, machine))
-    );
+    )}
+    </>
+  );
 
   const actionFeedback = (
     <>
@@ -732,10 +778,11 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               label={t("Refresh skills")}
               tooltip={t("Rescan skill folders")}
               disabled={(skills === null && !error) || saving}
+              loading={localLoading || Object.values(machineLists).some((entry) => entry.loading)}
               onClick={() => {
                 invalidateSkills();
                 window.dispatchEvent(new Event(SKILLS_CHANGE_EVENT));
-                setReload((value) => value + 1);
+                requestRefresh();
               }}
             >
               <RefreshCw className="icon-sm" aria-hidden="true" />
@@ -772,10 +819,11 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         </header>
         {!previewSkill ? actionFeedback : null}
         <div ref={lockOverscroll} className={styles.list}>
-          <details open className={styles.machine}>
+          <details open className={styles.machine} aria-busy={localLoading}>
             <summary>
-              {t("This computer")} <span>{filtered.length}</span>
+              {t("This computer")} <span>{skills === null ? "…" : filtered.length}</span>
             </summary>
+            {policyErrors.local ? <Alert tone="danger" action={<Button onClick={() => requestRefresh("local")}>{t("Retry")}</Button>}>{policyErrors.local}</Alert> : null}
             {renderList(skills, filtered, error)}
           </details>
           {machineShown.map(({ machine, all, shown }) => (
@@ -783,11 +831,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               open
               key={machine.environmentId}
               className={styles.machine}
+              aria-busy={machineLists[machine.environmentId]?.loading}
               aria-label={t("Skills on {p0}", { p0: machine.name })}
             >
               <summary>
-                {machine.name} <span>{shown.length}</span>
+                {machine.name} <span>{all === null ? "…" : shown.length}</span>
               </summary>
+              {policyErrors[machine.environmentId] ? <Alert tone="danger" action={<Button onClick={() => requestRefresh(machine.environmentId)}>{t("Retry")}</Button>}>{policyErrors[machine.environmentId]}</Alert> : null}
               {renderList(all, shown, machineLists[machine.environmentId]?.error ?? null, machine)}
             </details>
           ))}
@@ -894,14 +944,16 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                 <span className={styles.fileLabel}>SKILL.md</span>
                 <Segmented
                   label={t("Markdown view")}
-                  value={editing ? "edit" : previewMode}
+                  value={split ? "split" : editing ? "edit" : previewMode}
                   options={[
                     ...(editable ? [{ value: "edit", label: t("Edit") }] : []),
                     { value: "preview", label: t("Preview") },
                     { value: "source", label: t("Source") },
+                    { value: "split", label: t("Split") },
                   ]}
                   onChange={(mode) => {
                     setEditing(mode === "edit");
+                    setSplit(mode === "split");
                     if (mode === "preview" || mode === "source") setPreviewMode(mode);
                   }}
                 />
@@ -910,11 +962,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
                     variant="ghost"
                     disabled={saving}
                     onClick={() =>
-                      setDrafts((current) => {
+                      { setDraftBases((current) => {
+                        const next = { ...current }; delete next[previewSkill.path]; return next;
+                      }); setDrafts((current) => {
                         const next = { ...current };
                         delete next[previewSkill.path];
                         return next;
-                      })
+                      }); }
                     }
                   >
                     {t("Discard changes")}
@@ -934,33 +988,41 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </header>
             <div key={previewSkill.path} className={styles.document}>
               {previewError ? (
-                <Alert tone="danger" role="alert">
+                <Alert tone="danger" role="alert" action={<Button onClick={() => setPreviewRead((value) => value + 1)}>{t("Retry")}</Button>}>
                   {previewError}
                 </Alert>
               ) : draft === null ? (
                 <Alert tone="info" role="status">
                   {t("Loading skill…")}
                 </Alert>
-              ) : editing && editable ? (
+              ) : (editing && editable) || split ? (
+                <div className={split ? styles.split : styles.editPane}>
+                  <section className={styles.rawPane} aria-label={editable ? t("Skill instructions") : t("Source")}>
+                  {editable ? (
                 <NoteMarkdownEditor
                   value={draft}
                   viewRef={editorView}
                   minHeight={320}
                   label={t("Skill instructions")}
-                  onChange={(text) =>
-                    setDrafts((current) => ({ ...current, [previewSkill.path]: text }))
-                  }
+                  onChange={(text) => {
+                    setDraftBases((current) => ({ ...current, [previewSkill.path]: drafts[previewSkill.path] === undefined ? (previewText ?? "") : (current[previewSkill.path] ?? previewText ?? "") }));
+                    setDrafts((current) => ({ ...current, [previewSkill.path]: text }));
+                  }}
                   onSave={() => void onSave()}
                 />
+                  ) : <MarkdownSource text={draft} />}
+                  </section>
+                  {split ? <section className={styles.previewPane} aria-label={t("Preview")}><SkillDocumentPreview text={draft} className={styles.reading} cwd={previewMachine?.cwd ?? cwd} documentPath={previewSkill.path} /></section> : null}
+                </div>
               ) : previewMode === "preview" ? (
-                <SkillDocumentPreview text={draft} />
+                <SkillDocumentPreview text={draft} className={styles.reading} cwd={previewMachine?.cwd ?? cwd} documentPath={previewSkill.path} />
               ) : (
                 <MarkdownSource text={draft} />
               )}
             </div>
             <footer className={styles.detailFooter}>
-              <span>{dirty ? t("Unsaved changes") : t("Saved")}</span>
-              <span>{editing ? t("Ctrl/Cmd+S to save") : t("Markdown")}</span>
+              <span>{previewError ? t("Could not read skill") : previewText === null ? t("Loading skill…") : saving ? t("Saving…") : dirty ? t("Unsaved changes") : t("Saved")}</span>
+              <span>{editing || (split && editable) ? t("Ctrl/Cmd+S to save") : t("Markdown")}</span>
             </footer>
           </aside>
         ) : showCreate ? null : (

@@ -3,6 +3,54 @@ import { isTurnInterruptMessage } from "../../sessions/model/inFlight";
 import { sessionIssue } from "../../sessions/model/sessionIssue";
 import { closeLeaf, leafIds, type WorkspaceTab } from "./layout";
 import { parseWorkspaceSnapshot, type WorkspaceSnapshot } from "./workspaceSnapshot";
+import { isRemoteProjectPath, sameProjectPath } from "../../projects/model/recents";
+import type { WorkspaceSessionStub } from "./workspaceSnapshot";
+
+/** One population for the panel and rail; never acknowledges or removes history. */
+export function eligibleRecoverySessions(
+  recovery: SessionRecovery,
+  sessions: readonly Session[],
+  isLocked: (cwd: string) => boolean,
+  hostSessionFor: (id: string) => string | null | undefined,
+): WorkspaceSessionStub[] {
+  const seen = new Set<string>();
+  const rows: WorkspaceSessionStub[] = [];
+  for (const stub of recovery.workspace.sessions) {
+    if (seen.has(stub.id) || recovery.resolvedIds?.includes(stub.id) || isLocked(stub.cwd)) continue;
+    seen.add(stub.id);
+    if (isRemoteProjectPath(stub.cwd) && stub.remoteSessionId) {
+      if (sessions.some((session) => sameProjectPath(session.cwd, stub.cwd) && hostSessionFor(session.id) === stub.remoteSessionId)) continue;
+      if (rows.some((row) => sameProjectPath(row.cwd, stub.cwd) && row.remoteSessionId === stub.remoteSessionId)) continue;
+    }
+    rows.push(stub);
+  }
+  return rows;
+}
+
+export class RecoveryOpenError extends Error {
+  constructor(
+    readonly opened: string[],
+    readonly alreadyOpen: string[],
+    readonly failed: string[],
+    readonly acknowledgmentFailed = false,
+  ) {
+    super(acknowledgmentFailed ? "Conversation tabs are open, but the recovery update could not be saved." : "Some recovery entries could not be opened.");
+    this.name = "RecoveryOpenError";
+  }
+}
+
+type RecoverySaveFailure = { owner: object; retry: () => Promise<void> } | null;
+let saveFailure: RecoverySaveFailure = null;
+const saveFailureListeners = new Set<() => void>();
+export const getRecoverySaveFailure = () => saveFailure;
+export const subscribeRecoverySaveFailure = (listener: () => void) => {
+  saveFailureListeners.add(listener);
+  return () => { saveFailureListeners.delete(listener); };
+};
+export function setRecoverySaveFailure(value: RecoverySaveFailure) {
+  saveFailure = value;
+  for (const listener of saveFailureListeners) listener();
+}
 
 export type SessionRecovery = {
   capturedAt: number;

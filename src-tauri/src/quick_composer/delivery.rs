@@ -11,6 +11,7 @@ pub struct Delivery {
 struct Pending {
     delivery: Delivery,
     owner: String,
+    source_store: Option<uuid::Uuid>,
 }
 
 #[derive(Default)]
@@ -22,29 +23,62 @@ impl LaunchQueue {
     }
 
     pub fn push(&mut self, request: QuickLaunch, owner: String) {
+        self.push_reserved(request, owner, uuid::Uuid::new_v4().to_string(), None);
+    }
+
+    pub(crate) fn push_reserved(
+        &mut self,
+        request: QuickLaunch,
+        owner: String,
+        id: String,
+        source_store: Option<uuid::Uuid>,
+    ) {
         self.0.push_back(Pending {
-            delivery: Delivery {
-                id: uuid::Uuid::new_v4().to_string(),
-                request,
-            },
+            delivery: Delivery { id, request },
             owner,
+            source_store,
         });
     }
 
     // Claims are repeatable until acknowledged. Only the owning window can
     // accept a delivery; a destroyed owner can be replaced by a live window.
+    #[cfg(test)]
     pub fn claim(&mut self, window: &str, exists: impl Fn(&str) -> bool) -> Option<Delivery> {
-        let next = self
-            .0
-            .iter_mut()
-            .find(|entry| entry.owner == window || !exists(&entry.owner))?;
+        self.claim_for_store(window, None, exists)
+    }
+
+    pub(crate) fn claim_for_store(
+        &mut self,
+        window: &str,
+        store: Option<uuid::Uuid>,
+        exists: impl Fn(&str) -> bool,
+    ) -> Option<Delivery> {
+        let next = self.0.iter_mut().find(|entry| {
+            (entry.source_store.is_none() || entry.source_store == store)
+                && (entry.owner == window || !exists(&entry.owner))
+        })?;
         next.owner = window.to_owned();
         Some(next.delivery.clone())
     }
 
-    pub fn acknowledge(&mut self, window: &str, id: &str) {
-        self.0
-            .retain(|entry| !(entry.owner == window && entry.delivery.id == id));
+    #[cfg(test)]
+    pub fn acknowledge(&mut self, window: &str, id: &str) -> bool {
+        self.acknowledge_in_store(window, id, None)
+    }
+
+    pub(crate) fn acknowledge_in_store(
+        &mut self,
+        window: &str,
+        id: &str,
+        store: Option<uuid::Uuid>,
+    ) -> bool {
+        let before = self.0.len();
+        self.0.retain(|entry| {
+            !(entry.owner == window
+                && entry.delivery.id == id
+                && (store.is_none() || entry.source_store.is_none() || entry.source_store == store))
+        });
+        before != self.0.len()
     }
 }
 

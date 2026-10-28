@@ -26,9 +26,10 @@ export function InboxConnectionStatus({
       description={t(
         "Checking reads the saved configuration. Save and test verifies access with the credentials you enter.",
       )}
+      feedback={error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : undefined}
     >
       <Badge
-        tone={error ? "danger" : configured && !checking ? "success" : "neutral"}
+        tone={error ? "danger" : "neutral"}
         icon={
           error ? (
             <AlertCircle size={14} />

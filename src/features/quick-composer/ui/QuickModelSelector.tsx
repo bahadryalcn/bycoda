@@ -354,7 +354,7 @@ export function QuickModelSelector({
                 ) : (
                   <span />
                 )}
-                <span className="text-center text-[13px] font-medium text-accent">
+                <span className="text-center text-ui-secondary font-medium text-accent">
                   {effort.options[effortIndex]?.label}
                 </span>
                 <Button

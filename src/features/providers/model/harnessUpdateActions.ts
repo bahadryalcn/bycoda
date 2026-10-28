@@ -19,7 +19,7 @@ import {
 export type HarnessUpdateRun =
   | { status: "idle" }
   | { status: "updating" }
-  | { status: "updated"; version: string }
+  | { status: "updated"; version: string; catalogRefresh?: "attempted" | "failed" }
   | { status: "failed"; error: string };
 
 export type HarnessUpdateSnapshot = {
@@ -141,8 +141,8 @@ function markCurrent(update: HarnessUpdate, version: string) {
 
 /**
  * Some updaters exit cleanly without installing anything, so success is the
- * version the CLI reports afterwards, not the exit code. Its models are
- * reloaded before the result says so, so the picker is current by then.
+ * version the CLI reports afterwards, not the exit code. Catalog refresh is a
+ * separate attempt: adapters may retain old data or report no fresh catalog.
  */
 async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
   let stage = "updater";
@@ -156,9 +156,16 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
     }
     if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
       stage = "model refresh";
-      await refreshHarnessCatalogs([update.harness], { force: true });
+      let catalogRefresh: "attempted" | "failed" = "attempted";
+      try {
+        await refreshHarnessCatalogs([update.harness], { force: true });
+      } catch {
+        catalogRefresh = "failed";
+      }
       void announceHarnessUpdated(update.harness).catch(() => undefined);
-      return { status: "updated", version };
+      return catalogRefresh === "failed"
+        ? { status: "updated", version, catalogRefresh }
+        : { status: "updated", version };
     }
     throw new Error(`Still on ${version} after updating.`);
   } catch (error) {

@@ -247,11 +247,23 @@ html:not(.theme-light) img[src="/brand/bycoda/mark-black.svg"] {
 }
 html [data-composer-box] {
   border-radius: 12px;
-  border-color: var(--color-stroke);
+  border-color: transparent;
   box-shadow: none;
 }
 html.theme-light [data-composer-box] {
-  background: color-mix(in srgb, var(--color-background-base) 96%, var(--palette-solidInk));
+  background: var(--ui-surface);
+}
+/* Text inputs also match :focus-visible after pointer focus. A large writing
+   surface uses its fill and caret instead of a surrounding form-field ring;
+   toolbar controls keep their own keyboard focus treatment. */
+html [data-composer-box]:has([data-ui-focus="group"]:focus-visible) {
+  outline-color: transparent;
+  background: var(--ui-surface-raised);
+}
+/* Operation boundaries retain their meaning independently of ordinary focus. */
+html [data-composer-box][data-composer-editing],
+html [data-composer-box][data-composer-dragging] {
+  border-color: var(--ui-tone-accent-border);
 }
 .bycoda-title-settle {
   animation: bycoda-title-settle 220ms ease-out both;

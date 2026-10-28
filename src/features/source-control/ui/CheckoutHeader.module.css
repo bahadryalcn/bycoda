@@ -90,7 +90,7 @@
   min-block-size: 32px;
   max-block-size: 160px;
   padding-block: 4px;
-  padding-inline: 8px 52px;
+  padding-inline: 8px 76px;
   resize: none;
   overflow-y: auto;
   font-size: var(--ui-font-caption);

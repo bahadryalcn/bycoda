@@ -56,6 +56,8 @@ export type SessionChangesSource = {
 };
 
 export type FilePaneTab = {
+  /** Explicit local recovery target. Content stays in Native storage. */
+  recoveredEditorDraft?: import("../../files/model/editorDraftRecovery").RecoveredEditorDraft;
   id: string;
   path: string;
   cwd: string;

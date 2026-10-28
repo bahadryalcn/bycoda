@@ -76,7 +76,13 @@ export type AccountEditor = {
   label: string;
 };
 
-export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
+export function ProviderAccountsSettings({
+  harness,
+  onBusyChange,
+}: {
+  harness?: HarnessId;
+  onBusyChange?: (busy: boolean) => void;
+}) {
   useLocale();
   const [version, setVersion] = useState(0);
   const [editor, setEditor] = useState<AccountEditor | null>(null);
@@ -87,6 +93,16 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
   const busy = useRef(false);
   const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
+  useEffect(() => {
+    onBusyChange?.(Boolean(working || editor));
+  }, [working, editor, onBusyChange]);
+  useEffect(
+    () => () => {
+      registrationAbort.current?.abort();
+      onBusyChange?.(false);
+    },
+    [onBusyChange],
+  );
 
   const cancelEditor = () => {
     if (registrationAbort.current) {
@@ -258,10 +274,17 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
   };
 
   const identities = useProviderAccountIdentities(
-    PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
+    harness
+      ? supportsProviderAccounts(harness)
+        ? providerAccounts(harness)
+        : []
+      : PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts),
     version,
   );
-  const usage = useProviderAccountUsage(version);
+  const usage = useProviderAccountUsage(version, {
+    provider: harness && supportsProviderAccounts(harness) ? harness : undefined,
+    enabled: !harness || supportsProviderAccounts(harness),
+  });
   const standaloneHarness = harness === "cursor" || harness === "grok" ? harness : null;
   const accountProvider = harness
     ? supportsProviderAccounts(harness)
@@ -281,6 +304,9 @@ export function ProviderAccountsSettings({ harness }: { harness?: HarnessId }) {
         <div className="provider-accounts-heading" aria-busy={Boolean(working) || usage.refreshing}>
           <span className="provider-accounts-title">
             {t(harness === "cursor" || harness === "grok" ? "Sign in" : "Accounts")}
+          </span>
+          <span className="text-ui-caption text-(--ui-text-secondary)">
+            {t("This machine · all projects")}
           </span>
           {accountProvider ? (
             <>

@@ -1,3 +1,4 @@
+import { runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
@@ -217,7 +218,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
         .catch(() => undefined);
       return;
     }
-    void handleRequest(live, id, method, params).catch(() => {
+    return handleRequest(live, id, method, params).catch(() => {
       console.warn("[bycoda] fx server request failed");
     });
   };
@@ -417,25 +418,25 @@ function fxSpawnArgs(model: string): string[] {
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+const responseScope: { work: NativeOutputWork | null } = { work: null };
+const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
+try {
+
   try {
     const blocks = fxPromptBlocks(input.text);
     if (blocks.length === 0) return;
-    const result = await live.acp.request(
-      "session/prompt",
-      {
+    const result = await live.acp.request("session/prompt", {
         sessionId: live.acpSessionId,
         prompt: blocks,
-      },
-      PROMPT_TIMEOUT_MS,
-    );
+      }, PROMPT_TIMEOUT_MS, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
     if (live.cancelled) return;
-    live.onEvent({ type: "message.completed" });
-    live.onEvent({ type: "reasoning.completed" });
-    reportAcpStopReason(result, live.onEvent);
+    emitNative({ type: "message.completed" });
+    emitNative({ type: "reasoning.completed" });
+    reportAcpStopReason(result, emitNative);
   } catch (error) {
     if (live.cancelled) return;
     const detail = error instanceof Error ? error.message : String(error);
-    live.onEvent({
+    emitNative({
       type: "session.error",
       message: /needs access|AI Gateway|API key|Keychain/i.test(detail)
         ? `${detail.trim()}\n\n${AUTH_HELP}`
@@ -443,6 +444,8 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
     });
     throw error;
   }
+
+} finally { responseScope.work?.finish(); }
 }
 
 function ignoreUnsupportedControl(method: string, error: unknown): void {
@@ -459,16 +462,19 @@ function handleNotification(live: Live, method: string, params: unknown) {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
   if (method === "session/request_permission") {
-    await handlePermission(live, id, params);
+    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
     return;
   }
-  await live.acp
+  await nativeOutputSink(outputWork, () => live.acp
     .respondError(id, {
       code: -32601,
       message: `Method not found: ${method}`,
-    })
+    }))()
     .catch(() => undefined);
+
+});
 }
 
 /**
@@ -477,9 +483,11 @@ async function handleRequest(live: Live, id: number, method: string, params: unk
  * what left sessions stuck on "Working…" with an empty transcript.
  */
 async function handlePermission(live: Live, id: number, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const request = permissionRequestFromAcp(params);
   if (request.callId) {
-    live.onEvent({
+    emitNative({
       type: "tool.updated",
       callId: request.callId,
       title: request.title,
@@ -494,7 +502,9 @@ async function handlePermission(live: Live, id: number, params: unknown) {
       )
     : (autoPermissionOption(live.runtimeMode, request.optionIds) ??
       permissionOptionId("allow", request.optionIds));
-  await live.acp.respond(id, {
+  await nativeOutputSink(outputWork, () => live.acp.respond(id, {
     outcome: { outcome: "selected", optionId },
-  });
+  }))();
+
+});
 }

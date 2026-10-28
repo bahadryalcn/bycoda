@@ -72,7 +72,7 @@ export default function SheetViewer({
         <SheetGridView key={active} grid={state.book.sheets[Math.min(active, names.length - 1)]} fitContent={fitContent} />
       </div>
       {state.book.omittedSheets > 0 ? (
-        <p role="status" className="px-3 text-xs text-[var(--ui-text-secondary)]">
+        <p role="status" className="px-3 text-ui-caption text-(--ui-text-secondary)">
           {t("Only the first 100 sheets are previewed.")}
         </p>
       ) : null}
@@ -80,7 +80,7 @@ export default function SheetViewer({
         <div
           role="tablist"
           aria-label={t("Workbook sheets")}
-          className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-t border-stroke px-2 text-[11px]"
+          className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-1 overflow-x-auto border-t border-(--ui-pane-border) px-2 py-1 text-ui-caption"
         >
           {names.map((name, index) => (
             <Button

@@ -1,9 +1,16 @@
 /* Arc free radio-group presentation, adapted to shared bycoda semantic roles. */
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .group:global(.bycoda-arc) {
+    min-inline-size: 0;
+    margin: 0;
+  }
+}
 .group:global(.bycoda-arc) {
   display: grid;
   align-content: start;
-  min-inline-size: 0;
-  margin: 0;
   border: 0;
   padding: 0;
   gap: 0;

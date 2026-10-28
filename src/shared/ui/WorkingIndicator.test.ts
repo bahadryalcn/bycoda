@@ -90,3 +90,16 @@ it("is decorative by default and one polite status when it carries a label", () 
   // The bars stay hidden from assistive technology.
   expect(status.querySelector("span[aria-hidden='true']")).not.toBeNull();
 });
+
+it("owns its size variant and keeps consumer classes for placement only", () => {
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  mounted.push(root);
+  act(() => root.render(createElement(WorkingIndicator)));
+  const element = container.firstElementChild!;
+  // Default follows the icon-xs slot that status icons use.
+  expect(element.getAttribute("data-size")).toBe("xs");
+  act(() => root.render(createElement(WorkingIndicator, { size: "md", className: "ml-1" })));
+  expect(element.getAttribute("data-size")).toBe("md");
+  expect(element.classList.contains("ml-1")).toBe(true);
+});

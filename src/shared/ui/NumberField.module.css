@@ -1,0 +1,30 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* Placement of the stepper group is external layout, so a caller utility can still move it. */
+@layer components {
+  .steppers {
+    flex: none;
+  }
+}
+
+.steppers {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The native spin buttons are replaced by two InlineActions that live in the same trailing slot as the
+   clear and reveal actions. The extra specificity beats the field owner's single-action padding. */
+input.stepped[type="number"] {
+  padding-inline-end: calc(2.5rem + 2px + var(--space-1) + var(--space-3));
+  font-variant-numeric: tabular-nums;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input.stepped[type="number"]::-webkit-inner-spin-button,
+input.stepped[type="number"]::-webkit-outer-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+}

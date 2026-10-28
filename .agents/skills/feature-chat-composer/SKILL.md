@@ -5,6 +5,27 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Composer frame correction, 2026-10-28
+
+Owner, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> böyle border filan geldi fokus olunca bunları istemiyorum mesela solda sağda altta üstte şerit çizgiler istemiyorum mesela bunlarıda toparlamak gerekiyor.
+
+Normal `[data-composer-box]` no longer receives a visible surrounding field
+focus frame; `src/styles/bycoda.css` uses the owning surface and caret instead.
+The workspace toolbar in `Composer.tsx` no longer paints a second attached
+outlined box. Toolbar keyboard focus remains local; explicit earlier-turn edit
+and attachment-drop borders retain their operation meaning through the existing
+editing marker and the new `data-composer-dragging` marker. System forced-colors
+rules remain authoritative. Draft, send/queue/steer and workspace logic unchanged.
+
+Source-only T1 change on shared dirty `main@4de508dea`; no application tests,
+captures, build or install were run under the owner's deferred-test instruction.
+`git diff --check` passed. Light/dark, narrow, keyboard, high-contrast and actual
+native rendering remain unverified; see
+`temp/local/2026-10-28-composer-focus/README.md`. This does not close C01 or the
+whole Composer redesign.
+
 ## Host migration persistence foundation (2026-10-28)
 
 `sessions/data/persistenceDrain.ts`, `sessionStore.ts`, `composerDraftStore.ts`
@@ -510,3 +531,186 @@ acceptance remains pending; earlier HOT1 evidence above is a separate scope.
 
 135 related existing tests/13 suites pass with fixture native/remote/skill-policy
 and act diagnostics retained. No actual accent/menu/reader acceptance inferred.
+
+## Mounted Composer closure foundation, 2026-10-28
+
+Delivered source increment in the shared dirty `main` checkout; no commit,
+package, install or release is implied. `sessions/data/composerClosure.ts` and
+`hooks/useMountedComposerClosure.ts` register the actual mounted Composer,
+close explicit target admission, retain full immutable text/whitespace, tags,
+attachments and draft mode, and await accepted attachment preparation plus
+strict draft-row acknowledgement. `Composer.tsx` starts picker/clipboard/drop
+factories only after admission, preserves accepted work across view retirement,
+and blocks new target input/send while keeping Stop available. Unexpected late
+changes invalidate the observation and keep their data. IME is never forced to
+commit to obtain closure. Exact in-memory owner identity is required to reopen;
+it is not a native authority grant.
+
+Atomic `draftCache.setComposerDraftSnapshot` plus
+`composerDraftStore.persistMountedComposerDraft` preserve legacy serialization,
+including its whitespace-only/empty representation. The separately retained
+mounted snapshot includes the original whitespace/tags/mode; the legacy row is
+not claimed to store that whole representation. Cache-clear/version checks
+prevent an old retired callback from resurrecting a cleared or newer draft.
+An applied preparation whose native ACK fails retries persistence without
+reopening the picker. Failed operations and differing retired snapshots remain
+retained; bounds reject further capture instead of silently evicting them.
+Renderer-local limits are 256 retained mounts, 16 preparation jobs per mount,
+64 actual preparation/checkpoint operations, 16 closures and 64 MiB of charged
+snapshot data. These are logical source-state limits, not a heap/RSS claim.
+HMR retains state/jobs and invalidates old implementations' new admissions.
+
+This API is internal and explicitly invoked only; there is no migration UI or
+native challenge activation. Every result remains `qualified:false`.
+QuickComposer's sessionless prompt/attachments are **not covered**. Parent
+SessionPane selector/pending-session persistence, provider/output callbacks,
+native challenge/checkpoint receipt and full-snapshot native retention are
+also **not covered**. Native `write_attachment` now holds its Buffers admission
+through actual file write/access-grant settlement and flushes file bytes, but
+its temporary path is not a profile blob, parent-directory/power-loss durability
+receipt or native drain proof. Do not promote any of these surfaces to Complete.
+
+Initial renderer checkpoint: 18 suites/177 tests, including 22 new pure/mounted closure
+cases; normal web `tsc-rs`, scoped general lint and new registry/hook lint pass.
+Composer hooks lint still reports eight existing `set-state-in-effect` warnings.
+The attempted normal Host typecheck hit concurrent native-buffer catalog/report
+edits; its transient failure is recorded separately for Root's final check.
+Tests use fixture Native IPC, not an installed app, real picker/provider or
+multiwindow native acceptance. No new active visual flow was introduced.
+Exact source hashes and logs:
+`temp/verification/2026-10-28-renderer-persistence-drain/composer-closure.README.md`
+and `composer-closure-source-identity.json`. Remaining composition sequence:
+`temp/local/2026-10-27-host-architecture-plan/ws/COMPOSER-CLOSURE-NEXT.md`.
+
+Independent review found two P2 defects in that initial snapshot; both were
+reproduced red and fixed before the superseding source freeze. Previously open
+slash/mention/MCP/folder/plus and translation completions now check admission
+before changing the draft. Accepted asynchronous skill completion owns its
+draft mutation/ACK lifetime; a later draft ACK failure does not repeat its
+successful file creation.
+
+`attachments.retainAttachmentPickerSelection` holds the original successful
+native chooser paths separately from inspection. Composer retries inspection
+or persistence from those exact paths without reopening the chooser. A genuine
+later clear/send/reset rejects stale retry before more work, while another
+failed attachment does not falsely change that retained selection's identity.
+Each retained selection is bounded to 4,096 paths/1 MiB of charged path text;
+over-capacity selection fails explicitly without truncation or chooser replay.
+The ordinary no-argument `pickAttachments()` behavior remains independent.
+
+Superseding renderer verification: **22 suites/216 tests** (13 pure closure,
+17 mounted Composer and seven selection-stage new cases included), normal web
+types and scoped general lint pass; hooks retain the same eight existing
+Composer warnings. Exact ten-file manifest replaces the prior eight-file
+snapshot, preserved as `composer-closure-source-identity.frozen8.json`. New logs
+use `composer-closure-review-*`; prior 177 evidence is historical, not evidence
+for the follow-up bytes. Root owns the final Host check. All coverage limits
+and qualified:false status above remain unchanged.
+
+## QuickComposer sessionless renderer closure, 2026-10-28
+
+This supersedes only the earlier **renderer** QuickComposer gap; it does not
+promote Quick/native migration qualification. `quick-composer/model/quickComposerClosure.ts`
+retains raw prompt, attachments, selected project/model/settings/permissions and
+workspace plus effective defaults under renderer window/intent UUID hints.
+Those hints are not Native Window/reload identities or actor grants. The actual
+QuickComposer uses the standard sessionless producer admission and a separate
+full immutable capture; it never manufactures a session or writes a fake draft row.
+
+Actual textarea/completion handlers gate new target effects. Options/default
+changes participate in revision/invalidation even when basic prompt/files did
+not change. Hide/dismiss preserves the draft. View unmount/HMR retains the window
+state, accepted async work and owned captures; late results remain with their
+original intent and replacement views receive them. Source admission occurs
+before picker/paste/drop/clipboard/screenshot reads and spill. Successful stages
+are retained for retry; mutable external capture outcomes are single-use `once`
+stages, including unknown/rejected outcomes, so closure retry cannot capture
+different clipboard contents or reopen/retake an uncertain selection. All spill
+siblings settle before failure returns. Real queued clipboard capture has its
+own work admission before its first read and retains its later spill/application.
+
+Launch owns workspace resolution and Native submit through actual settlement.
+Closure retry never replays an uncertain submit. Known successful handoff clears
+covered data/rotates the renderer intent, preserving newer prompt edits. The
+ordinary explicit Start retry and void remove/clear APIs remain available;
+Native acceptance/idempotent reconciliation is still a dependency. A successful
+later operation does not clear a failed prior intent's ledger. Native Git popup
+open uses a live gate and an owned memoized Promise; its separate physical
+window/cancel-completion proof remains missing.
+
+The renderer capture is always `qualified:false`. Native physical challenge and
+durable full raw snapshot/blob receipts are not installed; the generic typed
+Native capture adapter is a contract only. At this writer's read, Native
+quick_composer_capture still needed its own Buffers lease before spawn_blocking;
+renderer IPC ownership does not supply it. Parent/provider-output and Native
+qualification remain separate. No Complete/actor/default-floor/source retirement
+or coordinator activation is introduced.
+
+Final focused verification: **21 suites/168 tests**, including 30 new registry,
+real mounted, Native-popup guard and sibling-settlement cases; normal web
+tsc-rs, scoped general lint and new producer hooks lint pass. The popup retains
+one existing set-state-in-effect warning. Exact 11 owned hashes and 21 test paths,
+limits, historical logs and Native/installed acceptance exclusions:
+`temp/verification/2026-10-28-quick-composer-closure/README.md` and
+`source-identity.json`. No active migration UI or visual redesign was added.
+
+Independent read-only Quick review closed with zero remaining concrete findings
+on those final 11 hashes after fixing its HMR shown-listener owner dependency.
+The real replacement case verifies fresh project/model defaults on the next show
+while retaining the prompt. Capacity notices are also preserved after bounded
+File admission. See `INDEPENDENT-REVIEW.md` beside the Quick evidence; review of
+source/fixture logs does not establish installed or Native durability proof.
+
+### Quick Native lifetimes and in-memory launch receipts (2026-10-28)
+
+This delivery supersedes the preceding Quick Native source gaps only within this
+scope. Actual macOS screenshot scheduling captures a Native Buffers admission
+before work and moves its non-Clone owner into the blocking worker through
+capture/file-byte sync, ownership registration, access grant and restore
+scheduling. A detached IPC waiter or shortcut-off does not release accepted
+work. File-byte sync is not a profile blob, directory/power-loss or checkpoint
+receipt. Original owned screenshots survive session-copy promotion until explicit
+renderer release, including lost ACK and newer unsent draft cases.
+
+The separate Git popup now captures both actual physical Window resources and
+both Buffers admissions. Its pending request retains those exact handles through
+Native completion/dismissal; old destruction/blur callbacks cannot retarget a
+replacement by label. Unexpected unfinished retirement stays unknown. This is a
+Native popup lifetime foundation, not full popup child Git/provider closure or a
+physical-window challenge/full raw capture receipt.
+
+The additive local-only launch scope/submit-intent/status commands preserve the
+legacy void submit API. First admission atomically publishes Pending and advances
+the exact Native-issued sequence before effects. Duplicate tuples join one
+delivery; terminal Failed never rearms, ambiguous outcomes never replay, and
+compaction retains the sequence fence and reports old missing history as unknown.
+Only actual existing workspace delivery ACKs or observed verified no-effect
+failures can make records eligible for bounded compaction. Captured source Store
+construction/physical resource identity is checked around scheduled effects;
+new deliveries cannot be claimed/ACKed in another Store construction. UUIDs,
+renderer window IDs and intent IDs remain matching hints, not actor authority.
+
+QuickComposer uses these commands and retains an immutable original request
+across HMR/unmount and uncertain responses. Explicit Start reconciles that tuple;
+closure retry only observes. A fresh Native Failed status permits an explicit
+corrected request with a new intent UUID/current next sequence. A failed read-only
+scope discovery with no tuple or attempted send does not freeze stale text for a
+later Start. Known handoff checks actual live mounted DOM/IME state before clearing
+covered text/attachments, preserving newer unsent raw data after remount.
+
+Automatic age/visibility-based Quick window destruction is disabled until a real
+Native raw/empty receipt can authorize retirement. Hidden webviews consume memory
+until explicit app shutdown. Sessionless full raw options/attachments still lack
+durable Native capture; crash/app-exit recovery and durable launch reconciliation,
+popup child/provider closure and challenge binding remain unimplemented here.
+All captures/receipts stay `qualified:false`; no Complete, actor enrollment,
+default floor, coordinator activation or source retirement is introduced.
+
+Evidence: `temp/verification/2026-10-28-quick-native/README.md` and
+`source-identity.json`. Windows verification exercised **18 actual portable Native
+owner/ledger/filesystem tests** and **22 renderer suites/189 tests**, normal web
+tsc-rs, scoped general/hooks lint and formatting. The macOS AppKit command branches
+and OS screenshot/popup behavior were not compiled or exercised on this Windows
+host; portable tests do not establish installed macOS or crash/durability
+acceptance. Source manifest separates the seven Native and nine renderer owned
+files from Root's separate lib registration/combined checks.

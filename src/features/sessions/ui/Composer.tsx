@@ -12,6 +12,8 @@ import {
 } from "../../connections/model/useSharedLocalQueues";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
+import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
+import type { ComposerPreparation } from "../data/composerClosure";
 import {
   useComposerTranslationSelection,
   type ComposerTranslationSelection,
@@ -82,6 +84,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
+  type SetStateAction,
 } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
@@ -91,6 +94,7 @@ import {
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
+  retainAttachmentPickerSelection,
   revokeAttachment,
 } from "../model/attachments";
 import {
@@ -997,6 +1001,13 @@ export const Composer = memo(function Composer({
   "use memo";
   const t = useT();
   const ref = useRef<HTMLTextAreaElement>(null);
+  const draftTextRef = useRef(initialDraft ?? "");
+  const mountedClosureRef = useRef<ReturnType<typeof useMountedComposerClosure> | null>(null);
+  const attachmentApplyDepth = useRef(0);
+  const canMutateDraft = useCallback(
+    () => attachmentApplyDepth.current > 0 || (mountedClosureRef.current?.canMutate() ?? true),
+    [],
+  );
   const translationContext = useMemo(
     () => ({ cwd: executionCwd, harness, model, modelSettings, providerAccountId }),
     [executionCwd, harness, model, modelSettings, providerAccountId],
@@ -1034,6 +1045,7 @@ export const Composer = memo(function Composer({
   const draftResetTokenRef = useRef(draftResetToken);
   /** Bumped when the draft is cleared, so a late paste cannot land on the next one. */
   const pasteGenerationRef = useRef(0);
+  const pasteFailuresRef = useRef(0);
   const sendIntentRef = useRef(0);
   /** Pasted and dropped files still reading when Send is pressed. */
   const pasteFlightRef = useRef<Promise<void> | null>(null);
@@ -1064,17 +1076,27 @@ export const Composer = memo(function Composer({
   /** Set while the text is an unedited entry recalled with Up/Down. */
   const historyRef = useRef<HistoryBrowse | null>(null);
   const escapeArmedRef = useRef<number | null>(null);
-  const [draft, setDraft] = useState(initialDraft ?? "");
+  const [draft, setDraftState] = useState(initialDraft ?? "");
+  const setDraft = useCallback((update: SetStateAction<string>) => {
+    const next = typeof update === "function" ? update(draftTextRef.current) : update;
+    if (next !== draftTextRef.current) mountedClosureRef.current?.changed();
+    draftTextRef.current = next;
+    setDraftState(next);
+  }, []);
   const publishedDraft = useRef<string | undefined>(undefined);
   const publishDraft = useCallback(
     (text: string) => {
+      draftTextRef.current = text;
+      if (mountedClosureRef.current?.retired) return;
       if (publishedDraft.current === text) return;
+      const publish = () => onDraftChange?.(text);
+      if (mountedClosureRef.current && !mountedClosureRef.current.publishCache(publish)) return;
+      if (!mountedClosureRef.current) publish();
       publishedDraft.current = text;
-      onDraftChange?.(text);
     },
     [onDraftChange],
   );
-  const clearComposer = useClearComposerDraft(ref, setDraft, publishDraft);
+  const clearComposer = useClearComposerDraft(ref, setDraft, publishDraft, canMutateDraft);
   // Updating defaultValue rewrites WebKit's text node and commits an active IME.
   // Apply later external drafts through the existing synchronization effect.
   const [mountDraft] = useState(initialDraft);
@@ -1138,11 +1160,26 @@ export const Composer = memo(function Composer({
   const [planSelected, setPlanSelected] = useState(false);
   const [operatorSelected, setOperatorSelected] = useState(false);
   const [orchestrationSelected, setOrchestrationSelected] = useState(false);
-  const [draftSelected, setDraftSelected] = useState(() =>
+  const [draftSelected, setDraftSelectedState] = useState(() =>
     sessionId ? getComposerDraftMode(sessionId) === "save" : false,
   );
+  const draftModeRef = useRef(draftSelected);
+  const setDraftSelected = useCallback(
+    (update: SetStateAction<boolean>) => {
+      if (!canMutateDraft()) return;
+      const next = typeof update === "function" ? update(draftModeRef.current) : update;
+      if (next === draftModeRef.current) return;
+      draftModeRef.current = next;
+      setDraftSelectedState(next);
+      mountedClosureRef.current?.changed();
+    },
+    [canMutateDraft],
+  );
   useEffect(() => {
-    if (sessionId) setComposerDraftMode(sessionId, draftSelected ? "save" : undefined);
+    if (sessionId)
+      mountedClosureRef.current?.publishCache(() =>
+        setComposerDraftMode(sessionId, draftSelected ? "save" : undefined),
+      );
   }, [sessionId, draftSelected]);
   const [slash, setSlash] = useState<SlashToken | null>(null);
   const [skillSelection, setSkillSelection] = useState({ query: "", cwd, index: 0 });
@@ -1169,9 +1206,35 @@ export const Composer = memo(function Composer({
   const [mcpStatus, setMcpStatus] = useState<Map<string, string>>(new Map());
   const [mcpLoading, setMcpLoading] = useState(false);
   const [mcpError, setMcpError] = useState("");
-  const [selectedMcp, setSelectedMcp] = useState<McpTag[]>(() =>
+  const [selectedMcp, setSelectedMcpState] = useState<McpTag[]>(() =>
     sessionId ? getComposerMcpTags(sessionId) : [],
   );
+  const selectedMcpRef = useRef(selectedMcp);
+  const setSelectedMcp = useCallback(
+    (update: SetStateAction<McpTag[]>) => {
+      if (!canMutateDraft()) return;
+      const next = typeof update === "function" ? update(selectedMcpRef.current) : update;
+      if (next === selectedMcpRef.current) return;
+      selectedMcpRef.current = next;
+      setSelectedMcpState(next);
+      mountedClosureRef.current?.changed();
+    },
+    [canMutateDraft],
+  );
+  const mountedClosure = useMountedComposerClosure({
+    sessionId,
+    input: ref,
+    snapshot: () => ({
+      text: ref.current?.value ?? draftTextRef.current,
+      attachments: attachmentsRef.current,
+      mcpTags: selectedMcpRef.current,
+      ...(draftModeRef.current ? { mode: "save" as const } : {}),
+    }),
+    reopened: () => publishDraft(ref.current?.value ?? draftTextRef.current),
+  });
+  useLayoutEffect(() => {
+    mountedClosureRef.current = mountedClosure;
+  }, [mountedClosure]);
   const mcpInsertAt = useRef<number | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [createBusy, setCreateBusy] = useState(false);
@@ -1418,6 +1481,7 @@ export const Composer = memo(function Composer({
 
   /** Turning a mode off also drops its leading command from the text. */
   const clearLeadingMode = (name: string) => {
+    if (!canMutateDraft()) return;
     const el = ref.current;
     if (!el || leadingModeCommand(el.value, skillNames)?.name !== name) return;
     const next = el.value.replace(/^\/[a-z]+\s?/, "");
@@ -1465,15 +1529,17 @@ export const Composer = memo(function Composer({
   }, [executionCwd, harness, sessionId]);
 
   useEffect(() => {
-    if (sessionId) setComposerMcpTags(sessionId, selectedMcp);
+    if (sessionId) mountedClosure.publishCache(() => setComposerMcpTags(sessionId, selectedMcp));
   }, [sessionId, selectedMcp]);
 
   useEffect(() => {
     // Object URLs die with this pane, so the saved copy keeps none.
     if (sessionId) {
-      setComposerAttachments(
-        sessionId,
-        attachments.map(({ previewUrl: _preview, ...file }) => file),
+      mountedClosure.publishCache(() =>
+        setComposerAttachments(
+          sessionId,
+          attachments.map(({ previewUrl: _preview, ...file }) => file),
+        ),
       );
     }
   }, [sessionId, attachments]);
@@ -1483,20 +1549,33 @@ export const Composer = memo(function Composer({
   }, [inboxCard, noteCard, handoffCard, syncHasValue]);
 
   /** Text goes at the caret when the input has focus, otherwise at the end. */
-  const insertIntoDraft = useCallback((insertion: string) => {
-    const el = ref.current;
-    if (!el || !insertion) return;
-    const focused = document.activeElement === el;
-    const edit = insertAtSelection(
-      el.value,
-      focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
-      insertion,
-    );
-    applyTextareaEdit(el, edit.text, edit.caret);
-  }, []);
+  const insertIntoDraft = useCallback(
+    (insertion: string) => {
+      if (!canMutateDraft()) return;
+      const el = ref.current;
+      if (!insertion) return;
+      if (!el) {
+        if (attachmentApplyDepth.current > 0) {
+          const edit = insertAtSelection(draftTextRef.current, null, insertion);
+          setDraft(edit.text);
+          publishDraft(edit.text);
+        }
+        return;
+      }
+      const focused = document.activeElement === el;
+      const edit = insertAtSelection(
+        el.value,
+        focused ? { start: el.selectionStart, end: el.selectionEnd } : null,
+        insertion,
+      );
+      applyTextareaEdit(el, edit.text, edit.caret);
+    },
+    [canMutateDraft, publishDraft],
+  );
 
   const addAttachments = useCallback(
     (incoming: Attachment[]) => {
+      if (!canMutateDraft()) return;
       if (!harnessSupportsAttachments(harness) || incoming.length === 0) return;
       const previous = attachmentsRef.current;
       const next = mergeAttachments(previous, incoming);
@@ -1524,6 +1603,7 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!sessionId || !cwd || disabled) return;
     return registerDeviceImageComposer(cwd, sessionId, (file, context) => {
+      if (!canMutateDraft()) return false;
       const el = ref.current;
       const previous = attachmentsRef.current;
       if (!el || !attachmentsSupported || previous.length >= MAX_ATTACHMENTS) return false;
@@ -1547,6 +1627,7 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!sessionId || !cwd || disabled) return;
     return registerLogsComposer(cwd, sessionId, (text) => {
+      if (!canMutateDraft()) return false;
       if (!ref.current || !text) return false;
       draftRevisionRef.current += 1;
       const next = `${ref.current.value}${ref.current.value ? "\n\n" : ""}${text}`;
@@ -1559,6 +1640,7 @@ export const Composer = memo(function Composer({
 
   const insertAttachmentToken = useCallback(
     (id: string) => {
+      if (!canMutateDraft()) return;
       const index = attachmentsRef.current.findIndex((file) => file.id === id);
       if (index < 0) return;
       draftRevisionRef.current += 1;
@@ -1570,6 +1652,7 @@ export const Composer = memo(function Composer({
 
   const removeAttachment = useCallback(
     (id: string) => {
+      if (!canMutateDraft()) return;
       const previous = attachmentsRef.current;
       const removed = previous.find((file) => file.id === id);
       if (removed && !borrowedAttachmentIdsRef.current.delete(removed.id)) {
@@ -1614,50 +1697,80 @@ export const Composer = memo(function Composer({
     fileDropStateRef.current = { attachmentsSupported, remote, addAttachments };
   }, [attachmentsSupported, remote, addAttachments]);
 
-  const rememberAttachmentRead = useCallback((work: Promise<void>) => {
-    const generation = pasteGenerationRef.current;
-    const flight = work.then(
-      () => undefined,
-      (reason: unknown) => {
-        if (pasteGenerationRef.current !== generation) return;
-        // Abort a Send already waiting on this failed read, retaining its text.
-        pasteGenerationRef.current += 1;
-        setPasteError(reason instanceof Error ? reason.message : String(reason));
-      },
-    );
-    const previous = pasteFlightRef.current;
-    const joined = previous ? previous.then(() => flight) : flight;
-    pasteFlightRef.current = joined;
-    void joined.finally(() => {
-      if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
-    });
-  }, []);
+  const rememberAttachmentRead = useCallback(
+    (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
+      let generation = pasteGenerationRef.current;
+      let failures = pasteFailuresRef.current;
+      const work = mountedClosure.prepare((accepted) => {
+        // Another failed read still cancels ordinary pending reads/Send, but
+        // cannot silently turn this retained selection into a different draft.
+        // Only non-failure generation transitions invalidate explicit retry.
+        if (pasteGenerationRef.current - generation !== pasteFailuresRef.current - failures)
+          throw new Error("Attachment preparation belongs to an earlier draft.");
+        generation = pasteGenerationRef.current;
+        failures = pasteFailuresRef.current;
+        return read({
+          ...accepted,
+          isCurrent: () => pasteGenerationRef.current === generation,
+          apply: (mutation) =>
+            accepted.apply(() => {
+              attachmentApplyDepth.current++;
+              try {
+                return mutation();
+              } finally {
+                attachmentApplyDepth.current--;
+              }
+            }),
+        });
+      });
+      const flight = work.then(
+        () => undefined,
+        (reason: unknown) => {
+          if (pasteGenerationRef.current !== generation) return;
+          // Abort a Send already waiting on this failed read, retaining its text.
+          pasteGenerationRef.current += 1;
+          pasteFailuresRef.current += 1;
+          // The retained intent owns this failure transition only. A genuine
+          // later reset/send still makes its explicit retry stale before work.
+          generation = pasteGenerationRef.current;
+          failures = pasteFailuresRef.current;
+          setPasteError(reason instanceof Error ? reason.message : String(reason));
+        },
+      );
+      const previous = pasteFlightRef.current;
+      const joined = previous ? previous.then(() => flight) : flight;
+      pasteFlightRef.current = joined;
+      void joined.finally(() => {
+        if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
+      });
+    },
+    [mountedClosure],
+  );
 
   const readDroppedAttachments = useCallback(
     (read: () => Promise<Attachment[]>) => {
-      const generation = pasteGenerationRef.current;
       setPasteError(null);
-      rememberAttachmentRead(
+      rememberAttachmentRead((accepted) =>
         Promise.resolve()
           .then(read)
-          .then((incoming) => {
-            if (
-              pasteGenerationRef.current !== generation ||
-              !fileDropStateRef.current.attachmentsSupported
-            ) {
-              incoming.forEach(revokeAttachment);
-              return;
-            }
-            if (incoming.length === 0) {
-              setPasteError(
-                "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
-              );
-              return;
-            }
-            fileDropStateRef.current.addAttachments(incoming);
-          })
+          .then((incoming) =>
+            accepted.apply(() => {
+              if (!accepted.isCurrent() || !fileDropStateRef.current.attachmentsSupported) {
+                incoming.forEach(revokeAttachment);
+                return;
+              }
+              if (incoming.length === 0) {
+                setPasteError(
+                  "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
+                );
+                return;
+              }
+              fileDropStateRef.current.addAttachments(incoming);
+            }),
+          )
           .catch((reason: unknown) => {
-            if (pasteGenerationRef.current !== generation) return;
+            if (!accepted.isCurrent()) return;
+            accepted.fail(reason);
             setPasteError(reason instanceof Error ? reason.message : String(reason));
           }),
       );
@@ -1700,18 +1813,27 @@ export const Composer = memo(function Composer({
     return () => {
       queueMicrotask(() => {
         if (attachmentLifecycleRef.current !== lifecycle) return;
-        pasteGenerationRef.current += 1;
-        releaseAttachments(attachmentsRef.current, borrowedAttachmentIdsRef.current);
-        attachmentsRef.current = [];
-        borrowedAttachmentIdsRef.current.clear();
+        // Retirement captures refs before teardown and keeps accepted reads and
+        // actual Native writes alive. A failed capture keeps its only data owner.
+        void mountedClosure.retire().then(
+          () => {
+            if (attachmentLifecycleRef.current !== lifecycle) return;
+            pasteGenerationRef.current += 1;
+            releaseAttachments(attachmentsRef.current, borrowedAttachmentIdsRef.current);
+            attachmentsRef.current = [];
+            borrowedAttachmentIdsRef.current.clear();
+          },
+          () => {},
+        );
       });
     };
-  }, []);
+  }, [mountedClosure]);
 
   useEffect(() => {
     if (harnessSupportsAttachments(harness)) return;
     const previous = attachmentsRef.current;
     if (previous.length === 0) return;
+    mountedClosure.changed();
     releaseAttachments(previous, borrowedAttachmentIdsRef.current);
     attachmentsRef.current = [];
     setAttachments([]);
@@ -1761,6 +1883,8 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     const el = ref.current;
     if (!el || !initialDraft) return;
+    if (el.value !== initialDraft) mountedClosure.changed();
+    draftTextRef.current = initialDraft;
     if (el.value !== initialDraft) el.value = initialDraft;
     if (!positionedInitialDraft.current) {
       const end = el.value.length;
@@ -1792,6 +1916,7 @@ export const Composer = memo(function Composer({
       return;
     }
     draftResetTokenRef.current = draftResetToken;
+    mountedClosure.changed();
     pasteGenerationRef.current += 1;
     draftRevisionRef.current += 1;
     clearComposer();
@@ -1878,6 +2003,7 @@ export const Composer = memo(function Composer({
   // text after it over as the unsent side question.
   const enterBtwFromPrefix = useCallback(
     (el: HTMLTextAreaElement) => {
+      if (!canMutateDraft()) return false;
       if (!onBtwCommand || inboxCard || noteCard || handoffCard) return false;
       if (attachmentsRef.current.length > 0) return false;
       const rest = consumeBtwPrefix(el.value);
@@ -1894,11 +2020,12 @@ export const Composer = memo(function Composer({
       setMention(null);
       return true;
     },
-    [handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasValue],
+    [canMutateDraft, handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasValue],
   );
 
   const pickSkill = useCallback(
     (skill: Skill) => {
+      if (!canMutateDraft()) return;
       const el = ref.current;
       const token = slashRef.current;
       if (!el || !token) {
@@ -1980,6 +2107,7 @@ export const Composer = memo(function Composer({
       el.focus();
     },
     [
+      canMutateDraft,
       enterBtwFromPrefix,
       publishDraft,
       onPlaceInFolder,
@@ -1992,6 +2120,7 @@ export const Composer = memo(function Composer({
 
   const pickMention = useCallback(
     (file: ProjectFile) => {
+      if (!canMutateDraft()) return;
       const el = ref.current;
       const token = mentionRef.current;
       if (!el || !token) {
@@ -2013,7 +2142,7 @@ export const Composer = memo(function Composer({
       setMention(null);
       el.focus();
     },
-    [syncHasValue, remote],
+    [canMutateDraft, syncHasValue, remote],
   );
 
   const lastFocusToken = useRef(focusToken);
@@ -2288,6 +2417,7 @@ export const Composer = memo(function Composer({
   }, [editLastTurnSupported, onRecallLastTurnReady, recallLastTurn]);
 
   const submit = (value: string, queue = false) => {
+    if (!canMutateDraft()) return;
     if (
       disabled ||
       worktreeRemoved ||
@@ -2316,6 +2446,7 @@ export const Composer = memo(function Composer({
       pending = pasteFlightRef.current;
     }
     const value = ref.current?.value ?? submittedValue;
+    if (!canMutateDraft()) return;
     if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) return;
     if (isClearSessionCommand(value)) {
       if (busy || onSubmit(value.trim(), [], { intent: "default" }) === false) {
@@ -2558,6 +2689,18 @@ export const Composer = memo(function Composer({
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
+    if (!canMutateDraft()) {
+      if (
+        busy &&
+        onStop &&
+        (keybindingPressed(STOP_TURN_COMMAND, e, isDefaultStopChord(e)) ||
+          isInterruptChord(e, e.currentTarget.selectionStart !== e.currentTarget.selectionEnd))
+      ) {
+        e.preventDefault();
+        stopPendingSend();
+      }
+      return;
+    }
     if (creatingSkill) return;
     if (
       !e.shiftKey &&
@@ -2817,23 +2960,28 @@ export const Composer = memo(function Composer({
   };
 
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!canMutateDraft()) {
+      e.preventDefault();
+      return;
+    }
     setPasteError(null);
     const messageFiles = messageFilesFromClipboard(e.clipboardData);
     if (messageFiles) {
       e.preventDefault();
-      const generation = pasteGenerationRef.current;
       const captured = captureDraft(e.currentTarget);
       const text = e.clipboardData.getData("text/plain");
       if (captured) insertRestoredText(captured, text);
       if (!attachmentsSupported) return;
-      rememberAttachmentRead(
-        attachmentsFromFiles(messageFiles).then((pasted) => {
-          if (pasteGenerationRef.current !== generation) {
-            pasted.forEach(revokeAttachment);
-            return;
-          }
-          addAttachments(pasted);
-        }),
+      rememberAttachmentRead((accepted) =>
+        attachmentsFromFiles(messageFiles).then((pasted) =>
+          accepted.apply(() => {
+            if (!accepted.isCurrent()) {
+              pasted.forEach(revokeAttachment);
+              return;
+            }
+            addAttachments(pasted);
+          }),
+        ),
       );
       return;
     }
@@ -2851,25 +2999,27 @@ export const Composer = memo(function Composer({
       e.preventDefault();
       // Captured before the read crosses an IPC hop. Send and draft reset bump
       // the generation, so a finished read cannot attach onto a draft that is gone.
-      const generation = pasteGenerationRef.current;
       const captured = isFileReferenceText(text) ? captureDraft(e.currentTarget) : null;
-      rememberAttachmentRead(
+      rememberAttachmentRead((accepted) =>
         nativeClipboardAttachments(text)
-          .then(({ files: pasted, warning }) => {
-            if (pasteGenerationRef.current !== generation) {
-              pasted.forEach(revokeAttachment);
-              return;
-            }
-            if (pasted.length) {
-              // WebKit can insert the URI after preventDefault. The chip
-              // replaces it, so the draft must not keep that text.
-              if (captured) dropPastedText(captured, text);
-              addAttachments(pasted);
-            } else if (captured) insertRestoredText(captured, text);
-            if (warning) setPasteError(warning);
-          })
+          .then(({ files: pasted, warning }) =>
+            accepted.apply(() => {
+              if (!accepted.isCurrent()) {
+                pasted.forEach(revokeAttachment);
+                return;
+              }
+              if (pasted.length) {
+                // WebKit can insert the URI after preventDefault. The chip
+                // replaces it, so the draft must not keep that text.
+                if (captured) dropPastedText(captured, text);
+                addAttachments(pasted);
+              } else if (captured) insertRestoredText(captured, text);
+              if (warning) setPasteError(warning);
+            }),
+          )
           .catch((reason: unknown) => {
-            if (pasteGenerationRef.current !== generation) return;
+            if (!accepted.isCurrent()) return;
+            accepted.fail(reason);
             setPasteError(reason instanceof Error ? reason.message : String(reason));
           }),
       );
@@ -2877,34 +3027,34 @@ export const Composer = memo(function Composer({
     }
     e.preventDefault();
     if (!attachmentsSupported) return;
-    const generation = pasteGenerationRef.current;
-    rememberAttachmentRead(
-      attachmentsFromFiles(files).then((pasted) => {
-        if (pasteGenerationRef.current !== generation) {
-          pasted.forEach(revokeAttachment);
-          return;
-        }
-        addAttachments(pasted);
-      }),
+    rememberAttachmentRead((accepted) =>
+      attachmentsFromFiles(files).then((pasted) =>
+        accepted.apply(() => {
+          if (!accepted.isCurrent()) {
+            pasted.forEach(revokeAttachment);
+            return;
+          }
+          addAttachments(pasted);
+        }),
+      ),
     );
   };
 
   const attachFromPicker = () => {
-    if (!attachmentsSupported) return;
-    const generation = pasteGenerationRef.current;
+    if (!attachmentsSupported || !canMutateDraft()) return;
+    const selection = retainAttachmentPickerSelection();
     setPasteError(null);
-    rememberAttachmentRead(
-      pickAttachments().then((files) => {
-        if (
-          pasteGenerationRef.current !== generation ||
-          !fileDropStateRef.current.attachmentsSupported
-        ) {
-          files.forEach(revokeAttachment);
-          return;
-        }
-        fileDropStateRef.current.addAttachments(files);
-        ref.current?.focus();
-      }),
+    rememberAttachmentRead((accepted) =>
+      pickAttachments(selection).then((files) =>
+        accepted.apply(() => {
+          if (!accepted.isCurrent() || !fileDropStateRef.current.attachmentsSupported) {
+            files.forEach(revokeAttachment);
+            return;
+          }
+          fileDropStateRef.current.addAttachments(files);
+          ref.current?.focus();
+        }),
+      ),
     );
   };
 
@@ -2981,6 +3131,7 @@ export const Composer = memo(function Composer({
         selection={translationSelection.selection}
         onDismiss={translationSelection.dismissSelection}
         onTranslate={(target) => {
+          if (!canMutateDraft()) return;
           const selection = translationSelection.selection;
           if (selection) setTranslationRequest({ selection, target });
         }}
@@ -2997,6 +3148,7 @@ export const Composer = memo(function Composer({
           context={translationContext}
           onClose={() => setTranslationRequest(null)}
           onApply={(translation) => {
+            if (!canMutateDraft()) throw new Error("Composer input is temporarily closed.");
             const el = ref.current;
             const selected = translationRequest.selection;
             if (!el || el.value !== selected.value) throw new Error("Draft changed");
@@ -3056,6 +3208,7 @@ export const Composer = memo(function Composer({
               loading={mcpLoading}
               error={mcpError}
               onPick={(server) => {
+                if (!canMutateDraft()) return;
                 const el = ref.current;
                 if (!el) return;
                 const previous = selectedMcp.find(
@@ -3104,6 +3257,7 @@ export const Composer = memo(function Composer({
             <SessionFolderPicker
               folders={sessionFolders}
               onPick={(target) => {
+                if (!canMutateDraft()) return;
                 setSessionFolderOpen(false);
                 setSessionFolderSelected(true);
                 onPlaceInFolder?.(target);
@@ -3142,6 +3296,7 @@ export const Composer = memo(function Composer({
               onActive={setSkillActive}
               onPick={pickSkill}
               onStartCreate={() => {
+                if (!canMutateDraft()) return;
                 setCreatingSkill(true);
                 setCreateError(null);
               }}
@@ -3153,29 +3308,37 @@ export const Composer = memo(function Composer({
                 el?.focus();
               }}
               onCreate={(name, scope) => {
+                if (!canMutateDraft()) return;
                 setCreateBusy(true);
                 setCreateError(null);
-                void createBlankSkill({ cwd: executionCwd, name, scope })
-                  .then((path) => {
-                    const el = ref.current;
-                    const token = slashRef.current;
-                    if (el && token) {
-                      const rest = el.value.slice(token.end).replace(/^\s/, "");
-                      const next = `${el.value.slice(0, token.start)}${rest}`;
-                      el.value = next;
-                      resizeComposer(el);
-                      el.setSelectionRange(token.start, token.start);
-                      setDraft(next);
-                      syncHasValue(next, attachments);
-                    }
-                    setCreatingSkill(false);
-                    setSlash(null);
-                    setCreateError(null);
-                    void skillCatalog.refresh({ refresh: true }).catch((error) => {
-                      console.warn("Composer operation failed", error);
+                let createdPath: string | undefined;
+                void mountedClosure
+                  .prepare(async (accepted) => {
+                    // A successful file creation is never repeated merely because
+                    // its later mounted capture/Native draft ACK needs retry.
+                    createdPath ??= await createBlankSkill({ cwd: executionCwd, name, scope });
+                    const path = createdPath;
+                    accepted.apply(() => {
+                      const el = ref.current;
+                      const token = slashRef.current;
+                      if (el && token) {
+                        const rest = el.value.slice(token.end).replace(/^\s/, "");
+                        const next = `${el.value.slice(0, token.start)}${rest}`;
+                        el.value = next;
+                        resizeComposer(el);
+                        el.setSelectionRange(token.start, token.start);
+                        setDraft(next);
+                        syncHasValue(next, attachments);
+                      }
+                      setCreatingSkill(false);
+                      setSlash(null);
+                      setCreateError(null);
+                      void skillCatalog.refresh({ refresh: true }).catch((error) => {
+                        console.warn("Composer operation failed", error);
+                      });
+                      onOpenFile?.(path);
+                      el?.focus();
                     });
-                    onOpenFile?.(path);
-                    el?.focus();
                   })
                   .catch((err: unknown) => {
                     setCreateError(err instanceof Error ? err.message : String(err));
@@ -3204,6 +3367,7 @@ export const Composer = memo(function Composer({
           data-ui-focus-group=""
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
+          data-composer-dragging={fileDrag ? "" : undefined}
           className={`relative z-10 border bg-(--ui-surface-raised) ${
             resendEdited
               ? "edit-last-turn-composer rounded-lg"
@@ -3529,6 +3693,7 @@ export const Composer = memo(function Composer({
                     },
                   ]}
                   onPick={(id) => {
+                    if (!canMutateDraft()) return;
                     if (id === "upload") {
                       attachFromPicker();
                       return;
@@ -3738,7 +3903,7 @@ export const Composer = memo(function Composer({
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-b-xl border border-t-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 pb-1.5 pt-2"
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 pb-1.5 pt-2"
           >
             <ComposerTips active={focused && !disabled} />
             <div
@@ -3969,7 +4134,15 @@ export function ComposerAction({
   const label = labelProp ?? t("Send");
   if (disabled && !busy && !submitting) {
     return (
-      <Button variant="primary" motion="none" iconOnly label={label} shortcut="Enter" disabled>
+      <Button
+        variant="primary"
+        tone="accent"
+        motion="none"
+        iconOnly
+        label={label}
+        shortcut="Enter"
+        disabled
+      >
         <ArrowUp className="size-3.5" strokeWidth={2.25} />
       </Button>
     );
@@ -3997,6 +4170,7 @@ export function ComposerAction({
             ) : null}
             <Button
               variant="primary"
+              tone="accent"
               motion="none"
               iconOnly={!busyLabel}
               label={label}
@@ -4036,6 +4210,7 @@ export function ComposerAction({
   return (
     <Button
       variant="primary"
+      tone="accent"
       motion="none"
       iconOnly
       label={blockedReason ? `${label}. ${blockedReason}` : label}

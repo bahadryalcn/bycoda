@@ -1,0 +1,44 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* Placement and box layout are caller-adjustable (width, gap, padding, radius for a
+   tab strip versus a list row); the highlight states below are owned here. */
+@layer components {
+  .host {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-inline-size: 0;
+    border-radius: var(--ui-control-radius);
+  }
+}
+
+.host {
+  transition: background-color var(--duration-fast) var(--ease-standard);
+}
+/* One highlight for the whole item: it stays while the pointer is over an inline
+   action, and keyboard focus anywhere inside reads the same as hover. */
+@media (hover: hover) and (pointer: fine) {
+  .host:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.host:has(:focus-visible) {
+  background: var(--ui-surface-hover);
+}
+.host[data-selected] {
+  background: var(--ui-surface-selected);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .host[data-selected] {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
+}

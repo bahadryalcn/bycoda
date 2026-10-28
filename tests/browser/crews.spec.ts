@@ -55,7 +55,7 @@ test("library copy reconciles an uncertain saved profile without a second save",
   await page
     .locator(".settings-row")
     .filter({ hasText: "API engineer" })
-    .getByRole("button", { name: "Edit", exact: true })
+    .getByRole("button", { name: /^Edit / })
     .click();
   const dialog = page.getByRole("dialog", { name: "API engineer", exact: true });
   await dialog.getByRole("button", { name: "Copy to all projects", exact: true }).click();
@@ -324,8 +324,11 @@ for (const theme of ["light", "dark"] as const) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/crews.html?defaults&theme=${theme}`);
     await page.getByRole("button", { name: "Crew settings page" }).click();
-    await expect(page.getByRole("button", { name: "Edit", exact: true })).toHaveCount(18);
-    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    await expect(page.getByRole("button", { name: /^Edit / })).toHaveCount(18);
+    await page
+      .getByRole("button", { name: /^Edit / })
+      .first()
+      .click();
     const team = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
     await expect(team.getByRole("region", { name: "Coordinator", exact: true })).toContainText(
       "Team Lead",
@@ -351,7 +354,9 @@ for (const theme of ["light", "dark"] as const) {
     await expect(team.getByRole("textbox", { name: "Instructions", exact: true })).toHaveValue(
       /intermittent connectivity/,
     );
-    await team.getByRole("textbox", { name: "Role", exact: true }).fill("Our mobile engineer");
+    await team
+      .getByRole("textbox", { name: "Member name", exact: true })
+      .fill("Our mobile engineer");
     await team.getByRole("button", { name: "Save", exact: true }).click();
     await expect(team.getByRole("status")).toHaveText("Saved");
     await page.keyboard.press("Escape");
@@ -362,7 +367,10 @@ for (const theme of ["light", "dark"] as const) {
     await page.screenshot({
       path: `${shots}/defaults-${theme}-${testInfo.project.name}.png`,
     });
-    await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+    await page
+      .getByRole("button", { name: /^Edit / })
+      .first()
+      .click();
     const saved = page.getByRole("dialog", { name: "bycoda Product Team", exact: true });
     await expect(saved.getByRole("region", { name: "Specialists", exact: true })).toContainText(
       "Our mobile engineer",
@@ -389,9 +397,9 @@ test("creates a crew from the rail with chosen members without starting work", a
   // Several library members are added in one step; groups filter the list.
   await dialog.getByRole("button", { name: "Add members", exact: true }).click();
   await expect(dialog.getByRole("radio", { name: "Library (2)" })).toBeChecked();
-  await dialog.getByRole("textbox", { name: "Search members" }).fill("designer");
+  await dialog.getByRole("textbox", { name: "Search name, role, model or group" }).fill("designer");
   await dialog.getByRole("checkbox").first().check();
-  await dialog.getByRole("textbox", { name: "Search members" }).fill("");
+  await dialog.getByRole("textbox", { name: "Search name, role, model or group" }).fill("");
   await dialog.getByLabel("API engineer").check();
   await page.screenshot({
     path: `${shots}/add-members-${testInfo.project.name}.png`,
@@ -431,8 +439,8 @@ test("adds a new member when the library is empty and shows role problems in pla
     .getByRole("group", { name: "Suggested roles" })
     .getByRole("button", { name: "Project lead" })
     .click();
-  await expect(dialog.getByRole("textbox", { name: "Role" })).toHaveValue("Project lead");
-  await dialog.getByRole("textbox", { name: "Role" }).fill("Mobile release lead");
+  await expect(dialog.getByRole("textbox", { name: "Member name" })).toHaveValue("Project lead");
+  await dialog.getByRole("textbox", { name: "Member name" }).fill("Mobile release lead");
   await dialog.getByLabel("Also save to member library").check();
   await dialog
     .getByRole("radiogroup", { name: "Library availability" })
@@ -605,14 +613,17 @@ test("editing keeps the roster first, settings one tab away, and fits narrow win
 }, testInfo) => {
   await page.goto("/tests/browser/crews.html?theme=light");
   await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+  await page
+    .getByRole("button", { name: /^Edit / })
+    .first()
+    .click();
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
   await dialog.getByRole("button", { name: /UI Build accessible UI/ }).click();
   // Automatic members rate their models with plain levels instead of raw numbers.
   await expect(dialog.getByRole("list", { name: "Model ratings" })).toBeVisible();
   await expect(dialog.getByText("Owner quality estimate")).toHaveCount(0);
-  await dialog.getByRole("textbox", { name: "Role" }).fill("Frontend");
+  await dialog.getByRole("textbox", { name: "Member name" }).fill("Frontend");
   await dialog.getByRole("textbox", { name: "Groups" }).fill("Web");
   await dialog.getByRole("textbox", { name: "Groups" }).press("Enter");
   await dialog.getByRole("button", { name: "Save to library" }).click();
@@ -650,7 +661,10 @@ test("conflicting edits can be preserved as a new crew or replaced by the latest
 }) => {
   await page.goto("/tests/browser/crews.html");
   await page.getByRole("button", { name: "Crew settings page" }).click();
-  await page.getByRole("button", { name: "Edit", exact: true }).first().click();
+  await page
+    .getByRole("button", { name: /^Edit / })
+    .first()
+    .click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("textbox", { name: "Crew name" }).fill("My local edits");
   await page.evaluate(() =>
@@ -760,7 +774,7 @@ test("polling keeps the selected work when another delivery becomes newest", asy
 test("crew settings work view opens the selected conversation", async ({ page }) => {
   await page.goto("/tests/browser/crews.html");
   await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
-  await page.getByRole("button", { name: "Crew work", exact: true }).click();
+  await page.getByRole("button", { name: "Crew work: Website Crew", exact: true }).click();
   const management = page.getByRole("dialog", { name: "Website Crew", exact: true });
   await management
     .locator('[data-crew-run="run"]')

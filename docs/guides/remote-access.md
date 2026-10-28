@@ -6,6 +6,29 @@ A folder on a connected machine is a project in the rail, marked with a globe. E
 
 ## Connect through SSH
 
+### Servers catalog and terminal tabs
+
+The Servers catalog distinguishes saved SSH terminal targets from machines running
+bycoda Host. Machine connection status comes from the connection state; a saved SSH
+entry alone does not establish that its destination is reachable. Use **Connect**
+to open a terminal, or select an entry to inspect its address and connection,
+forwarding, automation, organization and activity tools. Applied filters are shown
+beside the catalog; **Recently used first** changes order without filtering entries.
+
+SSH tabs support the close action, middle click and Delete on the focused tab.
+The existing terminal close policy asks before closing foreground work or a terminal
+whose process status cannot be determined. Closing the active tab selects a surviving
+neighbor. Opening, running, failed and exited labels describe the terminal lifecycle;
+an opened terminal does not by itself verify remote SSH authentication.
+
+While a terminal is open, **Saved SSH tabs** holds the restore preference and pending
+entries. Only saved connections can be remembered. Restoring an entry requires
+**Connect**, opens a new shell and does not replay previous commands. Exact endpoint
+and identity-file details remain available from the terminal's connection information.
+
+SSH settings load keys, known hosts and agent information independently. A failed
+section has its own **Retry** action; successfully loaded sections remain available.
+
 In **Settings → Connections → Add machine**, enter an SSH address (`user@my-mac-mini`) or an alias from your SSH config and click **Connect**. The machine picker also links to this Settings page. An optional name and SSH port are available.
 
 bycoda downloads the host package matching the desktop release and remote architecture, verifies its checksum, installs a background service, pairs this desktop, and opens a private SSH forward. Node is included in the host package; users do not build the host, install Node, copy tokens, or run a tunnel command. Existing running hosts are reused without interrupting their agents.

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { ChevronDown } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
@@ -13,7 +13,13 @@ const ModelPicker = lazy(() =>
   })),
 );
 import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/model/models";
-import type { HarnessId } from "../../sessions/model/session";
+import { HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import {
+  defaultProviderAccountId,
+  providerAccountLabel,
+  subscribeProviderAccounts,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import {
   TEXT_HARNESSES,
   pickTextHarness,
@@ -117,6 +123,13 @@ export function GitGenerationSettings({
   const harness = choice?.harness ?? pickTextHarness(preferred);
   const automatic = automaticGitChoice(preferred);
   const model = resolveModel(harness, choice?.model ?? automatic?.model ?? defaultModelId(harness));
+  const account = useSyncExternalStore(
+    subscribeProviderAccounts,
+    () => supportsProviderAccounts(harness)
+      ? providerAccountLabel(harness, defaultProviderAccountId(harness))
+      : "",
+    () => "",
+  );
   return (
     <>
       <Button
@@ -153,9 +166,9 @@ export function GitGenerationSettings({
           }}
           className="flex flex-col gap-2 p-3"
         >
-          <p className="text-[12px] font-medium">{t("Commit and pull request generation")}</p>
+          <p className="text-ui-body font-medium">{t("Commit and pull request generation")}</p>
           {!choice && (
-            <p className="text-[11px] text-[var(--ui-text-secondary)]">{t("Automatic")}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">{t("Automatic")}</p>
           )}
           <GitGenerationModelControl
             cwd={cwd}
@@ -164,6 +177,16 @@ export function GitGenerationSettings({
             onChange={onChange}
             disabled={disabled}
           />
+          <details className="text-ui-caption text-(--ui-text-secondary)">
+            <summary className="cursor-pointer py-1">{t("Effective generation configuration")}</summary>
+            <p className="my-2">{t(hasOverride ? "Checkout override" : choice ? "Global generation default" : "Automatic generation selection")}</p>
+            <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+              <dt>{t("Provider")}</dt><dd className="break-words">{HARNESS_TITLE[harness]}</dd>
+              <dt>{t("Model")}</dt><dd className="break-words">{model.name}</dd>
+              {account ? <><dt>{t("Account")}</dt><dd className="break-words">{account}</dd></> : null}
+            </dl>
+            <p className="my-2">{t(account ? "Uses the provider default account at generation time." : "Uses the provider CLI's current account.")}</p>
+          </details>
           {hasOverride && (
             <Button
               size="sm"

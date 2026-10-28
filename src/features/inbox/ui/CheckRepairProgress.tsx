@@ -320,8 +320,8 @@ function RepairCard({
       (check) => check.name === single.check.name && check.workflow === single.check.workflow,
     ).length === 1;
   return (
-    <div className="overflow-hidden rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-hover)">
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5">
+    <div className="min-w-0 overflow-hidden rounded-(--radius-control) bg-(--ui-surface)">
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-2 py-2">
         <Button
           variant="ghost"
           type="button"
@@ -329,7 +329,8 @@ function RepairCard({
           aria-expanded={expanded}
           aria-controls={detailsId}
           onClick={() => setExpanded(!expanded)}
-          className="min-w-0 flex-1 text-left"
+          align="start"
+          className="min-w-0 flex-1"
         >
           <StatusIcon state={lead} />
           <span className="min-w-0 flex-1">
@@ -351,7 +352,7 @@ function RepairCard({
             </span>
             <span
               title={single ? `${single.check.workflow}: ${single.check.name}` : undefined}
-              className="mt-0.5 block truncate text-ui-micro text-(--ui-text-secondary)"
+              className="mt-0.5 block break-words text-ui-caption text-(--ui-text-secondary)"
             >
               {single ? single.check.name : t("CI repair for {p0}", { p0: label })}
             </span>
@@ -394,7 +395,7 @@ function RepairCard({
               <li
                 key={JSON.stringify([check.workflow, check.name, check.url])}
                 title={check.workflow}
-                className="max-w-full truncate rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
+                className="max-w-full break-words rounded bg-(--ui-surface-raised) px-2 py-1 text-(--ui-text-secondary)"
               >
                 {check.name}
               </li>

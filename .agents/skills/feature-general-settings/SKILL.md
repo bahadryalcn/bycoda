@@ -147,3 +147,27 @@ isolated data. Update user guides when behavior changes.
 Audit/design ready locally, uncommitted. Baseline is source identity, not a
 delivered fix; installed inclusion UNKNOWN. No setting/language/OS/trace/import/
 setup/guide/link/update/native/Host/index/branch/build/install/release change.
+
+## H3 implemented reference, 2026-10-28
+
+The implementation request is quoted in `feature-settings/SKILL.md`, conversation
+`55e5cc00-32d1-420a-ac03-bdb7f2a2af2d`. Uncommitted on shared main, observed HEAD
+`c03fa98d4819494a53ebfa61ff74320105bd05fc`; no delivery commit exists.
+
+`GeneralSettings.tsx` now separates language/behavior/power preferences from
+setup/diagnostics/About in independent responsive tracks (`GeneralSettings.css`).
+Shared Group/Row expose required scope/dependency context and retain optional
+InfoPopover help, control IDs, reveal and persistence descriptions.
+Website/contact operations have independent duplicate guards, pending feedback,
+retry/copy-address errors and focus return. The available-update action says
+"Install and restart" using a new key in all eight desktop locale catalogs.
+
+GEN-01/02/03/16/18 are implemented for review; GEN-19/20 are preserved contracts.
+GEN-04-15/17 require the existing persistence/i18n/native/diagnostics/updater
+owners and remain open. This patch does not invent effective OS state, native
+language success, durable-save success or installed-source equivalence.
+
+Test edilmedi under the overnight rule. The single final fast typecheck and
+morning acceptance matrix are recorded in
+`temp/local/2026-10-28-h3-settings-reference/handoff.json`. Source review does
+not establish runtime, native, clipboard, updater or installed acceptance.

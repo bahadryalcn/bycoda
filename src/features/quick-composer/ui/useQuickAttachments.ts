@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ClipboardEvent,
@@ -14,123 +15,206 @@ import {
   filesFromClipboard,
   MAX_ATTACHMENTS,
   pickAttachments,
+  retainAttachmentPickerSelection,
   revokeAttachment,
+  MAX_EMBED_BYTES,
 } from "../../sessions/model/attachments";
-import type { Attachment } from "../../sessions/model/session";
-import { isFileReferenceText, nativeClipboardAttachments } from "../../../platform/tauri/clipboard";
+import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
+import {
+  isFileReferenceText,
+  nativeClipboardAttachments,
+  readClipboardFilePaths,
+  readClipboardImage,
+} from "../../../platform/tauri/clipboard";
 import { storeQuickAttachments } from "../model/quickAttachments";
+import type { QuickComposerOwner, QuickPreparation } from "../model/quickComposerClosure";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
 
-function releaseCaptures(files: Attachment[]) {
+async function releaseCaptures(files: Attachment[]) {
   const paths = files.flatMap((file) => (file.path ? [file.path] : []));
-  if (paths.length) void invoke("quick_composer_release_capture", { paths }).catch(() => undefined);
+  if (paths.length) await invoke("quick_composer_release_capture", { paths });
 }
-
-type CapturedClipboardPaste = { files: Attachment[]; warning?: string } | { error: unknown };
-
-function discardCapturedPaste(paste: CapturedClipboardPaste) {
-  if ("files" in paste) paste.files.forEach(revokeAttachment);
+function localPreparation(): QuickPreparation {
+  const values = new Map<string, unknown>();
+  const captured = new Map<string, Promise<unknown>>();
+  return {
+    apply: (operation) => operation(),
+    fail: (error) => {
+      throw error;
+    },
+    async stage(key, operation) {
+      if (values.has(key)) return values.get(key) as never;
+      const value = await operation();
+      values.set(key, value);
+      return value;
+    },
+    once(key, operation) {
+      if (!captured.has(key)) captured.set(key, operation());
+      return captured.get(key) as never;
+    },
+  };
 }
 
 export function useQuickAttachments(
   supported: boolean,
   onError: (message: string | null) => void,
-  /** Called with what was attached and the files already there before it. */
   onAdded?: (added: Attachment[], previous: Attachment[]) => void,
+  owner?: QuickComposerOwner,
 ) {
-  const [files, setFiles] = useState<Attachment[]>([]);
+  const [files, setFiles] = useState<Attachment[]>(() => owner?.draft().attachments ?? []);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const filesRef = useRef(files);
-  const loadingRef = useRef(false);
+  const queueRef = useRef(
+    owner?.queue ?? { tail: Promise.resolve(), pending: 0, screenshot: false },
+  );
   const alive = useRef(true);
   const nativeDropAt = useRef(0);
-  /** Clipboard contents captured while another collection is still running. */
-  const queuedScreenshot = useRef<Promise<CapturedClipboardPaste> | null>(null);
   const supportedRef = useRef(supported);
-  supportedRef.current = supported;
   const onAddedRef = useRef(onAdded);
-  onAddedRef.current = onAdded;
+  useLayoutEffect(() => {
+    supportedRef.current = supported;
+    onAddedRef.current = onAdded;
+  }, [supported, onAdded]);
+  const currentFiles = () => owner?.draft().attachments ?? filesRef.current;
+  const updateFiles = (next: Attachment[]) => {
+    filesRef.current = next;
+    if (owner) owner.update((draft) => ({ ...draft, attachments: next }));
+    if (alive.current) setFiles(next);
+  };
 
   useEffect(() => {
     alive.current = true;
     return () => {
       alive.current = false;
-      const queued = queuedScreenshot.current;
-      queuedScreenshot.current = null;
-      if (queued) void queued.then(discardCapturedPaste);
-      filesRef.current.forEach(revokeAttachment);
-      releaseCaptures(filesRef.current);
+      // The actual QuickComposer window owner retains raw draft/captures and
+      // admitted jobs across view unmount/HMR. A view is not Native destruction.
+      if (!owner) {
+        filesRef.current.forEach(revokeAttachment);
+        void releaseCaptures(filesRef.current).catch(() => {});
+      }
     };
-  }, []);
+  }, [owner]);
 
-  /** `collect` bails on the same conditions, so a paste must ask first. */
-  const canCollect = useCallback(() => supportedRef.current && !loadingRef.current, []);
+  const canMutate = () => !owner || owner.canMutate();
+  const isSupported = useCallback(
+    () =>
+      owner
+        ? harnessSupportsAttachments(owner.draft().choice.harness) && !owner.launching
+        : supportedRef.current,
+    [owner],
+  );
+  const canCollect = useCallback(
+    () => isSupported() && queueRef.current.pending === 0 && (!owner || owner.canMutate()),
+    [owner, isSupported],
+  );
 
   const collect = useCallback(
-    async (read: () => Promise<Attachment[]>) => {
-      if (!canCollect()) return;
-      loadingRef.current = true;
-      setLoading(true);
-      onError(null);
+    (
+      read: (accepted: QuickPreparation) => Promise<Attachment[]>,
+      captureEarly = false,
+    ): Promise<void> => {
+      const queue = queueRef.current;
+      if (
+        !isSupported() ||
+        (owner && !owner.canMutate()) ||
+        (!captureEarly && queue.pending > 0) ||
+        (captureEarly && queue.screenshot)
+      )
+        return Promise.resolve();
+      if (captureEarly) queue.screenshot = true;
+      const previous = queue.tail;
+      queue.pending++;
+      owner?.touch();
+      if (alive.current) {
+        setLoading(true);
+        onError(null);
+      }
       let incoming: Attachment[] = [];
-      try {
-        incoming = await read();
-        if (!alive.current || !supportedRef.current) {
+      const operation = async (accepted: QuickPreparation) => {
+        // Capture the queued clipboard NOW, after its own admission. Observe a
+        // rejection immediately even while an earlier spill is still pending.
+        const early = captureEarly
+          ? read(accepted).then(
+              (value) => ({ value }),
+              (error: unknown) => ({ error }),
+            )
+          : undefined;
+        await previous;
+        incoming = await accepted.stage("incoming", async () => {
+          if (!early) return read(accepted);
+          const result = await early;
+          if ("error" in result) throw result.error;
+          return result.value;
+        });
+        if ((!alive.current && !owner) || !isSupported()) {
+          if (owner)
+            throw new Error(
+              "The attachment's provider changed; its accepted selection is retained.",
+            );
           incoming.forEach(revokeAttachment);
           return;
         }
-        const next = [...filesRef.current];
-        const accepted: Attachment[] = [];
-        for (const file of incoming) {
-          if (
-            next.length + accepted.length >= MAX_ATTACHMENTS ||
-            [...next, ...accepted].some(
-              (item) => item.id === file.id || (item.path && item.path === file.path),
-            )
-          ) {
-            revokeAttachment(file);
-            continue;
+        const selected = await accepted.stage("accepted", async () => {
+          const before = currentFiles();
+          const picked: Attachment[] = [];
+          for (const file of incoming) {
+            if (
+              before.length + picked.length >= MAX_ATTACHMENTS ||
+              [...before, ...picked].some(
+                (item) => item.id === file.id || (item.path && item.path === file.path),
+              )
+            ) {
+              revokeAttachment(file);
+              continue;
+            }
+            picked.push(file);
           }
-          accepted.push(file);
-        }
-        if (incoming.length > accepted.length && next.length + accepted.length >= MAX_ATTACHMENTS)
-          onError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
-        const stored = await storeQuickAttachments(accepted);
-        if (!alive.current || !supportedRef.current) {
+          if (
+            incoming.length > picked.length &&
+            before.length + picked.length >= MAX_ATTACHMENTS &&
+            alive.current
+          )
+            onError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+          return picked;
+        });
+        const stored = await accepted.stage("stored", () =>
+          storeQuickAttachments(selected, accepted.stage),
+        );
+        if ((!alive.current && !owner) || !isSupported()) {
+          if (owner)
+            throw new Error("The attachment's provider changed; its accepted bytes are retained.");
           stored.forEach(revokeAttachment);
           return;
         }
-        // Read the current list again: files may have been removed while loading.
-        const previous = filesRef.current;
-        filesRef.current = [...previous, ...stored];
-        setFiles(filesRef.current);
-        if (stored.length) onAddedRef.current?.(stored, previous);
-      } catch (reason) {
-        incoming.forEach(revokeAttachment);
-        if (alive.current) onError(reason instanceof Error ? reason.message : String(reason));
-      } finally {
-        loadingRef.current = false;
-        if (alive.current) setLoading(false);
-        // The clipboard read started when Paste was pressed. Queue only the
-        // captured result so a later clipboard change cannot replace it.
-        const queued = queuedScreenshot.current;
-        queuedScreenshot.current = null;
-        if (queued) {
-          if (!alive.current || !supportedRef.current) {
-            void queued.then(discardCapturedPaste);
-          } else {
-            void collect(async () => {
-              const result = await queued;
-              if ("error" in result) throw result.error;
-              if (result.warning) onError(result.warning);
-              return result.files;
-            });
-          }
-        }
-      }
+        accepted.apply(() => {
+          const before = currentFiles();
+          const additions = stored.filter(
+            (file) =>
+              !before.some((item) => item.id === file.id || (item.path && item.path === file.path)),
+          );
+          updateFiles([...before, ...additions]);
+          if (additions.length) onAddedRef.current?.(additions, before);
+        });
+      };
+      const actual = owner ? owner.prepare(operation) : operation(localPreparation());
+      const settled = actual.then(
+        () => undefined,
+        (reason: unknown) => {
+          if (!owner) incoming.forEach(revokeAttachment);
+          if (alive.current) onError(reason instanceof Error ? reason.message : String(reason));
+        },
+      );
+      queue.tail = settled;
+      void settled.then(() => {
+        queue.pending--;
+        if (captureEarly) queue.screenshot = false;
+        owner?.touch();
+        if (alive.current) setLoading(queue.pending > 0);
+      });
+      return settled;
     },
-    [onError, canCollect],
+    [owner, isSupported, onError],
   );
 
   useEffect(() => {
@@ -145,126 +229,198 @@ export function useQuickAttachments(
         if (payload.type === "drop") {
           setDragging(false);
           nativeDropAt.current = Date.now();
-          void collect(() => attachmentsFromPaths(payload.paths));
-        } else setDragging(supportedRef.current && !loadingRef.current);
+          const paths = [...payload.paths];
+          void collect(() => attachmentsFromPaths(paths));
+        } else setDragging(canCollect());
       })
       .then((unlisten) => {
         if (disposed) unlisten();
         else stop = unlisten;
       })
-      .catch(() => undefined);
+      .catch(() => {});
     return () => {
       disposed = true;
       stop?.();
     };
-  }, [collect]);
+  }, [collect, canCollect]);
 
-  const onPaste = (event: ClipboardEvent) => {
-    const pasted = filesFromClipboard(event.clipboardData);
-    if (!pasted.length) {
-      // A webview reports a paste as text only, so a screenshot or a file
-      // copied in a file manager arrives with nothing to attach; both live on
-      // the native clipboard.
-      if (!supported) return;
-      const text = event.clipboardData.getData("text/plain");
-      // Prose and whitespace alike are the webview's to insert, and cost no
-      // clipboard read, spinner, or cleared error.
-      if (text && !isFileReferenceText(text)) return;
-      // A file URI can still be inserted by the webview. A screenshot cannot,
-      // so capture it now even when attachment processing must wait.
-      if (!canCollect()) {
-        if (!text) {
-          event.preventDefault();
-          if (!queuedScreenshot.current) {
-            queuedScreenshot.current = nativeClipboardAttachments("").then(
-              ({ files, warning }) => ({ files, warning }),
-              (error: unknown) => ({ error }),
-            );
-          }
-        }
-        return;
-      }
-      // A file URI becomes a chip, so it is kept out of the prompt; with no
-      // text at all the paste carried an image the webview cannot see.
-      event.preventDefault();
-      // Captured before the read crosses an IPC hop.
-      const captured = isFileReferenceText(text) ? captureDraft(event.target) : null;
-      void collect(async () => {
-        const { files, warning } = await nativeClipboardAttachments(text);
-        if (warning) onError(warning);
-        if (files.length) {
-          // WebKit can insert the URI after preventDefault. The chip
-          // replaces it, so the prompt must not keep that text.
-          if (captured) dropPastedText(captured, text);
-        } else if (captured) insertRestoredText(captured, text);
-        return files;
+  const readFiles = (input: File[], accepted: QuickPreparation, overflow = false) => {
+    const selected = input.slice(0, MAX_ATTACHMENTS);
+    return Promise.allSettled(
+      selected.map((file, index) =>
+        accepted.stage(`file:${index}`, () => attachmentsFromFiles([file])),
+      ),
+    ).then((results) => {
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
+      if (overflow && alive.current) onError(`You can attach up to ${MAX_ATTACHMENTS} files.`);
+      return results.flatMap((result) => (result as PromiseFulfilledResult<Attachment[]>).value);
+    });
+  };
+  const clipboard = async (text: string, accepted: QuickPreparation) => {
+    if (!owner) return nativeClipboardAttachments(text);
+    const paths = await accepted.once("clipboard-paths", async () => {
+      const selected = await readClipboardFilePaths();
+      if (
+        selected.length > 4096 ||
+        selected.reduce((size, path) => size + path.length * 2, 0) > 1024 * 1024
+      )
+        throw new Error("The clipboard selection exceeds retained attachment capacity.");
+      return Object.freeze([...selected]);
+    });
+    if (paths.length) {
+      const chosen = paths.slice(0, MAX_ATTACHMENTS);
+      const files = await attachmentsFromPaths(chosen);
+      if (!files.length)
+        throw new Error(
+          "Nothing to attach from that path — the file may have been moved, renamed, or deleted.",
+        );
+      return {
+        files,
+        ...(chosen.length < paths.length
+          ? {
+              warning: `Attached ${files.length} of ${paths.length} copied files. A turn carries up to ${MAX_ATTACHMENTS}.`,
+            }
+          : {}),
+      };
+    }
+    if (text) return { files: [] };
+    try {
+      const file = await accepted.once("clipboard-image", async () => {
+        const selected = await readClipboardImage();
+        if (selected.size > MAX_EMBED_BYTES)
+          throw new Error("The clipboard image exceeds retained attachment capacity.");
+        return selected;
       });
+      return { files: await readFiles([file], accepted) };
+    } catch (error) {
+      if (error instanceof Error && error.message === "The clipboard does not contain an image.")
+        return { files: [] };
+      throw error;
+    }
+  };
+  const onPaste = (event: ClipboardEvent) => {
+    if (!canMutate()) {
+      event.preventDefault();
+      return;
+    }
+    const pasted = filesFromClipboard(event.clipboardData);
+    if (pasted.length) {
+      if (!supported) return;
+      event.preventDefault();
+      const selected = pasted.slice(0, MAX_ATTACHMENTS);
+      const overflow = selected.length < pasted.length;
+      void collect((accepted) => readFiles(selected, accepted, overflow));
       return;
     }
     if (!supported) return;
-    event.preventDefault();
-    void collect(() => attachmentsFromFiles(pasted));
-  };
-  const onDragOver = (event: DragEvent) => {
-    if (!Array.from(event.dataTransfer.types).includes("Files")) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = supported && !loading ? "copy" : "none";
-    setDragging(supported && !loading);
-  };
-  const onDragLeave = (event: DragEvent) => {
-    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+    const text = event.clipboardData.getData("text/plain");
+    if (text && !isFileReferenceText(text)) return;
+    if (!canCollect()) {
+      if (!text) {
+        event.preventDefault();
+        void collect(async (accepted) => {
+          const result = await clipboard("", accepted);
+          if (result.warning && alive.current) onError(result.warning);
+          return result.files;
+        }, true);
+      }
       return;
-    setDragging(false);
-  };
-  const onDrop = (event: DragEvent) => {
-    event.preventDefault();
-    setDragging(false);
-    if (Date.now() - nativeDropAt.current < 250) return;
-    const dropped = Array.from(event.dataTransfer.files);
-    if (dropped.length) void collect(() => attachmentsFromFiles(dropped));
-  };
-  const remove = (id: string) => {
-    const removed = filesRef.current.find((file) => file.id === id);
-    if (removed) {
-      revokeAttachment(removed);
-      releaseCaptures([removed]);
     }
-    filesRef.current = filesRef.current.filter((file) => file.id !== id);
-    setFiles(filesRef.current);
+    event.preventDefault();
+    const captured = isFileReferenceText(text) ? captureDraft(event.target) : null;
+    void collect(async (accepted) => {
+      const result = await clipboard(text, accepted);
+      accepted.apply(() => {
+        if (result.warning && alive.current) onError(result.warning);
+        if (result.files.length) {
+          if (captured) dropPastedText(captured, text);
+        } else if (captured) insertRestoredText(captured, text);
+      });
+      return result.files;
+    });
   };
-  const clear = () => {
-    filesRef.current.forEach(revokeAttachment);
-    releaseCaptures(filesRef.current);
-    filesRef.current = [];
-    setFiles([]);
+  const remove = (id: string): void => {
+    if (!canMutate()) return;
+    const removed = currentFiles().filter((file) => file.id === id);
+    const operation = async (accepted: QuickPreparation) => {
+      accepted.apply(() => {
+        removed.forEach(revokeAttachment);
+        updateFiles(currentFiles().filter((file) => file.id !== id));
+      });
+      await releaseCaptures(removed);
+    };
+    const actual = owner ? owner.prepare(operation) : operation(localPreparation());
+    void actual.catch(() => {});
   };
-
+  const clearAfterHandoff = (covered?: readonly { id: string; path?: string }[]): Promise<void> => {
+    if (!canMutate()) return Promise.resolve();
+    if (owner && !owner.admitted)
+      return Promise.reject(new Error("Quick attachment cleanup requires its accepted owner."));
+    const before = currentFiles().filter(
+      (file) => !covered || covered.some((sent) => sent.id === file.id && sent.path === file.path),
+    );
+    before.forEach(revokeAttachment);
+    const removed = new Set(before);
+    updateFiles(currentFiles().filter((file) => !removed.has(file)));
+    return releaseCaptures(before).catch(() => {
+      owner?.unknown();
+    });
+  };
   return {
-    files,
-    loading,
+    files: owner?.draft().attachments ?? files,
+    loading: owner ? owner.attachmentPending > 0 : loading,
     dragging,
     remove,
-    clear,
+    clear: () => {
+      if (!canMutate()) return;
+      if (owner)
+        void owner
+          .prepare(async (accepted) => {
+            const release = accepted.apply(clearAfterHandoff);
+            await release;
+          })
+          .catch(() => {});
+      else void clearAfterHandoff();
+    },
+    clearAfterHandoff,
     onPaste,
-    onDragOver,
-    onDragLeave,
-    onDrop,
-    chooseFiles: () => collect(pickAttachments),
-    takeScreenshot: async () => {
+    onDragOver: (event: DragEvent) => {
+      if (!Array.from(event.dataTransfer.types).includes("Files")) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = canCollect() ? "copy" : "none";
+      setDragging(canCollect());
+    },
+    onDragLeave: (event: DragEvent) => {
+      if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+        return;
+      setDragging(false);
+    },
+    onDrop: (event: DragEvent) => {
+      event.preventDefault();
+      setDragging(false);
+      if (Date.now() - nativeDropAt.current < 250) return;
+      const input = Array.from(event.dataTransfer.files).slice(0, MAX_ATTACHMENTS);
+      const overflow = event.dataTransfer.files.length > input.length;
+      if (input.length) void collect((accepted) => readFiles(input, accepted, overflow));
+    },
+    chooseFiles: () => {
+      const selection = retainAttachmentPickerSelection();
+      return collect((accepted) =>
+        pickAttachments({ read: () => accepted.once("picker-selection", selection.read) }),
+      );
+    },
+    takeScreenshot: () => {
       let captured: string | null = null;
-      try {
-        await collect(async () => {
-          captured = await invoke<string | null>("quick_composer_capture");
-          return captured ? attachmentsFromPaths([captured]) : [];
-        });
-      } finally {
-        // Inspection, capacity checks, and unmounting can reject a new capture.
-        if (captured && !filesRef.current.some((file) => file.path === captured)) {
-          await invoke("quick_composer_release_capture", {
-            paths: [captured],
-          }).catch(() => undefined);
-        }
-      }
+      return collect(async (accepted) => {
+        captured = await accepted.once("screen-selection", () =>
+          invoke<string | null>("quick_composer_capture"),
+        );
+        return captured ? attachmentsFromPaths([captured]) : [];
+      }).then(async () => {
+        if (!owner && captured && !currentFiles().some((file) => file.path === captured))
+          await releaseCaptures([{ path: captured } as Attachment]).catch(() => {});
+      });
     },
   };
 }

@@ -5,6 +5,17 @@ description: Projects inventory for project rail, groups, folder selection, rena
 
 # Projects
 
+## H4 rail/menu source delivery, 2026-10-28
+
+ProjectRail uses shared ActionHost/InlineAction for project/group controls.
+Workspace has an accessible icon; project diff counts, group dirty counts and
+link warnings remain visible independently of contextual actions. Existing
+narrow rail, right-click menus, project identity, locks and saved appearance are
+preserved. Remote menu Reconnect/Edit actions retain their IDs under Machine.
+Uncommitted baseline `c03fa98d4819494a53ebfa61ff74320105bd05fc`; full checklist:
+`temp/local/2026-10-28-h4-workbench/handoff.json`. Test edilmedi under nightly
+RULES.md; source delivery does not prove installed/native acceptance.
+
 Open and organize local/remote project identities while keeping their execution workspaces and saved data intact. Keywords: project rail, projects, group, folder, recents, archive, remove, rename, logos, mascot, background, quick actions, remote, workspace navigation.
 
 Inventory inspected on 2026-10-26 at contracts baseline `f26ac112404e326478adb687c23ca9cc032acfef`. Paths are repository-relative. Search again and inspect recent Git history before editing. This card is not a live concurrency lock: check Host feature claims and session/workspace ownership across worktrees. `docs/reference/managed-workspaces.md` defines intended contracts; runtime support must be verified separately.

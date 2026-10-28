@@ -133,7 +133,7 @@ export function HarnessUpdateNotice({
       </div>
       <p className="pt-2 text-ui-micro text-(--ui-text-muted)">
         {anyUpdated
-          ? t("Model picker refreshed with the new version’s models.")
+          ? t("CLI version verified. Model discovery can be retried in Providers.")
           : t("New models often need the latest version.")}
       </p>
     </TransientNotice>

@@ -11,6 +11,7 @@ export * from "./mobile-tls";
 export * from "./authority";
 export * from "./files";
 export * from "./persistence";
+export * from "./native-buffer-recovery";
 export * from "./terminals";
 export * from "./git";
 export * from "./notes";

@@ -11,6 +11,8 @@ export type GitMenuState = {
   updateNotice?: string | null;
   /** Another git action is already running. */
   busy: boolean;
+  /** Generation leaves staging available, but cannot race any commit variant. */
+  generating?: boolean;
   /** Current branch, or null when HEAD is detached. */
   branch: string | null;
   /** HEAD points at a commit (false in a fresh repository). */
@@ -191,5 +193,15 @@ export function gitActionsMenuItems(state: GitMenuState): ExplorerMenuItem[] {
     SEP,
     entry("auto-fetch", "Auto Fetch", canFetch, { checked: state.autoFetch }),
   ];
-  return state.busy ? lock(items) : items;
+  const eligible = state.generating
+    ? items.map((item) => {
+        if (item.kind !== "item" || item.id !== "commit-menu") return item;
+        return {
+          ...item,
+          submenu: item.submenu?.map((sub) =>
+            sub.kind === "item" && commitMenuOptions(sub.id) ? { ...sub, disabled: true } : sub),
+        };
+      })
+    : items;
+  return state.busy ? lock(eligible) : eligible;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  blockLifecycle,
   deriveActivityDock,
   dockCountLabel,
   dockStateLabel,
@@ -245,7 +246,13 @@ describe("deriveActivityDock", () => {
       blocks: [user, agent("a1", "in_progress")],
     });
     expect(dock.running).toBe(0);
-    expect(dock.agents[0].status).toBe("done");
+    // Never reported as finished: its outcome is unknown, same as the sheet.
+    expect(dock.agents[0].status).toBe("interrupted");
+    expect(dock.interrupted).toBe(1);
+    expect(dock.finished).toBe(0);
+    expect(dockCountLabel(dock)).toBe("1 interrupted");
+    expect(blockLifecycle(agent("a1", "in_progress"), false)).toBe("interrupted");
+    expect(blockLifecycle(agent("a1", "in_progress"), true)).toBe("running");
   });
 
   it("only looks at the latest turn", () => {

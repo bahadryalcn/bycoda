@@ -2,6 +2,8 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale, getLocale } from "../../../shared/i18n";
 import { useGithubPrChecks } from "../hooks/useGithubPrChecks";
 import { summarizePrChecks } from "../model/githubPrChecks";
@@ -12,7 +14,6 @@ import {
   ExternalLink,
   GitCompare,
   MessageSquare,
-  LoaderCircle,
   MessageMultiple,
 } from "../../../shared/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
@@ -24,6 +25,7 @@ import {
   githubWorkItemThread,
   gitlabAttentionLabel,
   inboxItemRef,
+  inboxItemKey,
   inboxItemStatus,
   formatRelativeTime,
   inboxPersonAvatarUrl,
@@ -178,9 +180,15 @@ export function InboxDetail({
             : azuredevops
               ? "Open on ADO"
               : "Open on GitHub";
-  const [replyTo, setReplyTo] = useState<InboxReplyTarget | null>(null);
+  const commentScope = `${cwd}:${item.projectPath}:${inboxItemKey(item)}`;
+  const [replyTo, setReplyTo] = useRetainedState<InboxReplyTarget | null>(
+    `inbox:reply:${commentScope}`, null,
+  );
   const [posting, setPosting] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
+  const [postRefreshError, setPostRefreshError] = useState<string | null>(null);
+  const [threadRefreshing, setThreadRefreshing] = useState(false);
+  const postingRef = useRef(false);
   const defaultProject =
     projects.find((project) => sameProjectPath(project.path, cwd))?.path ??
     projects[0]?.path ??
@@ -189,8 +197,8 @@ export function InboxDetail({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const chooseStartProject = tracker || ((gitlab || azuredevops) && !item.projectPath);
-  const status = tracker ? item.state || inboxItemStatus(item) : inboxItemStatus(item);
   const statusMark = inboxStatusMark(item);
+  const status = tracker ? item.state || inboxItemStatus(item) : t(statusMark.label);
 
   const source = tracker ? item.teamName || item.repo : item.repo || projectName(item.projectPath);
   const attentionLabel =
@@ -230,77 +238,58 @@ export function InboxDetail({
       })
     : null;
 
+  const refreshPostedThread = async () => {
+    setThreadRefreshing(true);
+    try {
+      const next = linear
+        ? await linearIssueThread(item.id ?? "", { force: true })
+        : jira
+          ? await jiraIssueThread(jiraKey, { force: true })
+          : gitlabKind
+            ? await gitlabWorkItemThread(item.repo, gitlabKind, item.number, { force: true })
+            : azureDevOpsKind
+              ? await azureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number, { force: true })
+              : githubKind
+                ? await githubWorkItemThread(item.projectPath, item.repo, githubKind, item.number, { force: true })
+                : null;
+      if (next) setThread(next);
+      setPostRefreshError(null);
+    } catch (err: unknown) {
+      setPostRefreshError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setThreadRefreshing(false);
+    }
+  };
+
   const postComment = async (body: string) => {
+    if (postingRef.current) throw new Error("Comment already in progress");
+    postingRef.current = true;
     setPosting(true);
     setPostError(null);
     try {
       if (linear) {
-        const id = item.id ?? "";
-        await linearIssueComment(id, body, { parentId: replyTo?.id });
-        setReplyTo(null);
-        try {
-          setThread(await linearIssueThread(id, { force: true }));
-        } catch (err: unknown) {
-          setPostError(err instanceof Error ? err.message : String(err));
-        }
-        return;
-      }
-      if (jira) {
+        await linearIssueComment(item.id ?? "", body, { parentId: replyTo?.id });
+      } else if (jira) {
         await jiraIssueComment({ id: item.id ?? "", key: jiraKey }, body);
-        setReplyTo(null);
-        try {
-          setThread(await jiraIssueThread(jiraKey, { force: true }));
-        } catch (err: unknown) {
-          setPostError(err instanceof Error ? err.message : String(err));
-        }
-        return;
-      }
-      if (gitlabKind) {
+      } else if (gitlabKind) {
         await gitlabWorkItemComment(item.repo, gitlabKind, item.number, body);
-        setReplyTo(null);
-        try {
-          setThread(
-            await gitlabWorkItemThread(item.repo, gitlabKind, item.number, {
-              force: true,
-            }),
-          );
-        } catch (err: unknown) {
-          setPostError(err instanceof Error ? err.message : String(err));
-        }
-        return;
-      }
-      if (azureDevOpsKind) {
+      } else if (azureDevOpsKind) {
         await azureDevOpsWorkItemComment(item.repo, azureDevOpsKind, item.number, body);
-        setReplyTo(null);
-        try {
-          setThread(
-            await azureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number, {
-              force: true,
-            }),
-          );
-        } catch (err: unknown) {
-          setPostError(err instanceof Error ? err.message : String(err));
-        }
-        return;
+      } else {
+        if (!githubKind) throw new Error("Unknown inbox item");
+        await githubWorkItemComment(item.projectPath, item.repo, githubKind, item.number, body, {
+          inReplyTo: replyTo?.threadId,
+        });
       }
-      if (!githubKind) throw new Error("Unknown inbox item");
-      await githubWorkItemComment(item.projectPath, item.repo, githubKind, item.number, body, {
-        inReplyTo: replyTo?.threadId,
-      });
+      // Only a confirmed write clears the originating draft. A failed read-back
+      // has its own retry and must never resubmit the provider mutation.
       setReplyTo(null);
-      try {
-        setThread(
-          await githubWorkItemThread(item.projectPath, item.repo, githubKind, item.number, {
-            force: true,
-          }),
-        );
-      } catch (err: unknown) {
-        setPostError(err instanceof Error ? err.message : String(err));
-      }
+      await refreshPostedThread();
     } catch (err: unknown) {
       setPostError(err instanceof Error ? err.message : String(err));
       throw err;
     } finally {
+      postingRef.current = false;
       setPosting(false);
     }
   };
@@ -309,7 +298,7 @@ export function InboxDetail({
     <div
       data-inbox-detail-identity
       data-inbox-detail-fixed-header={panel ? "" : undefined}
-      className={`flex min-w-0 items-center gap-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${
+      className={`flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary) ${
         panel ? "h-9 shrink-0 border-b border-(--ui-tone-neutral-border) px-4 pr-[34px]" : ""
       }`}
     >
@@ -325,7 +314,7 @@ export function InboxDetail({
       {attentionLabel ? (
         <span className="shrink-0 text-(--ui-tone-accent-fg)">{attentionLabel}</span>
       ) : null}
-      {source ? <span className="min-w-0 truncate">{source}</span> : null}
+      {source ? <span className="min-w-0 wrap-anywhere">{source}</span> : null}
       {panel ? (
         <Button
           variant="ghost"
@@ -355,12 +344,9 @@ export function InboxDetail({
           className={`relative border-b border-(--ui-tone-neutral-border) ${panel ? "" : "z-10 shrink-0"}`}
         >
           <div
-            className={`mx-auto flex w-full max-w-5xl flex-col ${
-              panel ? "gap-2 px-4 pt-4" : "gap-2.5 px-8 pt-5"
-            } ${isPr ? "" : panel ? "pb-4" : "pb-5"}`}
+            className={`flex w-full min-w-0 flex-col gap-2 px-4 pt-3 ${isPr ? "" : "pb-3"}`}
           >
             <header className={`flex flex-col ${panel ? "gap-2" : "gap-2.5"}`}>
-              {panel ? null : identityRow}
               <h1
                 title={item.title}
                 className={`break-words font-medium leading-tight text-(--ui-tone-neutral-fg) ${
@@ -369,6 +355,7 @@ export function InboxDetail({
               >
                 {item.title}
               </h1>
+              {panel ? null : identityRow}
               <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
                 {authorName ? (
                   <InboxPerson
@@ -425,18 +412,6 @@ export function InboxDetail({
                     </span>
                   </>
                 ) : null}
-                {baseRef && headRef ? (
-                  <>
-                    <span aria-hidden>·</span>
-                    <span className="inline-flex min-w-0 items-center gap-1">
-                      <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
-                      <span className="min-w-0 truncate">
-                        {baseRef} ← {headRef}
-                      </span>
-                      <CopyBranchNameButton branch={headRef} />
-                    </span>
-                  </>
-                ) : null}
                 {reviewLabel ? (
                   <Badge
                     tone={
@@ -459,7 +434,7 @@ export function InboxDetail({
                 </div>
               ) : null}
               {!panel && relatedSessions.length > 0 ? (
-                <div className="flex min-w-0 items-center gap-1.5 overflow-hidden">
+                <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto">
                   <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
                     <MessageMultiple className="icon-sm" strokeWidth={1.75} />
                     {t("Related")} {relatedSessions.length === 1 ? t("thread") : t("threads")}
@@ -519,11 +494,10 @@ export function InboxDetail({
                       </span>
                     ) : null}
                     {chooseStartProject ? (
-                      <InboxProjectPicker
-                        projects={projects}
-                        value={startProject}
-                        onChange={setStartProject}
-                      />
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <span className="text-ui-caption text-(--ui-text-secondary)">{t("Agent working folder")}</span>
+                        <InboxProjectPicker projects={projects} value={startProject} onChange={setStartProject} />
+                      </div>
                     ) : null}
                   </>
                 ) : null}
@@ -611,19 +585,6 @@ export function InboxDetail({
                     />
                   ) : null}
                 </div>
-                {tab === "code" && inboxShowsFullFileDiff(item) ? (
-                  <SegmentedControl
-                    className="ml-auto self-center"
-                    label={t("Diff context")}
-                    selectionRole="pressed"
-                    value={diffMode}
-                    onValueChange={(next) => setDiffMode(next === "full" ? "full" : "hunks")}
-                    options={[
-                      { value: "hunks", label: t("Hunks") },
-                      { value: "full", label: t("Full file") },
-                    ]}
-                  />
-                ) : null}
               </div>
             ) : null}
           </div>
@@ -637,14 +598,12 @@ export function InboxDetail({
           className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"}
         >
           <div
-            className={`mx-auto flex w-full max-w-5xl flex-col ${
-              panel ? "linked-work-item-content-enter gap-6 px-4 py-5" : "gap-5 px-8 py-5"
-            }`}
+            className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : "mx-auto max-w-5xl"}`}
           >
             {isPr && tab === "code" ? (
-              diffLoading ? (
-                <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-                  <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
+              diffLoading && !prDiff ? (
+                <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-secondary text-(--ui-text-secondary)">
+                  <WorkingIndicator size="md" />{t("Loading...")}
                 </div>
               ) : diffError && !prDiff ? (
                 <Alert tone="info" role="alert">
@@ -652,16 +611,35 @@ export function InboxDetail({
                 </Alert>
               ) : prDiff ? (
                 <>
+                  {diffLoading ? <div role="status" className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)"><WorkingIndicator size="sm" />{t("Loading...")}</div> : null}
                   {diffError ? (
                     <Alert tone="info" role="alert">
                       {diffError}
                     </Alert>
                   ) : null}
                   <InboxPrDiff
-                    key={`${item.projectPath}:${item.number}:${revision}:${diffMode}`}
+                    key={inboxItemKey(item)}
                     diff={prDiff}
                     fullFile={fullFile}
                     focusPath={diffFocusPath}
+                    contextControl={inboxShowsFullFileDiff(item) ? (
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
+                        <SegmentedControl
+                          label={t("Diff context")}
+                          selectionRole="pressed"
+                          value={diffMode}
+                          onValueChange={(next) => setDiffMode(next === "full" ? "full" : "hunks")}
+                          options={[{ value: "hunks", label: t("Hunks") }, { value: "full", label: t("Full file") }]}
+                        />
+                        {baseRef && headRef ? (
+                          <span className="inline-flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary)">
+                            <GitCompare className="icon-xs shrink-0" aria-hidden="true" />
+                            <span className="wrap-anywhere">{baseRef} ← {headRef}</span>
+                            <CopyBranchNameButton branch={headRef} />
+                          </span>
+                        ) : null}
+                      </div>
+                    ) : undefined}
                   />
                 </>
               ) : (
@@ -694,9 +672,9 @@ export function InboxDetail({
                     : undefined
                 }
               />
-            ) : loading ? (
-              <div className="flex justify-center py-10 text-(--ui-text-secondary)">
-                <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
+            ) : loading && !details ? (
+              <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-secondary text-(--ui-text-secondary)">
+                <WorkingIndicator size="md" />{t("Loading...")}
               </div>
             ) : error && !details ? (
               <Alert tone="info" role="alert">
@@ -740,9 +718,18 @@ export function InboxDetail({
                   replyMode={
                     linear ? "parent" : jira || gitlab || azuredevops ? undefined : "thread"
                   }
-                  onReply={setReplyTo}
+                  onReply={(next) => { if (!posting) setReplyTo(next); }}
                 />
+                {postRefreshError ? (
+                  <Alert tone="warning" role="status" action={
+                    <Button loading={threadRefreshing} onClick={() => void refreshPostedThread()}>{t("Retry refresh")}</Button>
+                  }>
+                    <p>{t("Comment sent. Could not refresh the conversation.")}</p>
+                    <p className="wrap-anywhere text-ui-caption">{postRefreshError}</p>
+                  </Alert>
+                ) : null}
                 <InboxCommentForm
+                  draftKey={`${commentScope}:${replyTo?.threadId || replyTo?.id || "comment"}`}
                   target={providerLabel(item.provider)}
                   replyTo={replyTo}
                   posting={posting}

@@ -59,3 +59,46 @@ it("remembers review and normal view modes independently with their own defaults
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps the inactive pane mounted but inert and non-painting despite descendant overrides", async () => {
+  const { MarkdownViewShell } = await import("./MarkdownModeToggle");
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  const ruler = (id: string) =>
+    createElement("div", {
+      "data-testid": id,
+      style: { visibility: "visible", pointerEvents: "auto" },
+    });
+  const render = (mode: MarkdownViewMode) =>
+    root.render(
+      createElement(MarkdownViewShell, {
+        mode,
+        onModeChange: () => undefined,
+        preview: ruler("preview-ruler"),
+        source: ruler("source-ruler"),
+      }),
+    );
+  const pane = (name: string) =>
+    container.querySelector<HTMLElement>(`[data-markdown-view-pane="${name}"]`)!;
+  try {
+    await act(async () => render("preview"));
+    expect(pane("source").hasAttribute("inert")).toBe(true);
+    expect(pane("source").getAttribute("aria-hidden")).toBe("true");
+    expect(pane("source").style.opacity).toBe("0");
+    expect(pane("source").contains(container.querySelector('[data-testid="source-ruler"]'))).toBe(
+      true,
+    );
+    expect(pane("preview").hasAttribute("inert")).toBe(false);
+    expect(pane("preview").hasAttribute("aria-hidden")).toBe(false);
+    await act(async () => render("source"));
+    expect(pane("preview").hasAttribute("inert")).toBe(true);
+    expect(pane("source").hasAttribute("inert")).toBe(false);
+    expect(container.querySelector('[data-testid="preview-ruler"]')).not.toBeNull();
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

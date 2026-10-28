@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { providerLabel } from "../../../shared/lib/providerLabel";
 import { t, useLocale } from "../../../shared/i18n";
 import { CircleDot, GitPullRequest, X } from "../../../shared/ui/icons";
@@ -21,9 +22,11 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
 
   return (
     <div className="px-3 pt-2">
-      <div className="relative rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2.5 py-2 pr-8">
+      <ActionHost className="flex min-w-0 items-start gap-1">
         <Button
-          variant="ghost"
+          variant="item"
+          layout="stacked"
+          align="start"
           type="button"
           title={t("Open in {p0}", { p0: serviceLabel })}
           aria-label={t("Open {p0} {p1} in {p2}", {
@@ -35,17 +38,17 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           onClick={() => {
             if (card.url) void openUrl(card.url);
           }}
-          className="w-full flex-col text-left"
+          className="min-w-0 flex-1"
         >
+          <span className="line-clamp-2 wrap-anywhere text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
+            {card.title}
+          </span>
           <span className="flex min-w-0 items-center gap-1.5">
             <InboxProviderMark provider={card.provider} className="icon-sm shrink-0" />
             <KindIcon className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
               {kindLabel} · {card.identifier}
             </span>
-          </span>
-          <span className="mt-1 line-clamp-1 text-ui-secondary font-medium leading-snug text-(--ui-tone-neutral-fg)">
-            {card.title}
           </span>
           <span className="mt-1 flex min-w-0 items-center gap-2">
             {card.source ? (
@@ -65,19 +68,17 @@ export function InboxMiniCard({ card, onDismiss }: Props) {
           </span>
         </Button>
         {onDismiss ? (
-          <Button
-            iconOnly
+          <InlineAction
             label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
-            variant="ghost"
             type="button"
             title={t("Remove")}
             aria-label={t("Remove {p0} {p1}", { p0: kindLabel, p1: card.identifier })}
             onClick={onDismiss}
           >
             <X className="icon-xs" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
         ) : null}
-      </div>
+      </ActionHost>
     </div>
   );
 }

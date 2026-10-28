@@ -4,7 +4,6 @@ import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
-import { Badge } from "../../../shared/ui/Badge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TagInput } from "../../../shared/ui/TagInput";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
@@ -15,7 +14,6 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import { t, useLocale } from "../../../shared/i18n";
 import {
-  LoaderCircle,
   Plus,
   Search,
   File,
@@ -28,9 +26,12 @@ import {
 import { Popover } from "../../../shared/ui/Popover";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { TextField } from "../../../shared/ui/TextField";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { MoreHorizontal } from "../../../shared/ui/icons";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { openSearchPanel } from "@codemirror/search";
+import { openSearchPanel, SearchQuery, setSearchQuery } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
 import {
   useCallback,
@@ -101,6 +102,8 @@ import {
   groupNoteLibrary,
   loadNoteLibraryPreferences,
   noteLibraryProjects,
+  noteLibraryDate,
+  noteLibraryMatchLocation,
   noteProjectKey,
   saveNoteLibraryPreferences,
   type NoteGrouping,
@@ -133,6 +136,7 @@ let rememberedLibraryStart = 0;
 let rememberedLibraryScroll = 0;
 
 type NoteViewMode = "preview" | "source" | "split";
+type NoteFindRequest = { noteId: string; query: string; token: number } | null;
 
 type Props = {
   besideRail?: boolean;
@@ -211,15 +215,22 @@ export function NotesView({
     return () => window.removeEventListener(DRAFT_CHANGED_EVENT, update);
   }, []);
   const [query, setQuery] = useState("");
+  const [findRequest, setFindRequest] = useState<{ noteId: string; query: string; token: number } | null>(null);
+  const findSequence = useRef(0);
+  const completeFind = useCallback((token: number) => setFindRequest((current) => current?.token === token ? null : current), []);
   const deferredQuery = useDeferredValue(query);
   const [bodyMatches, setBodyMatches] = useState<{ query: string; ids: Set<string> } | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [searchingBody, setSearchingBody] = useState(false);
+  const [searchRevision, setSearchRevision] = useState(0);
   useEffect(() => {
     const needle = deferredQuery.trim();
     if (!needle) {
       setSearchError(null);
+      setSearchingBody(false);
       return;
     }
+    setSearchingBody(true);
     let active = true;
     // Coalesce typing before asking the native body index. Stale query results
     // never join a newer set of metadata filters.
@@ -229,10 +240,14 @@ export function NotesView({
           if (active) {
             setBodyMatches({ query: needle, ids: new Set(ids) });
             setSearchError(null);
+            setSearchingBody(false);
           }
         },
         (cause: unknown) => {
-          if (active) setSearchError(cause instanceof Error ? cause.message : String(cause));
+          if (active) {
+            setSearchError(cause instanceof Error ? cause.message : String(cause));
+            setSearchingBody(false);
+          }
         },
       );
     }, 150);
@@ -240,7 +255,7 @@ export function NotesView({
       active = false;
       clearTimeout(timer);
     };
-  }, [deferredQuery, notes]);
+  }, [deferredQuery, notes, searchRevision]);
   const [libraryPreferences, setLibraryPreferences] = useState(loadNoteLibraryPreferences);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const [tagFilter, setTagFilter] = useState<string | null>(null);
@@ -611,22 +626,21 @@ export function NotesView({
       ref={resize.setPaneRef}
       className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
     >
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-1">
+        <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)" aria-live="polite">
+          {filtered ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length }) : t("{p0} notes", { p0: notes.length })}
+        </span>
+        <Button variant="secondary" loading={creating} onClick={() => void onCreate()} startIcon={<Plus className="icon-sm" />}>
+          {t("New note")}
+        </Button>
+      </div>
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
-        <div className="relative flex h-7 min-w-0 flex-1 items-center">
-          <Search className="pointer-events-none absolute left-2 size-3 shrink-0 opacity-50" />
-          <TextField
-            label={t("Filter notes")}
-            clearable
-            hideLabel
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter notes")}
-            aria-label={t("Filter notes")}
-            spellCheck={false}
-            autoComplete="off"
-            fieldClassName="bycoda-arc-field--search"
-          />
-        </div>
+        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+          <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+          <SearchInput focusOwner="group" value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("Filter notes")} aria-label={t("Filter notes")} aria-busy={searchingBody} spellCheck={false} autoComplete="off" />
+          {searchingBody ? <span role="status" aria-label={t("Searching note content…")}><WorkingIndicator size="xs" /></span> : null}
+        </SearchInputGroup>
         <Button
           iconOnly
           label={t("Filters and options")}
@@ -654,7 +668,6 @@ export function NotesView({
         <Button
           ref={selectionButton}
           variant="ghost"
-          iconOnly
           label={t("Select notes")}
           selected={selectionMode}
           aria-pressed={selectionMode}
@@ -664,27 +677,9 @@ export function NotesView({
             setCheckedIds(new Set());
           }}
         >
-          <Check className="size-3.5" />
+          <Check className="icon-sm" />{t("Select notes")}
         </Button>
-        <Button
-          iconOnly
-          label={t("New note")}
-          variant="ghost"
-          size="sm"
-          loading={creating}
-          type="button"
-          title={t("New note")}
-          aria-label={t("New note")}
-          disabled={creating}
-          onClick={() => void onCreate()}
-          className="shrink-0"
-        >
-          {creating ? (
-            <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
-          ) : (
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          )}
-        </Button>
+
       </div>
       {filtersOpen ? (
         <Popover
@@ -812,17 +807,7 @@ export function NotesView({
           </Button>
         </div>
       ) : null}
-      <div
-        className="flex min-h-9 items-center justify-between gap-2 border-b border-stroke px-3 text-[11px] text-content/65"
-        aria-live="polite"
-      >
-        <span>{t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })}</span>
-        {filtered ? (
-          <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
-            {t("Clear filters")}
-          </Button>
-        ) : null}
-      </div>
+      {filtered ? <div className="flex justify-end px-2 pb-1"><Button variant="link" onClick={clearFilters}>{t("Clear filters")}</Button></div> : null}
       <div
         ref={setListScroller}
         className="min-h-0 flex-1 overflow-y-auto overscroll-none"
@@ -854,8 +839,8 @@ export function NotesView({
               variant="ghost"
               size="sm"
               type="button"
-              loading={notesQuery.isFetching}
-              onClick={() => void refresh()}
+              loading={searchingBody}
+              onClick={() => setSearchRevision((value) => value + 1)}
               className="underline"
             >
               {t("Retry")}
@@ -874,13 +859,14 @@ export function NotesView({
             </Alert>
           ))}
         {loading && notes.length === 0 ? (
-          <div className="flex justify-center py-10 text-content/40">
-            <LoaderCircle className="size-4 animate-spin" strokeWidth={1.75} />
+          <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-caption text-(--ui-text-secondary)">
+            <WorkingIndicator size="md" />
+            {t("Loading notes…")}
           </div>
         ) : error && notes.length === 0 ? null : visible.length === 0 ? (
           <EmptyState
             description={
-              filtered
+              searchingBody ? t("Searching note content…") : filtered
                 ? t("No matching notes")
                 : t("No notes yet. Save a turn from the transcript, or create one here.")
             }
@@ -916,7 +902,7 @@ export function NotesView({
                           ? t("No project")
                           : t("Untagged"))}
                     </span>
-                    <span className="tabular-nums text-content/60">{group.totalNotes}</span>
+                    <span className="tabular-nums text-(--ui-text-secondary)">{group.totalNotes}</span>
                   </Button>
                 ) : null}
                 {collapsedGroups.has(group.key) ? null : (
@@ -934,6 +920,10 @@ export function NotesView({
                         <NoteCard
                           note={note}
                           group={group.key}
+                          grouping={libraryPreferences.grouping}
+                          sort={libraryPreferences.sort}
+                          query={deferredQuery}
+                          bodyMatches={bodyMatches?.query === deferredQuery.trim() ? bodyMatches.ids : undefined}
                           active={selectedSummary?.id === note.id}
                           logos={logos}
                           mascots={groupMascots}
@@ -971,11 +961,11 @@ export function NotesView({
               if (listScroller.current) listScroller.current.scrollTop = 0;
             }}
           >
-            {t("Back")}
+            {t("Previous page")}
           </Button>
           <span aria-live="polite" className="tabular-nums">
-            {Math.floor(libraryWindow.start / LIST_PAGE_SIZE) + 1} /{" "}
-            {Math.ceil(libraryWindow.total / LIST_PAGE_SIZE)}
+            {t("Rows {p0}–{p1} of {p2}", { p0: libraryWindow.rangeStart, p1: libraryWindow.rangeEnd, p2: libraryWindow.total })}
+            <span className="sr-only"> · {t("{p0} unique notes", { p0: libraryWindow.uniqueTotal })}</span>
           </span>
           <Button
             variant="ghost"
@@ -987,7 +977,7 @@ export function NotesView({
               if (listScroller.current) listScroller.current.scrollTop = 0;
             }}
           >
-            {t("Show more")}
+            {t("Next page")}
           </Button>
         </nav>
       ) : null}
@@ -995,7 +985,7 @@ export function NotesView({
         {...resize.separatorProps}
         aria-label={t("Resize notes list")}
         className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-content/15" : "hover:bg-content/10"
+          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
         }`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
@@ -1019,8 +1009,8 @@ export function NotesView({
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
-          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-[13px]">
-            <File className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <File className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-content">{t("Notes")}</span>
           </div>
         </ToolHeader>
@@ -1051,10 +1041,18 @@ export function NotesView({
           className="notes-workspace-detail flex min-h-0 min-w-0 flex-1 flex-col"
         >
           {selectedSummary && !visible.some((note) => note.id === selectedSummary.id) ? (
-            <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-[12px] text-content/70">
+            <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-5 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("This note is outside the current filters.")}
               <Button variant="ghost" size="sm" type="button" onClick={clearFilters}>
                 {t("Clear filters")}
+              </Button>
+            </div>
+          ) : null}
+          {selected && deferredQuery.trim() ? (
+            <div className="flex flex-wrap items-center gap-2 px-4 py-1 text-ui-caption text-(--ui-text-secondary)">
+              {t("Search in this note")}
+              <Button variant="link" onClick={() => setFindRequest({ noteId: selected.id, query: deferredQuery.trim(), token: ++findSequence.current })}>
+                {t("Find in note")}
               </Button>
             </div>
           ) : null}
@@ -1075,10 +1073,12 @@ export function NotesView({
           ) : null}
           {detailLoading && !selected ? (
             <div role="status" className="grid min-h-0 flex-1 place-items-center">
-              <LoaderCircle className="size-4 animate-spin text-content/40" strokeWidth={1.75} />
+              <span className="flex items-center gap-2 text-ui-caption text-(--ui-text-secondary)"><WorkingIndicator size="md" />{t("Loading note…")}</span>
             </div>
           ) : (
             <NoteDetail
+              findRequest={findRequest}
+              onFindHandled={completeFind}
               note={selected}
               recents={recents}
               activeCwd={cwd}
@@ -1205,82 +1205,41 @@ function NoteDetailTab({
   );
 }
 
-function NoteCard({
-  note,
-  group,
-  active,
-  logos,
-  mascots,
-  colors,
-  customColors,
-  onSelect,
-  onNavigate,
-}: {
+function NoteCard({ note, group, grouping, sort, query, bodyMatches, active, logos, mascots, colors, customColors, onSelect, onNavigate }: {
   note: NoteSummary;
   group: string;
+  grouping: NoteGrouping;
+  sort: NoteSort;
+  query: string;
+  bodyMatches?: ReadonlySet<string>;
   active: boolean;
   onSelect: () => void;
   onNavigate: (event: ReactKeyboardEvent<HTMLButtonElement>) => void;
 } & ProjectMarks) {
   useLocale();
-  const preview = note.preview;
+  const date = noteLibraryDate(note, sort);
+  const validDate = Number.isFinite(date.timestamp) && date.timestamp > 0;
+  const time = validDate ? formatRelativeTime(new Date(date.timestamp).toISOString()) : "";
   const project = noteSourceProject(note.sourceCwd);
-  const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
-  const hint = [note.title, project].filter(Boolean).join(" · ");
+  const match = noteLibraryMatchLocation(note, query, bodyMatches);
+  const hint = [note.title, note.sourceCwd || project, ...note.tags].filter(Boolean).join(" · ");
   return (
-    <Button
-      variant="item"
-      motion="none"
-      selected={active}
-      type="button"
-      title={hint}
-      aria-current={active ? "true" : undefined}
-      data-note-id={note.id}
-      data-note-group={group}
-      onClick={onSelect}
-      onKeyDown={onNavigate}
-      className="note-library-card flex w-full flex-col"
-    >
-      <span className="flex items-center gap-2">
-        {project && note.sourceCwd ? (
-          <span className="min-w-0 flex-1 text-[11px] text-content/50">
-            <NoteProjectMark
-              cwd={note.sourceCwd}
-              logos={logos}
-              mascots={mascots}
-              colors={colors}
-              customColors={customColors}
-            />
-          </span>
-        ) : (
-          <span className="min-w-0 flex-1" />
-        )}
-        {time ? (
-          <span className="shrink-0 text-[11px] tabular-nums text-content/45">{time}</span>
-        ) : null}
+    <Button variant="item" layout="stacked" motion="none" selected={active} title={hint}
+      aria-current={active ? "true" : undefined} data-note-id={note.id} data-note-group={group}
+      onClick={onSelect} onKeyDown={onNavigate} className="w-full min-w-0">
+      <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-secondary font-medium">{note.title || t("Untitled")}</span>
+      <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
+        {match === "content" ? t("Match in note") : note.preview || t("No preview")}
       </span>
-      <span className="mt-1 line-clamp-1 text-[13px] font-semibold leading-snug text-content">
-        {note.title}
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
+        {grouping !== "project" && project && note.sourceCwd ? <span className="min-w-0 max-w-full truncate"><NoteProjectMark cwd={note.sourceCwd} logos={logos} mascots={mascots} colors={colors} customColors={customColors} /></span> : null}
+        {time ? <time dateTime={new Date(date.timestamp).toISOString()} title={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`} className="shrink-0 tabular-nums">{t(date.label)} {time}</time> : null}
+        {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
       </span>
-      {preview ? (
-        <span className="mt-1 line-clamp-1 text-[12px] leading-snug text-content/45">
-          {preview}
-        </span>
-      ) : null}
-      {note.tags.length > 0 ? (
-        <span className="mt-1.5 flex min-w-0 items-center gap-1 overflow-hidden">
-          {note.tags.slice(0, 3).map((tag) => (
-            <Badge key={tag} size="sm" className="max-w-24 truncate">
-              #{tag}
-            </Badge>
-          ))}
-          {note.tags.length > 3 ? (
-            <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
-              +{note.tags.length - 3}
-            </span>
-          ) : null}
-        </span>
-      ) : null}
+      {note.tags.length ? <span className="flex min-w-0 flex-wrap items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
+        {note.tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-32 truncate">#{tag}</span>)}
+        {note.tags.length > 2 ? <span>+{note.tags.length - 2}</span> : null}
+      </span> : null}
     </Button>
   );
 }
@@ -1292,6 +1251,8 @@ function NoteDetail({
   onSaved,
   onDelete,
   onAddToChat,
+  findRequest,
+  onFindHandled,
 }: {
   note: Note | null;
   recents: RecentProject[];
@@ -1299,13 +1260,15 @@ function NoteDetail({
   onSaved: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
+  findRequest?: NoteFindRequest;
+  onFindHandled?: (token: number) => void;
 }) {
   useLocale();
   if (!note) {
     return (
       <div className="flex h-full min-w-0 flex-1 flex-col items-center justify-center px-6 text-center">
-        <File className="mb-3 size-6 text-content/30" strokeWidth={1.75} />
-        <p className="text-[13px] text-content/45">{t("Select a note")}</p>
+        <File className="mb-3 size-6 text-(--ui-text-secondary)" strokeWidth={1.75} />
+        <p className="text-ui-secondary text-(--ui-text-secondary)">{t("Select a note")}</p>
       </div>
     );
   }
@@ -1318,6 +1281,8 @@ function NoteDetail({
       onSaved={onSaved}
       onDelete={onDelete}
       onAddToChat={onAddToChat}
+      findRequest={findRequest}
+      onFindHandled={onFindHandled}
     />
   );
 }
@@ -1329,6 +1294,8 @@ function NoteEditor({
   onSaved,
   onDelete,
   onAddToChat,
+  findRequest,
+  onFindHandled,
 }: {
   note: Note;
   recents: RecentProject[];
@@ -1336,6 +1303,8 @@ function NoteEditor({
   onSaved: (note: Note) => void;
   onDelete: (id: string, expectedUpdatedAt?: number) => Promise<boolean>;
   onAddToChat: (note: Note) => void;
+  findRequest?: NoteFindRequest;
+  onFindHandled?: (token: number) => void;
 }) {
   useLocale();
   const modesId = useId();
@@ -1356,12 +1325,12 @@ function NoteEditor({
   const blank = !note.body.trim() && note.title === "Untitled";
   const [mode, setModeState] = useRetainedState<NoteViewMode>(
     `note-editor:${note.id}:mode`,
-    "split",
+    "preview",
   );
   const setMode = (next: NoteViewMode) => {
     if (narrow && mode === "split" && next !== "split") setNarrowPane(next);
     else setModeState(next);
-    setToolbarTarget("source");
+    if (next !== "split") setToolbarTarget(next);
   };
   // Narrow panels show one pane without overwriting the retained desktop mode.
   const visibleMode = narrow && mode === "split" ? narrowPane : mode;
@@ -1416,6 +1385,8 @@ function NoteEditor({
   const previewViewRef = useRef<EditorView | null>(null);
   const previewRangeRef = useRef<{ from: number; to: number } | null>(null);
   const [previewEditing, setPreviewEditing] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const actionsButton = useRef<HTMLButtonElement>(null);
   const [toolbarTarget, setToolbarTarget] = useState<"source" | "preview">("source");
   const toolbarTargetRef = useRef(toolbarTarget);
   toolbarTargetRef.current = toolbarTarget;
@@ -1553,9 +1524,28 @@ function NoteEditor({
     }, 400);
   }, [saveNow]);
 
+  useEffect(() => {
+    if (!findRequest || findRequest.noteId !== note.id) return;
+    if (narrow && mode === "split") setNarrowPane("source");
+    else setModeState("source");
+    setToolbarTarget("source");
+    const frame = requestAnimationFrame(() => {
+      const view = editorViewRef.current;
+      if (!view) return;
+      const search = new SearchQuery({ search: findRequest.query, caseSensitive: false });
+      view.dispatch({ effects: setSearchQuery.of(search) });
+      const cursor = search.getCursor(view.state.doc);
+      const match = cursor.next();
+      if (!match.done) view.dispatch({ selection: { anchor: match.value.from, head: match.value.to }, scrollIntoView: true });
+      openSearchPanel(view);
+      onFindHandled?.(findRequest.token);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [findRequest, note.id, setModeState, narrow, mode, onFindHandled]);
+
   const insertionRange = useCallback(() => {
     if (
-      toolbarTargetRef.current === "preview" &&
+      (modeRef.current === "preview" || (modeRef.current === "split" && toolbarTargetRef.current === "preview")) &&
       previewRangeRef.current &&
       previewViewRef.current
     ) {
@@ -1763,31 +1753,7 @@ function NoteEditor({
         cwd={sourceCwd ?? undefined}
         contentVersion={body}
       >
-        <header className="note-detail-header">
-          <div className="note-detail-identity flex min-w-0 items-center gap-2 text-[12px] text-content/50">
-            <File className="size-3.5 shrink-0" strokeWidth={1.75} />
-            <span>{t("Note")}</span>
-            {note.slug ? <span className="min-w-0 truncate">{note.slug}</span> : null}
-            <SearchableProjectPicker
-              cwd={sourceCwd ?? "~"}
-              recents={recents}
-              mode="move"
-              railCwd={activeCwd}
-              buttonClassName="px-1.5"
-              onSelectProject={(path) => {
-                const change = { path };
-                projectChangeRef.current = change;
-                setProjectChange(change);
-                void saveNow();
-              }}
-            />
-            {time ? (
-              <span className="note-detail-updated">
-                {t("Updated ")}
-                {time}
-              </span>
-            ) : null}
-          </div>
+        <header className="flex min-w-0 shrink-0 flex-col gap-2">
           <TextField
             label={t("Note title")}
             error={titleError}
@@ -1810,30 +1776,35 @@ function NoteEditor({
             fieldClassName="note-detail-title"
             placeholder={t("Untitled")}
           />
-          <details className="note-detail-tags">
-            <summary>
-              {t("Tags")}
-              {tags.length ? ` · ${tags.length}` : ""}
-            </summary>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
+            <div className="flex min-w-0 items-center gap-1" aria-label={t("Note project")}>
+            <SearchableProjectPicker
+              cwd={sourceCwd ?? "~"}
+              recents={recents}
+              mode="move"
+              railCwd={activeCwd}
+              buttonClassName="px-1.5"
+              onSelectProject={(path) => {
+                const change = { path };
+                projectChangeRef.current = change;
+                setProjectChange(change);
+                void saveNow();
+              }}
+            />            </div>
+            <div className="min-w-0 flex-1 basis-40">
             <NoteTagsEditor
               tags={tags}
               onChange={(next) => {
                 editNote({ tags: next });
                 scheduleSave();
               }}
-            />
-          </details>
-          <div className="note-detail-actions">
-            <Button
-              variant="primary"
-              size="sm"
-              type="button"
-              disabled={!canAddToChat}
-              onClick={() => onAddToChat(draft)}
-            >
-              <MessageSquarePlus className="size-3.5" strokeWidth={1.75} />
-              {t("Add to chat")}
-            </Button>
+            />            </div>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span role="status" className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
+              {deleting ? t("Deleting…") : saveError ? t("Save failed") : titleError ? t("Title needs attention") : recovering ? t("Saving recovery copy…") : saving || saveAction ? t("Saving…") : dirty ? t("Unsaved changes") : t("Saved")}
+            </span>
+            <span className="mr-auto text-ui-micro text-(--ui-text-secondary)"><NoteWordCount body={body} /></span>
             <Button
               variant={dirty || saveError ? "secondary" : "ghost"}
               size="sm"
@@ -1843,7 +1814,20 @@ function NoteEditor({
             >
               {t("Save")}
             </Button>
-            <span className="note-detail-delete">
+            <Button variant="ghost" disabled={!canAddToChat} onClick={() => onAddToChat(draft)} startIcon={<MessageSquarePlus className="icon-sm" />}>
+              {t("Add to chat")}
+            </Button>
+            <Button variant="ghost" iconOnly label={t("Note actions")} ref={actionsButton} disabled={deleting} aria-haspopup="dialog" aria-expanded={actionsOpen} onClick={() => setActionsOpen((open) => !open)}>
+              <MoreHorizontal className="icon-sm" />
+            </Button>
+            {actionsOpen ? <Popover anchor={actionsButton} align="end" width={320} role="dialog" aria-label={t("Note actions")} onDismiss={deleting ? undefined : () => setActionsOpen(false)} autoFocus className="p-3">
+              <div className="flex min-w-0 flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
+                <span className="wrap-anywhere">{note.title}</span>
+                {note.slug ? <span className="wrap-anywhere">{t("Note")}: {note.slug}</span> : null}
+                {sourceCwd ? <span className="wrap-anywhere">{t("Project")}: {sourceCwd}</span> : null}
+                <span>{t("Created")}: {new Date(note.createdAt).toLocaleString()}</span>
+                <span>{t("Updated")}: {new Date(note.updatedAt).toLocaleString()}{time ? ` · ${time}` : ""}</span>
+            <span className="flex">
               <ConfirmMorph
                 disabled={deleting}
                 label={t("Delete")}
@@ -1868,17 +1852,9 @@ function NoteEditor({
                 }}
               />
             </span>
+              </div>
+            </Popover> : null}
           </div>
-          <span role="status" className="note-detail-status">
-            {saveError || (dirty && !saving) ? (
-              <Badge tone={saveError ? "danger" : "warning"} appearance="subtle">
-                {t("Unsaved changes")}
-              </Badge>
-            ) : null}
-            <span className="note-detail-words">
-              <NoteWordCount body={body} />
-            </span>
-          </span>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">
               <span>
@@ -1906,10 +1882,20 @@ function NoteEditor({
                   recoveringRef.current = true;
                   setRecovering(true);
                   try {
+                    const submittedEdits = { ...editsRef.current };
+                    const submittedProject = projectChangeRef.current;
                     await createRecoveredNote({ title, body, tags, sourceCwd });
-                    editsRef.current = {};
-                    projectChangeRef.current = null;
-                    setEdits({});
+                    const remaining = { ...editsRef.current };
+                    if (remaining.title === submittedEdits.title) delete remaining.title;
+                    if (remaining.body === submittedEdits.body) delete remaining.body;
+                    if (remaining.tags === submittedEdits.tags) delete remaining.tags;
+                    editsRef.current = remaining;
+                    bodyRef.current = remaining.body ?? noteRef.current.body;
+                    setEdits(remaining);
+                    if (projectChangeRef.current === submittedProject) {
+                      projectChangeRef.current = null;
+                      setProjectChange(null);
+                    }
                     setSaveError(null);
                     window.dispatchEvent(new Event(NOTES_CHANGED_EVENT));
                   } catch (error) {
@@ -1951,7 +1937,7 @@ function NoteEditor({
             <NoteDetailTab
               id={`${modesId}-preview`}
               controls={panelId}
-              label={t("Edit preview")}
+              label={t("Document")}
               selected={visibleMode === "preview"}
               onSelect={() => setMode("preview")}
             />
@@ -1973,7 +1959,7 @@ function NoteEditor({
             )}
           </div>
           <NoteMarkdownToolbar
-            viewRef={previewEditing && toolbarTarget === "preview" ? previewViewRef : editorViewRef}
+            viewRef={visibleMode === "preview" ? previewViewRef : visibleMode === "source" ? editorViewRef : previewEditing && toolbarTarget === "preview" ? previewViewRef : editorViewRef}
             editing={editing}
             imageBusy={imageBusy}
             onInsertImage={() => void insertImage()}
@@ -2015,7 +2001,7 @@ function NoteEditor({
           }}
         >
           {imageDrag && !imageBusy ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-background-base/80 text-[12px] text-content/70 backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-surface-raised) text-ui-caption text-(--ui-text-secondary) backdrop-blur-sm">
               {t("Drop images here")}
             </div>
           ) : null}
@@ -2023,13 +2009,14 @@ function NoteEditor({
             {/* Stays mounted in preview so undo history survives the switch. */}
             <NoteEditorPane
               label={t("Source")}
+              scrollKey={`${note.id}:source`}
               hidden={visibleMode === "preview"}
               split={visibleMode === "split"}
             >
               <NoteMarkdownEditor
                 viewRef={editorViewRef}
                 minHeight={0}
-                autoFocus={blank}
+                autoFocus={blank && visibleMode === "source"}
                 value={body}
                 onChange={(next) => {
                   editNote({ body: next });
@@ -2040,8 +2027,7 @@ function NoteEditor({
                 onFocus={() => setToolbarTarget("source")}
               />
             </NoteEditorPane>
-            {visibleMode === "source" ? null : (
-              <NoteEditorPane label={t("Edit preview")} split={visibleMode === "split"}>
+              <NoteEditorPane label={t("Document")} scrollKey={`${note.id}:document`} hidden={visibleMode === "source"} split={visibleMode === "split"}>
                 <NoteEditablePreview
                   value={body}
                   cwd={sourceCwd}
@@ -2057,7 +2043,6 @@ function NoteEditor({
                   onPasteImages={pasteImages}
                 />
               </NoteEditorPane>
-            )}
           </div>
         </div>
       </SurfaceSelection>

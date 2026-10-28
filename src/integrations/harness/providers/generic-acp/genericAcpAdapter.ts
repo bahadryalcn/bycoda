@@ -1,3 +1,4 @@
+import { nativeOutputSink, retainNativeOutputEventOrigin, captureNativeOutputWork, trackNativeOutputWork, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, killChild, invokeProviderCommand } from "../../core/child";
@@ -19,7 +20,7 @@ type Live = {
   planning: boolean;
   modes?: { currentModeId: string; availableModes: { id: string }[] };
   previousMode?: string;
-  approvals: Map<number, { options: { optionId: string; kind: string }[] }>;
+  approvals: Map<number, { options: { optionId: string; kind: string }[]; work: NativeOutputWork | null }>;
 };
 const lives = new Map<string, Live>();
 const resumes = new Map<string, { providerId: string; cwd: string }>();
@@ -32,6 +33,8 @@ async function stop(sessionId: string): Promise<void> {
   if (live) {
     live.cancelled = true;
     live.client.close(new Error("ACP process stopped"));
+    for (const pending of live.approvals.values()) pending.work?.fail("generic-acp-approval-retired");
+    live.approvals.clear();
   }
   await killChild(sessionId);
 }
@@ -45,8 +48,8 @@ async function cancel(sessionId: string): Promise<void> {
     return;
   }
   live.cancelled = true;
-  for (const id of live.approvals.keys())
-    await live.client.respond(id, { outcome: { outcome: "cancelled" } });
+  for (const [id, pending] of live.approvals)
+    await trackNativeOutputWork(nativeOutputSink(pending.work, () => live.client.respond(id, { outcome: { outcome: "cancelled" } }))(), pending.work);
   live.approvals.clear();
   await live.client.notify("session/cancel", { sessionId: live.providerId }).catch(() => undefined);
   // A noncompliant agent must not leave the turn waiting forever.
@@ -57,6 +60,10 @@ export async function sendGenericAcpTurn(
   input: SendTurnInput,
   program?: { id: string; path: string; args: string[]; model: string },
 ): Promise<void> {
+const responseScope: { work: NativeOutputWork | null } = { work: null };
+const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => input.onEvent(event))();
+try {
+
   const configId = program?.id ?? input.model.replace(/^acp:/, "");
   if (!configId) throw new Error("Choose a configured ACP agent in Settings first");
   let live = lives.get(input.sessionId);
@@ -74,7 +81,7 @@ export async function sendGenericAcpTurn(
       configId,
       cwd: input.cwd,
       providerId: "",
-      onEvent: input.onEvent,
+      onEvent: emitNative,
       cancelled: false,
       replaying: false,
       planning: input.intent === "plan",
@@ -139,7 +146,7 @@ export async function sendGenericAcpTurn(
         });
         return;
       }
-      state.approvals.set(id, { options: permission.options ?? [] });
+      state.approvals.set(id, { options: permission.options ?? [], work: captureNativeOutputWork() });
       state.onEvent({
         type: "approval.requested",
         requestId: id,
@@ -215,7 +222,7 @@ export async function sendGenericAcpTurn(
       lives.set(input.sessionId, state);
       live = state;
       resumes.set(input.sessionId, { providerId: state.providerId, cwd: input.cwd });
-      input.onEvent({ type: "session.providerBound", providerSessionId: state.providerId });
+      emitNative({ type: "session.providerBound", providerSessionId: state.providerId });
     } catch (error) {
       client.close(error instanceof Error ? error : undefined);
       await killChild(input.sessionId);
@@ -262,18 +269,20 @@ export async function sendGenericAcpTurn(
       { sessionId: live.providerId, configId: "model", value: program.model },
       30_000,
     );
-  input.onEvent({ type: "session.started" });
+  emitNative({ type: "session.started" });
   try {
     const result = await live.client.request("session/prompt", {
       sessionId: live.providerId,
       prompt: promptBlocks(input.text, input.attachments),
-    });
-    input.onEvent({ type: "message.completed" });
-    input.onEvent({ type: "reasoning.completed" });
-    if (!live.cancelled) reportAcpStopReason(result, input.onEvent);
+    }, 0, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
+    emitNative({ type: "message.completed" });
+    emitNative({ type: "reasoning.completed" });
+    if (!live.cancelled) reportAcpStopReason(result, emitNative);
   } catch (error) {
     if (!live.cancelled) throw error;
   }
+
+} finally { responseScope.work?.finish(); }
 }
 
 function toolResultDetail(update: Record<string, unknown>): string | undefined {
@@ -320,14 +329,12 @@ export const genericAcpAdapter: HarnessAdapter = {
     const option = pending.options.find(
       (entry) => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"),
     );
-    void live.client
-      .respond(id, {
+    const actual = nativeOutputSink(pending.work, () => live.client.respond(id, {
         outcome: option
           ? { outcome: "selected", optionId: option.optionId }
           : { outcome: "cancelled" },
-      })
-      .then(() => live.onEvent({ type: "approval.resolved", requestId: id, decision }))
-      .catch(() => undefined);
+      }))().then(nativeOutputSink(pending.work, () => live.onEvent({ type: "approval.resolved", requestId: id, decision })));
+    void trackNativeOutputWork(actual, pending.work).catch(() => undefined);
   },
   refreshCatalog: refreshGenericAcpCatalog,
 };

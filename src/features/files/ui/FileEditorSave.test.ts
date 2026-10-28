@@ -67,6 +67,22 @@ function saveButton() {
   return container.querySelector<HTMLButtonElement>('button[aria-label="Save"]')!;
 }
 
+it("treats a path change without an explicit document identity as a different document", async () => {
+  const open = (path: string) =>
+    act(async () =>
+      root.render(createElement(FileEditor, { path, cwd: "/repo", active: true, onDirtyChange })),
+    );
+  await open("/repo/first.txt");
+  const first = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+  act(() => first.dispatch({ changes: { from: 0, insert: "first draft " } }));
+  disk = "second document\r\n";
+  await open("/repo/second.txt");
+  const second = EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-editor")!)!;
+  expect(second.state.doc.toString()).toBe("second document\n");
+  expect(second.state.doc.toString()).not.toContain("first draft");
+  expect(saveButton().disabled).toBe(true);
+});
+
 it("saves an already dirty buffer when autosave is enabled from settings", async () => {
   const view = await render();
   act(() => view.dispatch({ changes: { from: 0, insert: "automatic " } }));
@@ -333,4 +349,29 @@ it("updates Markdown preview from the edited buffer and saves while preview is o
     expect(shortcut(modeButton("Preview")).defaultPrevented).toBe(true);
   });
   expect(disk).toBe("updated original\r\n");
+});
+
+it("retains the same source editor, selection and undo while Preview owns the pane", async () => {
+  const view = await render(true, "/repo/retained-preview.md");
+  const modeButton = (text: string) =>
+    [...container.querySelectorAll("button")].find((button) => button.textContent === text)!;
+  await act(async () => modeButton("Source").click());
+  act(() =>
+    view.dispatch({ changes: { from: 0, insert: "draft " }, selection: { anchor: 1, head: 4 } }),
+  );
+  await act(async () => modeButton("Preview").click());
+  const source = container.querySelector<HTMLElement>("[data-file-editor-source-active]")!;
+  expect(source.getAttribute("data-file-editor-source-active")).toBe("false");
+  expect(source.hasAttribute("inert")).toBe(true);
+  expect(EditorView.findFromDOM(source.querySelector<HTMLElement>(".cm-editor")!)).toBe(view);
+  expect(view.state.doc.toString()).toBe("draft original\n");
+  expect(disk).toBe("original\r\n");
+
+  await act(async () => modeButton("Source").click());
+  expect(source.getAttribute("data-file-editor-source-active")).toBe("true");
+  expect(source.hasAttribute("inert")).toBe(false);
+  expect(view.state.selection.main.anchor).toBe(1);
+  expect(view.state.selection.main.head).toBe(4);
+  act(() => expect(undo(view)).toBe(true));
+  expect(view.state.doc.toString()).toBe("original\n");
 });

@@ -1,3 +1,9 @@
+.pane:global(.bycoda-sidebar.body-glass) {
+  /* Override the legacy opaque canvas fill, while the more specific native
+     glass selector in index.css retains ownership of its transparency. */
+  background: var(--ui-surface-panel);
+}
+
 .folder[data-folder-dragging="true"] {
   opacity: 0.4;
 }

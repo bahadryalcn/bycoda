@@ -16,7 +16,26 @@ import {
   setSessionRecovery,
   removeRecoverySessions,
   dropRecoverySessions,
+  eligibleRecoverySessions,
 } from "./sessionRecovery";
+
+describe("eligible recovery population", () => {
+  it("uses the same deduplicated unlocked unresolved entries for rail and panel", () => {
+    const value = captureSessionRecovery(null, snapshot(["a", "b", "c"]), 100)!;
+    value.workspace.sessions.push(value.workspace.sessions[0]);
+    value.resolvedIds = ["c"];
+    expect(eligibleRecoverySessions(value, [], (cwd) => cwd === "/b", () => undefined).map((row) => row.id)).toEqual(["a"]);
+  });
+  it("deduplicates exact remote host identities while retaining different projects", () => {
+    const value = captureSessionRecovery(null, snapshot(["a", "b", "c"]), 100)!;
+    value.workspace.sessions = value.workspace.sessions.map((stub, index) => ({
+      ...stub, cwd: index === 2 ? "remote://env/other" : "remote://env/repo", remoteSessionId: "host-chat",
+    }));
+    expect(eligibleRecoverySessions(value, [], () => false, () => undefined).map((row) => row.id)).toEqual(["a", "c"]);
+    const open = { ...chat("open"), cwd: "remote://env/repo" };
+    expect(eligibleRecoverySessions(value, [open], () => false, () => "host-chat").map((row) => row.id)).toEqual(["c"]);
+  });
+});
 import { saveWorkspaceSnapshot } from "../../sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
 

@@ -60,7 +60,7 @@ import { BranchManagerDialog } from "./BranchManagerDialog";
 import { GitPickDialog, type PickItem } from "./GitPickDialog";
 import { stashCommit } from "./GitStashSection";
 import { RefNameDialog } from "./RefNameDialog";
-import { gitPanelRuntime, setGitFeedback, withGitOperation } from "../model/gitPanelState";
+import { gitPanelRuntime, setGitFeedback, withGitOperation, useGitPanelState } from "../model/gitPanelState";
 import { appName } from "../../../shared/lib/appName";
 
 /** The `busy` key the menu's own actions hold while they run. */
@@ -160,6 +160,7 @@ export function GitActionsMenu({
 }: Props) {
   useLocale();
   // Everything beyond Pull needs this computer or a host with `git.actions`.
+  const [generating] = useGitPanelState(cwd, "generating");
   const supported = useRemoteSupports(cwd, GIT_ACTIONS);
   const actions = supported === true;
   const { branches } = useProjectBranchesState(cwd, actions);
@@ -199,6 +200,7 @@ export function GitActionsMenu({
       actions,
       updateNotice: supported === false ? HOST_UPDATE_NOTICE : null,
       busy: busy !== null,
+      generating,
       branch,
       hasCommits: Boolean(index?.head),
       hasRemote: Boolean(index?.remote),
@@ -212,7 +214,7 @@ export function GitActionsMenu({
       autoFetch,
       ...data,
     });
-  }, [actions, autoFetch, branch, branches, busy, data, index, supported]);
+  }, [actions, autoFetch, branch, branches, busy, data, generating, index, supported]);
 
   const run = async (work: () => Promise<unknown>, status?: string, pending?: string) => {
     if (gitPanelRuntime(cwd).state.busy) return;

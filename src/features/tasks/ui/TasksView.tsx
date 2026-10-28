@@ -14,6 +14,7 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { OverlayParent, useOverlay } from "../../../shared/ui/overlay";
 import { Modal } from "../../../shared/ui/Modal";
+import { InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { WorkspaceReview } from "../../workspaces/ui/WorkspaceReview";
 import { workspaceRequest, workspaceOperationKey } from "../../workspaces/model/workspaceClient";
@@ -2967,18 +2968,18 @@ function TaskActions({
       ) : null}
       {compact && overflow.length > 0 ? (
         <>
-          <Button
-            variant="ghost"
-            iconOnly
+          {/* A compact action inside the card: the card keeps its own hover, the action only
+              adds a transparent overlay instead of an opaque square. */}
+          <InlineAction
+            reveal="always"
             label={t("More actions")}
-            tooltip={t("More actions")}
             aria-haspopup="menu"
             aria-expanded={!!menuAnchor}
             className="ms-auto"
             onClick={(event) => setMenuAnchor(event.currentTarget)}
           >
-            <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-          </Button>
+            <MoreHorizontal />
+          </InlineAction>
           {menuAnchor ? (
             <DropdownMenu
               anchor={menuAnchor}
@@ -4938,17 +4939,13 @@ function GoalForm({
                   {t("lead")}
                 </span>
               ) : null}
-              <Button
-                iconOnly
+              <InlineAction
+                reveal="always"
                 label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
-                variant="ghost"
-                type="button"
-                aria-label={t("Remove {p0}", { p0: projectDisplayName(cwd) })}
                 onClick={() => onChange(toggleGoalProject(draft, cwd))}
-                className="shrink-0"
               >
-                <X className="icon-xs" />
-              </Button>
+                <X />
+              </InlineAction>
             </span>
           ))}
           {draft.cwds.length < MAX_GOAL_PROJECTS ? (

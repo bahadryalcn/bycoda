@@ -29,6 +29,33 @@ type Preview = {
   warnings: string[];
 };
 
+/** Independent read-only inventories keep successful sections available on partial failure. */
+function useSshInventory<T>(command: string) {
+  const [value, setValue] = useState<T>();
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setError("");
+    void invoke<T>(command).then(
+      (result) => {
+        if (current) setValue(result);
+      },
+      (reason) => {
+        if (current) setError(String(reason));
+      },
+    ).finally(() => {
+      if (current) setLoading(false);
+    });
+    return () => {
+      current = false;
+    };
+  }, [command, attempt]);
+  return { value, error, loading, retry: () => setAttempt((previous) => previous + 1) };
+}
+
 export function SshSettings({
   server,
   servers,
@@ -49,18 +76,22 @@ export function SshSettings({
   const [securityPanel, setSecurityPanel] = useState("keys");
   const [keySearch, setKeySearch] = useState("");
   const [hostSearch, setHostSearch] = useState("");
-  const [keys, setKeys] = useState<PublicKey[]>([]);
-  const [hosts, setHosts] = useState<PublicKey[]>([]);
-  const [agent, setAgent] = useState<{
+  const keyInventory = useSshInventory<PublicKey[]>("ssh_public_keys_list");
+  const hostInventory = useSshInventory<PublicKey[]>("ssh_known_hosts_list");
+  const agentInventory = useSshInventory<{
     status: string;
     identities: { bits: number; fingerprint: string; keyType: string }[];
-  }>();
+  }>("ssh_agent_identities");
+  const keys = keyInventory.value ?? [];
+  const hosts = hostInventory.value ?? [];
+  const agent = agentInventory.value;
   const [config, setConfig] = useState("");
   const [preview, setPreview] = useState<Preview>();
   const [error, setError] = useState("");
-  const [hostsError, setHostsError] = useState("");
-  const [busy, setBusy] = useState(true);
-  const pending = useRef(true);
+  const hostsError = hostInventory.error;
+  const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const pending = useRef(false);
   const canAssignKey = Boolean(server && (server.kind === "ssh" || server.machine?.ssh));
   const selectedIdentity =
     server?.effectiveSshEndpoint?.identityFile ??
@@ -93,35 +124,6 @@ export function SshSettings({
       setBusy(false);
     }
   };
-  useEffect(() => {
-    let current = true;
-    pending.current = true;
-    void Promise.allSettled([
-      invoke<PublicKey[]>("ssh_public_keys_list"),
-      invoke<PublicKey[]>("ssh_known_hosts_list"),
-      invoke<{
-        status: string;
-        identities: { bits: number; fingerprint: string; keyType: string }[];
-      }>("ssh_agent_identities"),
-    ]).then((result) => {
-      if (!current) return;
-      if (result[0].status === "fulfilled") setKeys(result[0].value);
-      if (result[1].status === "fulfilled") {
-        setHosts(result[1].value);
-        setHostsError("");
-      } else setHostsError(String(result[1].reason));
-      if (result[2].status === "fulfilled") setAgent(result[2].value);
-      if (result.some((item) => item.status === "rejected"))
-        setError(
-          t("Some SSH information could not be loaded. Close and reopen settings to retry."),
-        );
-      pending.current = false;
-      setBusy(false);
-    });
-    return () => {
-      current = false;
-    };
-  }, []);
   return (
     <Modal title={t("SSH settings")} onClose={() => onClose()} size="lg">
       <div className="flex flex-col gap-4 p-4">
@@ -147,15 +149,22 @@ export function SshSettings({
             <h3 className="text-sm font-medium">{t("Keys")}</h3>
             {generateKey ? (
               <Button
+                disabled={busy}
+                loading={generating}
                 onClick={() =>
                   void act(async () => {
-                    const path = await save({
-                      title: t("Generate SSH key"),
-                      defaultPath: "id_ed25519_bycoda",
-                    });
-                    if (path) {
-                      onClose();
-                      generateKey(path);
+                    setGenerating(true);
+                    try {
+                      const path = await save({
+                        title: t("Generate SSH key"),
+                        defaultPath: "id_ed25519_bycoda",
+                      });
+                      if (path) {
+                        onClose();
+                        generateKey(path);
+                      }
+                    } finally {
+                      setGenerating(false);
                     }
                   })
                 }
@@ -164,6 +173,17 @@ export function SshSettings({
               </Button>
             ) : null}
           </div>
+          {agentInventory.loading ? (
+            <p role="status" className="mbs-2 text-ui-caption text-(--ui-text-muted)">
+              {t("SSH agent")}: {t("Loading\u2026")}
+            </p>
+          ) : null}
+          {agentInventory.error ? (
+            <Alert tone="danger" role="alert">
+              {t("SSH agent")}: {agentInventory.error}
+              <Button loading={agentInventory.loading} onClick={agentInventory.retry}>{t("Retry")}</Button>
+            </Alert>
+          ) : null}
           {agent ? (
             <div className="mbs-2 text-xs">
               <span>
@@ -218,12 +238,18 @@ export function SshSettings({
             placeholder={t("Search SSH keys…")}
             aria-label={t("Search SSH keys…")}
           />
-          {busy && keys.length === 0 ? (
+          {keyInventory.error ? (
+            <Alert tone="danger" role="alert">
+              {t("Keys")}: {keyInventory.error}
+              <Button loading={keyInventory.loading} onClick={keyInventory.retry}>{t("Retry")}</Button>
+            </Alert>
+          ) : null}
+          {keyInventory.loading && keys.length === 0 ? (
             <p role="status" className="mbs-2 text-xs text-(--ui-text-muted)">
               {t("Loading…")}
             </p>
           ) : null}
-          {!busy && keys.length === 0 ? (
+          {!keyInventory.loading && !keyInventory.error && keys.length === 0 ? (
             <p className="mbs-2 text-xs text-(--ui-text-muted)">{t("No SSH keys found.")}</p>
           ) : null}
           {keys.length > 0 && matchingKeys.length === 0 ? (
@@ -235,8 +261,8 @@ export function SshSettings({
                 className="mbs-2 flex min-w-0 flex-wrap items-center gap-2"
                 key={`${key.identityFile}:${key.fingerprint}`}
               >
-                <div className="min-w-0 flex-1 text-xs">
-                  <p className="break-all font-medium">
+                <div className="min-w-0 flex-1 text-ui-caption">
+                  <p className="break-all text-ui-body font-medium">
                     {key.identityFile?.split(/[\\/]/).pop() ?? key.keyType}
                   </p>
                   <p className="break-all text-(--ui-text-muted)">{key.identityFile}</p>
@@ -272,7 +298,7 @@ export function SshSettings({
           className="flex min-w-0 flex-col gap-3"
         >
           <h3 className="text-sm font-medium">
-            {t("Known hosts")} ({hosts.length})
+            {t("Known hosts")}{hostInventory.value ? ` (${hosts.length})` : ""}
           </h3>
           <SearchInput
             appearance="field"
@@ -281,12 +307,18 @@ export function SshSettings({
             value={hostSearch}
             onChange={(event) => setHostSearch(event.target.value)}
           />
-          {hostsError ? (
-            <p role="alert" className="text-xs text-(--ui-tone-danger-fg)">
-              {hostsError}
+          {hostInventory.loading ? (
+            <p role="status" className="text-ui-caption text-(--ui-text-muted)">
+              {t("Loading\u2026")}
             </p>
           ) : null}
-          {!hosts.length && !busy && !hostsError ? (
+          {hostsError ? (
+            <Alert tone="danger" role="alert">
+              {hostsError}
+              <Button loading={hostInventory.loading} onClick={hostInventory.retry}>{t("Retry")}</Button>
+            </Alert>
+          ) : null}
+          {!hosts.length && !hostInventory.loading && !hostsError ? (
             <p className="text-xs text-(--ui-text-muted)">{t("No known hosts yet.")}</p>
           ) : null}
           {hosts

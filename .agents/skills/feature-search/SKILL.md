@@ -5,6 +5,19 @@ description: General workspace Search dialog/page, All/Conversations/Files/Proje
 
 # General workspace search
 
+## H4 source implementation, 2026-10-28
+
+Search UI and model/action delivery for GS-U01..06 and GS-D01..04 is recorded
+per ID in `temp/local/2026-10-28-search-recovery-impl/handoff.json`. Baseline
+`4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`, shared `main`, uncommitted packet.
+Public shared controls and dialog/page/query/filter/permission owners remain
+authoritative. GS-D04 visibility-before-native-limit saturation needs a typed
+native search contract; client filtering must not leak locked rows or silently
+narrow Everywhere to known recent directories. Test edilmedi under RULES.md;
+suites, fixtures, screenshots, keyboard/reader/native acceptance remain morning
+checks. Handoff records the single fast typecheck and exact dependencies. Guide:
+`docs/guides/search-and-recovery.md`. No installed/build inclusion is implied.
+
 Find and open the correct conversation/message/file/content location/project
 without losing workspace context, retained query or privacy. Keywords: Search,
 global search, general search, Ctrl K, All, Conversations, Files, Projects,

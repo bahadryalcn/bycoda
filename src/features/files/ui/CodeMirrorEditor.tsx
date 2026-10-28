@@ -134,6 +134,11 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     );
     return write;
   }, []);
+  const onMergedDocumentChange = useCallback((document: Text) => {
+    propsRef.current.onEdit?.();
+    propsRef.current.onDocChange?.(document.toString());
+    propsRef.current.onDocumentChange?.(document);
+  }, []);
   useEffect(
     () =>
       registerClosingEditor({
@@ -159,7 +164,7 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
       onSave={onSave}
       onDirtyChange={onDirtyChange}
       canSave={props.canAutosave}
-      onDocumentChange={props.onDocumentChange}
+      onDocumentChange={onMergedDocumentChange}
       saveRequestRef={saveRequestRef}
       onOpenFile={props.onOpenFile}
     />
@@ -179,6 +184,8 @@ function StandardCodeMirrorEditor({
   commentPath,
   value,
   initialDraft,
+  initialDirty = false,
+  retainedState,
   showDiff,
   gitOriginal,
   active,
@@ -202,6 +209,10 @@ function StandardCodeMirrorEditor({
   value: string;
   /** Recovered edits start dirty against value, which remains the disk baseline. */
   initialDraft?: string;
+  /** Explicit recovery copies remain unsaved until a successful file write. */
+  initialDirty?: boolean;
+  /** Parent-scoped carry survives replacement of this editor component. */
+  retainedState?: { current: EditorCarry | null };
   showDiff: boolean;
   gitOriginal: string | null;
   active: boolean;
@@ -231,6 +242,7 @@ function StandardCodeMirrorEditor({
   const leftViewRef = useRef<EditorView | null>(null);
   const savedDocumentRef = useRef<Text | null>(null);
   const dirtyRef = useRef(false);
+  const initialDirtyRef = useRef(initialDirty);
   const activeRef = useRef(active);
   const onDirtyChangeRef = useRef(onDirtyChange);
   const onErrorCountChangeRef = useRef(onErrorCountChange);
@@ -258,7 +270,8 @@ function StandardCodeMirrorEditor({
   // What scrolls the editor: its own scroller, or the pair's shared container.
   const scrollerRef = useRef<HTMLElement | null>(null);
   // What a rebuilt editor needs to pick up where the last one stopped.
-  const carryRef = useRef<EditorCarry | null>(null);
+  const localCarryRef = useRef<EditorCarry | null>(null);
+  const carryRef = retainedState ?? localCarryRef;
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const colorScheme = useColorScheme();
   const diffLayout = useResponsiveDiffLayout(hostRef);
@@ -406,7 +419,7 @@ function StandardCodeMirrorEditor({
 
     const markDirty = () => {
       const saved = savedDocumentRef.current;
-      setDirty(saved ? !view.state.doc.eq(saved) : false);
+      setDirty(initialDirtyRef.current || (saved ? !view.state.doc.eq(saved) : false));
     };
 
     const formatDocument = async (manual = false) => {
@@ -463,6 +476,7 @@ function StandardCodeMirrorEditor({
         }
         if (disposed || generation !== saveGeneration) return true;
         savedDocumentRef.current = document;
+        initialDirtyRef.current = false;
         markDirty();
         scheduleBlame();
         return true;
@@ -669,6 +683,7 @@ function StandardCodeMirrorEditor({
     scrollerRef.current = split ? split.dom : view.scrollDOM;
     if (carry?.saved) {
       savedDocumentRef.current = carry.saved;
+      markDirty();
     } else {
       savedDocumentRef.current =
         initialDraftRef.current === undefined
@@ -755,6 +770,7 @@ function StandardCodeMirrorEditor({
     // Inline diff visibility and format-on-save reconfigure the existing editor.
     splitDiff,
     conflictLayoutActive,
+    carryRef,
     syncChunkNav,
   ]);
 
@@ -1019,6 +1035,7 @@ function StandardCodeMirrorEditor({
           <div
             ref={hostRef}
             data-diff-layout={diffLayout}
+            data-editor-shown={shown}
             className="relative min-h-0 min-w-0 flex-1"
           />
         </ConflictLayoutFrame>
@@ -1209,7 +1226,7 @@ function indentOrInsertTab(view: EditorView): boolean {
 
 type LineRange = { from: number; to: number };
 
-type EditorCarry = {
+export type EditorCarry = {
   /** Document and history carried when path-specific extensions are rebuilt. */
   doc: Text | null;
   saved: Text | null;

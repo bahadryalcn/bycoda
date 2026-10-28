@@ -31,7 +31,7 @@
 }
 
 .pdf-text-layer ::selection {
-  background: var(--color-selection-strong);
+  background: var(--ui-overlay-selection-background);
   color: transparent;
 }
 

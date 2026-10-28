@@ -7,9 +7,11 @@ import { setQuickComposerShortcut } from "../../quick-composer/model/quickCompos
 import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComposerShortcut";
 import {
   loadFileTabMode,
+  subscribeFileTabMode,
   loadLiveAgentsEnabled,
   subscribeLiveAgentsEnabled,
   loadQuickComposerEnabled,
+  subscribeQuickComposerEnabled,
   loadQuickComposerShortcut,
   saveFileTabMode,
   saveLiveAgentsEnabled,
@@ -107,9 +109,14 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
     loadLiveAgentsEnabled,
     subscribeLiveAgentsEnabled,
   );
-  const [fileTabMode, setFileTabMode] = useState<FileTabMode>(loadFileTabMode);
+  const [fileTabMode, setFileTabMode] = useStoredPreferenceState(loadFileTabMode, subscribeFileTabMode);
+  const [fileTabError, setFileTabError] = useState(false);
+  const [liveAgentsError, setLiveAgentsError] = useState(false);
 
-  const [quickComposerEnabled, setQuickComposerEnabled] = useState(loadQuickComposerEnabled);
+  const [quickComposerEnabled, setQuickComposerEnabled] = useStoredPreferenceState(
+    loadQuickComposerEnabled,
+    subscribeQuickComposerEnabled,
+  );
   const [quickComposerError, setQuickComposerError] = useState<string | null>(null);
   const [quickComposerSaving, setQuickComposerSaving] = useState(false);
   const quickComposerPending = useRef(false);
@@ -118,9 +125,16 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
     quickComposerPending.current = true;
     setQuickComposerSaving(true);
     saveQuickComposerEnabled(next);
-    setQuickComposerEnabled(next);
+    const saved = loadQuickComposerEnabled();
+    setQuickComposerEnabled(saved);
     setQuickComposerError(null);
-    void setQuickComposerShortcut(next)
+    if (saved !== next) {
+      quickComposerPending.current = false;
+      setQuickComposerSaving(false);
+      setQuickComposerError(t("Could not save changes"));
+      return;
+    }
+    void setQuickComposerShortcut(saved)
       .catch((error: unknown) => {
         // Another app already owns the combination. Leave the switch where the
         // user put it so the next launch tries again, but say why it is dead.
@@ -133,15 +147,19 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
   };
   const onLiveAgentsEnabled = (next: boolean) => {
     saveLiveAgentsEnabled(next);
-    setLiveAgentsEnabled(next);
+    const saved = loadLiveAgentsEnabled();
+    setLiveAgentsEnabled(saved);
+    setLiveAgentsError(saved !== next);
   };
   const onFileTabMode = (next: FileTabMode) => {
     saveFileTabMode(next);
-    setFileTabMode(next);
+    const saved = loadFileTabMode();
+    setFileTabMode(saved);
+    setFileTabError(saved !== next);
   };
 
   return (
-    <div className="workspace-settings">
+    <div className="workspace-settings settings-topics">
       <Group
         title={t("Files and navigation")}
         layout="full"
@@ -151,6 +169,9 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           id="file-tabs"
           label={t("File tabs")}
           description={t("Choose where files open. Both layouts support split panes.")}
+          feedback={fileTabError ? (
+            <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+          ) : undefined}
         >
           <Segmented
             label={t("File tabs")}
@@ -173,11 +194,28 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           />
         </Row>
       </Group>
-      <Group title={t("Workspace tools")} layout="full" action={<WorkspaceToolsHelp />}>
+      {children}
+      <Group
+        title={t("Workspace tools")}
+        layout="full"
+        action={<WorkspaceToolsHelp />}
+        scope={t("Controls navigation visibility. Hiding this tool does not stop work or change permissions.")}
+      >
         <WorkspaceFeatureSettings />
+        <Row
+          id="working-agents"
+          label={t("Working agents")}
+          description={t("Show running and recently finished chats in the project rail.")}
+          feedback={liveAgentsError ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
+        >
+          <Toggle
+            label={t("Working agents")}
+            on={liveAgentsEnabled}
+            onChange={onLiveAgentsEnabled}
+          />
+        </Row>
       </Group>
-      <Group title={t("Session access")} layout="full">
-        <ExactGitRewindSetting />
+      {IS_MAC ? <Group title={t("Session access")} layout="full">
         {IS_MAC && (
           <Row
             id="quick-composer"
@@ -205,19 +243,14 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
             />
           </Row>
         )}
-        <Row
-          id="working-agents"
-          label={t("Working agents")}
-          description={t("Show running and recently finished chats in the project rail.")}
-        >
-          <Toggle
-            label={t("Working agents")}
-            on={liveAgentsEnabled}
-            onChange={onLiveAgentsEnabled}
-          />
-        </Row>
+      </Group> : null}
+      <Group
+        title={t("Experimental settings")}
+        layout="full"
+        scope={t("Applies to new turns on this computer's Host.")}
+      >
+        <ExactGitRewindSetting />
       </Group>
-      {children}
     </div>
   );
 }

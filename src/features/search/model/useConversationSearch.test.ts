@@ -92,6 +92,19 @@ it("exposes a conversation error and recovers with Retry", async () => {
   expect(searchSessionContent).toHaveBeenCalledTimes(2);
   expect(view.error).toBeNull();
 });
+
+it("does not retry the index on later queries after an explicit retry completed", async () => {
+  searchSessionContent.mockResolvedValue(empty);
+  await render("first");
+  await advance(200);
+  act(() => view.retry());
+  await advance(200);
+  expect(searchSessionContent.mock.calls[1][0].retryIndex).toBe(true);
+  await render("second");
+  await advance(200);
+  expect(searchSessionContent.mock.calls[2][0].query).toBe("second");
+  expect(searchSessionContent.mock.calls[2][0].retryIndex).toBeUndefined();
+});
 it("cancels an old query and rejects its late result", async () => {
   let resolve!: (value: SessionContentResult) => void;
   searchSessionContent

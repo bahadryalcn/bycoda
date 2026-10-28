@@ -3,12 +3,15 @@ import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
 } from "../../settings/model/appearancePreferences";
-import { File } from "../../../shared/ui/icons";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { t } from "../../../shared/i18n";
 import type { SshEndpoint } from "../model/serverInventory";
 import styles from "./ServerTerminalSession.module.css";
 
 /** Presentation only. The existing SSH PTY owns connection, input and approvals. */
 export function ServerTerminalSession({
+  name,
+  lifecycle,
   endpoint,
   target,
   port,
@@ -16,6 +19,8 @@ export function ServerTerminalSession({
   keyGenerationPath,
   children,
 }: {
+  name?: string;
+  lifecycle?: "opened-on-computer" | "exited" | "failed" | "closed";
   endpoint?: SshEndpoint;
   target?: string;
   port?: number | null;
@@ -47,17 +52,17 @@ export function ServerTerminalSession({
     <div className={styles.session} data-server-terminal-session>
       <div className={styles.toolbar}>
         <div className={styles.identity}>
-          <span className={styles.address} title={address}>
-            {address}
+          <span className={styles.address} title={name ?? address}>{name ?? address}</span>
+          <span className="shrink-0 text-ui-caption text-(--ui-text-muted)" role="status">
+            {t(!lifecycle ? "Opening…" : lifecycle === "opened-on-computer" ? "Running" : lifecycle === "failed" ? "Failed" : "Terminal closed")}
           </span>
-          {sshPort ? <span className={styles.port}>:{sshPort}</span> : null}
-          {key ? (
-            <span className={styles.key} title={key}>
-              <File aria-hidden className="icon-xs shrink-0" />
-              <span className={styles.keyName}>{key.split(/[\\/]/).pop()}</span>
-            </span>
-          ) : null}
         </div>
+        <InfoPopover label={t("Connection details")}>
+          <dl className="grid min-w-0 gap-2">
+            <div><dt>{t("Host")}</dt><dd className="select-text break-all">{address}{sshPort ? `:${sshPort}` : ""}</dd></div>
+            {key ? <div><dt>{t("Identity file")}</dt><dd className="select-text break-all">{key}</dd></div> : null}
+          </dl>
+        </InfoPopover>
       </div>
       {children(fontSize, setFontSize, preferences.terminalLineHeight)}
     </div>

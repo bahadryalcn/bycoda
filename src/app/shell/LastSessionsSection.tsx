@@ -1,5 +1,6 @@
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "./RelativeSessionTime";
 import { getLocale, useT } from "../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -146,7 +147,7 @@ export function LastSessionsSection({
 
   return (
     <div ref={drag?.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
-      <div
+      <ActionHost
         {...drag?.headerProps}
         title={drag ? t("Drag to reorder") : undefined}
         className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""}`}
@@ -176,7 +177,7 @@ export function LastSessionsSection({
           <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
         )}
         {drag ? <SectionMenuButton label={t("Last sessions")} onOpen={drag.openMenu} /> : null}
-      </div>
+      </ActionHost>
       {prefs.collapsed ? null : (
         <LastSessionsRows
           rows={rows}
@@ -387,9 +388,9 @@ function SessionRow({
   };
 
   return (
-    <div
+    <ActionHost
       role="listitem"
-      data-selected={selected || undefined}
+      selected={selected}
       className="group relative flex"
       onContextMenu={openMenuAt}
     >
@@ -475,12 +476,9 @@ function SessionRow({
         </span>
       </Button>
       {row.pinnable ? (
-        <Button
-          variant="ghost"
+        <InlineAction
           motion="none"
           type="button"
-          iconOnly
-          size="sm"
           label={row.pinned ? t("Unpin session") : t("Pin session")}
           title={row.pinned ? t("Unpin session") : t("Pin session")}
           aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
@@ -488,15 +486,15 @@ function SessionRow({
             event.stopPropagation();
             onTogglePin();
           }}
-          className="absolute end-1 bottom-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
+          className="absolute end-1 bottom-1"
         >
           {row.pinned ? (
             <PinOff className="icon-sm" strokeWidth={1.75} />
           ) : (
             <Pin className="icon-sm" strokeWidth={1.75} />
           )}
-        </Button>
+        </InlineAction>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }

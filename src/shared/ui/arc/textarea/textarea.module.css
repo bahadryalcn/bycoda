@@ -1,7 +1,18 @@
-.field { display: grid; align-content: start; min-width: 0; }
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    min-width: 0;
+  }
+  .control {
+    width: 100%;
+  }
+}
+.field { display: grid; align-content: start; }
 .field label { margin-bottom: var(--space-2); font-size: var(--text-sm); font-weight: 500; }
 /* Same frame as Input: border-only focus owned by the field owner, and the box never changes size. */
-.control { width: 100%; min-height: 110px; resize: vertical; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); outline: none; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
+.control { min-height: 110px; resize: vertical; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); outline: none; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
 .control::placeholder { color: var(--text-muted); }
 @media (hover: hover) and (pointer: fine) { .control:hover:not(:disabled, [aria-invalid="true"]) { border-color: var(--foreground); } }
 .control:focus-visible { border-color: var(--foreground); }

@@ -452,3 +452,35 @@ compacted context and paused/still scene behavior. No executable crew/profile/
 model or ambient preference was changed. See feature-appearance for inventory,
 proposal and native/rendering acceptance; fresh153 Appearance tests do not prove
 all crew-scene/Host/device journeys.
+
+## Redesign implementation, 2026-10-28 (H2-2, uncommitted)
+
+Shared checkout `main @ c03fa98d4`, uncommitted, no build. Not tested by owner
+rule (2026-10-28, RULES.md): "test yapmasınlar en iyisi kodları yazsınlar en son
+testi biz yaparız". Only `tsc-rs --noEmit --fast` ran (exit 0). Package:
+`temp/local/2026-10-28-crews-impl/` (handoff, writer reports, review).
+
+Delivered behavior (source only):
+- Team: roster grouped by responsibility with counts, name-first rows with
+  `CrewRoleIcon` + responsibility label + `memberModelSummary`; Remove is an
+  `InlineAction` in `ActionHost`. Unfinished picks/new-member draft survive Back
+  and filter changes (picks keep the slot role they were made in) until Add,
+  **Discard draft** or crew Discard. "Member name" field; groups editable on new
+  members independently of library save (CR-I01, CR-E01–E05, CR-E07).
+- Working settings: `CrewWorkingSettings.tsx` compact sections (eligibility for
+  every member with affected members via `crewPolicyImpact`, ranking, bulk fixed
+  Apply with count, limits, visible permission consequences, device-local
+  appearance note). Enforcement and persisted fields unchanged (CR-S01–S05).
+- Library/picker/rail/settings list: search over visible row text plus
+  instructions (`CrewLibrarySearch.ts`, scope excluded), picked chips with hidden
+  count and clear routes, rail attention ranking separate from execution with
+  Start visible at rest (CR-E03, CR-E06, CR-E07, CR-W04, CR-I01).
+- Work: `CrewWorkList/Detail/Sessions/State.tsx`: search, timestamps, execution
+  versus attention badges, "This work's team" snapshot versus saved team,
+  run-recorded member/model rows, honest first-line request notice (CR-W01–W05).
+
+Open: Host owner-scoped request detail read (CR-W01), cost unit/two meanings
+owner decision (CR-S03), installed action-icon visibility reproduction (CR-I01),
+roster search (CR-E02), compact shared settings Group/Row variant (H3), browser
+fixture variant without `launch`. Browser selectors in `tests/browser/crews.spec.ts`
+were updated for the new labels but not run.

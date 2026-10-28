@@ -1,15 +1,16 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { isAbsolute, join, sep } from "node:path";
 import {
-  canonicalWorkspaceDirectory,
   canonicalWorkspaceEntry,
   canonicalWorkspacePath,
   workspacePathKey as pathKey,
 } from "./workspace-paths";
 import { withHostGitMutation } from "./git-mutations";
 import { durableWrite } from "./turn-git-history";
-import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
+import { createNativeBufferReports } from "./native-buffer-reports";
+export type { NativeBufferSnapshot } from "./native-buffer-reports";
+import type { ManagedWorkspace } from "./workspace-contracts";
 import type {
   ExecutionActivityReservations,
   WorkspaceOwnerAuthorization,
@@ -21,28 +22,12 @@ export interface NativeActivityStart {
   kind: "provider" | "shell" | "terminal";
   sessionId?: string;
 }
-export interface NativeBufferSnapshot {
-  clientId: string;
-  instanceId: string;
-  processId: number;
-  owners: {
-    ownerId: string;
-    updatedAt: number;
-    unknown: boolean;
-    buffers: { path: string; dirty: boolean }[];
-  }[];
-}
 interface ProcessLease extends NativeActivityStart {
   device: string;
   workspaceId: string;
   activityOwnerId: string;
   phase: "starting" | "active" | "ending" | "ended";
   sharedActivityId?: string;
-}
-interface BufferLease extends NativeBufferSnapshot {
-  device: string;
-  receivedAt: number;
-  retiredAt?: number;
 }
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const contains = (root: string, target: string) =>
@@ -65,8 +50,6 @@ export function createManagedNativeActivity(deps: {
   authorize(owner: WorkspaceOwnerAuthorization): Promise<boolean>;
   now?(): number;
 }) {
-  const now = deps.now ?? Date.now;
-  const refreshed = new Set<string>();
   let tail: Promise<unknown> = Promise.resolve();
   const serial = <T>(action: () => Promise<T>): Promise<T> => {
     const result = tail.then(action);
@@ -80,8 +63,6 @@ export function createManagedNativeActivity(deps: {
   };
   const leasePath = (activityId: string) =>
     join(deps.root, "native-activity", "processes", `${digest(activityId)}.json`);
-  const bufferDirectory = join(deps.root, "native-activity", "buffers");
-  const canonicalBuffer = canonicalWorkspaceDirectory;
   const read = async <T>(path: string): Promise<T | null> => {
     try {
       return JSON.parse(await readFile(path, "utf8")) as T;
@@ -115,58 +96,14 @@ export function createManagedNativeActivity(deps: {
       throw new Error("Native workspace canonical identity changed");
     return { workspace, canonical };
   };
-  const snapshots = async () => {
-    let names: string[];
-    try {
-      names = await readdir(bufferDirectory);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-      throw error;
-    }
-    const result: BufferLease[] = [];
-    for (const name of names.filter((name) => /^[a-f0-9]{64}\.json$/.test(name))) {
-      const value = await read<BufferLease>(join(bufferDirectory, name));
-      if (value) result.push(value);
-    }
-    return result;
-  };
-  const probe = async (workspaceId: string): Promise<WorkspaceActivity[]> => {
-    // Removal verifies its reservation after the directory has been tombstoned.
-    // Buffer ownership still uses the registry path; it must not require a live
-    // Git worktree during that final journal transition.
-    const stored = (await deps.listWorkspaces()).find((entry) => entry.id === workspaceId);
-    if (!stored) throw new Error("Native workspace registry identity is unavailable");
-    const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
-    const result: WorkspaceActivity[] = [];
-    for (const report of await snapshots()) {
-      if (report.retiredAt !== undefined) continue;
-      const reportId = digest([report.device, report.clientId, report.instanceId]);
-      const stale =
-        !refreshed.has(reportId) || now() - report.receivedAt > 45_000 || report.receivedAt > now();
-      const blocked =
-        report.owners.length === 0 ||
-        report.owners.some((owner) => {
-          const unknown = owner.unknown || stale || now() - owner.updatedAt > 45_000;
-          return owner.buffers.length === 0
-            ? unknown
-            : owner.buffers.some(
-                (buffer) => contains(workspace.path, buffer.path) && (unknown || buffer.dirty),
-              );
-        });
-      if (blocked) {
-        const ownerId = `native-buffer:${digest([report.device, report.clientId, report.instanceId])}`;
-        result.push({
-          id: `${ownerId}:${workspaceId}`,
-          workspaceId,
-          kind: "editor",
-          ownerId,
-          startedAt: report.receivedAt,
-          dirtyBuffer: true,
-        });
-      }
-    }
-    return result;
-  };
+  const buffers = createNativeBufferReports({
+    root: deps.root,
+    listWorkspaces: () => deps.listWorkspaces(),
+    serial,
+    authenticate,
+    now: deps.now,
+  });
+  const probe = buffers.probe;
   return {
     probe,
     start(request: NativeActivityStart, owner: WorkspaceOwnerAuthorization) {
@@ -272,152 +209,12 @@ export function createManagedNativeActivity(deps: {
         return { acknowledged: true as const };
       });
     },
-    retireBuffers(
-      request: { clientId: string; instanceId: string; processId: number },
-      owner: WorkspaceOwnerAuthorization,
-    ) {
-      return serial(async () => {
-        const device = await authenticate(owner);
-        identity(request.clientId, "client identity");
-        identity(request.instanceId, "instance identity");
-        const path = join(
-          bufferDirectory,
-          `${digest([device, request.clientId, request.instanceId])}.json`,
-        );
-        const report = await read<BufferLease>(path);
-        if (!report || report.processId !== request.processId)
-          throw new Error("Native buffer instance identity is unavailable");
-        if (report.retiredAt !== undefined) return { acknowledged: true as const };
-        if (
-          !report.owners.length ||
-          report.owners.some(
-            (entry) => entry.unknown || entry.buffers.some((buffer) => buffer.dirty),
-          )
-        )
-          throw new Error("Dirty or unknown buffers require explicit owner recovery");
-        await durableWrite(path, JSON.stringify({ ...report, retiredAt: now() }));
-        return { acknowledged: true as const };
-      });
-    },
-    reconcileBuffers(
-      request: {
-        clientId: string;
-        instanceId: string;
-        predecessors: { instanceId: string; processId: number }[];
-      },
-      owner: WorkspaceOwnerAuthorization,
-    ) {
-      return serial(async () => {
-        const device = await authenticate(owner);
-        identity(request.clientId, "client identity");
-        identity(request.instanceId, "instance identity");
-        if (!Array.isArray(request.predecessors) || request.predecessors.length > 1000)
-          throw new Error("Invalid predecessor identities");
-        for (const entry of request.predecessors) {
-          identity(entry.instanceId, "predecessor identity");
-          if (!Number.isSafeInteger(entry.processId) || entry.processId < 1)
-            throw new Error("Invalid predecessor process identity");
-        }
-        const current = await read<BufferLease>(
-          join(bufferDirectory, `${digest([device, request.clientId, request.instanceId])}.json`),
-        );
-        if (!current || current.retiredAt !== undefined)
-          throw new Error("Fresh native instance report required");
-        // Native transport is pinned to the local-sync Host. The Host checks the
-        // operating system itself: caller booleans, elapsed time and EPERM are
-        // never evidence of death, and PID reuse conservatively keeps the fence.
-        const prior = (await snapshots()).filter(
-          (report) =>
-            report.device === device &&
-            report.clientId === request.clientId &&
-            report.instanceId !== request.instanceId &&
-            report.retiredAt === undefined,
-        );
-        for (const report of prior) {
-          if (
-            request.predecessors.length &&
-            !request.predecessors.some(
-              (entry) =>
-                entry.instanceId === report.instanceId && entry.processId === report.processId,
-            )
-          )
-            continue;
-          if (
-            !report.owners.length ||
-            report.owners.some(
-              (entry) => entry.unknown || entry.buffers.some((buffer) => buffer.dirty),
-            )
-          )
-            throw new Error("Dirty or unknown buffers require explicit owner recovery");
-          let dead = false;
-          try {
-            process.kill(report.processId, 0);
-          } catch (error) {
-            dead = (error as NodeJS.ErrnoException).code === "ESRCH";
-          }
-          if (!dead) throw new Error("Previous native process is not proven dead");
-          await durableWrite(
-            join(bufferDirectory, `${digest([device, report.clientId, report.instanceId])}.json`),
-            JSON.stringify({ ...report, retiredAt: now() }),
-          );
-        }
-        return { acknowledged: true as const };
-      });
-    },
-    updateBuffers(request: NativeBufferSnapshot, owner: WorkspaceOwnerAuthorization) {
-      return serial(async () => {
-        const device = await authenticate(owner);
-        identity(request.clientId, "client identity");
-        identity(request.instanceId, "instance identity");
-        if (!Number.isSafeInteger(request.processId) || request.processId < 1)
-          throw new Error("Invalid native process identity");
-        if (!Array.isArray(request.owners) || request.owners.length > 1000)
-          throw new Error("Invalid native buffer owners");
-        const ownerIds = new Set<string>();
-        for (const report of request.owners) {
-          identity(report.ownerId, "window identity");
-          if (ownerIds.has(report.ownerId)) throw new Error("Duplicate native buffer window");
-          ownerIds.add(report.ownerId);
-          if (
-            typeof report.unknown !== "boolean" ||
-            !Number.isSafeInteger(report.updatedAt) ||
-            report.updatedAt < 0 ||
-            report.updatedAt > now() + 5000 ||
-            !Array.isArray(report.buffers) ||
-            report.buffers.length > 10_000
-          )
-            throw new Error("Invalid native buffer snapshot");
-          for (const buffer of report.buffers) {
-            if (
-              typeof buffer.path !== "string" ||
-              !isAbsolute(buffer.path) ||
-              buffer.path.includes("\0") ||
-              typeof buffer.dirty !== "boolean"
-            )
-              throw new Error("Invalid native buffer path");
-            buffer.path = await canonicalBuffer(buffer.path);
-          }
-        }
-        const reportId = digest([device, request.clientId, request.instanceId]);
-        const path = join(bufferDirectory, `${reportId}.json`);
-        const previous = await read<BufferLease>(path);
-        if (previous?.retiredAt !== undefined)
-          throw new Error("Native buffer instance already retired");
-        if (previous && previous.processId !== request.processId)
-          throw new Error("Native instance process identity changed");
-        const omitted = previous?.owners.filter((entry) => !ownerIds.has(entry.ownerId)) ?? [];
-        const report: BufferLease = {
-          clientId: request.clientId,
-          instanceId: request.instanceId,
-          processId: request.processId,
-          owners: request.owners.concat(omitted.map((entry) => ({ ...entry, unknown: true }))),
-          device,
-          receivedAt: now(),
-        };
-        await durableWrite(path, JSON.stringify(report));
-        refreshed.add(reportId);
-        return { acknowledged: true as const };
-      });
-    },
+    retireBuffers: buffers.retireBuffers,
+    reconcileBuffers: buffers.reconcileBuffers,
+    updateBuffers: buffers.updateBuffers,
+    listBufferRecovery: buffers.listRecovery,
+    readBufferRecovery: buffers.readRecovery,
+    bufferRecoveryStatus: buffers.recoveryStatus,
+    closeBufferRecoveryCatalog: buffers.closeRecoveryCatalog,
   };
 }

@@ -160,11 +160,11 @@
   grid-template-columns: minmax(0, 1fr);
 }
 .social-view .social-account-detail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.85fr);
+  display: flex;
+  flex-direction: column;
   align-content: start;
-  gap: 0.75rem 2rem;
-  padding: 1.5rem;
+  gap: 0.75rem 1rem;
+  padding: 1rem;
 }
 .social-account-detail > h2,
 .social-account-detail > .social-account-overview {
@@ -342,7 +342,7 @@
 .social-stats strong {
   font-size: var(--ui-font-secondary);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-content);
 }
 .social-history-summary {
@@ -378,8 +378,8 @@
   border-radius: var(--radius-control);
 }
 .social-history-record {
-  padding-block: 1rem;
-  border-block-end: 1px solid var(--color-stroke);
+  min-inline-size: 0;
+  padding-block: 2px;
 }
 .social-history-record:last-child {
   border-block-end: 0;

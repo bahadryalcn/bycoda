@@ -281,19 +281,22 @@ it("reports terminal closure only after its own canonical PTY cleanup completes"
   }
 });
 
-it("changes server typography without replacing or restarting its SSH process", async () => {
+it("keeps the actual canvas policy when SSH typography overrides change without restarting its process", async () => {
   const { host, root } = setup();
-  const render = (fontSize: number) =>
+  // The parent really paints the terminal canvas; a token alone is not evidence
+  // of the pixels under a transparent renderer.
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  const render = (fontSize: number, lineHeight?: number) =>
     createElement(TerminalView, {
       id: "ssh-typography",
       cwd: "",
       sshConnectionId: "saved",
       active: true,
       fontSize,
-      lineHeight: 1.35,
+      lineHeight,
     });
   try {
-    await act(async () => root.render(render(15)));
+    await act(async () => root.render(render(15, 1.35)));
     const instance = xterm.instances[0];
     expect(instance.options).toMatchObject({
       fontSize: 15,
@@ -302,11 +305,14 @@ it("changes server typography without replacing or restarting its SSH process", 
     });
     expect(instance.options).toHaveProperty(
       "theme.background",
-      expect.not.stringMatching(/^(#00000000|transparent)$/),
+      "rgba(17, 34, 51, 0)",
     );
+    expect(host.querySelector("[data-terminal-canvas]")?.getAttribute("data-terminal-canvas")).toBe("resolved");
+    // Omitting lineHeight changes typography only, never contrast/transparency.
     await act(async () => root.render(render(20)));
     expect(xterm.instances).toHaveLength(1);
-    expect(instance.options).toMatchObject({ fontSize: 20, lineHeight: 1.35 });
+    expect(instance.options).toMatchObject({ fontSize: 20, minimumContrastRatio: 4.5 });
+    expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
     expect(
       native.invoke.mock.calls.filter(([command]) => command === "ssh_terminal_spawn"),
     ).toHaveLength(1);
@@ -549,7 +555,8 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
   const { host, root } = setup();
   host.style.setProperty("--terminal-text", "#aabbcc");
   host.style.setProperty("--terminal-canvas", "#112233");
-  host.style.setProperty("--color-accent", "#778899");
+  host.style.backgroundColor = "rgb(17, 34, 51)";
+  host.style.setProperty("--ui-focus-ring-color", "#778899");
   try {
     await act(async () =>
       root.render(
@@ -566,9 +573,11 @@ it("resolves scoped theme colors for xterm and six-digit OSC replies", async () 
     await act(async () => {
       terminal.osc.get(10)?.("?");
       terminal.osc.get(11)?.("?");
+      terminal.osc.get(12)?.("?");
     });
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]10;rgb:aaaa/bbbb/cccc\x1b\\");
     expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]11;rgb:1111/2222/3333\x1b\\");
+    expect(pty.writePty).toHaveBeenCalledWith("theme-terminal", "\x1b]12;rgb:7777/8888/9999\x1b\\");
     host.style.setProperty("--terminal-text", "#ddeeff");
     await act(async () => {
       document.documentElement.style.setProperty("--terminal-test-theme", "updated");

@@ -25,6 +25,7 @@ export type ProjectNotificationPreference = {
 type Preferences = Record<string, ProjectNotificationPreference>;
 const KEY = "bycoda.projectNotifications.v1";
 const CHANGE = "bycoda:project-notifications-change";
+let lastKnownPreferences: Preferences = {};
 
 /** `after` is the last suppressed millisecond, shared with native delivery. */
 export type ProjectNotificationRule = { enabled: boolean; after: number };
@@ -47,9 +48,15 @@ export function getProjectNotificationRule(
 }
 
 export function loadNotificationPreferences(): Preferences {
+  return readNotificationPreferences(false);
+}
+
+function readNotificationPreferences(strict: boolean): Preferences {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Project notification preferences are unavailable.");
+    }
     const entries = Object.entries(parsed).flatMap(([id, value]) => {
       if (!id || !value || typeof value !== "object" || Array.isArray(value)) return [];
       const disabled = Array.isArray(value.disabled)
@@ -84,9 +91,13 @@ export function loadNotificationPreferences(): Preferences {
         ],
       ];
     });
-    return Object.fromEntries(entries);
-  } catch {
-    return {};
+    lastKnownPreferences = Object.fromEntries(entries);
+    return lastKnownPreferences;
+  } catch (error) {
+    // Read-only consumers retain known data. Mutations must never merge into
+    // defaults after a failed read and overwrite recoverable preferences.
+    if (strict) throw error;
+    return lastKnownPreferences;
   }
 }
 
@@ -94,7 +105,7 @@ export function updateNotificationPreferences(
   projectIds: readonly string[],
   patch: Partial<ProjectNotificationPreference>,
 ) {
-  const preferences = loadNotificationPreferences();
+  const preferences = { ...readNotificationPreferences(true) };
   for (const id of projectIds) {
     const previous = preferences[id];
     const enabled =
@@ -117,6 +128,7 @@ export function updateNotificationPreferences(
     };
   }
   localStorage.setItem(KEY, JSON.stringify(preferences));
+  lastKnownPreferences = preferences;
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
 }
 

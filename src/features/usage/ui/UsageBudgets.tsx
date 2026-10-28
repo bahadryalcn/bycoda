@@ -16,6 +16,7 @@ import { formatUsageTokens } from "../../providers/model/providerUsage";
 import { formatResetCountdown } from "../../providers/model/rateLimits";
 import { getSessions, useShellSessions } from "../../sessions/model/sessionsStore";
 import { pathKey } from "../../../shared/lib/paths";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { createBudgetReader } from "../model/usageBudgetReadings";
 import {
   deleteUsageBudget,
@@ -30,8 +31,8 @@ import {
   type UsageBudget,
 } from "../model/usageBudgets";
 
-const scopes = ["project", "session", "workspace"] as const;
-const scopeLabel = { project: "Project", session: "Session", workspace: "Workspace" };
+const scopes = ["machine", "project", "session", "workspace"] as const;
+const scopeLabel = { machine: "This machine", project: "Project", session: "Session", workspace: "Workspace" };
 const periodLabel = { all: "All time", weekly: "Rolling 7 days", fiveHour: "5 hours" };
 const subscribeNothing = () => () => {};
 const clientSnapshot = () => true;
@@ -100,18 +101,18 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
 
   const pending = load?.version !== version || load?.refresh !== refresh;
   const budgets = load?.budgets ?? [];
-  const readings = pending ? {} : (load?.readings ?? {});
+  const readings = load?.readings ?? {};
   const error = writeError || load?.error;
   const now = load?.now ?? 0;
   const editorVisible =
     editor === "new" ||
     (editor &&
-      (editor.scope === "workspace"
+      (editor.scope === "machine" ? true : editor.scope === "workspace"
         ? !lock.lockedGroupIds.has(editor.target)
         : !isProjectLockedIn(lock, editor.project ?? editor.target)));
 
   const visible = budgets.filter((b) =>
-    b.scope === "workspace"
+    b.scope === "machine" ? true : b.scope === "workspace"
       ? !lock.lockedGroupIds.has(b.target)
       : b.scope === "project"
         ? !isProjectLockedIn(lock, b.target)
@@ -145,6 +146,9 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         {t(
           "Budgets apply to local desktop turns. Host tasks, remote sessions and other machines are not covered.",
         )}
+      </p>
+      <p className="text-ui-caption text-(--ui-text-secondary)">
+        {t("Local rules can overlap. Their readings are not added together and provider quota percentages are never pooled.")} · {visible.filter((budget) => budget.action === "block").length} {t("Block new turns")} · {visible.filter((budget) => budget.action === "monitor").length} {t("Monitor only")}
       </p>
       {error ? (
         <Alert tone="danger" role="alert">
@@ -188,7 +192,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         </p>
       ) : null}
       {visible.map((budget) => {
-        const reading = readings[budget.id];
+        const reading = budget.scope === "machine" && (lock.lockedGroupIds.size > 0 || (lock.lockedProjectKeys?.size ?? 0) > 0) ? undefined : readings[budget.id];
         const known = reading?.used != null;
         const format = (n: number) =>
           budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
@@ -201,11 +205,13 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   {t(scopeLabel[budget.scope])} · {t(periodLabel[budget.period])} ·{" "}
                   {t(budget.action === "block" ? "Block new turns" : "Monitor only")}
                 </p>
+                <p className="break-all text-ui-caption text-(--ui-text-secondary)">
+                  {budget.scope === "machine" ? t("Supported local Codex and Claude usage") : budget.scope === "workspace" ? loadProjectGroups().find((group) => group.id === budget.target)?.name ?? t("Workspace unavailable") : budget.scope === "session" ? sessions.find((session) => session.id === budget.target)?.title ?? budget.target : budget.target}
+                </p>
               </div>
               <div className="flex gap-1">
                 <Button
                   variant="ghost"
-                  disabled={pending}
                   onClick={() => {
                     setEditor(budget);
                     setSaved(false);
@@ -217,7 +223,6 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                   label={t("Remove")}
                   tone="danger"
                   confirmMode="press"
-                  disabled={pending}
                   onConfirm={() => remove(budget.id)}
                 />
               </div>
@@ -252,6 +257,8 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
                 )}
               </Alert>
             )}
+            {pending && known ? <p role="status" className="text-ui-caption text-(--ui-text-secondary)">{t("Refreshing usage… Previous results remain visible.")}</p> : null}
+            {!pending && known ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Last observed")}: {new Date(now).toLocaleString()}</p> : null}
             {budget.metric === "accountPercent" ? (
               <p className="text-ui-caption text-(--ui-text-secondary)">
                 {budget.provider} ·{" "}
@@ -297,19 +304,20 @@ function BudgetEditor({
   onSave: () => void;
   onCancel: () => void;
 }) {
-  const [scope, setScope] = useState<BudgetScope>(budget?.scope ?? "project");
-  const [target, setTarget] = useState(budget?.target ?? "");
-  const [label, setLabel] = useState(budget?.label ?? "");
-  const [metric, setMetric] = useState<UsageBudget["metric"]>(budget?.metric ?? "tokens");
-  const [period, setPeriod] = useState<UsageBudget["period"]>(budget?.period ?? "weekly");
-  const [capacity, setCapacity] = useState(String(budget?.capacity ?? 1_000_000));
-  const [percent, setPercent] = useState(String(budget?.percent ?? 100));
-  const [action, setAction] = useState<UsageBudget["action"]>(budget?.action ?? "monitor");
+  const draftKey = `usage-budget:${budget?.id ?? "new"}`;
+  const [scope, setScope] = useRetainedState<BudgetScope>(`${draftKey}:scope`, budget?.scope ?? "project");
+  const [target, setTarget] = useRetainedState(`${draftKey}:target`, budget?.target ?? "");
+  const [label, setLabel] = useRetainedState(`${draftKey}:label`, budget?.label ?? "");
+  const [metric, setMetric] = useRetainedState<UsageBudget["metric"]>(`${draftKey}:metric`, budget?.metric ?? "tokens");
+  const [period, setPeriod] = useRetainedState<UsageBudget["period"]>(`${draftKey}:period`, budget?.period ?? "weekly");
+  const [capacity, setCapacity] = useRetainedState(`${draftKey}:capacity`, String(budget?.capacity ?? 1_000_000));
+  const [percent, setPercent] = useRetainedState(`${draftKey}:percent`, String(budget?.percent ?? 100));
+  const [action, setAction] = useRetainedState<UsageBudget["action"]>(`${draftKey}:action`, budget?.action ?? "monitor");
   const accounts = (["codex", "claude"] as const).flatMap(providerAccounts);
-  const [account, setAccount] = useState(budget ? `${budget.provider}:${budget.accountId}` : "");
+  const [account, setAccount] = useRetainedState(`${draftKey}:account`, budget ? `${budget.provider}:${budget.accountId}` : "");
   const [error, setError] = useState("");
   const targets =
-    scope === "project"
+    scope === "machine" ? [{ value: "local", label: t("This machine") }] : scope === "project"
       ? projectPaths.map((p) => ({ value: pathKey(p), label: p }))
       : scope === "workspace"
         ? groups.map((g) => ({ value: g.id, label: g.name }))
@@ -318,6 +326,16 @@ function BudgetEditor({
     targets.push({ value: budget.target, label: budget.label });
   }
   const selectedAccount = accounts.find((a) => `${a.provider}:${a.id}` === account);
+  const effectiveLimit = Number(capacity) > 0 && Number(percent) > 0 && Number(percent) <= 100 && Number.isFinite(Number(capacity) * Number(percent))
+    ? formatUsageTokens(Number(capacity) * Number(percent) / 100)
+    : "—";
+  const clearDraft = (saved?: UsageBudget) => {
+    const value = budget ? saved ?? budget : undefined;
+    setScope(value?.scope ?? "project"); setTarget(value?.target ?? ""); setLabel(value?.label ?? "");
+    setMetric(value?.metric ?? "tokens"); setPeriod(value?.period ?? "weekly"); setCapacity(String(value?.capacity ?? 1_000_000));
+    setPercent(String(value?.percent ?? 100)); setAction(value?.action ?? "monitor");
+    setAccount(value ? `${value.provider}:${value.accountId}` : "");
+  };
   return (
     <form
       className="space-y-3 border-y border-stroke py-3"
@@ -349,6 +367,7 @@ function BudgetEditor({
         }
         try {
           saveUsageBudget(next);
+          clearDraft(next);
           onSave();
         } catch {
           setError(t("Usage budget settings could not be saved."));
@@ -361,7 +380,8 @@ function BudgetEditor({
           value={scope}
           onChange={(v) => {
             setScope(v as BudgetScope);
-            setTarget("");
+            setTarget(v === "machine" ? "local" : "");
+            if (v === "machine") setMetric("tokens");
           }}
           options={scopes.map((s) => ({ value: s, label: t(scopeLabel[s]) }))}
         />
@@ -386,7 +406,7 @@ function BudgetEditor({
           }}
           options={[
             { value: "tokens", label: t("Token allocation") },
-            { value: "accountPercent", label: t("Provider account threshold (%)") },
+            ...(scope === "machine" ? [] : [{ value: "accountPercent", label: t("Provider account threshold (%)") }]),
           ]}
         />
         <BudgetSelect
@@ -437,6 +457,14 @@ function BudgetEditor({
           ]}
         />
       </div>
+      <p className="text-ui-secondary text-(--ui-text-secondary)">
+        {metric === "tokens" ? `${t("Effective token limit")}: ${effectiveLimit}` : `${t("Account usage threshold (%)")}: ${percent}%`}
+        {" · "}{t(action === "block" ? "Block new turns" : "Monitor only")}
+      </p>
+      {scope === "machine" ? <div className="space-y-1 text-ui-caption text-(--ui-text-secondary)">
+        <p>{t("Supported local Codex and Claude usage. Missing, unsupported or private data stays unknown; a blocking rule refuses new turns until usage can be verified.")}</p>
+        <p>{t("Multiple profiles of one provider may share logs; common usage remains unknown until their sources can be verified.")}</p>
+      </div> : null}
       {error ? (
         <Alert tone="danger" role="alert">
           {error}
@@ -446,7 +474,7 @@ function BudgetEditor({
         <Button type="submit" variant="primary">
           {t("Save budget")}
         </Button>
-        <Button onClick={onCancel}>{t("Cancel")}</Button>
+        <Button onClick={() => { clearDraft(); onCancel(); }}>{t("Cancel")}</Button>
       </div>
     </form>
   );

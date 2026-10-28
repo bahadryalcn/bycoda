@@ -110,7 +110,8 @@ export function SshIdentityField({
           setPickerError(false);
           onChange(next);
         }}
-        disabled={disabled || selecting || loading}
+        disabled={disabled || selecting}
+        loading={loading}
         placeholder={loading ? t("Loading…") : t("SSH agent and default keys")}
         options={[{ value: "", label: t("SSH agent and default keys") }, ...options]}
       />
@@ -118,11 +119,7 @@ export function SshIdentityField({
         <p className="break-all text-xs text-(--ui-text-muted)" title={value}>
           {value}
         </p>
-      ) : (
-        <p className="text-xs text-(--ui-text-muted)">
-          {t("Uses your SSH agent and default identities.")}
-        </p>
-      )}
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button
           variant="secondary"

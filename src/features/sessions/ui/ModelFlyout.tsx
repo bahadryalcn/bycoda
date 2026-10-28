@@ -1,3 +1,4 @@
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useLocale, useT } from "../../../shared/i18n";
@@ -274,14 +275,11 @@ export function ModelFlyout({
                       // Provider first (OpenCode Go vs OpenCode), else harness.
                       const provenance = item.provider?.name ?? HARNESS_TITLE[item.harness];
                       return (
-                        <div
+                        <ActionHost
                           key={modelChoiceKey(item)}
-                          className={`group flex h-8 items-center rounded-lg px-1 ${
-                            disabled
-                              ? "text-(--ui-text-secondary)"
-                              : highlighted
-                                ? "bg-selection text-(--ui-tone-neutral-fg)"
-                                : "text-(--ui-tone-neutral-fg) hover:bg-(--ui-surface-raised)"
+                          selected={highlighted && !disabled}
+                          className={`h-8 rounded-lg px-1 ${
+                            disabled ? "text-(--ui-text-secondary)" : "text-(--ui-tone-neutral-fg)"
                           }`}
                           onMouseEnter={() => onActive(index)}
                         >
@@ -312,28 +310,20 @@ export function ModelFlyout({
                               {provenance}
                             </span>
                           ) : null}
-                          <Button
-                            className={`shrink-0 ${favorited ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100"}`}
-                            iconOnly
+                          <InlineAction
+                            className="shrink-0"
+                            reveal={favorited ? "always" : "interaction"}
                             label={favorited ? t("Remove from favorites") : t("Add to favorites")}
-                            variant="ghost"
                             type="button"
-                            title={favorited ? t("Remove from favorites") : t("Add to favorites")}
-                            aria-label={
-                              favorited ? t("Remove from favorites") : t("Add to favorites")
-                            }
                             onMouseDown={(event) => event.preventDefault()}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onToggleFavorite(item.id);
-                            }}
+                            onClick={() => onToggleFavorite(item.id)}
                           >
                             <Star
                               className="size-3.5"
                               strokeWidth={1.75}
                               fill={favorited ? "currentColor" : "none"}
                             />
-                          </Button>
+                          </InlineAction>
                           {selected ? (
                             <span
                               aria-hidden="true"
@@ -345,7 +335,7 @@ export function ModelFlyout({
                               />
                             </span>
                           ) : null}
-                        </div>
+                        </ActionHost>
                       );
                     })}
                   </div>

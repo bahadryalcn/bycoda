@@ -1,13 +1,14 @@
 "use client";
 import { debounce } from "es-toolkit";
-import { SearchInput } from "../../SearchInput";
+import { SearchInput, SearchInputGroup } from "../../SearchInput";
 
 import { t, useT } from "../../../i18n";
-
 import { forwardRef, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { AnimatePresence, LayoutGroup, animate, motion, useReducedMotion } from "motion/react";
 import type { AnimationPlaybackControls, Transition } from "motion/react";
+import { InlineAction } from "../../ActionHost";
+import { Button } from "../../Button";
 import {
   Check,
   ChevronDown,
@@ -19,7 +20,7 @@ import {
   Link2,
   Search,
   X,
-} from "lucide-react";
+} from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./json-viewer.module.css";
 
@@ -85,7 +86,8 @@ type Row = {
   hidden?: number;
 };
 
-const ROW = 30;
+/** Row height in px. Keep in sync with --row-height in the stylesheet. */
+const ROW = 28;
 const IDENT = /^[A-Za-z_$][\w$]*$/;
 
 function typeOf(value: unknown): JsonValueType {
@@ -215,7 +217,10 @@ function Highlight({ text, needle, current }: { text: string; needle: string; cu
 }
 
 type CopyState = "idle" | "done" | "error";
-/** Icon-only copy action. The glyph swaps in place, so the button never changes width. */
+/**
+ * Icon-only copy action built on the shared Button. A row action is the compact inline variant; the path bar uses a regular
+ * ghost icon Button. The glyph swaps in place, so the button never changes width.
+ */
 function CopyButton({
   label,
   icon,
@@ -247,53 +252,69 @@ function CopyButton({
   };
   const glyph =
     state === "done" ? (
-      <Check size={14} strokeWidth={2} aria-hidden="true" />
+      <Check aria-hidden="true" />
     ) : state === "error" ? (
-      <X size={14} strokeWidth={2} aria-hidden="true" />
+      <X aria-hidden="true" />
     ) : (
       icon
     );
+  const name = state === "done" ? t("Copied") : state === "error" ? t("Copy failed") : label;
+  const body = (
+    <AnimatePresence initial={false} mode="popLayout">
+      <motion.span
+        key={state}
+        className={styles.actionGlyph}
+        data-state={state}
+        initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.6 }}
+        transition={
+          reduced
+            ? { duration: motionTokens.duration.instant }
+            : {
+                ...motionTokens.spring.snappy,
+                opacity: { duration: motionTokens.duration.instant },
+              }
+        }
+      >
+        {glyph}
+      </motion.span>
+    </AnimatePresence>
+  );
+  if (focusable)
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        motion="none"
+        label={name}
+        title={label}
+        className={className}
+        data-state={state}
+        onClick={(event) => {
+          event.stopPropagation();
+          void run();
+        }}
+      >
+        {body}
+      </Button>
+    );
   return (
-    <button
-      type="button"
-      tabIndex={focusable ? undefined : -1}
-      className={[styles.action, className].filter(Boolean).join(" ")}
-      data-state={state}
-      aria-label={state === "done" ? t("Copied") : state === "error" ? t("Copy failed") : label}
+    <InlineAction
+      reveal="always"
+      label={name}
       title={label}
-      onClick={(event) => {
-        event.stopPropagation();
+      tabIndex={-1}
+      motion="none"
+      className={className}
+      data-state={state}
+      onClick={() => {
         void run();
       }}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.span
-          key={state}
-          className={styles.actionGlyph}
-          initial={
-            reduced
-              ? { opacity: 0 }
-              : { opacity: 0, scale: 0.6,}
-          }
-          animate={{ opacity: 1, scale: 1,}}
-          exit={
-            reduced
-              ? { opacity: 0 }
-              : { opacity: 0, scale: 0.6,}
-          }
-          transition={
-            reduced
-              ? { duration: motionTokens.duration.instant }
-              : {
-                  ...motionTokens.spring.snappy,
-                  opacity: { duration: motionTokens.duration.instant },
-                }
-          }
-        >
-          {glyph}
-        </motion.span>
-      </AnimatePresence>
-    </button>
+      {body}
+    </InlineAction>
   );
 }
 
@@ -718,13 +739,17 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
       {searchable || rows.length > 1 ? (
         <div className={styles.toolbar}>
           {searchable ? (
-            <label className={styles.search} data-ui-focus-group="">
-              <Search
-                size={15}
-                strokeWidth={1.75}
-                aria-hidden="true"
-                className={styles.searchIcon}
-              />
+            <SearchInputGroup
+              appearance="field"
+              className={styles.search}
+              onPointerDown={(event) => {
+                // The whole field is a click target for the input, the way a label would be.
+                if (event.target !== event.currentTarget) return;
+                event.preventDefault();
+                searchRef.current?.focus();
+              }}
+            >
+              <Search aria-hidden="true" className={styles.searchIcon} />
               <SearchInput
                 ref={searchRef}
                 type="search"
@@ -739,68 +764,62 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                 spellCheck={false}
                 autoComplete="off"
               />
-              <AnimatePresence initial={false}>
-                {needle ? (
-                  <motion.span
-                    key="matches"
-                    className={styles.matches}
-                    initial={reduced ? { opacity: 0 } : { opacity: 0, x: 6 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={reduced ? { opacity: 0 } : { opacity: 0, x: 6 }}
-                    transition={{
-                      duration: motionTokens.duration.fast,
-                      ease: [...motionTokens.ease.enter],
-                    }}
-                  >
-                    <span className={styles.count} aria-live="polite">
-                      {matchCount
-                        ? `${Math.min(matchIndex, matchCount - 1) + 1}/${matchCount}`
-                        : "0/0"}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.tool}
-                      aria-label={t("Previous match")}
-                      disabled={!matchCount}
-                      onClick={() => stepMatch(-1)}
-                    >
-                      <ChevronUp size={15} strokeWidth={1.75} aria-hidden="true" />
-                    </button>
-                    <button
-                      type="button"
-                      className={styles.tool}
-                      aria-label={t("Next match")}
-                      disabled={!matchCount}
-                      onClick={() => stepMatch(1)}
-                    >
-                      <ChevronDown size={15} strokeWidth={1.75} aria-hidden="true" />
-                    </button>
-                  </motion.span>
-                ) : null}
-              </AnimatePresence>
-            </label>
+              {needle ? (
+                <span className={styles.count} aria-live="polite">
+                  {matchCount ? `${Math.min(matchIndex, matchCount - 1) + 1}/${matchCount}` : "0/0"}
+                </span>
+              ) : null}
+            </SearchInputGroup>
           ) : (
             <span className={styles.grow} />
           )}
+          {searchable && needle ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                motion="none"
+                label={t("Previous match")}
+                disabled={!matchCount}
+                onClick={() => stepMatch(-1)}
+              >
+                <ChevronUp aria-hidden="true" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                iconOnly
+                motion="none"
+                label={t("Next match")}
+                disabled={!matchCount}
+                onClick={() => stepMatch(1)}
+              >
+                <ChevronDown aria-hidden="true" />
+              </Button>
+            </>
+          ) : null}
           <span className={styles.divider} aria-hidden="true" />
-          <button
-            type="button"
-            className={styles.tool}
-            aria-label={t("Expand all")}
-            title={t("Expand all")}
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            motion="none"
+            label={t("Expand all")}
             onClick={expandAll}
           >
-            <ChevronsUpDown size={15} strokeWidth={1.75} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={styles.tool}
-            aria-label={t("Collapse all")}
-            title={t("Collapse all")}
+            <ChevronsUpDown aria-hidden="true" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            iconOnly
+            motion="none"
+            label={t("Collapse all")}
             onClick={collapseAll}
           >
-            <ChevronsDownUp size={15} strokeWidth={1.75} aria-hidden="true" />
-          </button>
+            <ChevronsDownUp aria-hidden="true" />
+          </Button>
         </div>
       ) : null}
 
@@ -882,9 +901,16 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                           data-branch={branch || undefined}
                           aria-hidden="true"
                         >
-                          {branch ? <ChevronRight size={14} strokeWidth={1.75} /> : null}
+                          {branch ? <ChevronRight /> : null}
                         </span>
-                        <span className={typeof row.name === "number" ? styles.index : styles.key}>
+                        <span
+                          className={typeof row.name === "number" ? styles.index : styles.key}
+                          title={
+                            typeof row.name === "string" && row.name.length > 24
+                              ? row.name
+                              : undefined
+                          }
+                        >
                           {row.name === null ? (
                             rootName
                           ) : typeof row.name === "number" ? (
@@ -943,13 +969,13 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                           <span className={styles.actions}>
                             <CopyButton
                               label="Copy value"
-                              icon={<Copy size={14} strokeWidth={1.75} aria-hidden="true" />}
+                              icon={<Copy aria-hidden="true" />}
                               reduced={reduced}
                               onCopy={() => copy(row, "value")}
                             />
                             <CopyButton
                               label="Copy path"
-                              icon={<Link2 size={14} strokeWidth={1.75} aria-hidden="true" />}
+                              icon={<Link2 aria-hidden="true" />}
                               reduced={reduced}
                               onCopy={() => copy(row, "path")}
                             />
@@ -984,9 +1010,8 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
             <CopyButton
               key={activeRow.id}
               focusable
-              className={styles.pathCopy}
               label="Copy path"
-              icon={<Copy size={14} strokeWidth={1.75} aria-hidden="true" />}
+              icon={<Copy aria-hidden="true" />}
               reduced={reduced}
               onCopy={() => copy(activeRow, "path")}
             />

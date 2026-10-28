@@ -32,7 +32,7 @@ const onChange = vi.fn();
 const onOpenChange = vi.fn();
 const onClose = vi.fn();
 const onError = vi.fn();
-async function render() {
+async function render(extra: Record<string, unknown> = {}) {
   await act(async () =>
     root.render(
       createElement(QuickWorkspaceControls, {
@@ -42,6 +42,7 @@ async function render() {
         onOpenChange,
         onClose,
         onError,
+        ...extra,
       }),
     ),
   );
@@ -63,6 +64,45 @@ beforeEach(async () => {
   document.body.append(container);
   root = createRoot(container);
   await render();
+});
+
+it("checks the live closure gate before opening and applying a Native popup result", async () => {
+  let admitted = true;
+  await render({ canOpen: () => admitted });
+  admitted = false;
+  await act(async () => button("Choose branch").click());
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "quick_git_open"),
+  ).toHaveLength(0);
+  admitted = true;
+  await act(async () => button("Choose branch").click());
+  const id = request().request.id;
+  admitted = false;
+  act(() =>
+    bridge.result({
+      payload: { id, choice: { cwd: "/repo", mode: "worktree", base: "main" }, restoreFocus: true },
+    }),
+  );
+  expect(onChange).not.toHaveBeenCalled();
+});
+
+it("an owned unknown popup open is not replayed by the same preparation's retry", async () => {
+  let retry!: () => Promise<unknown>;
+  vi.mocked(invoke).mockImplementation(async (command) => {
+    if (command === "quick_git_open") throw new Error("Popup outcome unknown");
+  });
+  await render({
+    prepare: (operation: () => Promise<unknown>) => {
+      retry = operation;
+      return operation();
+    },
+  });
+  await act(async () => button("Choose branch").click());
+  await expect(retry()).rejects.toThrow("Popup outcome unknown");
+  expect(
+    vi.mocked(invoke).mock.calls.filter(([command]) => command === "quick_git_open"),
+  ).toHaveLength(1);
+  expect(onError).toHaveBeenCalledWith(expect.stringContaining("Popup outcome unknown"));
 });
 afterEach(async () => {
   await act(async () => root.unmount());

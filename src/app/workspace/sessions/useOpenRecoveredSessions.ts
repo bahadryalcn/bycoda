@@ -3,6 +3,7 @@ import { sessionsRef, setSessions } from "../../../features/sessions/model/sessi
 import type { Session } from "../../../features/sessions/model/session";
 import {
   mergeRecoveryTabs,
+  RecoveryOpenError,
   sessionRecoveryTabs,
   type SessionRecovery,
 } from "../../../features/workspace/model/sessionRecovery";
@@ -67,9 +68,12 @@ export function useOpenRecoveredSessions({
     // Stubs whose host session is already shown by a tab: resolved without a second shell.
     const covered = new Map<string, WorkspaceTab | undefined>();
     const openedHostSessions = new Set<string>();
+    const attempted = new Set<string>();
     for (const stub of sessionRecovery.workspace.sessions.filter(
       (entry) => wanted.has(entry.id) && !isProjectLockedIn(lockSnapshot, entry.cwd),
     )) {
+      if (attempted.has(stub.id)) continue;
+      attempted.add(stub.id);
       if (
         removingSessionIds.current.has(stub.id) ||
         movingSessionIds.current.has(stub.id) ||
@@ -82,6 +86,11 @@ export function useOpenRecoveredSessions({
         isRemoteProjectPath(stub.cwd) && stub.remoteSessionId
           ? `${stub.cwd}|${stub.remoteSessionId}`
           : undefined;
+      const existing = tabsRef.current.find((tab) => leafIds(tab.layout).includes(stub.id));
+      if (existing && sessionsRef.current.some((session) => session.id === stub.id && sameProjectPath(session.cwd, stub.cwd))) {
+        covered.set(stub.id, existing);
+        continue;
+      }
       if (hostKey && stub.remoteSessionId) {
         const shown = findRemoteSessionTab(
           tabsRef.current,
@@ -150,8 +159,14 @@ export function useOpenRecoveredSessions({
       }
     }
     const resolved = [...opened, ...covered.keys()];
-    if (resolved.length) await removeRecoveredSessions(resolved);
-    if (failed.length) throw new Error("Recovery sessions unavailable");
+    if (resolved.length) {
+      try {
+        await removeRecoveredSessions(resolved);
+      } catch {
+        throw new RecoveryOpenError([...opened], [...covered.keys()], failed, true);
+      }
+    }
+    if (failed.length) throw new RecoveryOpenError([...opened], [...covered.keys()], failed);
   };
   return { openRecoveredSessions };
 }

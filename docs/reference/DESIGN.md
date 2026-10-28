@@ -29,6 +29,41 @@ and the [native mobile design system](../../mobile/docs/reference/design-system.
 Keep their platform-specific controls, geometry and behavior; consistent intent
 does not require copying desktop controls into a touch interface.
 
+## Product-wide redesign outcome
+
+Owner direction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> heryerde yep yeni tasarım anlayışı istiyorum demiştim. T3Code klasında birşeylere ihtiyaç vardı
+
+The outcome is a coherent product-wide visual and interaction redesign, with
+T3 Code as a quality reference. Evaluate complete screen and control groups:
+navigation, task hierarchy, content layout, surfaces, typography, controls,
+collections, overlays, scroll ownership and operation states together. Every
+shared family and feature-local composition belongs to the coverage inventory.
+Existing native and mobile surfaces retain their platform conventions and need
+explicit mapping rather than implied acceptance from desktop changes.
+
+A closed defect, token substitution, smaller padding or successful compiler run
+does not by itself deliver this outcome. Existing implementations may be reused
+when they meet the target; changes must still produce the intended hierarchy in
+real application consumers. Preserve all capabilities, drafts, permissions,
+accessibility, theme/font/scale/density preferences and recovery behavior.
+
+The approved direction remains compact tools/lists, more comfortable reading
+and forms, neutral semantic surfaces, restrained accent, fewer decorative boxes
+and clear pane/input/selection/focus/drag boundaries. Use the existing Arc
+adapters and shared theme to establish one control and composition language.
+Do not introduce marketing typography, decorative textures, another UI library
+or new product defaults as an interpretation of higher quality.
+
+The single execution view is
+[the shared redesign TODO](../../temp/local/2026-10-27-workbench-audit/TODO.md).
+Each product package specifies a target composition as well as source gaps.
+Design acceptance covers the whole surface and its states, with real light/dark
+1280/800 consumers and independent review after the owner's deferred checks.
+Source delivery and design acceptance are separate states. No existing packet
+is visually accepted merely because its handoff says fixed or REVIEW.
+
 ## Colors
 
 Build hierarchy with neutral surfaces, text contrast and restrained emphasis.
@@ -100,6 +135,19 @@ real task grouping, structural separation or an interaction that needs a visible
 boundary. Keep input, selection, focus and drag boundaries distinguishable.
 Do not add nested cards, repeated headers or decorative boxes around ordinary
 content.
+
+Owner correction, 2026-10-28, session
+`0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> böyle border filan geldi fokus olunca bunları istemiyorum mesela solda sağda altta üstte şerit çizgiler istemiyorum mesela bunlarıda toparlamak gerekiyor.
+
+Do not introduce a surrounding focus frame or decorative edge stripe on a large
+composer, panel, card or row. Use the owning surface, text/icon emphasis and
+caret to convey the relevant state; keyboard-operated controls keep a visible
+local focus cue. Treat required input/drag/resize and system high-contrast
+boundaries separately. Do not wrap a composer's subordinate workspace toolbar
+in another attached outline. Apply this rule to screen compositions and shared
+controls together rather than inventing an edge treatment on each screen.
 
 Use shared floating surfaces to distinguish menus, popovers and dialogs from
 the work beneath them. Preserve existing glass and background preferences while

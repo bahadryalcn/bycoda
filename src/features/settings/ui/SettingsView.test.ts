@@ -4,6 +4,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import * as clipboard from "../../../platform/tauri/clipboard";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { SettingsView } from "./SettingsView";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setHarnessModels, resetHarnessModelOverlays } from "../../sessions/model/models";
@@ -321,6 +323,8 @@ describe("settings pages", () => {
       next: "0",
       selector: '[data-setting-id="close-to-tray"] [role="switch"]',
     },
+    { section: "chat", key: "bycoda.resumeAtReset", initial: "1", next: "0", selector: '[data-setting-id="resume-at-reset"] [role="switch"]' },
+    { section: "chat", key: "bycoda.autoContinueInterrupted", initial: "1", next: "0", selector: '[data-setting-id="auto-continue-interrupted"] [role="switch"]' },
   ])(
     "refreshes mounted $section controls after sibling storage changes to $key",
     async ({ section, key, initial, next, selector, index = 0 }) => {
@@ -331,6 +335,10 @@ describe("settings pages", () => {
       );
       localStorage.setItem(key, initial);
       await render(section as SettingsSectionId);
+      if (section === "chat") {
+        const advanced = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Advanced conversation settings");
+        await act(async () => advanced?.click());
+      }
       const control = () => container.querySelectorAll(selector)[index];
       expect(control(), key).toBeDefined();
       const before = control()!.getAttribute("aria-checked");
@@ -444,6 +452,82 @@ describe("settings pages", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "Copy info@bahadrhllyalcn.com",
     );
+  });
+
+  it("keeps a General link pending and its recovery local while other links remain usable", async () => {
+    let rejectOpen!: (reason: Error) => void;
+    const opening = new Promise<void>((_resolve, reject) => {
+      rejectOpen = reject;
+    });
+    vi.mocked(openUrl).mockReset().mockImplementationOnce(() => opening).mockResolvedValue(undefined);
+    await render("general");
+    const website = container.querySelector<HTMLButtonElement>(
+      `button[title="${PRODUCT_IDENTITY.websiteUrl}"]`,
+    )!;
+    const contact = container.querySelector<HTMLButtonElement>(
+      `button[title="${PRODUCT_IDENTITY.contactEmail}"]`,
+    )!;
+    const websiteRow = website.closest(".settings-row")!;
+    const contactRow = contact.closest(".settings-row")!;
+
+    await act(async () => {
+      website.click();
+      website.click();
+    });
+    expect(openUrl).toHaveBeenCalledTimes(1);
+    expect(website.getAttribute("aria-disabled")).toBe("true");
+    expect(website.getAttribute("aria-busy")).toBe("true");
+    expect(contact.disabled).toBe(false);
+    await act(async () => contact.click());
+    expect(openUrl).toHaveBeenLastCalledWith(`mailto:${PRODUCT_IDENTITY.contactEmail}`);
+
+    await act(async () => rejectOpen(new Error("No browser available")));
+    expect(websiteRow.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not open the link. Copy the address and open it manually.",
+    );
+    expect(contactRow.querySelector('[role="alert"]')).toBeNull();
+    expect(website.disabled).toBe(false);
+
+    const retry = Array.from(websiteRow.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent?.trim() === "Retry",
+    )!;
+    retry.focus();
+    await act(async () => retry.click());
+    expect(openUrl).toHaveBeenLastCalledWith(PRODUCT_IDENTITY.websiteUrl);
+    expect(websiteRow.querySelector('[role="alert"]')).toBeNull();
+    expect(document.activeElement).toBe(website);
+  });
+
+  it("retains a failed General link address through clipboard failure and lets copying recover", async () => {
+    vi.mocked(openUrl).mockReset().mockRejectedValueOnce(new Error("No email app"));
+    const copy = vi
+      .spyOn(clipboard, "copyText")
+      .mockRejectedValueOnce(new Error("Clipboard unavailable"))
+      .mockResolvedValue(undefined);
+    await render("general");
+    const contact = container.querySelector<HTMLButtonElement>(
+      `button[title="${PRODUCT_IDENTITY.contactEmail}"]`,
+    )!;
+    const row = contact.closest(".settings-row")!;
+    await act(async () => contact.click());
+    const copyButton = () =>
+      row.querySelector<HTMLButtonElement>(`[aria-label="Copy: ${PRODUCT_IDENTITY.contactEmail}"]`)!;
+
+    await act(async () => copyButton().click());
+    expect(copy).toHaveBeenCalledWith(PRODUCT_IDENTITY.contactEmail);
+    expect(row.querySelector('[role="alert"]')?.textContent).toContain(
+      "Could not copy. Select the details and copy them manually.",
+    );
+    expect(row.querySelector('[role="alert"]')?.textContent).toContain(
+      PRODUCT_IDENTITY.contactEmail,
+    );
+    copyButton().focus();
+    await act(async () => copyButton().click());
+    expect(copy).toHaveBeenCalledTimes(2);
+    expect(openUrl).toHaveBeenCalledTimes(1);
+    expect(row.querySelector('[role="alert"]')).toBeNull();
+    expect(row.querySelector('[role="status"]')?.textContent).toBe("Copied");
+    expect(document.activeElement).toBe(contact);
   });
   it("sekme değiştiğinde yeni bölümü başından açar", async () => {
     await render("appearance");
@@ -1688,7 +1772,7 @@ describe("settings search", () => {
     await choose();
     expect(onSelectSection).not.toHaveBeenCalled();
     const row = container.querySelector('[data-setting-id="sounds"]')!;
-    expect(row.className).toContain("bg-(--ui-surface-selected)");
+    expect(row.getAttribute("data-revealed")).toBe("true");
   });
 });
 

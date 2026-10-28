@@ -5,6 +5,38 @@ description: Appearance Settings inventory for theme/palette/accent, scale/contr
 
 # Appearance Settings
 
+## H3 implementation, 2026-10-28 (uncommitted)
+
+Appearance now consumes the shared Settings topic/row presentation without page-local
+Group/Row skins. Six open topics have compact local navigation; search targets remain.
+Translucency dependencies stay visible and the native blur-radius control is macOS-only,
+with its saved value retained elsewhere. Background previews use the runtime chat-pane
+image/effect/blur/scope treatment for Empty and Conversation, include original-image
+loading/failure, and retain Change/Remove. Global image blur remains reachable without a
+global image, including when only project images exist. Preview scope is labelled.
+Existing theme/code samples are joined by real shared accent action/selection and bubble
+samples and a terminal font/size/weight/spacing sample. These are representative previews,
+not installed-font, native glass, terminal-grid or GPU acceptance.
+
+`appearancePersistence.ts` reports per-setting failed durable writes and retries while
+retaining an explicitly applied window fallback. Sibling writes supersede stale retries.
+Fonts/density keep write-before-apply: unavailable reads retain last-known state, each
+replacement requires a fresh read and merges only edited fields, and failed drafts remain
+editable across read recovery/sibling refresh. Appearance topics show local retry feedback.
+Live-scene/intensity and zoom writes use the same receipts. Excluded-file visibility
+performs durable readback and same/sibling synchronization; tab animation consumes the
+shared settings subscription. Existing defaults, palettes, scopes, reset subsets and
+permission gates remain.
+
+Source delivery: `temp/local/2026-10-28-settings-pages-a/appearance.json`, including every
+APP-01..20, SEL-09 and WS-06 boundary. **test edilmedi** under the owner-directed overnight
+RULES.md exception. No tests, browser/server, screenshots, compiler, build, install,
+native operation or release ran in this worker. Morning acceptance must cover failure/
+retry/read/sibling races, light/dark1280/800/narrow, keyboard/density/reduced motion,
+project precedence and actual native/font/terminal behavior. Native image replacement,
+worker crash settlement, shared session-list durability and installed-source inclusion
+remain explicit open items. No feature claim/lock is established by this card.
+
 ## Purpose, scope and coordination
 
 Make appearance choices understandable and manageable while preserving effective

@@ -78,18 +78,30 @@ export function ProviderBinaryControl({
   const working = operation !== null;
   const inspectionBusy = useRef(false);
   const mounted = useRef(true);
+  const request = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
   useEffect(() => {
     mounted.current = true;
+    setOpen(false);
+    setEditing(inline);
+    setDraft(loadProviderBinaryPath(provider) ?? "");
+    setOverridden(Boolean(loadProviderBinaryPath(provider)));
+    setInspection(undefined);
+    setError(null);
+    setRevealError(null);
+    setOperation(null);
+    inspectionBusy.current = false;
     return () => {
       mounted.current = false;
+      request.current += 1;
     };
-  }, []);
+  }, [provider, inline]);
 
   const inspect = useCallback(
     async (binaryPath?: string | null, action: "inspect" | "save" | "auto" = "inspect") => {
       if (inspectionBusy.current) return null;
+      const generation = ++request.current;
       inspectionBusy.current = true;
       setOperation(action);
       setInspection(undefined);
@@ -97,6 +109,7 @@ export function ProviderBinaryControl({
       setRevealError(null);
       try {
         const next = await inspectHarnessBinary(provider, binaryPath);
+        if (!mounted.current || generation !== request.current) return null;
         setInspection({
           ...next,
           overridden: Boolean(binaryPath?.trim()),
@@ -104,12 +117,15 @@ export function ProviderBinaryControl({
         setError(binaryInspectionError(provider, next));
         return next;
       } catch (cause) {
+        if (!mounted.current || generation !== request.current) return null;
         const message = cause instanceof Error ? cause.message : String(cause);
         setError(message);
         return null;
       } finally {
-        inspectionBusy.current = false;
-        setOperation(null);
+        if (generation === request.current) {
+          inspectionBusy.current = false;
+          setOperation(null);
+        }
       }
     },
     [provider],
@@ -120,6 +136,9 @@ export function ProviderBinaryControl({
   }, [editing]);
 
   const dismiss = (restoreFocus = false) => {
+    request.current += 1;
+    inspectionBusy.current = false;
+    setOperation(null);
     setOpen(false);
     setEditing(false);
     if (restoreFocus) queueMicrotask(() => trigger.current?.focus());
@@ -134,8 +153,9 @@ export function ProviderBinaryControl({
       await useAuto();
       return;
     }
+    const generation = request.current + 1;
     const next = await inspect(value, "save");
-    if (!mounted.current || !next) return;
+    if (!mounted.current || generation !== request.current || !next) return;
     const validationError = binaryInspectionError(provider, next);
     if (validationError) {
       setError(validationError);
@@ -153,8 +173,15 @@ export function ProviderBinaryControl({
 
   const useAuto = async () => {
     if (working) return;
+    const generation = request.current + 1;
     const next = await inspect(null, "auto");
-    if (!next || binaryInspectionError(provider, next)) return;
+    if (
+      !mounted.current ||
+      generation !== request.current ||
+      !next ||
+      binaryInspectionError(provider, next)
+    )
+      return;
     if (!saveProviderBinaryPath(provider, null)) {
       setInspection(undefined);
       setError(t("Could not save the binary path."));
@@ -175,6 +202,7 @@ export function ProviderBinaryControl({
       disabled={working}
       onClick={() => {
         if (inspectionBusy.current) return;
+        const generation = ++request.current;
         inspectionBusy.current = true;
         setOperation("choose");
         void pickFile({
@@ -183,15 +211,19 @@ export function ProviderBinaryControl({
           title: t("Select {p0} CLI executable", { p0: title }),
         })
           .then((path) => {
-            if (mounted.current && typeof path === "string") {
+            if (mounted.current && generation === request.current && typeof path === "string") {
               setDraft(path);
               setError(null);
             }
           })
-          .catch((cause) => setError(String(cause)))
+          .catch((cause) => {
+            if (mounted.current && generation === request.current) setError(String(cause));
+          })
           .finally(() => {
-            inspectionBusy.current = false;
-            setOperation(null);
+            if (generation === request.current) {
+              inspectionBusy.current = false;
+              setOperation(null);
+            }
           });
       }}
     >
@@ -293,6 +325,10 @@ export function ProviderBinaryControl({
           p0: title,
         })}
         onClick={() => {
+          if (open) {
+            dismiss(true);
+            return;
+          }
           if (!open && !inspection && !working && !error) {
             void inspect(loadProviderBinaryPath(provider));
           }

@@ -29,7 +29,7 @@ import {
   useTransform,
 } from "motion/react";
 import type { AnimationPlaybackControls, MotionValue, Transition, Variants } from "motion/react";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import { Button } from "../../Button";
 import styles from "./confirm-morph.module.css";

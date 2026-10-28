@@ -8,7 +8,7 @@
   display: none;
 }
 .usage-analytics h3 {
-  font-size: var(--text-ui-body);
+  font-size: var(--ui-font-body);
   font-weight: 500;
   color: var(--color-content);
 }
@@ -34,7 +34,7 @@
 .usage-section-heading > span,
 .usage-pagination {
   color: var(--ui-text-secondary);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
 }
 .usage-analytics-actions {
   max-inline-size: 100%;
@@ -78,13 +78,13 @@
 }
 .usage-metrics small {
   color: var(--ui-text-secondary);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
 }
 .usage-facts {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }
 .usage-facts b {
@@ -106,7 +106,7 @@
 .usage-panel details,
 .usage-display-preferences {
   margin-block-start: 12px;
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }
 .usage-panel summary,
@@ -154,7 +154,7 @@
   text-overflow: ellipsis;
 }
 .usage-contribution > span {
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   color: var(--color-content);
   font-variant-numeric: tabular-nums;
 }
@@ -218,7 +218,7 @@
 .usage-week-row > [role="columnheader"] {
   display: grid;
   gap: 4px;
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   text-align: center;
   color: var(--ui-text-secondary);
   padding-block-end: 8px;
@@ -229,7 +229,7 @@
 }
 .usage-week-row > [role="rowheader"] {
   align-self: center;
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -257,7 +257,7 @@
   color: var(--color-on-solid);
 }
 .usage-week-grid .usage-hour-cell > span {
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 .usage-heat-legend {
@@ -267,7 +267,7 @@
   gap: 4px;
   margin-block-start: 12px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
 }
 .usage-heat-legend > i {
   inline-size: 12px;
@@ -313,7 +313,7 @@
 .usage-quota-zero {
   position: absolute;
   inset-inline-end: calc(100% + 8px);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
 }
 .usage-quota-max {
@@ -324,7 +324,7 @@
 }
 .usage-empty {
   padding-block: 12px;
-  font-size: var(--text-ui-body);
+  font-size: var(--ui-font-body);
   color: var(--ui-text-secondary);
 }
 @container (max-width: 900px) {
@@ -366,4 +366,42 @@
   .usage-week-grid .usage-hour-cell {
     block-size: 18px;
   }
+}
+
+.usage-single-period {
+  display: grid;
+  gap: 8px;
+  padding-block: 12px;
+}
+.usage-single-period > p {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.usage-week-grid[data-single-day] {
+  max-inline-size: 40rem;
+  gap: 6px 20px;
+}
+.usage-week-grid[data-single-day] .usage-week-row {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+.usage-week-grid[data-single-day] .usage-week-row:first-child {
+  grid-column: 1 / -1;
+}
+.usage-history-table {
+  max-block-size: 26rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  margin-block-start: 12px;
+}
+.usage-quota-axis {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
 }

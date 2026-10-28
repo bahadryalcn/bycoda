@@ -373,3 +373,34 @@ it("shows pressed keys without an error and Escape cancels recording", async () 
   expect(container.textContent).not.toContain("Del disables · Esc cancels");
   expect(invoke).not.toHaveBeenCalledWith("quick_composer_set_enabled", expect.anything());
 });
+
+it("updates an externally changed chord without remounting the editor", async () => {
+  await render();
+  const input = container.querySelector<HTMLButtonElement>('[aria-label="Change Quick composer shortcut"]')!;
+  await act(async () => {
+    data.set("bycoda.quickComposerShortcut", "Control+KeyY");
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.quickComposerShortcut", newValue: "Control+KeyY" }));
+  });
+  expect(container.querySelector('[aria-label="Change Quick composer shortcut"]')).toBe(input);
+  expect(input.querySelector("[data-shortcut-display]")?.textContent).toContain("Y");
+});
+
+it("does not report a global chord saved when persistence rejects it and restores the previous native chord", async () => {
+  await render();
+  const write = localStorage.setItem;
+  localStorage.setItem = (key: string, value: string) => {
+    if (key === "bycoda.quickComposerShortcut") throw new Error("Quota exceeded");
+    write(key, value);
+  };
+  const input = container.querySelector<HTMLButtonElement>('[aria-label="Change Quick composer shortcut"]')!;
+  await act(async () => input.click());
+  await act(async () => document.body.dispatchEvent(new KeyboardEvent("keydown", {
+    code: "KeyY", key: "y", ctrlKey: true, bubbles: true, cancelable: true,
+  })));
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Could not save changes");
+  expect(container.textContent).not.toContain("Saved");
+  expect(input.querySelector("[data-shortcut-display]")?.textContent).toBe("⌘⇧Space");
+  expect(invoke).toHaveBeenLastCalledWith("quick_composer_set_enabled", {
+    enabled: true, shortcut: "Command+Shift+Space",
+  });
+});

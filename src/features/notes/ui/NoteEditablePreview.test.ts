@@ -30,6 +30,7 @@ vi.mock("./NoteMarkdownEditor", async () => {
 it("keeps neighbour parse/DOM stable during block edits and maps the next selected block to current text", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const parse = vi.spyOn(NotePreviewParser.prototype, "parse");
+  const save = vi.fn();
   let latest = "Before.\n\nMiddle.\n\nAfter.";
   function Fixture() {
     const [value, setValue] = useState(latest),
@@ -43,7 +44,7 @@ it("keeps neighbour parse/DOM stable during block edits and maps the next select
         latest = next;
         setValue(next);
       },
-      onSave: () => {},
+      onSave: save,
       onPasteImages: () => {},
       onEditingChange: () => {},
       onFocus: () => {},
@@ -79,6 +80,11 @@ it("keeps neighbour parse/DOM stable during block edits and maps the next select
     )!;
     await act(async () => after.click());
     expect(host.querySelector("textarea")?.value).toBe("After.");
+    const read = [...host.querySelectorAll("button")].find((button) => button.textContent === "Read document")!;
+    await act(async () => read.click());
+    expect(host.querySelector("textarea")).toBeNull();
+    expect(latest).toBe("Before.\n\nFinal middle.\n\nAfter.");
+    expect(save).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
     host.remove();

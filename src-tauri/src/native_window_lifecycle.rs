@@ -64,6 +64,70 @@ pub(crate) struct NativeBufferOwner {
     incarnation: uuid::Uuid,
     label: String,
 }
+
+/// Opaque exact physical resource/incarnation capture, never an IPC argument.
+pub(crate) struct NativeCheckpointWindow {
+    slot: Arc<WindowSlot>,
+    token: WindowToken,
+    incarnation: uuid::Uuid,
+    store_instance: uuid::Uuid,
+}
+
+impl NativeCheckpointWindow {
+    pub(crate) fn incarnation(&self) -> uuid::Uuid {
+        self.incarnation
+    }
+}
+
+pub(crate) fn capture_checkpoint_resources(
+    resources: &ResourceTable,
+    store_instance: uuid::Uuid,
+) -> Result<NativeCheckpointWindow, String> {
+    let slot = slot(resources).ok_or("NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    let token = slot
+        .token
+        .lock()
+        .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    let incarnation = slot
+        .buffer_incarnation
+        .lock()
+        .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    if !slot.buffer_owner_valid.load(Ordering::Acquire) {
+        return Err("NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE".into());
+    }
+    Ok(NativeCheckpointWindow {
+        slot: slot.clone(),
+        token: token.clone(),
+        incarnation: *incarnation,
+        store_instance,
+    })
+}
+
+/// Keep physical-owner locks through the bounded local SQL callback. Native
+/// reload/destruction cannot make a new incarnation inherit an older receipt.
+pub(crate) fn with_checkpoint_resources<T>(
+    owner: &NativeCheckpointWindow,
+    resources: &ResourceTable,
+    store_instance: uuid::Uuid,
+    consume: impl FnOnce(&WindowBarrier, &WindowToken) -> Result<T, String>,
+) -> Result<T, String> {
+    let current = slot(resources).ok_or("NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    if !Arc::ptr_eq(&current, &owner.slot) || owner.store_instance != store_instance {
+        return Err("NATIVE_CHECKPOINT_WINDOW_CHANGED".into());
+    }
+    let _token = current
+        .token
+        .lock()
+        .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    let incarnation = current
+        .buffer_incarnation
+        .lock()
+        .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE")?;
+    if !current.buffer_owner_valid.load(Ordering::Acquire) || *incarnation != owner.incarnation {
+        return Err("NATIVE_CHECKPOINT_WINDOW_CHANGED".into());
+    }
+    consume(&current.barrier, &owner.token)
+}
 impl NativeBufferOwner {
     pub(crate) fn store_instance(&self) -> uuid::Uuid {
         self.store_instance
@@ -124,6 +188,61 @@ pub(crate) fn editor_buffers<T>(
     admission
         .finish(work(&owner))
         .map_err(|error| error.to_string())
+}
+
+fn capture_workspace_report(
+    resources: &ResourceTable,
+    store_instance: uuid::Uuid,
+    fallback: Option<&WindowBarrier>,
+) -> Result<(Option<NativeBufferOwner>, NativeWriteAdmission), BarrierError> {
+    if let Some(slot) = slot(resources) {
+        // One exact pair across reload; never substitute the newest label token.
+        if let (Ok(token), Ok(incarnation)) = (slot.token.lock(), slot.buffer_incarnation.lock()) {
+            if slot.buffer_owner_valid.load(Ordering::Acquire) {
+                match slot.barrier.begin_native_write(&token, NativeLane::Buffers) {
+                    Ok(admission) => {
+                        return Ok((
+                            Some(NativeBufferOwner {
+                                store_instance,
+                                incarnation: *incarnation,
+                                label: token.label().into(),
+                            }),
+                            NativeWriteAdmission::Tracked(admission),
+                        ));
+                    }
+                    Err(BarrierError::AdmissionClosed) => {
+                        return Err(BarrierError::AdmissionClosed)
+                    }
+                    Err(_) => {}
+                }
+            }
+        }
+        slot.barrier.admit_unqualified_write()?;
+    } else if let Some(barrier) = fallback {
+        barrier.admit_unqualified_write()?;
+    }
+    Ok((None, NativeWriteAdmission::Unqualified))
+}
+
+/// Compatibility reports preserve ordinary work if physical attribution is
+/// missing, while tainting qualification. None must be stored as unattributed;
+/// callers may never synthesize a physical owner from a label or renderer data.
+/// The closure retains actual admission through SQL/Host/confirmation settlement.
+pub(crate) fn workspace_buffer_report<T>(
+    window: &tauri::Window,
+    store: &crate::session_store::SessionStore,
+    work: impl FnOnce(Option<&NativeBufferOwner>) -> Result<T, String>,
+) -> Result<T, String> {
+    let (owner, admission) = {
+        let barrier = window.app_handle().try_state::<WindowBarrier>();
+        capture_workspace_report(
+            &window.resources_table(),
+            store.native_instance_id(),
+            barrier.as_ref().map(|state| state.inner()),
+        )
+        .map_err(|error| error.to_string())?
+    };
+    admission.finish(work(owner.as_ref()))
 }
 
 #[cfg(test)]
@@ -195,20 +314,42 @@ fn admit_lane(
     fallback: Option<&WindowBarrier>,
     lane: NativeLane,
 ) -> Result<NativeWriteAdmission, BarrierError> {
+    admit_scoped_lane(resources, fallback, lane, None)
+}
+
+fn admit_scoped_lane(
+    resources: &ResourceTable,
+    fallback: Option<&WindowBarrier>,
+    lane: NativeLane,
+    session_id: Option<&str>,
+) -> Result<NativeWriteAdmission, BarrierError> {
     if let Some(slot) = slot(resources) {
         // This resource belongs to this physical Window. Never obtain a newer
         // same-label window's token from the global roster (label ABA).
         let token = slot.token.lock().ok().map(|token| token.clone());
         if let Some(token) = token {
-            match slot.barrier.begin_native_write(&token, lane) {
+            let admitted = match session_id {
+                Some(session_id) => slot.barrier.begin_session_write(&token, session_id, lane),
+                None => slot.barrier.begin_native_write(&token, lane),
+            };
+            match admitted {
                 Ok(operation) => return Ok(NativeWriteAdmission::Tracked(operation)),
                 Err(BarrierError::AdmissionClosed) => return Err(BarrierError::AdmissionClosed),
+                Err(BarrierError::InvalidSessionScope) => {
+                    return Err(BarrierError::InvalidSessionScope)
+                }
                 Err(_) => {}
             }
         }
-        slot.barrier.admit_unqualified_write()?;
+        match session_id {
+            Some(session_id) => slot.barrier.admit_unqualified_session_write(session_id)?,
+            None => slot.barrier.admit_unqualified_write()?,
+        }
     } else if let Some(barrier) = fallback {
-        barrier.admit_unqualified_write()?;
+        match session_id {
+            Some(session_id) => barrier.admit_unqualified_session_write(session_id)?,
+            None => barrier.admit_unqualified_write()?,
+        }
     }
     Ok(NativeWriteAdmission::Unqualified)
 }
@@ -231,24 +372,39 @@ pub(crate) fn persistence_write<T>(
     admission.finish(work())
 }
 
-/// Own the buffer report before waiting for its serialization gate, through
-/// local SQL, the actual Host response and exact local confirmation. This is
-/// accounting only: legacy report identities are not migration checkpoints.
-pub(crate) fn buffers_write<T>(
+/// The actual native command's mutation key, not a separate caller-chosen scope.
+/// Session B continues during a closure for A. Shared/unknown commands retain
+/// the profile lane; this grants neither checkpoint admission nor actor proof.
+pub(crate) fn session_persistence_write<T>(
     window: &tauri::Window,
+    session_id: &str,
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
     let admission = {
         let barrier = window.app_handle().try_state::<WindowBarrier>();
         let resources = window.resources_table();
-        admit_lane(
+        admit_scoped_lane(
             &resources,
             barrier.as_ref().map(|state| state.inner()),
-            NativeLane::Buffers,
+            NativeLane::Persistence,
+            Some(session_id),
         )
         .map_err(|error| error.to_string())?
     };
     admission.finish(work())
+}
+
+/// Admit before scheduling asynchronous blob work; the native worker owns this
+/// lease until its actual write/access-grant result, independent of its waiter.
+pub(crate) fn admit_window_buffers(window: &tauri::Window) -> Result<NativeWriteAdmission, String> {
+    let barrier = window.app_handle().try_state::<WindowBarrier>();
+    let resources = window.resources_table();
+    admit_lane(
+        &resources,
+        barrier.as_ref().map(|state| state.inner()),
+        NativeLane::Buffers,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn ensure_slot(
@@ -387,6 +543,179 @@ impl Drop for WindowCreation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scoped_native_persistence_keeps_other_sql_rows_writable_and_shared_work_closed() {
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "main");
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE drafts(id TEXT PRIMARY KEY, body TEXT); INSERT INTO drafts VALUES('A','old A'),('B','old B');").unwrap();
+        let closed = barrier.close_target_admission("A").unwrap();
+        let other = admit_scoped_lane(
+            &resources,
+            Some(&barrier),
+            NativeLane::Persistence,
+            Some("B"),
+        )
+        .unwrap();
+        assert_eq!(
+            other.finish(db.execute("UPDATE drafts SET body='new B' WHERE id='B'", [])),
+            Ok(1)
+        );
+        assert!(matches!(
+            admit_scoped_lane(
+                &resources,
+                Some(&barrier),
+                NativeLane::Persistence,
+                Some("A")
+            ),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert!(matches!(
+            admit_persistence(&resources, Some(&barrier)),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert!(matches!(
+            admit_process_persistence(Some(&barrier)),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert_eq!(
+            db.query_row("SELECT body FROM drafts WHERE id='A'", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "old A"
+        );
+        assert_eq!(
+            db.query_row("SELECT body FROM drafts WHERE id='B'", [], |row| row
+                .get::<_, String>(0))
+                .unwrap(),
+            "new B"
+        );
+        barrier.reopen_target_admission(closed).unwrap();
+        assert!(admit_scoped_lane(
+            &resources,
+            Some(&barrier),
+            NativeLane::Persistence,
+            Some("A")
+        )
+        .unwrap()
+        .finish(Ok::<_, String>(()))
+        .is_ok());
+    }
+
+    #[test]
+    fn scoped_missing_window_is_unqualified_without_blocking_unrelated_actual_result() {
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "main");
+        let closed = barrier.close_target_admission("A").unwrap();
+        let unknown = ResourceTable::default();
+        assert_eq!(
+            admit_scoped_lane(&unknown, Some(&barrier), NativeLane::Persistence, Some("B"))
+                .unwrap()
+                .finish(Ok::<_, String>("committed B")),
+            Ok("committed B")
+        );
+        assert!(matches!(
+            admit_scoped_lane(&unknown, Some(&barrier), NativeLane::Persistence, Some("A")),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert!(barrier.prove_target_native_idle(&closed).is_err());
+        barrier.reopen_target_admission(closed).unwrap();
+        assert!(admit_persistence(&resources, Some(&barrier))
+            .unwrap()
+            .finish(Ok::<_, String>(()))
+            .is_ok());
+    }
+
+    #[test]
+    fn workspace_report_owner_and_lease_are_captured_together_through_settlement() {
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "main");
+        let store = uuid::Uuid::new_v4();
+        let (owner, admission) =
+            capture_workspace_report(&resources, store, Some(&barrier)).unwrap();
+        let owner = owner.unwrap();
+        assert_eq!(owner.store_instance(), store);
+        assert_eq!(owner.label(), "main");
+        let (same, second) = capture_workspace_report(&resources, store, Some(&barrier)).unwrap();
+        assert_eq!(same.unwrap().key(), owner.key());
+        second.finish(Ok::<_, String>(())).unwrap();
+        let closed = barrier.close_target_admission("A").unwrap();
+        assert!(matches!(
+            barrier.prove_target_native_idle(&closed),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        assert!(matches!(
+            capture_workspace_report(&resources, store, Some(&barrier)),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        assert_eq!(
+            admission.finish(Ok::<_, String>("Host response")),
+            Ok("Host response")
+        );
+        assert!(matches!(
+            barrier.prove_target_native_idle(&closed),
+            Err(BarrierError::MissingNativeCheckpoint)
+        ));
+    }
+
+    #[test]
+    fn workspace_report_reload_preserves_captured_old_owner_and_gives_new_reports_a_new_key() {
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "main");
+        let store = uuid::Uuid::new_v4();
+        let (old, admission) = capture_workspace_report(&resources, store, Some(&barrier)).unwrap();
+        let old = old.unwrap();
+        test_reload_buffer_resources(&resources);
+        let (new, next) = capture_workspace_report(&resources, store, Some(&barrier)).unwrap();
+        assert_ne!(old.key(), new.unwrap().key());
+        assert_eq!(admission.finish(Ok::<_, String>(old.key())), Ok(old.key()));
+        next.finish(Ok::<_, String>(())).unwrap();
+        assert!(barrier.close_target_admission("A").is_err());
+    }
+
+    #[test]
+    fn unattributed_workspace_report_stays_explicitly_unknown_and_cannot_cross_closed_gate() {
+        let barrier = WindowBarrier::new();
+        let resources = ResourceTable::default();
+        let store = uuid::Uuid::new_v4();
+        let (owner, admission) =
+            capture_workspace_report(&resources, store, Some(&barrier)).unwrap();
+        assert!(owner.is_none());
+        assert_eq!(
+            admission.finish(Err::<(), _>("original failure")),
+            Err("original failure")
+        );
+        assert!(barrier.close_target_admission("A").is_err());
+
+        let barrier = WindowBarrier::new();
+        let _live = self::resources(&barrier, "main");
+        let closed = barrier.close_target_admission("A").unwrap();
+        assert!(matches!(
+            capture_workspace_report(&resources, store, Some(&barrier)),
+            Err(BarrierError::AdmissionClosed)
+        ));
+        barrier.reopen_target_admission(closed).unwrap();
+        assert!(capture_workspace_report(&resources, store, Some(&barrier))
+            .unwrap()
+            .0
+            .is_none());
+    }
+
+    #[test]
+    fn invalidated_physical_resource_cannot_mint_workspace_report_ownership() {
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "main");
+        Resource::close(slot(&resources).unwrap());
+        let (owner, admission) =
+            capture_workspace_report(&resources, uuid::Uuid::new_v4(), Some(&barrier)).unwrap();
+        assert!(owner.is_none());
+        assert_eq!(
+            admission.finish(Ok::<_, String>("retained unknown report")),
+            Ok("retained unknown report")
+        );
+        assert!(barrier.close_target_admission("A").is_err());
+    }
 
     fn resources(barrier: &WindowBarrier, label: &str) -> ResourceTable {
         let mut resources = ResourceTable::default();

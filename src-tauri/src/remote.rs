@@ -5,6 +5,7 @@ use crate::remote_ssh::{self, Job, JobView, SshTarget, Tunnel, Tunnels};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -39,6 +40,38 @@ pub struct RemoteConnections {
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     ws: HostWsBroker,
     ws_capabilities: Mutex<HashMap<String, WsCapability>>,
+    recovery_routes: RecoveryRoutes,
+}
+
+/// Native-only retirement history. Saved-row equality cannot detect disconnect /
+/// re-pair ABA while an old bearer remains valid on the Host.
+#[derive(Default)]
+struct RecoveryRoutes {
+    revision: AtomicU64,
+    closed: AtomicBool,
+}
+impl RecoveryRoutes {
+    fn retire(&self) {
+        let _ = self
+            .revision
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |revision| {
+                revision.checked_add(1)
+            });
+    }
+    fn capture(&self) -> Result<u64, String> {
+        let revision = self.revision.load(Ordering::Acquire);
+        if self.closed.load(Ordering::Acquire) || revision == u64::MAX {
+            return Err("Native recovery connection retired".into());
+        }
+        Ok(revision)
+    }
+    fn current(&self, revision: u64) -> bool {
+        self.capture().is_ok_and(|current| current == revision)
+    }
+    fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.retire();
+    }
 }
 
 impl RemoteConnections {
@@ -53,6 +86,7 @@ impl RemoteConnections {
         }));
     }
     pub fn shutdown(&self) {
+        self.recovery_routes.close();
         self.ws.shutdown();
         folder_access::shutdown();
         if let Ok(jobs) = self.jobs.lock() {
@@ -67,6 +101,7 @@ impl RemoteConnections {
     }
 
     fn invalidate_ws(&self, machine_id: &str) {
+        self.recovery_routes.retire();
         self.ws.invalidate_machine(machine_id);
         self.ws_capabilities
             .lock()
@@ -1070,12 +1105,22 @@ pub fn remote_disconnect(
         .lock()
         .map_err(|_| "Connection store is locked")?;
     let path = store_path(&app)?;
-    let mut machines = read(&path)?;
-    machines.retain(|m| m.id != machine_id);
-    write(&path, &machines)?;
-    state.invalidate_ws(&machine_id);
+    disconnect_saved_machine(&state, &path, &machine_id)?;
     state.tunnels.remove(&machine_id);
     folder_access::stop_machine(&machine_id);
+    Ok(())
+}
+
+/// Caller holds the canonical connection-store lock through write + retirement.
+fn disconnect_saved_machine(
+    state: &RemoteConnections,
+    path: &Path,
+    machine_id: &str,
+) -> Result<(), String> {
+    let mut machines = read(path)?;
+    machines.retain(|m| m.id != machine_id);
+    write(path, &machines)?;
+    state.invalidate_ws(machine_id);
     Ok(())
 }
 
@@ -1561,9 +1606,123 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
 /// Reconnects and retries are explicit; an uncertain mutation is not replayed here.
 pub(crate) struct NativeWorkspaceTransport {
     machine: StoredMachine,
+    recovery: Option<RecoveryRoute>,
+}
+
+struct RecoveryRoute {
+    revision: u64,
+    selected_endpoint: String,
 }
 
 impl NativeWorkspaceTransport {
+    /// Recovery pins the actual Native-selected bootstrap, not the selected project machine.
+    pub(crate) fn connect_recovery(
+        app: &AppHandle,
+        selected_endpoint: &str,
+        environment_id: &str,
+    ) -> Result<Self, String> {
+        let state = app
+            .try_state::<RemoteConnections>()
+            .ok_or("The Native local Host connection state is unavailable")?;
+        let (machine, recovery) = {
+            let _guard = state
+                .store
+                .lock()
+                .map_err(|_| "Connection store is locked")?;
+            let machine = read_uncached(&store_path(app)?)?
+                .into_iter()
+                .find(|machine| {
+                    recovery_machine_matches(machine, selected_endpoint, environment_id)
+                })
+                .ok_or("The Native-selected local Host is not paired for report recovery")?;
+            let revision = state.recovery_routes.capture()?;
+            (
+                machine,
+                RecoveryRoute {
+                    revision,
+                    selected_endpoint: selected_endpoint.into(),
+                },
+            )
+        };
+        let transport = Self {
+            machine,
+            recovery: Some(recovery),
+        };
+        transport.assert_recovery_current(app)?;
+        let descriptor = rpc(
+            &transport.machine.endpoint,
+            &transport.machine.token,
+            Some(environment_id),
+            "environment.describe",
+            json!({}),
+        )?;
+        if descriptor["environmentId"] != environment_id
+            || descriptor["protocolVersion"] != 1
+            || !descriptor["capabilities"].as_array().is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|item| item == "native.buffers.recovery.v1")
+            })
+        {
+            return Err("The Native-selected local Host cannot inspect retained reports".into());
+        }
+        transport.assert_recovery_current(app)?;
+        Ok(transport)
+    }
+    pub(crate) fn assert_recovery_current(&self, app: &AppHandle) -> Result<(), String> {
+        let state = app
+            .try_state::<RemoteConnections>()
+            .ok_or("Native recovery connection unavailable")?;
+        self.assert_recovery_saved(&state, &store_path(app)?)
+    }
+    pub(crate) fn call_recovery(
+        &self,
+        app: &AppHandle,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
+        let state = app
+            .try_state::<RemoteConnections>()
+            .ok_or("Native recovery connection unavailable")?;
+        self.call_recovery_saved(&state, &store_path(app)?, method, params)
+    }
+    fn call_recovery_saved(
+        &self,
+        state: &RemoteConnections,
+        path: &Path,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, String> {
+        self.assert_recovery_saved(state, path)?;
+        let value = self.call(method, params)?;
+        self.assert_recovery_saved(state, path)?;
+        Ok(value)
+    }
+    fn assert_recovery_saved(&self, state: &RemoteConnections, path: &Path) -> Result<(), String> {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        let pin = self
+            .recovery
+            .as_ref()
+            .ok_or("Native recovery connection unavailable")?;
+        let current = state.recovery_routes.current(pin.revision)
+            && read_uncached(path)?.iter().any(|current| {
+                same_request_route(&self.machine, current)
+                    && self.machine.local_host == current.local_host
+                    && recovery_machine_matches(
+                        current,
+                        &pin.selected_endpoint,
+                        &self.machine.environment_id,
+                    )
+            })
+            && state.recovery_routes.current(pin.revision);
+        if !current {
+            return Err("Native recovery connection changed or retired".into());
+        }
+        Ok(())
+    }
     #[cfg(test)]
     pub(crate) fn for_test(endpoint: String) -> Self {
         Self {
@@ -1576,6 +1735,7 @@ impl NativeWorkspaceTransport {
                 ssh: None,
                 local_host: true,
             },
+            recovery: None,
         }
     }
     pub(crate) fn connect(app: &AppHandle, capability: &str) -> Result<Self, String> {
@@ -1611,7 +1771,10 @@ impl NativeWorkspaceTransport {
         {
             return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
         }
-        Ok(Self { machine })
+        Ok(Self {
+            machine,
+            recovery: None,
+        })
     }
 
     pub(crate) fn call(&self, method: &str, params: Value) -> Result<Value, String> {
@@ -1624,6 +1787,9 @@ impl NativeWorkspaceTransport {
                 | "native.buffers.update"
                 | "native.buffers.retire"
                 | "native.buffers.reconcile"
+                | "native.buffers.recovery.list"
+                | "native.buffers.recovery.read"
+                | "native.buffers.recovery.status"
                 | "native.rewind.plan"
                 | "native.rewind.prepare"
                 | "native.rewind.apply"
@@ -1645,6 +1811,15 @@ impl NativeWorkspaceTransport {
             params,
         )
     }
+}
+
+fn recovery_machine_matches(machine: &StoredMachine, endpoint: &str, environment: &str) -> bool {
+    // Both accepted spellings still name the exact bootstrap-selected loopback port.
+    let alternate = endpoint.replacen("http://127.0.0.1:", "http://localhost:", 1);
+    is_local_sync(machine, "This computer (local sync)")
+        && machine.environment_id == environment
+        && (machine.endpoint == endpoint || machine.endpoint == alternate)
+        && endpoint.starts_with("http://127.0.0.1:")
 }
 
 pub(crate) fn local_conversation_environment(app: &AppHandle) -> Result<String, String> {
@@ -3375,6 +3550,9 @@ mod tests {
             "native.buffers.update",
             "native.buffers.retire",
             "native.buffers.reconcile",
+            "native.buffers.recovery.list",
+            "native.buffers.recovery.read",
+            "native.buffers.recovery.status",
             "native.rewind.plan",
             "native.rewind.prepare",
             "native.rewind.apply",
@@ -3637,6 +3815,167 @@ mod tests {
     }
 
     #[test]
+    fn native_recovery_rejects_identical_repair_and_saved_route_replacement() {
+        let temporary = std::env::temp_dir().canonicalize().unwrap();
+        let root = temporary.join(format!("bycoda-recovery-route-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("connections.json");
+        let state = RemoteConnections::default();
+        let machine = StoredMachine {
+            id: "local-recovery".into(),
+            name: "Local".into(),
+            endpoint: "http://127.0.0.1:3774".into(),
+            environment_id: "env".into(),
+            token: "fixture-owner".into(),
+            ssh: None,
+            local_host: true,
+        };
+        write(&path, std::slice::from_ref(&machine)).unwrap();
+        let transport = NativeWorkspaceTransport {
+            machine: machine.clone(),
+            recovery: Some(RecoveryRoute {
+                revision: state.recovery_routes.capture().unwrap(),
+                selected_endpoint: machine.endpoint.clone(),
+            }),
+        };
+        transport.assert_recovery_saved(&state, &path).unwrap();
+        let mut changed = machine.clone();
+        changed.token = "replaced-fixture-owner".into();
+        write(&path, &[changed]).unwrap();
+        assert!(transport.assert_recovery_saved(&state, &path).is_err());
+        write(&path, std::slice::from_ref(&machine)).unwrap();
+        transport.assert_recovery_saved(&state, &path).unwrap();
+        {
+            let _guard = state.store.lock().unwrap();
+            disconnect_saved_machine(&state, &path, &machine.id).unwrap();
+            write(&path, std::slice::from_ref(&machine)).unwrap();
+        }
+        assert!(transport.assert_recovery_saved(&state, &path).is_err());
+        let fresh = NativeWorkspaceTransport {
+            machine: machine.clone(),
+            recovery: Some(RecoveryRoute {
+                revision: state.recovery_routes.capture().unwrap(),
+                selected_endpoint: machine.endpoint.clone(),
+            }),
+        };
+        fresh.assert_recovery_saved(&state, &path).unwrap();
+        state.recovery_routes.close();
+        assert!(fresh.assert_recovery_saved(&state, &path).is_err());
+        assert_eq!(
+            root.canonicalize().unwrap().parent(),
+            Some(temporary.as_path())
+        );
+        assert!(!std::fs::symlink_metadata(&root)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn native_recovery_retires_an_actual_in_flight_http_read_before_disclosure() {
+        use std::io::{BufRead, BufReader};
+        use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
+        let temporary = std::env::temp_dir().canonicalize().unwrap();
+        let root = temporary.join(format!("bycoda-recovery-inflight-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("connections.json");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let state = Arc::new(RemoteConnections::default());
+        let machine = StoredMachine {
+            id: "local-recovery".into(),
+            name: "Local".into(),
+            endpoint: format!("http://{}", listener.local_addr().unwrap()),
+            environment_id: "env".into(),
+            token: "fixture-owner".into(),
+            ssh: None,
+            local_host: true,
+        };
+        write(&path, std::slice::from_ref(&machine)).unwrap();
+        let transport = NativeWorkspaceTransport {
+            machine: machine.clone(),
+            recovery: Some(RecoveryRoute {
+                revision: state.recovery_routes.capture().unwrap(),
+                selected_endpoint: machine.endpoint.clone(),
+            }),
+        };
+        let (seen_tx, seen_rx) = mpsc::sync_channel(1);
+        let (release_tx, release_rx) = mpsc::sync_channel(1);
+        let server = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut size = 0;
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                if line == "\r\n" {
+                    break;
+                }
+                if line.to_ascii_lowercase().starts_with("content-length:") {
+                    size = line
+                        .split(':')
+                        .nth(1)
+                        .unwrap()
+                        .trim()
+                        .parse::<usize>()
+                        .unwrap();
+                }
+            }
+            let mut body = vec![0; size];
+            reader.read_exact(&mut body).unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&body).unwrap()["method"],
+                "native.buffers.recovery.read"
+            );
+            seen_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let body = r#"{"result":{"oldRouteSecret":"must-not-return"}}"#;
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+            .unwrap();
+            stream.flush().unwrap();
+        });
+        let calling = {
+            let state = state.clone();
+            let path = path.clone();
+            thread::spawn(move || {
+                transport.call_recovery_saved(
+                    &state,
+                    &path,
+                    "native.buffers.recovery.read",
+                    json!({"reportId":"fixture"}),
+                )
+            })
+        };
+        seen_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        {
+            let _guard = state.store.lock().unwrap();
+            disconnect_saved_machine(&state, &path, &machine.id).unwrap();
+            write(&path, std::slice::from_ref(&machine)).unwrap();
+        }
+        release_tx.send(()).unwrap();
+        let error = calling.join().unwrap().unwrap_err();
+        assert!(!error.contains("must-not-return"));
+        assert!(error.contains("retired"));
+        server.join().unwrap();
+        assert_eq!(
+            root.canonicalize().unwrap().parent(),
+            Some(temporary.as_path())
+        );
+        assert!(!std::fs::symlink_metadata(&root)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn only_automatic_loopback_links_count_as_local_sync() {
         let local = |endpoint: &str| StoredMachine {
             id: endpoint.into(),
@@ -3666,6 +4005,46 @@ mod tests {
             serde_json::to_value(restored.public()).unwrap()["localHost"],
             true
         );
+    }
+
+    #[test]
+    fn retained_recovery_requires_the_native_selected_bootstrap_port_and_environment() {
+        let mut machine =
+            NativeWorkspaceTransport::for_test("http://127.0.0.1:3774".into()).machine;
+        assert!(recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3774",
+            "fixture-env"
+        ));
+        assert!(!recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3776",
+            "fixture-env"
+        ));
+        assert!(!recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3774",
+            "other-profile-host"
+        ));
+        machine.endpoint = "http://localhost:3774".into();
+        assert!(recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3774",
+            "fixture-env"
+        ));
+        machine.endpoint = "http://192.168.1.5:3774".into();
+        assert!(!recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3774",
+            "fixture-env"
+        ));
+        machine.endpoint = "http://127.0.0.1:3774".into();
+        machine.ssh = saved("fixture", "me@other-machine").ssh;
+        assert!(!recovery_machine_matches(
+            &machine,
+            "http://127.0.0.1:3774",
+            "fixture-env"
+        ));
     }
 
     #[test]

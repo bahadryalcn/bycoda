@@ -82,3 +82,23 @@ it("keeps failure recoverable through Retry", async () => {
   expect(view.error).toBeNull();
   expect(view.result).toEqual(result);
 });
+
+it("retains same-query matches during retry and after a retry failure", async () => {
+  let rejectRetry!: (cause: unknown) => void;
+  bridge.searchProject
+    .mockResolvedValueOnce(result)
+    .mockReturnValueOnce(new Promise((_, reject) => { rejectRetry = reject; }));
+  await render("/old", "old");
+  await advance();
+  act(() => view.retry());
+  expect(view.loading).toBe(true);
+  expect(view.result).toEqual(result);
+  await advance();
+  expect(view.loading).toBe(true);
+  expect(view.result).toEqual(result);
+  await act(async () => rejectRetry(new Error("Refresh failed")));
+  expect(view.error).toBe("Refresh failed");
+  expect(view.result).toEqual(result);
+  await render("/new", "old");
+  expect(view.result.matches).toEqual([]);
+});

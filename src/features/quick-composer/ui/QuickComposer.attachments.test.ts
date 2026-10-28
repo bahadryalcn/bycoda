@@ -4,6 +4,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { QuickComposer } from "./QuickComposer";
+import { quickNativeReply } from "../model/nativeQuickLaunch.fixture";
+import { createQuickComposerClosureRuntime } from "../model/quickComposerClosure";
+import { createMountedComposerRegistry } from "../../sessions/data/composerClosure";
+import { PersistenceDrainRegistry } from "../../sessions/data/persistenceDrain";
 
 const native = vi.hoisted(() => ({
   hide: vi.fn(),
@@ -77,18 +81,24 @@ beforeEach(async () => {
     return 0;
   });
   native.submitFails = false;
-  vi.mocked(invoke).mockImplementation(async (cmd) => {
+  vi.mocked(invoke).mockImplementation(async (cmd, args) => {
     if (cmd === "inspect_paths")
       return [{ path: "/tmp/image.png", name: "image.png", size: 4, isDir: false }];
     if (cmd === "read_file_base64") return "dGVzdA==";
-    if (cmd === "quick_composer_submit" && native.submitFails)
+    if (cmd === "quick_composer_submit_intent" && native.submitFails)
       throw new Error("Could not start session");
-    return undefined;
+    return quickNativeReply(cmd, args);
   });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
-  await act(async () => root.render(createElement(QuickComposer, { onShown: () => {} })));
+  const closure = createQuickComposerClosureRuntime(
+    createMountedComposerRegistry({
+      registry: new PersistenceDrainRegistry(),
+      publish: async () => {},
+    }),
+  );
+  await act(async () => root.render(createElement(QuickComposer, { onShown: () => {}, closure })));
 });
 afterEach(() => {
   act(() => root.unmount());
@@ -106,12 +116,17 @@ it("uploads from the plus menu, preserves attachments on dismissal, and submits 
   expect(container.querySelector('button[aria-label="Open image.png full screen"]')).not.toBeNull();
   expect(button("Start").disabled).toBe(false);
   await act(async () => button("Start").click());
-  expect(invoke).toHaveBeenCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({
-      prompt: "[image1]",
-      attachments: [expect.objectContaining({ path: "/tmp/image.png", kind: "image" })],
+  expect(invoke).toHaveBeenCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({
+          prompt: "[image1]",
+          attachments: [expect.objectContaining({ path: "/tmp/image.png", kind: "image" })],
+        }),
+      }),
     }),
-  });
+  );
   expect(container.querySelector('button[aria-label="Open image.png full screen"]')).toBeNull();
 });
 
@@ -132,12 +147,17 @@ it("selects permissions separately and sends them with the existing attachments"
   act(() => menu.querySelectorAll<HTMLButtonElement>('[role="option"]')[3].click());
   expect(container.querySelector('[role="listbox"][aria-label="Permissions"]')).toBeNull();
   await act(async () => button("Start").click());
-  expect(invoke).toHaveBeenCalledWith("quick_composer_submit", {
-    request: expect.objectContaining({
-      runtimeMode: "full-access",
-      attachments: [expect.objectContaining({ path: "/tmp/image.png" })],
+  expect(invoke).toHaveBeenCalledWith(
+    "quick_composer_submit_intent",
+    expect.objectContaining({
+      submission: expect.objectContaining({
+        request: expect.objectContaining({
+          runtimeMode: "full-access",
+          attachments: [expect.objectContaining({ path: "/tmp/image.png" })],
+        }),
+      }),
     }),
-  });
+  );
 });
 
 it("references an attachment in the prompt and drops the token with the chip", async () => {

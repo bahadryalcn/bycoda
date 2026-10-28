@@ -160,14 +160,6 @@ export function SshServerEditor({
       >
         <fieldset className="flex min-w-0 flex-col gap-3">
           <legend className="mbe-3 text-sm font-medium">{t("Connection")}</legend>
-          <TextField
-            label={t("Name")}
-            value={name}
-            required={!onConnect || saveConnection}
-            maxLength={200}
-            onChange={(event) => setName(event.target.value)}
-            disabled={saving}
-          />
           <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_6rem] items-start gap-3">
             <TextField
               label={t("Host")}
@@ -200,6 +192,14 @@ export function SshServerEditor({
           />
           <SshIdentityField value={identityFile} onChange={setIdentityFile} disabled={saving} />
         </fieldset>
+        <TextField
+          label={t("Name")}
+          value={name}
+          required={!onConnect || saveConnection}
+          maxLength={200}
+          onChange={(event) => setName(event.target.value)}
+          disabled={saving}
+        />
         <details className="text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer py-1">{t("Connection help")}</summary>
           <p className="mbs-2">
@@ -320,18 +320,20 @@ export function SshServerEditor({
               />
               {t("Save connection")}
             </label>
-            <div
-              aria-label={t("Endpoint preview")}
-              className="border-t border-stroke pbs-3 text-xs"
-            >
-              <p className="break-all font-medium">
-                {valid ? sshEndpointPreview(endpoint) : t("Endpoint preview")}
-              </p>
-              {endpoint.jumpHosts?.length ? (
-                <p className="mbs-1 break-all text-(--ui-text-muted)">
-                  {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
+            {valid ? (
+              <div
+                aria-label={t("Endpoint preview")}
+                className="border-t border-stroke pbs-3 text-xs"
+              >
+                <p className="break-all font-medium">
+                  {sshEndpointPreview(endpoint)}
                 </p>
-              ) : null}
+                {endpoint.jumpHosts?.length ? (
+                  <p className="mbs-1 break-all text-(--ui-text-muted)">
+                    {t("Jump chain")}: {endpoint.jumpHosts.join(" → ")}
+                  </p>
+    
+            ) : null}
               {endpoint.jumpPolicies?.length ? (
                 <p className="mbs-1 break-all text-(--ui-text-muted)">
                   {t("Jump chain")}: {endpoint.jumpPolicies.map(sshEndpointPreview).join(" → ")}
@@ -357,6 +359,7 @@ export function SshServerEditor({
                 <p className="mbs-1 text-(--ui-text-muted)">{t("Uses the default SSH user.")}</p>
               ) : null}
             </div>
+            ) : null}
           </>
         ) : null}
         {error ? (

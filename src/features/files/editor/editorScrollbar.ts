@@ -2,6 +2,7 @@ import { forEachDiagnostic, setDiagnosticsEffect, type Diagnostic } from "@codem
 import type { EditorState, Extension } from "@codemirror/state";
 import { EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { revealOverviewTick } from "./editorOverview";
+import { editorSurfaceActive, observeEditorSurface } from "./editorSurfaceVisibility";
 
 const RAIL_WIDTH = 18;
 const MIN_THUMB_HEIGHT = 32;
@@ -96,6 +97,11 @@ class EditorScrollbar {
   private railRight = 0;
   private railTop = -1;
   private railHeight = -1;
+  private stopObserving: (() => void) | null = null;
+
+  private active() {
+    return editorSurfaceActive(this.dom) && !window.matchMedia("(forced-colors: active)").matches;
+  }
 
   constructor(readonly view: EditorView) {
     this.dom.className = "cm-editorScrollbar";
@@ -149,6 +155,7 @@ class EditorScrollbar {
   destroy() {
     if (this.frame) cancelAnimationFrame(this.frame);
     this.resizeObserver?.disconnect();
+    this.stopObserving?.();
     this.view.scrollDOM.removeEventListener("scroll", this.onScroll);
     this.view.dom.removeEventListener("wheel", this.onWheel);
     this.view.dom.removeEventListener("pointerdown", this.onPointerDown, true);
@@ -174,7 +181,7 @@ class EditorScrollbar {
    * nested scroller there is not hijacked.
    */
   private readonly onWheel = (event: WheelEvent) => {
-    if (event.defaultPrevented || event.ctrlKey) return;
+    if (!this.active() || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
     if (event.deltaY === 0) return;
     const target = event.target;
     if (!(target instanceof Element)) return;
@@ -248,7 +255,7 @@ class EditorScrollbar {
   }
 
   private readonly onPointerDown = (event: PointerEvent) => {
-    if (event.button !== 0 || this.pointerId !== null) return;
+    if (!this.active() || event.defaultPrevented || event.button !== 0 || this.pointerId !== null) return;
     // A gesture is worth a fresh read: the cached strip is one frame old and
     // the window may have moved since.
     this.measure();
@@ -303,6 +310,11 @@ class EditorScrollbar {
   };
 
   private readonly onPointerMove = (event: PointerEvent) => {
+    if (!this.active()) {
+      this.setHover(false);
+      this.stopDragging();
+      return;
+    }
     if (event.pointerId === this.pointerId) {
       event.preventDefault();
       this.scrollFromPointer(event.clientY);
@@ -322,7 +334,7 @@ class EditorScrollbar {
   private readonly onPointerLeave = () => this.setHover(false);
 
   private readonly onMouseDown = (event: MouseEvent) => {
-    if (event.button !== 0 || !this.claimsPress(event.target)) return;
+    if (!this.active() || event.defaultPrevented || event.button !== 0 || !this.claimsPress(event.target)) return;
     if (!this.overRail(event.clientX)) return;
     event.preventDefault();
     event.stopPropagation();
@@ -356,8 +368,10 @@ class EditorScrollbar {
   }
 
   private stopDragging() {
+    const pointer = this.pointerId;
     this.pointerId = null;
     delete this.dom.dataset.dragging;
+    if (pointer !== null && this.view.dom.hasPointerCapture?.(pointer)) this.view.dom.releasePointerCapture(pointer);
   }
 
   private metrics(): ScrollbarMetrics {
@@ -382,6 +396,15 @@ class EditorScrollbar {
   }
 
   private drawThumb() {
+    // Install after mount, once all retained-pane ancestors are present.
+    this.stopObserving ??= observeEditorSurface(this.dom, this.scheduleDraw);
+    if (!this.active()) {
+      this.dom.style.visibility = "hidden";
+      this.setHover(false);
+      this.stopDragging();
+      return;
+    }
+    this.dom.style.visibility = "inherit";
     this.syncRailBox();
     const metrics = this.metrics();
     this.thumb.hidden = !metrics.scrollable;
@@ -436,7 +459,7 @@ const scrollbarTheme = EditorView.theme({
     bottom: "0",
     width: `${RAIL_WIDTH}px`,
     boxSizing: "border-box",
-    borderLeft: "1px solid color-mix(in srgb, var(--color-content) 7%, transparent)",
+    borderLeft: "1px solid var(--color-stroke)",
     background: "transparent",
     cursor: "default",
     userSelect: "none",
@@ -457,14 +480,12 @@ const scrollbarTheme = EditorView.theme({
     right: "3px",
     minHeight: `${MIN_THUMB_HEIGHT}px`,
     borderRadius: "2px",
-    backgroundColor: "color-mix(in srgb, var(--color-content) 30%, transparent)",
-    opacity: "0.72",
+    backgroundColor: "var(--ui-text-disabled)",
     willChange: "transform",
   },
   ".cm-editorScrollbar[data-hover] .cm-editorScrollbarThumb, .cm-editorScrollbar[data-dragging] .cm-editorScrollbarThumb":
     {
-      backgroundColor: "color-mix(in srgb, var(--color-content) 38%, transparent)",
-      opacity: "0.88",
+      backgroundColor: "var(--ui-text-secondary)",
     },
   ".cm-editorScrollbarTick": {
     position: "absolute",
@@ -486,7 +507,7 @@ const scrollbarTheme = EditorView.theme({
     backgroundColor: "var(--color-info)",
   },
   ".cm-editorScrollbar-hint": {
-    backgroundColor: "color-mix(in srgb, var(--color-content) 48%, transparent)",
+    backgroundColor: "var(--ui-text-secondary)",
   },
   ".cm-editorScrollbarCursor": {
     position: "absolute",
@@ -496,10 +517,15 @@ const scrollbarTheme = EditorView.theme({
     height: "2px",
     pointerEvents: "none",
     backgroundColor: "var(--color-accent)",
-    boxShadow: "0 0 0 1px color-mix(in srgb, var(--color-background-base) 42%, transparent)",
+    boxShadow: "0 0 0 1px var(--ui-surface)",
   },
   "&:not(.cm-focused) .cm-editorScrollbarCursor": {
     opacity: "0.6",
+  },
+  "@media (forced-colors: active)": {
+    ".cm-scroller": { scrollbarWidth: "auto" },
+    ".cm-scroller::-webkit-scrollbar": { width: "auto", height: "auto" },
+    ".cm-editorScrollbar": { display: "none" },
   },
 });
 

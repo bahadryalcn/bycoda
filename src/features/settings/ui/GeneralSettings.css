@@ -1,17 +1,25 @@
 .general-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
   min-inline-size: 0;
 }
 
-/* Keep paired headings aligned without stretching a one-row card to its peer. */
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .general-settings
-  > .settings-group
-  > .settings-group-content {
-  align-self: start;
+.general-preferences,
+.general-support {
+  min-inline-size: 0;
 }
 
-.general-save-note,
+/* Independent tracks keep short support actions beside preferences without
+   stretching unrelated topics into the same heading/content subgrid. */
+@container settings (min-width: 960px) {
+  .general-settings {
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 32px;
+  }
+}
+
 .general-dependency,
 .general-detail {
   margin: 0;
@@ -21,26 +29,14 @@
   overflow-wrap: anywhere;
 }
 
-.general-save-note {
-  margin-block-end: 16px;
-}
-
-.bycoda-settings-workbench .bycoda-settings-form .general-settings > .settings-group {
-  padding-block: 20px;
-}
-
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .general-settings
-  > .settings-group
-  > .settings-group-heading {
-  padding-block: 0 12px;
-}
-
 .general-sleep-options {
-  padding-inline-start: 16px;
+  margin-inline: 16px;
+  padding-inline-start: 12px;
   border-inline-start: 2px solid var(--color-stroke);
   margin-block: 8px;
+}
+.general-sleep-options > .settings-row {
+  padding-inline: 0;
 }
 
 .general-dependency {
@@ -63,7 +59,4 @@
   color: var(--ui-text-secondary);
   font-family: var(--font-mono);
   font-size: var(--ui-font-secondary);
-}
-.general-link-error {
-  padding: 0 16px 16px;
 }

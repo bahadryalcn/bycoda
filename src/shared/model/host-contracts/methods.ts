@@ -1,4 +1,11 @@
 import { z } from "zod";
+import {
+  NativeBufferRecoveryListParamsSchema,
+  NativeBufferRecoverySourceSchema,
+  NativeBufferRecoveryPageSchema,
+  NativeBufferRecoveryReadSchema,
+  NativeBufferRecoveryStatusSchema,
+} from "./native-buffer-recovery";
 import { WS_LIMITS } from "./policy";
 import * as gitDto from "./git";
 import * as notesDto from "./notes";
@@ -232,6 +239,18 @@ const crewOperation = (method: keyof typeof CREWS_RPC_SCHEMAS): HostRpcMethodDef
 });
 
 export const HOST_RPC_METHODS = Object.freeze({
+  "native.buffers.recovery.list": {
+    ...read(NativeBufferRecoveryListParamsSchema, NativeBufferRecoveryPageSchema),
+    requiredCapability: "native.buffers.recovery.v1",
+  },
+  "native.buffers.recovery.read": {
+    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryReadSchema),
+    requiredCapability: "native.buffers.recovery.v1",
+  },
+  "native.buffers.recovery.status": {
+    ...read(NativeBufferRecoverySourceSchema, NativeBufferRecoveryStatusSchema),
+    requiredCapability: "native.buffers.recovery.v1",
+  },
   "crews.list": crewOperation("crews.list"),
   "crews.schema": crewOperation("crews.schema"),
   "crews.inspect": crewOperation("crews.inspect"),

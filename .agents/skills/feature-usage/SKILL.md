@@ -223,3 +223,50 @@ Audit/card ready for review, product implementation not started. No live quota/
 budget/provider/Host/send operation, build/install/release or source commit. New
 common scope and actual renderer/native/device acceptance remain pending. Baseline
 above is inventory provenance, not delivery/install inclusion. Preserve shared work.
+
+## H3 Settings pages B implementation, 2026-10-28
+
+Uncommitted source implementation in src/features/usage now displays an honest
+single-period series value, keeps compact primary table columns with all metrics
+available, removes single-page navigation, aligns unknown values/shares by source
+provenance, retains cost meaning/coverage beside comparisons, keeps independent
+Overview/Projects grouping, resolves runtime labels from configured accounts and
+surfaces truncated session coverage. A single-day matrix keeps all24 hours in a
+compact two-column presentation with keyboard traversal. Time chart names follow
+actual grouping/metric. Configured colors and raw IDs remain unchanged; shared
+non-color multi-period series encoding remains H1 acceptance work (UA-10).
+
+Fresh Limits-only filters derive from configured quota accounts; only effective
+provider/account dimensions apply. Quota All time includes recorded quota dates.
+Account cards retain content-sized height, actual last-observed timestamps and
+local retry. Display preferences use optional shared disclosure with reveal.
+Latest100 history detail is a bounded focusable table with time endpoints and
+human-readable/exact window duration. No observations/interpolated points were
+invented. Budget meters retain last-known readings during refresh, field drafts
+retain by rule ID for the window lifetime, actual targets remain visible and the
+editor explains its effective capacity-times-allocation threshold.
+
+The owner-selected common local capability has an explicit token-only machine
+scope/target, separate from workspace project-group scope. Existing valid v1
+rules are preserved; no default/real rule was created. Normalized Codex/Claude
+reports are read independently from overlapping rule rows, and repeated reads
+share provider/account/period scans. Account IDs do not prove canonical log
+source identity. More than one profile of one provider therefore returns common
+UNKNOWN before scanning until native canonical source identity is available;
+no row-value deduplication or pooled quota percentage is used. Missing account
+history, failed/timed-out reads, unsupported loaded local sessions and private
+contributors remain UNKNOWN. Existing fresh pre-dispatch assertUsageBudgets
+blocks matching unknown/exceeded blocking rules; monitor rules stay informational.
+Common matching excludes remote cwd. Host tasks/other machines, provider capacity
+reservations and strict in-flight ceilings remain outside this local gate.
+
+Sources: UsageOverview/Charts/Visualizations/QuotaHistory/Budgets/Page and their
+owned CSS; usageBudgets/usageBudgetReadings plus minimal matcher/read/unknown-gate
+regression source. **test edilmedi** under the night rule; no tests/compiler,
+fixture/dev server/screenshots/native provider/budget operation was run by this
+writer. Root owns the single final compiler. Real renderer, native, dispatch,
+privacy and installed inclusion acceptance remains pending. Source is frozen.
+Per-ID UA-01..10/LB-01..10 delivery/dependencies/morning checks:
+`temp/local/2026-10-28-settings-pages-b/usage.json`. New8-locale key map is
+usage-locales.json for root merge. Guide text for the morning coordinator is
+usage-guide.md; docs/guides/usage-budgets.md is not edited by H3 overnight.

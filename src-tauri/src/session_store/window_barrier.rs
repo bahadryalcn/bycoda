@@ -11,6 +11,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, Weak};
 
+#[path = "window_target_barrier.rs"]
+pub(crate) mod target;
+
 const MAX_WINDOWS: usize = 256;
 const MAX_LABEL_BYTES: usize = 256;
 const MAX_OPERATIONS: usize = 2048;
@@ -34,6 +37,7 @@ impl NativeLane {
 pub(crate) enum BarrierError {
     Unavailable,
     InvalidWindowLabel,
+    InvalidSessionScope,
     UnknownWindow,
     StaleWindow,
     ForeignToken,
@@ -130,6 +134,9 @@ struct WindowState {
 struct Operation {
     owner: OperationOwner,
     checkpoint: Option<(NativeLane, u64)>,
+    /// None is shared/profile work, never an unknown session silently omitted.
+    session_id: Option<String>,
+    target_checkpoint: Option<(NativeLane, u64)>,
 }
 
 enum OperationOwner {
@@ -150,6 +157,7 @@ struct State {
     qualification_taint: Option<BarrierError>,
     windows: BTreeMap<String, WindowState>,
     operations: BTreeMap<u64, Operation>,
+    targets: BTreeMap<String, target::TargetState>,
 }
 
 impl State {
@@ -424,7 +432,7 @@ impl WindowBarrier {
     pub(crate) fn close_admission(&self) -> Result<ClosedAdmission, BarrierError> {
         let mut state = self.lock()?;
         state.qualified()?;
-        if state.closed_round.is_some() {
+        if state.closed_round.is_some() || !state.targets.is_empty() {
             return Err(BarrierError::AdmissionAlreadyClosed);
         }
         let round = state.id()?;
@@ -483,9 +491,7 @@ impl WindowBarrier {
     pub(crate) fn begin_process_write(&self) -> Result<NativeOperation, BarrierError> {
         let mut state = self.lock()?;
         state.healthy()?;
-        if state.closed_round.is_some() {
-            return Err(BarrierError::AdmissionClosed);
-        }
+        state.scope_open(None)?;
         if state.operations.len() >= MAX_OPERATIONS {
             return Err(BarrierError::CapacityExceeded);
         }
@@ -499,6 +505,8 @@ impl WindowBarrier {
             Operation {
                 owner: OperationOwner::Process,
                 checkpoint: None,
+                session_id: None,
+                target_checkpoint: None,
             },
         );
         Ok(NativeOperation {
@@ -517,9 +525,7 @@ impl WindowBarrier {
             state
         });
         state.taint(BarrierError::UnattributedNativeOperation);
-        if state.closed_round.is_some() {
-            return Err(BarrierError::AdmissionClosed);
-        }
+        state.scope_open(None)?;
         Ok(())
     }
 
@@ -561,8 +567,10 @@ impl WindowBarrier {
                 }
                 Some((lane, closed.round))
             }
-            None if state.closed_round.is_some() => return Err(BarrierError::AdmissionClosed),
-            None => None,
+            None => {
+                state.scope_open(None)?;
+                None
+            }
         };
         if state.operations.len() >= MAX_OPERATIONS {
             return Err(BarrierError::CapacityExceeded);
@@ -582,6 +590,8 @@ impl WindowBarrier {
                     incarnation: window.incarnation,
                 },
                 checkpoint,
+                session_id: None,
+                target_checkpoint: None,
             },
         );
         Ok(NativeOperation {
@@ -657,11 +667,12 @@ impl NativeOperation {
         let Some(operation) = state.operations.remove(&id) else {
             return Err(state.taint(BarrierError::UnfinishedNativeOperation));
         };
-        state.tick()?;
+        let epoch = state.tick()?;
         if !success {
             return Err(state.taint(BarrierError::FailedNativeOperation));
         }
         state.healthy()?;
+        state.finish_target_operation(&operation, epoch);
         let OperationOwner::Window { label, incarnation } = operation.owner else {
             for window in state.windows.values_mut() {
                 window.checkpoints = [None; 2];

@@ -214,7 +214,7 @@ export function SocialBulkComposer({
         >
           <Notice kind="info" title={selectionTitle}>
             {t(
-              "Review the text and recipients. You can approve and send the prepared drafts individually.",
+              "Review the text and recipients. Approving a prepared draft adds it to the send queue.",
             )}
           </Notice>
           {!replyOnly ? (
@@ -456,6 +456,7 @@ export function SocialBulkComposer({
                   }
                 />
                 {row.reason ? <p>{row.reason}</p> : null}
+                {row.draft ? <DraftList recipientInParent drafts={[snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]} client={client} run={run} snapshot={snapshot} /> : null}
               </article>
             ))}
           </div>
@@ -494,16 +495,7 @@ export function SocialBulkComposer({
               </Button>
             ) : null}
           </div>
-          <DraftList
-            drafts={rows.flatMap((row) =>
-              row.draft
-                ? [snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]
-                : [],
-            )}
-            client={client}
-            run={run}
-            snapshot={snapshot}
-          />
+
         </>
       )}
       {previousPreparations.map((preparation, index) => (
@@ -524,19 +516,11 @@ export function SocialBulkComposer({
                   label={row.status === "succeeded" ? t("Draft ready") : undefined}
                 />
                 {row.reason ? <p>{row.reason}</p> : null}
+                {row.draft ? <DraftList recipientInParent drafts={[snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]} client={client} run={run} snapshot={snapshot} /> : null}
               </article>
             ))}
           </div>
-          <DraftList
-            drafts={preparation.rows.flatMap((row) =>
-              row.draft
-                ? [snapshot.drafts.find((draft) => draft.id === row.draft?.id) ?? row.draft]
-                : [],
-            )}
-            client={client}
-            run={run}
-            snapshot={snapshot}
-          />
+
         </details>
       ))}
     </div>

@@ -73,12 +73,12 @@ export function TerminalPage() {
   const current = effectiveProfileId(listed, chosen);
 
   return (
-    <div className="terminal-settings">
+    <div className="terminal-settings settings-topics">
       <Group
         layout="full"
         title={t("This computer")}
         persistence={{ mode: "automatic" }}
-        description={t("Choose the shell for new terminals and local !commands.")}
+        scope={t("Choose the shell for new terminals and commands on this computer, including local sync sessions.")}
         feedback={
           saveProblem ? (
             <SettingsFeedback state="error">
@@ -90,7 +90,7 @@ export function TerminalPage() {
             <SettingsFeedback state="error">
               {t("Could not discover shells. Use Look again to retry.")} {problem}
             </SettingsFeedback>
-          ) : scanning ? (
+          ) : scanning && !listed ? (
             <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
           ) : null
         }
@@ -103,14 +103,14 @@ export function TerminalPage() {
             disabled={scanning || saving}
             onClick={() => scan(true)}
           >
-            {scanning ? t("Looking…") : t("Look again")}
+            {t("Look again")}
           </Button>
         }
       >
         <Row
           id="terminal-default-profile"
           label={t("Default terminal profile")}
-          description={
+          dependency={
             missing
               ? t("The shell you picked is no longer installed, so the system default is used.")
               : undefined
@@ -118,7 +118,8 @@ export function TerminalPage() {
         >
           <SearchableSelect
             label={t("Default terminal profile")}
-            disabled={scanning || saving}
+            disabled={scanning || saving || !listed}
+            loading={scanning}
             value={chosen && !missing ? chosen : ""}
             options={[
               {
@@ -151,7 +152,7 @@ export function TerminalPage() {
           "Applies to new commands on this host. Already open terminals keep their current shell.",
         )}
       </p>
-      <AdvancedSettings title={t("Advanced terminal settings")}>
+      <AdvancedSettings id="terminal-available-shells" defaultOpen={false} title={t("Advanced terminal settings")}>
         <Group
           layout="full"
           title={t("This computer · Available shells")}
@@ -190,32 +191,21 @@ export function TerminalPage() {
             ))
           )}
         </Group>
-        <Group layout="full" title={t("How it works")}>
-          <Row
-            label={t("This computer")}
-            description={t(
+        <div className="terminal-settings-help">
+          <h3 className="text-ui-secondary font-medium">{t("How it works")}</h3>
+          <p>{t(
               "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
-            )}
-          />
-          <Row
-            label={t("Automatic")}
-            description={t(
+            )}</p>
+          <p>{t(
               "Automatic follows the system: PowerShell on Windows, your login shell elsewhere.",
-            )}
-          />
-          <Row
-            label={t("Local sync")}
-            description={t(
+            )}</p>
+          <p>{t(
               "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
-            )}
-          />
-          <Row
-            label={t("Remote server")}
-            description={t(
+            )}</p>
+          <p>{t(
               "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
-            )}
-          />
-        </Group>
+            )}</p>
+        </div>
       </AdvancedSettings>
     </div>
   );
@@ -224,14 +214,16 @@ export function TerminalPage() {
 /** Each connected machine runs `!commands` for its sessions in its own shell. */
 export function RemoteMachineShells() {
   useLocale();
-  const { machines } = useRemoteMachines();
-  if (machines.length === 0)
-    return (
-      <Row label={t("Connect a machine in Connections to configure its default shell here.")} />
-    );
+  const { machines, loaded, loading, error, refresh } = useRemoteMachines();
+  const remoteMachines = machines.filter((machine) => !isLocalSyncMachine(machine));
   return (
     <>
-      {machines.map((machine) => (
+      {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={refresh}>{t("Retry")}</Button>}>{error}</SettingsFeedback> : null}
+      {!loaded && loading ? <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback> : null}
+      {loaded && !loading && !error && remoteMachines.length === 0 ? (
+        <Row label={t("Connect a machine in Connections to configure its default shell here.")} />
+      ) : null}
+      {remoteMachines.map((machine) => (
         <RemoteMachineShell key={machine.id} machine={machine} />
       ))}
     </>
@@ -239,7 +231,7 @@ export function RemoteMachineShells() {
 }
 
 export function RemoteMachineShell({ machine }: { machine: RemoteMachine }) {
-  return <RemoteMachineShellState key={machine.id} machine={machine} />;
+  return <RemoteMachineShellState key={JSON.stringify([machine.id, machine.environmentId, machine.endpoint, machine.ssh])} machine={machine} />;
 }
 
 function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
@@ -250,6 +242,9 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [needsRead, setNeedsRead] = useState(false);
+  const [requestedShell, setRequestedShell] = useState<string | null>(null);
+  const savingRef = useRef(false);
   const generation = useRef(0);
   const [retry, setRetry] = useState(0);
   const explain = (error: unknown) => {
@@ -259,10 +254,17 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
   useEffect(() => {
     let alive = true;
     generation.current++;
+    setLoading(true);
+    setProblem(null);
+    setSaved(false);
     void remoteRequest<ShellProfiles>(machine.id, "shell.profiles")
       .then(
         (value) => {
-          if (alive) setListed(value);
+          if (alive) {
+            setListed(value);
+            setNeedsRead(false);
+            setRequestedShell(null);
+          }
         },
         (error) => {
           if (alive) setProblem(explain(error));
@@ -277,7 +279,9 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
     };
   }, [machine.id, retry]);
   const choose = (next: string) => {
-    if (saving || loading) return;
+    if (savingRef.current || loading || needsRead) return;
+    savingRef.current = true;
+    setRequestedShell(next);
     const version = generation.current;
     setSaving(true);
     setSaved(false);
@@ -296,11 +300,17 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           setSaved(true);
         },
         (error) => {
-          if (version === generation.current) setProblem(explain(error));
+          if (version === generation.current) {
+            setProblem(explain(error));
+            setNeedsRead(true);
+          }
         },
       )
       .finally(() => {
-        if (version === generation.current) setSaving(false);
+        if (version === generation.current) {
+          savingRef.current = false;
+          setSaving(false);
+        }
       });
   };
   const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
@@ -317,25 +327,30 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           <SettingsFeedback
             state="error"
             action={
-              !listed ? (
+              (
                 <Button
                   variant="ghost"
+                  disabled={saving || loading}
                   onClick={() => {
-                    setListed(null);
                     setLoading(true);
                     setSaved(false);
                     setProblem(null);
                     setRetry((value) => value + 1);
                   }}
                 >
-                  {t("Retry")}
+                  {needsRead ? t("Read current shell") : t("Retry")}
                 </Button>
-              ) : undefined
+              )
             }
           >
             {problem}
+            {needsRead && requestedShell !== null ? (
+              <p>{t("Requested shell: {p0}", {
+                p0: listed?.profiles.find((profile) => profile.id === requestedShell)?.name ?? (requestedShell || t("Automatic")),
+              })}</p>
+            ) : null}
           </SettingsFeedback>
-        ) : loading || saving || saved ? (
+        ) : saving || saved ? (
           <SettingsFeedback state={saved ? "success" : "loading"}>
             {saving ? t("Saving…") : loading ? t("Asking the machine…") : t("Saved")}
           </SettingsFeedback>
@@ -347,6 +362,7 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           <Badge>{local ? t("Local sync") : t("Remote server")}</Badge>
         </span>
       }
+      dependency={missing ? t("The shell you picked is no longer installed, so the system default is used.") : undefined}
       description={
         missing
           ? t("The shell you picked is no longer installed, so the system default is used.")
@@ -358,7 +374,8 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
     >
       {listed ? (
         <SearchableSelect
-          disabled={saving || loading}
+          disabled={saving || loading || needsRead}
+          loading={loading}
           label={
             local
               ? t("Default shell on this computer (local sync)")
@@ -383,6 +400,15 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           }}
         />
       ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={loading}
+        disabled={saving || loading}
+        onClick={() => setRetry((value) => value + 1)}
+      >
+        {t("Read current shell")}
+      </Button>
     </Row>
   );
 }

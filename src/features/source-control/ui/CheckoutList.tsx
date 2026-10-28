@@ -3,6 +3,8 @@ import { type ReactNode } from "react";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import {
   ArrowUp,
   ChevronDown,
@@ -52,6 +54,7 @@ export function CheckoutList({
     const { title, detail } = checkoutRowLabels(tree);
     return (
       <li key={tree.path} className={styles.item}>
+        <ActionHost selected={isSession} className="flex w-full min-w-0 items-center">
         <Button
           variant="item"
           motion="none"
@@ -63,8 +66,8 @@ export function CheckoutList({
           onClick={() => onSelect(tree.path)}
         >
           <span className={styles.identity}>
-            <span className={styles.branch}>{title}</span>
-            {detail ? <span className={styles.folder}>{detail}</span> : null}
+            <MiddleTruncate mode="text" className={styles.branch}>{title}</MiddleTruncate>
+            {detail ? <MiddleTruncate mode="path" className={styles.folder}>{detail}</MiddleTruncate> : null}
             {isSession ? <Badge tone="info">{t("This session")}</Badge> : null}
             {tree.isMain ? <Badge>{t("Main folder")}</Badge> : null}
           </span>
@@ -100,10 +103,7 @@ export function CheckoutList({
           </span>
         </Button>
         {!tree.isMain ? (
-          <Button
-            variant="ghost"
-            iconOnly
-            className={styles.delete}
+          <InlineAction
             label={t("Delete worktree")}
             disabled={!enabled || tree.locked || !tree.branch}
             title={
@@ -116,10 +116,11 @@ export function CheckoutList({
             onClick={() => requestWorktreeManagement(cwd, tree.path)}
           >
             <Trash2 aria-hidden className="size-3.5" />
-          </Button>
+          </InlineAction>
         ) : (
           <span className={styles.deleteSlot} aria-hidden />
         )}
+        </ActionHost>
       </li>
     );
   };

@@ -1,4 +1,5 @@
 import { Button } from "../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useT } from "../../shared/i18n";
 import {
   useEffect,
@@ -52,7 +53,7 @@ export function RailSectionHeader({
 }) {
   const t = useT();
   return (
-    <div
+    <ActionHost
       {...drag.headerProps}
       tabIndex={0}
       aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
@@ -83,7 +84,7 @@ export function RailSectionHeader({
       <span className="contents @max-[140px]/rail:hidden">
         <SectionMenuButton label={label} onOpen={drag.openMenu} />
       </span>
-    </div>
+    </ActionHost>
   );
 }
 
@@ -97,10 +98,8 @@ export function SectionMenuButton({
 }) {
   const t = useT();
   return (
-    <Button
-      iconOnly
+    <InlineAction
       label={t("{p0} section options", { p0: label })}
-      variant="ghost"
       motion="none"
       type="button"
       data-no-drag
@@ -111,10 +110,10 @@ export function SectionMenuButton({
         const rect = event.currentTarget.getBoundingClientRect();
         onOpen(rect.left, rect.bottom);
       }}
-      className="hidden size-5 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
+      className="shrink-0"
     >
       <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
-    </Button>
+    </InlineAction>
   );
 }
 

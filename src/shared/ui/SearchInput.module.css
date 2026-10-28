@@ -1,3 +1,16 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .input[data-search-appearance="field"],
+  .group[data-search-appearance="field"] {
+    min-inline-size: 0;
+    inline-size: 100%;
+  }
+  .standalone:has(.input[data-search-appearance="field"]) {
+    inline-size: 100%;
+  }
+}
 .input::-webkit-search-cancel-button {
   display: none;
 }
@@ -8,8 +21,6 @@
 .group[data-search-appearance="field"] {
   box-sizing: border-box;
   min-block-size: var(--ui-control-height-compact);
-  min-inline-size: 0;
-  inline-size: 100%;
   block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: var(--space-3, 0.625rem);
@@ -63,9 +74,6 @@
   min-block-size: var(--ui-control-height);
   block-size: var(--ui-control-height);
 }
-.standalone:has(.input[data-search-appearance="field"]) {
-  inline-size: 100%;
-}
 .group[data-search-appearance="field"] {
   display: flex;
   align-items: center;
@@ -111,34 +119,13 @@
 }
 
 /* Keep compact controls independent of page-wide button defaults. */
-button.clear[data-search-clear] {
-  display: grid;
+/* The clear action is a shared InlineAction (presentation owned by Button); this
+   module only places it inside the field. */
+.clear[data-search-clear] {
   flex: none;
-  place-items: center;
-  inline-size: var(--ui-control-clear-size, 24px);
-  block-size: var(--ui-control-clear-size, 24px);
-  min-block-size: var(--ui-control-clear-size, 24px);
-  padding: 0;
-  border: 0;
-  border-radius: var(--ui-control-radius);
-  background: transparent;
-  color: var(--ui-text-secondary);
-  cursor: pointer;
 }
 
 .standalone .clear {
   position: absolute;
   inset-inline-end: 4px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  button.clear[data-search-clear]:hover {
-    background: var(--ui-surface-hover);
-    color: var(--color-content);
-  }
-}
-
-button.clear[data-search-clear]:active {
-  background: var(--color-selection);
-  color: var(--color-content);
 }

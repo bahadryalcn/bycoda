@@ -42,23 +42,25 @@ function changed() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(DAILY_SUMMARY_CHANGE_EVENT));
 }
 
-export function saveDailySummaryEnabled(value: boolean) {
+export function saveDailySummaryEnabled(value: boolean): boolean {
   try {
     localStorage.setItem(ENABLED_KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    return false;
   }
   changed();
+  return true;
 }
 
-export function saveDailySummaryTime(value: string) {
-  if (!isSummaryTime(value)) return;
+export function saveDailySummaryTime(value: string): boolean {
+  if (!isSummaryTime(value)) return false;
   try {
     localStorage.setItem(TIME_KEY, value);
   } catch {
-    // private mode / quota
+    return false;
   }
   changed();
+  return true;
 }
 
 /** When the daily summary last went out, or null. */

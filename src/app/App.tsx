@@ -60,6 +60,13 @@ import { useSourceControlSurfaces } from "./workspace/files/useSourceControlSurf
 import { useEditorFileEvents } from "./workspace/files/useEditorFileEvents";
 import { useManagedWorkspaceBuffers } from "./workspace/files/useManagedWorkspaceBuffers";
 import { useEditorFileOpen } from "./workspace/files/useEditorFileOpen";
+import { useOpenRecoveredEditorDraft } from "./workspace/files/useOpenRecoveredEditorDraft";
+import { useEditorDraftRecovery } from "./workspace/files/useEditorDraftRecovery";
+import {
+  editorDraftPathVisible,
+  editorDraftProject,
+} from "../features/files/model/editorDraftRecovery";
+import { getGroupLockView } from "../features/group-lock/model/groupLock";
 import { useRepositoryReviewOpen } from "./workspace/files/useRepositoryReviewOpen";
 import { useSessionLoading } from "./workspace/sessions/useSessionLoading";
 import { useOpenSessionTargets } from "./workspace/sessions/useOpenSessionTargets";
@@ -1799,6 +1806,46 @@ function Workspace({
     editorNavigationToken,
   });
 
+  const editorRecoveryRoots = [
+    ...recents
+      .filter((entry) => !isRemoteProjectPath(entry.path))
+      .map((entry) => ({ root: entry.path, projectCwd: entry.path })),
+    ...sessions
+      .filter((session) => !isRemoteProjectPath(session.cwd))
+      .map((session) => ({ root: sessionWorkCwd(session), projectCwd: session.cwd })),
+  ];
+  const allowEditorRecoveryPath = (path: string) =>
+    !isRemoteProjectPath(path) &&
+    editorDraftPathVisible(path, getGroupLockView().lock, editorRecoveryRoots);
+  const { openRecoveredEditorDraft } = useOpenRecoveredEditorDraft({
+    tabsRef,
+    setTabs,
+    insertBesideActive,
+    activateTab,
+    setActiveTabId,
+    setProjectTerminalFocused,
+    setComposerFocused,
+    allowPath: allowEditorRecoveryPath,
+  });
+  const editorDraftRecovery = useEditorDraftRecovery({
+    enabled: !toolWindow && !windowTransfer,
+    allowPath: allowEditorRecoveryPath,
+    isTargetOpen: (id) =>
+      tabsRef.current.some((tab) =>
+        tab.editorPanes.some((pane) => pane.files.some((file) => file.id === id)),
+      ),
+    onOpen: async (prepared) => {
+      await openRecoveredEditorDraft(
+        prepared,
+        editorDraftProject(prepared.target.path, editorRecoveryRoots),
+      );
+      setRecoveryOpen(false);
+    },
+  });
+  const visibleEditorDraftRecords = editorDraftRecovery.records.filter((record) =>
+    allowEditorRecoveryPath(record.path),
+  );
+
   const { onOpenRepository } = useRepositoryReviewOpen({
     sidebarCwdRef,
     lockSnapshot,
@@ -2776,6 +2823,13 @@ function Workspace({
     toolWindow,
     windowTransfer,
     recoveryCount,
+    editorDraftCount: visibleEditorDraftRecords.filter(
+      (record) =>
+        record.state === "retained" && record.serializedTextDigest !== record.baselineDigest,
+    ).length,
+    // Earlier path-only reports are inspected on demand and are absent from
+    // the modern draft count. Keep their desktop entry reachable at count 0.
+    editorDraftAvailable: editorDraftRecovery.available,
     setRecoveryOpen,
     clearRecoveredSessions,
   });
@@ -3280,6 +3334,13 @@ function Workspace({
               closeRecovery={closeRecovery}
               openRecoveredSessions={openRecoveredSessions}
               removeRecoveredSessions={removeRecoveredSessions}
+              editorDraftRecovery={editorDraftRecovery}
+              editorDraftRecords={visibleEditorDraftRecords}
+              canInspectLegacyReports={() => {
+                const view = getGroupLockView();
+                return view.lock.lockedGroupIds.size === 0 && view.hiddenGroupIds.size === 0;
+              }}
+              getLegacyReportPrivacySnapshot={getGroupLockView}
               sessionDeleteDialog={sessionDeleteDialog}
               setSessionDeleteDialog={setSessionDeleteDialog}
             />

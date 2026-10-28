@@ -7,7 +7,6 @@ import { Button } from "../../../shared/ui/Button";
 import { SshIdentityField } from "./SshIdentityField";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Select } from "../../../shared/ui/Select";
 import { Terminal, Lock } from "../../../shared/ui/icons";
 import { t } from "../../../shared/i18n";
 import { setServerSshIdentity, type ServerRecord } from "../model/serverInventory";
@@ -111,18 +110,13 @@ export function ServersConnectionTools({
           </Button>
         ) : null}
       </div>
-      <div className="server-tools-selector">
-        <Select label={t("Server tools")} value={panel} onValueChange={setPanel} options={panels} />
-      </div>
-      <div className="server-tools-segments">
-        <SegmentedControl
-          label={t("Server tools")}
-          selectionRole="pressed"
-          value={panel}
-          onValueChange={setPanel}
-          options={panels}
-        />
-      </div>
+      <SegmentedControl
+        label={t("Server tools")}
+        selectionRole="pressed"
+        value={panel}
+        onValueChange={setPanel}
+        options={panels}
+      />
       <div id={`${panelId}-connection`} hidden={panel !== "connection"}>
         {canAssignKey ? (
           <section aria-label={t("Credentials")} className="flex min-w-0 flex-col gap-3">
@@ -223,7 +217,7 @@ export function ServersConnectionTools({
             {t("SSH settings")}
           </Button>
         </div>
-        <ServerOrganization key={server.id} server={server} expanded />
+        <ServerOrganization key={server.id} server={server} servers={servers} expanded />
       </div>
       <div id={`${panelId}-activity`} hidden={panel !== "activity"}>
         <ServerActivity key={server.id} server={server} expanded />

@@ -17970,6 +17970,380 @@
       "retry": "never",
       "scope": "device"
     },
+    "native.buffers.recovery.list": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cursorId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "page": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "version": { "const": 1, "type": "number" }
+                },
+                "required": ["version", "cursorId", "page"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "limit": { "maximum": 100, "minimum": 1, "type": "integer" }
+        },
+        "type": "object"
+      },
+      "requiredCapability": "native.buffers.recovery.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "duplicatesPossible": { "type": "boolean" },
+          "incomplete": { "type": "boolean" },
+          "next": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cursorId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "page": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "version": { "const": 1, "type": "number" }
+                },
+                "required": ["version", "cursorId", "page"],
+                "type": "object"
+              },
+              { "type": "null" }
+            ]
+          },
+          "qualified": { "const": false, "type": "boolean" },
+          "records": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "bufferCount": { "maximum": 10000, "minimum": 0, "type": "integer" },
+                "byteLength": { "maximum": 67108864, "minimum": 0, "type": "integer" },
+                "clientId": { "type": "string" },
+                "compatibilityHoldId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                "dirtyCount": { "maximum": 10000, "minimum": 0, "type": "integer" },
+                "inspectable": { "type": "boolean" },
+                "instanceId": { "type": "string" },
+                "lineage": { "enum": ["physical", "legacy"], "type": "string" },
+                "ownerMissing": { "type": "boolean" },
+                "processId": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                "provenance": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "enum": ["physical", "unattributed", "legacy", "retained"],
+                          "type": "string"
+                        },
+                        "reportNonce": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            { "type": "null" }
+                          ]
+                        },
+                        "reportVersion": {
+                          "maximum": 9007199254740991,
+                          "minimum": 1,
+                          "type": "integer"
+                        },
+                        "snapshotDigest": {
+                          "pattern": "^[a-f0-9]{64}(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "sourceProfileId": { "type": "string" },
+                        "sourceStoreId": { "type": "string" },
+                        "storeInstance": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            { "type": "null" }
+                          ]
+                        },
+                        "version": { "const": 2, "type": "number" },
+                        "windowIncarnation": {
+                          "anyOf": [
+                            {
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                              "type": "string"
+                            },
+                            { "type": "null" }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "version",
+                        "sourceStoreId",
+                        "sourceProfileId",
+                        "storeInstance",
+                        "windowIncarnation",
+                        "kind",
+                        "reportVersion",
+                        "reportNonce",
+                        "snapshotDigest"
+                      ],
+                      "type": "object"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "qualified": { "const": false, "type": "boolean" },
+                "resolution": { "const": "unsupported", "type": "string" },
+                "retention": { "enum": ["current", "held", "historical"], "type": "string" },
+                "source": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "ownerId": { "type": "string" },
+                    "ownerVersion": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                    "reportVersion": {
+                      "maximum": 9007199254740991,
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+                  },
+                  "required": [
+                    "reportId",
+                    "reportVersion",
+                    "ownerId",
+                    "ownerVersion",
+                    "snapshotDigest"
+                  ],
+                  "type": "object"
+                },
+                "unknown": { "type": "boolean" },
+                "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "verification": { "enum": ["raw-checked", "metadata-only"], "type": "string" }
+              },
+              "required": [
+                "source",
+                "clientId",
+                "instanceId",
+                "processId",
+                "updatedAt",
+                "byteLength",
+                "bufferCount",
+                "dirtyCount",
+                "unknown",
+                "provenance",
+                "lineage",
+                "ownerMissing",
+                "compatibilityHoldId",
+                "verification",
+                "retention",
+                "inspectable",
+                "qualified",
+                "resolution"
+              ],
+              "type": "object"
+            },
+            "maxItems": 100,
+            "type": "array"
+          },
+          "version": { "const": 1, "type": "number" }
+        },
+        "required": ["version", "qualified", "records", "next", "incomplete", "duplicatesPossible"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "native.buffers.recovery.read": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ownerId": { "type": "string" },
+          "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+          "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+        },
+        "required": ["reportId", "reportVersion", "ownerId", "ownerVersion", "snapshotDigest"],
+        "type": "object"
+      },
+      "requiredCapability": "native.buffers.recovery.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "owner": {
+            "additionalProperties": false,
+            "properties": {
+              "buffers": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": { "dirty": { "type": "boolean" }, "path": { "type": "string" } },
+                  "required": ["path", "dirty"],
+                  "type": "object"
+                },
+                "maxItems": 10000,
+                "type": "array"
+              },
+              "ownerId": { "type": "string" },
+              "source": {
+                "additionalProperties": false,
+                "properties": {
+                  "kind": {
+                    "enum": ["physical", "unattributed", "legacy", "retained"],
+                    "type": "string"
+                  },
+                  "reportNonce": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "reportVersion": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
+                  "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                  "sourceProfileId": { "type": "string" },
+                  "sourceStoreId": { "type": "string" },
+                  "storeInstance": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      { "type": "null" }
+                    ]
+                  },
+                  "version": { "const": 2, "type": "number" },
+                  "windowIncarnation": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                        "type": "string"
+                      },
+                      { "type": "null" }
+                    ]
+                  }
+                },
+                "required": [
+                  "version",
+                  "sourceStoreId",
+                  "sourceProfileId",
+                  "storeInstance",
+                  "windowIncarnation",
+                  "kind",
+                  "reportVersion",
+                  "reportNonce",
+                  "snapshotDigest"
+                ],
+                "type": "object"
+              },
+              "unknown": { "type": "boolean" },
+              "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["ownerId", "updatedAt", "unknown", "buffers"],
+            "type": "object"
+          },
+          "qualified": { "const": false, "type": "boolean" },
+          "rawReport": { "type": "string" },
+          "resolution": { "const": "unsupported", "type": "string" },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "ownerId": { "type": "string" },
+              "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": ["reportId", "reportVersion", "ownerId", "ownerVersion", "snapshotDigest"],
+            "type": "object"
+          },
+          "version": { "const": 1, "type": "number" }
+        },
+        "required": ["version", "qualified", "source", "rawReport", "owner", "resolution"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
+    "native.buffers.recovery.status": {
+      "admissionTimeoutMs": 5000,
+      "cancellation": "query",
+      "controlTypes": [],
+      "cost": "read",
+      "kind": "query",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "ownerId": { "type": "string" },
+          "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+          "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+        },
+        "required": ["reportId", "reportVersion", "ownerId", "ownerVersion", "snapshotDigest"],
+        "type": "object"
+      },
+      "requiredCapability": "native.buffers.recovery.v1",
+      "responseTimeoutMs": 12000,
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "found": { "type": "boolean" },
+          "inspectable": { "type": "boolean" },
+          "qualified": { "const": false, "type": "boolean" },
+          "resolution": { "const": "unsupported", "type": "string" },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "ownerId": { "type": "string" },
+              "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+              "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+            },
+            "required": ["reportId", "reportVersion", "ownerId", "ownerVersion", "snapshotDigest"],
+            "type": "object"
+          },
+          "version": { "const": 1, "type": "number" }
+        },
+        "required": ["version", "qualified", "source", "found", "inspectable", "resolution"],
+        "type": "object"
+      },
+      "retry": "safe-query",
+      "scope": "device"
+    },
     "notes.delete": {
       "admissionTimeoutMs": 5000,
       "cancellation": "wait-only",
@@ -33615,6 +33989,106 @@
               "type": "string"
             },
             "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.buffers.recovery.list", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "after": {
+                  "anyOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cursorId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "page": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                        "version": { "const": 1, "type": "number" }
+                      },
+                      "required": ["version", "cursorId", "page"],
+                      "type": "object"
+                    },
+                    { "type": "null" }
+                  ]
+                },
+                "limit": { "maximum": 100, "minimum": 1, "type": "integer" }
+              },
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.buffers.recovery.read", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "ownerId": { "type": "string" },
+                "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+              },
+              "required": [
+                "reportId",
+                "reportVersion",
+                "ownerId",
+                "ownerVersion",
+                "snapshotDigest"
+              ],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
+            "method": { "const": "native.buffers.recovery.status", "type": "string" },
+            "params": {
+              "additionalProperties": false,
+              "properties": {
+                "ownerId": { "type": "string" },
+                "ownerVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "reportId": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" },
+                "reportVersion": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "snapshotDigest": { "pattern": "^[a-f0-9]{64}(?![\\s\\S])", "type": "string" }
+              },
+              "required": [
+                "reportId",
+                "reportVersion",
+                "ownerId",
+                "ownerVersion",
+                "snapshotDigest"
+              ],
+              "type": "object"
+            }
+          },
+          "required": ["jsonrpc", "id", "method", "params"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "jsonrpc": { "const": "2.0", "type": "string" },
             "method": { "const": "crews.list", "type": "string" },
             "params": {
               "additionalProperties": false,
@@ -43655,5 +44129,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "3a32bdd786455d3c0ab6e670a23071cfa868d57cbe5e6bff6d21fe2bf89ac72d"
+  "schemaHash": "07311692d08439f84f806931f1a355bcb9e6c74dd743a8cc4c26f8cfbae410fe"
 }

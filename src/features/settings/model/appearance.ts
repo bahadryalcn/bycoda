@@ -9,6 +9,11 @@ import { readFlag, writeFlag } from "./storageFlags";
 import { initUiScale } from "./uiScale";
 import { runThemeTransition } from "./themeTransition";
 import {
+  acceptAppearanceStorageChange,
+  readAppearanceValue,
+  writeAppearanceValue,
+} from "./appearancePersistence";
+import {
   applyPreparedNewThreadBackground,
   clearPreparedNewThreadBackground,
 } from "./newThreadBackgroundEffects";
@@ -175,7 +180,7 @@ export const CHAT_BACKGROUND_SCOPE_DEFAULT: ChatBackgroundScope = "all";
 
 function readNumber(key: string): number | null {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = readAppearanceValue(key);
     if (raw == null) return null;
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
@@ -191,11 +196,49 @@ function notifyAppearance(key: string) {
 }
 
 function writeNumber(key: string, value: number) {
+  if (!appearanceSettingIds[key]) {
+    try {
+      localStorage.setItem(key, String(value));
+    } catch {
+      /* Layout fallback unchanged. */
+    }
+    return;
+  }
+  return saveAppearanceValue(key, String(value));
+}
+
+const appearanceSettingIds: Record<string, string> = {
+  [ACCENT_COLOR_KEY]: "accent-color",
+  [SCHEME_KEY]: "theme",
+  [THEME_HUE_KEY]: "hue",
+  [THEME_SATURATION_KEY]: "saturation",
+  [THEME_DARK_LIGHTNESS_KEY]: "dark-lightness",
+  [OPACITY_KEY]: "sidebar-opacity",
+  [MAIN_OPACITY_KEY]: "main-pane-opacity",
+  [BLUR_KEY]: "blur",
+  [BODY_KEY]: "main-pane-glass",
+  [WINDOW_GLASS_KEY]: "window-glass",
+  [CHAT_BACKGROUND_PATH_KEY]: "chat-background",
+  [CHAT_BACKGROUND_EMPTY_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_SESSION_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_OPACITY_KEY]: "chat-background",
+  [CHAT_BACKGROUND_BLUR_KEY]: "chat-background",
+  [CHAT_BACKGROUND_SCOPE_KEY]: "chat-background",
+  [NEW_THREAD_BACKGROUND_EFFECT_KEY]: "chat-background",
+  [DIFF_PALETTE_KEY]: "diff-palette",
+  [SHOW_EXCLUDED_FILES_KEY]: "show-excluded-files",
+};
+function saveAppearanceValue(key: string, value: string | null) {
+  return writeAppearanceValue(key, value, appearanceSettingIds[key] ?? key, () =>
+    notifyAppearance(key),
+  );
+}
+function readAppearanceFlag(key: string, fallback: boolean) {
   try {
-    localStorage.setItem(key, String(value));
-    notifyAppearance(key);
+    const value = readAppearanceValue(key);
+    return value == null ? fallback : value === "1" || value === "true";
   } catch {
-    // private mode / quota
+    return fallback;
   }
 }
 
@@ -209,7 +252,7 @@ function normalizeAccentColor(value: unknown): string | null {
 export function migrateWorkbenchPalette() {
   try {
     const marker = "bycoda.workbenchPalette.v1";
-    if (localStorage.getItem(marker) === "1") return;
+    if (readAppearanceValue(marker) === "1") return;
     const hue = readNumber(THEME_HUE_KEY);
     const saturation = readNumber(THEME_SATURATION_KEY);
     const lightness = readNumber(THEME_DARK_LIGHTNESS_KEY);
@@ -221,7 +264,7 @@ export function migrateWorkbenchPalette() {
       for (const key of [THEME_HUE_KEY, THEME_SATURATION_KEY, THEME_DARK_LIGHTNESS_KEY])
         localStorage.removeItem(key);
     }
-    if (localStorage.getItem(ACCENT_COLOR_KEY)?.toLowerCase() === themePalette.hexb39963)
+    if (readAppearanceValue(ACCENT_COLOR_KEY)?.toLowerCase() === themePalette.hexb39963)
       localStorage.removeItem(ACCENT_COLOR_KEY);
     localStorage.setItem(marker, "1");
   } catch {
@@ -241,7 +284,7 @@ function accentForeground(color: string): (typeof themePalette)["scrim" | "solid
 export function loadAccentColor(): string | null {
   migrateWorkbenchPalette();
   try {
-    return normalizeAccentColor(localStorage.getItem(ACCENT_COLOR_KEY));
+    return normalizeAccentColor(readAppearanceValue(ACCENT_COLOR_KEY));
   } catch {
     return ACCENT_COLOR_DEFAULT;
   }
@@ -249,15 +292,13 @@ export function loadAccentColor(): string | null {
 
 export function saveAccentColor(value: string | null) {
   migrateWorkbenchPalette();
-  try {
-    const next = normalizeAccentColor(value);
-    if (value == null || next == null || next.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase())
-      localStorage.removeItem(ACCENT_COLOR_KEY);
-    else localStorage.setItem(ACCENT_COLOR_KEY, next);
-    notifyAppearance(ACCENT_COLOR_KEY);
-  } catch {
-    // private mode / quota
-  }
+  const next = normalizeAccentColor(value);
+  return saveAppearanceValue(
+    ACCENT_COLOR_KEY,
+    value == null || next == null || next.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase()
+      ? null
+      : next,
+  );
 }
 
 export function applyAccentColor(value: string | null) {
@@ -366,7 +407,10 @@ const SHARED_APPEARANCE_KEYS = new Set([
 export function subscribeThemeStorage(onChange: (key: string | null) => void) {
   const onStorage = (event: StorageEvent) => {
     if (event.storageArea && event.storageArea !== localStorage) return;
-    if (event.key === null || SHARED_APPEARANCE_KEYS.has(event.key)) onChange(event.key);
+    if (event.key === null || SHARED_APPEARANCE_KEYS.has(event.key)) {
+      acceptAppearanceStorageChange(event.key);
+      onChange(event.key);
+    }
   };
   const onLocal = (event: Event) => onChange((event as CustomEvent<string>).detail);
   window.addEventListener("storage", onStorage);
@@ -443,7 +487,7 @@ function isThemePreference(value: unknown): value is ThemePreference {
 
 export function loadThemePreference(): ThemePreference {
   try {
-    const raw = localStorage.getItem(SCHEME_KEY);
+    const raw = readAppearanceValue(SCHEME_KEY);
     return isThemePreference(raw) ? raw : THEME_PREFERENCE_DEFAULT;
   } catch {
     return THEME_PREFERENCE_DEFAULT;
@@ -451,12 +495,7 @@ export function loadThemePreference(): ThemePreference {
 }
 
 export function saveThemePreference(value: ThemePreference) {
-  try {
-    localStorage.setItem(SCHEME_KEY, value);
-    notifyAppearance(SCHEME_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(SCHEME_KEY, value);
 }
 
 function systemQuery(): MediaQueryList | null {
@@ -625,26 +664,24 @@ export function saveSidebarBlur(value: number) {
 
 export function applySidebarBlur(value: number) {
   const next = Math.round(clamp(value, SIDEBAR_BLUR_MIN, SIDEBAR_BLUR_MAX));
-  void invoke("set_window_background_blur", { radius: next });
+  if (IS_MAC) void invoke("set_window_background_blur", { radius: next }).catch(() => {});
   return next;
 }
 
 export function loadBodyGlass(): boolean {
-  return readFlag(BODY_KEY) ?? BODY_GLASS_DEFAULT;
+  return readAppearanceFlag(BODY_KEY, BODY_GLASS_DEFAULT);
 }
 
 export function saveBodyGlass(value: boolean) {
-  writeFlag(BODY_KEY, value);
-  notifyAppearance(BODY_KEY);
+  return saveAppearanceValue(BODY_KEY, value ? "1" : "0");
 }
 
 export function loadWindowGlass(): boolean {
-  return readFlag(WINDOW_GLASS_KEY) ?? WINDOW_GLASS_DEFAULT;
+  return readAppearanceFlag(WINDOW_GLASS_KEY, WINDOW_GLASS_DEFAULT);
 }
 
 export function saveWindowGlass(value: boolean) {
-  writeFlag(WINDOW_GLASS_KEY, value);
-  notifyAppearance(WINDOW_GLASS_KEY);
+  return saveAppearanceValue(WINDOW_GLASS_KEY, value ? "1" : "0");
 }
 
 export function applyBodyGlass(value: boolean) {
@@ -654,22 +691,17 @@ export function applyBodyGlass(value: boolean) {
 
 export function loadChatBackgroundPath(): string | null {
   try {
-    return localStorage.getItem(CHAT_BACKGROUND_PATH_KEY)?.trim() || null;
+    return readAppearanceValue(CHAT_BACKGROUND_PATH_KEY)?.trim() || null;
   } catch {
     return null;
   }
 }
 
 export function saveChatBackgroundPath(value: string | null) {
-  try {
-    if (value) localStorage.setItem(CHAT_BACKGROUND_PATH_KEY, value);
-    else localStorage.removeItem(CHAT_BACKGROUND_PATH_KEY);
-    notifyAppearance(CHAT_BACKGROUND_PATH_KEY);
-  } catch {
-    // private mode / quota
-  }
+  const saved = saveAppearanceValue(CHAT_BACKGROUND_PATH_KEY, value);
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CHAT_BACKGROUND_PATH_CHANGE_EVENT));
+  return saved;
 }
 
 export function subscribeChatBackgroundPath(onStoreChange: () => void) {
@@ -700,7 +732,7 @@ function isNewThreadBackgroundEffect(value: unknown): value is NewThreadBackgrou
 
 export function loadNewThreadBackgroundEffect(): NewThreadBackgroundEffect {
   try {
-    const raw = localStorage.getItem(NEW_THREAD_BACKGROUND_EFFECT_KEY);
+    const raw = readAppearanceValue(NEW_THREAD_BACKGROUND_EFFECT_KEY);
     return isNewThreadBackgroundEffect(raw) ? raw : NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
   } catch {
     return NEW_THREAD_BACKGROUND_EFFECT_DEFAULT;
@@ -708,12 +740,7 @@ export function loadNewThreadBackgroundEffect(): NewThreadBackgroundEffect {
 }
 
 export function saveNewThreadBackgroundEffect(effect: NewThreadBackgroundEffect) {
-  try {
-    localStorage.setItem(NEW_THREAD_BACKGROUND_EFFECT_KEY, effect);
-    notifyAppearance(NEW_THREAD_BACKGROUND_EFFECT_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(NEW_THREAD_BACKGROUND_EFFECT_KEY, effect);
 }
 
 function renderChatBackground(path: string, effect = loadNewThreadBackgroundEffect()) {
@@ -831,7 +858,7 @@ function isChatBackgroundScope(value: unknown): value is ChatBackgroundScope {
 
 export function loadChatBackgroundScope(): ChatBackgroundScope {
   try {
-    const raw = localStorage.getItem(CHAT_BACKGROUND_SCOPE_KEY);
+    const raw = readAppearanceValue(CHAT_BACKGROUND_SCOPE_KEY);
     return isChatBackgroundScope(raw) ? raw : CHAT_BACKGROUND_SCOPE_DEFAULT;
   } catch {
     return CHAT_BACKGROUND_SCOPE_DEFAULT;
@@ -839,12 +866,7 @@ export function loadChatBackgroundScope(): ChatBackgroundScope {
 }
 
 export function saveChatBackgroundScope(value: ChatBackgroundScope) {
-  try {
-    localStorage.setItem(CHAT_BACKGROUND_SCOPE_KEY, value);
-    notifyAppearance(CHAT_BACKGROUND_SCOPE_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(CHAT_BACKGROUND_SCOPE_KEY, value);
 }
 
 export function applyChatBackgroundScope(value: ChatBackgroundScope) {
@@ -858,7 +880,7 @@ function isDiffPalette(value: unknown): value is DiffPalette {
 
 export function loadDiffPalette(): DiffPalette {
   try {
-    const raw = localStorage.getItem(DIFF_PALETTE_KEY);
+    const raw = readAppearanceValue(DIFF_PALETTE_KEY);
     return isDiffPalette(raw) ? raw : DIFF_PALETTE_DEFAULT;
   } catch {
     return DIFF_PALETTE_DEFAULT;
@@ -866,12 +888,7 @@ export function loadDiffPalette(): DiffPalette {
 }
 
 export function saveDiffPalette(value: DiffPalette) {
-  try {
-    localStorage.setItem(DIFF_PALETTE_KEY, value);
-    notifyAppearance(DIFF_PALETTE_KEY);
-  } catch {
-    // private mode / quota
-  }
+  return saveAppearanceValue(DIFF_PALETTE_KEY, value);
 }
 
 /** Swaps the diff color tokens in index.css via an html class. */
@@ -904,7 +921,7 @@ export function saveSessionSidebarOpen(value: boolean) {
 
 export function loadSidebarTabOrder(): SidebarTabId[] {
   try {
-    const raw = localStorage.getItem(SIDEBAR_TAB_ORDER_KEY);
+    const raw = readAppearanceValue(SIDEBAR_TAB_ORDER_KEY);
     if (!raw) return [...DEFAULT_SIDEBAR_TAB_ORDER];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [...DEFAULT_SIDEBAR_TAB_ORDER];
@@ -966,7 +983,7 @@ function isTranscriptLayout(value: unknown): value is TranscriptLayout {
 
 export function loadTranscriptLayout(): TranscriptLayout {
   try {
-    const raw = localStorage.getItem(TRANSCRIPT_LAYOUT_KEY);
+    const raw = readAppearanceValue(TRANSCRIPT_LAYOUT_KEY);
     return isTranscriptLayout(raw) ? raw : TRANSCRIPT_LAYOUT_DEFAULT;
   } catch {
     return TRANSCRIPT_LAYOUT_DEFAULT;
@@ -988,7 +1005,8 @@ export function saveTranscriptLayout(value: TranscriptLayout) {
   );
 }
 
-export const subscribeTranscriptLayout = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_LAYOUT_KEY], TRANSCRIPT_LAYOUT_CHANGE_EVENT, onChange);
+export const subscribeTranscriptLayout = (onChange: () => void) =>
+  subscribePreferenceChanges([TRANSCRIPT_LAYOUT_KEY], TRANSCRIPT_LAYOUT_CHANGE_EVENT, onChange);
 
 function isChangesView(value: unknown): value is ChangesView {
   return value === "list" || value === "tree";
@@ -996,7 +1014,7 @@ function isChangesView(value: unknown): value is ChangesView {
 
 export function loadChangesView(): ChangesView {
   try {
-    const raw = localStorage.getItem(CHANGES_VIEW_KEY);
+    const raw = readAppearanceValue(CHANGES_VIEW_KEY);
     return isChangesView(raw) ? raw : CHANGES_VIEW_DEFAULT;
   } catch {
     return CHANGES_VIEW_DEFAULT;
@@ -1025,24 +1043,33 @@ export function saveTranscriptAnchor(value: boolean) {
   );
 }
 
-export const subscribeTranscriptAnchor = (onChange: () => void) => subscribePreferenceChanges([TRANSCRIPT_ANCHOR_KEY], TRANSCRIPT_ANCHOR_CHANGE_EVENT, onChange);
+export const subscribeTranscriptAnchor = (onChange: () => void) =>
+  subscribePreferenceChanges([TRANSCRIPT_ANCHOR_KEY], TRANSCRIPT_ANCHOR_CHANGE_EVENT, onChange);
 
 export function loadShowExcludedFiles(): boolean {
   return readFlag(SHOW_EXCLUDED_FILES_KEY) ?? SHOW_EXCLUDED_FILES_DEFAULT;
 }
 
 export function saveShowExcludedFiles(value: boolean) {
-  writeFlag(SHOW_EXCLUDED_FILES_KEY, value);
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(
-    new CustomEvent<boolean>(SHOW_EXCLUDED_FILES_CHANGE_EVENT, {
-      detail: value,
-    }),
+  return writeAppearanceValue(
+    SHOW_EXCLUDED_FILES_KEY,
+    value ? "1" : "0",
+    "show-excluded-files",
+    () => {
+      if (typeof window !== "undefined")
+        window.dispatchEvent(new Event(SHOW_EXCLUDED_FILES_CHANGE_EVENT));
+    },
+    false,
   );
 }
 
 export function subscribeShowExcludedFiles(onStoreChange: () => void) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
-  return () => window.removeEventListener(SHOW_EXCLUDED_FILES_CHANGE_EVENT, onStoreChange);
+  return subscribePreferenceChanges(
+    [SHOW_EXCLUDED_FILES_KEY],
+    SHOW_EXCLUDED_FILES_CHANGE_EVENT,
+    () => {
+      acceptAppearanceStorageChange(SHOW_EXCLUDED_FILES_KEY);
+      onStoreChange();
+    },
+  );
 }

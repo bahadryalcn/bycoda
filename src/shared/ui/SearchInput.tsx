@@ -7,6 +7,7 @@ import {
   type ComponentPropsWithoutRef,
 } from "react";
 import { useT } from "../i18n";
+import { InlineAction } from "./ActionHost";
 import { X } from "./icons";
 import styles from "./SearchInput.module.css";
 
@@ -110,20 +111,16 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
         data-search-filled={canClear || undefined}
       />
       {canClear ? (
-        <button
-          type="button"
-          title={t("Clear search")}
-          aria-label={t("Clear search")}
-          data-search-clear
+        <InlineAction
+          reveal="always"
+          label={t("Clear search")}
+          data-search-clear=""
           className={styles.clear}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-          }}
+          // Keep focus and the caret in the field while the pointer presses the action.
+          onPointerDown={(event) => event.preventDefault()}
           onMouseDown={(event) => event.preventDefault()}
           onClick={(event) => {
             event.preventDefault();
-            event.stopPropagation();
             const node = input.current;
             if (!node) return;
             // Use the native setter so React delivers the same onChange event as typing.
@@ -136,8 +133,8 @@ export const SearchInput = forwardRef<HTMLInputElement, SearchInputProps>(functi
             node.focus();
           }}
         >
-          <X size={12} strokeWidth={1.75} aria-hidden="true" />
-        </button>
+          <X aria-hidden="true" />
+        </InlineAction>
       ) : null}
     </>
   );

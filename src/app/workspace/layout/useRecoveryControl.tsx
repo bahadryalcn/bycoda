@@ -8,6 +8,8 @@ export interface RecoveryControlDeps {
   toolWindow: ToolWindow | null;
   windowTransfer: WindowTransferPayload | null;
   recoveryCount: number;
+  editorDraftCount?: number;
+  editorDraftAvailable?: boolean;
   setRecoveryOpen: Dispatch<SetStateAction<boolean>>;
   clearRecoveredSessions: () => Promise<void>;
 }
@@ -16,6 +18,8 @@ export function useRecoveryControl({
   toolWindow,
   windowTransfer,
   recoveryCount,
+  editorDraftCount = 0,
+  editorDraftAvailable = false,
   setRecoveryOpen,
   clearRecoveredSessions,
 }: RecoveryControlDeps) {
@@ -28,11 +32,20 @@ export function useRecoveryControl({
     () =>
       visible ? (
         <SessionRecoveryControl
-          count={recoveryCount}
+          count={recoveryCount + editorDraftCount}
+          allowEmpty={editorDraftAvailable}
+          includeFiles={editorDraftAvailable}
           onOpen={actions.onOpen}
-          onClear={actions.onClear}
+          onClear={recoveryCount > 0 ? actions.onClear : undefined}
         />
       ) : null,
-    [visible, recoveryCount, actions.onOpen, actions.onClear],
+    [
+      visible,
+      recoveryCount,
+      editorDraftCount,
+      editorDraftAvailable,
+      actions.onOpen,
+      actions.onClear,
+    ],
   );
 }

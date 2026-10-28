@@ -1,3 +1,4 @@
+import { runNativeOutputWork, nativeOutputSink, captureNativeOutputWork, captureNativeOutputCurrentEvent, scheduleNativeOutputCallback, cancelNativeOutputCallback } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { deliverQuestionReply, type QuestionDelivery } from "../questionDelivery";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
@@ -888,15 +889,15 @@ function handleLine(sessionId: string, live: Live, line: string): void {
   const control = parseControlRequest(rec);
   if (control) {
     const turn = live.turnDone;
-    void handleControlRequest(sessionId, live, control).catch((error: unknown) => {
+    void runNativeOutputWork(async (work) => { try { await handleControlRequest(sessionId, live, control); } catch (error: unknown) {
       if (live.muteUpdates || live.turnDone !== turn) return;
       const failure = error instanceof Error ? error : new Error(String(error));
       if (live.turnFailed) {
         live.turnFailed(failure);
       } else {
-        live.onEvent({ type: "session.error", message: failure.message });
+        nativeOutputSink(work, () => live.onEvent({ type: "session.error", message: failure.message }))();
       }
-    });
+    }});
     return;
   }
 
@@ -1290,8 +1291,10 @@ async function handleControlRequest(
   live: Live,
   control: ClaudeControlRequest,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   if (control.subtype !== "can_use_tool" && control.subtype !== "permission") {
-    await writeJson(sessionId, buildControlResponse(control.requestId, {}));
+    await nativeOutputSink(outputWork, writeJson)(sessionId, buildControlResponse(control.requestId, {}));
     return;
   }
 
@@ -1299,7 +1302,7 @@ async function handleControlRequest(
   const input = control.input ?? {};
 
   if (live.cancelled || live.muteUpdates) {
-    await writeJson(
+    await nativeOutputSink(outputWork, writeJson)(
       sessionId,
       buildControlResponse(control.requestId, toClaudePermissionResult("deny", input)),
     ).catch(() => undefined);
@@ -1309,7 +1312,7 @@ async function handleControlRequest(
   if (toolName === "AskUserQuestion") {
     const questions = questionsFromUnknown(input);
     const uiId = live.nextApprovalUiId++;
-    const pending = waitQuestion(
+    const pending = nativeOutputSink(outputWork, waitQuestion)(
       live,
       uiId,
       control.requestId,
@@ -1323,7 +1326,7 @@ async function handleControlRequest(
         dismissAction: "cancel",
       },
       (reply) =>
-        writeJson(
+        nativeOutputSink(outputWork, writeJson)(
           sessionId,
           buildControlResponse(
             control.requestId,
@@ -1333,24 +1336,24 @@ async function handleControlRequest(
           ),
         ),
     );
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     const outcome = await pending;
     const decision =
       outcome === "cancelled" ? "cancelled" : outcome.kind === "answered" ? "answered" : "skipped";
-    live.onEvent({
+    emitNative({
       type: "question.resolved",
       requestId: uiId,
       decision,
       ...(outcome !== "cancelled" && outcome.kind === "answered" ? { reply: outcome } : {}),
     });
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     return;
   }
 
   if (toolName === "ExitPlanMode") {
     const plan = extractExitPlanModePlan(input);
-    if (plan) live.onEvent({ type: "plan", text: plan });
-    await writeJson(
+    if (plan) emitNative({ type: "plan", text: plan });
+    await nativeOutputSink(outputWork, writeJson)(
       sessionId,
       buildControlResponse(control.requestId, {
         behavior: "deny",
@@ -1362,12 +1365,12 @@ async function handleControlRequest(
     return;
   }
 
-  applyKnownToolInput(live, toolName, input, control.toolUseId);
+  nativeOutputSink(outputWork, applyKnownToolInput)(live, toolName, input, control.toolUseId);
 
   if (live.planning) {
     const kind = toolKindFromName(toolName);
     const decision = kind === "read" || kind === "search" ? "allow" : "deny";
-    await writeJson(
+    await nativeOutputSink(outputWork, writeJson)(
       sessionId,
       buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
     );
@@ -1375,7 +1378,7 @@ async function handleControlRequest(
   }
 
   if (live.runtimeMode === "full-access") {
-    await writeJson(
+    await nativeOutputSink(outputWork, writeJson)(
       sessionId,
       buildControlResponse(control.requestId, toClaudePermissionResult("allow", input)),
     );
@@ -1383,8 +1386,8 @@ async function handleControlRequest(
   }
 
   const uiId = live.nextApprovalUiId++;
-  const pending = waitApproval(live, uiId, control.requestId, input);
-  live.onEvent({
+  const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, control.requestId, input);
+  emitNative({
     type: "approval.requested",
     requestId: uiId,
     title: toolTitle(toolName, input),
@@ -1393,12 +1396,14 @@ async function handleControlRequest(
     preview: previewFromTool(toolName, input),
   });
   const decision = await pending;
-  live.onEvent({ type: "approval.resolved", requestId: uiId, decision });
+  emitNative({ type: "approval.resolved", requestId: uiId, decision });
   if (decision === "cancelled") return;
-  await writeJson(
+  await nativeOutputSink(outputWork, writeJson)(
     sessionId,
     buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
   );
+
+});
 }
 
 function applyKnownToolInput(
@@ -1443,6 +1448,7 @@ function waitQuestion(
   event: Extract<HarnessEvent, { type: "question.asked" }>,
   deliver: QuestionDelivery["deliver"],
 ): Promise<UserQuestionReply | "cancelled"> {
+  captureNativeOutputCurrentEvent(event);
   return new Promise<UserQuestionReply | "cancelled">((resolve) => {
     live.questions.set(uiId, { requestId, event, deliver, resolve });
   }).finally(() => {
@@ -1832,7 +1838,7 @@ function completeAgentTask(live: Live, taskId: string, status: string, detail?: 
 function finishBackgroundTask(live: Live, taskId: string): void {
   if (!live.backgroundTasks.delete(taskId)) return;
   if (live.turnResultSeen && live.activeTurn && !live.awaitingResume) {
-    live.awaitingResume = setTimeout(() => {
+    live.awaitingResume = scheduleNativeOutputCallback(() => {
       live.awaitingResume = null;
       maybeFinishTurn(live);
       syncBackgroundWait(live);
@@ -1920,6 +1926,11 @@ function stopOutputWatches(live: Live): void {
   live.outputWatches.clear();
 }
 
+/** Consecutive missing-file polls (about a second each) before the row says it is still waiting. */
+const OUTPUT_WAIT_REPORT_AFTER = 30;
+/** Extra attempts after the last read of a finished task fails. */
+const OUTPUT_FINAL_RETRIES = 3;
+
 function watchCommandOutput(live: Live, taskId: string, reportedTask?: BackgroundTask): void {
   const task = reportedTask ?? live.backgroundTasks.get(taskId);
   const callId = live.backgroundRows.get(taskId);
@@ -1932,43 +1943,73 @@ function watchCommandOutput(live: Live, taskId: string, reportedTask?: Backgroun
   )
     return;
   let stopped = false;
+  const outputWork = captureNativeOutputWork({ additionalInput: true });
   let finished = false;
   let reading = false;
+  /** What the row currently shows, including any unavailable note. */
   let last = "";
+  /** The latest successfully read output, without notes. */
+  let lastOutput = "";
+  let failures = 0;
+  let finalFailures = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  const emitOutput = nativeOutputSink(outputWork, (text: string) => {
+    if (stopped || live.cancelled || live.muteUpdates || text === last) return;
+    last = text;
+    live.onEvent({
+      type: "tool.updated",
+      callId,
+      preview: { ...previewFromTool(source.name, source.input), kind: "shell", output: text },
+    });
+  });
   const poll = async () => {
     if (stopped || reading) return;
     reading = true;
     const finalRead = finished;
+    let failed = false;
     try {
       const output = await readHarnessTaskOutput(path, taskId);
-      if (!stopped && !live.cancelled && !live.muteUpdates) {
-        const text = output.truncated ? `[Earlier output omitted]\n${output.text}` : output.text;
-        if (text !== last) {
-          last = text;
-          live.onEvent({
-            type: "tool.updated",
-            callId,
-            preview: { ...previewFromTool(source.name, source.input), kind: "shell", output: text },
-          });
-        }
+      failures = 0;
+      lastOutput = output.truncated ? `[Earlier output omitted]
+${output.text}` : output.text;
+      emitOutput(lastOutput);
+    } catch (error) {
+      failed = true;
+      failures += 1;
+      // A missing file is normal until the provider creates it, so it is only
+      // reported once the command has finished or has been missing for a long
+      // while. Any other read error is reported after a few retries.
+      const missing = (error as { code?: unknown } | null)?.code === "ENOENT";
+      const persistent = missing ? failures >= OUTPUT_WAIT_REPORT_AFTER : failures >= 3;
+      if (finalRead ? finalFailures >= OUTPUT_FINAL_RETRIES : persistent) {
+        const note = missing
+          ? finalRead
+            ? "[Output unavailable: the task output file was not found]"
+            : "[Waiting for the task output file]"
+          : "[Output unavailable: the task output file could not be read]";
+        emitOutput(lastOutput ? `${lastOutput}
+${note}` : note);
       }
-    } catch {
-      // The provider can announce a task before its output file exists.
     } finally {
       reading = false;
       if (!stopped) {
-        if (finished && finalRead) {
+        if (finalRead && failed && finalFailures < OUTPUT_FINAL_RETRIES) {
+          // A failed last read is retried briefly before the watcher gives up.
+          finalFailures += 1;
+          timer = setTimeout(() => void poll(), 250);
+        } else if (finished && finalRead) {
           stopped = true;
           live.outputWatches.delete(taskId);
+          if (failed) outputWork?.fail("claude-file-output-failed"); else outputWork?.finish();
         } else timer = setTimeout(() => void poll(), finished ? 0 : 1000);
-      }
+      } else outputWork?.fail("claude-file-output-retired");
     }
   };
   live.outputWatches.set(taskId, {
     stop: () => {
       stopped = true;
       clearTimeout(timer);
+      if (!reading) outputWork?.fail("claude-file-output-retired");
     },
     finish: () => {
       finished = true;
@@ -2017,7 +2058,7 @@ function noteTaskNotification(live: Live, notice: ClaudeAgentTaskNotification): 
 
 function clearAwaitingResume(live: Live): void {
   if (!live.awaitingResume) return;
-  clearTimeout(live.awaitingResume);
+  cancelNativeOutputCallback(live.awaitingResume ?? undefined);
   live.awaitingResume = null;
 }
 

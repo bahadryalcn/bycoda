@@ -1,4 +1,5 @@
 import { Button } from "../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { t, useLocale, useT } from "../../shared/i18n";
 import {
@@ -304,7 +305,7 @@ function TabHarnesses({
             } ${i > 0 ? "-ml-0.5" : ""}`}
           >
             {status === "busy" ? (
-              <TerminalSpinner className="inline-block w-3.5 select-none text-center text-ui-micro leading-none text-active" />
+              <TerminalSpinner />
             ) : status === "done" ? (
               <CheckCircle className="icon-sm shrink-0 text-success" strokeWidth={2} />
             ) : (
@@ -361,7 +362,8 @@ function TitleTabItem({
   ].join(" · ");
 
   return (
-    <div
+    <ActionHost
+      selected={active}
       ref={(el) => {
         sortable.setItemRef(tab.id, el);
         itemRef?.(el);
@@ -480,10 +482,8 @@ function TitleTabItem({
         </span>
       </Button>
       {closable ? (
-        <Button
-          iconOnly
+        <InlineAction
           label={t("Close {p0}", { p0: headline })}
-          variant="ghost"
           motion="none"
           type="button"
           title={t("Close Tab")}
@@ -495,12 +495,12 @@ function TitleTabItem({
             e.stopPropagation();
             onClose(tab.id);
           }}
-          className="absolute end-0 inset-bs-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100 group-has-[button:focus-visible]:opacity-100"
+          className="absolute end-0 inset-bs-1/2 -translate-y-1/2"
         >
           <X className="icon-xs" strokeWidth={1.75} />
-        </Button>
+        </InlineAction>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }
 
@@ -1294,7 +1294,7 @@ function TitleBarComponent({
   // exempts buttons, links and inputs on its own.
   return (
     <header
-      className={`bycoda-titlebar flex h-10 shrink-0 select-none items-stretch border-b border-stroke${
+      className={`bycoda-titlebar flex h-10 shrink-0 select-none items-stretch border-b border-b-(--ui-pane-border)!${
         compactRail ? " body-glass" : ""
       }`}
       data-tauri-drag-region="deep"
@@ -1355,7 +1355,7 @@ function TitleBarComponent({
 
       <div
         className={`flex min-w-0 flex-1 items-stretch${
-          showProjectButton ? " border-l border-stroke" : ""
+          showProjectButton ? " border-l border-l-(--ui-pane-border)" : ""
         }`}
       >
         <div

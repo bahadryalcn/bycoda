@@ -215,7 +215,10 @@ export function ServersView({
   const colorServer = colorTarget
     ? servers.find((server) => server.id === colorTarget.serverId)
     : undefined;
-  const filterCount = Number(!!group) + Number(!!tag) + Number(favoritesOnly) + Number(recentFirst);
+  const filterCount = Number(!!group) + Number(!!tag) + Number(favoritesOnly);
+  const filterSummary = [group, tag, favoritesOnly ? t("Favorites only") : ""]
+    .filter(Boolean)
+    .join(" · ");
   // Membership is separate from the inspected row. Hidden selections remain explicit.
   const checkedServers = servers.filter((server) => checkedIds.has(server.id));
   const visibleChecked = filtered.filter((server) => checkedIds.has(server.id)).length;
@@ -407,13 +410,13 @@ export function ServersView({
             variant="ghost"
             iconOnly
             label={t("Server filters")}
-            selected={filterCount > 0}
+            selected={filterCount > 0 || recentFirst}
             aria-expanded={filtersOpen}
             aria-haspopup="dialog"
             onClick={() => setFiltersOpen(!filtersOpen)}
           >
             <ListFilter aria-hidden className="icon-sm" />
-            {filterCount > 0 ? <span className="sr-only">{filterCount}</span> : null}
+            {filterCount > 0 ? <span aria-hidden className="text-xs tabular-nums">{filterCount}</span> : null}
           </Button>
           {filtersOpen ? (
             <Popover
@@ -448,14 +451,16 @@ export function ServersView({
                   checked={favoritesOnly}
                   onCheckedChange={setFavoritesOnly}
                 />
-                <Switch
-                  label={t("Recently used first")}
-                  checked={recentFirst}
-                  onCheckedChange={setRecentFirst}
-                />
+                <div className="border-t border-stroke pt-3">
+                  <Switch
+                    label={t("Recently used first")}
+                    checked={recentFirst}
+                    onCheckedChange={setRecentFirst}
+                  />
+                </div>
                 <Button
                   variant="ghost"
-                  disabled={!filterCount}
+                  disabled={!filterCount && !recentFirst}
                   onClick={() => {
                     setGroup("");
                     setTag("");
@@ -510,8 +515,8 @@ export function ServersView({
               anchor={actionsAnchor}
               label={t("Add")}
               items={[
-                { kind: "item", id: "add-ssh", label: t("Add SSH server") },
-                { kind: "item", id: "add-machine", label: t("Add machine") },
+                { kind: "item", id: "add-ssh", label: t("Add SSH server"), description: t("SSH terminal access") },
+                { kind: "item", id: "add-machine", label: t("Add machine"), description: t("Connect a machine running bycoda Host") },
                 { kind: "sep" },
                 { kind: "item", id: "import-termius", label: t("Import from Termius") },
               ]}
@@ -621,9 +626,9 @@ export function ServersView({
             <h1 className="min-w-0 text-sm font-medium">
               {t("Servers")}{" "}
               <span className="text-(--ui-text-muted) tabular-nums">
-                {filtered.length === servers.length
+                {loaded ? (filtered.length === servers.length
                   ? servers.length
-                  : `${filtered.length} / ${servers.length}`}
+                  : `${filtered.length} / ${servers.length}`) : null}
               </span>
             </h1>
             {checkedServers.length ? (
@@ -664,7 +669,12 @@ export function ServersView({
                 </div>
               </>
             ) : (
-              <span className="ms-auto text-(--ui-text-muted)">{group}</span>
+              <span className="ms-auto min-w-0 text-right text-(--ui-text-muted)">
+                {filterSummary ? (
+                  <span className="block truncate" title={filterSummary}>{filterSummary}</span>
+                ) : null}
+                {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
+              </span>
             )}
           </div>
           <ul
@@ -705,8 +715,8 @@ export function ServersView({
               anchor={detailAnchor}
               side="bottom"
               align="end"
-              width={480}
-              maxHeight={560}
+              width={720}
+              maxHeight={640}
               autoFocus={false}
               solid
               ignore="[data-server-row]"
@@ -761,12 +771,7 @@ export function ServersView({
                     </div>
                   </div>
                 ) : null}
-                <details className="server-connection-details">
-                  <summary>{t("Diagnostics")}</summary>
-                  {selected.machine ? (
-                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
-                  ) : null}
-                  <dl className="mbs-3 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
+                  <dl className="mbe-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-xs">
                     <dt className="text-(--ui-text-muted)">{t("Address")}</dt>
                     <dd className="break-all">{address(selected)}</dd>
                     {selected.machine?.ssh || selected.sshEndpoint ? (
@@ -787,7 +792,6 @@ export function ServersView({
                       </>
                     ) : null}
                   </dl>
-                </details>
                 <ServersConnectionTools
                   key={selected.id}
                   server={selected}
@@ -798,6 +802,12 @@ export function ServersView({
                     setEditor(existing);
                   }}
                 />
+                {selected.machine ? (
+                  <details className="server-connection-details">
+                    <summary>{t("Diagnostics")}</summary>
+                    <RemoteConnectionDetails environmentId={selected.machine.environmentId} />
+                  </details>
+                ) : null}
               </div>
             </Popover>
           </Activity>

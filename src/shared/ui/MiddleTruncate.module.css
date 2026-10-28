@@ -1,15 +1,24 @@
 /* Middle truncation without measuring: the head shrinks and ends in an ellipsis while the tail keeps its width. */
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    min-inline-size: 0;
+    max-inline-size: 100%;
+  }
+  .plain {
+    min-inline-size: 0;
+  }
+}
 .root {
   position: relative;
   display: flex;
-  min-inline-size: 0;
-  max-inline-size: 100%;
   overflow: hidden;
   white-space: pre;
   unicode-bidi: isolate;
 }
 .plain {
-  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: pre;

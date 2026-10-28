@@ -13,6 +13,25 @@ Desktop/Host inventory starts at the s0 contract baseline. Mobile inventory was 
 
 Below, `mobile/` paths refer to that external read-only source root; other paths refer to this integration worktree. Search roots were `mobile/app`, `mobile/src`, `mobile/package.json`, `mobile/vitest.config.ts`, plus the desktop/Host/native roots below. Searches followed route exports, screen imports, request adapters, literal/dynamic RPC dispatch, English message keys and colocated tests. Source inventory is complete for the route tree; runtime acceptance is separate. This card is not a live feature lock. F1 workers coordinated file ownership in-session; no running-owner Host or claim service was contacted for this read-only inventory.
 
+## Host architecture source continuation, 2026-10-28
+
+The later full Host/WebSocket implementation scope includes nested mobile
+transport source. Its separate Git root and HEAD remain `mobile/` /
+`e480dac5f66e068e17cfc54a623a4d5aa7bacc39`; dirty changes do not become part
+of the desktop commit or an installed app by this inventory.
+
+`src/remote/host-transport.ts`, `ws-connection.ts`, `lan-ws.ts` and the native
+Android/Swift raw transport gates deny the three Native-profile buffer recovery
+methods. They belong to the desktop profile's Native-selected Host bridge, not
+the phone's selected project/server. Normal capability/transport behavior is
+preserved. No mobile recovery screen was added.
+
+Focused mobile evidence:40 cases across3 files and normal `tsc-rs` typecheck in
+`temp/verification/2026-10-28-host-recovery-bridge/`. Exact nested source hashes
+are separate entries in its25-file manifest. Android/iOS native compilation,
+Expo/device rendering, APK/IPA packaging, installation and real-device/live Host
+acceptance remain unverified. The older read-only inventory below is historical.
+
 ## Owner decisions
 
 - 2026-10-26, owner F1 stream brief, item 12: "mobile/ is a separate nested repo excluded from this branch; inventory it read-only from G:/Projects/my_projects/monocode/mobile (screens/routes, host RPCs it calls, locale prefixes, tests). Do not copy mobile files into this repo."

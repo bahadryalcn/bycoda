@@ -7880,18 +7880,22 @@ pub async fn read_project_image(
 #[tauri::command]
 pub async fn write_attachment(
     app: AppHandle,
+    window: tauri::Window,
     name: String,
     data: String,
 ) -> Result<String, String> {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
     tauri::async_runtime::spawn_blocking(move || {
-        let path = write_attachment_sync(&name, &data)?;
-        crate::file_access::grant_produced_file(
-            &app,
-            Path::new(&path),
-            &std::env::temp_dir(),
-            "bycoda-attachments",
-        )?;
-        Ok(path)
+        admission.finish((|| {
+            let path = write_attachment_sync(&name, &data)?;
+            crate::file_access::grant_produced_file(
+                &app,
+                Path::new(&path),
+                &std::env::temp_dir(),
+                "bycoda-attachments",
+            )?;
+            Ok(path)
+        })())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -7931,7 +7935,12 @@ fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
     }
     options
         .open(&path)
-        .and_then(|mut file| file.write_all(&bytes))
+        .and_then(|mut file| {
+            file.write_all(&bytes)?;
+            // This path remains an ephemeral attachment, not a profile-retention
+            // or directory-durability receipt. Flush file bytes before its ACK.
+            file.sync_all()
+        })
         .map_err(|e| format!("{}: {e}", path.display()))?;
     Ok(path.to_string_lossy().into_owned())
 }

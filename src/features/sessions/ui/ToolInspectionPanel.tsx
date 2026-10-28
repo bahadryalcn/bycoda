@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Block } from "../model/session";
-import { toolCallState } from "../model/transcriptActivity";
+import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
 
@@ -49,9 +49,9 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
       legacy?: boolean;
       error?: boolean;
     }[] = [];
-    const detail = block.tool?.detail?.trim();
-    const failed = toolCallState(block) === "rejected";
-    if (failed && detail) items.push({ title: "Error", text: detail, error: true });
+    // Same reconciliation as Command details and Copy (commandInspection.ts).
+    const { error, output: outputs } = toolResultTexts(block);
+    if (error) items.push({ title: "Error", text: error, error: true });
     if (inspection) {
       items.push({
         title:
@@ -80,11 +80,13 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
     if (!inspection && preview?.kind === "shell" && preview.title) {
       items.unshift({ title: "Command", text: preview.title });
     }
-    const output = block.tool?.output?.trim() || preview?.output?.trim();
-    if (detail && !failed && detail !== output)
-      items.push({ title: output ? "Details" : "Output", text: detail });
-    if (output && (!failed || output !== detail))
-      items.push({ title: "Output", text: output, truncated: block.tool?.outputTruncated });
+    if (outputs.length) {
+      items.push({
+        title: "Output",
+        text: outputs.join("\n\n"),
+        truncated: block.tool?.outputTruncated,
+      });
+    }
     return items;
   }, [block]);
   const copyText = sections.map((section) => section.text).join("\n\n");

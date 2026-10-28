@@ -27,6 +27,7 @@ import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 
 export function WorkspaceSourceControl({
   cwd,
@@ -180,6 +181,7 @@ export function WorkspaceSourceControl({
                   value: path,
                   label: name(path),
                   keywords: path,
+                  description: path,
                 })),
                 ...(pendingSelection &&
                 !repositories.some((path) => projectKey(path) === projectKey(pendingSelection))
@@ -225,6 +227,13 @@ export function WorkspaceSourceControl({
         >
           {t("Could not refresh submodules. Refresh source control to retry.")}
         </p>
+      ) : null}
+      {active || plain ? (
+        <div className="flex min-w-0 shrink-0 items-center gap-2 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+          <span className="shrink-0">{t("Reviewing")}</span>
+          <MiddleTruncate mode="path">{active || cwd}</MiddleTruncate>
+          {own(active || cwd) ? <span className="shrink-0">{t("This session")}</span> : null}
+        </div>
       ) : null}
       <div
         id={repositoryListId}

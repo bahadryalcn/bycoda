@@ -45,7 +45,7 @@ const serverRowKey = (server: ServerRow) =>
 type Filter = "all" | McpConnection["provider"];
 type Provider = McpConnection["provider"];
 const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
-const PAGE_SIZE = 8;
+const BATCH_SIZE = 16;
 const SCOPES: Record<Provider, Scope[]> = {
   claude: ["local", "project", "user"],
   claude_desktop: ["user"],
@@ -85,15 +85,18 @@ function McpPicker<T extends string>({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string; icon?: ReactNode }[];
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <SharedSelect
       loopNavigation
+      disabled={disabled}
       label={label}
       value={value}
       options={options}
@@ -120,9 +123,12 @@ function AddServerModal({
   const [config, setConfig] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const adding = useRef(false);
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (adding.current) return;
+    adding.current = true;
     try {
       const parsed: unknown = JSON.parse(config);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -142,6 +148,7 @@ function AddServerModal({
     } catch (cause) {
       setError(String(cause));
     } finally {
+      adding.current = false;
       setBusy(false);
     }
   }
@@ -151,13 +158,14 @@ function AddServerModal({
       title={t("Add MCP server")}
       description={t("Paste a server configuration and choose where to add it.")}
       onClose={() => {
-        if (!busy) onClose();
+        if (!adding.current) onClose();
       }}
       fitViewport
     >
       <form onSubmit={(event) => void add(event)} className="space-y-4 p-4">
         <div className="grid gap-3 sm:grid-cols-2">
           <McpPicker
+            disabled={busy}
             label={t("Provider")}
             value={provider}
             options={PROVIDERS.map((option) => ({
@@ -171,6 +179,7 @@ function AddServerModal({
             }}
           />
           <McpPicker
+            disabled={busy}
             label={t("Scope")}
             value={scope}
             options={SCOPES[provider].map((option) => ({
@@ -193,6 +202,7 @@ function AddServerModal({
             hideLabel
             label={t("Name")}
             value={name}
+            disabled={busy}
             pattern={provider === "opencode" ? undefined : "[A-Za-z0-9_-]*"}
             onChange={(event) => setName(event.target.value)}
 
@@ -206,6 +216,7 @@ function AddServerModal({
             label={t("JSON configuration")}
             required
             value={config}
+            disabled={busy}
             onChange={(event) => setConfig(event.target.value)}
             rows={7}
             spellCheck={false}
@@ -234,7 +245,7 @@ function AddServerModal({
             {t("Cancel")}
           </Button>
           <Button variant="primary" size="sm" type="submit" loading={busy} disabled={busy}>
-            {busy ? t("Adding…") : t("Add server")}
+            {t("Add server")}
           </Button>
         </div>
       </form>
@@ -269,6 +280,15 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   }
   return (
     <div className="grid min-w-0 gap-6">
+      <nav className="flex flex-wrap gap-2" aria-label={t("MCP settings")}>
+        {[["setting-mcp-servers", "MCP connections"], ["setting-external-mcp-access", "External MCP access"]].map(([id, label]) => (
+          <Button key={id} variant="ghost" onClick={() => {
+            const target = document.getElementById(id);
+            target?.scrollIntoView({ block: "start" });
+            target?.focus({ preventScroll: true });
+          }}>{t(label)}</Button>
+        ))}
+      </nav>
       <McpConnections key={project} cwd={project} projectPicker={projectPicker} />
       <ExternalMcpAccess cwd={project} />
     </div>
@@ -282,7 +302,9 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const stateKey = `mcp-connections:${pathKey(cwd)}`;
   const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
-  const [page, setPage] = useState(0);
+  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const listRoot = useRef<HTMLDivElement>(null);
+  const continuation = useRef<HTMLDivElement>(null);
   const [showAllProviders, setShowAllProviders] = useRetainedState(
     `${stateKey}:all-providers`,
     false,
@@ -351,9 +373,17 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             .includes(search)),
     );
   }, [filter, servers, query]);
-  const pageCount = Math.max(1, Math.ceil(visible.length / PAGE_SIZE));
-  const currentPage = Math.min(page, pageCount - 1);
-  const pageServers = visible.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const pageServers = visible.slice(0, visibleCount);
+  useEffect(() => setVisibleCount(BATCH_SIZE), [filter, query]);
+  useEffect(() => {
+    if (!continuation.current || !listRoot.current || visibleCount >= visible.length || typeof IntersectionObserver === "undefined") return;
+    let cancelled = false;
+    const observer = new IntersectionObserver((entries) => {
+      if (!cancelled && entries.some((entry) => entry.isIntersecting)) setVisibleCount((count) => Math.min(count + BATCH_SIZE, visible.length));
+    }, { root: listRoot.current, rootMargin: "160px" });
+    observer.observe(continuation.current);
+    return () => { cancelled = true; observer.disconnect(); };
+  }, [visible.length, visibleCount, query, filter]);
   const filterProviders = showAllProviders
     ? PROVIDERS
     : PROVIDERS.filter(
@@ -420,7 +450,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   }
 
   return (
-    <div id="setting-mcp-servers" data-setting-id="mcp-servers" className={styles.connections}>
+    <div id="setting-mcp-servers" data-setting-id="mcp-servers" tabIndex={-1} className={styles.connections}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
@@ -460,7 +490,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setPage(0);
+              setVisibleCount(BATCH_SIZE);
             }}
           />
         </div>
@@ -503,7 +533,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                   aria-pressed={filter === provider}
                   onClick={() => {
                     setFilter(provider);
-                    setPage(0);
+                    setVisibleCount(BATCH_SIZE);
                   }}
                 >
                   {provider === "all" ? (
@@ -537,7 +567,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 setFilter("all");
                 setQuery("");
                 setShowAllProviders(false);
-                setPage(0);
+                setVisibleCount(BATCH_SIZE);
               }}
             >
               {t("Reset filters")}
@@ -545,7 +575,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
           </div>
         </Popover>
       ) : null}
-      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={() => void refresh()}>{t("Retry")}</Button>}>{servers.length ? `${t("Showing the last successful result.")} ` : ""}{error}</SettingsFeedback> : null}
       {claudeError && (filter === "all" || filter === "claude") ? (
         <SettingsFeedback state="warning">
           {t("Claude connection status unavailable: ")} {claudeError}
@@ -562,7 +592,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
               : t("No MCP servers configured for this provider.")}
         </SettingsFeedback>
       ) : (
-        <div className={styles.list}>
+        <div ref={listRoot} className={styles.list} role="region" aria-label={t("MCP connections")} tabIndex={0}>
           {pageServers.map((server) => (
             <div key={serverRowKey(server)} className={styles.row}>
               <span className={styles.providerIcon}>
@@ -580,7 +610,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                     ? "warning"
                     : /failed|error|disconnected/i.test(server.status)
                       ? "danger"
-                      : /^connected$/i.test(server.status)
+                      : /^(?:✔\s*)?connected$/i.test(server.status.trim())
                         ? "success"
                         : "neutral"
                 }
@@ -600,6 +630,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                 <details className={styles.disclosure}>
                   <summary>{t("Connection details")}</summary>
                   <div className={styles.detailContent}>
+                    {server.provider === "claude" ? <p>{t("Claude CLI status is matched by server name; it is not verified separately for each scope.")}</p> : null}
                     {server.configPath ? (
                       <span className={styles.path}>{server.configPath}</span>
                     ) : (
@@ -685,40 +716,30 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
               </div>
             </div>
           ))}
+          {visibleCount < visible.length ? <div ref={continuation} className={styles.continuation}>
+            <Button variant="ghost" onClick={() => setVisibleCount((count) => count + BATCH_SIZE)}>{t("Show more connections")}</Button>
+          </div> : null}
         </div>
       )}
       {visible.length > 0 ? (
         <div className={styles.pagination}>
           <span role="status">
             {t("{p0}–{p1} of {p2} connections", {
-              p0: currentPage * PAGE_SIZE + 1,
-              p1: Math.min((currentPage + 1) * PAGE_SIZE, visible.length),
+              p0: 1,
+              p1: Math.min(visibleCount, visible.length),
               p2: visible.length,
             })}
           </span>
-          {pageCount > 1 ? (
-            <div className={styles.actions}>
-              <Button disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>
-                {t("Previous")}
-              </Button>
-              <span>
-                {currentPage + 1} / {pageCount}
-              </span>
-              <Button
-                disabled={currentPage + 1 === pageCount}
-                onClick={() => setPage(currentPage + 1)}
-              >
-                {t("Next")}
-              </Button>
-            </div>
-          ) : null}
         </div>
       ) : null}
       {busy ? (
         <p role="status" className="text-ui-caption text-(--ui-text-secondary)">
           {t(
             "Operation in progress for {p0}. Wait for the result before starting another operation.",
-            { p0: busy },
+            { p0: (() => {
+              const server = servers.find((entry) => serverRowKey(entry) === busy.server);
+              return server ? `${t(busy.action === "login" ? "Sign in" : "Remove")}: ${server.name} · ${MCP_PROVIDER_LABELS[server.provider]} · ${scopeLabel(server.scope)}` : busy.server;
+            })() },
           )}
         </p>
       ) : null}
@@ -727,14 +748,13 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         settingIds={["mcp-scopes"]}
         title={t("Advanced: scopes and connection status")}
       >
-        <Row
-          label={t("Scope")}
-          description={[
+        <div className="space-y-2 text-ui-caption text-(--ui-text-secondary)">
+          {[
             scopeDescription("local"),
             scopeDescription("project"),
             scopeDescription("user"),
-          ].join(" ")}
-        />
+          ].map((description) => <p key={description}>{description}</p>)}
+        </div>
         <p className="text-ui-caption text-(--ui-text-muted)">
           {t(
             "Claude Code status comes from its CLI. Other providers show configured entries. Sign in opens your browser when supported.",

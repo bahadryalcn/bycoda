@@ -1,9 +1,21 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External layout: callers can size or place the tray with Tailwind utilities. The reveal below is layout-only CSS and stays unlayered. */
+@layer components {
+  .group {
+    max-inline-size: 100%;
+    flex: none;
+  }
+  .group[data-full-width] {
+    inline-size: 100%;
+  }
+}
+
 .group {
   position: relative;
   isolation: isolate;
   display: inline-flex;
-  max-inline-size: 100%;
-  flex: none;
   align-items: center;
   gap: var(--space-1);
   padding: var(--space-1);
@@ -39,12 +51,21 @@
 .group[data-fit] .item {
   flex-shrink: 1;
 }
-.group[data-full-width] {
-  inline-size: 100%;
-}
 .group[data-full-width] .item {
   flex-grow: 1;
   justify-content: center;
+}
+/* A running action keeps its label open; its icon breathes so pending reads without another control. */
+.item[aria-busy="true"] {
+  cursor: progress;
+}
+.item[aria-busy="true"] .icon {
+  animation: ebg-pending 1s var(--ebg-ease) infinite;
+}
+@keyframes ebg-pending {
+  50% {
+    opacity: 0.45;
+  }
 }
 .icon {
   position: relative;
@@ -147,7 +168,8 @@
   }
   .word[data-swap],
   .glyph[data-swap],
-  .check {
+  .check,
+  .item[aria-busy="true"] .icon {
     animation: none;
   }
 }

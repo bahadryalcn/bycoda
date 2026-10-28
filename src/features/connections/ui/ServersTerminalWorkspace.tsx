@@ -17,6 +17,9 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { WindowControls } from "../../../app/shell/WindowControls";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { confirmCloseTerminal } from "../../terminal/model/terminalClose";
 import { ArrowLeft, Terminal, X } from "../../../shared/ui/icons";
 import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
@@ -31,7 +34,7 @@ import { ServerTerminalSession } from "./ServerTerminalSession";
 
 type TerminalActions = {
   inventoryVisible: boolean;
-  open: (server: ServerRecord) => void;
+  open: (server: ServerRecord) => Promise<void>;
   forwardAgent: (server: ServerRecord, reviewId: string) => void;
   quick: (endpoint: SshEndpoint, name?: string) => void;
   generate: (path: string) => void;
@@ -55,10 +58,16 @@ export function ServersTerminalWorkspace({
   useLocale();
   const proxyApproval = useSshHttpProxyApproval();
   const startupNotified = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const [terminals, setTerminals] = useState<
     {
       id: string;
       restoreId: string;
+      lifecycle?: "opened-on-computer" | "exited" | "failed" | "closed";
       name: string;
       server?: ServerRecord;
       endpoint?: SshEndpoint;
@@ -73,6 +82,46 @@ export function ServersTerminalWorkspace({
     }[]
   >([]);
   const [active, setActive] = useState<string | null>(null);
+  const closingRef = useRef(new Set<string>());
+  const [closing, setClosing] = useState<Set<string>>(new Set());
+  const [closeError, setCloseError] = useState("");
+  const removeTerminal = (id: string) => {
+    const snapshot = terminalSnapshot.current;
+    const index = snapshot.findIndex((value) => value.id === id);
+    if (index < 0) return;
+    const terminal = snapshot[index];
+    const remaining = snapshot.filter((value) => value.id !== id);
+    // Close confirmations can settle together before React renders again.
+    terminalSnapshot.current = remaining;
+    serverTerminalRestoreState.remove(terminal.restoreId);
+    setTerminals((previous) => previous.filter((value) => value.id !== id));
+    setActive((current) => {
+      const survivors = terminalSnapshot.current;
+      if (current !== id && (current === null || survivors.some((value) => value.id === current))) return current;
+      const next = survivors[Math.min(index, survivors.length - 1)];
+      if (next) serverTerminalRestoreState.activate(next.restoreId);
+      requestAnimationFrame(() => document.getElementById(next ? `tab-${next.id}` : "servers-inventory-content")?.focus());
+      return next?.id ?? null;
+    });
+  };
+  const requestClose = async (id: string) => {
+    if (closingRef.current.has(id)) return;
+    const terminal = terminalSnapshot.current.find((value) => value.id === id);
+    if (!terminal) return;
+    closingRef.current.add(id);
+    setClosing(new Set(closingRef.current));
+    setCloseError("");
+    try {
+      const ended = terminal.lifecycle === "exited" || terminal.lifecycle === "closed";
+      if (!ended && !await confirmCloseTerminal({ id, path: terminal.name, cwd: "", terminal: true })) return;
+      removeTerminal(id);
+    } catch (reason) {
+      setCloseError(String(reason));
+    } finally {
+      closingRef.current.delete(id);
+      setClosing(new Set(closingRef.current));
+    }
+  };
   const [reviewQueueRequest, setReviewQueueRequest] = useState(0);
   const [configurationReview, setConfigurationReview] = useState<{
     server: ServerRecord;
@@ -164,9 +213,7 @@ export function ServersTerminalWorkspace({
         entry.closeFailed = () => reject(new Error("Owned terminal close did not complete"));
       });
       // TerminalView cleanup waits for its own spawn and kills only this exact PTY.
-      serverTerminalRestoreState.remove(terminal.restoreId);
-      setTerminals((previous) => previous.filter((value) => value.id !== resourceId));
-      setActive((current) => (current === resourceId ? null : current));
+      removeTerminal(resourceId);
       await closed;
     },
   };
@@ -230,10 +277,19 @@ export function ServersTerminalWorkspace({
     setActive(id);
     return true;
   };
-  const open = (server: ServerRecord, replacingPendingId?: string) => {
+  const open = async (server: ServerRecord, replacingPendingId?: string) => {
     if (mobileReviewBusy.current) return;
     if (server.metadata.sshInheritance) setConfigurationReview({ server, replacingPendingId });
-    else launch(server, replacingPendingId);
+    else {
+      setCloseError("");
+      try {
+        await launch(server, replacingPendingId);
+      } catch (reason) {
+        setCloseError(String(reason));
+        // Restore owns its initiating Connect control and retains its row on failure.
+        if (replacingPendingId) throw reason;
+      }
+    }
   };
   return (
     <TerminalContext.Provider
@@ -299,7 +355,10 @@ export function ServersTerminalWorkspace({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {proxyApproval.dialog}
         <SshRunbookQueue openRequest={reviewQueueRequest} />
+        {closeError ? <p role="alert" className="px-3 py-1 text-ui-secondary text-(--ui-tone-danger-fg)">{closeError}</p> : null}
         <div
+          id="servers-inventory-content"
+          tabIndex={-1}
           className={active ? "hidden" : "flex min-h-0 min-w-0 flex-1 flex-col"}
           inert={active ? true : undefined}
         >
@@ -312,7 +371,7 @@ export function ServersTerminalWorkspace({
             inert={!active ? true : undefined}
           >
             <div className="flex h-10 min-w-0 shrink-0 items-center border-b border-stroke">
-              <Button variant="ghost" iconOnly label={t("Servers")} onClick={() => setActive(null)}>
+              <Button id="servers-inventory-return" variant="ghost" iconOnly label={t("Servers")} onClick={() => setActive(null)}>
                 <ArrowLeft className="icon-sm" />
               </Button>
               <ToolHeader>
@@ -335,17 +394,23 @@ export function ServersTerminalWorkspace({
               aria-label={t("SSH terminals")}
             >
               {terminals.map((terminal) => (
-                <div
+                <ActionHost
                   key={terminal.id}
+                  selected={active === terminal.id}
                   data-server-terminal-tab
-                  className="relative min-w-28 max-w-64 shrink-0"
+                  className="flex min-w-28 max-w-64 shrink-0 items-center"
+                  onAuxClick={(event) => {
+                    if (event.button !== 1) return;
+                    event.preventDefault();
+                    void requestClose(terminal.id);
+                  }}
                 >
                   <Button
                     variant="tab"
                     tone={active === terminal.id ? "info" : "neutral"}
                     motion="none"
                     fullWidth
-                    className="h-9 min-w-0 pe-9"
+                    className="min-w-0 flex-1"
                     title={terminal.name}
                     role="tab"
                     id={`tab-${terminal.id}`}
@@ -353,6 +418,11 @@ export function ServersTerminalWorkspace({
                     aria-selected={active === terminal.id}
                     tabIndex={active === terminal.id ? 0 : -1}
                     onKeyDown={(event) => {
+                      if (event.key === "Delete") {
+                        event.preventDefault();
+                        void requestClose(terminal.id);
+                        return;
+                      }
                       const index = terminals.findIndex((item) => item.id === terminal.id);
                       const next =
                         event.key === "Home"
@@ -377,24 +447,28 @@ export function ServersTerminalWorkspace({
                   >
                     <Terminal aria-hidden className="icon-sm shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{terminal.name}</span>
+                    {!terminal.lifecycle ? <WorkingIndicator label={t("Opening…")} /> : (
+                      <span className="text-ui-caption text-(--ui-text-muted)">
+                        {t(terminal.lifecycle === "opened-on-computer" ? "Running" : terminal.lifecycle === "exited" ? "Terminal closed" : terminal.lifecycle === "failed" ? "Failed" : "Closed")}
+                      </span>
+                    )}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    iconOnly
+                  <InlineAction
+                    reveal="always"
                     motion="none"
-                    className="absolute end-1 inset-bs-1"
+                    loading={closing.has(terminal.id)}
                     label={`${t("Close terminal")}: ${terminal.name}`}
-                    onClick={() => {
-                      serverTerminalRestoreState.remove(terminal.restoreId);
-                      setTerminals((previous) =>
-                        previous.filter((item) => item.id !== terminal.id),
-                      );
-                      if (active === terminal.id) setActive(null);
+                    onClick={() => void requestClose(terminal.id)}
+                    onAuxClick={(event) => {
+                      if (event.button === 1) {
+                        event.preventDefault();
+                        void requestClose(terminal.id);
+                      }
                     }}
                   >
                     <X className="icon-xs" />
-                  </Button>
-                </div>
+                  </InlineAction>
+                </ActionHost>
               ))}
             </div>
             {terminals.map((terminal) => (
@@ -413,6 +487,8 @@ export function ServersTerminalWorkspace({
                   </p>
                 ) : null}
                 <ServerTerminalSession
+                  name={terminal.name}
+                  lifecycle={terminal.lifecycle}
                   keyGenerationPath={terminal.keyGenerationPath}
                   target={terminal.server?.machine?.ssh?.target}
                   port={terminal.server?.machine?.ssh?.port}
@@ -453,14 +529,26 @@ export function ServersTerminalWorkspace({
                                   false,
                                 );
                             }
-                          : undefined
+                          : terminal.endpoint
+                            ? async () => {
+                                const id = `ssh-quick:${crypto.randomUUID()}`;
+                                const endpoint = { ...terminal.endpoint! };
+                                const approval = authorizeProxy(id, undefined, endpoint, terminal.shellIntegration);
+                                const httpProxyTicketId = approval ? await approval : undefined;
+                                if (httpProxyTicketId === null) return;
+                                setTerminals((previous) => [...previous, {
+                                  id, restoreId: crypto.randomUUID(), name: terminal.name,
+                                  endpoint, shellIntegration: terminal.shellIntegration, httpProxyTicketId,
+                                }]);
+                                setActive(id);
+                              }
+                            : undefined
                       }
                       sshConnectionId={terminal.server?.id}
                       canStart={terminal.mobileValid}
                       authorizeStart={terminal.mobileAuthorize}
-                      onLifecycle={
-                        mobileResources.current.has(terminal.id)
-                          ? (state) => {
+                      onLifecycle={(state) => {
+                              if (mounted.current) setTerminals((previous) => previous.map((value) => value.id === terminal.id ? { ...value, lifecycle: state } : value));
                               const entry = mobileResources.current.get(terminal.id);
                               if (!entry) return;
                               entry.state = state;
@@ -476,7 +564,6 @@ export function ServersTerminalWorkspace({
                               if (state === "closed") entry.closed?.();
                               if (state === "failed") entry.closeFailed?.();
                             }
-                          : undefined
                       }
                       sshEndpoint={terminal.endpoint}
                       shellIntegration={terminal.shellIntegration}
@@ -587,6 +674,7 @@ export function ServersTerminalWorkspace({
           />
         ) : null}
         <ServerTerminalRestoreControls
+          compact={!!active}
           openTabs={terminals.flatMap((terminal) =>
             terminal.server ? [{ tabId: terminal.restoreId, serverId: terminal.server.id }] : [],
           )}

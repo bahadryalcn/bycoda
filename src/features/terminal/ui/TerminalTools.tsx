@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Terminal } from "@xterm/xterm";
-import { SearchAddon } from "@xterm/addon-search";
+import { SearchAddon, type ISearchOptions, type ISearchResultChangeEvent } from "@xterm/addon-search";
 import { Button } from "../../../shared/ui/Button";
 import { Switch } from "../../../shared/ui/Switch";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
@@ -26,6 +26,7 @@ import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 import { localTerminalPrefix } from "../model/localTerminalCompletion";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
+const SEARCH_RESULT_LIMIT = 1000;
 
 export function TerminalTools({
   terminalId,
@@ -38,6 +39,10 @@ export function TerminalTools({
   onEnableShellIntegration,
   onSavedCommands,
   onStartupReview,
+  fontSize,
+  savedFontSize,
+  onResetFontSize,
+  searchDecorations,
 }: {
   terminalId?: string;
   terminal: Terminal | null;
@@ -49,12 +54,19 @@ export function TerminalTools({
   onEnableShellIntegration?: (shell?: "bash" | "zsh" | "powershell") => void;
   onSavedCommands?: () => void;
   onStartupReview?: () => Promise<void>;
+  /** Effective per-instance size, supplied by the terminal owner after zoom. */
+  fontSize?: number;
+  savedFontSize?: number;
+  onResetFontSize?: () => void;
+  /** Resolved shared semantic colors; the terminal owner refreshes these with its theme. */
+  searchDecorations?: ISearchOptions["decorations"];
 }) {
   useLocale();
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const menuAnchor = useRef<HTMLButtonElement>(null);
   const [found, setFound] = useState(true);
+  const [results, setResults] = useState<ISearchResultChangeEvent>();
   const [alternate, setAlternate] = useState(false);
   const [reviewingStartup, setReviewingStartup] = useState(false);
   const startupPending = useRef(false);
@@ -89,11 +101,13 @@ export function TerminalTools({
 
   useEffect(() => {
     if (!terminal || mode !== "search") return;
-    const addon = new SearchAddon();
+    const addon = new SearchAddon({ highlightLimit: SEARCH_RESULT_LIMIT });
     terminal.loadAddon(addon);
     searchRef.current = addon;
+    const resultSubscription = addon.onDidChangeResults(setResults);
     return () => {
       searchRef.current = null;
+      resultSubscription.dispose();
       addon.clearDecorations();
       terminal.clearSelection();
       addon.dispose();
@@ -103,8 +117,12 @@ export function TerminalTools({
   useEffect(() => {
     if (mode !== "search" || !terminal) return;
     const refresh = () => {
-      if (query) setFound(searchRef.current?.findNext(query, { incremental: true }) ?? false);
+      if (query) setFound(searchRef.current?.findNext(query, {
+        incremental: true,
+        decorations: searchDecorations,
+      }) ?? false);
       else {
+        setResults(undefined);
         searchRef.current?.clearDecorations();
         terminal?.clearSelection();
         setFound(true);
@@ -119,7 +137,7 @@ export function TerminalTools({
       subscription.dispose();
       parsed.dispose();
     };
-  }, [query, mode, terminal]);
+  }, [query, mode, terminal, searchDecorations]);
 
   useEffect(() => {
     const input = mode === "search" ? inputRef.current : null;
@@ -138,7 +156,10 @@ export function TerminalTools({
   };
   const find = (previous: boolean) => {
     const addon = searchRef.current;
-    if (addon && query) setFound(previous ? addon.findPrevious(query) : addon.findNext(query));
+    if (addon && query) {
+      const options = { decorations: searchDecorations };
+      setFound(previous ? addon.findPrevious(query, options) : addon.findNext(query, options));
+    }
   };
 
   const controls = (
@@ -163,7 +184,10 @@ export function TerminalTools({
               aria-label={t("Find in terminal")}
               placeholder={t("Find in terminal")}
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setResults(undefined);
+                setQuery(event.target.value);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.nativeEvent.isComposing) {
                   event.preventDefault();
@@ -192,26 +216,16 @@ export function TerminalTools({
               <ChevronDown size={14} />
             </Button>
             <span role="status" className={styles.hint}>
-              {query && !found ? t("No matches") : ""}
+              {query && !found ? t("No matches") : query && results && searchDecorations ? (
+                results.resultCount >= SEARCH_RESULT_LIMIT
+                  ? t("Results limited to the first matches")
+                  : results.resultIndex >= 0
+                    ? `${results.resultIndex + 1} / ${results.resultCount}`
+                    : t("{p0} matches", { p0: String(results.resultCount) })
+              ) : ""}
             </span>
           </>
         ) : null}
-        {suggestionsAllowed && (
-          <Button
-            variant="ghost"
-            size="sm"
-            title={`${t("Command suggestions")} (Ctrl+Space)`}
-            aria-label={t("Command suggestions")}
-            aria-pressed={mode === "command"}
-            disabled={!ready || alternate}
-            onClick={() => {
-              if (mode === "command") close();
-              else changeMode("command");
-            }}
-          >
-            <TerminalIcon size={14} />
-          </Button>
-        )}
         {mode !== "search" && remoteShell ? (
           <>
             <Button
@@ -302,20 +316,6 @@ export function TerminalTools({
             <CheckList size={14} />
           </Button>
         ) : null}
-        {onEnableShellIntegration ? (
-          <Button
-            ref={helpAnchor}
-            variant="ghost"
-            size="sm"
-            iconOnly
-            label={t("About shell suggestions")}
-            aria-expanded={helpOpen}
-            aria-haspopup="dialog"
-            onClick={() => setHelpOpen(!helpOpen)}
-          >
-            <Info aria-hidden size={14} />
-          </Button>
-        ) : null}
         {mode && (
           <Button
             variant="ghost"
@@ -328,29 +328,6 @@ export function TerminalTools({
           </Button>
         )}
       </div>
-      {onEnableShellIntegration && helpOpen ? (
-        <Popover
-          anchor={helpAnchor}
-          align="end"
-          role="dialog"
-          aria-label={t("About shell suggestions")}
-          width={340}
-          onDismiss={() => setHelpOpen(false)}
-        >
-          <div className="p-3 text-xs text-(--ui-text-muted)">
-            <p className="mbs-2">
-              {t(
-                "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
-              )}
-            </p>
-            <p className="mbs-2">
-              {t(
-                "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
-              )}
-            </p>
-          </div>
-        </Popover>
-      ) : null}
       {remoteShell ? (
         <details className="px-2 py-1 text-xs text-(--ui-text-muted)">
           <summary className="cursor-pointer">{t("Suggestion settings")}</summary>
@@ -420,6 +397,36 @@ export function TerminalTools({
           >
             <Search size={14} />
           </Button>
+        {suggestionsAllowed && (
+          <Button
+            variant="ghost"
+            size="sm"
+            title={`${t("Command suggestions")} (Ctrl+Space)`}
+            aria-label={t("Command suggestions")}
+            aria-pressed={mode === "command"}
+            disabled={!ready || alternate}
+            onClick={() => {
+              if (mode === "command") close();
+              else changeMode("command");
+            }}
+          >
+            <TerminalIcon size={14} />
+          </Button>
+        )}
+        {onEnableShellIntegration ? (
+          <Button
+            ref={helpAnchor}
+            variant="ghost"
+            size="sm"
+            iconOnly
+            label={t("About shell suggestions")}
+            aria-expanded={helpOpen}
+            aria-haspopup="dialog"
+            onClick={() => setHelpOpen(!helpOpen)}
+          >
+            <Info aria-hidden size={14} />
+          </Button>
+        ) : null}
           {terminal ? (
             <>
               <Button
@@ -444,6 +451,26 @@ export function TerminalTools({
                   onDismiss={() => setMenuOpen(false)}
                 >
                   {controls}
+                  {fontSize !== undefined ? (
+                    <div className={styles.row}>
+                      <span className={styles.hint} role="status">
+                        {t("Terminal font size")}: {fontSize}px
+                      </span>
+                      {onResetFontSize ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={savedFontSize === undefined || fontSize === savedFontSize}
+                          onClick={() => {
+                            onResetFontSize();
+                            terminal.focus();
+                          }}
+                        >
+                          {t("Reset text size")}
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className={styles.row}>
                     <Button
                       variant="ghost"
@@ -475,6 +502,29 @@ export function TerminalTools({
           ) : null}
         </div>
       )}
+      {onEnableShellIntegration && helpOpen ? (
+        <Popover
+          anchor={helpAnchor}
+          align="end"
+          role="dialog"
+          aria-label={t("About shell suggestions")}
+          width={340}
+          onDismiss={() => setHelpOpen(false)}
+        >
+          <div className="p-3 text-xs text-(--ui-text-muted)">
+            <p className="mbs-2">
+              {t(
+                "Windows PowerShell suggestions require PowerShell 7+ and PSReadLine 2.4+. A new session starts with -NoProfile; custom profile key bindings and history settings are not loaded.",
+              )}
+            </p>
+            <p className="mbs-2">
+              {t(
+                "Accepting an app suggestion inserts one line only; press Enter to run. Raw multiline paste follows PowerShell behavior and can execute commands.",
+              )}
+            </p>
+          </div>
+        </Popover>
+      ) : null}
       {ready && suggestionsAllowed && terminal ? (
         <LocalTerminalSuggestions
           terminalId={terminalId}

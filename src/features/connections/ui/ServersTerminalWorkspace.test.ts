@@ -19,6 +19,8 @@ import { serverTerminalRestoreState } from "../model/serverTerminalRestoreState"
 vi.mock("../model/serverInventory", () => ({
   useServerInventory: () => ({ servers: [server], loaded: true, loading: false }),
 }));
+const closePolicy = vi.hoisted(() => ({ confirm: vi.fn(async () => true) }));
+vi.mock("../../terminal/model/terminalClose", () => ({ confirmCloseTerminal: closePolicy.confirm }));
 const events = vi.hoisted(() => ({ mounted: [] as string[], unmounted: [] as string[] }));
 const configuration = vi.hoisted(() => ({ preview: vi.fn() }));
 const proxy = vi.hoisted(() => ({ request: vi.fn() }));
@@ -489,6 +491,7 @@ it.each([
 );
 let root: Root;
 beforeEach(() => {
+  closePolicy.confirm.mockReset().mockResolvedValue(true);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   events.mounted = [];
   events.unmounted = [];
@@ -685,4 +688,31 @@ it("suspends terminal focus while another tool is visible and retains its proces
   expect(container.querySelector("[data-terminal-id]")?.getAttribute("data-active")).toBe("true");
   expect(events.mounted).toHaveLength(1);
   expect(events.unmounted).toEqual([]);
+});
+
+it("middle-click uses the close policy and retains the neighboring active SSH tab", async () => {
+  await act(async () => root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })));
+  const open = [...container.querySelectorAll("button")].find((button) => button.textContent === "Open explicit SSH")!;
+  await act(async () => open.click());
+  await act(async () => open.click());
+  const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+  closePolicy.confirm.mockResolvedValueOnce(false);
+  await act(async () => tabs[1].dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true })));
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+  expect(events.unmounted).toEqual([]);
+  await act(async () => tabs[1].dispatchEvent(new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true })));
+  expect(closePolicy.confirm).toHaveBeenCalledWith(expect.objectContaining({ id: tabs[1].id.slice(4), terminal: true }));
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  expect(tabs[0].getAttribute("aria-selected")).toBe("true");
+  expect(events.unmounted).toHaveLength(1);
+});
+it("Delete requests the same close policy and preserves a terminal when confirmation fails", async () => {
+  await act(async () => root.render(createElement(ServersTerminalWorkspace, { children: createElement(Inventory) })));
+  await act(async () => [...container.querySelectorAll("button")].find((button) => button.textContent === "Open explicit SSH")!.click());
+  const tab = container.querySelector<HTMLButtonElement>('[role="tab"]')!;
+  closePolicy.confirm.mockRejectedValueOnce(new Error("fixture confirmation unavailable"));
+  await act(async () => tab.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true })));
+  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(1);
+  expect(events.unmounted).toEqual([]);
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("fixture confirmation unavailable");
 });

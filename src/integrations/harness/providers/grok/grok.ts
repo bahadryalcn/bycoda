@@ -1,3 +1,4 @@
+import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
@@ -272,7 +273,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         .catch(() => undefined);
       return;
     }
-    void handleRequest(live, id, method, params).catch(() => {
+    return handleRequest(live, id, method, params).catch(() => {
       console.warn("[bycoda] grok server request failed");
     });
   };
@@ -456,25 +457,25 @@ async function applyModelSelection(live: Live, input: HarnessSessionInput): Prom
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+const responseScope: { work: NativeOutputWork | null } = { work: null };
+const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
+try {
+
   try {
     const blocks = grokPromptBlocks(input.text, input.attachments);
     if (blocks.length === 0) return;
-    const result = await live.acp.request(
-      "session/prompt",
-      {
+    const result = await live.acp.request("session/prompt", {
         sessionId: live.acpSessionId,
         prompt: blocks,
-      },
-      PROMPT_TIMEOUT_MS,
-    );
+      }, PROMPT_TIMEOUT_MS, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
     if (live.cancelled) return;
-    live.onEvent({ type: "message.completed" });
-    live.onEvent({ type: "reasoning.completed" });
-    reportAcpStopReason(result, live.onEvent);
+    emitNative({ type: "message.completed" });
+    emitNative({ type: "reasoning.completed" });
+    reportAcpStopReason(result, emitNative);
   } catch (error) {
     if (live.cancelled) return;
     const detail = error instanceof Error ? error.message : String(error);
-    live.onEvent({
+    emitNative({
       type: "session.error",
       message: /auth|login|credential|api key|XAI_API_KEY/i.test(detail)
         ? `${detail.trim()}\n\n${AUTH_HELP}`
@@ -482,6 +483,8 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
     });
     throw error;
   }
+
+} finally { responseScope.work?.finish(); }
 }
 
 function ignoreUnsupportedControl(method: string, error: unknown): void {
@@ -516,36 +519,42 @@ function unwrapSessionNotification(params: unknown): unknown {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   if (method === "session/request_permission") {
-    await handlePermission(live, id, params);
+    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
     return;
   }
   if (method === "_x.ai/ask_user_question" || method === "x.ai/ask_user_question") {
-    await handleAskQuestion(live, id, params);
+    await nativeOutputSink(outputWork, handleAskQuestion)(live, id, params);
     return;
   }
   if (method === "_x.ai/exit_plan_mode" || method === "x.ai/exit_plan_mode") {
     const plan = planFromExitPlan(params);
-    if (plan) live.onEvent({ type: "plan", text: plan });
-    await live.acp
+    if (plan) emitNative({ type: "plan", text: plan });
+    await nativeOutputSink(outputWork, () => live.acp
       // End the provider-owned plan turn without approving implementation.
       // Bycoda's separate Build turn is the only approval boundary.
-      .respond(id, { outcome: "abandoned" })
+      .respond(id, { outcome: "abandoned" }))()
       .catch(() => undefined);
     return;
   }
-  await live.acp
+  await nativeOutputSink(outputWork, () => live.acp
     .respondError(id, {
       code: -32601,
       message: `Method not found: ${method}`,
-    })
+    }))()
     .catch(() => undefined);
+
+});
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const request = permissionRequestFromAcp(params);
   if (request.callId) {
-    live.onEvent({
+    emitNative({
       type: "tool.updated",
       callId: request.callId,
       title: request.title,
@@ -557,21 +566,21 @@ async function handlePermission(live: Live, id: number, params: unknown) {
   if (live.planning) {
     const readOnly = request.kind === "read" || request.kind === "search";
     const optionId = permissionOptionId(readOnly ? "allow" : "deny", request.optionIds);
-    await live.acp.respond(id, {
+    await nativeOutputSink(outputWork, () => live.acp.respond(id, {
       outcome: { outcome: "selected", optionId },
-    });
+    }))();
     return;
   }
 
   const auto = pickAutoOption(live.runtimeMode, request.kind, request.optionIds);
   if (auto) {
-    await live.acp.respond(id, {
+    await nativeOutputSink(outputWork, () => live.acp.respond(id, {
       outcome: { outcome: "selected", optionId: auto },
-    });
+    }))();
     return;
   }
 
-  live.onEvent({
+  emitNative({
     type: "approval.requested",
     requestId: id,
     title: request.title,
@@ -584,17 +593,21 @@ async function handlePermission(live: Live, id: number, params: unknown) {
     live.approvals.set(id, resolve);
   });
   live.approvals.delete(id);
-  live.onEvent({ type: "approval.resolved", requestId: id, decision });
+  emitNative({ type: "approval.resolved", requestId: id, decision });
 
-  await live.acp.respond(id, {
+  await nativeOutputSink(outputWork, () => live.acp.respond(id, {
     outcome: {
       outcome: "selected",
       optionId: permissionOptionId(decision, request.optionIds),
     },
-  });
+  }))();
+
+});
 }
 
 async function handleAskQuestion(live: Live, id: number, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const questions = askQuestionsFromAcp(params);
   const event: Extract<HarnessEvent, { type: "question.asked" }> = {
     type: "question.asked",
@@ -603,6 +616,7 @@ async function handleAskQuestion(live: Live, id: number, params: unknown) {
     questions,
     dismissAction: "skip",
   };
+captureNativeOutputWorkEvent(outputWork, event);
 
   const replyPromise = new Promise<UserQuestionReply>((resolve) => {
     live.questions.set(
@@ -610,18 +624,20 @@ async function handleAskQuestion(live: Live, id: number, params: unknown) {
       Object.assign(resolve, {
         event,
         deliver: (reply: UserQuestionReply) =>
-          live.acp.respond(id, askQuestionResponse(reply, questions)),
+          nativeOutputSink(outputWork, () => live.acp.respond(id, askQuestionResponse(reply, questions)))(),
       }),
     );
   });
   showNextQueuedQuestion(live);
   const reply = await replyPromise;
   live.questions.delete(id);
-  live.onEvent({
+  emitNative({
     type: "question.resolved",
     requestId: id,
     decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
     ...(reply.kind === "answered" ? { reply } : {}),
   });
   showNextQueuedQuestion(live);
+
+});
 }

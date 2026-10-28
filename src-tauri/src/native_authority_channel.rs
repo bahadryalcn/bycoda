@@ -227,6 +227,31 @@ impl CapturedSourceBinding {
         })
     }
 
+    /// Bounded native SQL only. Retains the actual manager/Store and checks its
+    /// construction identity on both sides; never reopens a caller-selected DB.
+    pub(crate) fn with_checked_store<T>(
+        &self,
+        operation: impl FnOnce(&SessionStore) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let before = self.checked_source().map_err(|error| error.to_string())?;
+        let result = match &self.store {
+            CapturedStore::Owned(store) => operation(store),
+            CapturedStore::Managed { app, instance } => {
+                use tauri::Manager;
+                let store = app
+                    .try_state::<SessionStore>()
+                    .ok_or("NATIVE_CHECKPOINT_SOURCE_UNAVAILABLE")?;
+                managed_store_identity(store.inner(), *instance)
+                    .map_err(|error| error.to_string())?;
+                operation(store.inner())
+            }
+        };
+        if self.checked_source().map_err(|error| error.to_string())? != before {
+            return Err("NATIVE_CHECKPOINT_SOURCE_CHANGED".into());
+        }
+        result
+    }
+
     /// Read only from the actually captured manager/Store; never reopen a path.
     pub(crate) fn read_retained_snapshot(
         &self,

@@ -1,6 +1,8 @@
 import { TextField } from "../../../shared/ui/TextField";
 import { TreeRow } from "../../../shared/ui/TreeRow";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Alert } from "../../../shared/ui/Alert";
 import { getLocale, t, useLocale } from "../../../shared/i18n/technical";
 import {
@@ -14,6 +16,8 @@ import {
   Loader,
   RefreshCw,
   Search,
+  MoreHorizontal,
+  ListFilter,
 } from "../../../shared/ui/icons";
 import {
   createContext,
@@ -32,7 +36,7 @@ import {
 } from "react";
 import { leafName, validateFileName, wellFormedFileName, type NameIssue } from "../model/fileName";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { loadShowExcludedFiles, subscribeShowExcludedFiles } from "../../settings/model/appearance";
+import { loadShowExcludedFiles, saveShowExcludedFiles, SHOW_EXCLUDED_FILES_DEFAULT, subscribeShowExcludedFiles } from "../../settings/model/appearance";
 import {
   createParentOf,
   dirsTouchedByCreate,
@@ -241,9 +245,14 @@ async function copyText(text: string) {
     el.style.position = "fixed";
     el.style.left = "-9999px";
     document.body.appendChild(el);
-    el.select();
-    document.execCommand("copy");
-    el.remove();
+    const focused = document.activeElement;
+    try {
+      el.select();
+      if (!document.execCommand("copy")) throw new Error(t("Could not copy. Try again."));
+    } finally {
+      el.remove();
+      if (focused instanceof HTMLElement && focused.isConnected) focused.focus({ preventScroll: true });
+    }
   }
 }
 
@@ -433,6 +442,12 @@ export const FileTree = memo(function FileTree({
   const [dragOverPath, setDragOverPath] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
   const [operationPending, setOperationPending] = useState(false);
+  const [copyNotice, setCopyNotice] = useState<string | null>(null);
+  const [copyFailedText, setCopyFailedText] = useState<string | null>(null);
+  const [headerMenu, setHeaderMenu] = useState(false);
+  const headerMenuRef = useRef<HTMLButtonElement>(null);
+  const activeRoot = useRef(cwd);
+  activeRoot.current = cwd;
   const [refreshFailure, setRefreshFailure] = useState<{
     cwd: string;
     touched: string[];
@@ -494,6 +509,36 @@ export const FileTree = memo(function FileTree({
       : selectedPaths.size
         ? [...selectedPaths].filter((value) => value !== cwd)
         : [path];
+
+  // Keep the selection stable, but make hidden mutation targets explicit.
+  const hiddenSelectedPaths = [...selectedPaths].filter((path) => {
+    if (path === cwd) return false;
+    let current = path;
+    while (current !== cwd) {
+      const parent = parentPath(current);
+      if (!parent || parent === current) return true;
+      if (!expanded.has(parent)) return true;
+      const entry = peekDir(parent)?.find((value) => value.path === current);
+      if (!showExcludedFiles && entry?.ignored) return true;
+      current = parent;
+    }
+    return false;
+  });
+
+  const copyPathText = async (value: string) => {
+    setCopyNotice(null);
+    setCopyFailedText(null);
+    setOpError(null);
+    try {
+      await copyText(value);
+      if (activeRoot.current === cwd) setCopyNotice(t("Copied"));
+    } catch (error) {
+      if (activeRoot.current === cwd) {
+        setCopyFailedText(value);
+        setOpError(error instanceof Error ? error.message : String(error));
+      }
+    }
+  };
 
   const setClipboard = (mode: "copy" | "cut", path: string) => {
     setClip({
@@ -708,16 +753,22 @@ export const FileTree = memo(function FileTree({
   };
 
   const refreshAfterMutation = async (touched: string[], forget: string[] = []) => {
-    setRefreshFailure(null);
     try {
       await refreshTouched(touched, forget);
-    } catch (error) {
-      setRefreshFailure({
-        cwd,
-        touched,
-        forget,
-        message: error instanceof Error ? error.message : String(error),
+      if (activeRoot.current !== cwd) return;
+      setRefreshFailure((current) => {
+        if (!current || current.cwd !== cwd) return current;
+        const remaining = current.touched.filter((path) => !touched.includes(path));
+        return remaining.length ? { ...current, touched: remaining } : null;
       });
+    } catch (error) {
+      if (activeRoot.current !== cwd) return;
+      setRefreshFailure((current) => ({
+        cwd,
+        touched: [...new Set([...(current?.cwd === cwd ? current.touched : []), ...touched])],
+        forget: [...new Set([...(current?.cwd === cwd ? current.forget : []), ...forget])],
+        message: error instanceof Error ? error.message : String(error),
+      }));
     }
   };
 
@@ -750,6 +801,7 @@ export const FileTree = memo(function FileTree({
   };
 
   const startCreate = (isDir: boolean, atPath: string | null = selectedPath) => {
+    if (operationRunning.current) return;
     const parent = createParentOf(cwd, atPath);
     setRenaming(null);
     expandDirs([cwd, parent]);
@@ -757,6 +809,7 @@ export const FileTree = memo(function FileTree({
   };
 
   const startRename = (path: string) => {
+    if (operationRunning.current) return;
     if (path === cwd) return;
     setCreating(null);
     setMenu(null);
@@ -807,12 +860,15 @@ export const FileTree = memo(function FileTree({
     const targets = topLevelTreePaths(paths.filter((path) => path !== cwd));
     if (!targets.length) return;
     const label = basename(targets[0]);
-    const ok = window.confirm(
+    const warning = hiddenSelectedPaths.length
+      ? `${t("Selection includes hidden items")}:\n${targets.join("\n")}\n\n`
+      : "";
+    const ok = window.confirm(warning + (
       targets.length > 1
         ? `Delete ${targets.length} selected files/folders? Selected folders and everything inside them will be deleted.`
         : isDirAt(cwd, targets[0])
           ? `Delete folder “${label}” and everything inside it?`
-          : `Delete “${label}”?`,
+          : `Delete “${label}”?`),
     );
     if (!ok) return;
     for (const path of targets) {
@@ -839,7 +895,7 @@ export const FileTree = memo(function FileTree({
         return current;
       });
       onFileDeleted?.(path);
-      await refreshTouched([parentPath(path)], isDir ? [path] : []);
+      await refreshAfterMutation([parentPath(path)], isDir ? [path] : []);
     }
   };
 
@@ -849,7 +905,7 @@ export const FileTree = memo(function FileTree({
       for (const from of paths) created = await copyPath(from, destParent);
     } finally {
       if (created) {
-        await refreshTouched([destParent]);
+        await refreshAfterMutation([destParent]);
         expandDirs([destParent]);
         onSelect(created);
       }
@@ -875,7 +931,7 @@ export const FileTree = memo(function FileTree({
         remapTreePaths(from, created);
         onFileMoved?.(from, created);
       }
-      await refreshTouched(
+      await refreshAfterMutation(
         copy ? [destParent] : dirsTouchedByMove(from, created),
         !copy && isDir ? [from] : [],
       );
@@ -920,12 +976,12 @@ export const FileTree = memo(function FileTree({
         });
         remapTreePaths(entry.path, created);
         onFileMoved?.(entry.path, created);
-        await refreshTouched(
+        await refreshAfterMutation(
           dirsTouchedByMove(entry.path, created),
           entry.isDir ? [entry.path] : [],
         );
       } else {
-        await refreshTouched([destParent]);
+        await refreshAfterMutation([destParent]);
       }
     }
     expandDirs([destParent]);
@@ -939,7 +995,7 @@ export const FileTree = memo(function FileTree({
     if (path === cwd) return;
     const destParent = parentPath(path);
     const created = await copyPath(path, destParent);
-    await refreshTouched([destParent]);
+    await refreshAfterMutation([destParent]);
     onSelect(created);
     return created;
   };
@@ -950,10 +1006,12 @@ export const FileTree = memo(function FileTree({
     operationRunning.current = true;
     setOperationPending(true);
     setOpError(null);
+    setCopyNotice(null);
+    setCopyFailedText(null);
     try {
       await work();
     } catch (err: unknown) {
-      setOpError(err instanceof Error ? err.message : String(err));
+      if (activeRoot.current === cwd) setOpError(err instanceof Error ? err.message : String(err));
     } finally {
       operationRunning.current = false;
       setOperationPending(false);
@@ -977,6 +1035,7 @@ export const FileTree = memo(function FileTree({
   };
 
   const runAction = async (id: string, target: MenuTarget) => {
+    if (operationRunning.current && ["new-file", "new-folder", "cut", "paste", "duplicate", "rename", "delete", "reveal"].includes(id)) return;
     switch (id) {
       case "open":
         for (const path of actionPaths(target.path)) {
@@ -1011,12 +1070,12 @@ export const FileTree = memo(function FileTree({
         });
         return;
       case "copy-path":
-        await copyText(
+        await copyPathText(
           (actionPaths(target.path).length ? actionPaths(target.path) : [target.path]).join("\n"),
         );
         return;
       case "copy-relative-path":
-        await copyText(
+        await copyPathText(
           (actionPaths(target.path).length ? actionPaths(target.path) : [target.path])
             .map((path) => displayPath(path, cwd))
             .join("\n"),
@@ -1234,7 +1293,7 @@ export const FileTree = memo(function FileTree({
     }
     if (mod && !e.altKey && e.shiftKey && key === "c") {
       e.preventDefault();
-      void copyText((actionPaths(path).length ? actionPaths(path) : [path]).join("\n"));
+      void copyPathText((actionPaths(path).length ? actionPaths(path) : [path]).join("\n"));
       return;
     }
     if (mod && !e.altKey && !e.shiftKey && key === "c") {
@@ -1246,6 +1305,7 @@ export const FileTree = memo(function FileTree({
     if (mod && !e.altKey && !e.shiftKey && key === "x") {
       if (isRoot) return;
       e.preventDefault();
+      if (operationRunning.current) return;
       setClipboard("cut", path);
       return;
     }
@@ -1519,84 +1579,15 @@ export const FileTree = memo(function FileTree({
   return (
     <TreeActionsCtx.Provider value={actions}>
       <TreeStateCtx.Provider value={treeStore}>
-        <div className="flex h-full min-h-0 flex-col">
-          <div
-            className="flex min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 items-center gap-0.5 overflow-visible border-b border-stroke px-2"
-            onContextMenu={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-          >
-            <HeaderIcon
-              label={t("New File")}
-              onClick={() => {
-                if (search) onCloseSearch?.();
-                startCreate(false);
-              }}
-            >
-              <FilePlus className="size-3.5" strokeWidth={1.75} />
-            </HeaderIcon>
-            <HeaderIcon
-              label={t("New Folder")}
-              onClick={() => {
-                if (search) onCloseSearch?.();
-                startCreate(true);
-              }}
-            >
-              <FolderPlus className="size-3.5" strokeWidth={1.75} />
-            </HeaderIcon>
-            <HeaderIcon
-              label={REVEAL_LABEL}
-              onClick={() => void run(() => revealInFileManager(cwd))}
-            >
-              <FolderOpen className="size-3.5" strokeWidth={1.75} />
-            </HeaderIcon>
-            <HeaderIcon
-              label={t("Collapse All")}
-              onClick={() => {
-                if (search) onCloseSearch?.();
-                setCreating(null);
-                setRenaming(null);
-                const next = new Set([cwd]);
-                saveExpanded(cwd, next);
-                setExpanded(next);
-              }}
-            >
-              <FoldVertical className="size-3.5" strokeWidth={1.75} />
-            </HeaderIcon>
-            {onSearch ? (
-              <HeaderIcon
-                className="ms-auto"
-                label={t("Search in files ({p0}Shift+F)", { p0: MOD })}
-                active={!!search}
-                onClick={search ? onCloseSearch : onSearch}
-              >
-                <Search className="size-3.5" strokeWidth={1.75} />
-              </HeaderIcon>
-            ) : null}
-          </div>
-          {operationPending ? (
-            <div
-              role="status"
-              className="flex items-center gap-2 px-3 py-1 text-ui-caption text-(--ui-text-secondary)"
-            >
-              <Loader className="size-3.5 animate-spin" aria-hidden />
-              {t("Working…")}
-            </div>
-          ) : null}
-          {search ?? (
-            <div
-              ref={rootRef}
-              data-external-drop-owner="file-tree"
-              tabIndex={-1}
-              className="flex min-h-0 flex-1 flex-col outline-none"
-              onKeyDown={onKeyDown}
-              onContextMenu={onBackgroundMenu}
-            >
-              <div className="@container/explorer-root flex min-h-[var(--ui-control-height-compact)] shrink-0 items-center">
+        <div ref={rootRef} data-external-drop-owner="file-tree" tabIndex={-1}
+          onKeyDown={onKeyDown} onContextMenu={onBackgroundMenu}
+          className="flex h-full min-h-0 flex-col outline-none">
+          <ActionHost selected={dragOverPath === cwd}
+            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none border-b border-(--ui-pane-border) px-1">
                 <Button
                   size="sm"
-                  variant="tab"
+                  variant="ghost"
+                  align="start"
                   selected={dragOverPath === cwd}
                   motion="none"
                   type="button"
@@ -1612,9 +1603,7 @@ export const FileTree = memo(function FileTree({
                     e.stopPropagation();
                     openMenu({ path: cwd, isDir: true, isRoot: true }, e.clientX, e.clientY);
                   }}
-                  className={`  flex min-w-0 flex-1 items-center gap-1 h-full text-left focus-visible:-outline-offset-1  ${
-                    dragOverPath === cwd ? "" : ""
-                  }   `}
+                  className="min-w-0 flex-1"
                 >
                   <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
                     {rootOpen ? (
@@ -1627,12 +1616,63 @@ export const FileTree = memo(function FileTree({
                     {name}
                   </span>
                 </Button>
-                <ExplorerSyncStatus state={rootDataState} onRefresh={refreshRoot} />
-              </div>
-              <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+            <InlineAction reveal="always" label={t("New File")} disabled={operationPending}
+              onClick={() => { if (search) onCloseSearch?.(); startCreate(false); }}>
+              <FilePlus className="icon-sm" strokeWidth={1.75} />
+            </InlineAction>
+            {onSearch ? <InlineAction reveal="always"
+              label={t("Search in files ({p0}Shift+F)", { p0: MOD })}
+              aria-pressed={!!search} onClick={search ? onCloseSearch : onSearch}>
+              <Search className="icon-sm" strokeWidth={1.75} />
+            </InlineAction> : null}
+            <InlineAction reveal="always" ref={headerMenuRef} label={t("Explorer actions")}
+              aria-haspopup="menu" aria-expanded={headerMenu} selected={showExcludedFiles}
+              onClick={() => setHeaderMenu((open) => !open)}>
+              {showExcludedFiles ? <ListFilter className="icon-sm" /> : <MoreHorizontal className="icon-sm" />}
+            </InlineAction>
+            <ExplorerSyncStatus state={rootDataState} onRefresh={refreshRoot} />
+          </ActionHost>
+          {headerMenu ? <DropdownMenu anchor={headerMenuRef} label={t("Explorer actions")}
+            returnFocusRef={headerMenuRef} onClose={() => setHeaderMenu(false)}
+            items={[
+              { kind: "item", id: "new-folder", label: t("New Folder"), disabled: operationPending, icon: <FolderPlus className="icon-sm" /> },
+              { kind: "item", id: "reveal", label: t(REVEAL_LABEL), disabled: operationPending, icon: <FolderOpen className="icon-sm" /> },
+              { kind: "item", id: "collapse", label: t("Collapse All"), icon: <FoldVertical className="icon-sm" /> },
+              { kind: "sep" },
+              { kind: "item", id: "excluded", label: t("Show excluded files"), checked: showExcludedFiles, selectionRole: "checkbox" },
+              { kind: "item", id: "reset", label: t("Reset"), disabled: showExcludedFiles === SHOW_EXCLUDED_FILES_DEFAULT },
+            ]}
+            onPick={(id) => {
+              setHeaderMenu(false);
+              if (id === "excluded" || id === "reset") { saveShowExcludedFiles(id === "reset" ? SHOW_EXCLUDED_FILES_DEFAULT : !showExcludedFiles); return; }
+              if (id === "collapse") {
+                if (search) onCloseSearch?.();
+                setCreating(null); setRenaming(null);
+                const next = new Set([cwd]); saveExpanded(cwd, next); setExpanded(next);
+              } else if (id === "new-folder") {
+                if (search) onCloseSearch?.(); startCreate(true);
+              } else if (id === "reveal") void run(() => revealInFileManager(cwd));
+            }} /> : null}
+          {selectedPaths.size > 1 || hiddenSelectedPaths.length ? (
+            <div role="status" data-explorer-selection-scope className="flex flex-wrap items-center gap-1 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <span>{t("Selected")}: {selectedPaths.size}</span>
+              {hiddenSelectedPaths.length ? <span>{t("Selection includes hidden items")}: {hiddenSelectedPaths.length}</span> : null}
+            </div>
+          ) : null}
+          {copyNotice ? <p role="status" className="px-2 py-1 text-ui-caption text-(--ui-text-secondary)">{copyNotice}</p> : null}
+          {operationPending ? (
+            <div
+              role="status"
+              className="flex items-center gap-2 px-3 py-1 text-ui-caption text-(--ui-text-secondary)"
+            >
+              <Loader className="icon-sm motion-safe:animate-spin" aria-hidden />
+              {t("Working…")}
+            </div>
+          ) : null}
                 {opError ? (
                   <Alert tone="danger" inline className="mx-2 my-1">
                     {opError}
+                    {copyFailedText !== null ? <Button variant="ghost" size="sm" onClick={() => void copyPathText(copyFailedText)}>{t("Retry")}</Button> : null}
                   </Alert>
                 ) : null}
                 {refreshFailure?.cwd === cwd ? (
@@ -1643,14 +1683,21 @@ export const FileTree = memo(function FileTree({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() =>
-                        void refreshAfterMutation(refreshFailure.touched, refreshFailure.forget)
-                      }
+                      loading={operationPending}
+                      onClick={() => {
+                        const failure = refreshFailure;
+                        void run(() => refreshAfterMutation(failure.touched, failure.forget));
+                      }}
                     >
                       {t("Retry")}
                     </Button>
                   </Alert>
                 ) : null}
+          {search ?? (
+            <div
+              className="flex min-h-0 flex-1 flex-col outline-none"
+            >
+              <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {connectionFailure ? (
                   <RemoteLoadError
                     cwd={cwd}
@@ -1691,7 +1738,9 @@ export const FileTree = memo(function FileTree({
               canInspectGit,
               selectedPaths.size,
               actionPaths(menu.target.path).some((path) => !isDirAt(cwd, path)),
-            )}
+            ).map((item) => item.kind === "item" && operationPending &&
+              ["new-file", "new-folder", "cut", "paste", "duplicate", "rename", "delete", "reveal"].includes(item.id)
+              ? { ...item, disabled: true } : item)}
             onPick={(id) => {
               const target = menu.target;
               setMenu(null);
@@ -1705,39 +1754,6 @@ export const FileTree = memo(function FileTree({
     </TreeActionsCtx.Provider>
   );
 });
-
-function HeaderIcon({
-  label,
-  onClick,
-  active = false,
-  className,
-  children,
-}: {
-  className?: string;
-  label: string;
-  onClick?: () => void;
-  active?: boolean;
-  children: ReactNode;
-}) {
-  useLocale();
-  return (
-    <Button
-      size="sm"
-      selected={active}
-      variant="ghost"
-      motion="none"
-      type="button"
-      title={label}
-      aria-label={label}
-      aria-pressed={active || undefined}
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={onClick}
-      className={`grid shrink-0 place-items-center self-center ${className ?? ""}`}
-    >
-      {children}
-    </Button>
-  );
-}
 
 /** Root freshness at the end of the project row: icon, time, refresh. */
 function ExplorerSyncStatus({
@@ -1776,34 +1792,33 @@ function ExplorerSyncStatus({
       className="flex shrink-0 items-center gap-1 pr-1.5 text-ui-micro leading-none text-[var(--ui-text-muted)]"
     >
       {warn ? (
-        <span className="hidden items-center gap-1 @min-[140px]/explorer-root:inline-flex">
+        <span className="inline-flex items-center gap-1">
           <CircleAlert aria-hidden className="icon-xs shrink-0 text-warning" />
           {time ? (
             <span className="hidden tabular-nums @min-[200px]/explorer-root:inline">{time}</span>
           ) : null}
         </span>
       ) : null}
-      <Button
-        size="sm"
-        variant="ghost"
+      <InlineAction
+        reveal="always"
+        label={state.phase === "error" ? t("Retry loading {p0}", { p0: "files" }) : t("Refresh {p0}", { p0: "files" })}
         motion="none"
         type="button"
         onClick={onRefresh}
-        disabled={busy}
+        loading={busy}
         aria-label={
           state.phase === "error"
             ? t("Retry loading {p0}", { p0: "files" })
             : t("Refresh {p0}", { p0: "files" })
         }
         title={t("Refresh")}
-        className="grid size-6 shrink-0 place-items-center"
       >
         {busy ? (
-          <Loader aria-hidden className="size-3.5 animate-spin" />
+          <Loader aria-hidden className="icon-sm motion-safe:animate-spin" />
         ) : (
           <RefreshCw aria-hidden className="size-3.5" />
         )}
-      </Button>
+      </InlineAction>
     </div>
   );
 }
@@ -1879,7 +1894,7 @@ function TreeChildren({
       {error ? (
         <p
           role="alert"
-          className="flex items-start gap-2 py-1 pr-2 text-[12px] leading-4 text-danger"
+          className="flex items-start gap-2 py-1 pr-2 text-ui-caption leading-4 text-danger"
           style={pad}
         >
           <span className="min-w-0 flex-1 break-words">{error}</span>
@@ -1895,8 +1910,14 @@ function TreeChildren({
           </Button>
         </p>
       ) : loading && entries === null ? (
-        <p className="py-1 pr-2 text-[12px] text-[var(--ui-text-muted)]" style={pad}>
+        <p className="py-1 pr-2 text-ui-caption text-[var(--ui-text-muted)]" style={pad}>
           {t("Loading…")}
+        </p>
+      ) : null}
+      {!error && !loading && entries !== null && visible.length === 0 && !show ? (
+        <p role="status" data-explorer-empty className="py-1 pr-2 text-ui-caption text-(--ui-text-muted)" style={pad}>
+          {entries.length ? t("Only excluded files in this folder") : t("This folder is empty")}
+          {entries.length ? <Button variant="link" size="sm" onClick={() => saveShowExcludedFiles(true)}>{t("Show excluded files")}</Button> : null}
         </p>
       ) : null}
       {show && ctx.creating?.isDir ? row : null}
@@ -1904,7 +1925,7 @@ function TreeChildren({
       {show && ctx.creating && !ctx.creating.isDir ? row : null}
       {files.map(renderNode)}
       {hidden > 0 ? (
-        <p className="flex gap-3 pr-2 text-[12px] text-[var(--ui-text-secondary)]" style={pad}>
+        <p className="flex gap-3 pr-2 text-ui-caption text-[var(--ui-text-secondary)]" style={pad}>
           <Button
             size="sm"
             variant="ghost"
@@ -2263,7 +2284,7 @@ function NameIssueView({
   const error = Boolean(fallback) || !issue || issue.severity === "error";
   return (
     <p
-      className={`pr-2 pb-1 text-[12px] leading-4 ${error ? "text-danger" : "text-warning"}`}
+      className={`pr-2 pb-1 text-ui-caption leading-4 ${error ? "text-danger" : "text-warning"}`}
       style={{ paddingLeft: 28 + depth * 12 }}
     >
       {body}

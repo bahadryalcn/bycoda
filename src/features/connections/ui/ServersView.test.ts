@@ -550,6 +550,28 @@ it("filters favorites without clearing hidden selection and resets inside the po
   ).toContain("Home Mac");
 });
 
+it("keeps sorting separate from filtering and exposes the applied filter summary", async () => {
+  fixture.extraServers = [sshServer];
+  await render();
+  await click("Server filters");
+  const popover = document.querySelector('[role="dialog"][aria-label="Server filters"]')!;
+  const recent = popover.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Recently used first"]',
+  )!;
+  await act(async () => recent.click());
+  expect(document.querySelectorAll("[data-server-row]")).toHaveLength(2);
+  const trigger = document.querySelector('[aria-label="Server filters"]')!;
+  expect(trigger.textContent).not.toContain("1");
+  const favorites = popover.querySelector<HTMLButtonElement>(
+    '[role="switch"][aria-label="Favorites only"]',
+  )!;
+  await act(async () => favorites.click());
+  expect(document.querySelectorAll("[data-server-row]")).toHaveLength(1);
+  expect(trigger.textContent).toContain("1");
+  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain("Favorites only");
+  expect(document.querySelector(".servers-selection-bar")?.textContent).toContain("Recently used first");
+});
+
 it("searches and displays the effective SSH destination while preserving the editable base", async () => {
   const server: ServerRecord = {
     id: "inherited-destination",

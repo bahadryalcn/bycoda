@@ -57,7 +57,7 @@ import { PrivacyStartupSettings } from "./PrivacyStartupSettings";
 import { SourceControlSettings } from "./SourceControlSettings";
 import { ChatPage } from "./ChatSettings";
 import { InboxPage } from "./InboxSettings";
-import { useAppearanceSettings } from "./useAppearanceSettings";
+import { AppearanceSaveFeedback, useAppearanceSettings } from "./useAppearanceSettings";
 import { AppearancePage } from "./AppearanceSettings";
 import { KeybindingsPage } from "./ShortcutSettings";
 import { TerminalPage } from "./TerminalSettings";
@@ -144,7 +144,8 @@ export function SettingsView({
   const panelId = useId();
   const categoryRefs = useRef(new Map<SettingsSectionId, HTMLButtonElement>());
   const panelRef = useRef<HTMLDivElement>(null);
-  const categories = settingsSectionsByGroup().flatMap((group) => group.sections);
+  const categoryGroups = settingsSectionsByGroup();
+  const categories = categoryGroups.flatMap((group) => group.sections);
   const [horizontalNavigation, setHorizontalNavigation] = useState(false);
   const navigationRef = useRef<HTMLElement>(null);
   const [revealed, setRevealed] = useState<string | null>(anchor);
@@ -250,6 +251,11 @@ export function SettingsView({
     [onSelectSection, section],
   );
 
+  const selectCategory = (next: SettingsSectionId) => {
+    setRevealed(null);
+    onSelectSection?.(next);
+  };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
@@ -270,7 +276,7 @@ export function SettingsView({
       className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
     >
       <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        className="bycoda-settings-titlebar flex min-h-10 shrink-0 select-none items-center border-b border-stroke"
         data-tauri-drag-region="deep"
       >
         {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
@@ -281,9 +287,10 @@ export function SettingsView({
             type="button"
             onClick={onClose}
             aria-label={t("Back to workspace")}
+            tooltip={t("Back to workspace")}
             data-tauri-drag-region="false"
           >
-            <ArrowLeft className="icon-sm shrink-0" aria-hidden="true" />
+            <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
             <span className="truncate">{t("Back to workspace")}</span>
           </Button>
           <span className="min-w-0 truncate text-(--ui-text-secondary)">
@@ -324,7 +331,7 @@ export function SettingsView({
               label={t("Restore defaults")}
               onClick={appearance.restoreDefaults}
             >
-              <RotateCcw className="icon-sm" strokeWidth={1.75} />
+              <RotateCcw aria-hidden="true" strokeWidth={1.75} />
             </Button>
           ) : null}
         </div>
@@ -338,10 +345,20 @@ export function SettingsView({
           aria-orientation={horizontalNavigation ? "horizontal" : "vertical"}
           aria-label={t("Settings categories")}
         >
-          {settingsSectionsByGroup().map((group) => (
-            <div key={group.id} className="bycoda-settings-category-group">
-              <span className="bycoda-settings-category-label">{group.label}</span>
-              <div className="bycoda-settings-category-tabs">
+          {categoryGroups.map((group) => (
+            <div
+              key={group.id}
+              className="bycoda-settings-category-group"
+              role="presentation"
+            >
+              <span className="bycoda-settings-category-label" aria-hidden="true">
+                {group.label}
+              </span>
+              <div
+                className="bycoda-settings-category-tabs"
+                role="group"
+                aria-label={group.label}
+              >
                 {group.sections.map((category) => {
                   const index = categories.findIndex((item) => item.id === category.id);
                   const Icon = SETTINGS_SECTION_ICONS[category.id];
@@ -349,6 +366,8 @@ export function SettingsView({
                     <Button
                       variant="item"
                       motion="none"
+                      align="start"
+                      fullWidth
                       selected={category.id === section}
                       tooltip={category.label}
                       key={category.id}
@@ -364,10 +383,7 @@ export function SettingsView({
                       tabIndex={category.id === section ? 0 : -1}
                       disabled={!onSelectSection && category.id !== section}
                       data-category-group={category.group}
-                      onClick={() => {
-                        setRevealed(null);
-                        onSelectSection?.(category.id);
-                      }}
+                      onClick={() => selectCategory(category.id)}
                       onKeyDown={(event) => {
                         if (!onSelectSection) return;
                         let next = index;
@@ -381,9 +397,8 @@ export function SettingsView({
                         event.preventDefault();
                         event.stopPropagation();
                         const target = categories[next]!;
-                        setRevealed(null);
                         categoryRefs.current.get(target.id)?.focus();
-                        onSelectSection(target.id);
+                        selectCategory(target.id);
                       }}
                     >
                       <Icon aria-hidden strokeWidth={1.75} />
@@ -428,7 +443,7 @@ export function SettingsView({
                 >
                   <div
                     data-settings-section={section}
-                    className="bycoda-settings-content bycoda-settings-form mx-auto w-full px-5 py-6 pb-16 @min-[560px]/settings:px-8 @min-[560px]/settings:py-8"
+                    className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
                   >
                     <PageHeader
                       title={settingsSectionLabel(section)}
@@ -437,6 +452,7 @@ export function SettingsView({
                     />
                     {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
                     {section === "crews" ? (
+                      <div className="settings-topics flex min-w-0 flex-col gap-6">
                       <CrewsSettings
                         cwd={cwd}
                         onOpen={
@@ -448,6 +464,7 @@ export function SettingsView({
                             : undefined
                         }
                       />
+                      </div>
                     ) : null}
                     {section === "connections" ? (
                       <>
@@ -461,6 +478,7 @@ export function SettingsView({
                           <Row
                             id="show-excluded-files"
                             label={t("Show excluded files")}
+                            feedback={<AppearanceSaveFeedback settingIds={["show-excluded-files"]} />}
                             description={t(
                               "Show files and folders Git excludes, such as build output and dependencies, in the explorer.",
                             )}

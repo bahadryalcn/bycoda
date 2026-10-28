@@ -77,9 +77,63 @@ it("requires a booted device for capture and prevents booting a physical device"
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
   expect(button("Capture").disabled).toBe(true);
-  expect(button("Boot").disabled).toBe(true);
-  expect(container.textContent).toContain("Boot the selected device");
+  // A physical phone is never booted from here: no Boot/Start action, only connection help.
+  expect(button("Boot")).toBeUndefined();
+  expect(button("Start emulator")).toBeUndefined();
+  expect(container.textContent).not.toContain("Boot the selected device");
+  expect(container.textContent).toContain("This phone is not available");
+  expect(container.textContent).toContain("Not ready");
+  expect(button("Refresh devices")).toBeDefined();
+  expect(api.boot).not.toHaveBeenCalled();
   expect(api.capture).not.toHaveBeenCalled();
+});
+
+it("shows a persistent target summary and boots a stopped emulator only from its named Start action", async () => {
+  const api = makeApi();
+  vi.mocked(api.list).mockResolvedValue({
+    devices: [{ ...device, booted: false }],
+    errors: [],
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const summary = container.querySelector(".device-panel-summary")!;
+  expect(summary.textContent).toContain("Android 16");
+  expect(summary.textContent).toContain("Emulator");
+  expect(summary.textContent).toContain("Stopped");
+  expect(api.boot).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Start this emulator");
+  await act(async () => button("Start emulator").click());
+  expect(api.boot).toHaveBeenCalledWith("emulator");
+});
+
+it("shows a readable capture time beside a paused frame", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-28T10:00:30Z"));
+  const api = makeApi();
+  vi.mocked(api.capture).mockResolvedValue({
+    mime: "image/png",
+    base64: "frame",
+    capturedAt: "2026-10-28T10:00:00Z",
+  });
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => button("Live view").click());
+  const chip = container.querySelector(".device-panel-frame-state")!;
+  expect(chip.textContent).toContain("Paused");
+  expect(chip.textContent).toContain("Captured");
+});
+
+it("offers Refresh frame, not a repeated action, when input succeeded but the screenshot failed", async () => {
+  const api = makeApi();
+  vi.mocked(api.capture)
+    .mockResolvedValueOnce({ mime: "image/png", base64: "frame", capturedAt: "now" })
+    .mockRejectedValueOnce(new Error("Screenshot unavailable"));
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  await act(async () => button("Home").click());
+  expect(container.textContent).toContain("Action completed");
+  expect(button("Refresh frame")).toBeDefined();
+  await act(async () => button("Refresh frame").click());
+  expect(api.action).toHaveBeenCalledOnce();
+  expect(container.textContent).not.toContain("do not repeat the action");
 });
 
 it("connects an installed runtime and follows a connected phone without controlling it", async () => {

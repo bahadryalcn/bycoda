@@ -16,10 +16,8 @@ import {
   jiraConnected,
   jiraBackgroundSyncEnabled,
   saveJiraBackgroundSync,
-  loadAllowedJiraBoardIds,
   saveAllowedJiraBoardIds,
   listJiraProjects,
-  loadHiddenJiraProjectIds,
   notifyJiraChange,
   saveHiddenJiraProjectIds,
   saveJiraConfig,
@@ -27,8 +25,21 @@ import {
   type JiraStatus,
 } from "../../inbox/model/jira";
 import { listJiraBoards, type JiraBoard } from "../../inbox/model/jiraBoard";
+import {
+  isInboxScopeNumber,
+  isInboxScopeString,
+  useInboxScopePreference,
+} from "./useInboxScopePreference";
 
-export function JiraSettings() {
+function readBackgroundSync() {
+  try {
+    return { value: jiraBackgroundSyncEnabled(), available: true };
+  } catch {
+    return { value: false, available: false };
+  }
+}
+
+export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   useLocale();
   const [status, setStatus] = useState<JiraStatus | null>(null);
   const [site, setSite] = useState("");
@@ -38,26 +49,49 @@ export function JiraSettings() {
   const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
   const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const request = useRef(0);
+  const projectRequest = useRef(0);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(false);
   const [boardsLoading, setBoardsLoading] = useState(false);
   const [boardsRevision, setBoardsRevision] = useState(0);
   const [projects, setProjects] = useState<JiraProject[]>([]);
-  const [hiddenIds, setHiddenIds] = useState(loadHiddenJiraProjectIds);
-  const [allowedBoardIds, setAllowedBoardIds] = useState(loadAllowedJiraBoardIds);
-  const [backgroundSync, setBackgroundSync] = useState(jiraBackgroundSyncEnabled);
+  const scopeOwner = `${status?.site ?? ""}\0${status?.email ?? ""}`;
+  const projectScope = useInboxScopePreference(
+    "bycoda.jiraHiddenProjects",
+    JIRA_CHANGE_EVENT,
+    isInboxScopeString,
+    saveHiddenJiraProjectIds,
+    scopeOwner,
+  );
+  const boardScope = useInboxScopePreference(
+    "bycoda.jiraAllowedBoards",
+    JIRA_CHANGE_EVENT,
+    isInboxScopeNumber,
+    saveAllowedJiraBoardIds,
+    scopeOwner,
+  );
+  const hiddenIds = projectScope.value;
+  const allowedBoardIds = boardScope.value;
+  const [backgroundState, setBackgroundState] = useState(readBackgroundSync);
+  const projectOwner = useRef("");
   const [boards, setBoards] = useState<JiraBoard[]>([]);
   const [boardsError, setBoardsError] = useState<string | null>(null);
+  const boardsOwner = useRef(scopeOwner);
 
   useEffect(() => {
+    if (busy || !active) return;
     if (!status?.connected) {
       setBoards([]);
       setBoardsLoading(false);
       return;
     }
     let cancelled = false;
-    setBoards([]);
+    if (boardsOwner.current !== scopeOwner) setBoards([]);
+    boardsOwner.current = scopeOwner;
     setBoardsError(null);
     setBoardsLoading(true);
     void listJiraBoards({ includeUnselected: true })
@@ -73,32 +107,40 @@ export function JiraSettings() {
     return () => {
       cancelled = true;
     };
-  }, [status?.connected, hiddenIds, projects, boardsRevision]);
+  }, [status?.connected, scopeOwner, busy, active, hiddenIds, projects, boardsRevision]);
 
   const loadProjects = useCallback(async () => {
+    const generation = ++projectRequest.current;
+    const account = request.current;
     setProjectsError(null);
     setProjectsLoading(true);
     try {
-      setProjects(await listJiraProjects());
+      const next = await listJiraProjects();
+      if (generation === projectRequest.current && account === request.current) setProjects(next);
     } catch (err) {
-      setProjectsError(String(err instanceof Error ? err.message : err));
+      if (generation === projectRequest.current && account === request.current)
+        setProjectsError(String(err instanceof Error ? err.message : err));
     } finally {
-      setProjectsLoading(false);
+      if (generation === projectRequest.current && account === request.current)
+        setProjectsLoading(false);
     }
   }, []);
 
   const checkStatus = useCallback(async () => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const next = await jiraConnected();
       if (generation !== request.current) return;
+      const owner = `${next.site}\0${next.email}`;
+      if (projectOwner.current !== owner) setProjects([]);
+      projectOwner.current = owner;
       setStatus(next);
       if (next.connected) await loadProjects();
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(String(err instanceof Error ? err.message : err));
+        setStatusError(String(err instanceof Error ? err.message : err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -107,26 +149,41 @@ export function JiraSettings() {
   useEffect(() => {
     void checkStatus();
     const onChange = () => {
-      setHiddenIds(loadHiddenJiraProjectIds());
-      setAllowedBoardIds(loadAllowedJiraBoardIds());
-      setBackgroundSync(jiraBackgroundSyncEnabled());
+      setBackgroundState(readBackgroundSync());
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === "bycoda.jiraBackgroundSync") onChange();
     };
     window.addEventListener(JIRA_CHANGE_EVENT, onChange);
+    window.addEventListener("storage", onStorage);
     return () => {
       request.current += 1;
+      projectRequest.current += 1;
       window.removeEventListener(JIRA_CHANGE_EVENT, onChange);
+      window.removeEventListener("storage", onStorage);
     };
   }, [checkStatus]);
 
   const connect = async () => {
-    if (busy || checking || !site.trim() || !email.trim() || !token.trim()) return;
+    if (busy || checking || mutation.current || !site.trim() || !email.trim() || !token.trim())
+      return;
+    mutation.current = true;
+    request.current += 1;
+    projectRequest.current += 1;
+    setProjectsLoading(false);
+    setBoardsLoading(false);
     setOperation("save");
     setError(null);
     try {
       const next = await saveJiraConfig({ site, email, token });
       if (!next.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
+      const owner = `${next.site}\0${next.email}`;
+      if (projectOwner.current !== owner) setProjects([]);
+      projectOwner.current = owner;
       setStatus(next);
+      setEditing(false);
+      setStatusError(null);
       setToken("");
       clearInboxCache();
       // Reconnecting must preserve the owner's existing scope choices.
@@ -135,12 +192,18 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
 
   const disconnect = async () => {
-    if (busy) return;
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
+    projectRequest.current += 1;
+    setProjectsLoading(false);
+    setBoardsLoading(false);
     setOperation("disconnect");
     setError(null);
     try {
@@ -152,6 +215,7 @@ export function JiraSettings() {
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
@@ -159,15 +223,15 @@ export function JiraSettings() {
   const setVisibleProjects = (visible: string[]) => {
     const known = new Set(projects.map((project) => project.id));
     clearInboxCache();
-    saveHiddenJiraProjectIds([
-      ...hiddenIds.filter((id) => !known.has(id)),
+    projectScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
       ...projects.filter((project) => !visible.includes(project.id)).map((project) => project.id),
     ]);
   };
   const setAllowedBoards = (selected: string[]) => {
     const known = new Set(boards.map((board) => board.id));
-    saveAllowedJiraBoardIds([
-      ...allowedBoardIds.filter((id) => !known.has(id)),
+    boardScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
       ...boards.filter((board) => selected.includes(String(board.id))).map((board) => board.id),
     ]);
   };
@@ -178,7 +242,7 @@ export function JiraSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={Boolean(status?.connected)}
-        error={error}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
@@ -196,7 +260,7 @@ export function JiraSettings() {
             <p className="text-ui-caption text-(--ui-text-muted)">
               {t("Checking Jira connection…")}
             </p>
-          ) : status?.connected ? (
+          ) : status?.connected && !editing ? (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
                 <p className="break-all">{status.site}</p>
@@ -204,6 +268,16 @@ export function JiraSettings() {
                   <PrivateEmail key={status.email} email={status.email} />
                 </p>
               </div>
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setSite(status.site);
+                  setEmail(status.email);
+                  setEditing(true);
+                }}
+              >
+                {t("Edit")}
+              </Button>
               <Button
                 className="shrink-0"
                 onClick={() => void disconnect()}
@@ -273,6 +347,18 @@ export function JiraSettings() {
                 />
               ))}
               <div className="flex items-center gap-3">
+                {status?.connected ? (
+                  <Button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setEditing(false);
+                      setToken("");
+                    }}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                ) : null}
                 <Button
                   className="shrink-0"
                   type="submit"
@@ -323,27 +409,44 @@ export function JiraSettings() {
                 </Button>
               </div>
               <InboxConnectionError error={projectsError} />
-              <SearchableSelect
-                multiple
-                label={t("Projects")}
-                options={projects.map((project) => ({
-                  value: project.id,
-                  label: `${project.name} · ${project.key}`,
-                  keywords: project.key,
-                }))}
-                value={projects
-                  .filter((project) => !hiddenIds.includes(project.id))
-                  .map((project) => project.id)}
-                onChange={setVisibleProjects}
-                disabled={busy}
-                placeholder={t("{p0} of {p1} projects selected", { p0: 0, p1: projects.length })}
-                searchPlaceholder={t("Search projects")}
-                emptyLabel={t("No matching projects")}
-                selectionLabels={{
-                  summary: (count) =>
-                    t("{p0} of {p1} projects selected", { p0: count, p1: projects.length }),
-                }}
-              />
+              {projectScope.error ? (
+                <SettingsFeedback
+                  state="error"
+                  action={<Button onClick={projectScope.retry}>{t("Retry")}</Button>}
+                >
+                  {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                </SettingsFeedback>
+              ) : null}
+              {projectScope.available ? (
+                <SearchableSelect
+                  multiple
+                  label={t("Projects")}
+                  options={projects.map((project) => ({
+                    value: project.id,
+                    label: `${project.name} · ${project.key}`,
+                    keywords: project.key,
+                  }))}
+                  value={projects
+                    .filter((project) => !hiddenIds.includes(project.id))
+                    .map((project) => project.id)}
+                  onChange={setVisibleProjects}
+                  disabled={
+                    busy ||
+                    checking ||
+                    projectsLoading ||
+                    Boolean(projectsError) ||
+                    !projectScope.available
+                  }
+                  loading={projectsLoading}
+                  placeholder={t("{p0} of {p1} projects selected", { p0: 0, p1: projects.length })}
+                  searchPlaceholder={t("Search projects")}
+                  emptyLabel={t("No matching projects")}
+                  selectionLabels={{
+                    summary: (count) =>
+                      t("{p0} of {p1} projects selected", { p0: count, p1: projects.length }),
+                  }}
+                />
+              ) : null}
               {projects.length === 0 && !projectsError && !projectsLoading ? (
                 <p className="inbox-scope-help">
                   {t("No projects available. Refresh projects to try again.")}
@@ -370,7 +473,15 @@ export function JiraSettings() {
               {boardsError ? (
                 <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
               ) : null}
-              {boards.length > 0 ? (
+              {boardScope.error ? (
+                <SettingsFeedback
+                  state="error"
+                  action={<Button onClick={boardScope.retry}>{t("Retry")}</Button>}
+                >
+                  {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+                </SettingsFeedback>
+              ) : null}
+              {boards.length > 0 && boardScope.available ? (
                 <SearchableSelect
                   multiple
                   label={t("Boards")}
@@ -382,7 +493,14 @@ export function JiraSettings() {
                     .filter((board) => allowedBoardIds.includes(board.id))
                     .map((board) => String(board.id))}
                   onChange={setAllowedBoards}
-                  disabled={busy}
+                  disabled={
+                    busy ||
+                    checking ||
+                    boardsLoading ||
+                    Boolean(boardsError) ||
+                    !boardScope.available
+                  }
+                  loading={boardsLoading}
                   placeholder={t("{p0} of {p1} boards selected", { p0: 0, p1: boards.length })}
                   searchPlaceholder={t("Search boards")}
                   selectionLabels={{
@@ -407,12 +525,33 @@ export function JiraSettings() {
             "Off by default. Jira loads when opened or refreshed manually. Background notifications and Jira triggers require this option.",
           )}
           persistence={{ mode: "automatic" }}
+          feedback={
+            !backgroundState.available ? (
+              <SettingsFeedback
+                state="error"
+                action={
+                  <Button onClick={() => setBackgroundState(readBackgroundSync())}>
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+              </SettingsFeedback>
+            ) : undefined
+          }
         >
           <Toggle
             label={t("Automatically refresh Jira in the background")}
-            on={backgroundSync}
-            disabled={busy}
-            onChange={saveJiraBackgroundSync}
+            on={backgroundState.value}
+            disabled={busy || !backgroundState.available}
+            onChange={(next) => {
+              try {
+                saveJiraBackgroundSync(next);
+                setBackgroundState(readBackgroundSync());
+              } catch {
+                setBackgroundState((previous) => ({ ...previous, available: false }));
+              }
+            }}
           />
         </Row>
       ) : null}

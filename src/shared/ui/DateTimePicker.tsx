@@ -87,6 +87,9 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
   const timeId = useId();
   const timeHintId = useId();
   const time = value.includes("T") ? value.slice(value.indexOf("T") + 1) : "";
+  // A malformed time shows the danger frame once the field is left; typing a partial value stays quiet.
+  const [timeTouched, setTimeTouched] = useState(false);
+  const timeInvalid = timeTouched && parseLocalDateTime(`${selectedKey}T${time}`) === null;
   const navigate = (date: Date, focus: boolean) => {
     const next = minimum && date < minimum ? minimum : date;
     shouldFocus.current = focus;
@@ -133,18 +136,11 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
   });
   return (
     <div className="bycoda-date-time-picker">
-      <div className="mb-2 flex min-h-8 items-center justify-between px-1">
-        <span
-          id={headingId}
-          aria-live="polite"
-          className="flex items-baseline gap-1.5 text-xs font-medium text-content"
-        >
-          {monthLabel}{" "}
-          <span className="font-normal tabular-nums text-(--ui-text-secondary)">
-            {month.getFullYear()}
-          </span>
+      <div className="date-time-header">
+        <span id={headingId} aria-live="polite" className="date-time-title">
+          {monthLabel} <span className="date-time-year">{month.getFullYear()}</span>
         </span>
-        <div className="flex gap-0.5">
+        <div className="date-time-nav">
           <Button
             variant="ghost"
             iconOnly
@@ -153,7 +149,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             onClick={() => navigate(shiftMonth(focusedDate, -1), false)}
             className="date-time-month-action"
           >
-            <ChevronLeft className="size-3.5" />
+            <ChevronLeft className="size-(--ui-icon-sm)" />
           </Button>
           <Button
             variant="ghost"
@@ -162,32 +158,32 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             onClick={() => navigate(shiftMonth(focusedDate, 1), false)}
             className="date-time-month-action"
           >
-            <ChevronRight className="size-3.5" />
+            <ChevronRight className="size-(--ui-icon-sm)" />
           </Button>
         </div>
       </div>
       <div className="date-time-calendar">
         <div ref={gridRef} role="grid" aria-labelledby={headingId}>
-          <div role="row" className="grid grid-cols-7">
+          <div role="row" className="date-time-row">
             {weekdays.map((label) => (
               <span
                 key={label.long}
                 role="columnheader"
                 aria-label={label.long}
                 title={label.long}
-                className="pb-1.5 text-center text-(length:--ui-font-caption) font-normal text-(--ui-text-secondary)"
+                className="date-time-weekday"
               >
                 {label.short}
               </span>
             ))}
           </div>
           {Array.from({ length: cells.length / 7 }, (_, week) => (
-            <div role="row" key={week} className="grid grid-cols-7 py-0.5">
+            <div role="row" key={week} className="date-time-row date-time-week">
               {cells.slice(week * 7, week * 7 + 7).map((date, column) => (
                 <div
                   role="gridcell"
                   key={column}
-                  className="flex justify-center"
+                  className="date-time-cell"
                   aria-selected={date ? dateKey(date) === selectedKey : undefined}
                 >
                   {date ? (
@@ -202,17 +198,12 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
                       })}
                       disabled={!!minimum && date < minimum}
                       aria-current={dateKey(date) === dateKey(today) ? "date" : undefined}
-                      className="date-time-day relative rounded text-xs tabular-nums"
+                      className="date-time-day"
                       data-selected={dateKey(date) === selectedKey || undefined}
+                      data-today={dateKey(date) === dateKey(today) || undefined}
                       onClick={() => pick(date)}
                     >
                       {date.getDate()}
-                      {dateKey(date) === dateKey(today) ? (
-                        <span
-                          aria-hidden="true"
-                          className="absolute bottom-1 left-1/2 size-0.5 -translate-x-1/2 rounded-full bg-current"
-                        />
-                      ) : null}
                     </button>
                   ) : null}
                 </div>
@@ -221,20 +212,17 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
           ))}
         </div>
       </div>
-      <div className="mt-3 flex items-center justify-between gap-3 border-t border-stroke px-1 pt-3">
+      <div className="date-time-footer">
         <div>
-          <label htmlFor={timeId} className="flex items-center gap-1.5 text-xs text-content">
-            <Clock className="size-3 shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+          <label htmlFor={timeId} className="date-time-time-label">
+            <Clock className="date-time-time-icon size-(--ui-icon-xs)" aria-hidden="true" />
             {t("Time")}
           </label>
-          <p
-            id={timeHintId}
-            className="mt-0.5 text-(length:--ui-font-caption) text-(--ui-text-secondary)"
-          >
+          <p id={timeHintId} className="date-time-hint">
             {t("Local time, 24-hour")}
           </p>
         </div>
-        <div className="w-24">
+        <div className="date-time-time-field">
           <TextField
             label={t("Time")}
             hideLabel
@@ -245,8 +233,11 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             spellCheck={false}
             placeholder={t("HH:mm")}
             value={time}
+            aria-invalid={timeInvalid || undefined}
+            onFocus={() => setTimeTouched(false)}
+            onBlur={() => setTimeTouched(true)}
             onChange={(event) => onChange(`${dateKey(selected)}T${event.target.value}`)}
-            className="text-center text-xs tabular-nums"
+            className="date-time-time-input"
           />
         </div>
       </div>

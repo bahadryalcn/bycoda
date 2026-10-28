@@ -2,6 +2,8 @@ import { memo, type ComponentProps, type Dispatch, type SetStateAction } from "r
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
 import { useHeldValue } from "../helpers/stableProps";
 import { SessionRecoveryPanel } from "../../shell/SessionRecoveryPanel";
+import { WorkspaceRecoveryDialog } from "./WorkspaceRecoveryDialog";
+import type { EditorDraftRecoverySectionProps } from "./EditorDraftRecoverySection";
 import { WhatsNewDialog } from "../../shell/WhatsNewDialog";
 import {
   DeleteSessionDialog,
@@ -52,6 +54,10 @@ export interface WorkspaceRecoveryDialogsProps {
   closeRecovery: RecoveryPanelProps["onClose"];
   openRecoveredSessions: RecoveryPanelProps["onOpen"];
   removeRecoveredSessions: RecoveryPanelProps["onRemove"];
+  editorDraftRecovery?: EditorDraftRecoverySectionProps["recovery"];
+  editorDraftRecords?: EditorDraftRecoverySectionProps["records"];
+  canInspectLegacyReports?: () => boolean;
+  getLegacyReportPrivacySnapshot?: () => unknown;
   sessionDeleteDialog: SessionDeleteDialogState | undefined;
   setSessionDeleteDialog: Dispatch<SetStateAction<SessionDeleteDialogState | undefined>>;
 }
@@ -64,14 +70,22 @@ function WorkspaceRecoveryDialogsComponent({
   closeRecovery,
   openRecoveredSessions,
   removeRecoveredSessions,
+  editorDraftRecovery,
+  editorDraftRecords,
+  canInspectLegacyReports,
+  getLegacyReportPrivacySnapshot,
   sessionDeleteDialog,
   setSessionDeleteDialog,
 }: WorkspaceRecoveryDialogsProps) {
   return (
     <>
-      {recoveryOpen && sessionRecovery ? (
-        <SessionRecoveryPanel
+      {recoveryOpen && (sessionRecovery || editorDraftRecovery?.available) ? (
+        <WorkspaceRecoveryDialog
           recovery={sessionRecovery}
+          editorDraftRecovery={editorDraftRecovery}
+          editorDraftRecords={editorDraftRecords}
+          canInspectLegacyReports={canInspectLegacyReports}
+          getLegacyReportPrivacySnapshot={getLegacyReportPrivacySnapshot}
           sessions={sessions}
           remoteSessions={remoteSessions}
           onClose={closeRecovery}

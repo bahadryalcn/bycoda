@@ -3,7 +3,7 @@ import { isGitWatched, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { pathKey } from "../../../shared/lib/paths";
 import { listWorktrees, type Worktrees } from "../model/worktrees";
 
-type Snapshot = { data?: Worktrees; error?: string };
+type Snapshot = { data?: Worktrees; error?: string; loading?: boolean };
 type Entry = {
   cwd: string;
   snapshot: Snapshot;
@@ -43,16 +43,17 @@ function load(entry: Entry, invalidated = false): Promise<boolean> {
     entry.invalidated ||= invalidated;
     return entry.inFlight;
   }
+  publish(entry, { ...entry.snapshot, loading: true });
   entry.inFlight = (async () => {
     let loaded = false;
     try {
       const data = await listWorktrees(entry.cwd);
-      publish(entry, { data });
+      publish(entry, { data, loading: false });
       loaded = true;
     } catch (error) {
       // A background failure must not replace a usable list with a loading or
       // error screen. The caller can still surface the error beside the list.
-      publish(entry, { ...entry.snapshot, error: String(error) });
+      publish(entry, { ...entry.snapshot, error: String(error), loading: false });
     }
     entry.inFlight = undefined;
     if (entry.invalidated) {

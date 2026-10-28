@@ -150,3 +150,24 @@ Concrete blocker: this is audit/design with no product patch or app/provider/
 native/device run. Source/mock/schematic evidence is not a fix or live output
 acceptance. Baseline above is the immutable reference; no committed repair SHA,
 package/install/release delivered. Source inclusion UNKNOWN; ready to implement.
+
+## Implementation 2026-10-28 (H6, uncommitted, untested)
+
+Base `c03fa98d4`. Delivered for review: CMD-01..12. Nothing was run because of the
+owner's no-test night rule. Handoff: `temp/local/2026-10-28-chat-impl/handoff.json`.
+
+- Shared selector `src/features/sessions/model/commandInspection.ts` (exact command,
+  output precedence tool.output > tool.detail > preview.output, dedupe, separate error)
+  feeds CommandDetails, Copy and ToolInspectionPanel.
+- `blockLifecycle()` in `model/activityDock.ts`: a pending block in an idle session is
+  `interrupted` in the dock, the sheet and Copy.
+- SubagentSheet: distinct running/finished-empty/stopped/interrupted/failed states,
+  remote full-output load with pending/error/Retry and revision guard, follow-tail with
+  Jump to latest, guarded Copy, "Session working directory" label.
+- Codex outputDelta is accumulated per call ID in the provider. The core detail cap sets
+  `tool.outputTruncated`, and the event has an optional `detailTruncated`
+  (`core/toolDetailLimits.ts`). The Claude watcher reports waiting/unavailable
+  output instead of swallowing read failures.
+- Open: structured unavailable-output field (Claude notes are English text), and a
+  flag for capped agent-step detail. Per-command cwd/timing/exit metadata remains a
+  schema proposal.

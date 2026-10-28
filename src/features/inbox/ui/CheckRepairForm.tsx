@@ -180,7 +180,7 @@ export function CheckRepairForm({
           </p>
           <p
             title={checks.map((check) => check.name).join(", ")}
-            className="mt-0.5 truncate text-ui-micro leading-4 text-(--ui-text-secondary)"
+            className="mt-0.5 break-words text-ui-caption text-(--ui-text-secondary)"
           >
             {checks.length === 1 ? checks[0].name : t("{p0} failed checks", { p0: checks.length })}{" "}
             {t("· PR #")}
@@ -284,7 +284,7 @@ export function CheckRepairForm({
       ) : null}
       <div className="flex shrink-0 items-center gap-3 border-t border-(--ui-tone-neutral-border) px-3 py-2.5">
         <div className="min-w-0 flex-1 text-ui-micro leading-4">
-          <p className="truncate text-(--ui-text-secondary)" title={selectedTitle}>
+          <p className="break-words text-(--ui-text-secondary)" title={selectedTitle}>
             {selectedTitle}
           </p>
           <p className="text-(--ui-text-secondary)">{t("CI details included")}</p>

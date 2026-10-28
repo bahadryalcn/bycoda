@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 import { modelsFor, resetHarnessModelOverlays } from "../../../../features/sessions/model/models";
@@ -196,12 +197,23 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       model: `${provider.id}:m1`,
       text: "hi",
       runtimeMode: "supervised",
-      onEvent: (event) => events.push(event),
+      onEvent: (event) => { captureNativeOutputEvent("thread",event); events.push(event); },
     };
   });
   afterEach(async () => {
     await provider.forget("thread");
     resetHarnessModelOverlays();
+  });
+
+  it("keeps a generated route bound to its explicit logical hint through deferred approval", async () => {
+    const turn = provider.send({...input,nativeOutputSessionId:"thread"}); await waitPrompt();
+    expect(mock.spawn.mock.calls.at(-1)?.[9]).toBe("thread");
+    const inspect=nativeOutputFrame(liveKey(),"permission",()=>permission("execute",913),"thread");
+    const asked=events.find(e=>e.type==="approval.requested")!;const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
+    expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+    provider.respond("thread",913,"allow");await flush();
+    const resolved=events.find(e=>e.type==="approval.resolved")!;expect(getNativeOutputEventOrigin(resolved)).toBe(origin);
+    finishPrompt();await turn;await flush();expect(inspect().pendingCausalWork).toBe(0);
   });
 
   it("spawns the exact endpoint, sends settings/images and routes real approvals", async () => {
@@ -220,6 +232,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       provider.id === "antigravity" ? "/fake/" : "/repo",
       undefined,
       provider.id,
+      undefined, undefined, undefined, undefined,
     );
     expect(mock.sent.find((m) => m.method === "initialize")?.params).toMatchObject({
       protocolVersion: 1,

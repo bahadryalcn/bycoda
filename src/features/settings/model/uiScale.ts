@@ -1,5 +1,10 @@
 import { clamp } from "../../../shared/lib/numbers";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import {
+  acceptAppearanceStorageChange,
+  readAppearanceValue,
+  writeAppearanceValue,
+} from "./appearancePersistence";
 
 export const UI_SCALE_KEY = "bycoda.uiScale";
 
@@ -27,7 +32,7 @@ export function normalizeUiScale(value: unknown): number {
 
 export function loadUiScale(): number {
   try {
-    const raw = localStorage.getItem(UI_SCALE_KEY);
+    const raw = readAppearanceValue(UI_SCALE_KEY);
     if (raw == null) return UI_SCALE_DEFAULT;
     return normalizeUiScale(Number(raw));
   } catch {
@@ -39,11 +44,18 @@ export function loadUiScale(): number {
  * read the store must already see the new value. */
 export function saveUiScale(value: number) {
   const next = normalizeUiScale(value);
-  try {
-    localStorage.setItem(UI_SCALE_KEY, String(next));
-  } catch {
-    // private mode / quota
-  }
+  writeAppearanceValue(
+    UI_SCALE_KEY,
+    String(next),
+    "ui-scale",
+    () => {},
+    true,
+    () => {
+      const saved = writeAppearanceValue(UI_SCALE_KEY, String(next), "ui-scale", () => {});
+      if (saved) void applyUiScale(next);
+      return saved;
+    },
+  );
   return next;
 }
 
@@ -110,7 +122,10 @@ export function initUiScale() {
   if (!scaleStorageWatching) {
     scaleStorageWatching = true;
     window.addEventListener("storage", (event) => {
-      if (isScaleStorage(event)) void applyUiScale(loadUiScale());
+      if (isScaleStorage(event)) {
+        acceptAppearanceStorageChange(event.key);
+        void applyUiScale(loadUiScale());
+      }
     });
   }
   void applyUiScale(loadUiScale());
@@ -119,7 +134,10 @@ export function initUiScale() {
 export function subscribeUiScale(onStoreChange: () => void) {
   if (typeof window === "undefined") return () => {};
   const onStorage = (event: StorageEvent) => {
-    if (isScaleStorage(event)) onStoreChange();
+    if (isScaleStorage(event)) {
+      acceptAppearanceStorageChange(event.key);
+      onStoreChange();
+    }
   };
   window.addEventListener(UI_SCALE_CHANGE_EVENT, onStoreChange);
   window.addEventListener("storage", onStorage);

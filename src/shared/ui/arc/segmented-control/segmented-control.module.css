@@ -1,8 +1,15 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    min-width: 0;
+    max-width: 100%;
+    flex-shrink: 1;
+  }
+}
 .root {
   display: inline-flex;
-  min-width: 0;
-  max-width: 100%;
-  flex-shrink: 1;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-muted);

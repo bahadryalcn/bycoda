@@ -7,10 +7,24 @@ import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import type { Text } from "@codemirror/state";
-import { bindEditorDraftDocument } from "../data/editorDraftPersistence";
+import type { RecoveredEditorDraft } from "../model/editorDraftRecovery";
+import { readEditorDraftRecovery } from "../data/editorDraftRecovery";
+import {
+  bindEditorDraftDocument,
+  type EditorDraftDocument,
+  type NativeCaptureState,
+} from "../data/editorDraftPersistence";
 import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
 
 import {
@@ -41,9 +55,10 @@ import {
 import { FilePreviewSearch } from "./FilePreviewSearch";
 import { InlineBlameToggle, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 
-import { CodeMirrorEditor } from "./CodeMirrorEditor";
+import { CodeMirrorEditor, type EditorCarry } from "./CodeMirrorEditor";
 import { HtmlPreview } from "./HtmlPreview";
 import { PreviewSelection } from "./PreviewSelection";
+import { DocumentMessage } from "./DocumentMessage";
 export { CodeMirrorEditor } from "./CodeMirrorEditor";
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
@@ -59,6 +74,7 @@ type Props = {
   path: string;
   /** Stable tab identity; filesystem relocation changes the path, not this document. */
   documentId?: string;
+  recoveredEditorDraft?: RecoveredEditorDraft;
   cwd: string;
   active: boolean;
   /** False while another tab of the pane, or the hidden pane itself, covers this
@@ -83,6 +99,7 @@ type SaveState = { status: "idle" | "saving" | "saved" } | { status: "error"; me
 export function FileEditor({
   path,
   documentId: suppliedDocumentId,
+  recoveredEditorDraft,
   cwd,
   active,
   shown = true,
@@ -94,8 +111,10 @@ export function FileEditor({
   onOpenFile,
 }: Props) {
   useLocale();
-  const fallbackDocumentId = useRef(crypto.randomUUID());
-  const documentId = suppliedDocumentId ?? fallbackDocumentId.current;
+  const fallbackDocument = useRef({ path, id: crypto.randomUUID() });
+  if (!suppliedDocumentId && fallbackDocument.current.path !== path)
+    fallbackDocument.current = { path, id: crypto.randomUUID() };
+  const documentId = suppliedDocumentId ?? fallbackDocument.current.id;
   const shownRef = useRef(shown);
   shownRef.current = shown;
   /** Work skipped while hidden, replayed once on show. */
@@ -113,15 +132,19 @@ export function FileEditor({
   const [draft, setDraft] = useState("");
   const [dirty, setDirty] = useState(false);
   const [diskConflict, setDiskConflict] = useState(false);
+  const [diskVerificationError, setDiskVerificationError] = useState<string | null>(null);
   const [editorRevision, setEditorRevision] = useState(0);
+  const retainedEditor = useMemo(
+    () => ({ current: null as EditorCarry | null }),
+    [documentId, reloadKey, editorRevision],
+  );
   const [recoveredText, setRecoveredText] = useState<string | undefined>();
   const recoveryReviewRef = useRef(false);
-  const draftHandleRef = useRef<ReturnType<typeof bindEditorDraftDocument> | null>(null);
-  const [draftPersistence, setDraftPersistence] = useState<ReturnType<
-    ReturnType<typeof bindEditorDraftDocument>["observe"]
-  > | null>(null);
+  const draftHandleRef = useRef<EditorDraftDocument | null>(null);
+  const [draftPersistence, setDraftPersistence] = useState<NativeCaptureState | null>(null);
   const [draftAction, setDraftAction] = useState<"restore" | "replace" | null>(null);
   const draftActionRef = useRef(false);
+  const draftViewGeneration = useRef(0);
   const [draftActionError, setDraftActionError] = useState<string | null>(null);
   const editorRootRef = useRef<HTMLDivElement>(null);
   const manualSaveRef = useRef(false);
@@ -200,6 +223,10 @@ export function FileEditor({
     showDiff ? `review:${path}` : path,
     showDiff ? "source" : "preview",
   );
+  const setLoadedMode = useRef(setMode);
+  useLayoutEffect(() => {
+    setLoadedMode.current = setMode;
+  }, [setMode]);
   const sourceNavigationToken = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (
@@ -224,13 +251,36 @@ export function FileEditor({
   /** The file's text as last read or written; tells real disk changes from no-op events. */
   const diskTextRef = useRef<string | null>(null);
   const draftBaselineRef = useRef<string | null>(null);
+  const latestDocumentRef = useRef<string | Text | null>(null);
   const eolRef = useRef<LineEnding>("\n");
   const onDirtyChangeRef = useRef(onDirtyChange);
   const loadedDocumentRef = useRef<{ id: string; reloadKey: number } | null>(null);
   const renderedDocumentRef = useRef<string | null>(null);
   onDirtyChangeRef.current = onDirtyChange;
 
+  const captureRelocatedDraft = useEffectEvent((handle: EditorDraftDocument) => {
+    if (
+      isTauri() &&
+      !isRemoteProjectPath(path) &&
+      loadedDocumentRef.current?.id === documentId &&
+      dirtyRef.current &&
+      latestDocumentRef.current !== null &&
+      draftBaselineRef.current !== null
+    ) {
+      // Relocation preserves the actual immutable dirty document and baseline.
+      handle.capture({
+        captureId: crypto.randomUUID(),
+        text: latestDocumentRef.current,
+        diskBaseline: draftBaselineRef.current,
+        eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
+      });
+    }
+  });
   useEffect(() => {
+    draftViewGeneration.current += 1;
+    setDraftAction(null);
+    draftActionRef.current = false;
+    setDraftActionError(null);
     const handle = bindEditorDraftDocument({
       documentId,
       path,
@@ -240,6 +290,7 @@ export function FileEditor({
     const update = () => setDraftPersistence(handle.observe());
     const unsubscribe = handle.subscribe(update);
     update();
+    captureRelocatedDraft(handle);
     void handle.ready.then(update, update);
     return () => {
       unsubscribe();
@@ -249,29 +300,42 @@ export function FileEditor({
     };
   }, [documentId, path]);
 
-  const captureDraft = useCallback((text: string | Text) => {
-    // Remote files need their own Host-owned origin contract. A local window
-    // receipt must not accidentally stand in for that contract.
-    if (!isTauri() || isRemoteProjectPath(currentIdentity.current.path)) return;
-    const handle = draftHandleRef.current;
-    const baseline = draftBaselineRef.current;
-    if (!handle || baseline === null) return;
-    return handle.capture({
-      captureId: crypto.randomUUID(),
-      text,
-      diskBaseline: baseline,
-      eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
-    });
-  }, []);
+  const captureDraft = useCallback(
+    (text: string | Text) => {
+      if (
+        currentIdentity.current.path !== path ||
+        currentIdentity.current.documentId !== documentId
+      )
+        return;
+      latestDocumentRef.current = text;
+      // Remote files need their own Host-owned origin contract. A local window
+      // receipt must not accidentally stand in for that contract.
+      if (!isTauri() || isRemoteProjectPath(path)) return;
+      const handle = draftHandleRef.current;
+      const baseline = draftBaselineRef.current;
+      if (!handle || baseline === null) return;
+      const owner = handle.observe();
+      if (owner.documentId !== documentId || owner.path !== path) return;
+      return handle.capture({
+        captureId: crypto.randomUUID(),
+        text,
+        diskBaseline: baseline,
+        eol: eolRef.current === "\r\n" ? "crlf" : eolRef.current === "\r" ? "cr" : "lf",
+      });
+    },
+    [documentId, path],
+  );
 
   const applyDiskContent = useCallback((raw: string) => {
     // CodeMirror documents are LF-only; keep the editor in that convention
     // and restore the file's own line endings on save. Feeding CRLF text
     // into the LF document doubles every line (see editorDoc.ts).
     eolRef.current = detectLineEnding(raw);
+    setDiskVerificationError(null);
     diskTextRef.current = raw;
     draftBaselineRef.current = raw;
     const content = normalizeLineBreaks(raw);
+    latestDocumentRef.current = content;
     setLoadState((current) => {
       if (current.status === "ready" && current.content === content) {
         return current;
@@ -297,7 +361,9 @@ export function FileEditor({
         if (force && edits !== editVersion.current) return;
         if (dirtyRef.current && !force) {
           // Keep unsaved edits; only a real change on disk blocks saving over it.
-          pendingDiskRef.current = content !== diskTextRef.current;
+          pendingDiskRef.current =
+            content !==
+            (recoveryReviewRef.current ? draftBaselineRef.current : diskTextRef.current);
           setDiskConflict(pendingDiskRef.current);
           return;
         }
@@ -312,6 +378,7 @@ export function FileEditor({
           setEditorRevision((value) => value + 1);
         }
         applyDiskContent(content);
+        if (force) captureDraft(normalizeLineBreaks(content));
       } catch (error: unknown) {
         if (
           generation !== loadGeneration.current ||
@@ -337,13 +404,16 @@ export function FileEditor({
         });
       }
     },
-    [applyDiskContent, documentId, path],
+    [applyDiskContent, captureDraft, documentId, path],
   );
 
   useEffect(() => {
     const loaded = loadedDocumentRef.current;
     if (loaded?.id === documentId && loaded.reloadKey === reloadKey) return;
+    setRecoveredText(undefined);
+    recoveryReviewRef.current = false;
     dirtyRef.current = false;
+    setDirty(false);
     pendingDiskRef.current = false;
     setDiskConflict(false);
     overwriteVersion.current = null;
@@ -351,23 +421,84 @@ export function FileEditor({
     setLoadState({ status: "loading" });
     setSaveState({ status: "idle" });
     const generation = ++loadGeneration.current;
-    void readTextFile(path)
-      .then((content) => {
+    void (async () => {
+      if (recoveredEditorDraft) {
+        if (recoveredEditorDraft.documentId !== documentId || recoveredEditorDraft.path !== path)
+          throw new Error(t("The recovery copy does not match this document."));
+        const record = await readEditorDraftRecovery({
+          ownerId: recoveredEditorDraft.ownerEpoch,
+          documentId,
+          revision: recoveredEditorDraft.revision,
+          payloadDigest: recoveredEditorDraft.payloadDigest,
+        });
+        const handle = draftHandleRef.current;
+        if (!handle) throw new Error(t("The recovery window is no longer available."));
+        await handle.ready;
+        const verifyLane = () => {
+          const state = handle.observe();
+          const acknowledged = state.acknowledgedDraft;
+          if (
+            state.ownerEpoch !== recoveredEditorDraft.ownerEpoch ||
+            state.pending ||
+            state.error ||
+            state.disposed ||
+            !acknowledged ||
+            acknowledged.revision !== recoveredEditorDraft.revision ||
+            acknowledged.payloadDigest !== recoveredEditorDraft.payloadDigest
+          )
+            throw new Error(
+              t("Open the latest copy again from Recovery. Newer edits may still be pending."),
+            );
+        };
+        verifyLane();
+        let actual: string | null = null;
+        let diskError: string | null = null;
+        try {
+          actual = await readTextFile(path);
+        } catch (error) {
+          diskError = error instanceof Error ? error.message : String(error);
+        }
+        if (cancelled || generation !== loadGeneration.current) return;
+        verifyLane();
+        const state = handle.observe();
+        if (state.initializationDecisionRequired)
+          handle.resolveInitialization({
+            decision: "restore",
+            revision: record.metadata.revision,
+            payloadDigest: record.metadata.payloadDigest,
+          });
+        const payload = record.payload;
+        diskTextRef.current = actual;
+        draftBaselineRef.current = payload.diskBaseline;
+        latestDocumentRef.current = payload.text;
+        eolRef.current = payload.eol === "crlf" ? "\r\n" : payload.eol === "cr" ? "\r" : "\n";
+        pendingDiskRef.current = actual === null || actual !== payload.diskBaseline;
+        if (pendingDiskRef.current) diskChangeVersion.current += 1;
+        setDiskConflict(pendingDiskRef.current);
+        setDiskVerificationError(diskError);
+        recoveryReviewRef.current = true;
+        setRecoveredText(payload.text);
+        setDraft(payload.text);
+        setLoadedMode.current("source");
+        loadedDocumentRef.current = { id: documentId, reloadKey };
+        setLoadState({ status: "ready", content: normalizeLineBreaks(payload.diskBaseline) });
+      } else {
+        const content = await readTextFile(path);
         if (cancelled || generation !== loadGeneration.current) return;
         loadedDocumentRef.current = { id: documentId, reloadKey };
         applyDiskContent(content);
-      })
-      .catch((error: unknown) => {
-        if (cancelled || generation !== loadGeneration.current) return;
-        setLoadState({
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
+      }
+    })().catch((error: unknown) => {
+      if (cancelled || generation !== loadGeneration.current) return;
+      setLoadState({
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
       });
+    });
     return () => {
       cancelled = true;
     };
-  }, [applyDiskContent, documentId, path, reloadKey]);
+  }, [applyDiskContent, documentId, path, reloadKey, recoveredEditorDraft]);
 
   useEffect(() => {
     if (!showDiff) {
@@ -556,6 +687,7 @@ export function FileEditor({
         }
         recoveryReviewRef.current = false;
         diskTextRef.current = serializedContent;
+        setDiskVerificationError(null);
         draftBaselineRef.current = serializedContent;
         pendingDiskRef.current = false;
         setDiskConflict(false);
@@ -639,6 +771,9 @@ export function FileEditor({
     const handle = draftHandleRef.current;
     const record = draftPersistence?.currentDraft;
     if (!handle || !record || draftActionRef.current) return;
+    const identity = handle.observe();
+    if (identity.documentId !== documentId || identity.path !== path) return;
+    const generation = draftViewGeneration.current;
     draftActionRef.current = true;
     setDraftAction(decision);
     setDraftActionError(null);
@@ -666,29 +801,39 @@ export function FileEditor({
         setRecoveredText(payload.text);
         setEditorRevision((value) => value + 1);
         setMode("source");
-      } else if (dirtyRef.current) {
-        await handle.retry();
+        captureDraft(payload.text);
+      } else {
+        const text = latestDocumentRef.current;
+        if (text !== null) captureDraft(text);
       }
+      await handle.flush();
     } catch (error) {
-      setDraftActionError(error instanceof Error ? error.message : String(error));
+      if (generation === draftViewGeneration.current)
+        setDraftActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      draftActionRef.current = false;
-      setDraftAction(null);
+      if (generation === draftViewGeneration.current) {
+        draftActionRef.current = false;
+        setDraftAction(null);
+      }
     }
   };
 
   const retryDraft = async () => {
     if (draftActionRef.current) return;
+    const generation = draftViewGeneration.current;
     draftActionRef.current = true;
     setDraftAction("replace");
     setDraftActionError(null);
     try {
       await draftHandleRef.current?.retry();
     } catch (error) {
-      setDraftActionError(error instanceof Error ? error.message : String(error));
+      if (generation === draftViewGeneration.current)
+        setDraftActionError(error instanceof Error ? error.message : String(error));
     } finally {
-      draftActionRef.current = false;
-      setDraftAction(null);
+      if (generation === draftViewGeneration.current) {
+        draftActionRef.current = false;
+        setDraftAction(null);
+      }
     }
   };
 
@@ -706,9 +851,14 @@ export function FileEditor({
 
   if (loadState.status === "loading" || diffPending) {
     return (
-      <div className="grid h-full place-items-center text-ui-caption text-[var(--ui-text-muted)]">
-        {t("Opening ")}
-        {basename(path)}…
+      <div
+        role="status"
+        className="grid h-full min-w-0 place-items-center p-3 text-ui-caption text-(--ui-text-muted)"
+      >
+        <span className="max-w-full break-words text-center">
+          {t("Opening ")}
+          {basename(path)}…
+        </span>
       </div>
     );
   }
@@ -831,9 +981,13 @@ export function FileEditor({
           className="flex shrink-0 flex-wrap items-center gap-2 border-b border-stroke px-2.5 py-1 text-ui-caption text-content"
         >
           <span className="min-w-0 flex-1">
-            {t(
-              "File changed on disk. Reload discards your edits; overwrite replaces the disk version.",
-            )}
+            {diskVerificationError
+              ? t(
+                  "The disk version could not be verified. Reload reads it again; overwrite writes the recovered draft.",
+                )
+              : t(
+                  "File changed on disk. Reload discards your edits; overwrite replaces the disk version.",
+                )}
           </span>
           <Button
             size="sm"
@@ -863,7 +1017,7 @@ export function FileEditor({
       {showDiff && gitDiff?.eolOnly && (
         <p
           role="status"
-          className="shrink-0 border-b border-stroke px-3 py-1 text-[12px] text-[var(--ui-text-secondary)]"
+          className="shrink-0 border-b border-stroke px-3 py-1 text-ui-secondary text-(--ui-text-secondary)"
         >
           {gitDiff.kind === "staged" ? t("Staged") : t("Unstaged")}
           {t(" line-ending changes. Line breaks are normalized in this view.")}
@@ -884,7 +1038,7 @@ export function FileEditor({
                   <MarkdownDocumentPreview
                     text={draft}
                     documentPath={path}
-                    metadataLabel="Properties"
+                    metadataLabel={t("Properties")}
                     cwd={cwd}
                     onOpenFile={onOpenFile}
                   />
@@ -893,18 +1047,24 @@ export function FileEditor({
             ) : html ? (
               <HtmlPreview path={path} source={draft} active={active && mode === "preview"} />
             ) : (
-              <SvgPreview source={draft} />
+              <SvgPreview source={draft} name={basename(path)} />
             )
           }
           source={
-            <div className="flex h-full min-h-0 min-w-0 flex-col">
+            <div
+              data-file-editor-source-active={shown && mode === "source" ? "true" : "false"}
+              inert={!shown || mode !== "source"}
+              className="flex h-full min-h-0 min-w-0 flex-col"
+            >
               <CodeMirrorEditor
                 key={`${documentId}:${reloadKey}:${editorRevision}`}
+                retainedState={retainedEditor}
                 path={path}
                 cwd={cwd}
                 commentPath={relativePath}
                 value={loadState.content}
                 initialDraft={recoveredText}
+                initialDirty={recoveredText !== undefined && recoveryReviewRef.current}
                 showDiff={showDiff}
                 gitOriginal={gitOriginal}
                 active={active && mode === "source"}
@@ -927,11 +1087,13 @@ export function FileEditor({
       ) : (
         <CodeMirrorEditor
           key={`${documentId}:${reloadKey}:${editorRevision}`}
+          retainedState={retainedEditor}
           path={path}
           cwd={cwd}
           commentPath={relativePath}
           value={loadState.content}
           initialDraft={recoveredText}
+          initialDirty={recoveredText !== undefined && recoveryReviewRef.current}
           showDiff={showDiff}
           gitOriginal={gitOriginal}
           active={active}
@@ -1035,20 +1197,39 @@ export function FileEditor({
  * fetches no external reference the document asks for, which is what makes it
  * safe to preview a file the agent may have just written.
  */
-function SvgPreview({ source }: { source: string }) {
+function SvgPreview({ source, name }: { source: string; name: string }) {
   useLocale();
   const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
+    setFailed(false);
     const next = URL.createObjectURL(new Blob([source], { type: "image/svg+xml" }));
     setUrl(next);
     return () => URL.revokeObjectURL(next);
   }, [source]);
 
+  if (!source.trim()) return <DocumentMessage title={t("Empty file")} />;
+  if (failed)
+    return (
+      <DocumentMessage title={t("Couldn’t read this document")} error>
+        {name}
+      </DocumentMessage>
+    );
   if (!url) return null;
   return (
-    <div className="grid h-full place-items-center overflow-auto p-6">
-      <img src={url} alt="" className="max-h-full max-w-full object-contain" />
+    <div
+      tabIndex={0}
+      role="region"
+      aria-label={name}
+      className="grid h-full min-w-0 place-items-center overflow-auto p-6"
+    >
+      <img
+        src={url}
+        alt={name}
+        onError={() => setFailed(true)}
+        className="max-h-full max-w-full object-contain"
+      />
     </div>
   );
 }

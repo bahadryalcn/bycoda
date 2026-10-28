@@ -21,6 +21,7 @@ import styles from "./SearchableSelect.module.css";
 import { LAYER } from "../lib/layers";
 import type { PopoverAlign } from "../lib/popover";
 import { Popover } from "./Popover";
+import { InlineAction } from "./ActionHost";
 import { Button } from "./Button";
 import { isImeComposition } from "../lib/keyboard";
 import { SelectTrigger, SelectValue } from "./arc/select/select";
@@ -540,10 +541,8 @@ function SearchableSelectMenu({
                 title={option?.description ?? value}
               >
                 <span className={styles.valueLabel}>{name}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  iconOnly
+                <InlineAction
+                  reveal="always"
                   label={selectionLabels?.remove?.(name) ?? `${t("Remove")}: ${name}`}
                   disabled={disabled}
                   onClick={() => {
@@ -551,7 +550,7 @@ function SearchableSelectMenu({
                   }}
                 >
                   <X aria-hidden="true" />
-                </Button>
+                </InlineAction>
               </span>
             );
           })}

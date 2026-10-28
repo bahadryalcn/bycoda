@@ -128,3 +128,12 @@ describe("Tüm ACP provider'ları için ortak sosyal erişim", () => {
     expect(mocks.request).toHaveBeenLastCalledWith("session/new", params, 0);
   });
 });
+
+it("passes the exact tracked response consumer through MCP preparation without an extra request",async()=>{
+ const consume=vi.fn((value:unknown)=>value);mocks.bridge.mockResolvedValue({command:"trusted-host"});
+ const client=new AcpClient("session#4",{});
+ await client.requestWithNativeOutput("session/new",{mcpServers:[]},consume,1234);
+ expect(mocks.request).toHaveBeenCalledTimes(1);
+ expect(mocks.request).toHaveBeenCalledWith("session/new",expect.objectContaining({mcpServers:expect.arrayContaining([expect.objectContaining({name:"bycoda-social"})])}),1234,consume);
+ expect(consume).not.toHaveBeenCalled(); // The mocked RPC has not delivered an actual response.
+});

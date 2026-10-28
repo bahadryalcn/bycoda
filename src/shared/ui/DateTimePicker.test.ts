@@ -200,3 +200,37 @@ it.each([
   act(() => leapDay.click());
   expect(onChange).toHaveBeenCalledWith("2028-02-29T18:30");
 });
+
+it("marks today, the chosen day and disabled days with attributes that do not depend on colour", () => {
+  act(() =>
+    root.render(
+      createElement(DateTimePicker, {
+        value: "2028-02-24T09:00",
+        minDate: "2028-02-18",
+        onChange: vi.fn(),
+      }),
+    ),
+  );
+  expect(day("2028-02-20").hasAttribute("data-today")).toBe(true);
+  expect(day("2028-02-20").getAttribute("aria-current")).toBe("date");
+  expect(day("2028-02-24").hasAttribute("data-selected")).toBe(true);
+  expect(day("2028-02-24").closest('[role="gridcell"]')!.getAttribute("aria-selected")).toBe(
+    "true",
+  );
+  expect(day("2028-02-17").disabled).toBe(true);
+  expect(day("2028-02-18").disabled).toBe(false);
+  expect(day("2028-02-17").hasAttribute("data-today")).toBe(false);
+});
+
+it("shows the danger frame for a malformed time only after the field is left", () => {
+  const onChange = vi.fn();
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T1", onChange })));
+  const time = container.querySelector<HTMLInputElement>('input[placeholder="HH:mm"]')!;
+  expect(time.getAttribute("aria-invalid")).toBeNull();
+  act(() => {
+    time.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+  });
+  expect(time.getAttribute("aria-invalid")).toBe("true");
+  act(() => root.render(createElement(DateTimePicker, { value: "2028-02-20T18:30", onChange })));
+  expect(time.getAttribute("aria-invalid")).toBeNull();
+});

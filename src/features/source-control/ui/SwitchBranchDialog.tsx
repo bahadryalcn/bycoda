@@ -3,6 +3,7 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
+import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { Loader, WandSparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { generateCommitMessage } from "../../../integrations/harness";
@@ -111,7 +112,7 @@ export function SwitchBranchDialog({
       }}
     >
       <div aria-busy={Boolean(busy) || generating} className="flex flex-col gap-3 px-4 pt-2 pb-4">
-        <div className="relative">
+        <div className="flex min-w-0 flex-col gap-1">
           <TextareaField
             hideLabel
             label=""
@@ -122,7 +123,7 @@ export function SwitchBranchDialog({
             placeholder={t("Message ({p0}↩ to commit)", { p0: MOD })}
             disabled={Boolean(busy) || generating}
             aria-label={t("Commit message")}
-            className="max-h-40 w-full resize-none overflow-y-auto leading-5 pe-8"
+            className="max-h-40 w-full resize-none overflow-y-auto leading-5"
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key === "Enter" && canCommit) {
@@ -131,6 +132,8 @@ export function SwitchBranchDialog({
               }
             }}
           />
+          <div className="flex items-center justify-end gap-1">
+          {generating ? <WorkingIndicator label={t("Working")} /> : null}
           <Button
             iconOnly
             variant="ghost"
@@ -145,23 +148,15 @@ export function SwitchBranchDialog({
             }
             disabled={Boolean(busy)}
             onClick={() => (generating ? cancelGenerate() : void generate())}
-            className="group absolute top-1 right-1"
+            className="self-end"
           >
             {generating ? (
-              <>
-                <Loader
-                  className="icon-sm animate-spin group-hover:hidden group-focus-visible:hidden"
-                  strokeWidth={1.75}
-                />
-                <X
-                  className="icon-sm hidden group-hover:block group-focus-visible:block"
-                  strokeWidth={1.75}
-                />
-              </>
+                <X className="icon-sm" strokeWidth={1.75} />
             ) : (
               <WandSparkles className="icon-sm" strokeWidth={1.75} />
             )}
           </Button>
+          </div>
         </div>
 
         {generateError ? <Alert tone="danger">{generateError}</Alert> : null}

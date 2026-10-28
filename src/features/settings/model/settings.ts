@@ -1293,6 +1293,12 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       keywords: "unlock all password gruplar kilit birlikte",
     },
     {
+      id: "terminal-available-shells",
+      section: "terminal",
+      label: "Advanced terminal settings",
+      keywords: "local available shells discovery advanced gelişmiş kabuk keşif",
+    },
+    {
       id: "host-shells",
       section: "terminal",
       label: "Default shell",
@@ -1513,7 +1519,7 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
   "cost-overview": ["Cost range", "Estimated cost", "Input", "Output", "Cache"],
   "daily-summary": ["Daily summary time"],
   "mcp-scopes": ["Scope", "Personal", "Project", "Local project"],
-  "host-shells": ["Advanced terminal settings", "This computer · Available shells"],
+  "terminal-available-shells": ["Advanced terminal settings", "This computer · Available shells"],
   "group-lock-options": ["Advanced: automatic locking"],
   "claude-hooks": ["Advanced provider options"],
   "archived-projects": ["Restore", "Delete"],
@@ -1656,6 +1662,7 @@ const COMPOSER_EFFORT_VISIBLE_KEY = "bycoda.composerEffortVisible";
 const MODEL_CONTROLS_KEY = "bycoda.modelControls";
 
 const FILE_TAB_MODE_KEY = "bycoda.fileTabMode";
+const FILE_TAB_MODE_CHANGE_EVENT = "bycoda:file-tab-mode-change";
 
 const TAB_ANIMATIONS_ENABLED_KEY = "bycoda.tabAnimationsEnabled";
 
@@ -1683,7 +1690,13 @@ export function saveFileTabMode(value: FileTabMode) {
   } catch {
     // private mode / quota
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(FILE_TAB_MODE_CHANGE_EVENT));
+  }
 }
+
+export const subscribeFileTabMode = (onChange: () => void) =>
+  subscribePreferenceChanges([FILE_TAB_MODE_KEY], FILE_TAB_MODE_CHANGE_EVENT, onChange);
 
 export const TAB_ANIMATIONS_ENABLED_DEFAULT = false;
 
@@ -1693,7 +1706,11 @@ export function loadTabAnimationsEnabled(): boolean {
 
 export function saveTabAnimationsEnabled(value: boolean) {
   writeFlag(TAB_ANIMATIONS_ENABLED_KEY, value);
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:tab-animations-change"));
 }
+
+export const subscribeTabAnimationsEnabled = (onChange: () => void) =>
+  subscribePreferenceChanges([TAB_ANIMATIONS_ENABLED_KEY], "bycoda:tab-animations-change", onChange);
 
 export type CollapsedProjectRailMode = "compact" | "hidden";
 
@@ -1769,6 +1786,7 @@ const notesEnabledSetting = storedFlag(
   NOTES_ENABLED_KEY,
   NOTES_ENABLED_DEFAULT,
   NOTES_ENABLED_CHANGE_EVENT,
+  true,
 );
 
 export function loadNotesEnabled(): boolean {
@@ -1797,8 +1815,15 @@ export function loadQuickComposerEnabled(): boolean {
   return quickComposerEnabledSetting.load() ?? QUICK_COMPOSER_ENABLED_DEFAULT;
 }
 
-export function saveQuickComposerEnabled(value: boolean) {
-  quickComposerEnabledSetting.save(value);
+export function saveQuickComposerEnabled(value: boolean): boolean {
+  try {
+    localStorage.setItem(QUICK_COMPOSER_ENABLED_KEY, value ? "1" : "0");
+    if (localStorage.getItem(QUICK_COMPOSER_ENABLED_KEY) !== (value ? "1" : "0")) return false;
+  } catch {
+    return false;
+  }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("bycoda:quick-composer-enabled-change"));
+  return true;
 }
 
 export const subscribeQuickComposerEnabled = quickComposerEnabledSetting.subscribe;
@@ -1812,16 +1837,23 @@ export function loadQuickComposerShortcut(): string {
   }
 }
 
-export function saveQuickComposerShortcut(value: string) {
-  if (!isGlobalShortcut(value)) return;
+export const QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT = "bycoda:quick-composer-shortcut-change";
+export const subscribeQuickComposerShortcut = (onChange: () => void) =>
+  subscribePreferenceChanges([QUICK_COMPOSER_SHORTCUT_KEY], QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT, onChange);
+
+export function saveQuickComposerShortcut(value: string): boolean {
+  if (!isGlobalShortcut(value)) return false;
   // Same conflict rules as every other row, so the separately stored Quick
   // Composer chord cannot claim a combination another command already owns.
   const shortcut = validateKeybindingShortcut(QUICK_COMPOSER_COMMAND, value);
   try {
     localStorage.setItem(QUICK_COMPOSER_SHORTCUT_KEY, shortcut);
+    if (localStorage.getItem(QUICK_COMPOSER_SHORTCUT_KEY) !== shortcut) return false;
   } catch {
-    // private mode / quota
+    return false;
   }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(QUICK_COMPOSER_SHORTCUT_CHANGE_EVENT));
+  return true;
 }
 
 const LIVE_AGENTS_ENABLED_KEY = "bycoda.liveAgentsEnabled";
@@ -2178,21 +2210,38 @@ const RESUME_AT_RESET_KEY = "bycoda.resumeAtReset";
 export const RESUME_AT_RESET_DEFAULT = true;
 
 /** Whether a usage limit notice starts armed to continue at the reset. */
-const resumeAtResetSetting = storedFlag(RESUME_AT_RESET_KEY, RESUME_AT_RESET_DEFAULT);
+const resumeAtResetSetting = storedFlag(RESUME_AT_RESET_KEY, RESUME_AT_RESET_DEFAULT, "bycoda:resume-at-reset-change", true);
+export const subscribeResumeAtReset = resumeAtResetSetting.subscribe;
+
+function saveChatFlag(key: string, value: boolean, event: string): boolean {
+  try {
+    const raw = value ? "1" : "0";
+    localStorage.setItem(key, raw);
+    if (localStorage.getItem(key) !== raw) return false;
+  } catch { return false; }
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(event));
+  return true;
+}
 
 export function loadResumeAtReset(): boolean {
   return resumeAtResetSetting.load() ?? RESUME_AT_RESET_DEFAULT;
 }
 
 export function saveResumeAtReset(value: boolean) {
-  resumeAtResetSetting.save(value);
+  return saveChatFlag(RESUME_AT_RESET_KEY, value, "bycoda:resume-at-reset-change");
 }
 
 const FORMAT_ON_SAVE_KEY = "bycoda.formatOnSave";
+const FORMAT_ON_SAVE_CHANGE_EVENT = "bycoda:format-on-save-change";
 
 export const FORMAT_ON_SAVE_DEFAULT = true;
 
-const formatOnSaveSetting = storedFlag(FORMAT_ON_SAVE_KEY, FORMAT_ON_SAVE_DEFAULT);
+const formatOnSaveSetting = storedFlag(
+  FORMAT_ON_SAVE_KEY,
+  FORMAT_ON_SAVE_DEFAULT,
+  FORMAT_ON_SAVE_CHANGE_EVENT,
+  true,
+);
 
 export function loadFormatOnSave(): boolean {
   return formatOnSaveSetting.load() ?? FORMAT_ON_SAVE_DEFAULT;
@@ -2201,6 +2250,8 @@ export function loadFormatOnSave(): boolean {
 export function saveFormatOnSave(value: boolean) {
   formatOnSaveSetting.save(value);
 }
+
+export const subscribeFormatOnSave = formatOnSaveSetting.subscribe;
 
 const AUTOSAVE_KEY = "bycoda.autosave";
 const AUTOSAVE_CHANGE_EVENT = "bycoda:autosave-change";
@@ -2727,5 +2778,8 @@ export function loadAutoContinueInterrupted(): boolean {
 }
 
 export function saveAutoContinueInterrupted(value: boolean) {
-  writeFlag(AUTO_CONTINUE_INTERRUPTED_KEY, value);
+  return saveChatFlag(AUTO_CONTINUE_INTERRUPTED_KEY, value, "bycoda:auto-continue-interrupted-change");
 }
+
+export const subscribeAutoContinueInterrupted = (onChange: () => void) =>
+  subscribePreferenceChanges([AUTO_CONTINUE_INTERRUPTED_KEY], "bycoda:auto-continue-interrupted-change", onChange);

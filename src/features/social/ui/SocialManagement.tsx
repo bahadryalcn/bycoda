@@ -11,7 +11,7 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
@@ -55,6 +55,12 @@ export function Audience({
   );
   const [selectedId, setSelectedId] = useState(snapshot.contacts[0]?.id ?? "");
   const [checkedIds, setCheckedIds] = useState<string[]>([]);
+  const [createRequest, setCreateRequest] = useState(0);
+  const [importOpen, setImportOpen] = useState(false);
+  const importSection = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    if (importOpen) importSection.current?.scrollIntoView({ block: "nearest" });
+  }, [importOpen]);
   const selected =
     snapshot.contacts.find((contact) => contact.id === selectedId) ?? snapshot.contacts[0];
   const [query, setQuery] = useState("");
@@ -87,7 +93,7 @@ export function Audience({
   return (
     <div className="social-page social-collection-page">
       <div className="social-collection-actions">
-        <Composer title={t("Add contact")}>
+        <Composer title={t("Add contact")} openRequest={createRequest}>
           <ContactForm
             client={client}
             snapshot={snapshot}
@@ -347,14 +353,22 @@ export function Audience({
                   ? t("No contacts found")
                   : t("Build your audience")
               }
-            >
+            action={<div className="mt-2 flex flex-wrap gap-2">
+                {query || segment || accountFilter ? <Button variant="ghost" onClick={() => { setQuery(""); setSegment(""); setAccountFilter(""); }}>{t("Clear filters")}</Button> : <>
+                  <Button onClick={() => setCreateRequest((value) => value + 1)} disabled={socialLocked}>{t("Add contact")}</Button>
+                  <Button variant="ghost" onClick={() => setImportOpen(true)} disabled={socialLocked}>{t("Import contacts")}</Button>
+                </>}
+              </div>}
+              >
               {query || segment || accountFilter
                 ? t("No contact matches your search.")
                 : t("Add a contact or import your contact list.")}
+              
             </Empty>
           )}
-          <details className="social-settings">
+          <details ref={importSection} className="social-settings" open={importOpen} onToggle={(event) => setImportOpen(event.currentTarget.open)}>
             <summary>{t("Import contacts")}</summary>
+            <p className="text-ui-caption text-(--ui-text-secondary)">{t("JSON array, up to 1 MiB. Fields: accountId, platformId, name, projectIds, tags, language. Import does not grant sending permission.")}</p>
             <TextField
               disabled={socialLocked}
               label={t("JSON contact list")}
@@ -714,7 +728,7 @@ function ContactForm({
     </form>
   );
 }
-export function Rules({ client, snapshot, projects, initialProject, run }: Props) {
+export function Rules({ client, snapshot, projects, initialProject, run, onOpenContent }: Props) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -816,37 +830,7 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
             }}
           >
             <h3>{t("Create rule")}</h3>
-            <details className="social-settings">
-              <summary>{t("Use a different AI agent for this rule")}</summary>
-              <label>
-                {t("AI agent for this rule")}
-                <NativeSelect
-                  disabled={socialLocked}
-                  value={agent}
-                  onChange={(event) => {
-                    setAgent(event.target.value);
-                    setAgentModel("");
-                  }}
-                >
-                  <option value="">{t("Inherit the global / platform agent")}</option>
-                  {REMOTE_PROVIDERS.map((id) => (
-                    <option key={id} value={id}>
-                      {HARNESS_TITLE[id]}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-              {agent ? (
-                <TextField
-                  disabled={socialLocked}
-                  label={t("AI model for this rule")}
-                  value={agentModel}
-                  maxLength={200}
-                  placeholder={t("Empty: the agent's default model")}
-                  onChange={(event) => setAgentModel(event.target.value)}
-                />
-              ) : null}
-            </details>
+
             <TextField
               disabled={socialLocked}
               label={t("Name")}
@@ -935,6 +919,18 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 </option>
               </NativeSelect>
             </label>
+            <div className="flex flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
+              <p>{t("Verified facts for this project")}: {facts.length}</p>
+              {!facts.length ? <Notice kind="warning" title={t("Add a verified fact before creating a rule")}>
+                {t("Open Content to manage this project's verified facts. Your unfinished rule stays here.")}
+                <p>{projects.find((project) => project.id === projectId)?.name || projectId}</p>
+                {onOpenContent ? <Button variant="link" disabled={socialLocked} onClick={(event) => {
+                  if (event.currentTarget.form) closeComposer(event.currentTarget.form);
+                  onOpenContent(projectId);
+                }}>{t("Manage verified facts")}</Button> : null}
+              </Notice> : null}
+              <p>{t("AI agent")}: {agent ? HARNESS_TITLE[agent as keyof typeof HARNESS_TITLE] || agent : t("Inherit the global / platform agent")}</p>
+            </div>
             <TextField
               disabled={socialLocked}
               label={t("Incoming phrase to match exactly")}
@@ -943,11 +939,6 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
               maxLength={100}
               placeholder={t("E.g. what is the price")}
             />
-            {!facts.length ? (
-              <p className="social-muted">
-                {t("This project has no verified facts. Add one in the Campaigns section.")}
-              </p>
-            ) : null}
             <label>
               {t("Allowed reply fact")}
               <NativeSearchableSelect
@@ -965,6 +956,37 @@ export function Rules({ client, snapshot, projects, initialProject, run }: Props
                 onChange={(event) => setFactId(event.target.value)}
               />
             </label>
+            <details className="social-settings">
+              <summary>{t("Use a different AI agent for this rule")}</summary>
+              <label>
+                {t("AI agent for this rule")}
+                <NativeSelect
+                  disabled={socialLocked}
+                  value={agent}
+                  onChange={(event) => {
+                    setAgent(event.target.value);
+                    setAgentModel("");
+                  }}
+                >
+                  <option value="">{t("Inherit the global / platform agent")}</option>
+                  {REMOTE_PROVIDERS.map((id) => (
+                    <option key={id} value={id}>
+                      {HARNESS_TITLE[id]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+              {agent ? (
+                <TextField
+                  disabled={socialLocked}
+                  label={t("AI model for this rule")}
+                  value={agentModel}
+                  maxLength={200}
+                  placeholder={t("Empty: the agent's default model")}
+                  onChange={(event) => setAgentModel(event.target.value)}
+                />
+              ) : null}
+            </details>
             <details className="social-settings">
               <summary>{t("Advanced options: daily limit and stop phrases")}</summary>
               <TextField

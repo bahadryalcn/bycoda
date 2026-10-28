@@ -1,5 +1,6 @@
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "../core/types";
+import { getNativeOutputEventOrigin, retainNativeOutputEventOrigin, nativeOutputSink, trackNativeOutputWork } from "../core/nativeOutputDelivery";
 
 export type QuestionDelivery = {
   sending?: boolean;
@@ -36,20 +37,24 @@ export function deliverQuestionReply(
   const deliver = pending.deliver;
   if (pending.sending || !deliver) return;
   pending.sending = true;
-  onEvent({ type: "question.updated", requestId, delivery: "sending" });
-  void Promise.resolve()
-    .then(() => {
+  const origin = pending.event && getNativeOutputEventOrigin(pending.event);
+  const work = origin ? retainNativeOutputEventOrigin(origin) : null;
+  const emit = nativeOutputSink(work, onEvent);
+  emit({ type: "question.updated", requestId, delivery: "sending" });
+  const actual = Promise.resolve()
+    .then(nativeOutputSink(work, () => {
       if (!current()) return false;
       return deliver(reply).then(() => true);
-    })
-    .then((sent) => {
+    }))
+    .then(nativeOutputSink(work, (sent) => {
       if (sent && current()) accepted();
-    })
-    .catch((error: unknown) => {
-      if (!current()) return;
+      else work?.fail("question-reply-retired");
+    }));
+  const handled = actual.catch(nativeOutputSink(work, (error: unknown) => {
+      if (!current()) { work?.fail("question-reply-retired"); return; }
       const invalid = error instanceof QuestionReplyValidationError;
       if (invalid) pending.sending = false;
-      onEvent({
+      emit({
         type: "question.updated",
         requestId,
         delivery: invalid ? "failed" : "unknown",
@@ -57,5 +62,7 @@ export function deliverQuestionReply(
           ? error.message
           : "Answer delivery could not be confirmed. Check the connection before continuing.",
       });
-    });
+      work?.fail("question-reply-failed");
+    }));
+  void trackNativeOutputWork(handled, work).catch(() => undefined);
 }

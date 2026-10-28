@@ -46,6 +46,7 @@ export type HostWsPrincipal = {
   exposeQueueAttachments?: HostDispatchContext["exposeQueueAttachments"];
   retargetTask?: HostDispatchContext["retargetTask"];
   devServerAccess?: HostDispatchContext["devServerAccess"];
+  nativeBufferRecovery?: HostDispatchContext["nativeBufferRecovery"];
 };
 
 export type HostWebSocketOptions = {
@@ -58,7 +59,10 @@ export type HostWebSocketOptions = {
   capabilities?: readonly string[];
   subscriptions?: HostSubscriptionHub;
   bulk?: HostBulkTransfers;
-  bulkDependencies?: (method: string, params: Record<string, unknown>) => readonly string[] | Promise<readonly string[]>;
+  bulkDependencies?: (
+    method: string,
+    params: Record<string, unknown>,
+  ) => readonly string[] | Promise<readonly string[]>;
   /** Exact reverse-proxy Host values require deliberate composition. No wildcards. */
   allowedHosts?: readonly string[];
   limits?: Partial<
@@ -384,7 +388,8 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             : "environment";
       const action = async () => {
         const dependencies = options.bulk
-          ? await (options.bulkDependencies?.(request.method, request.params) ?? hostBulkDependencies(request.method, request.params))
+          ? await (options.bulkDependencies?.(request.method, request.params) ??
+              hostBulkDependencies(request.method, request.params))
           : [];
         const lease = options.bulk?.begin(peer.principal.id, resource, dependencies);
         try {
@@ -398,6 +403,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             exposeQueueAttachments: peer.principal.exposeQueueAttachments,
             retargetTask: peer.principal.retargetTask,
             devServerAccess: peer.principal.devServerAccess,
+            nativeBufferRecovery: peer.principal.nativeBufferRecovery,
             signal: definition.cancellation === "query" ? controller.signal : undefined,
           });
           const validated = definition.resultSchema.parse(JSON.parse(JSON.stringify(result)));

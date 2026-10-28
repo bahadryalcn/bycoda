@@ -96,6 +96,11 @@ export type HarnessEvent =
       kind?: string;
       status?: string;
       detail?: string;
+      /**
+       * The provider already dropped part of `detail` (for example the head of
+       * a long running output). Applied as `tool.outputTruncated`.
+       */
+      detailTruncated?: boolean;
       preview?: ToolPreview;
       /** Every path affected when one structured edit changes multiple files. */
       paths?: string[];
@@ -207,6 +212,9 @@ export type HarnessSessionInput = {
   /** Current machine restrictions; never grants provider enablement. */
   skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
+  /** Original logical locator after a real local persistence ACK. Native still
+   * validates actual construction/ownership; omission preserves unbound callers. */
+  nativeOutputSessionId?: string;
   cwd: string;
   model: string;
   modelSettings?: Record<string, string>;

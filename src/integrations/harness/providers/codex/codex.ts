@@ -1,3 +1,4 @@
+import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink, captureNativeOutputEvent, captureNativeOutputWork, trackNativeOutputWork, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
@@ -44,6 +45,7 @@ import {
   stringField,
   toCodexApprovalDecision,
   type CodexApprovalKind,
+  type CodexCommandOutputState,
   type CodexTurnUsageState,
 } from "./codexProtocol";
 import { JsonRpcClient, JsonRpcResponseError, type JsonRpcId } from "../../core/jsonRpc";
@@ -121,6 +123,8 @@ type Live = {
   asyncAnswerTexts: string[];
   queuedAsyncAnswers: Map<number, { pending: PendingQuestion; reply: UserQuestionReply }>;
   turnUsage: CodexTurnUsageState;
+  /** Running command output by item id; see `CodexCommandOutputState`. */
+  commandOutput: CodexCommandOutputState;
   /** A written turn/start still needs its response/notification turn identity. */
   pendingTurnStart: boolean;
   turns: Promise<void>;
@@ -139,7 +143,7 @@ type Live = {
   /** Child thread id -> the agent tool row that spawned it. */
   subagentThreads: Map<string, string>;
   /** Child notifications that arrived before their row was known. */
-  pendingSubagent: Map<string, Array<{ method: string; params: unknown }>>;
+  pendingSubagent: Map<string, Array<{ method: string; params: unknown; work: NativeOutputWork | null }>>;
   /** Agent rows still running, by call id, with the name to settle them under. */
   openAgentRows: Map<string, string>;
   /** Latest rate-limit windows by limit id, merged from sparse updates. */
@@ -312,8 +316,10 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
     return;
   }
 
-  await live.rpc.request("turn/steer", params);
-  live.onEvent({ type: "turn.started", providerTurnId: turnId });
+  await live.rpc.requestWithNativeOutput("turn/steer", params, (result, work) => {
+    nativeOutputSink(work, () => live.onEvent({ type: "turn.started", providerTurnId: turnId }))();
+    return result;
+  });
 }
 
 export function respondCodexApproval(
@@ -487,6 +493,8 @@ export async function stopCodexSession(sessionId: string): Promise<void> {
   if (live) {
     live.muteUpdates = true;
     live.turnGeneration += 1;
+    for (const backlog of live.pendingSubagent.values()) for (const step of backlog) step.work?.fail("codex-backlog-retired");
+    live.pendingSubagent.clear();
     clearServerRequests(live);
     live.turnDone?.();
     live.turnDone = null;
@@ -562,33 +570,35 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
   const rpc = new JsonRpcClient(
     input.sessionId,
     {
-      onNotification: (method, params) => {
+      onNotification: (method, params, work) => {
         const live = liveRef.current;
-        if (!live || live.muteUpdates) return;
+        if (!live || live.muteUpdates) { work?.fail("codex-notification-retired"); return; }
         if (live.notificationQueue) {
           const turnGeneration = live.turnGeneration;
           const queued = live.notificationQueue
             .catch(() => undefined)
-            .then(() => {
+            .then(nativeOutputSink(work ?? null, () => {
               if (live.muteUpdates || live.cancelled || turnGeneration !== live.turnGeneration) {
+                work?.fail("codex-notification-retired");
                 return;
               }
-              return handleNotification(live, method, params);
-            });
+              return handleNotification(live, method, params, work ?? null);
+            }));
           trackNotificationQueue(
             live,
             queued.catch(() => undefined),
           );
-          return;
+          return queued;
         }
-        const result = handleNotification(live, method, params);
+        const result = handleNotification(live, method, params, work ?? null);
         if (!result) return;
         trackNotificationQueue(
           live,
           result.catch(() => undefined),
         );
+        return result;
       },
-      onRequest: (id, method, params) => {
+      onRequest: (id, method, params, work) => {
         const live = liveRef.current;
         const turn = live?.turnDone;
         // The external clock can be requested before thread/start or resume
@@ -599,7 +609,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             : live
               ? handleServerRequest(live, id, method, params)
               : undefined;
-        void response?.catch((error: unknown) => {
+        return response?.catch(nativeOutputSink(work ?? null, (error: unknown) => {
           if (live?.muteUpdates || (live && live.turnDone !== turn)) return;
           const failure = error instanceof Error ? error : new Error(String(error));
           rpc.close(failure);
@@ -611,7 +621,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
               message: failure.message,
             });
           }
-        });
+        }));
       },
     },
     { includeJsonrpc: false, label: "codex", defaultRequestTimeoutMs: 60_000 },
@@ -769,6 +779,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       asyncAnswerTexts: [],
       queuedAsyncAnswers: new Map(),
       turnUsage: {},
+      commandOutput: new Map(),
       pendingTurnStart: false,
       turns: Promise.resolve(),
       turnDone: null,
@@ -880,6 +891,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   live.emittedAssistantByItem.clear();
   live.asyncAnswerTexts = [];
   live.turnUsage = {};
+  live.commandOutput.clear();
   live.emittedReasoningByItem.clear();
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
@@ -894,11 +906,11 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
 
   try {
     live.pendingTurnStart = true;
-    const response = await live.rpc.request<{ turn?: { id?: string } }>("turn/start", params);
+    await live.rpc.requestWithNativeOutput<{ turn?: { id?: string } }>("turn/start", params, (response, work) => nativeOutputSink(work, () => {
     live.pendingTurnStart = false;
     // Natural completion may arrive before this response. Still acknowledge it,
     // but never accept a stopped turn or an old transport's late response.
-    if (live.cancelled || live.muteUpdates) return;
+    if (live.cancelled || live.muteUpdates) return response;
     input.onAccepted?.();
     const turnId = response.turn?.id ?? live.activeTurnId;
     // turn/completed can arrive before turn/start returns; don't resurrect a
@@ -908,6 +920,8 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
       live.onEvent({ type: "turn.started", providerTurnId: turnId });
     }
     settlePendingTurn(live);
+    return response;
+    })());
     await turnPromise;
   } catch (error) {
     if (live.cancelled) return;
@@ -973,11 +987,10 @@ async function runCompaction(live: Live): Promise<void> {
   }
 }
 
-function handleNotification(live: Live, method: string, params: unknown): void | Promise<void> {
+function handleNotification(live: Live, method: string, params: unknown, outputWork: NativeOutputWork | null = null): void | Promise<void> {
   if (live.muteUpdates || live.cancelled) return;
   if (method === "skills/changed") {
-    void loadCodexSkills(live, live.sessionId);
-    return;
+    return loadCodexSkills(live, live.sessionId);
   }
   const rec = asRecord(params);
   if (method === "serverRequest/resolved") {
@@ -1004,7 +1017,7 @@ function handleNotification(live: Live, method: string, params: unknown): void |
   // mean the turn is over — more tools and messages can still arrive. Only
   // turn/completed (and turn/aborted) settle sendCodexTurn, which is what the
   // UI uses for busy / stop / "Working for".
-  const mapped = mapCodexNotification(method, params, live.turnUsage);
+  const mapped = mapCodexNotification(method, params, live.turnUsage, live.commandOutput);
   if (mapped.diagnostic) {
     console.debug(`[bycoda] codex ${live.threadId} ${method}`, mapped.diagnostic);
   }
@@ -1021,7 +1034,7 @@ function handleNotification(live: Live, method: string, params: unknown): void |
       if (live.emittedGeneratedImages.has(event.itemId)) continue;
       live.emittedGeneratedImages.add(event.itemId);
       if ("data" in event) {
-        const save = () => materializeGeneratedImage(live, event);
+        const save = nativeOutputSink(outputWork, () => materializeGeneratedImage(live, event));
         pending = pending ? pending.then(save) : save();
         continue;
       }
@@ -1048,7 +1061,13 @@ function handleNotification(live: Live, method: string, params: unknown): void |
     const backlog = live.pendingSubagent.get(childId);
     live.pendingSubagent.delete(childId);
     for (const pendingStep of backlog ?? []) {
-      const emit = () => emitSubagentSteps(live, owner, pendingStep.method, pendingStep.params);
+      const emit = () => {
+        try {
+          const actual = nativeOutputSink(pendingStep.work, () => emitSubagentSteps(live, owner, pendingStep.method, pendingStep.params))();
+          if (actual) return trackNativeOutputWork(actual, pendingStep.work);
+          pendingStep.work?.finish();
+        } catch (error) { pendingStep.work?.fail("codex-backlog-replay-failed"); throw error; }
+      };
       if (replay) {
         replay = replay.then(emit);
       } else {
@@ -1057,7 +1076,7 @@ function handleNotification(live: Live, method: string, params: unknown): void |
       }
     }
   }
-  const finish = () => {
+  const finish = nativeOutputSink(outputWork, () => {
     settleSubagentRows(live, rec);
     if (mapped.rateLimits) noteRateLimits(live, mapped.rateLimits);
     if (mapped.usageLimited) live.usageLimited = true;
@@ -1087,12 +1106,12 @@ function handleNotification(live: Live, method: string, params: unknown): void |
       }
       finishActiveTurn(live);
     }
-  };
-  const afterImages = () => {
+  });
+  const afterImages = nativeOutputSink(outputWork, () => {
     if (live.muteUpdates || live.cancelled) return;
     if (replay) return replay.then(finish);
     finish();
-  };
+  });
   if (pending) return pending.then(afterImages);
   return afterImages();
 }
@@ -1126,6 +1145,7 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
     behavior: "nonBlocking",
     dismissAction: "skip",
   };
+  captureNativeOutputEvent(live.sessionId, event);
   const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
     live.questions.set(uiId, {
       rpcId: null,
@@ -1140,7 +1160,9 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
     live.questions.delete(uiId);
   });
   showNextQuestion(live);
-  void outcome.then((reply) => {
+  void runNativeOutputWork(async (work) => {
+    const reply = await outcome;
+    nativeOutputSink(work, () => {
     live.onEvent({
       type: "question.resolved",
       requestId: uiId,
@@ -1150,6 +1172,7 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
     });
     showNextQuestion(live);
     settleAsyncAnswers(live);
+    })();
   });
 }
 
@@ -1157,6 +1180,8 @@ async function materializeGeneratedImage(
   live: Live,
   event: Extract<HarnessEvent, { type: "image.generated"; data: string }>,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const turnGeneration = live.turnGeneration;
   try {
     const asset = await saveGeneratedImage({
@@ -1164,10 +1189,10 @@ async function materializeGeneratedImage(
       name: event.name,
     });
     if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
-      void deleteGeneratedImages([asset.path]).catch(() => undefined);
+      void nativeOutputSink(outputWork, () => runNativeOutputWork(() => deleteGeneratedImages([asset.path])))().catch(() => undefined);
       return;
     }
-    live.onEvent({
+    emitNative({
       type: "image.generated",
       itemId: event.itemId,
       path: asset.path,
@@ -1180,13 +1205,15 @@ async function materializeGeneratedImage(
     if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
       return;
     }
-    live.onEvent({
+    emitNative({
       type: "session.error",
       message: `Could not save generated image: ${
         cause instanceof Error ? cause.message : String(cause)
       }`,
     });
   }
+
+});
 }
 
 /** Rate-limit updates are sparse: a missing window keeps its last reading. */
@@ -1291,8 +1318,8 @@ function handleSubagentNotification(
   )
     return;
   const backlog = live.pendingSubagent.get(threadId) ?? [];
-  if (backlog.length >= MAX_PENDING_SUBAGENT) return;
-  backlog.push({ method, params });
+  if (backlog.length >= MAX_PENDING_SUBAGENT) { captureNativeOutputWork()?.fail("codex-backlog-capacity"); return; }
+  backlog.push({ method, params, work: captureNativeOutputWork() });
   live.pendingSubagent.set(threadId, backlog);
 }
 
@@ -1416,6 +1443,7 @@ function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
   live.subagentThreads.clear();
+  for (const backlog of live.pendingSubagent.values()) for (const step of backlog) step.work?.fail("codex-backlog-retired");
   live.pendingSubagent.clear();
   TurnLatch.finish(live, extraEvents);
 }
@@ -1430,21 +1458,23 @@ async function handleServerRequest(
   method: string,
   params: unknown,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const threadId = stringField(asRecord(params), "threadId") ?? live.threadId;
   if (method === "item/tool/requestUserInput") {
     if (live.cancelled || live.muteUpdates) {
-      await live.rpc.respond(id, { answers: {} });
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
       return;
     }
     let questions;
     try {
       questions = codexQuestions(params);
     } catch (error) {
-      live.onEvent({
+      emitNative({
         type: "status",
         text: error instanceof Error ? error.message : String(error),
       });
-      await live.rpc.respond(id, { answers: {} });
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
       return;
     }
     const uiId = live.nextApprovalUiId++;
@@ -1458,13 +1488,14 @@ async function handleServerRequest(
       behavior: asRecord(params)?.isBlocking === false ? "nonBlocking" : "blocking",
       dismissAction: "skip",
     };
+captureNativeOutputWorkEvent(outputWork, event);
     const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
       live.questions.set(uiId, {
         rpcId: id,
         threadId,
         event,
         resolve,
-        deliver: (reply) => live.rpc.respond(id, codexQuestionResponse(questions, reply)),
+        deliver: (reply) => nativeOutputSink(outputWork, () => live.rpc.respond(id, codexQuestionResponse(questions, reply)))(),
         // Older servers omit this field and must keep their blocking behavior.
         isBlocking: asRecord(params)?.isBlocking !== false,
       });
@@ -1472,16 +1503,16 @@ async function handleServerRequest(
       clearTimeout(live.questions.get(uiId)?.timer);
       live.questions.delete(uiId);
     });
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     const reply = await outcome;
-    live.onEvent({
+    emitNative({
       type: "question.resolved",
       requestId: uiId,
       decision:
         reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
       ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
     });
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     return;
   }
 
@@ -1489,47 +1520,47 @@ async function handleServerRequest(
     const confirmation = codexMcpConfirmation(params);
     const form = confirmation ? null : codexMcpForm(params);
     if (form && !live.cancelled && !live.muteUpdates) {
-      await handleMcpForm(live, id, threadId, form);
+      await nativeOutputSink(outputWork, handleMcpForm)(live, id, threadId, form);
       return;
     }
     if (!confirmation || live.cancelled || live.muteUpdates) {
       if (!live.cancelled && !live.muteUpdates)
-        live.onEvent({
+        emitNative({
           type: "status",
           text: `This MCP server requested a form or browser sign-in that ${PRODUCT_IDENTITY.displayName} does not support yet. Complete it in the server's own interface.`,
         });
-      await live.rpc.respond(id, {
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
         action: "cancel",
         content: null,
         _meta: null,
-      });
+      }))();
       return;
     }
     if (!live.planning && live.runtimeMode === "full-access") {
-      await live.rpc.respond(id, {
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
         action: "accept",
         content: confirmation.content,
         _meta: null,
-      });
+      }))();
       return;
     }
     const uiId = live.nextApprovalUiId++;
-    const pending = waitApproval(live, uiId, id, "permissions", threadId);
+    const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, "permissions", threadId);
     // MCP consent requires an explicit decision outside non-plan Full Access turns.
-    live.onEvent({
+    emitNative({
       type: "approval.requested",
       requestId: uiId,
       kind: "other",
       title: confirmation.title,
     });
     const decision = await pending;
-    live.onEvent({ type: "approval.resolved", requestId: uiId, decision });
+    emitNative({ type: "approval.resolved", requestId: uiId, decision });
     if (decision !== "cancelled")
-      await live.rpc.respond(id, {
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
         action: decision === "allow" ? "accept" : "decline",
         content: decision === "allow" ? confirmation.content : null,
         _meta: null,
-      });
+      }))();
     return;
   }
 
@@ -1537,14 +1568,14 @@ async function handleServerRequest(
   const mapped = mapApprovalRequest(method, params, uiId);
   if (!mapped) {
     // An empty success or invented denial hides protocol incompatibility.
-    live.onEvent({
+    emitNative({
       type: "status",
       text: `Unsupported Codex request: ${method}`,
     });
-    await live.rpc.respondError(id, {
+    await nativeOutputSink(outputWork, () => live.rpc.respondError(id, {
       code: -32601,
       message: `Unsupported method: ${method}`,
-    });
+    }))();
     return;
   }
 
@@ -1553,12 +1584,12 @@ async function handleServerRequest(
     // app-server still asks for broader access, deny it silently instead of
     // leaking a Supervised approval prompt into the user's selected mode.
     if (method === "item/permissions/requestApproval") {
-      await live.rpc.respond(id, { permissions: {} }).catch(() => undefined);
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { permissions: {} }))().catch(() => undefined);
     } else {
-      await live.rpc
+      await nativeOutputSink(outputWork, () => live.rpc
         .respond(id, {
           decision: toCodexApprovalDecision("deny", mapped.kind),
-        })
+        }))()
         .catch(() => undefined);
     }
     return;
@@ -1569,17 +1600,17 @@ async function handleServerRequest(
     if (live.runtimeMode === "full-access") {
       const rec = asRecord(params);
       const permissions = rec?.permissions ?? {};
-      await live.rpc.respond(id, {
+      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
         scope: "session",
         permissions,
-      });
+      }))();
       return;
     }
     if (live.runtimeMode === "supervised") {
-      const pending = waitApproval(live, uiId, id, mapped.kind, threadId);
-      live.onEvent(mapped.event);
+      const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, mapped.kind, threadId);
+      emitNative(mapped.event);
       const decision = await pending;
-      live.onEvent({
+      emitNative({
         type: "approval.resolved",
         requestId: uiId,
         decision,
@@ -1587,44 +1618,46 @@ async function handleServerRequest(
       if (decision === "cancelled") return;
       if (decision === "allow") {
         const rec = asRecord(params);
-        await live.rpc.respond(id, {
+        await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
           scope: "turn",
           permissions: rec?.permissions ?? {},
-        });
+        }))();
       } else {
-        await live.rpc.respond(id, { permissions: {} });
+        await nativeOutputSink(outputWork, () => live.rpc.respond(id, { permissions: {} }))();
       }
       return;
     }
     // auto / auto-accept: grant requested permissions for the turn.
     const rec = asRecord(params);
-    await live.rpc.respond(id, {
+    await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
       scope: "turn",
       permissions: rec?.permissions ?? {},
-    });
+    }))();
     return;
   }
 
   const auto = autoApproval(live.runtimeMode, mapped.kind);
   if (auto) {
-    await live.rpc.respond(id, {
+    await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
       decision: toCodexApprovalDecision(auto, mapped.kind),
-    });
+    }))();
     return;
   }
 
-  const pending = waitApproval(live, uiId, id, mapped.kind, threadId);
-  live.onEvent(mapped.event);
+  const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, mapped.kind, threadId);
+  emitNative(mapped.event);
   const decision = await pending;
-  live.onEvent({
+  emitNative({
     type: "approval.resolved",
     requestId: uiId,
     decision,
   });
   if (decision === "cancelled") return;
-  await live.rpc.respond(id, {
+  await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
     decision: toCodexApprovalDecision(decision, mapped.kind),
-  });
+  }))();
+
+});
 }
 
 async function handleMcpForm(
@@ -1633,6 +1666,8 @@ async function handleMcpForm(
   threadId: string,
   form: CodexMcpForm,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   // Forms require user-supplied data even in Full Access. Never invent a default.
   while (!live.cancelled && !live.muteUpdates) {
     const uiId = live.nextApprovalUiId++;
@@ -1644,6 +1679,7 @@ async function handleMcpForm(
       behavior: "blocking",
       dismissAction: "decline",
     };
+captureNativeOutputWorkEvent(outputWork, event);
     const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
       live.questions.set(uiId, {
         rpcId,
@@ -1660,25 +1696,27 @@ async function handleMcpForm(
               error instanceof Error ? error.message : t("Check the form values."),
             );
           }
-          return live.rpc.respond(rpcId, response);
+          return nativeOutputSink(outputWork, () => live.rpc.respond(rpcId, response))();
         },
       });
     }).finally(() => {
       live.questions.delete(uiId);
     });
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     const reply = await outcome;
-    live.onEvent({
+    emitNative({
       type: "question.resolved",
       requestId: uiId,
       decision:
         reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
       ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
     });
-    showNextQuestion(live);
+    nativeOutputSink(outputWork, showNextQuestion)(live);
     if (reply === "cancelled" || live.cancelled || live.muteUpdates) return;
     return;
   }
+
+});
 }
 
 function waitApproval(

@@ -77,7 +77,7 @@ it("keeps discovered keys usable when the agent inventory fails and assigns once
       }),
     ),
   );
-  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Some SSH information");
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("Agent unavailable");
   const choose = document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')!;
   expect(choose.disabled).toBe(false);
   await act(async () => {
@@ -114,4 +114,20 @@ it("opens global SSH management with an empty inventory and preserves config tex
       ([command]) => command === "ssh_config_preview" || command === "server_ssh_save",
     ),
   ).toBe(false);
+});
+
+it("retries only the failed SSH inventory and keeps a successful key list usable", async () => {
+  await act(async () => root.render(createElement(SshSettings, { server, servers: [server], onClose: vi.fn() })));
+  const initialKeys = native.invoke.mock.calls.filter(([command]) => command === "ssh_public_keys_list").length;
+  const initialHosts = native.invoke.mock.calls.filter(([command]) => command === "ssh_known_hosts_list").length;
+  const alert = [...document.querySelectorAll('[role="alert"]')].find((node) => node.textContent?.includes("Agent unavailable"))!;
+  const retry = alert.querySelector<HTMLButtonElement>("button")!;
+  const previous = native.invoke.getMockImplementation()!;
+  native.invoke.mockImplementation((command: string, ...args: unknown[]) => command === "ssh_agent_identities" ? Promise.resolve({ status: "empty", identities: [] }) : previous(command, ...args));
+  await act(async () => retry.click());
+  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_agent_identities")).toHaveLength(2);
+  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_public_keys_list")).toHaveLength(initialKeys);
+  expect(native.invoke.mock.calls.filter(([command]) => command === "ssh_known_hosts_list")).toHaveLength(initialHosts);
+  expect(document.body.textContent).not.toContain("Agent unavailable");
+  expect(document.querySelector<HTMLButtonElement>('button[aria-label^="Assign key:"]')?.disabled).toBe(false);
 });

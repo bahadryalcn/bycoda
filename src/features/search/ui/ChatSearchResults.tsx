@@ -111,11 +111,10 @@ export function ChatFilterBar({
                 </option>
               ))}
             </NativeSelect>
-            <label className="flex items-center gap-1.5 text-[12px] text-(--ui-text-secondary)">
+            <label className="flex items-center gap-1.5 text-ui-secondary text-(--ui-text-secondary)">
               <Checkbox
                 checked={filters.archived}
                 onChange={(event) => onChange({ ...filters, archived: event.target.checked })}
-                className="size-3"
               />
               {t("Archived")}
             </label>
@@ -138,12 +137,14 @@ function Marked({ text, ranges }: { text: string; ranges: [number, number][] }) 
 }
 
 export function ChatSearchResults({
+  listId,
   groups,
   entries,
   active,
   onActive,
   onOpen,
 }: {
+  listId: string;
   groups: ChatProjectGroup[];
   entries: ChatEntry[];
   active: number;
@@ -183,6 +184,8 @@ export function ChatSearchResults({
       highlighted,
       entry: entries[index],
       buttonProps: {
+        id: `${listId}-option-${index}`,
+        tabIndex: -1,
         ref: highlighted ? activeRef : undefined,
         role: "option" as const,
         "aria-selected": highlighted,
@@ -198,6 +201,7 @@ export function ChatSearchResults({
 
   return (
     <div
+      id={listId}
       role="listbox"
       aria-label={t("Chat search results")}
       onMouseMove={onMouseMove}
@@ -207,13 +211,14 @@ export function ChatSearchResults({
         <section key={group.key} aria-label={group.name} className="mb-1.5">
           <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-ui-micro font-medium text-(--ui-text-secondary)">
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
-            <span className="min-w-0 truncate">{group.name}</span>
+            <span className="min-w-0 flex-1 break-words" title={group.cwd}>{group.name}</span>
             {group.groupName ? (
               <Badge size="sm" appearance="subtle" className="shrink-0">
                 {group.groupName}
               </Badge>
             ) : null}
           </h3>
+          <p className="px-2 pb-1 text-ui-caption text-(--ui-text-muted) [overflow-wrap:anywhere]">{group.cwd}</p>
           {group.sessions.map((session) => {
             const row = rowProps(session.id);
             const more = session.hitCount - session.hits.length;
@@ -224,29 +229,32 @@ export function ChatSearchResults({
                   motion="none"
                   fullWidth
                   selected={row.highlighted}
-                  className="app-search-result"
+                  className="app-search-result @max-[560px]/search:flex-wrap"
                   type="button"
                   {...row.buttonProps}
+                  title={`${session.title}\n${group.cwd}`}
                   onClick={() => row.entry && onOpen(row.entry)}
                 >
                   <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
-                  <span className="min-w-0 flex-1 truncate">
+                  <span className="app-search-result-title min-w-0 flex-1">
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </span>
+                  <span className="flex flex-wrap items-center gap-1.5 @max-[560px]/search:basis-full @max-[560px]/search:ps-6">
                   {session.archived ? (
                     <Badge size="sm" appearance="subtle" className="shrink-0">
                       {t("Archived")}
                     </Badge>
                   ) : null}
                   {session.hitCount > 0 ? (
-                    <span className="shrink-0 text-[11px] tabular-nums text-(--ui-text-secondary)">
+                    <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
                       {session.hitCount === 1
                         ? t("1 match")
                         : t("{p0} matches", { p0: session.hitCount })}
                     </span>
                   ) : null}
-                  <span className="shrink-0 text-[11px] text-(--ui-text-secondary)">
+                  <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                     {formatChatDate(session.updatedAt)}
+                  </span>
                   </span>
                 </Button>
                 {session.hits.map((hit) => {
@@ -261,23 +269,24 @@ export function ChatSearchResults({
                       key={hit.id}
                       type="button"
                       {...hitRow.buttonProps}
+                      title={hit.snippet}
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
                     >
                       <MessageSquare
                         className="size-3 shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
-                      <span className="app-search-result-copy app-search-result-preview">
+                      <span className={`app-search-result-copy ${hitRow.highlighted ? "app-search-result-identity" : "app-search-result-preview"}`}>
                         <Marked text={hit.snippet} ranges={hit.ranges} />
                       </span>
-                      <span className="shrink-0 text-(length:--ui-font-caption) text-(--ui-text-secondary)">
+                      <span className="app-search-chat-role shrink-0 text-ui-caption text-(--ui-text-secondary)">
                         {hit.role === "user" ? t("You") : hit.role}
                       </span>
                     </Button>
                   );
                 })}
                 {more > 0 ? (
-                  <p className="ml-7 px-2 py-0.5 text-[11px] text-(--ui-text-secondary)">
+                  <p className="ml-7 px-2 py-0.5 text-ui-caption text-(--ui-text-secondary)">
                     {more === 1 ? t("1 more match") : t("{p0} more matches", { p0: more })}
                   </p>
                 ) : null}

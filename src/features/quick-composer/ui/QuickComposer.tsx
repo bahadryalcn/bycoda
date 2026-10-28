@@ -22,6 +22,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type SetStateAction,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -88,6 +89,12 @@ import {
   type QuickLaunch,
 } from "../model/quickComposer";
 import { quickSessionModelSettings, quickSessionRuntimeMode } from "../model/quickSessionDefaults";
+import { nativeQuickLaunches } from "../model/nativeQuickLaunch";
+import {
+  quickComposerClosure,
+  type QuickComposerClosureRuntime,
+  type QuickComposerDraft,
+} from "../model/quickComposerClosure";
 
 /** Tallest the prompt grows before it scrolls, in px. */
 const PROMPT_MAX_HEIGHT = 220;
@@ -110,17 +117,78 @@ export function quickPromptMode(text: string): {
   return { prompt: text.slice(match![0].length), mode };
 }
 
-export function QuickComposer({ onShown }: { onShown: () => void }) {
+export function QuickComposer({
+  onShown,
+  closure = quickComposerClosure,
+}: {
+  onShown: () => void;
+  /** Trusted renderer composition/test isolation, never a renderer RPC grant. */
+  closure?: QuickComposerClosureRuntime;
+}) {
   useLocale();
   const spelling = useComposerSpelling();
   const [projects, setProjects] = useState(loadQuickProjects);
   const [projectAppearance, setProjectAppearance] = useState(loadQuickProjectAppearance);
   const [availableHarnesses, setAvailableHarnesses] = useState<HarnessId[] | null>(null);
-  const [cwd, setCwd] = useState(() => initialQuickProject(projects));
-  const [choice, setChoice] = useState(initialQuickChoice);
-  const [workspaceChoice, setWorkspaceChoice] = useState<QuickWorkspace>({
-    cwd,
+  const [initial] = useState<QuickComposerDraft>(() => {
+    const cwd = initialQuickProject(projects);
+    return {
+      prompt: "",
+      attachments: [],
+      cwd,
+      choice: initialQuickChoice(),
+      modelSettings: {},
+      pickedRuntimeMode: null,
+      workspaceChoice: { cwd },
+    };
   });
+  const owner = useMemo(() => closure.bind(closure.window(initial)), [closure, initial]);
+  useSyncExternalStore(owner.subscribe, owner.version);
+  const { cwd, choice, workspaceChoice, modelSettings, pickedRuntimeMode, prompt } = owner.draft();
+  const setField = useCallback(
+    <K extends keyof QuickComposerDraft>(key: K, action: SetStateAction<QuickComposerDraft[K]>) => {
+      if (!owner.canMutate()) return;
+      owner.update((draft) => {
+        const value =
+          typeof action === "function"
+            ? (action as (before: QuickComposerDraft[K]) => QuickComposerDraft[K])(draft[key])
+            : action;
+        return value === draft[key] ? draft : { ...draft, [key]: value };
+      });
+    },
+    [owner],
+  );
+  const setCwd = useCallback(
+    (value: SetStateAction<string | null>) => setField("cwd", value),
+    [setField],
+  );
+  const setChoice = useCallback(
+    (value: QuickComposerDraft["choice"]) => setField("choice", value),
+    [setField],
+  );
+  const setWorkspaceChoice = useCallback(
+    (value: QuickWorkspace) => setField("workspaceChoice", value),
+    [setField],
+  );
+  const setModelSettings = useCallback(
+    (value: Record<string, string>) => setField("modelSettings", value),
+    [setField],
+  );
+  const setPickedRuntimeMode = useCallback(
+    (value: RuntimeMode) => setField("pickedRuntimeMode", value),
+    [setField],
+  );
+  const setPrompt = useCallback(
+    (value: SetStateAction<string>) => {
+      if (!owner.canMutate()) return;
+      const next = typeof value === "function" ? value(owner.draft().prompt) : value;
+      // Match actual DOM and retained state in the same admitted turn. A pending
+      // controlled React commit is not an attachment/result capture barrier.
+      if (promptRef.current) promptRef.current.value = next;
+      setField("prompt", next);
+    },
+    [owner, setField],
+  );
   const workspace = workspaceForProject(workspaceChoice, cwd);
   const workspaceCreation = useWorkspaceCreation(
     cwd ?? "",
@@ -133,12 +201,9 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   const [gitOpen, setGitOpen] = useState(false);
   // Re-render when a workspace window's live catalog lands.
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot);
-  const [modelSettings, setModelSettings] = useState<Record<string, string>>({});
   // Only what the user picked is stored. Until then the mode follows the
   // selected harness's default for a new session, so it tracks the limits a
   // workspace window reports after the panel opened.
-  const [pickedRuntimeMode, setPickedRuntimeMode] = useState<RuntimeMode | null>(null);
-  const [prompt, setPrompt] = useState("");
   const leadingMode = leadingModeCommand(prompt, MODE_NAMES);
   const [slash, setSlash] = useState<SlashToken | null>(null);
   const [picker, setPicker] = useState<
@@ -147,13 +212,15 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [uiBusy, setBusy] = useState(false);
+  const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
   const attachmentsSupported = harnessSupportsAttachments(choice.harness);
   const attachments = useQuickAttachments(
     attachmentsSupported && !busy,
     setError,
     (added, previous) => insertPromptText(tokensForIncoming(previous, added)),
+    owner,
   );
   const frameRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -163,10 +230,64 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   const queryRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
+  useLayoutEffect(() => {
+    const input = promptRef.current;
+    let composing = false;
+    let closed = false;
+    const originalReadOnly = input?.readOnly ?? false;
+    const detach = owner.mount({
+      readPrompt: () => input?.value ?? null,
+      composing: () => composing,
+      gate: (value) => {
+        closed = value;
+        if (input && !composing) input.readOnly = value || originalReadOnly;
+      },
+    });
+    const before = (event: Event) => {
+      if (!composing && !owner.canMutate()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const changed = () => {
+      if (input) owner.externalPrompt(input.value);
+    };
+    const start = () => {
+      composing = true;
+    };
+    const end = () => {
+      composing = false;
+      changed();
+      owner.changed();
+      if (input) input.readOnly = closed || originalReadOnly;
+    };
+    input?.addEventListener("beforeinput", before, true);
+    input?.addEventListener("paste", before, true);
+    input?.addEventListener("drop", before, true);
+    input?.addEventListener("input", changed);
+    input?.addEventListener("compositionstart", start);
+    input?.addEventListener("compositionend", end);
+    return () => {
+      detach();
+      input?.removeEventListener("beforeinput", before, true);
+      input?.removeEventListener("paste", before, true);
+      input?.removeEventListener("drop", before, true);
+      input?.removeEventListener("input", changed);
+      input?.removeEventListener("compositionstart", start);
+      input?.removeEventListener("compositionend", end);
+      if (input) input.readOnly = originalReadOnly;
+    };
+  }, [owner]);
+
   /** Text goes at the caret when the prompt has focus, otherwise at the end. */
   function insertPromptText(insertion: string) {
+    if (!owner.canMutate()) return;
     const field = promptRef.current;
-    if (!field || !insertion) return;
+    if (!insertion) return;
+    if (!field) {
+      setPrompt((text) => `${text}${text && !/\s$/.test(text) ? " " : ""}${insertion}`);
+      return;
+    }
     const focused = document.activeElement === field;
     const edit = insertAtSelection(
       field.value,
@@ -194,6 +315,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
     let unlisten: (() => void) | undefined;
     void listen(QUICK_COMPOSER_SHOWN_EVENT, () => {
       onShown();
+      if (!owner.canMutate()) return;
       const nextProjects = loadQuickProjects();
       const nextChoice = initialQuickChoice();
       setProjects(nextProjects);
@@ -218,7 +340,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       disposed = true;
       unlisten?.();
     };
-  }, [focusPrompt, onShown]);
+  }, [focusPrompt, onShown, owner, setChoice, setCwd, setModelSettings]);
 
   // Model lists come from the CLIs, which only workspace windows talk to.
   useEffect(() => {
@@ -288,8 +410,25 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   };
   const settings = quickSessionModelSettings(model, cwd ?? undefined, modelSettings);
   const runtimeMode = quickSessionRuntimeMode(model.harness, cwd ?? undefined, pickedRuntimeMode);
+  useLayoutEffect(() => {
+    owner.effective({
+      model: resolvedModel ? { harness: model.harness, id: model.id } : null,
+      settings,
+      runtimeMode,
+      workspace: {
+        ...workspace,
+        resolvedMode: workspaceCreation.mode,
+        ...(workspace.base || workspaceCreation.base
+          ? { base: workspace.base || workspaceCreation.base }
+          : {}),
+      },
+      workspacePending: workspaceCreation.pending,
+      ...(workspaceCreation.error ? { workspaceError: workspaceCreation.error } : {}),
+    });
+  });
   const optionCount = picker === "commands" ? commandOptions.length : projectOptions.length;
   const openPicker = (kind: "project" | "model" | "permissions" | "attachments") => {
+    if (!owner.canMutate()) return;
     if (picker === kind) {
       closePicker();
       return;
@@ -311,6 +450,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   };
 
   const chooseAt = (index: number) => {
+    if (!owner.canMutate()) return;
     if (picker === "commands") {
       const command = commandOptions[index];
       const field = promptRef.current;
@@ -355,6 +495,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   };
 
   const removeAttachment = (id: string) => {
+    if (!owner.canMutate()) return;
     setPrompt((current) =>
       removeAttachmentFromText(
         current,
@@ -370,32 +511,58 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   };
 
   const submit = async (reveal: boolean) => {
-    const launchMode = quickPromptMode(prompt.trim());
+    if (!owner.canMutate() || owner.pending) return;
+    const current = owner.draft();
+    const recoveringLaunch = nativeQuickLaunches.has(owner.rendererWindowId);
+    const submittedPrompt = promptRef.current?.value ?? current.prompt;
+    const selectedModel = resolveQuickModel(current.choice);
+    const selectedWorkspace = workspaceForProject(current.workspaceChoice, current.cwd);
+    const selectedSettings = selectedModel
+      ? quickSessionModelSettings(selectedModel, current.cwd ?? undefined, current.modelSettings)
+      : {};
+    const selectedRuntime = quickSessionRuntimeMode(
+      current.choice.harness,
+      current.cwd ?? undefined,
+      current.pickedRuntimeMode,
+    );
+    const launchMode = quickPromptMode(submittedPrompt.trim());
     const text = launchMode.prompt.trim();
     if (
-      (!text && !attachments.files.length) ||
-      !cwd ||
+      (!recoveringLaunch && !text && !current.attachments.length) ||
+      (!recoveringLaunch && !current.cwd) ||
       submitting.current ||
       attachments.loading ||
       gitOpen ||
-      workspaceBlocked ||
-      !resolvedModel ||
-      (attachments.files.length > 0 && !attachmentsSupported)
+      (!recoveringLaunch && workspaceBlocked) ||
+      (!recoveringLaunch && !selectedModel) ||
+      (!recoveringLaunch &&
+        selectedModel &&
+        current.attachments.length > 0 &&
+        !harnessSupportsAttachments(selectedModel.harness))
     )
       return;
     const intent = launchMode.mode === PLAN_COMMAND.name ? ("plan" as const) : undefined;
-    const refusal = quickLaunchRefusal(model.harness, runtimeMode, intent);
+    const refusal =
+      !recoveringLaunch && selectedModel
+        ? quickLaunchRefusal(selectedModel.harness, selectedRuntime, intent)
+        : null;
     if (refusal) {
       setError(refusal);
       return;
     }
     submitting.current = true;
-    const submittedPrompt = prompt;
     setBusy(true);
     setError(null);
-    const picked = { harness: model.harness, model: model.id };
+    const picked = selectedModel
+      ? { harness: selectedModel.harness, model: selectedModel.id }
+      : current.choice;
+    const selectedCwd = current.cwd ?? "";
+    // The first explicit action may submit once. Closure retry only observes;
+    // a later explicit Start reconciles the retained original Native tuple.
+    let explicit = true;
+    const lineage: { intentId?: string } = {};
     try {
-      const request: QuickLaunch = {
+      const baseRequest = {
         prompt: text,
         ...(launchMode.mode === DRAFT_COMMAND.name ? { draft: true } : {}),
         ...(launchMode.mode === PLAN_COMMAND.name
@@ -403,22 +570,50 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           : launchMode.mode === ORCHESTRATOR_COMMAND.name
             ? { intent: "orchestrate" as const }
             : {}),
-        cwd,
+        cwd: selectedCwd,
         ...picked,
-        modelSettings: settings,
-        runtimeMode,
-        attachments: quickLaunchAttachments(attachments.files),
-        ...(await quickWorkspaceLaunch(workspace)),
+        modelSettings: selectedSettings,
+        runtimeMode: selectedRuntime,
+        attachments: quickLaunchAttachments(current.attachments),
         reveal,
       };
-      await invoke("quick_composer_submit", { request });
-      rememberQuickProject(cwd);
-      saveLastModelSettings(settings);
-      saveRecentModelChoice(picked.harness, picked.model);
-      setPrompt((current) => (current === submittedPrompt ? "" : current));
-      setPicker(null);
-      setSlash(null);
-      attachments.clear();
+      await owner.prepare(async (accepted) => {
+        const launch = nativeQuickLaunches.run({
+          key: owner.rendererWindowId,
+          intentId: owner.intentId,
+          rawPrompt: submittedPrompt,
+          explicit,
+          lineage,
+          prepare: async () =>
+            ({
+              ...baseRequest,
+              ...(await accepted.stage("launch-workspace", () =>
+                quickWorkspaceLaunch(selectedWorkspace),
+              )),
+            }) as QuickLaunch,
+        });
+        explicit = false;
+        const delivered = await launch;
+        let cleanup = Promise.resolve();
+        accepted.apply(() => {
+          rememberQuickProject(delivered.request.cwd);
+          saveLastModelSettings(delivered.request.modelSettings ?? {});
+          if (delivered.request.model)
+            saveRecentModelChoice(delivered.request.harness, delivered.request.model);
+          const latestPrompt = owner.currentPrompt();
+          const covered = !owner.composing && latestPrompt === delivered.rawPrompt;
+          if (covered) setPrompt("");
+          else owner.externalPrompt(latestPrompt);
+          setPicker(null);
+          setSlash(null);
+          if (covered) cleanup = attachments.clearAfterHandoff(delivered.request.attachments);
+        });
+        await cleanup;
+        accepted.apply(() => {
+          nativeQuickLaunches.complete(owner.rendererWindowId, delivered);
+          owner.nextIntent();
+        });
+      }, "launch");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -433,6 +628,10 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
       event.preventDefault();
       if (picker) closePicker();
       else dismiss();
+      return;
+    }
+    if (!owner.canMutate()) {
+      event.preventDefault();
       return;
     }
     if (picker === "commands") {
@@ -493,14 +692,16 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
   };
 
   const canSubmit = Boolean(
-    (quickPromptMode(prompt.trim()).prompt.trim() || attachments.files.length) &&
-    cwd &&
+    (nativeQuickLaunches.has(owner.rendererWindowId) ||
+      ((quickPromptMode(prompt.trim()).prompt.trim() || attachments.files.length) &&
+        cwd &&
+        !workspaceBlocked &&
+        resolvedModel &&
+        (attachmentsSupported || !attachments.files.length))) &&
     !busy &&
+    !owner.pending &&
     !attachments.loading &&
-    !gitOpen &&
-    !workspaceBlocked &&
-    resolvedModel &&
-    (attachmentsSupported || !attachments.files.length),
+    !gitOpen,
   );
 
   return (
@@ -559,6 +760,8 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           resolvedMode={workspaceCreation.mode}
           resolvedBase={workspaceCreation.base}
           enabled={!busy && !picker}
+          canOpen={owner.canMutate}
+          prepare={(operation) => owner.prepare(() => operation())}
           onChange={setWorkspaceChoice}
           onError={setError}
           onOpenChange={onGitOpenChange}
@@ -612,7 +815,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           ref={highlightRef}
           aria-hidden
           style={{ textIndent: leadingMode ? MODE_INDENT : undefined }}
-          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap wrap-break-word pl-5 pr-9 pt-4 pb-2 text-[16px] leading-6 text-content"
+          className="pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap wrap-break-word pl-5 pr-9 pt-4 pb-2 text-ui-title leading-6 text-content"
         >
           {leadingMode ? (
             <>
@@ -669,7 +872,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
           }
           spellCheck={spelling}
           autoCorrect={spelling ? "on" : "off"}
-          className="composer-field scrollbar-none relative block w-full resize-none bg-transparent pl-5 pr-9 pt-4 pb-2 text-[16px] leading-6 outline-none select-text"
+          className="composer-field scrollbar-none relative block w-full resize-none bg-transparent pl-5 pr-9 pt-4 pb-2 text-ui-title leading-6 outline-none select-text"
         />
       </div>
 
@@ -755,7 +958,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
             <ChevronDown className="size-3 shrink-0 opacity-60" />
           </Button>
         ) : null}
-        <span className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-(--ui-text-secondary)">
+        <span className="ml-auto flex shrink-0 items-center gap-3 text-ui-micro text-(--ui-text-secondary)">
           {attachments.loading ? (
             <span role="status">{t("Adding attachment…")}</span>
           ) : (
@@ -840,7 +1043,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
               className="shrink-0 border-t border-stroke p-2"
             >
               {commandOptions.length === 0 ? (
-                <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+                <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
                   {t("No matching commands")}
                 </p>
               ) : (
@@ -860,7 +1063,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                     onClick={() => chooseAt(index)}
                   >
                     <CommandLabel name={command.name} />
-                    <span className="text-[11px] leading-4 text-(--ui-text-secondary)">
+                    <span className="text-ui-micro leading-4 text-(--ui-text-secondary)">
                       {command.description}
                     </span>
                   </Button>
@@ -921,7 +1124,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                 className="min-h-0 max-h-64 overflow-y-auto overscroll-none px-2 pb-2"
               >
                 {optionCount === 0 ? (
-                  <p className="px-2 py-2 text-[12px] text-(--ui-text-secondary)">
+                  <p className="px-2 py-2 text-ui-caption text-(--ui-text-secondary)">
                     {t("No matches")}
                   </p>
                 ) : (
@@ -945,7 +1148,7 @@ export function QuickComposer({ onShown }: { onShown: () => void }) {
                         className="size-3 shrink-0"
                       />
                       <span className="truncate">{projectDisplayName(path)}</span>
-                      <span className="ml-auto truncate pl-3 text-[11px] text-(--ui-text-secondary)">
+                      <span className="ml-auto truncate pl-3 text-ui-micro text-(--ui-text-secondary)">
                         {prettyParent(path)}
                       </span>
                     </Button>

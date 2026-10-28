@@ -1,9 +1,11 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
 let onStderr: ((line: string) => void) | undefined;
 const textFiles = new Map<string, string>();
+let heldFileRead: ((path: string) => Promise<string>) | null = null;
 
 vi.mock("../../core/child", () => ({
   resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
@@ -23,13 +25,14 @@ vi.mock("../../core/child", () => ({
     sent.push(line);
   },
   readHarnessTextFile: async (path: string) => {
+    if (heldFileRead) return heldFileRead(path);
     const content = textFiles.get(path);
     if (content == null) throw new Error(`missing ${path}`);
     return content;
   },
 }));
 
-const { bindHermesSession, respondHermesApproval, sendHermesTurn, stopHermesSession } =
+const { bindHermesSession, respondHermesApproval, sendHermesTurn, stopHermesSession, cancelHermesTurn } =
   await import("./hermes");
 import type { HarnessEvent } from "../../core/types";
 
@@ -70,6 +73,7 @@ describe("Hermes live ACP sequence", () => {
     onLine = undefined;
     onStderr = undefined;
     textFiles.clear();
+    heldFileRead = null;
   });
 
   it("starts Hermes ACP, selects model and mode, and sends attachments", async () => {
@@ -339,4 +343,37 @@ describe("Hermes live ACP sequence", () => {
     expect(settled).toBe(true);
     await stopHermesSession("hermes-live-background");
   });
+});
+
+
+it("retains hermes completion lineage from the real RPC response across its await",async()=>{
+ sent.length=0;const sessionId="hermes-causal-response";const events:HarnessEvent[]=[];
+ const done=sendHermesTurn({sessionId,cwd:"/repo",model:"hermes:nous:hermes-4",runtimeMode:"supervised",text:"hi",attachments:[],onEvent:event=>{captureNativeOutputEvent(sessionId,event);events.push(event);}});
+ await initialize();await newSession();await waitFor(()=>parse().some(m=>m.method==="session/set_mode"),"mode");reply(parse().find(m=>m.method==="session/set_mode")!.id,{});
+ await waitFor(()=>parse().some(m=>m.method==="session/prompt"),"prompt");
+ const prompt=parse().find(m=>m.method==="session/prompt")!;
+ const line=JSON.stringify({jsonrpc:"2.0",id:prompt.id,result:{stopReason:"end_turn"}});
+ const inspect=nativeOutputFrame(sessionId,line,()=>onLine!(line));
+ expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+ await done;const event=events.find(e=>e.type==="message.completed")!;
+ expect(getNativeOutputEventOrigin(event)).not.toBeNull();
+ expect(inspect()).toMatchObject({pendingCausalWork:0,applicationThrough:null});
+ await stopHermesSession(sessionId);
+});
+
+it("does not release original background dispatch work while a cancelled file read is still running",async()=>{
+ sent.length=0;heldFileRead=null;const sessionId="hermes-causal-background";const events:HarnessEvent[]=[];
+ const done=sendHermesTurn({sessionId,cwd:"/repo",model:"hermes:nous:hermes-4",runtimeMode:"supervised",text:"hi",attachments:[],onEvent:event=>{captureNativeOutputEvent(sessionId,event);events.push(event);}});
+ await initialize();await newSession();await waitFor(()=>parse().some(m=>m.method==="session/set_mode"),"mode");reply(parse().find(m=>m.method==="session/set_mode")!.id,{});
+ await waitFor(()=>parse().some(m=>m.method==="session/prompt"),"prompt");
+ const line=JSON.stringify({method:"session/update",params:{sessionId:"hermes-session-1",update:{sessionUpdate:"tool_call_update",toolCallId:"held-background",kind:"agent",title:"Delegate task",status:"completed",content:[{type:"text",text:JSON.stringify({status:"dispatched",mode:"background",delegation_id:"deleg_causal",live_transcripts:["/tmp/deleg_causal/task-0.log"]})}]}}});
+ const inspect=nativeOutputFrame(sessionId,line,()=>onLine!(line));
+ let release!:(value:string)=>void;heldFileRead=()=>new Promise(resolve=>{release=resolve;});
+ reply(parse().find(m=>m.method==="session/prompt")!.id,{stopReason:"end_turn"});
+ await waitFor(()=>!!release,"actual manifest read");expect(inspect().pendingCausalWork).toBe(1);
+ await cancelHermesTurn(sessionId);expect(inspect().pendingCausalWork).toBe(1);
+ release(JSON.stringify({completed:true,tasks:[{status:"completed"}]}));await done;
+ expect(inspect()).toMatchObject({pendingCausalWork:0,unavailableReason:"additional-input-unsealed",applicationThrough:null});
+ expect(parse().filter(m=>m.method==="session/prompt")).toHaveLength(1);
+ heldFileRead=null;await stopHermesSession(sessionId);
 });

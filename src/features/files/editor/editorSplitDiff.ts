@@ -2,6 +2,7 @@ import { getChunks, MergeView } from "@codemirror/merge";
 import { EditorState, type Extension, type Text } from "@codemirror/state";
 import { EditorView, type ViewUpdate } from "@codemirror/view";
 import { editorDocChanges } from "./editorDoc";
+import { editorSurfaceActive } from "./editorSurfaceVisibility";
 import {
   DIFF_CONFIG,
   diffLineStats,
@@ -19,7 +20,7 @@ const ADDED = "var(--color-diff-add)";
 
 const splitScroll = EditorView.domEventHandlers({
   wheel(event, view) {
-    if (event.defaultPrevented || event.ctrlKey || event.shiftKey || !event.deltaY) return false;
+    if (!editorSurfaceActive(view.dom) || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey || !event.deltaY) return false;
     const scroller = view.dom.closest<HTMLElement>(".cm-mergeView");
     if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return false;
     const lineHeight = parseFloat(getComputedStyle(view.scrollDOM).lineHeight) || 20;

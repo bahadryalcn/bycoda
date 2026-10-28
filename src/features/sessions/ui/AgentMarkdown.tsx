@@ -1288,6 +1288,7 @@ export const MarkdownPreview = memo(function MarkdownPreview({
       tabIndex={0}
       role="region"
       aria-label={t("Markdown preview")}
+      data-markdown-region="preview"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
       <div className="px-6 py-8">
@@ -1315,6 +1316,7 @@ export const MarkdownSource = memo(function MarkdownSource({ text }: { text: str
       tabIndex={0}
       role="region"
       aria-label={t("Markdown source")}
+      data-markdown-region="source"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
       <pre className="min-h-full min-w-0 whitespace-pre-wrap wrap-break-word px-4 py-3 font-mono text-ui-secondary leading-5 text-(--ui-text-secondary)">

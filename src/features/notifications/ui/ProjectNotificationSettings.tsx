@@ -6,6 +6,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { NotificationMuteControl } from "./NotificationMuteControl";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
+import { SettingsFeedback } from "../../settings/ui/settingsControls";
 import "./ProjectNotificationSettings.css";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -57,7 +58,7 @@ export function ProjectNotificationSettings({
   const groupColors = loadTabGroupColors();
   const groupCustomColors = loadTabGroupCustomColors();
   const groupMascots = loadTabGroupMascots();
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ projectId: string; category: NotificationCategory; enabled: boolean } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [selecting, setSelecting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -105,9 +106,9 @@ export function ProjectNotificationSettings({
       updateNotificationPreferences([projectId], {
         disabled: enabled ? disabled.filter((id) => id !== category) : [...disabled, category],
       });
-      setError(null);
+      setError((current) => current?.projectId === projectId && current.category === category ? null : current);
     } catch {
-      setError(t("Could not save notification preferences. Please try again."));
+      setError({ projectId, category, enabled });
     }
   }
 
@@ -146,11 +147,6 @@ export function ProjectNotificationSettings({
         ) : null}
       </div>
       <div className="project-notification-collection" data-highlighted={highlighted || undefined}>
-        {error ? (
-          <p role="alert" className="px-4 py-3.5 text-ui-caption text-(--ui-tone-danger-fg)">
-            {error}
-          </p>
-        ) : null}
         {projects.length === 0 ? (
           <p role="status" className="px-4 py-3.5 text-ui-caption text-(--ui-text-secondary)">
             {t("Open a project or connect an Inbox provider to configure its notifications.")}
@@ -167,14 +163,14 @@ export function ProjectNotificationSettings({
                 onChange={(event) => setQuery(event.target.value)}
               />
               <span role="status" className="project-notification-count">
-                {visibleProjects.length} / {projects.length}
+                {t("Showing {p0} of {p1} known projects", { p0: visibleProjects.length, p1: projects.length })}
               </span>
             </div>
             {selecting ? (
               <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 px-4 py-3.5">
                 <label className="flex cursor-pointer items-center gap-2.5 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg)">
                   <ProjectSelection
-                    label={t("Select all projects")}
+                  label={t("Select all known projects")}
                     checked={selectedIds.length === projects.length}
                     mixed={selectedIds.length > 0 && selectedIds.length < projects.length}
                     onChange={(checked) =>
@@ -183,7 +179,7 @@ export function ProjectNotificationSettings({
                   />
                   {selectedIds.length
                     ? t("{p0} selected", { p0: selectedIds.length })
-                    : t("Select all projects")}
+                    : t("Select all known projects")}
                 </label>
                 {selectedIds.length ? (
                   <div role="group" aria-label={t("Mute selected projects")}>
@@ -199,9 +195,10 @@ export function ProjectNotificationSettings({
               tabIndex={0}
             >
               {visibleProjects.length === 0 ? (
-                <p role="status" className="project-notification-empty">
-                  {t("No projects found")}
-                </p>
+                <div className="project-notification-empty">
+                  <p role="status">{t("No projects found")}</p>
+                  <Button variant="ghost" onClick={() => setQuery("")}>{t("Clear search")}</Button>
+                </div>
               ) : null}
               {visibleProjects.map((project) => {
                 const path =
@@ -232,12 +229,12 @@ export function ProjectNotificationSettings({
                     tabIndex={-1}
                     className="project-notification-item"
                   >
-                    <legend className="sr-only">{project.name}</legend>
+                    <legend className="sr-only">{project.name} ({project.detail})</legend>
                     <div className="project-notification-item-heading">
                       <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
                         {selecting ? (
                           <ProjectSelection
-                            label={t("Select {p0}", { p0: project.name })}
+                            label={t("Select {p0}", { p0: `${project.name} (${project.detail})` })}
                             checked={selectedIds.includes(project.id)}
                             onChange={(checked) =>
                               setSelected((current) =>
@@ -252,7 +249,7 @@ export function ProjectNotificationSettings({
                           variant="item"
                           motion="none"
                           type="button"
-                          aria-label={t("Notification categories for {p0}", { p0: project.name })}
+                          aria-label={t("Notification categories for {p0}", { p0: `${project.name} (${project.detail})` })}
                           aria-expanded={isExpanded}
                           aria-controls={panelId}
                           onClick={() => setExpanded(isExpanded ? null : project.id)}
@@ -291,6 +288,7 @@ export function ProjectNotificationSettings({
                             >
                               {project.name}
                             </p>
+                            <p className="project-notification-summary break-all">{project.detail}</p>
                             <p className="project-notification-summary">
                               {project.kind === "local" ? t("Local project · ") : ""}
                               {muted
@@ -313,6 +311,17 @@ export function ProjectNotificationSettings({
                         <NotificationMuteControl projectIds={[project.id]} compact />
                       </div>
                     </div>
+                    {error?.projectId === project.id ? (
+                      <div className="px-4 pb-3">
+                        <SettingsFeedback
+                          state="error"
+                          action={<Button onClick={() => setCategory(project.id, error.category, error.enabled)}>{t("Retry")}</Button>}
+                        >
+                          {t("Could not save notification preferences. Please try again.")}
+                          <span className="block">{project.name} · {t(NOTIFICATION_CATEGORIES.find((category) => category.id === error.category)?.label ?? error.category)}</span>
+                        </SettingsFeedback>
+                      </div>
+                    ) : null}
                     <div
                       id={panelId}
                       hidden={!isExpanded}
@@ -336,7 +345,7 @@ export function ProjectNotificationSettings({
                             <Switch
                               aria-label={t("{p0} for {p1}", {
                                 p0: t(category.label),
-                                p1: project.name,
+                                p1: `${project.name} (${project.detail})`,
                               })}
                               aria-describedby={muted ? muteHintId : undefined}
                               checked={!preferences[project.id]?.disabled.includes(category.id)}

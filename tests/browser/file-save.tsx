@@ -13,14 +13,18 @@ localStorage.setItem("bycoda.formatOnSave", "0");
 let disk = "# Notes\r\nOriginal text\r\n";
 let writes = 0;
 const query = new URLSearchParams(location.search);
+if (query.has("restore-draft")) localStorage.setItem("bycoda.autosave", "1");
 const files = [newFileTab("/fixture/notes.md", "/fixture")];
 if (query.has("same-name")) files.push(newFileTab("/fixture/archive/notes.md", "/fixture"));
 const documents = new Map(
   files.map((file, index) => [file.path, index ? "# Archive\r\nArchived text\r\n" : disk]),
 );
 const controls = {
+  setTheme: (light: boolean) => applyThemePreference(light ? "light" : "dark"),
   failWrites: query.has("save-error"),
   failDrafts: query.has("draft-error"),
+  holdWrites: query.has("hold-write"),
+  releaseWrite: null as (() => void) | null,
   draftPuts: [] as Record<string, unknown>[],
   draftReports: [] as Record<string, unknown>[],
   nativeDraft: null as null | {
@@ -91,6 +95,9 @@ if (query.has("same-name")) {
 Object.assign(window, {
   fileSaveFixture: controls,
   __TAURI_INTERNALS__: {
+    metadata: { currentWindow: { label: "fixture" }, currentWebview: { label: "fixture" } },
+    transformCallback: () => 1,
+    unregisterCallback: () => {},
     invoke: async (command: string, args: Record<string, unknown> = {}) => {
       if (command === "native_editor_draft_open") {
         return { version: 1, qualified: false, ownerEpoch: nativeDraftOwner };
@@ -114,7 +121,11 @@ Object.assign(window, {
         };
         controls.nativeDraft = await draftRecord(payload);
         controls.draftPuts.push(payload);
-        return structuredClone({ version: 1, qualified: false, record: controls.nativeDraft.metadata });
+        return structuredClone({
+          version: 1,
+          qualified: false,
+          record: controls.nativeDraft.metadata,
+        });
       }
       if (command === "native_editor_draft_clear_saved") {
         const saved = args.saved as Record<string, unknown>;
@@ -127,7 +138,11 @@ Object.assign(window, {
         controls.draftReports.push(saved);
         controls.nativeDraft.metadata.state = "save-reported";
         controls.nativeDraft.metadata.saveAckId = "fixture-save-ack";
-        return structuredClone({ version: 1, qualified: false, record: controls.nativeDraft.metadata });
+        return structuredClone({
+          version: 1,
+          qualified: false,
+          record: controls.nativeDraft.metadata,
+        });
       }
       if (command === "read_text_file") return documents.get(args.path as string) ?? disk;
       if (command === "copy_text_to_clipboard") {
@@ -136,6 +151,10 @@ Object.assign(window, {
       }
       if (command === "write_text_file") {
         if (controls.failWrites) throw new Error(controls.error);
+        if (controls.holdWrites)
+          await new Promise<void>((resolve) => {
+            controls.releaseWrite = resolve;
+          });
         disk = args.content as string;
         documents.set(args.path as string, disk);
         document.querySelector("output")!.textContent = `${++writes}: ${disk}`;
@@ -144,6 +163,7 @@ Object.assign(window, {
       return [];
     },
   },
+  __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} },
 });
 applyThemePreference(new URLSearchParams(location.search).has("light") ? "light" : "dark");
 

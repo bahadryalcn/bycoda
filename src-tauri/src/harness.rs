@@ -14,6 +14,12 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::dirs_home;
 use crate::fs::expand_home;
+#[cfg(test)]
+use crate::native_provider_output::StreamKind;
+use crate::native_provider_output::{
+    NativeOutputStream, NativeProviderOutputRegistry, OutputChannel, OutputMetadata, OutputOwner,
+    OutputSource, OutputState, UnavailableReason,
+};
 use crate::passwd_identity;
 
 const STDOUT_EVENT: &str = "harness-stdout-lines";
@@ -21,6 +27,7 @@ const STDERR_EVENT: &str = "harness-stderr-lines";
 const EXIT_EVENT: &str = "harness-exit";
 const SSE_EVENT: &str = "harness-sse-batch";
 const SSE_END_EVENT: &str = "harness-sse-end";
+const OUTPUT_STATE_EVENT: &str = "harness-output-state";
 
 pub(crate) const DEFAULT_PROVIDER_ACCOUNT_ID: &str = "default";
 
@@ -36,6 +43,8 @@ pub struct HarnessAccount {
 struct HarnessLines {
     session_id: String,
     lines: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_output: Option<OutputMetadata>,
 }
 
 #[derive(Serialize, Clone)]
@@ -44,6 +53,8 @@ struct HarnessExit {
     session_id: String,
     code: Option<i32>,
     pid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_output_state: Option<OutputState>,
 }
 
 #[derive(Serialize, Clone)]
@@ -51,6 +62,8 @@ struct HarnessExit {
 struct HarnessSseBatch {
     session_id: String,
     data: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_output: Option<OutputMetadata>,
 }
 
 #[derive(Serialize, Clone)]
@@ -58,6 +71,14 @@ struct HarnessSseBatch {
 struct HarnessSseEnd {
     session_id: String,
     error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    native_output_state: Option<OutputState>,
+}
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct HarnessOutputState {
+    session_id: String,
+    native_output_state: OutputState,
 }
 
 #[derive(Serialize)]
@@ -120,11 +141,13 @@ struct LiveChild {
     account: Option<HarnessAccount>,
     /// Windows that consume this child's output.
     owners: Arc<Owners>,
+    output: Option<Arc<NativeOutputStream>>,
 }
 
 struct LiveSse {
     stop: Arc<AtomicBool>,
     owners: Arc<Owners>,
+    output: Option<Arc<NativeOutputStream>>,
 }
 
 /// Where a child's events go: only the windows that consume them, instead of
@@ -132,7 +155,10 @@ struct LiveSse {
 /// discards output for children it does not own, so broadcasting only costs
 /// serialisation and a JS callback per window.
 #[derive(Default)]
-struct Owners(Mutex<Vec<String>>);
+struct Owners {
+    labels: Mutex<Vec<String>>,
+    physical: Mutex<HashMap<String, Arc<OutputOwner>>>,
+}
 
 #[derive(Debug, PartialEq, Eq)]
 enum Route {
@@ -143,19 +169,77 @@ enum Route {
 
 impl Owners {
     fn new(label: &str) -> Self {
-        Self(Mutex::new(vec![label.to_string()]))
+        Self {
+            labels: Mutex::new(vec![label.to_string()]),
+            physical: Mutex::new(HashMap::new()),
+        }
     }
 
     fn add(&self, label: &str) {
-        let mut labels = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let mut labels = self.labels.lock().unwrap_or_else(|e| e.into_inner());
         if !labels.iter().any(|existing| existing == label) {
             labels.push(label.to_string());
         }
     }
+    fn for_source(window: &tauri::WebviewWindow, source: &OutputSource) -> Self {
+        let owners = Self::new(window.label());
+        if let Some(owner) = source.owner() {
+            owners
+                .physical
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .insert(window.label().into(), owner);
+        }
+        owners
+    }
+    fn capture_window(&self, window: &tauri::WebviewWindow, instance: Option<uuid::Uuid>) {
+        let Some(instance) = instance else {
+            return;
+        };
+        let Some(owner) = OutputOwner::capture(window, instance) else {
+            return;
+        };
+        let mut physical = self
+            .physical
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        // Missing/overflow observations remain unknown; legacy label routing is
+        // preserved rather than denying an ordinary attach.
+        if physical.len() < 64 {
+            physical.entry(window.label().into()).or_insert(owner);
+        }
+    }
+    fn add_window(&self, window: &tauri::WebviewWindow) {
+        self.add(window.label());
+        self.capture_window(
+            window,
+            window
+                .app_handle()
+                .try_state::<crate::session_store::SessionStore>()
+                .map(|store| store.native_instance_id()),
+        );
+    }
+    fn output_owner(&self, label: &str) -> Option<Arc<OutputOwner>> {
+        self.physical
+            .lock()
+            .ok()?
+            .get(label)
+            .filter(|owner| owner.current())
+            .cloned()
+    }
+    fn output_current(&self) -> bool {
+        let Ok(labels) = self.labels.lock() else {
+            return false;
+        };
+        !labels.is_empty()
+            && labels
+                .iter()
+                .all(|label| self.output_owner(label).is_some())
+    }
 
     /// Owners whose window still exists, or a broadcast when there are none.
     fn route(&self, window_exists: impl Fn(&str) -> bool) -> Route {
-        let labels = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        let labels = self.labels.lock().unwrap_or_else(|e| e.into_inner());
         let live: Vec<String> = labels
             .iter()
             .filter(|label| window_exists(label))
@@ -169,18 +253,122 @@ impl Owners {
     }
 }
 
-fn emit_routed<P: Serialize + Clone>(app: &AppHandle, owners: &Owners, event: &str, payload: P) {
+fn emit_output_batch<P: Serialize + Clone>(
+    app: &AppHandle,
+    owners: &Owners,
+    stream: &NativeOutputStream,
+    event: &str,
+    channel: OutputChannel,
+    items: &[String],
+    make: impl Fn(Option<OutputMetadata>) -> P,
+) {
     let route = owners.route(|label| app.get_webview_window(label).is_some());
-    if let Route::Windows(labels) = route {
-        let mut delivered = false;
-        for label in &labels {
-            delivered |= app.emit_to(label.as_str(), event, payload.clone()).is_ok();
-        }
-        if delivered {
-            return;
-        }
+    if matches!(route, Route::Broadcast) {
+        stream.invalidate(UnavailableReason::BroadcastOwner);
     }
-    let _ = app.emit(event, payload);
+    stream.emit(channel, items, |metadata| {
+        let mut delivered = false;
+        let mut complete = true;
+        if let Route::Windows(labels) = route {
+            for label in labels {
+                let owner = owners.output_owner(&label);
+                let mut observed = metadata.clone();
+                if let Some(observed) = &mut observed {
+                    observed.owner_epoch = owner.as_ref().map(|owner| owner.epoch());
+                    if owner.is_none() {
+                        observed.available = false;
+                        observed
+                            .unavailable_reason
+                            .get_or_insert(UnavailableReason::OwnerUnavailable);
+                    }
+                }
+                let sent = app.emit_to(label.as_str(), event, make(observed)).is_ok();
+                delivered |= sent;
+                complete &= sent && owner.is_some();
+            }
+        } else {
+            complete = false;
+        }
+        if !delivered {
+            let mut observed = metadata;
+            if let Some(observed) = &mut observed {
+                observed.owner_epoch = None;
+                observed.available = false;
+                observed
+                    .unavailable_reason
+                    .get_or_insert(UnavailableReason::BroadcastOwner);
+            }
+            // Preserve existing fallback delivery; it never supplies an exact
+            // physical consumer or a prospective Native checkpoint seal.
+            let _ = app.emit(event, make(observed));
+            complete = false;
+        }
+        complete
+    });
+}
+
+fn route_output_state<P: Serialize + Clone>(
+    app: &AppHandle,
+    owners: &Owners,
+    state: OutputState,
+    event: &str,
+    make: impl Fn(OutputState) -> P,
+) -> bool {
+    let mut delivered = false;
+    let mut complete = true;
+    if let Route::Windows(labels) = owners.route(|label| app.get_webview_window(label).is_some()) {
+        for label in labels {
+            let owner = owners.output_owner(&label);
+            let mut current = state.clone();
+            current.owner_epoch = owner.as_ref().map(|owner| owner.epoch());
+            if owner.is_none() {
+                current.state = crate::native_provider_output::EmissionState::Unavailable;
+                current
+                    .reason
+                    .get_or_insert(UnavailableReason::OwnerUnavailable);
+            }
+            let sent = app.emit_to(label.as_str(), event, make(current)).is_ok();
+            delivered |= sent;
+            complete &= sent && owner.is_some();
+        }
+    } else {
+        complete = false;
+    }
+    if !delivered {
+        let mut current = state;
+        current.owner_epoch = None;
+        current.state = crate::native_provider_output::EmissionState::Unavailable;
+        current
+            .reason
+            .get_or_insert(UnavailableReason::BroadcastOwner);
+        let _ = app.emit(event, make(current));
+        complete = false;
+    }
+    complete
+}
+
+type OutputCurrentCheck = Arc<dyn Fn() -> bool + Send + Sync>;
+type OutputNotice = Arc<dyn Fn(OutputState) -> bool + Send + Sync>;
+fn output_callbacks(app: &AppHandle, owners: &Arc<Owners>) -> (OutputCurrentCheck, OutputNotice) {
+    let current = owners.clone();
+    let notice_owners = owners.clone();
+    let notice_app = app.clone();
+    (
+        Arc::new(move || current.output_current()),
+        Arc::new(move |state| {
+            let session_id = state.session_id.clone();
+            route_output_state(
+                &notice_app,
+                &notice_owners,
+                state,
+                OUTPUT_STATE_EVENT,
+                |native_output_state| HarnessOutputState {
+                    session_id: session_id.clone(),
+                    native_output_state,
+                },
+            )
+        }),
+    )
 }
 
 struct HarnessInner {
@@ -235,15 +423,41 @@ pub struct HarnessHost {
     runtime_binary_paths: Mutex<Option<HashMap<String, String>>>,
     /// Bumped by `kill_all` so a spawn that started before quit cannot reinsert.
     kill_all_gen: AtomicU64,
+    output: NativeProviderOutputRegistry,
 }
 
 impl HarnessHost {
+    /// Only a retained native construction can translate a routing key. No
+    /// suffix parsing or caller-supplied logical identity is involved.
+    fn output_for_route(&self, route: &str) -> Result<Option<Arc<NativeOutputStream>>, String> {
+        let process = self.get(route).and_then(|live| live.output.clone());
+        let sse = self
+            .sse
+            .lock()
+            .map_err(|_| "NATIVE_OUTPUT_SOURCE_UNAVAILABLE")?
+            .get(route)
+            .and_then(|live| live.output.clone());
+        if process
+            .as_ref()
+            .zip(sse.as_ref())
+            .is_some_and(|(a, b)| a.target() != b.target())
+        {
+            return Err("NATIVE_OUTPUT_SOURCE_CHANGED".into());
+        }
+        Ok(process.or(sse))
+    }
     pub(crate) fn authority_idle(&self, session_id: &str) -> Result<(), String> {
         let inner = self
             .inner
             .lock()
             .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?;
-        if inner.children.contains_key(session_id) {
+        if inner.children.iter().any(|(route, child)| {
+            route == session_id
+                || child
+                    .output
+                    .as_ref()
+                    .is_some_and(|output| output.target() == session_id)
+        }) {
             return Err("NATIVE_AUTHORITY_PROVIDER_ACTIVE".into());
         }
         for exit in inner.managed_exits.get(session_id).into_iter().flatten() {
@@ -260,7 +474,14 @@ impl HarnessHost {
             .sse
             .lock()
             .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?
-            .contains_key(session_id)
+            .iter()
+            .any(|(route, live)| {
+                route == session_id
+                    || live
+                        .output
+                        .as_ref()
+                        .is_some_and(|output| output.target() == session_id)
+            })
         {
             return Err("NATIVE_AUTHORITY_PROVIDER_STREAM_ACTIVE".into());
         }
@@ -293,7 +514,19 @@ impl HarnessHost {
             sse: Mutex::new(HashMap::new()),
             runtime_binary_paths: Mutex::new(None),
             kill_all_gen: AtomicU64::new(0),
+            output: NativeProviderOutputRegistry::new(),
         }
+    }
+
+    /// Actual app Exit only. No provider stop/kill or synthetic settlement.
+    pub(crate) fn shutdown_provider_output(&self) {
+        self.output.shutdown();
+    }
+
+    /// Private retained handles, not serialized public observations/proofs.
+    #[allow(dead_code)] // The trusted output-applied checkpoint port is not installed.
+    pub(crate) fn native_output_streams(&self, session_id: &str) -> Vec<Arc<NativeOutputStream>> {
+        self.output.retained(session_id)
     }
 
     fn lock_inner(&self) -> std::sync::MutexGuard<'_, HarnessInner> {
@@ -340,6 +573,9 @@ impl HarnessHost {
             return Some(live);
         }
         if let Some(prev) = inner.children.insert(session_id, live) {
+            if let Some(output) = &prev.output {
+                output.invalidate(UnavailableReason::TerminalCancelled);
+            }
             terminate(prev.pid);
         }
         None
@@ -359,9 +595,23 @@ impl HarnessHost {
         self.spawn_tracked_guarded(session_id, epoch, kill_all, command, None)
     }
 
+    #[cfg(test)]
     fn spawn_tracked_guarded(
         &self,
         session_id: &str,
+        epoch: u64,
+        kill_all: u64,
+        command: &mut Command,
+        authority: Option<&mut crate::session_store::authority::NativeLease>,
+    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+        self.spawn_tracked_for_target(session_id, session_id, epoch, kill_all, command, authority)
+    }
+
+    #[allow(clippy::too_many_arguments)] // Routing generation and private logical authority target stay distinct.
+    fn spawn_tracked_for_target(
+        &self,
+        session_id: &str,
+        logical_session_id: &str,
         epoch: u64,
         kill_all: u64,
         command: &mut Command,
@@ -389,7 +639,10 @@ impl HarnessHost {
             let _ = lease.spawned(child.id());
         }
         let exit = Arc::new(ManagedProviderExit::default());
-        let receipts = inner.managed_exits.entry(session_id.into()).or_default();
+        let receipts = inner
+            .managed_exits
+            .entry(logical_session_id.into())
+            .or_default();
         receipts.retain(|receipt| !receipt.succeeded());
         receipts.push(Arc::clone(&exit));
         Ok((child, exit))
@@ -399,13 +652,46 @@ impl HarnessHost {
         let mut inner = self.lock_inner();
         *inner.epochs.entry(session_id.to_string()).or_insert(0) += 1;
         crate::session_tools_bridge::revoke_session(session_id);
-        inner.children.remove(session_id)
+        let removed = inner.children.remove(session_id);
+        drop(inner);
+        if let Some(output) = removed.as_ref().and_then(|live| live.output.as_ref()) {
+            output.cancelled();
+        }
+        removed
     }
 
     pub(crate) fn retire_managed_session(&self, session_id: &str) -> Result<(), String> {
-        self.stop_sse(session_id);
-        if let Some(live) = self.kill_session(session_id) {
-            terminate(live.pid);
+        let mut routes = vec![session_id.to_owned()];
+        routes.extend(
+            self.lock_inner()
+                .children
+                .iter()
+                .filter(|(_, live)| {
+                    live.output
+                        .as_ref()
+                        .is_some_and(|output| output.target() == session_id)
+                })
+                .map(|(route, _)| route.clone()),
+        );
+        routes.extend(
+            self.sse
+                .lock()
+                .map_err(|_| "NATIVE_AUTHORITY_UNKNOWN_PROCESS")?
+                .iter()
+                .filter(|(_, live)| {
+                    live.output
+                        .as_ref()
+                        .is_some_and(|output| output.target() == session_id)
+                })
+                .map(|(route, _)| route.clone()),
+        );
+        routes.sort();
+        routes.dedup();
+        for route in routes {
+            self.stop_sse(&route);
+            if let Some(live) = self.kill_session(&route) {
+                terminate(live.pid);
+            }
         }
         let exits = self
             .lock_inner()
@@ -417,7 +703,13 @@ impl HarnessHost {
             exit.wait(Duration::from_secs(20))?;
         }
         let mut inner = self.lock_inner();
-        if inner.children.contains_key(session_id) {
+        if inner.children.iter().any(|(route, child)| {
+            route == session_id
+                || child
+                    .output
+                    .as_ref()
+                    .is_some_and(|output| output.target() == session_id)
+        }) {
             return Err("A different managed provider started during turn retirement".into());
         }
         if let Some(pending) = inner.managed_exits.get_mut(session_id) {
@@ -466,6 +758,11 @@ impl HarnessHost {
         for (session_id, _) in &children {
             self.stop_sse(session_id);
         }
+        for (_, child) in &children {
+            if let Some(output) = &child.output {
+                output.cancelled();
+            }
+        }
         let pids: Vec<u32> = children.iter().map(|(_, child)| child.pid).collect();
         drop(children);
         terminate_all(&pids);
@@ -479,6 +776,11 @@ impl HarnessHost {
             inner.children.drain().map(|(_, child)| child).collect()
         };
         self.stop_all_sse();
+        for live in &kids {
+            if let Some(output) = &live.output {
+                output.cancelled();
+            }
+        }
         let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
         // Drop stdin before signaling so ACP CLIs that watch the pipe can exit.
         drop(kids);
@@ -493,13 +795,16 @@ impl HarnessHost {
     }
 
     fn stop_sse(&self, session_id: &str) {
-        if let Some(live) = self
+        let removed = self
             .sse
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .remove(session_id)
-        {
+            .remove(session_id);
+        if let Some(live) = removed {
             live.stop.store(true, Ordering::SeqCst);
+            if let Some(output) = &live.output {
+                output.cancelled();
+            }
         }
     }
 
@@ -510,12 +815,16 @@ impl HarnessHost {
         };
         for live in streams {
             live.stop.store(true, Ordering::SeqCst);
+            if let Some(output) = &live.output {
+                output.cancelled();
+            }
         }
     }
 }
 
 impl Drop for HarnessHost {
     fn drop(&mut self) {
+        self.shutdown_provider_output();
         self.kill_all();
     }
 }
@@ -1197,6 +1506,7 @@ pub fn harness_spawn(
     generic_acp_id: Option<String>,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
+    logical_session_id: Option<String>,
 ) -> Result<u32, String> {
     let generic = generic_acp_id
         .as_deref()
@@ -1220,10 +1530,9 @@ pub fn harness_spawn(
         return Err("harness_spawn: not a resolved harness CLI".to_string());
     }
 
-    let gate = app
-        .try_state::<crate::session_store::SessionStore>()
-        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
-        .authority_execution_gate();
+    let source = OutputSource::capture(&app, &window, &session_id, logical_session_id.as_deref())?;
+    let authority_target = source.target().to_owned();
+    let gate = source.control_gate(&app)?;
     let scope = match (authority_environment_id, authority_generation) {
         (Some(environment_id), Some(generation)) => {
             Some(crate::session_store::authority::NativeScope {
@@ -1234,9 +1543,14 @@ pub fn harness_spawn(
         (None, None) => None,
         _ => return Err("NATIVE_AUTHORITY_STALE_GENERATION".into()),
     };
-    let mut authority_lease = gate.reserve(&session_id, "provider", scope.as_ref())?;
+    let mut authority_lease = gate.reserve(&authority_target, "provider", scope.as_ref())?;
     let mut workspace_activity = if exact_workspace_activity_enabled(&app, &workdir) {
-        crate::native_workspace::Activity::start(&app, &workdir, "provider", Some(&session_id))?
+        crate::native_workspace::Activity::start(
+            &app,
+            &workdir,
+            "provider",
+            Some(&authority_target),
+        )?
     } else {
         None
     };
@@ -1245,6 +1559,9 @@ pub fn harness_spawn(
     let mut tool_spawn =
         crate::session_tools_bridge::SpawnGuard::new(&session_id, (epoch, kill_all));
     if let Some(prev) = prev {
+        if let Some(output) = &prev.output {
+            output.cancelled();
+        }
         terminate(prev.pid);
     }
 
@@ -1285,9 +1602,11 @@ pub fn harness_spawn(
     // after a replacement has revoked and removed its native grant cache.
     let tool_credentials = crate::session_tools_bridge::redaction_tokens(&cmd);
 
+    source.assert_explicit_target_current(logical_session_id.is_some())?;
     let (mut child, managed_exit) = host
-        .spawn_tracked_guarded(
+        .spawn_tracked_for_target(
             &session_id,
+            &authority_target,
             epoch,
             kill_all,
             &mut cmd,
@@ -1315,13 +1634,16 @@ pub fn harness_spawn(
         .ok_or_else(|| "Failed to open harness stderr".to_string())?;
 
     // The spawning window consumes the output; its JS state owns the turn.
-    let owners = Arc::new(Owners::new(window.label()));
+    let owners = Arc::new(Owners::for_source(&window, &source));
+    let (current, notice) = output_callbacks(&app, &owners);
+    let (output, child) = host.output.begin_process(source, child, current, notice);
     let live = Arc::new(LiveChild {
         cwd: workdir.clone(),
         stdin: Mutex::new(stdin),
         pid,
         account,
         owners: Arc::clone(&owners),
+        output: Some(output.clone()),
     });
     if let Some(rejected) = host.install_spawn(session_id.clone(), epoch, kill_all, live) {
         crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
@@ -1330,9 +1652,11 @@ pub fn harness_spawn(
         // session's live child, and this child's stdout would be parsed as the
         // stream that replaced it. Reap it without emitting anything.
         terminate(rejected.pid);
+        output.cancelled();
+        let rejected_output = output.clone();
         thread::spawn(move || {
-            let result = child
-                .wait()
+            let exited = child.wait(&rejected_output, true);
+            let result = exited
                 .map_err(|e| e.to_string())
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
             let result = result.and_then(|_| authority_lease.finish());
@@ -1350,16 +1674,23 @@ pub fn harness_spawn(
     let stdout_done = done_tx.clone();
     let stdout_owners = Arc::clone(&owners);
     let stdout_credentials = tool_credentials.clone();
+    let stdout_output = output.clone();
+    let stdout_reader = output.reader(0);
     thread::spawn(move || {
         let _done = stdout_done;
-        read_lines_batched(stdout, move |lines| {
-            emit_routed(
+        read_provider_lines(stdout, stdout_reader, move |lines| {
+            let lines = crate::session_tools_bridge::redact_lines(&stdout_credentials, lines);
+            emit_output_batch(
                 &stdout_app,
                 &stdout_owners,
+                &stdout_output,
                 STDOUT_EVENT,
-                HarnessLines {
+                OutputChannel::Stdout,
+                &lines,
+                |native_output| HarnessLines {
                     session_id: stdout_id.clone(),
-                    lines: crate::session_tools_bridge::redact_lines(&stdout_credentials, lines),
+                    lines: lines.clone(),
+                    native_output,
                 },
             );
         });
@@ -1368,16 +1699,23 @@ pub fn harness_spawn(
     let stderr_app = app.clone();
     let stderr_id = session_id.clone();
     let stderr_owners = Arc::clone(&owners);
+    let stderr_output = output.clone();
+    let stderr_reader = output.reader(1);
     thread::spawn(move || {
         let _done = done_tx;
-        read_lines_batched(stderr, move |lines| {
-            emit_routed(
+        read_provider_lines(stderr, stderr_reader, move |lines| {
+            let lines = crate::session_tools_bridge::redact_lines(&tool_credentials, lines);
+            emit_output_batch(
                 &stderr_app,
                 &stderr_owners,
+                &stderr_output,
                 STDERR_EVENT,
-                HarnessLines {
+                OutputChannel::Stderr,
+                &lines,
+                |native_output| HarnessLines {
                     session_id: stderr_id.clone(),
-                    lines: crate::session_tools_bridge::redact_lines(&tool_credentials, lines),
+                    lines: lines.clone(),
+                    native_output,
                 },
             );
         });
@@ -1387,7 +1725,7 @@ pub fn harness_spawn(
     let wait_id = session_id;
     let wait_pid = pid;
     thread::spawn(move || {
-        let exit = child.wait();
+        let exit = child.wait(&output, false);
         let code = exit.as_ref().ok().and_then(|status| status.code());
         let settlement = exit
             .map_err(|e| e.to_string())
@@ -1408,16 +1746,19 @@ pub fn harness_spawn(
             }
         });
         managed_exit.finish(settlement);
-        emit_routed(
+        let terminal_sent = route_output_state(
             &wait_app,
             &owners,
+            output.observation(),
             EXIT_EVENT,
-            HarnessExit {
-                session_id: wait_id,
+            |native_output_state| HarnessExit {
+                session_id: wait_id.clone(),
                 code,
                 pid: wait_pid,
+                native_output_state: Some(native_output_state),
             },
         );
+        output.terminal_delivery(terminal_sent);
     });
 
     Ok(pid)
@@ -1839,13 +2180,23 @@ pub async fn harness_write(
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
 ) -> Result<(), String> {
-    let gate = app
-        .try_state::<crate::session_store::SessionStore>()
-        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
-        .authority_execution_gate();
+    let live = host
+        .get(&session_id)
+        .ok_or_else(|| "Harness process is not running".to_string())?;
+    let gate = if let Some(output) = &live.output {
+        output.control_gate(&app)?
+    } else {
+        app.try_state::<crate::session_store::SessionStore>()
+            .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+            .authority_execution_gate()
+    };
+    let target = live
+        .output
+        .as_ref()
+        .map_or(session_id.as_str(), |output| output.target());
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
     let lease = gate.reserve_existing(
-        &session_id,
+        target,
         "provider-stdin",
         scope.as_ref(),
         finishing_native_frame(&line),
@@ -1853,9 +2204,6 @@ pub async fn harness_write(
     let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
-    let live = host
-        .get(&session_id)
-        .ok_or_else(|| "Harness process is not running".to_string())?;
     let pid = live.pid;
     let result = tauri::async_runtime::spawn_blocking(move || {
         write_child_with_deadline_guarded(live, line, Duration::from_secs(12), Some(lease))
@@ -2046,6 +2394,7 @@ mod authority_tests {
             Arc::new(LiveSse {
                 stop: Arc::new(AtomicBool::new(false)),
                 owners: Arc::new(Owners::new("isolated")),
+                output: None,
             }),
         );
         assert!(host.authority_idle("native").is_err());
@@ -2083,6 +2432,56 @@ mod authority_tests {
             .unwrap()
             .managed_exits
             .contains_key("native"));
+    }
+
+    #[test]
+    fn generated_route_fork_receipt_and_late_floor_belong_to_exact_logical_target() {
+        let store = store();
+        let gate = store.authority_execution_gate();
+        let host = HarnessHost::new();
+        let route = "logical#generated-child";
+        let mut lease = gate.reserve("logical", "provider-spawn", None).unwrap();
+        let (epoch, kill_all, _) = host.begin_spawn(route);
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .arg("--list")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        isolate_child(&mut command);
+        let (mut child, receipt) = host
+            .spawn_tracked_for_target(
+                route,
+                "logical",
+                epoch,
+                kill_all,
+                &mut command,
+                Some(&mut lease),
+            )
+            .unwrap();
+        assert!(host.authority_idle("logical").is_err());
+        assert!(!host.lock_inner().managed_exits.contains_key(route));
+        assert!(child.wait().unwrap().success());
+        assert!(host.authority_idle("logical").is_err());
+        lease.finish().unwrap();
+        receipt.finish(Ok(()));
+        assert!(host.authority_idle("logical").is_ok());
+
+        let mut blocked = gate.reserve("logical", "provider-spawn", None).unwrap();
+        store.lock_conn().unwrap().execute("INSERT INTO native_authority_floor(environment_id,session_id,generation,phase,migration_id,min_writer_protocol) VALUES('env','logical',1,'FENCED','migration',2)", []).unwrap();
+        let (epoch, kill_all, _) = host.begin_spawn(route);
+        assert!(host
+            .spawn_tracked_for_target(
+                route,
+                "logical",
+                epoch,
+                kill_all,
+                &mut command,
+                Some(&mut blocked)
+            )
+            .is_err());
+        assert!(host.lock_inner().managed_exits["logical"]
+            .iter()
+            .all(|receipt| receipt.succeeded()));
     }
 
     #[test]
@@ -2198,12 +2597,21 @@ pub async fn harness_http(
     tauri::async_runtime::spawn_blocking(move || {
         assert_loopback(&url)?;
         let mut authority = if !matches!(method.as_str(), "GET" | "HEAD" | "OPTIONS") {
-            let gate = app
-                .try_state::<crate::session_store::SessionStore>()
-                .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
-                .authority_execution_gate();
             if let Some(session_id) = session_id.as_deref() {
-                gate.assert_provider_target(session_id, &url)?;
+                let source = app
+                    .try_state::<HarnessHost>()
+                    .map(|host| host.output_for_route(session_id))
+                    .transpose()?
+                    .flatten();
+                let gate = match &source {
+                    Some(output) => output.control_gate(&app)?,
+                    None => app
+                        .try_state::<crate::session_store::SessionStore>()
+                        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+                        .authority_execution_gate(),
+                };
+                let target = source.as_ref().map_or(session_id, |output| output.target());
+                gate.assert_provider_target(target, &url)?;
                 let scope = native_authority_scope(authority_environment_id, authority_generation)?;
                 let path = url::Url::parse(&url)
                     .map_err(|_| "NATIVE_AUTHORITY_INVALID_PROVIDER_TARGET")?
@@ -2214,16 +2622,14 @@ pub async fn harness_http(
                         || path.ends_with("/interrupt")
                         || path.ends_with("/reply")
                         || path.ends_with("/reject"));
-                Some(gate.reserve_existing(
-                    session_id,
-                    "provider-http",
-                    scope.as_ref(),
-                    finishing,
-                )?)
+                Some(gate.reserve_existing(target, "provider-http", scope.as_ref(), finishing)?)
             } else {
                 // Retain ordinary legacy probes, but never qualify an unknown
                 // mutating caller for a later authority promotion.
-                gate.note_unknown_ingress("sessionless-provider-http")?;
+                app.try_state::<crate::session_store::SessionStore>()
+                    .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
+                    .authority_execution_gate()
+                    .note_unknown_ingress("sessionless-provider-http")?;
                 None
             }
         } else {
@@ -2272,7 +2678,7 @@ pub fn harness_set_owner(
     session_id: String,
 ) -> Result<(), String> {
     if let Some(live) = host.get(&session_id) {
-        live.owners.add(window.label());
+        live.owners.add_window(&window);
     }
     if let Some(sse) = host
         .sse
@@ -2280,7 +2686,7 @@ pub fn harness_set_owner(
         .unwrap_or_else(|e| e.into_inner())
         .get(&session_id)
     {
-        sse.owners.add(window.label());
+        sse.owners.add_window(&window);
     }
     Ok(())
 }
@@ -2297,27 +2703,31 @@ pub fn harness_sse_open(
     headers: Option<HashMap<String, String>>,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
+    logical_session_id: Option<String>,
 ) -> Result<(), String> {
     assert_loopback(&url)?;
-    let gate = app
-        .try_state::<crate::session_store::SessionStore>()
-        .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
-        .authority_execution_gate();
-    gate.assert_provider_target(&session_id, &url)?;
+    let source = OutputSource::capture(&app, &window, &session_id, logical_session_id.as_deref())?;
+    let gate = source.control_gate(&app)?;
+    gate.assert_provider_target(source.target(), &url)?;
     let scope = native_authority_scope(authority_environment_id, authority_generation)?;
-    let mut authority = gate.reserve(&session_id, "provider-events", scope.as_ref())?;
+    let mut authority = gate.reserve(source.target(), "provider-events", scope.as_ref())?;
+    source.assert_explicit_target_current(logical_session_id.is_some())?;
     authority.begin_external()?;
     host.stop_sse(&session_id);
     let stop = Arc::new(AtomicBool::new(false));
-    let owners = Arc::new(Owners::new(window.label()));
+    let owners = Arc::new(Owners::for_source(&window, &source));
+    let (current, notice) = output_callbacks(&app, &owners);
+    let output = host.output.begin_sse(source, current, notice);
     host.insert_sse(
         session_id.clone(),
         Arc::new(LiveSse {
             stop: Arc::clone(&stop),
             owners: Arc::clone(&owners),
+            output: Some(output.clone()),
         }),
     );
 
+    let output_reader = output.reader(0);
     thread::spawn(move || {
         let agent = localhost_http_agent_builder()
             .timeout_connect(Duration::from_secs(10))
@@ -2333,25 +2743,35 @@ pub fn harness_sse_open(
         let result = request.call();
         if stop.load(Ordering::SeqCst) {
             drop(result);
+            output_reader.finish(false, true);
+            output.terminal_complete(true, true);
             let _ = authority.finish();
-            emit_sse_end(&app, &owners, &session_id, None);
+            emit_sse_end(&app, &owners, &session_id, None, &output);
             return;
         }
-        match result {
+        let success = match result {
             Ok(response) => {
                 let reader = BufReader::new(response.into_reader());
-                read_sse(reader, &app, &owners, &session_id, &stop);
-                emit_sse_end(&app, &owners, &session_id, None);
+                let success = read_sse(reader, &app, &owners, &session_id, &stop, output.clone());
+                output_reader.finish(success, stop.load(Ordering::Acquire));
+                output.terminal_complete(success, stop.load(Ordering::Acquire));
+                emit_sse_end(&app, &owners, &session_id, None, &output);
+                success
             }
             Err(error) => {
+                output_reader.finish(false, false);
+                output.terminal_complete(false, false);
                 emit_sse_end(
                     &app,
                     &owners,
                     &session_id,
                     Some(format!("OpenCode event stream failed: {error}")),
+                    &output,
                 );
+                false
             }
-        }
+        };
+        let _ = success;
         if stop.load(Ordering::Acquire) {
             let _ = authority.finish();
         }
@@ -2472,10 +2892,18 @@ impl LineBatcher {
         }
     }
 
-    fn push(&self, line: String) {
+    fn push(&self, line: String) -> bool {
         if let Some(tx) = &self.tx {
-            let _ = tx.send(line);
+            return tx.send(line).is_ok();
         }
+        false
+    }
+
+    fn finish(mut self) -> bool {
+        self.tx.take();
+        self.worker
+            .take()
+            .is_none_or(|worker| worker.join().is_ok())
     }
 }
 
@@ -2490,12 +2918,27 @@ impl Drop for LineBatcher {
 
 /// Reads `reader` to EOF and emits its lines in batches; returns once the
 /// last batch is out.
-fn read_lines_batched<R: Read, F: FnMut(Vec<String>) + Send + 'static>(reader: R, emit: F) {
+fn read_lines_batched<R: Read, F: FnMut(Vec<String>) + Send + 'static>(reader: R, emit: F) -> bool {
     let batcher = LineBatcher::new(emit);
+    let mut success = true;
     for line in BufReader::new(reader).lines() {
-        let Ok(line) = line else { break };
-        batcher.push(line);
+        let Ok(line) = line else {
+            success = false;
+            break;
+        };
+        success &= batcher.push(line);
     }
+    batcher.finish() && success
+}
+
+fn read_provider_lines<R: Read, F: FnMut(Vec<String>) + Send + 'static>(
+    reader: R,
+    receipt: crate::native_provider_output::Reader,
+    emit: F,
+) -> bool {
+    let success = read_lines_batched(reader, emit);
+    receipt.finish(success, false);
+    success
 }
 
 /// Returns once every reader has dropped its sender, or after `grace`.
@@ -2526,27 +2969,45 @@ fn read_sse<R: BufRead>(
     owners: &Arc<Owners>,
     session_id: &str,
     stop: &AtomicBool,
-) {
+    output: Arc<NativeOutputStream>,
+) -> bool {
     let emit_app = app.clone();
     let emit_owners = Arc::clone(owners);
     let emit_id = session_id.to_string();
-    let batcher = LineBatcher::new(move |data| {
-        emit_routed(
+    read_sse_batches(reader, stop, move |data| {
+        emit_output_batch(
             &emit_app,
             &emit_owners,
+            &output,
             SSE_EVENT,
-            HarnessSseBatch {
+            OutputChannel::Sse,
+            &data,
+            |native_output| HarnessSseBatch {
                 session_id: emit_id.clone(),
-                data,
+                data: data.clone(),
+                native_output,
             },
         );
-    });
+    })
+}
+
+fn read_sse_batches<R: BufRead, F: FnMut(Vec<String>) + Send + 'static>(
+    reader: R,
+    stop: &AtomicBool,
+    emit: F,
+) -> bool {
+    let batcher = LineBatcher::new(emit);
     let mut data = String::new();
+    let mut success = true;
     for line in reader.lines() {
         if stop.load(Ordering::SeqCst) {
+            success = false;
             break;
         }
-        let Ok(line) = line else { break };
+        let Ok(line) = line else {
+            success = false;
+            break;
+        };
         if line.starts_with(':') {
             continue;
         }
@@ -2554,7 +3015,7 @@ fn read_sse<R: BufRead>(
             if data.is_empty() {
                 continue;
             }
-            batcher.push(std::mem::take(&mut data));
+            success &= batcher.push(std::mem::take(&mut data));
             continue;
         }
         if let Some(rest) = line.strip_prefix("data:") {
@@ -2565,18 +3026,33 @@ fn read_sse<R: BufRead>(
             data.push_str(piece);
         }
     }
+    // Keep the existing SSE wire behavior: an unterminated trailing message is
+    // not invented as delivered. Its presence prevents an emission seal.
+    if !data.is_empty() {
+        success = false;
+    }
+    batcher.finish() && success
 }
 
-fn emit_sse_end(app: &AppHandle, owners: &Owners, session_id: &str, error: Option<String>) {
-    emit_routed(
+fn emit_sse_end(
+    app: &AppHandle,
+    owners: &Owners,
+    session_id: &str,
+    error: Option<String>,
+    output: &NativeOutputStream,
+) {
+    let sent = route_output_state(
         app,
         owners,
+        output.observation(),
         SSE_END_EVENT,
-        HarnessSseEnd {
+        |native_output_state| HarnessSseEnd {
             session_id: session_id.to_string(),
-            error,
+            error: error.clone(),
+            native_output_state: Some(native_output_state),
         },
     );
+    output.terminal_delivery(sent);
 }
 
 fn assert_loopback(url: &str) -> Result<(), String> {
@@ -3102,6 +3578,7 @@ mod managed_retirement_tests {
             pid: child.id(),
             account: None,
             owners: Arc::new(Owners::default()),
+            output: None,
         });
         assert!(host
             .install_spawn("lightweight".into(), epoch, kill_all, live)
@@ -3181,6 +3658,7 @@ mod managed_retirement_tests {
             pid: child.id(),
             account: None,
             owners: Arc::new(Owners::default()),
+            output: None,
         });
         assert!(host
             .install_spawn("managed".into(), epoch, kill_all, live)
@@ -4961,6 +5439,7 @@ mod tests {
                 pid,
                 account: None,
                 owners: Arc::new(Owners::default()),
+                output: None,
             }),
             child,
         )
@@ -5150,6 +5629,7 @@ mod tests {
                 pid,
                 account: None,
                 owners: Arc::new(Owners::default()),
+                output: None,
             }),
             child,
         )
@@ -6041,6 +6521,366 @@ mod reap_logic_tests {
         assert!(!is_legacy_orphaned_cursor_acp(
             "node /usr/local/bin/typescript-language-server --stdio"
         ));
+    }
+}
+
+#[cfg(test)]
+mod native_output_integration_tests {
+    // Real production batching/reader paths and an isolated owned test child.
+    // Source/owner fixtures do not attest an actual GUI or applied/SQL state.
+    use super::*;
+    use crate::native_provider_output::EmissionState;
+
+    fn logical_source(route: &str) -> OutputSource {
+        use crate::session_store::window_barrier::{NativeLane, WindowBarrier};
+        let store = Arc::new(crate::session_store::SessionStore::open_in_memory().unwrap());
+        store.lock_conn().unwrap().execute(
+            "INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,created_at,updated_at)
+             VALUES('logical','/isolated','antigravity','test','approval-required','test',1,1)", []
+        ).unwrap();
+        let barrier = WindowBarrier::new();
+        let window = barrier.admit_window("physical-output-test").unwrap();
+        barrier.confirm_created(&window).unwrap();
+        OutputSource::capture_owned(
+            store,
+            route,
+            Some("logical"),
+            Arc::new(move || {
+                barrier
+                    .begin_native_write(&window, NativeLane::Buffers)
+                    .is_ok_and(|work| work.finish::<_, ()>(Ok(())).is_ok())
+            }),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn live_route_lookup_and_authority_idle_use_only_retained_logical_construction() {
+        let host = HarnessHost::new();
+        let output = host.output.begin_sse(
+            logical_source("logical#sse"),
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        );
+        host.insert_sse(
+            "logical#sse".into(),
+            Arc::new(LiveSse {
+                stop: Arc::new(AtomicBool::new(false)),
+                owners: Arc::new(Owners::new("fixture")),
+                output: Some(output.clone()),
+            }),
+        );
+        assert_eq!(
+            host.output_for_route("logical#sse")
+                .unwrap()
+                .unwrap()
+                .target(),
+            "logical"
+        );
+        assert!(host.output_for_route("logical#another").unwrap().is_none());
+        assert!(host.authority_idle("logical").is_err());
+        assert!(host.authority_idle("unrelated").is_ok());
+        host.stop_sse("logical#sse");
+        assert!(host.output_for_route("logical#sse").unwrap().is_none());
+        assert!(host.authority_idle("logical").is_ok());
+        assert_eq!(output.observation().state, EmissionState::Unavailable);
+    }
+
+    #[test]
+    fn exact_process_owner_cannot_settle_another_stream_even_with_same_route() {
+        let host = HarnessHost::new();
+        let spawn = || {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command
+                .arg("--list")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null());
+            isolate_child(&mut command);
+            command.spawn().unwrap()
+        };
+        let (a, process_a) = host.output.begin_process(
+            logical_source("logical#same"),
+            spawn(),
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        );
+        let (b, process_b) = host.output.begin_process(
+            logical_source("logical#same"),
+            spawn(),
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        );
+        assert_ne!(a.epoch(), b.epoch());
+        for output in [&a, &b] {
+            output.reader(0).finish(true, false);
+            output.reader(1).finish(true, false);
+            output.terminal_delivery(true);
+        }
+        assert!(process_b.wait(&a, false).is_err());
+        assert_eq!(a.observation().state, EmissionState::Unsealed);
+        assert!(process_a.wait(&a, false).unwrap().success());
+        assert!(a.verified_emit_seal().unwrap().is_current());
+        assert_eq!(b.observation().state, EmissionState::Unsealed);
+        assert!(process_b.wait(&b, false).unwrap().success());
+        assert!(b.verified_emit_seal().unwrap().is_current());
+    }
+
+    fn stream(host: &HarnessHost, kind: StreamKind, pid: Option<u32>) -> Arc<NativeOutputStream> {
+        host.output.begin(
+            OutputSource::fixture("output-fixture"),
+            kind,
+            pid,
+            if kind == StreamKind::Process { 2 } else { 1 },
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        )
+    }
+
+    #[test]
+    fn ordinary_kill_all_preserves_tracking_for_later_actual_reader_lifetimes() {
+        let host = HarnessHost::new();
+        let old = stream(&host, StreamKind::Sse, None);
+        host.kill_all();
+        let new = stream(&host, StreamKind::Sse, None);
+        assert_ne!(old.epoch(), new.epoch());
+        new.reader(0).finish(true, false);
+        new.terminal_complete(true, false);
+        new.terminal_delivery(true);
+        assert_eq!(new.observation().state, EmissionState::Sealed);
+        assert_eq!(host.native_output_streams("output-fixture").len(), 2);
+    }
+
+    struct HeldReader {
+        first: std::io::Cursor<Vec<u8>>,
+        release: mpsc::Receiver<()>,
+    }
+    impl Read for HeldReader {
+        fn read(&mut self, into: &mut [u8]) -> std::io::Result<usize> {
+            let read = self.first.read(into)?;
+            if read == 0 {
+                self.release
+                    .recv()
+                    .map_err(|_| std::io::Error::other("fixture release lost"))?;
+            }
+            Ok(read)
+        }
+    }
+
+    #[test]
+    fn real_reader_retains_pending_after_terminal_and_legacy_grace_until_actual_eof() {
+        let host = HarnessHost::new();
+        let output = stream(&host, StreamKind::Process, Some(123));
+        let (release, held) = mpsc::channel();
+        let (emitted, delivery) = mpsc::channel();
+        let (done, all_done) = mpsc::channel();
+        let receipt = output.reader(0);
+        output.reader(1).finish(true, false);
+        let worker_stream = output.clone();
+        let worker = thread::spawn(move || {
+            let completed = read_provider_lines(
+                HeldReader {
+                    first: std::io::Cursor::new(b"exact retained\n".to_vec()),
+                    release: held,
+                },
+                receipt,
+                move |items| {
+                    worker_stream.emit(OutputChannel::Stdout, &items, |metadata| {
+                        emitted.send((items.clone(), metadata.unwrap())).is_ok()
+                    })
+                },
+            );
+            drop(done);
+            completed
+        });
+        let (items, metadata) = delivery.recv_timeout(Duration::from_secs(3)).unwrap();
+        assert_eq!(items, ["exact retained"]);
+        assert_eq!(metadata.sequence, 1);
+        output.terminal_complete(true, false);
+        output.terminal_delivery(true);
+        assert!(!wait_for_readers(&all_done, Duration::from_millis(10)));
+        assert_eq!(output.observation().state, EmissionState::Unsealed);
+        assert!(output.verified_emit_seal().is_err());
+        release.send(()).unwrap();
+        assert!(worker.join().unwrap());
+        assert!(output.verified_emit_seal().unwrap().is_current());
+    }
+
+    struct FailedReader;
+    impl Read for FailedReader {
+        fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("fixture read failure"))
+        }
+    }
+
+    #[test]
+    fn actual_read_error_and_batch_worker_panic_never_claim_successful_flush() {
+        for panic in [false, true] {
+            let host = HarnessHost::new();
+            let output = stream(&host, StreamKind::Process, Some(123));
+            let receipt = output.reader(0);
+            output.reader(1).finish(true, false);
+            let success = if panic {
+                read_provider_lines(std::io::Cursor::new("line\n"), receipt, |_| {
+                    panic!("fixture enqueue panic")
+                })
+            } else {
+                read_provider_lines(FailedReader, receipt, |_| unreachable!())
+            };
+            assert!(!success);
+            output.terminal_complete(true, false);
+            output.terminal_delivery(true);
+            assert_eq!(output.observation().state, EmissionState::Unavailable);
+        }
+    }
+
+    #[test]
+    fn production_sse_parser_flushes_exact_events_and_reports_trailing_loss_or_cancel() {
+        for (input, cancelled, expected, success) in [
+            (
+                ": comment\ndata: 漢\ndata: second\n\ndata: [DONE]\n\n",
+                false,
+                vec!["漢\nsecond", "[DONE]"],
+                true,
+            ),
+            (
+                "data: retained\n\ndata: not terminated\n",
+                false,
+                vec!["retained"],
+                false,
+            ),
+            ("data: cancelled\n\n", true, vec![], false),
+        ] {
+            let host = HarnessHost::new();
+            let output = stream(&host, StreamKind::Sse, None);
+            let receipt = output.reader(0);
+            let sending = output.clone();
+            let (sent, received) = mpsc::channel();
+            let result = read_sse_batches(
+                std::io::Cursor::new(input),
+                &AtomicBool::new(cancelled),
+                move |items| {
+                    sending.emit(OutputChannel::Sse, &items, |metadata| {
+                        sent.send((items.clone(), metadata.unwrap())).is_ok()
+                    });
+                },
+            );
+            assert_eq!(result, success);
+            receipt.finish(result, cancelled);
+            output.terminal_complete(result, cancelled);
+            output.terminal_delivery(true);
+            let received: Vec<_> = received
+                .try_iter()
+                .flat_map(|(items, metadata)| {
+                    assert_eq!(metadata.channel, OutputChannel::Sse);
+                    items
+                })
+                .collect();
+            assert_eq!(received, expected);
+            assert_eq!(
+                output.observation().state,
+                if success {
+                    EmissionState::Sealed
+                } else {
+                    EmissionState::Unavailable
+                }
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "owned isolated child entry; invoked only by actual_output_child_pipes_settle"]
+    fn owned_output_child() {
+        println!("NATIVE_OUTPUT_STDOUT 漢🦀");
+        eprintln!("NATIVE_OUTPUT_STDERR preserved");
+    }
+
+    #[test]
+    fn actual_output_child_pipes_settle_only_with_real_wait_and_both_eof() {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "harness::native_output_integration_tests::owned_output_child",
+                "--ignored",
+                "--nocapture",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000);
+        }
+        let mut child = command.spawn().unwrap();
+        let host = HarnessHost::new();
+        let source = logical_source("logical#actual-owned-child");
+        let stdout = child.stdout.take().unwrap();
+        let stderr = child.stderr.take().unwrap();
+        let (output, child) =
+            host.output
+                .begin_process(source, child, Arc::new(|| true), Arc::new(|_| true));
+        let (sent, received) = mpsc::channel();
+        let jobs = [
+            (
+                OutputChannel::Stdout,
+                Box::new(stdout) as Box<dyn Read + Send>,
+            ),
+            (
+                OutputChannel::Stderr,
+                Box::new(stderr) as Box<dyn Read + Send>,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(slot, (channel, reader))| {
+            let receipt = output.reader(slot as u8);
+            let output = output.clone();
+            let sent = sent.clone();
+            thread::spawn(move || {
+                read_provider_lines(reader, receipt, move |items| {
+                    output.emit(channel, &items, |metadata| {
+                        sent.send((channel, items.clone(), metadata.unwrap()))
+                            .is_ok()
+                    })
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+        drop(sent);
+        let exit = child.wait(&output, false).unwrap();
+        assert!(exit.success());
+        // This is a fixture queue acceptance, never a real GUI applied ACK.
+        output.terminal_delivery(true);
+        for job in jobs {
+            assert!(job.join().unwrap());
+        }
+        let emitted: Vec<_> = received.into_iter().collect();
+        assert!(emitted.iter().all(|(_, _, metadata)| metadata.session_id
+            == "logical#actual-owned-child"
+            && metadata.logical_session_id.as_deref() == Some("logical")
+            && !metadata.qualified));
+        assert!(emitted
+            .iter()
+            .any(|(channel, items, _)| *channel == OutputChannel::Stdout
+                && items
+                    .iter()
+                    .any(|line| line.contains("NATIVE_OUTPUT_STDOUT 漢🦀"))));
+        assert!(emitted
+            .iter()
+            .any(|(channel, items, _)| *channel == OutputChannel::Stderr
+                && items
+                    .iter()
+                    .any(|line| line.contains("NATIVE_OUTPUT_STDERR preserved"))));
+        assert_eq!(
+            emitted
+                .iter()
+                .map(|(_, _, meta)| meta.sequence)
+                .collect::<Vec<_>>(),
+            (1..=emitted.len() as u64).collect::<Vec<_>>()
+        );
+        assert!(output.verified_emit_seal().unwrap().is_current());
     }
 }
 

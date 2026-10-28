@@ -119,8 +119,53 @@ describe("GitHub fork repositories", () => {
       }),
     ).resolves.toEqual({
       items: [],
-      errors: { github: "not a GitHub repository" },
+      errors: { github: "/tmp/local: not a GitHub repository" },
     });
+  });
+});
+
+describe("partial GitHub repository refresh", () => {
+  const projects = [{ path: "/tmp/web" }];
+  const query = { assignedToMe: false, state: "open" as const, search: "", githubKinds: ["issue" as const] };
+
+  function installProvider() {
+    type Phase = "initial" | "partial" | "recovered";
+    let phase: Phase = "initial";
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      const input = args as Record<string, unknown>;
+      if (command === "git_github_repositories") return ["acme/healthy", "acme/failed"] as never;
+      if (command === "git_github_work_items") {
+        const repo = String(input.repo);
+        if (phase === "partial" && repo === "acme/failed") throw new Error("service unavailable");
+        return (phase === "initial" ? [workItem(repo, "issue")] : []) as never;
+      }
+      if (["linear_status", "jira_status", "gitlab_status", "azure_devops_status"].includes(String(command)))
+        return { connected: false } as never;
+      throw new Error(`Unexpected command: ${command}`);
+    });
+    return (next: Phase) => { phase = next; };
+  }
+
+  it("keeps failed source rows while removing rows absent from a healthy refresh", async () => {
+    const phase = installProvider();
+    await listInboxItems(projects, query);
+    phase("partial");
+    const result = await listInboxItems(projects, query, { force: true });
+    expect(result.items.map((item) => item.repo)).toEqual(["acme/failed"]);
+    expect(result.errors.github).toBe("acme/failed (issue): service unavailable");
+  });
+
+  it("retries the failed source without reading healthy sources or other providers", async () => {
+    const phase = installProvider();
+    await listInboxItems(projects, query);
+    phase("partial");
+    await listInboxItems(projects, query, { force: true });
+    phase("recovered");
+    vi.mocked(invoke).mockClear();
+    const result = await listInboxItems(projects, query, { retryFailedOnly: true });
+    expect(result).toEqual({ items: [], errors: {} });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke).toHaveBeenCalledWith("git_github_work_items", expect.objectContaining({ repo: "acme/failed" }));
   });
 });
 

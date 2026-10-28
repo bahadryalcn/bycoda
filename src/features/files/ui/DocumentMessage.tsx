@@ -13,9 +13,9 @@ export function DocumentMessage({
   children?: ReactNode;
 }) {
   return (
-    <div className="grid h-full place-items-center p-6">
+    <div className="grid h-full min-w-0 place-items-center overflow-auto p-4">
       {error ? (
-        <Alert tone="danger" title={title}>
+        <Alert tone="danger" title={title} className="w-full min-w-0 max-w-xl break-words">
           {children}
         </Alert>
       ) : (

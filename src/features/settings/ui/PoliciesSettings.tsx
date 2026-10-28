@@ -1,5 +1,5 @@
 import { SettingsFeedback } from "./settingsControls";
-import { useContext, useId, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
@@ -27,6 +27,18 @@ export function PoliciesSettings() {
   const readerId = useId();
   const language = languageOverride ?? (locale === "tr" ? "tr" : "en");
   const turkish = language === "tr";
+  const body = turkish ? activePolicy.tr : activePolicy.en;
+  const context = `${activePolicy.id}:${language}`;
+  const currentContext = useRef(context);
+  currentContext.current = context;
+  const reader = useRef<HTMLElement>(null);
+  const mailAttempt = useRef(0);
+  const headings = [...body.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1]);
+  useEffect(() => {
+    mailAttempt.current += 1;
+    setContactError(false);
+    return () => { mailAttempt.current += 1; };
+  }, [context]);
 
   return (
     <div
@@ -38,8 +50,12 @@ export function PoliciesSettings() {
         if (target?.getAttribute("href") !== "mailto:info@bahadrhllyalcn.com") return;
         event.preventDefault();
         event.stopPropagation();
+        const origin = currentContext.current;
+        const attempt = ++mailAttempt.current;
         setContactError(false);
-        void openUrl("mailto:info@bahadrhllyalcn.com").catch(() => setContactError(true));
+        void openUrl("mailto:info@bahadrhllyalcn.com").catch(() => {
+          if (origin === currentContext.current && attempt === mailAttempt.current) setContactError(true);
+        });
       }}
     >
       <aside className="policy-sidebar">
@@ -59,6 +75,7 @@ export function PoliciesSettings() {
             onChange={setLanguageOverride}
           />
         </div>
+        <p className="policy-context">{t("Document language only; your app language and permissions stay unchanged.")}</p>
         <nav
           className="policy-navigation"
           role="tablist"
@@ -98,17 +115,9 @@ export function PoliciesSettings() {
             </Button>
           ))}
         </nav>
-        <details className="policy-reading-note">
-          <summary>{t("About")}</summary>
-          <h3>{t("Document language only; your app language and permissions stay unchanged.")}</h3>
-          <p>
-            {t(
-              "Documents are bundled for offline reading. Other interface languages use the English text.",
-            )}
-          </p>
-        </details>
       </aside>
       <section
+        ref={reader}
         id={readerId}
         className="policy-reader"
         role="tabpanel"
@@ -116,6 +125,25 @@ export function PoliciesSettings() {
         tabIndex={0}
         key={activePolicy.id}
       >
+        <div className="policy-reader-context">
+          <p>{t("Documents are bundled for offline reading. Other interface languages use the English text.")}</p>
+          {turkish && activePolicy.id === "software-license" ? <p>{t("This license is shown in its original English text.")}</p> : null}
+          {headings.length > 1 ? <Select
+            label={t("Document sections")}
+            value=""
+            options={[
+              { value: "", label: t("Jump to section") },
+              ...headings.map((label, index) => ({ value: String(index), label })),
+            ]}
+            onChange={(value) => {
+              const heading = reader.current?.querySelectorAll<HTMLElement>(".policy-document h2")[Number(value)];
+              if (!heading || value === "") return;
+              heading.tabIndex = -1;
+              heading.scrollIntoView({ block: "start" });
+              heading.focus({ preventScroll: true });
+            }}
+          /> : null}
+        </div>
         {contactError ? (
           <SettingsFeedback state="error">
             {t("Could not open your email app. Copy info@bahadrhllyalcn.com into your email app.")}
@@ -126,7 +154,7 @@ export function PoliciesSettings() {
           lang={turkish && activePolicy.id !== "software-license" ? "tr" : "en"}
           aria-label={turkish ? activePolicy.trTitle : activePolicy.title}
         >
-          <AgentMarkdown text={turkish ? activePolicy.tr : activePolicy.en} />
+          <AgentMarkdown text={body} />
         </article>
       </section>
     </div>

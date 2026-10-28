@@ -133,6 +133,14 @@ fn ensure_schema_in_transaction(conn: &Connection) -> rusqlite::Result<()> {
         owner_pid INTEGER NOT NULL, child_pid INTEGER, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS native_authority_reservation_session
         ON native_authority_reservations(session_id);
+      CREATE TABLE IF NOT EXISTS native_renderer_checkpoint_receipts (
+        nonce TEXT PRIMARY KEY, payload_digest TEXT NOT NULL, receipt_json TEXT NOT NULL);
+      CREATE TRIGGER IF NOT EXISTS native_renderer_checkpoint_no_update
+        BEFORE UPDATE ON native_renderer_checkpoint_receipts BEGIN
+        SELECT RAISE(ABORT,'NATIVE_CHECKPOINT_IMMUTABLE'); END;
+      CREATE TRIGGER IF NOT EXISTS native_renderer_checkpoint_no_delete
+        BEFORE DELETE ON native_renderer_checkpoint_receipts BEGIN
+        SELECT RAISE(ABORT,'NATIVE_CHECKPOINT_IMMUTABLE'); END;
       CREATE TABLE IF NOT EXISTS native_authority_unknown_ingress (
         id TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at INTEGER NOT NULL);")?;
     conn.execute("INSERT OR IGNORE INTO native_authority_identity(id,source_store_id,source_profile_id) VALUES(1,?1,?2)",
@@ -687,6 +695,166 @@ impl SessionStore {
         }
     }
 
+    pub(crate) fn renderer_checkpoint_validate_scope(
+        &self,
+        scope: &crate::native_authority_checkpoint::NativeCheckpointScope,
+    ) -> Result<(), String> {
+        let conn = self.lock_conn()?;
+        renderer_checkpoint_scope(&conn, scope)
+    }
+
+    /// Receipts attest exact, already committed SQL rows only. No source permit,
+    /// quiesce/fence transition, draft rewrite or provider effect is introduced.
+    pub(crate) fn renderer_checkpoint_commit(
+        &self,
+        commit: crate::native_authority_checkpoint::NativeCheckpointCommit<'_>,
+    ) -> Result<crate::native_authority_checkpoint::NativeSqlCheckpointReceipt, String> {
+        use crate::native_authority_checkpoint::{
+            CheckpointUnqualified, NativeSqlCheckpointReceipt, ProviderOutputCheckpoint,
+        };
+        if commit.expected.fingerprint()? != commit.fingerprint {
+            return Err("NATIVE_CHECKPOINT_CONFLICT".into());
+        }
+        for value in [
+            commit.nonce,
+            commit.service_epoch,
+            commit.round_id,
+            commit.window_epoch,
+        ] {
+            if uuid::Uuid::parse_str(value).is_err() || value.len() != 36 {
+                return Err("NATIVE_CHECKPOINT_INVALID_IDENTITY".into());
+            }
+        }
+        let conn = self.lock_conn()?;
+        critical(&conn, |tx| {
+            renderer_checkpoint_scope(tx, commit.scope)?;
+            if tx.query_row("SELECT EXISTS(SELECT 1 FROM native_renderer_checkpoint_receipts WHERE nonce=?1)", [commit.nonce], |row| row.get::<_,bool>(0)).map_err(|error| error.to_string())? {
+                return Err("NATIVE_CHECKPOINT_ALREADY_COMMITTED".into());
+            }
+            let count: i64 = tx
+                .query_row(
+                    "SELECT count(*) FROM native_renderer_checkpoint_receipts",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            if count >= 4096 {
+                return Err("NATIVE_CHECKPOINT_RECEIPT_CAPACITY".into());
+            }
+            let (revision, updated_at): (i64,i64) = tx.query_row(
+                "SELECT COALESCE((SELECT revision FROM session_block_state WHERE session_id=s.id),0),s.updated_at FROM sessions s WHERE s.id=?1",
+                [&commit.scope.session_id], |row| Ok((row.get(0)?, row.get(1)?)),
+            ).map_err(|error| error.to_string())?;
+            if revision != commit.expected.revision || updated_at != commit.expected.updated_at {
+                return Err("NATIVE_CHECKPOINT_CONFLICT".into());
+            }
+            let mut remaining = 32 * 1024 * 1024;
+            let transcript = checkpoint_blob(
+                tx,
+                "session_transcripts",
+                "id",
+                "blocks_json",
+                &commit.scope.session_id,
+                &mut remaining,
+            )?
+            .ok_or("NATIVE_CHECKPOINT_SESSION_MISSING")?;
+            let draft = checkpoint_blob(
+                tx,
+                "composer_drafts",
+                "session_id",
+                "draft_json",
+                &commit.scope.session_id,
+                &mut remaining,
+            )?;
+            let queue = checkpoint_blob(
+                tx,
+                "session_queues",
+                "session_id",
+                "queue_json",
+                &commit.scope.session_id,
+                &mut remaining,
+            )?;
+            let transcript_json: Value =
+                serde_json::from_str(&transcript).map_err(|_| "NATIVE_CHECKPOINT_CORRUPT")?;
+            if !transcript_json.is_array() {
+                return Err("NATIVE_CHECKPOINT_CORRUPT".into());
+            }
+            for (raw, object) in [(&draft, true), (&queue, false)] {
+                if let Some(raw) = raw {
+                    let value: Value =
+                        serde_json::from_str(raw).map_err(|_| "NATIVE_CHECKPOINT_CORRUPT")?;
+                    if (object && !value.is_object()) || (!object && !value.is_array()) {
+                        return Err("NATIVE_CHECKPOINT_CORRUPT".into());
+                    }
+                }
+            }
+            let transcript_sha256 = sha(transcript.as_bytes());
+            let draft_sha256 = draft.as_ref().map(|value| sha(value.as_bytes()));
+            let queue_sha256 = queue.as_ref().map(|value| sha(value.as_bytes()));
+            if transcript_sha256 != commit.expected.transcript_sha256
+                || !commit.expected.draft.matches(&draft_sha256)
+                || !commit.expected.queue.matches(&queue_sha256)
+            {
+                return Err("NATIVE_CHECKPOINT_CONFLICT".into());
+            }
+            let ids = identity(tx)?;
+            let receipt = NativeSqlCheckpointReceipt {
+                version: 1,
+                qualified: CheckpointUnqualified,
+                provider_output: ProviderOutputCheckpoint::Unsealed,
+                nonce: commit.nonce.into(),
+                service_epoch: commit.service_epoch.into(),
+                round_id: commit.round_id.into(),
+                window_epoch: commit.window_epoch.into(),
+                native_store_instance: self.native_instance_id().to_string(),
+                environment_id: commit.scope.environment_id.clone(),
+                source_store_id: ids.source_store_id,
+                source_profile_id: ids.source_profile_id,
+                session_id: commit.scope.session_id.clone(),
+                migration_id: commit.scope.migration_id.clone(),
+                generation: commit.scope.generation,
+                revision,
+                updated_at,
+                transcript_sha256,
+                draft_sha256,
+                queue_sha256,
+            };
+            let raw = serde_json::to_string(&receipt).map_err(|error| error.to_string())?;
+            if raw.len() > 8192 {
+                return Err("NATIVE_CHECKPOINT_RECEIPT_CAPACITY".into());
+            }
+            tx.execute("INSERT INTO native_renderer_checkpoint_receipts(nonce,payload_digest,receipt_json) VALUES(?1,?2,?3)", params![commit.nonce, commit.fingerprint, raw]).map_err(|error| error.to_string())?;
+            Ok(receipt)
+        })
+    }
+
+    pub(crate) fn renderer_checkpoint_read(
+        &self,
+        nonce: &str,
+        fingerprint: &str,
+        expected: &crate::native_authority_checkpoint::NativeSqlCheckpointReceipt,
+    ) -> Result<crate::native_authority_checkpoint::NativeSqlCheckpointReceipt, String> {
+        let conn = self.lock_conn()?;
+        let tx = Transaction::new_unchecked(&conn, TransactionBehavior::Deferred)
+            .map_err(|error| error.to_string())?;
+        let ids = identity(&tx)?;
+        if self.native_instance_id().to_string() != expected.native_store_instance
+            || ids.source_store_id != expected.source_store_id
+            || ids.source_profile_id != expected.source_profile_id
+        {
+            return Err("NATIVE_CHECKPOINT_SOURCE_CHANGED".into());
+        }
+        let row: Option<(String,String)> = tx.query_row("SELECT CASE WHEN typeof(payload_digest)='text' AND length(CAST(payload_digest AS BLOB))=64 THEN payload_digest ELSE NULL END,CASE WHEN typeof(receipt_json)='text' AND length(CAST(receipt_json AS BLOB))<=8192 THEN receipt_json ELSE NULL END FROM native_renderer_checkpoint_receipts WHERE nonce=?1", [nonce], |row| Ok((row.get(0)?,row.get(1)?))).optional().map_err(|error| error.to_string())?;
+        let (actual, raw) = row.ok_or("NATIVE_CHECKPOINT_RECEIPT_MISSING")?;
+        let receipt: crate::native_authority_checkpoint::NativeSqlCheckpointReceipt =
+            serde_json::from_str(&raw).map_err(|_| "NATIVE_CHECKPOINT_RECEIPT_CORRUPT")?;
+        if actual != fingerprint || &receipt != expected {
+            return Err("NATIVE_CHECKPOINT_RECEIPT_CHANGED".into());
+        }
+        tx.commit().map_err(|error| error.to_string())?;
+        Ok(receipt)
+    }
+
     pub(crate) fn authority_native_checkpoint(
         &self,
         scope: &NativeScope,
@@ -725,6 +893,86 @@ impl SessionStore {
         tx.commit().map_err(|error| error.to_string())?;
         Ok(summary)
     }
+}
+
+fn renderer_checkpoint_scope(
+    conn: &Connection,
+    scope: &crate::native_authority_checkpoint::NativeCheckpointScope,
+) -> Result<(), String> {
+    for value in [
+        &scope.environment_id,
+        &scope.session_id,
+        &scope.migration_id,
+    ] {
+        identifier(value)?;
+    }
+    if scope.generation > 9_007_199_254_740_991 {
+        return Err("NATIVE_CHECKPOINT_WRONG_SCOPE".into());
+    }
+    let exists: bool = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE id=?1)",
+            [&scope.session_id],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !exists {
+        return Err("NATIVE_CHECKPOINT_SESSION_MISSING".into());
+    }
+    if let Some(state) = read_state(conn, &scope.session_id)? {
+        require_supported_writer(&state)?;
+        if !matches!(state.phase.as_str(), "NATIVE" | "QUIESCING")
+            || state.environment_id != scope.environment_id
+            || state.generation != scope.generation
+            || (state.phase == "QUIESCING" && state.migration_id != scope.migration_id)
+        {
+            return Err("NATIVE_CHECKPOINT_WRONG_SCOPE".into());
+        }
+    } else if scope.generation != 0 {
+        return Err("NATIVE_CHECKPOINT_WRONG_SCOPE".into());
+    }
+    Ok(())
+}
+
+/// SQL size/type checks precede native String allocation. Table/column names are
+/// private constants above, never renderer routing fields.
+fn checkpoint_blob(
+    conn: &Connection,
+    table: &str,
+    id: &str,
+    column: &str,
+    session: &str,
+    remaining: &mut usize,
+) -> Result<Option<String>, String> {
+    let length: Option<(String, i64)> = conn
+        .query_row(
+            &format!(
+                "SELECT typeof({column}),length(CAST({column} AS BLOB)) FROM {table} WHERE {id}=?1"
+            ),
+            [session],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    let Some((kind, length)) = length else {
+        return Ok(None);
+    };
+    let bytes = usize::try_from(length).map_err(|_| "NATIVE_CHECKPOINT_CORRUPT")?;
+    if kind != "text" || bytes > *remaining {
+        return Err("NATIVE_CHECKPOINT_ROW_CAPACITY".into());
+    }
+    let raw: String = conn
+        .query_row(
+            &format!("SELECT {column} FROM {table} WHERE {id}=?1"),
+            [session],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if raw.len() != bytes {
+        return Err("NATIVE_CHECKPOINT_CORRUPT".into());
+    }
+    *remaining -= bytes;
+    Ok(Some(raw))
 }
 
 fn buffers_digest(conn: &Connection, session_id: &str) -> Result<String, String> {

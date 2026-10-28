@@ -66,13 +66,13 @@ function projectRow(name: string) {
   return (
     container
       // Settings list projects by their display (folder) name, not the repository slug.
-      .querySelector(`button[aria-label="Notification categories for ${name}"]`)!
+      .querySelector(`button[aria-label^="Notification categories for ${name} ("]`)!
       .closest("fieldset")!
   );
 }
 function click(scope: ParentNode, label: string) {
   const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
-    (item) => item.getAttribute("aria-label") === label || item.textContent === label,
+    (item) => item.getAttribute("aria-label") === label || item.getAttribute("aria-label")?.startsWith(`${label} (`) || item.textContent === label,
   );
   expect(button, label).toBeDefined();
   act(() => button!.click());
@@ -127,7 +127,7 @@ it("honors category choices before and after a project mute while another projec
   click(projectRow("one"), "Notification categories for one");
   act(() =>
     projectRow("one")
-      .querySelector<HTMLInputElement>('[aria-label="Issues and Linear tasks for one"]')!
+      .querySelector<HTMLInputElement>('[aria-label^="Issues and Linear tasks for one ("]')!
       .click(),
   );
   await pollUpdated(2);
@@ -204,7 +204,7 @@ it("bulk mutes through Settings and resumes just one project without losing unre
   await mount();
   click(container, "Select projects");
   act(() =>
-    container.querySelector<HTMLInputElement>('[aria-label="Select all projects"]')!.click(),
+    container.querySelector<HTMLInputElement>('[aria-label="Select all known projects"]')!.click(),
   );
   mute(container.querySelector('[aria-label="Mute selected projects"]')!);
   await pollUpdated(0, 1);

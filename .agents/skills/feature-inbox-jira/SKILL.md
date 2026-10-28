@@ -141,3 +141,52 @@ Jira, native mobile/build/install/release acceptance not performed. Live feature
 claims unavailable; shared Git/session inspected without a reservation claim.
 Preserve concurrent updater/sidebar/shared ButtonGroup/Host work. Update user
 guides when real behavior changes, not on this proposed design alone.
+
+## H7 implementation, 2026-10-28 (review only)
+
+Package `2026-10-28-inbox-impl`, shared main checkout, uncommitted. Board UI in
+`src/features/inbox/ui/JiraBoardView.tsx` now uses compact title-first cards,
+semantic typography, selected ActionHost and an always-discoverable InlineAction
+Move menu through DropdownMenu. Pointer capture starts only after the drag
+threshold; touch panning/tapping stays native and touch drag uses its dedicated
+handle. Actual drag suppresses activation; keyboard Move and required-field
+transition recovery remain explicit (J-B01-05).
+
+Board continuation consumes at most one page per near-end scroll event, with one
+request in flight and an explicit Load more/Retry fallback. Empty, repeated,
+cycling or failed pages stop automatic continuation. Search and counts explicitly
+describe loaded issues. Planning groups start collapsed except the first group;
+expansion reads lazily, and refresh replays only the already loaded depth of
+expanded groups, serially. Collapsed saved data is marked stale until refreshed.
+Ranking stays blocked for partial, unloaded, stale, failed, filtered or hidden
+project scopes (J-P01-05/07).
+
+`onScopeChanged` tells InboxView to invalidate detail for board/account/scope
+identity changes; `selectedIssueId` paints the selected card. Ordinary read-back
+does not imply a missing later-page issue was deleted. Shell-local List/Board and
+wide/narrow detail/focus work remains owned by InboxView (J-H01/J-B06); action and
+comment consequences remain owned by InboxDetail (J-H02).
+
+J-P06 remains a concrete transport dependency: `src/features/inbox/model/jira.ts`
+still invokes the capped `jira_list_issues` array in `src-tauri/src/jira.rs`.
+This package does not invent continuation metadata, expand board allowlists,
+enable background sync or change native/mobile contracts. Structured confirmed
+deletion/revocation evidence remains necessary to invalidate a retained detail;
+account/visibility changes and board discovery still retire their old scope.
+
+Test edilmedi: the owner's overnight RULES.md prohibits suites, fixture servers,
+screenshots and runtime acceptance. Morning verification must exercise jira-board
+and sprints fixtures, real mouse/touch/keyboard activation, drag threshold,
+selected later-page refresh, lazy planning groups, cursor/error recovery, rank
+guards and light/dark 1280/800/narrow layouts. No build/install/release or real
+Jira operation was performed. Local details: `temp/local/2026-10-28-inbox-impl/jira.md`.
+
+Root integration completed: InboxView wires selectedIssueId, preserves later-page
+detail on ordinary readback, and supplies narrow Back/close focus return. Shared
+detail names the agent working folder and public-comment destination; retained
+comment drafts and active-request guards are scoped to the originating target.
+The single compiler-only fast run reported three Inbox diagnostics corrected
+afterward and an out-of-scope H1 shortcut-recorder unused `t`. No rerun or clean
+compiler pass is claimed. Full 32-record delivery ledger, exact dependencies,
+source fingerprints and morning acceptance: adjacent package `handoff.json` and
+`SURFACES.md`. Test edilmedi; build/installed source inclusion remains unknown.

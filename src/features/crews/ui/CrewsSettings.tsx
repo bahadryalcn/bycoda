@@ -55,39 +55,88 @@ export function CrewsSettings({
       >
         {!data ? (
           <div className="p-3">
-            <Alert tone={state.error ? "warning" : "info"}>
-              {state.error ? state.error.message : t("Loading crews…")}
-              {state.error ? (
-                <Button variant="ghost" onClick={() => void state.refetch()}>
-                  {t("Retry")}
-                </Button>
-              ) : null}
-            </Alert>
+            {state.error ? (
+              <Alert
+                tone="warning"
+                action={
+                  <Button
+                    variant="secondary"
+                    loading={state.isFetching}
+                    onClick={() => void state.refetch()}
+                  >
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {state.error.message}
+              </Alert>
+            ) : (
+              <Alert tone="info">{t("Loading crews…")}</Alert>
+            )}
           </div>
-        ) : data.definitions.length === 0 ? (
-          <Row label={t("No crews yet")} />
         ) : (
-          data.definitions.map((crew) => (
-            <Row
-              key={crew.id}
-              label={
-                <span className="flex min-w-0 items-center gap-2">
-                  <CrewAvatar crew={crew} className="icon-md" />
-                  <span className="truncate">{crew.name}</span>
-                </span>
-              }
-              description={`${crew.projectId ? t("This project") : t("All projects on this host")} · ${t("{p0} members", { p0: crew.agents.length })}`}
-            >
-              <div className="flex flex-wrap items-center gap-1">
-                <Button variant="secondary" onClick={() => setManagedCrewId(crew.id)}>
-                  {t("Crew work")}
-                </Button>
-                <Button variant="ghost" onClick={() => setDialog({ crewId: crew.id })}>
-                  {t("Edit")}
-                </Button>
+          <>
+            {state.error ? (
+              // A failed refresh keeps the last list usable and says so.
+              <div className="p-3 pb-0">
+                <Alert
+                  tone="warning"
+                  action={
+                    <Button
+                      variant="secondary"
+                      loading={state.isFetching}
+                      onClick={() => void state.refetch()}
+                    >
+                      {t("Retry")}
+                    </Button>
+                  }
+                >
+                  {state.error.message}
+                </Alert>
               </div>
-            </Row>
-          ))
+            ) : null}
+            {data.definitions.length === 0 ? (
+              <Row label={t("No crews yet")} />
+            ) : (
+              data.definitions.map((crew) => (
+                <Row
+                  key={crew.id}
+                  label={
+                    // Scope and size are data, not help text: they stay visible in the row.
+                    <span className="flex min-w-0 items-center gap-2">
+                      <CrewAvatar crew={crew} className="icon-md" />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{crew.name}</span>
+                        <span className="truncate text-ui-caption font-normal text-(--ui-text-secondary)">
+                          {[
+                            crew.projectId ? t("This project") : t("All projects on this host"),
+                            t("{p0} members", { p0: crew.agents.length }),
+                          ].join(" · ")}
+                        </span>
+                      </span>
+                    </span>
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      aria-label={t("Crew work: {p0}", { p0: crew.name })}
+                      onClick={() => setManagedCrewId(crew.id)}
+                    >
+                      {t("Crew work")}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      aria-label={t("Edit {p0}", { p0: crew.name })}
+                      onClick={() => setDialog({ crewId: crew.id })}
+                    >
+                      {t("Edit")}
+                    </Button>
+                  </div>
+                </Row>
+              ))
+            )}
+          </>
         )}
       </Group>
       {data ? <CrewLibrary cwd={cwd} state={state} data={data} /> : null}

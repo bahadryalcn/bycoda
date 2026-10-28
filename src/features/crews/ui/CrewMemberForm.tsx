@@ -14,10 +14,13 @@ import type { CrewAgent, CrewCandidate, CrewRole } from "../model/crew";
 import {
   COST_LEVELS,
   QUALITY_LEVELS,
+  candidateDetailLabel,
   candidateLabel,
   catalogCandidate,
   catalogModels,
+  memberModelSummary,
 } from "../model/crewRoster";
+import { CrewRoleIcon } from "./CrewRoleIcon";
 import { MemberModelPicker } from "./MemberModelPicker";
 
 export function roleLabel(role: CrewRole) {
@@ -69,8 +72,9 @@ function levelOptions(levels: readonly number[], labels: string[], current?: num
 }
 
 /**
- * One member: a role name of the owner's choosing, its responsibility in the crew,
- * instructions and model. Ratings only appear where automatic selection uses them.
+ * One member: a name of the owner's choosing (a professional role works too), its
+ * responsibility in the crew, instructions and model. Ratings only appear where
+ * automatic selection uses them.
  */
 export function CrewMemberForm({
   cwd,
@@ -112,7 +116,8 @@ export function CrewMemberForm({
     <div className="flex min-w-0 flex-col gap-4">
       <div className="flex min-w-0 flex-col gap-1.5">
         <TextField
-          label={t("Role")}
+          label={t("Member name")}
+          description={t("Any name or professional role.")}
           placeholder={t("e.g. Frontend developer")}
           value={agent.name}
           autoFocus={autoFocus}
@@ -147,8 +152,9 @@ export function CrewMemberForm({
           }))}
           onValueChange={(role) => onChange({ role: role as CrewRole })}
         />
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {responsibilityHint(agent.role)}
+        <p className="flex min-w-0 items-start gap-1.5 text-ui-caption text-(--ui-text-secondary)">
+          <CrewRoleIcon role={agent.role} className="icon-xs mt-0.5 shrink-0" />
+          <span className="min-w-0">{responsibilityHint(agent.role)}</span>
         </p>
       </div>
       <TextareaField
@@ -201,6 +207,8 @@ export function CrewMemberForm({
         ) : (
           <>
             <p className="text-ui-caption text-(--ui-text-secondary)">
+              <span className="font-medium">{memberModelSummary(catalog, agent)}</span>
+              {" · "}
               {t(
                 "For each assignment the crew picks one of these models, using your ratings and the crew's working style.",
               )}
@@ -231,12 +239,16 @@ export function CrewMemberForm({
                   const model = catalogModels(catalog).find(
                     (m) => m.harness === c.harness && m.id === c.model,
                   );
-                  const name = candidateLabel(catalog, c);
+                  // Provider-qualified, so equal model names from two providers stay distinct.
+                  const name = candidateDetailLabel(catalog, c);
                   return (
                     <li key={c.id} className="flex min-w-0 flex-col gap-2 px-3 py-2">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
-                        <span className="min-w-0 flex-1 truncate text-ui-body font-medium">
-                          {name}
+                        <span className="min-w-0 flex-1 text-ui-body font-medium" title={name}>
+                          <span className="block truncate">{candidateLabel(catalog, c)}</span>
+                          <span className="block truncate text-ui-caption font-normal text-(--ui-text-secondary)">
+                            {c.harness}
+                          </span>
                         </span>
                         <span className="text-ui-caption text-(--ui-text-secondary)">
                           {t("Cost")}
@@ -327,13 +339,7 @@ export function CrewMemberForm({
             variant="ghost"
             motion="none"
             aria-expanded={advanced}
-            startIcon={
-              advanced ? (
-                <ChevronDown className="icon-sm" aria-hidden />
-              ) : (
-                <ChevronRight className="icon-sm" aria-hidden />
-              )
-            }
+            startIcon={advanced ? <ChevronDown aria-hidden /> : <ChevronRight aria-hidden />}
             onClick={() => setAdvanced((value) => !value)}
             className="self-start"
           >

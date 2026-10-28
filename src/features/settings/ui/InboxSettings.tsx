@@ -23,7 +23,6 @@ import {
   LINEAR_CHANGE_EVENT,
   linearConnected,
   listLinearTeams,
-  loadHiddenLinearTeamIds,
   notifyLinearChange,
   saveHiddenLinearTeamIds,
   saveLinearToken,
@@ -35,6 +34,8 @@ import { TextField } from "../../../shared/ui/TextField";
 import "./InboxSettings.css";
 
 import { Group, Row, RevealedSetting } from "./settingsControls";
+import { isInboxScopeString, useInboxScopePreference } from "./useInboxScopePreference";
+import { SettingsFeedback } from "./settingsControls";
 
 const INBOX_PROVIDERS = [
   {
@@ -86,6 +87,12 @@ export function InboxPage() {
   }
   const setActive = (next: string) => setSelection((current) => ({ ...current, active: next }));
   const tabsId = useId();
+  const [visited, setVisited] = useState(() => new Set([active]));
+  useEffect(
+    () =>
+      setVisited((previous) => (previous.has(active) ? previous : new Set([...previous, active]))),
+    [active],
+  );
   const tabs = useRef<HTMLDivElement>(null);
 
   return (
@@ -135,15 +142,23 @@ export function InboxPage() {
           hidden={active !== id}
           tabIndex={0}
         >
-          <Group
-            layout="full"
-            scope={t("This computer · Inbox account")}
-            id={id}
-            title={name}
-            description={t(description)}
-          >
-            <Component />
-          </Group>
+          <div className="settings-topics grid min-w-0 gap-6">
+            <Group
+              layout="full"
+              scope={t("This computer · Inbox account")}
+              id={id}
+              title={name}
+              description={t(description)}
+            >
+              {active === id || visited.has(id) ? (
+                id === "jira" ? (
+                  <JiraSettings active={active === id} />
+                ) : (
+                  <Component />
+                )
+              ) : null}
+            </Group>
+          </div>
         </div>
       ))}
     </div>
@@ -155,6 +170,7 @@ export function GithubSettings() {
   const [status, setStatus] = useState<GithubStatus | null>(null);
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [helpError, setHelpError] = useState<string | null>(null);
   const request = useRef(0);
 
   const checkStatus = useCallback(async () => {
@@ -217,8 +233,9 @@ export function GithubSettings() {
           <Button
             className="shrink-0"
             onClick={() => {
+              setHelpError(null);
               void openUrl("https://cli.github.com/").catch((err: unknown) =>
-                setError(String(err)),
+                setHelpError(String(err)),
               );
             }}
           >
@@ -230,6 +247,7 @@ export function GithubSettings() {
         </Button>
       </Row>
       <InboxConnectionError error={error} />
+      <InboxConnectionError error={helpError} />
     </>
   );
 }
@@ -237,6 +255,9 @@ export function GithubSettings() {
 export function GitlabSettings() {
   useLocale();
   const [url, setUrl] = useState("https://gitlab.com");
+  const [savedUrl, setSavedUrl] = useState("https://gitlab.com");
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -244,19 +265,21 @@ export function GitlabSettings() {
   const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
+  const [statusError, setStatusError] = useState<string | null>(null);
   const request = useRef(0);
   const checkStatus = useCallback(async (hydrate = false) => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await gitlabConnected();
       if (generation !== request.current) return;
       setConnected(status.connected);
+      setSavedUrl((previous) => status.url || previous);
       if (hydrate) setUrl(status.url);
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -270,7 +293,9 @@ export function GitlabSettings() {
   }, [checkStatus]);
 
   const onSave = async () => {
-    if (!url.trim() || !token.trim() || busy || checking) return;
+    if (!url.trim() || !token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
     setOperation("save");
     setError(null);
     try {
@@ -278,29 +303,35 @@ export function GitlabSettings() {
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setUrl(status.url);
+      setSavedUrl(status.url);
+      setStatusError(null);
+      setEditing(false);
       setToken("");
       setConnected(status.connected);
       clearInboxCache();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
     setOperation("disconnect");
     setError(null);
     try {
-      const status = await disconnectGitlab(url);
+      const status = await disconnectGitlab(savedUrl);
       setConnected(false);
       setUrl(status.url);
       clearInboxCache();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
@@ -311,7 +342,7 @@ export function GitlabSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
@@ -324,11 +355,23 @@ export function GitlabSettings() {
           "Connect GitLab.com or a self-managed GitLab instance. Use a personal access token with API access; the token is stored locally and Disconnect deletes it.",
         )}
       >
-        {connected ? (
+        {connected && !editing ? (
           <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
-              {url}
+            <span
+              title={savedUrl}
+              className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
+            >
+              {savedUrl}
             </span>
+            <Button
+              disabled={busy || checking}
+              onClick={() => {
+                setUrl(savedUrl);
+                setEditing(true);
+              }}
+            >
+              {t("Edit")}
+            </Button>
             <Button
               className="shrink-0"
               onClick={() => void onDisconnect()}
@@ -377,6 +420,18 @@ export function GitlabSettings() {
                   ? t("Retry save and test")
                   : t("Save and test connection")}
             </Button>
+            {connected ? (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setUrl(savedUrl);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
@@ -388,6 +443,9 @@ export function GitlabSettings() {
 export function AzureDevOpsSettings() {
   useLocale();
   const [url, setUrl] = useState("https://dev.azure.com/myorg");
+  const [savedUrl, setSavedUrl] = useState("https://dev.azure.com/myorg");
+  const [editing, setEditing] = useState(false);
+  const mutation = useRef(false);
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -395,19 +453,21 @@ export function AzureDevOpsSettings() {
   const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
 
+  const [statusError, setStatusError] = useState<string | null>(null);
   const request = useRef(0);
   const checkStatus = useCallback(async (hydrate = false) => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await azureDevOpsConnected();
       if (generation !== request.current) return;
       setConnected(status.connected);
+      setSavedUrl((previous) => status.url || previous);
       if (hydrate && status.url) setUrl(status.url);
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -421,7 +481,9 @@ export function AzureDevOpsSettings() {
   }, [checkStatus]);
 
   const onSave = async () => {
-    if (!url.trim() || !token.trim() || busy || checking) return;
+    if (!url.trim() || !token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
     setOperation("save");
     setError(null);
     try {
@@ -429,29 +491,35 @@ export function AzureDevOpsSettings() {
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setUrl(status.url);
+      setSavedUrl(status.url);
+      setStatusError(null);
+      setEditing(false);
       setToken("");
       setConnected(status.connected);
       clearInboxCache();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
+    request.current += 1;
     setOperation("disconnect");
     setError(null);
     try {
-      const status = await disconnectAzureDevOps(url);
+      const status = await disconnectAzureDevOps(savedUrl);
       setConnected(false);
       setUrl(status.url || url);
       clearInboxCache();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
@@ -462,7 +530,7 @@ export function AzureDevOpsSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
@@ -475,11 +543,23 @@ export function AzureDevOpsSettings() {
           "Connect your ADO organization with a personal access token (Boards + Repos read & write for comments). The token is stored locally and Disconnect deletes it.",
         )}
       >
-        {connected ? (
+        {connected && !editing ? (
           <div className="inbox-account-fields">
-            <span title={url} className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)">
-              {url}
+            <span
+              title={savedUrl}
+              className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
+            >
+              {savedUrl}
             </span>
+            <Button
+              disabled={busy || checking}
+              onClick={() => {
+                setUrl(savedUrl);
+                setEditing(true);
+              }}
+            >
+              {t("Edit")}
+            </Button>
             <Button
               className="shrink-0"
               onClick={() => void onDisconnect()}
@@ -528,6 +608,18 @@ export function AzureDevOpsSettings() {
                   ? t("Retry save and test")
                   : t("Save and test connection")}
             </Button>
+            {connected ? (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setUrl(savedUrl);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
@@ -540,14 +632,25 @@ export function LinearSettings() {
   useLocale();
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [accountEpoch, setAccountEpoch] = useState(0);
+  const mutation = useRef(false);
   const [operation, setOperation] = useState<"save" | "disconnect" | null>(null);
   const busy = operation !== null;
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [teamsError, setTeamsError] = useState<string | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
   const [teams, setTeams] = useState<LinearTeam[]>([]);
-  const [hiddenTeamIds, setHiddenTeamIds] = useState(loadHiddenLinearTeamIds);
+  const teamScope = useInboxScopePreference(
+    "bycoda.linearHiddenTeams",
+    LINEAR_CHANGE_EVENT,
+    isInboxScopeString,
+    saveHiddenLinearTeamIds,
+    `linear:${connected}:${accountEpoch}`,
+  );
+  const hiddenTeamIds = teamScope.value;
   const teamRequest = useRef(0);
 
   const loadTeams = useCallback(async () => {
@@ -569,7 +672,7 @@ export function LinearSettings() {
   const checkStatus = useCallback(async () => {
     const generation = ++request.current;
     setChecking(true);
-    setError(null);
+    setStatusError(null);
     try {
       const status = await linearConnected();
       if (generation !== request.current) return;
@@ -577,7 +680,7 @@ export function LinearSettings() {
       if (status.connected) await loadTeams();
     } catch (err: unknown) {
       if (generation === request.current)
-        setError(err instanceof Error ? err.message : String(err));
+        setStatusError(err instanceof Error ? err.message : String(err));
     } finally {
       if (generation === request.current) setChecking(false);
     }
@@ -591,15 +694,9 @@ export function LinearSettings() {
     };
   }, [checkStatus]);
 
-  // The inbox filter menu writes the same list, so follow it while both are mounted.
-  useEffect(() => {
-    const onChange = () => setHiddenTeamIds(loadHiddenLinearTeamIds());
-    window.addEventListener(LINEAR_CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(LINEAR_CHANGE_EVENT, onChange);
-  }, []);
-
   const onSave = async () => {
-    if (!token.trim() || busy || checking) return;
+    if (!token.trim() || busy || checking || mutation.current) return;
+    mutation.current = true;
     request.current += 1;
     teamRequest.current += 1;
     setTeamsLoading(false);
@@ -610,20 +707,25 @@ export function LinearSettings() {
       if (!status.connected)
         throw new Error(t("Connection test failed. Check your credentials and retry."));
       setToken("");
+      setEditing(false);
       setConnected(true);
+      setStatusError(null);
+      setAccountEpoch((value) => value + 1);
+      setTeams([]);
       clearInboxCache();
       notifyLinearChange();
       await loadTeams();
     } catch (err: unknown) {
-      setConnected(false);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
 
   const onDisconnect = async () => {
-    if (busy) return;
+    if (busy || checking || mutation.current) return;
+    mutation.current = true;
     request.current += 1;
     teamRequest.current += 1;
     setTeamsLoading(false);
@@ -632,6 +734,7 @@ export function LinearSettings() {
     try {
       await disconnectLinear();
       setConnected(false);
+      setAccountEpoch((value) => value + 1);
       setTeams([]);
       setTeamsError(null);
       clearInboxCache();
@@ -639,18 +742,17 @@ export function LinearSettings() {
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      mutation.current = false;
       setOperation(null);
     }
   };
 
   const setVisibleTeams = (visible: string[]) => {
     const known = new Set(teams.map((team) => team.id));
-    const ids = [
-      ...hiddenTeamIds.filter((id) => !known.has(id)),
+    teamScope.update((current) => [
+      ...current.filter((id) => !known.has(id)),
       ...teams.filter((team) => !visible.includes(team.id)).map((team) => team.id),
-    ];
-    setHiddenTeamIds(ids);
-    saveHiddenLinearTeamIds(ids);
+    ]);
     clearInboxCache();
   };
 
@@ -660,7 +762,7 @@ export function LinearSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
-        error={error}
+        error={statusError}
         onCheck={() => void checkStatus()}
       />
       <Row
@@ -673,15 +775,20 @@ export function LinearSettings() {
           "Create a personal API key in Linear → Settings → Security & Access. Disconnect deletes it.",
         )}
       >
-        {connected ? (
-          <Button
-            className="shrink-0"
-            onClick={() => void onDisconnect()}
-            loading={operation === "disconnect"}
-            disabled={busy || checking}
-          >
-            {t("Disconnect")}
-          </Button>
+        {connected && !editing ? (
+          <div className="inbox-account-fields">
+            <Button disabled={busy || checking} onClick={() => setEditing(true)}>
+              {t("Edit")}
+            </Button>
+            <Button
+              className="shrink-0"
+              onClick={() => void onDisconnect()}
+              loading={operation === "disconnect"}
+              disabled={busy || checking}
+            >
+              {t("Disconnect")}
+            </Button>
+          </div>
         ) : (
           <div className="inbox-account-fields">
             <PasswordField
@@ -710,6 +817,17 @@ export function LinearSettings() {
                   ? t("Retry save and test")
                   : t("Save and test connection")}
             </Button>
+            {connected ? (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  setEditing(false);
+                  setToken("");
+                }}
+              >
+                {t("Cancel")}
+              </Button>
+            ) : null}
           </div>
         )}
       </Row>
@@ -719,8 +837,18 @@ export function LinearSettings() {
           label={t("Teams")}
           description={t("Unchecked teams stay out of the inbox.")}
           persistence={{ mode: "automatic" }}
+          feedback={
+            teamScope.error ? (
+              <SettingsFeedback
+                state="error"
+                action={<Button onClick={teamScope.retry}>{t("Retry")}</Button>}
+              >
+                {t("Saved Inbox scope is unavailable. Retry before changing it.")}
+              </SettingsFeedback>
+            ) : undefined
+          }
         >
-          {teams.length > 0 ? (
+          {teams.length > 0 && teamScope.available ? (
             <SearchableSelect
               multiple
               label={t("Teams")}
@@ -733,7 +861,10 @@ export function LinearSettings() {
                 .filter((team) => !hiddenTeamIds.includes(team.id))
                 .map((team) => team.id)}
               onChange={setVisibleTeams}
-              disabled={busy || checking}
+              disabled={
+                busy || checking || teamsLoading || Boolean(teamsError) || !teamScope.available
+              }
+              loading={teamsLoading}
               showSelectedValues
               placeholder={t("{p0} of {p1} teams selected", { p0: 0, p1: teams.length })}
               selectionLabels={{

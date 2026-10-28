@@ -1,19 +1,24 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { t, useLocale, useT } from "../../../shared/i18n";
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
-import { Check, Copy, CornerDownRight, Square, X } from "../../../shared/ui/icons";
+import { ArrowDown, Check, Copy, CornerDownRight, Square, X } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
+import { Alert } from "../../../shared/ui/Alert";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
+import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
+import {
+  commandCopyText,
+  emptyOutputReason,
+  inspectCommand,
+} from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
 import {
-  isStoppedBlock,
   isSubagentBlock,
   subagentName,
   subagentReport,
   subagentStatusLine,
   toolCallState,
-  toolCallLabel,
 } from "../model/transcriptActivity";
 import { AgentClock } from "./AgentClock";
 import { ActivityRow, agentStepBlock } from "./AgentTranscript";
@@ -103,12 +108,24 @@ function blockForStep(step: AgentStep): Block {
   return block;
 }
 
+/** Same lifecycle rule as the dock (`blockLifecycle`), worded for the sheet. */
+function lifecycleLabel(lifecycle: DockAgentStatus): string {
+  switch (lifecycle) {
+    case "stopped":
+      return t("Stopped by you");
+    case "failed":
+      return t("Failed");
+    case "running":
+      return t("Running");
+    case "interrupted":
+      return t("Interrupted");
+    case "done":
+      return t("Done");
+  }
+}
+
 function runLabel(block: Block, busy: boolean): string {
-  if (isStoppedBlock(block)) return t("Stopped by you");
-  const state = toolCallState(block);
-  if (state === "rejected") return t("Failed");
-  if (state === "pending") return busy ? t("Running") : t("Stopped");
-  return t("Done");
+  return lifecycleLabel(blockLifecycle(block, busy));
 }
 
 /** Steps shown at first, and added by each "Show earlier steps". */
@@ -129,6 +146,7 @@ export function SubagentSheet({
   onClose,
   onStop,
   onShowInTranscript,
+  onLoadRemoteBlock,
   onOpenFile,
   onOpenDiff,
   relay,
@@ -140,7 +158,10 @@ export function SubagentSheet({
   onClose: () => void;
   /** Present when the harness can stop this one run without the whole turn. */
   onStop?: () => Promise<void>;
-  onShowInTranscript: (blockId: string) => void;
+  /** Returns false when the block could not be found; the sheet then stays open. */
+  onShowInTranscript: (blockId: string) => boolean | void;
+  /** The transcript's authorized full-block loader, for blocks held as remote summaries. */
+  onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
   onOpenFile?: (path: string) => void;
   onOpenDiff?: (path: string) => void;
   relay?: SubagentRelay;
@@ -153,9 +174,13 @@ export function SubagentSheet({
   const model = command ? undefined : subagentModel;
   const run = block.agentRun;
   const state = toolCallState(block);
-  const running = busy && state === "pending";
+  const running = blockLifecycle(block, busy) === "running";
+  // Showing in the transcript can fail (the block is not rendered there); the
+  // sheet stays open with the reason instead of silently losing its context.
+  const [showFailedFor, setShowFailedFor] = useState<string | null>(null);
+  const showFailed = showFailedFor === block.id;
   const steps = run?.steps ?? [];
-  const summary = isStoppedBlock(block) ? "" : subagentStatusLine(block, steps);
+  const summary = blockLifecycle(block, busy) === "stopped" ? "" : subagentStatusLine(block, steps);
   const stops = useStopRequests();
   const stopKey = block.tool?.callId ?? block.id;
   const stopping = stops.stopping.has(stopKey);
@@ -205,7 +230,7 @@ export function SubagentSheet({
               <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
                 {name}
               </h2>
-              <CopyTranscriptButton block={block} status={runLabel(block, busy)} />
+              <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
               {onStop && running ? (
                 <Button
                   className="shrink-0"
@@ -228,7 +253,9 @@ export function SubagentSheet({
                 label={t("Show in transcript")}
                 variant="ghost"
                 type="button"
-                onClick={() => onShowInTranscript(block.id)}
+                onClick={() => {
+                  setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+                }}
                 title={
                   command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
                 }
@@ -256,7 +283,9 @@ export function SubagentSheet({
                     ? "text-(--ui-tone-danger-fg)"
                     : running
                       ? "text-(--ui-tone-accent-fg)"
-                      : ""
+                      : blockLifecycle(block, busy) === "interrupted"
+                        ? "text-(--ui-tone-warning-fg)"
+                        : ""
                 }
               >
                 {runLabel(block, busy)}
@@ -267,8 +296,21 @@ export function SubagentSheet({
               <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
             </div>
           </header>
+          {showFailed ? (
+            <div className="shrink-0 px-4 pt-2">
+              <Alert tone="warning" inline>
+                {t("Could not find this item in the transcript. It stays open here.")}
+              </Alert>
+            </div>
+          ) : null}
           {command ? (
-            <CommandDetails key={block.id} block={block} cwd={cwd} />
+            <CommandDetails
+              key={block.id}
+              block={block}
+              busy={busy}
+              cwd={cwd}
+              onLoadRemoteBlock={onLoadRemoteBlock}
+            />
           ) : (
             <SubagentTrail
               key={block.id}
@@ -342,86 +384,295 @@ export function SubagentSheet({
   );
 }
 
-/** Provider-reported command data; updates from the same live block as the dock. */
-function CommandDetails({ block, cwd }: { block: Block; cwd?: string }) {
+/** Local state for loading a remote summary into the full block. */
+type RemoteLoad = { status: "idle" | "loading" | "failed"; revision: number };
+
+/**
+ * Command details, in reading order: status is in the header, then the command
+ * (exact text on demand), the session context (subordinate), and the output as
+ * the one main reading area. Updates from the same live block as the dock.
+ */
+function CommandDetails({
+  block,
+  busy,
+  cwd,
+  onLoadRemoteBlock,
+}: {
+  block: Block;
+  busy: boolean;
+  cwd?: string;
+  onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
+}) {
   const t = useT();
-  const command =
-    block.tool?.preview?.title || block.tool?.title || block.text || toolCallLabel(block);
-  const output = block.tool?.preview?.output || block.tool?.output;
-  const detail = block.tool?.detail?.trim();
-  const result = [output, detail && detail !== command && detail !== output ? detail : undefined]
-    .filter(Boolean)
-    .join("\n\n");
+  const inspection = useMemo(() => inspectCommand(block, busy), [block, busy]);
+  const { command, error, output, remote } = inspection;
+  const reason = emptyOutputReason(inspection);
+  const [commandOpen, setCommandOpen] = useState(false);
+  const longCommand = command.text.length > 240 || command.text.split("\n").length > 3;
+
+  // Remote summary: pending/error/retry are local; a result only counts for the
+  // revision it was requested for, and never after the command was swapped.
+  const [load, setLoad] = useState<RemoteLoad>({ status: "idle", revision: 0 });
+  const generation = useRef(0);
+  useEffect(
+    () => () => {
+      generation.current += 1;
+    },
+    [],
+  );
+  const revision = remote?.revision;
+  const loadState = revision !== undefined && load.revision === revision ? load.status : "idle";
+  const loadFull = () => {
+    if (!onLoadRemoteBlock || revision === undefined || loadState === "loading") return;
+    const requested = ++generation.current;
+    setLoad({ status: "loading", revision });
+    const settle = (status: RemoteLoad["status"]) => {
+      if (generation.current !== requested) return;
+      setLoad({ status, revision });
+    };
+    try {
+      void Promise.resolve(onLoadRemoteBlock(block.id, revision)).then(
+        () => settle("idle"),
+        () => settle("failed"),
+      );
+    } catch {
+      settle("failed");
+    }
+  };
+
+  // Follow the newest output until the reader scrolls up or selects text.
+  const scroller = useRef<HTMLDivElement>(null);
+  const following = useFollowBottom(scroller, true, output, 32, false);
+  const [behind, setBehind] = useState(false);
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const sync = () => setBehind(el.scrollHeight - el.scrollTop - el.clientHeight > 32);
+    const onSelection = () => {
+      const selection = document.getSelection();
+      if (
+        selection &&
+        !selection.isCollapsed &&
+        selection.anchorNode &&
+        el.contains(selection.anchorNode)
+      ) {
+        following.current = false;
+        setBehind(true);
+      }
+    };
+    el.addEventListener("scroll", sync, { passive: true });
+    document.addEventListener("selectionchange", onSelection);
+    return () => {
+      el.removeEventListener("scroll", sync);
+      document.removeEventListener("selectionchange", onSelection);
+    };
+  }, [following]);
+  // New output while the reader is paused keeps the jump control visible.
+  useEffect(() => {
+    const el = scroller.current;
+    if (el && !following.current) {
+      setBehind(el.scrollHeight - el.scrollTop - el.clientHeight > 32);
+    }
+  }, [output, following]);
+  const jumpToLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    following.current = true;
+    el.scrollTop = el.scrollHeight;
+    setBehind(false);
+  };
+
+  const emptyText =
+    reason === "running"
+      ? t("Running. No output has been reported yet; new output appears here.")
+      : reason === "done"
+        ? t("Finished. The command reported no output.")
+        : reason === "stopped"
+          ? t("Stopped before it reported any output.")
+          : reason === "interrupted"
+            ? t("Interrupted before it reported any output. Its final state was not reported.")
+            : reason === "failed" && !error
+              ? t("Failed without reporting output.")
+              : null;
+
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto overscroll-none px-4 py-3">
-      <h3 className="mb-1 text-xs text-(--ui-text-secondary)">{t("Command")}</h3>
-      <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
-        {command}
-      </pre>
-      {cwd ? (
-        <>
-          <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Working directory")}</h3>
-          <pre className="select-text whitespace-pre-wrap break-words font-mono text-xs">{cwd}</pre>
-        </>
-      ) : null}
-      <h3 className="mt-4 mb-1 text-xs text-(--ui-text-secondary)">{t("Output")}</h3>
-      {result ? (
-        <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-xs leading-5">
-          {result}
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
+      <section aria-label={t("Command")} className="flex shrink-0 flex-col gap-1">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="text-ui-caption text-(--ui-text-secondary)">{t("Command")}</h3>
+          {longCommand ? (
+            <Button
+              variant="ghost"
+              type="button"
+              aria-expanded={commandOpen}
+              onClick={() => setCommandOpen((value) => !value)}
+            >
+              {commandOpen ? t("Show less") : t("Show full command")}
+            </Button>
+          ) : null}
+        </div>
+        <pre
+          tabIndex={0}
+          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color) ${
+            commandOpen || !longCommand ? "max-h-64" : "max-h-20"
+          }`}
+        >
+          {command.text}
         </pre>
-      ) : (
-        <p className="text-xs text-(--ui-text-secondary)">
-          {t("No output has been reported for this command yet.")}
-        </p>
-      )}
-      {block.tool?.outputTruncated ? (
-        <p className="mt-2 text-xs text-(--ui-text-secondary)">
-          {t("Output was truncated by the provider.")}
-        </p>
-      ) : null}
+        {command.truncated ? (
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Command text was shortened to keep this conversation responsive.")}
+          </p>
+        ) : null}
+        {cwd ? (
+          <p className="text-ui-caption wrap-anywhere text-(--ui-text-secondary)">
+            <span>{t("Session working directory")}: </span>
+            <span className="select-text font-mono">{cwd}</span>
+          </p>
+        ) : null}
+      </section>
+      <section aria-label={t("Output")} className="relative flex min-h-0 flex-1 flex-col gap-1">
+        <h3 className="text-ui-caption text-(--ui-text-secondary)">{t("Output")}</h3>
+        {error ? (
+          <pre className="max-h-40 shrink-0 select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
+            {error}
+          </pre>
+        ) : null}
+        {/* Always mounted: the follow hook attaches to this element once. */}
+        <div
+          ref={scroller}
+          tabIndex={0}
+          className="min-h-0 flex-1 overflow-auto overscroll-none rounded-lg [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color)"
+        >
+          <div className="min-w-0">
+            {output ? (
+              <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5">
+                {output}
+              </pre>
+            ) : emptyText ? (
+              <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>
+            ) : null}
+          </div>
+        </div>
+        {behind && output ? (
+          <Button
+            className="absolute right-3 bottom-3 shadow-sm"
+            variant="secondary"
+            type="button"
+            onClick={jumpToLatest}
+          >
+            <ArrowDown className="size-3.5" strokeWidth={1.75} />
+            {t("Jump to latest")}
+          </Button>
+        ) : null}
+        {inspection.outputTruncated ? (
+          <p className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+            {t("Output was shortened; the full text may not be available.")}
+          </p>
+        ) : null}
+        {remote ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+            <span>{t("Only a summary of this output is kept here.")}</span>
+            {onLoadRemoteBlock ? (
+              <Button
+                variant="ghost"
+                type="button"
+                loading={loadState === "loading"}
+                onClick={loadFull}
+              >
+                {loadState === "failed"
+                  ? t("Retry")
+                  : `${t("Load full output (")}${Math.max(1, Math.ceil(remote.bytes / 1024))}${t(" KB)")}`}
+              </Button>
+            ) : null}
+            {loadState === "loading" ? (
+              <span role="status">{t("Loading full output…")}</span>
+            ) : null}
+            {loadState === "failed" ? (
+              <span role="alert" className="text-(--ui-tone-danger-fg)">
+                {t("Could not load the full output.")}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 }
 
-/** Copies the run as Markdown; the icon confirms it for a moment. */
-function CopyTranscriptButton({ block, status }: { block: Block; status: string }) {
+/**
+ * Copies the run (Markdown for a subagent, exact command + status + output for a
+ * command). One copy at a time, results ignored once the selected run changed,
+ * the confirmation resets after the copy settles, and a failure stays visible
+ * until retried.
+ */
+function CopyTranscriptButton({
+  block,
+  busy,
+  status,
+}: {
+  block: Block;
+  busy: boolean;
+  status: string;
+}) {
   const t = useT();
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">("idle");
   const timer = useRef<number | null>(null);
-  useEffect(
-    () => () => {
-      if (timer.current != null) window.clearTimeout(timer.current);
-    },
-    [],
-  );
-  const copy = () => {
-    const text = isSubagentBlock(block)
-      ? agentRunMarkdown(block, status)
-      : [
-          block.tool?.preview?.title || block.tool?.title || block.text,
-          status,
-          block.tool?.preview?.output || block.tool?.output,
-          block.tool?.detail,
-        ]
-          .filter(Boolean)
-          .join("\n\n");
-    if (!text) return;
-    void copyText(text).then(
-      () => setState("copied"),
-      () => setState("failed"),
-    );
+  const pending = useRef(false);
+  const generation = useRef(0);
+  const clearTimer = () => {
     if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setState("idle"), 2000);
+    timer.current = null;
+  };
+  // A different run invalidates any copy in flight and any shown outcome.
+  useEffect(() => {
+    generation.current += 1;
+    pending.current = false;
+    clearTimer();
+    setState("idle");
+    return () => {
+      generation.current += 1;
+      clearTimer();
+    };
+  }, [block.id]);
+  const command = !isSubagentBlock(block);
+  const copy = () => {
+    if (pending.current) return;
+    const text = command
+      ? commandCopyText(inspectCommand(block, busy), status)
+      : agentRunMarkdown(block, status);
+    if (!text) return;
+    pending.current = true;
+    const requested = generation.current;
+    setState("pending");
+    const settle = (next: "copied" | "failed") => {
+      if (generation.current !== requested) return;
+      pending.current = false;
+      clearTimer();
+      setState(next);
+      if (next === "copied") timer.current = window.setTimeout(() => setState("idle"), 2000);
+    };
+    void copyText(text).then(
+      () => settle("copied"),
+      () => settle("failed"),
+    );
   };
   const label =
-    state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy transcript";
+    state === "copied"
+      ? t("Copied")
+      : state === "failed"
+        ? t("Copy failed. Try again.")
+        : command
+          ? t("Copy details")
+          : t("Copy transcript");
   return (
     <Button
       className="shrink-0"
       variant="ghost"
       type="button"
+      loading={state === "pending"}
       onClick={copy}
-      title={t("{p0} (Markdown)", { p0: label })}
+      title={command ? label : t("{p0} (Markdown)", { p0: label })}
       aria-label={label}
     >
       {state === "copied" ? (

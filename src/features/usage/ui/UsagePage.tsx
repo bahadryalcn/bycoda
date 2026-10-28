@@ -30,6 +30,7 @@ import {
 import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubtitle";
 import { Button } from "../../../shared/ui/Button";
 import { UsageBudgets } from "./UsageBudgets";
+import { AdvancedSettings } from "../../settings/ui/settingsControls";
 
 export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
   useLocale();
@@ -63,7 +64,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
                 title={t("Refresh usage")}
                 onClick={() => setRefresh((v) => v + 1)}
               >
-                <RefreshCw className="icon-sm" />
+                <RefreshCw aria-hidden strokeWidth={1.75} />
                 {t("Refresh usage")}
               </Button>
             </div>
@@ -91,9 +92,9 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
               ) : null}
             </div>
             <UsageBudgets refresh={refresh} />
-            <div className="usage-display-preferences overflow-hidden rounded-xl border border-stroke bg-(--ui-surface)">
+            <AdvancedSettings id="usage-display-preferences" settingIds={["show-remaining-usage"]} title={t("Display preferences")} defaultOpen={false}>
               <UsageDisplaySettings />
-            </div>
+            </AdvancedSettings>
           </div>
         )}
       />
@@ -112,7 +113,7 @@ function AccountLimits({
   refresh: number;
   identity?: ProviderAccountIdentity | null;
 }) {
-  useLocale();
+  const locale = useLocale();
   const { id: accountId, label } = account;
   const showRemaining = useShowRemainingUsage();
   const color = providerAccountColorValue(account);
@@ -206,8 +207,9 @@ function AccountLimits({
           );
         })}
       </div>
+      {limits.updatedAt > 0 ? <p className="usage-muted">{t("Last observed")}: {new Date(limits.updatedAt).toLocaleString(locale)}</p> : null}
       {limits.error ? (
-        <Alert tone="danger" role="alert">
+        <Alert tone="danger" role="alert" action={<Button loading={limits.status === "fetching"} onClick={() => void loadRateLimits(provider, accountId, true)}>{t("Retry")}</Button>}>
           {label}: {limits.error}
         </Alert>
       ) : null}

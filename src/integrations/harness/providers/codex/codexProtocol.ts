@@ -16,6 +16,7 @@ import {
 } from "../../../../features/sessions/model/attachmentPrompt";
 import { displayPath } from "../../../../shared/lib/paths";
 import { normalizeTaskListStatus } from "../../../../features/sessions/model/taskList";
+import { MAX_TOOL_DETAIL_CHARS } from "../../core/toolDetailLimits";
 import { composeToolTitle, extractToolPreview, formatAgentType } from "../../core/preview";
 import { formatShellIntent, inferShellIntent } from "../../core/shellIntent";
 import { streamTextDelta } from "../../core/streamText";
@@ -433,6 +434,33 @@ export interface CodexTurnUsageState {
 }
 
 /**
+ * Running command output, owned per command item id. Codex streams raw chunks;
+ * the shared layer replaces `tool.updated.detail`, so the provider sends the
+ * accumulated tail instead of each chunk. Entries are removed when the item
+ * completes and when the turn ends.
+ */
+export type CodexCommandOutputState = Map<string, { text: string; truncated: boolean }>;
+
+function appendCommandOutput(
+  state: CodexCommandOutputState,
+  itemId: string,
+  delta: string,
+): { text: string; truncated: boolean } {
+  const prev = state.get(itemId);
+  let text = (prev?.text ?? "") + delta;
+  let truncated = prev?.truncated ?? false;
+  // Keep the tail: the latest lines matter while a command runs. Whitespace and
+  // repeated characters are kept verbatim; the shared layer trims for display.
+  if (text.length > MAX_TOOL_DETAIL_CHARS) {
+    text = text.slice(text.length - MAX_TOOL_DETAIL_CHARS);
+    truncated = true;
+  }
+  const next = { text, truncated };
+  state.set(itemId, next);
+  return next;
+}
+
+/**
  * Translate a Codex app-server notification into Bycoda HarnessEvents.
  * Unknown methods return empty events (non-fatal).
  */
@@ -440,6 +468,7 @@ export function mapCodexNotification(
   method: string,
   params: unknown,
   turnUsage?: CodexTurnUsageState,
+  commandOutput?: CodexCommandOutputState,
 ): MappedCodexNotification {
   const rec = asRecord(params);
   if (!rec) return { events: [] };
@@ -507,6 +536,12 @@ export function mapCodexNotification(
   }
 
   if (method === "item/started" || method === "item/completed") {
+    // The completed item carries the aggregate (or none); either way the
+    // running accumulator for this call is finished.
+    if (method === "item/completed") {
+      const doneId = stringField(asRecord(rec.item), "id");
+      if (doneId) commandOutput?.delete(doneId);
+    }
     return mapItemLifecycle(method, rec);
   }
 
@@ -514,13 +549,16 @@ export function mapCodexNotification(
     const itemId = stringField(rec, "itemId") ?? "";
     const delta = streamTextDelta(rec.delta);
     if (!itemId || !delta) return { events: [] };
+    // Without an owner (subagent mirroring) fall back to the raw chunk.
+    const acc = commandOutput ? appendCommandOutput(commandOutput, itemId, delta) : undefined;
     return {
       events: [
         {
           type: "tool.updated",
           callId: itemId,
           kind: "execute",
-          detail: delta,
+          detail: acc ? acc.text : delta,
+          ...(acc?.truncated ? { detailTruncated: true } : {}),
           status: "in_progress",
         },
       ],
@@ -545,6 +583,7 @@ export function mapCodexNotification(
   }
 
   if (method === "turn/completed" || method === "turn/aborted") {
+    commandOutput?.clear();
     return mapTurnTerminal(method, rec);
   }
 

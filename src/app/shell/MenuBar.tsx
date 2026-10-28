@@ -2,7 +2,7 @@ import { Button } from "../../shared/ui/Button";
 import { useT } from "../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
+import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ALT, MOD, SHIFT } from "../../platform/tauri/platform";
 import { runUpdateFlow } from "../model/updater";
 import { openUsageGuide } from "../../features/onboarding/model/usageGuide";
@@ -257,7 +257,7 @@ const MemoMenuBar = memo(function MenuBar({
     ],
   );
 
-  const getMenuItems = (key: MenuKey): ExplorerMenuItem[] => {
+  const getMenuItems = (key: MenuKey): ContextMenuItem[] => {
     switch (key) {
       case "file":
         return [
@@ -534,7 +534,7 @@ const MemoMenuBar = memo(function MenuBar({
     <div
       ref={barRef}
       data-workspace-menubar
-      className="flex h-7 shrink-0 items-center gap-0.5 border-b border-stroke bg-(--ui-surface-raised) px-2 text-ui-caption"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center gap-0.5 border-b border-(--ui-pane-border) bg-(--ui-surface-panel) px-2 text-ui-caption"
       data-tauri-drag-region="deep"
     >
       {MENUS.map(({ key, label }) => {
@@ -543,10 +543,13 @@ const MemoMenuBar = memo(function MenuBar({
           <Button
             selected={isActive}
             variant="ghost"
+            size="sm"
             motion="none"
             key={key}
             type="button"
             data-tauri-drag-region="false"
+            aria-haspopup="menu"
+            aria-expanded={isActive}
             onClick={(e) => {
               if (isActive) {
                 closeMenu();
@@ -559,7 +562,6 @@ const MemoMenuBar = memo(function MenuBar({
                 openDropdown(key, e.currentTarget);
               }
             }}
-            className={``}
           >
             {label}
           </Button>
@@ -567,11 +569,11 @@ const MemoMenuBar = memo(function MenuBar({
       })}
 
       {activeMenu && menuAnchor ? (
-        <ExplorerMenu
+        <ContextMenu
           x={menuAnchor.x}
           y={menuAnchor.y}
           items={getMenuItems(activeMenu)}
-          ariaLabel={`${activeMenu} menu`}
+          ariaLabel={MENUS.find((menu) => menu.key === activeMenu)?.label}
           onPick={handlePick}
           onClose={closeMenu}
         />

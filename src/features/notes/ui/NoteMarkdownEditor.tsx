@@ -63,7 +63,7 @@ const noteEditorTheme = (minHeight: number) =>
     },
     "&.cm-editor .cm-scroller": {
       overflow: "visible",
-      lineHeight: "20px",
+      lineHeight: "var(--ui-leading-body)",
     },
     "&.cm-editor .cm-content": {
       minHeight: `${minHeight}px`,
@@ -71,7 +71,7 @@ const noteEditorTheme = (minHeight: number) =>
       cursor: "text",
     },
     "&.cm-editor .cm-panels.cm-panels-top": {
-      backgroundColor: "var(--color-background-base)",
+      backgroundColor: "var(--ui-surface)",
       marginBottom: "8px",
     },
   });
@@ -328,6 +328,12 @@ const TOOLBAR: {
   },
 ];
 
+const TOOLBAR_GROUPS: { label: string; commands: readonly MarkdownCommand[] }[] = [
+  { label: "Text", commands: ["bold", "italic", "strike"] },
+  { label: "Block", commands: ["heading", "bullet", "numbered", "checklist", "quote"] },
+  { label: "Insert", commands: ["code", "link", "table", "rule"] },
+];
+
 export function NoteMarkdownToolbar({
   viewRef,
   editing,
@@ -335,7 +341,7 @@ export function NoteMarkdownToolbar({
   onInsertImage,
 }: {
   viewRef: NoteEditorViewRef;
-  /** Formatting buttons only make sense while the source is visible. */
+  /** Formatting acts on the visible source or active document range. */
   editing: boolean;
   imageBusy?: boolean;
   onInsertImage: () => void;
@@ -355,21 +361,6 @@ export function NoteMarkdownToolbar({
       // Keep the selection in the editor while a button is pressed.
       onMouseDown={(event) => event.preventDefault()}
     >
-      <Button
-        variant="ghost"
-        size="sm"
-        iconOnly
-        label={t("Insert image")}
-        motion="none"
-        type="button"
-        title={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
-        aria-label={t("Insert image")}
-        loading={imageBusy}
-        onClick={onInsertImage}
-      >
-        <ImagePlus className="size-3.5" />
-      </Button>
-      {editing ? <span aria-hidden className="mx-1 h-4 w-px shrink-0 bg-content/10" /> : null}
       {(editing ? TOOLBAR.slice(0, 2) : []).map(({ command, label, icon: Icon }) => (
         <Button
           variant="ghost"
@@ -383,7 +374,7 @@ export function NoteMarkdownToolbar({
           aria-label={label}
           onClick={() => run((view) => runMarkdownCommand(view, command))}
         >
-          <Icon className="size-3.5" />
+          <Icon className="icon-sm" />
         </Button>
       ))}
       {editing ? (
@@ -395,31 +386,42 @@ export function NoteMarkdownToolbar({
             iconOnly
             label={t("Markdown formatting")}
             aria-expanded={expanded}
+            aria-haspopup="dialog"
             onClick={() => setExpanded((current) => !current)}
           >
-            <MoreHorizontal className="size-3.5" />
+            <MoreHorizontal className="icon-sm" />
           </Button>
           {expanded ? (
             <Popover
               anchor={moreRef}
               align="end"
               onDismiss={() => setExpanded(false)}
-              className="note-format-popover"
+              role="dialog"
+              aria-label={t("Markdown formatting")}
+              className="flex max-h-96 w-60 flex-col gap-2 overflow-y-auto p-2"
             >
-              {TOOLBAR.slice(2).map(({ command, label, icon: Icon }) => (
-                <Button
-                  key={command}
-                  variant="ghost"
-                  size="sm"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => {
-                    run((view) => runMarkdownCommand(view, command));
-                    setExpanded(false);
-                  }}
-                >
-                  <Icon className="size-3.5" />
-                  {label}
-                </Button>
+              {TOOLBAR_GROUPS.map((group) => (
+                <section key={group.label} aria-label={t(group.label)}>
+                  <h3 className="px-2 py-1 text-ui-caption font-medium text-(--ui-text-secondary)">{t(group.label)}</h3>
+                  <div className="grid grid-cols-2 gap-0.5">
+                    {TOOLBAR.filter((item) => group.commands.includes(item.command)).map(({ command, label, icon: Icon }) => (
+                      <Button
+                        key={command}
+                        variant="ghost"
+                        size="sm"
+                        align="start"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => {
+                          run((view) => runMarkdownCommand(view, command));
+                          setExpanded(false);
+                        }}
+                      >
+                        <Icon className="icon-sm" />
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                </section>
               ))}
             </Popover>
           ) : null}
@@ -434,10 +436,24 @@ export function NoteMarkdownToolbar({
             aria-label={t("Find and replace")}
             onClick={() => run(openSearchPanel)}
           >
-            <Search className="size-3.5" />
+            <Search className="icon-sm" />
           </Button>
         </>
       ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        iconOnly
+        label={t("Insert image")}
+        motion="none"
+        type="button"
+        title={t("Insert image · or paste ({p0}V) / drop one", { p0: MOD })}
+        aria-label={t("Insert image")}
+        loading={imageBusy}
+        onClick={onInsertImage}
+      >
+        <ImagePlus className="icon-sm" />
+      </Button>
     </div>
   );
 }

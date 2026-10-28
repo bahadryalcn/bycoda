@@ -5,7 +5,7 @@ import { Storage } from "happy-dom";
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { CodeMirrorEditor } from "./CodeMirrorEditor";
+import { CodeMirrorEditor, type EditorCarry } from "./CodeMirrorEditor";
 import { message } from "@tauri-apps/plugin-dialog";
 import { prepareEditorsToClose } from "../model/editorClose";
 import type { Text } from "@codemirror/state";
@@ -16,6 +16,59 @@ vi.mock("@tauri-apps/api/core", async (original) => ({
   ...(await original<typeof import("@tauri-apps/api/core")>()),
   invoke: async () => [],
 }));
+
+it("keeps the current document across actual child replacement instead of replaying an old recovery value", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const storage = new Storage();
+  storage.setItem("bycoda.autosave", "0");
+  vi.stubGlobal("localStorage", storage);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const retainedState = { current: null as EditorCarry | null };
+  const dirty = vi.fn();
+  const saveRequestRef = { current: null as (() => Promise<boolean>) | null };
+  const onSave = vi.fn(async () => {});
+  const props = {
+    path: "/repo/recovered.txt",
+    cwd: "/repo",
+    commentPath: "recovered.txt",
+    value: "baseline",
+    initialDraft: "recovered A",
+    initialDirty: true,
+    showDiff: false,
+    gitOriginal: null,
+    active: false,
+    onDirtyChange: dirty,
+    onErrorCountChange: vi.fn(),
+    onSave,
+    canAutosave: () => false,
+    formatOnSave: false,
+    saveRequestRef,
+    retainedState,
+  };
+  try {
+    await act(async () => root.render(createElement(CodeMirrorEditor, { ...props, key: "first" })));
+    const first = EditorView.findFromDOM(host.querySelector(".cm-editor")!)!;
+    act(() =>
+      first.dispatch({ changes: { from: first.state.doc.length, insert: " plus newer B" } }),
+    );
+    await act(async () =>
+      root.render(createElement(CodeMirrorEditor, { ...props, key: "replacement" })),
+    );
+    const second = EditorView.findFromDOM(host.querySelector(".cm-editor")!)!;
+    expect(second).not.toBe(first);
+    expect(second.state.doc.toString()).toBe("recovered A plus newer B");
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    await act(async () => {
+      expect(await saveRequestRef.current!()).toBe(true);
+    });
+    expect(onSave).toHaveBeenCalledWith("recovered A plus newer B");
+    expect(dirty).toHaveBeenLastCalledWith(false);
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});
 
 it("admits immutable documents synchronously and preserves recovered edits against their disk baseline", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);

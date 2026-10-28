@@ -1,7 +1,14 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    inline-size: 100%;
+    min-inline-size: 0;
+  }
+}
 .field {
   display: grid;
-  inline-size: 100%;
-  min-inline-size: 0;
 }
 .field label {
   margin-block-end: var(--space-2);
@@ -57,7 +64,7 @@
   gap: var(--space-1);
   min-inline-size: 0;
   max-inline-size: 100%;
-  padding-inline-start: var(--space-2);
+  padding-inline: var(--space-2) 2px;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface-muted);

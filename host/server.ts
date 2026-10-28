@@ -84,7 +84,12 @@ import {
   crewRunBulkDeleteKeys,
 } from "./transport/http/bulk";
 import { MobileTlsAuthority } from "./security/mobile-tls";
-import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
+import {
+  JsonValueSchema,
+  WS_LIMITS,
+  parseHostRpcParams,
+  type NativeBufferRecoveryOperation,
+} from "../src/shared/model/host-contracts";
 import { McpHttp } from "./mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
@@ -152,7 +157,11 @@ import { DesktopSessions } from "./desktopSessions";
 import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
-import { HostDomainAuthorizationError, type HostDomainContext } from "./domains/context";
+import {
+  assertDomainAuthority,
+  HostDomainAuthorizationError,
+  type HostDomainContext,
+} from "./domains/context";
 import { RunLeases } from "./run-lease";
 import { LeaseHeldError, type RunLease } from "../src/features/sync/model/runLease";
 import { AdoptedChanges } from "./adoptedChanges";
@@ -447,6 +456,37 @@ export async function createHostServer(
       owner: import("./workspace-service-contracts").WorkspaceOwnerAuthorization,
     ) => Promise<T>,
   ) => managed.withOwner(await workspaceOwnerDeviceId(token), action);
+  const nativeBufferRecovery = (
+    token: string,
+    operation: NativeBufferRecoveryOperation,
+    input: unknown,
+  ) => {
+    const params = parseHostRpcParams(`native.buffers.recovery.${operation}`, input);
+    return withWorkspaceOwner(token, async (owner) => {
+      const value =
+        operation === "list"
+          ? await managed.nativeActivity.listBufferRecovery(params as never, owner)
+          : operation === "read"
+            ? await managed.nativeActivity.readBufferRecovery(params as never, owner)
+            : await managed.nativeActivity.bufferRecoveryStatus(params as never, owner);
+      if (
+        createHash("sha256")
+          .update(await workspaceOwnerDeviceId(token))
+          .digest("hex") !== owner.ownerId
+      )
+        throw new Error("Owner device authorization was revoked");
+      return value;
+    });
+  };
+  const nativeBufferOperation =
+    (operation: NativeBufferRecoveryOperation) =>
+    async (params: Record<string, unknown>, context: HostDomainContext) => {
+      await assertDomainAuthority(context);
+      if (!context.nativeBufferRecovery) throw new HostDomainAuthorizationError();
+      const value = await context.nativeBufferRecovery(operation, params);
+      await assertDomainAuthority(context);
+      return value;
+    };
   const recordWorkspaceActivity = async (action: () => Promise<void>) => {
     try {
       await action();
@@ -1501,6 +1541,7 @@ export async function createHostServer(
           : []),
         "sessions.managedCreation.v1",
         "workspaces.native-activity.v1",
+        "native.buffers.recovery.v1",
         ...(buildIdentity ? ["build.identity.v1"] : []),
         "terminals.v1",
         "mobile.pairing",
@@ -1838,6 +1879,9 @@ export async function createHostServer(
     environment: environmentService,
     projects: projectsService,
     operations: {
+      "native.buffers.recovery.list": nativeBufferOperation("list"),
+      "native.buffers.recovery.read": nativeBufferOperation("read"),
+      "native.buffers.recovery.status": nativeBufferOperation("status"),
       "crews.list": crewOperation("crews.list"),
       "crews.schema": crewOperation("crews.schema"),
       "crews.inspect": crewOperation("crews.inspect"),
@@ -2877,6 +2921,18 @@ export async function createHostServer(
                             : "end";
                   result = await withWorkspaceOwner<unknown>(token, (owner) =>
                     managed.nativeActivity[action](params as never, owner),
+                  );
+                  break;
+                }
+                case "native.buffers.recovery.list":
+                case "native.buffers.recovery.read":
+                case "native.buffers.recovery.status": {
+                  result = await nativeBufferRecovery(
+                    token,
+                    input.method.slice(
+                      "native.buffers.recovery.".length,
+                    ) as NativeBufferRecoveryOperation,
+                    input.params ?? {},
                   );
                   break;
                 }
@@ -4952,6 +5008,7 @@ export async function createHostServer(
     environmentId: engine.store.environmentId,
     methods: domainDispatcher.methods,
     capabilities: [
+      "native.buffers.recovery.v1",
       "transport.ws.sessions.v2",
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
@@ -4984,6 +5041,8 @@ export async function createHostServer(
           id: createHash("sha256").update(token).digest("hex"),
           devServerAccess: (method, params, authorize) =>
             devServerAccess.handle(method, params, token, authorize),
+          nativeBufferRecovery: (operation, params) =>
+            nativeBufferRecovery(token, operation, params),
           retargetTask: (id, target, autoMerge) =>
             withWorkspaceOwner(token, (owner) => tasks.retarget(id, target, autoMerge, owner)),
           // Domain transactions already own the serialized database scope. Re-entering
@@ -5056,6 +5115,7 @@ export async function createHostServer(
         bulkTransfers.close();
       });
       drain(() => managed.retention.stop());
+      drain(() => managed.nativeActivity.closeBufferRecoveryCatalog());
       drain(async () => await queueDrainer.close());
       drain(() => localVoice.close());
       drain(() => voiceSetup.close());

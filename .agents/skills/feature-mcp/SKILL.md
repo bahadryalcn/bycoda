@@ -140,3 +140,24 @@ Audit/card ready for review, product migration not started. No actual config/tok
 credential read or operation, build/install/release. Native/Host/installed/mobile
 acceptance pending. No new source commit; uncommitted inventory against baseline
 above preserves concurrent work. Update user guides after behavior implementation.
+
+## H3 Settings consumer implementation, 2026-10-28 (uncommitted)
+
+McpSettings now progressively reveals cached matches in a bounded continuous
+list with an accessible continuation fallback; it does not issue network pages
+or repeat discovery per batch. Topic jump actions retain both Connections and
+External access owners. Exact row keys, details, scope/provider distinctions,
+explicit auth/removal and Add validation remain. Add has a synchronous in-flight
+guard and immutable pending fields. Cache failure retains last-good rows with
+error/retry; CLI status normalization preserves raw evidence and names its
+same-name/per-scope limitation. Empty help Rows become contextual prose.
+
+External grants gain local search/status/history and returned-set counts. Expiry
+display updates at the next expiry and on focus without Host polling. New token
+forms expose runtime-logs read-only choices; existing grants are untouched.
+Unknown create outcome blocks resubmission in that form and refreshes history;
+one-shot secrets remain memory-only and both topic owners stay mounted.
+
+Test edilmedi under the nightly owner rule. Per-ID MC-01..11 delivery and morning
+checks: `temp/local/2026-10-28-settings-pages-b/tooling.json`. No real MCP/config,
+login/token/credential mutation, test/server/capture, build/install or release.

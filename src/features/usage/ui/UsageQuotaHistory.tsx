@@ -106,8 +106,13 @@ export function QuotaHistory({
               />
             ))}
           </div>
+          <p className="usage-quota-axis usage-muted">
+            <span>{new Date(window.start).toLocaleString(locale)}</span>
+            <span>{t("Used (%)")} · {new Date(window.end).toLocaleString(locale)}</span>
+          </p>
           <details>
             <summary>{t("Show as table")}</summary>
+            <div className="usage-history-table" role="region" aria-label={t("Limit history")} tabIndex={0}>
             <SortableDataTable
               caption={t("Limit history")}
               rowKey="key"
@@ -134,7 +139,7 @@ export function QuotaHistory({
                   numeric: true,
                   render: (v) => `${Number(v).toFixed(1)}%`,
                 },
-                { key: "minutes", label: t("Window (minutes)"), numeric: true },
+                { key: "minutes", label: t("Window (minutes)"), numeric: true, render: (value) => `${Number(value) % 60 === 0 ? `${Number(value) / 60}h` : `${Number(value)}m`} (${value})` },
                 {
                   key: "reset",
                   label: t("Reset"),
@@ -145,6 +150,7 @@ export function QuotaHistory({
                 },
               ]}
             />
+            </div>
             <p className="usage-muted">{t("Latest 100 samples in the selected interval.")}</p>
           </details>
         </>

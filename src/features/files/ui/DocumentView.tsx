@@ -192,12 +192,11 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path, fitCon
         {body}
       </SurfaceSelection>
       {pdfReady ? null : (
-        <footer className="flex h-8 shrink-0 items-center gap-3 border-t border-stroke px-3 text-ui-micro text-[var(--ui-text-secondary)]">
-          <span className="truncate">{name}</span>
+        <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
+          <span className="min-w-0 flex-1 truncate" title={name}>{name}</span>
           {state.status === "ready" ? (
-            <span className="tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
+            <span className="shrink-0 tabular-nums">{formatFileSize(state.bytes.byteLength)}</span>
           ) : null}
-          <span className="flex-1" />
           {openButton}
         </footer>
       )}

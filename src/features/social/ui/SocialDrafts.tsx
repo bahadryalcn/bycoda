@@ -31,16 +31,18 @@ export function DraftList({
   client,
   run,
   snapshot,
+  recipientInParent = false,
 }: {
   drafts: SocialDraft[];
   client: SocialClient;
   run: Run;
   snapshot?: SocialSnapshot;
+  recipientInParent?: boolean;
 }) {
   return (
     <div>
       {drafts.map((draft) => (
-        <Draft key={draft.id} draft={draft} client={client} run={run} snapshot={snapshot} />
+        <Draft key={draft.id} draft={draft} client={client} run={run} snapshot={snapshot} recipientInParent={recipientInParent} />
       ))}
     </div>
   );
@@ -51,11 +53,13 @@ function Draft({
   client,
   run,
   snapshot,
+  recipientInParent,
 }: {
   draft: SocialDraft;
   client: SocialClient;
   run: Run;
   snapshot?: SocialSnapshot;
+  recipientInParent: boolean;
 }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
@@ -168,13 +172,7 @@ function Draft({
   return (
     <article className="social-preview">
       <div className="social-record-heading">
-        <strong>
-          {draft.kind === "message"
-            ? t("Message draft")
-            : draft.kind === "comment"
-              ? t("Comment draft")
-              : t("Reply draft")}
-        </strong>
+        {!recipientInParent ? <strong className="min-w-0 break-words text-ui-secondary font-medium">{contact?.name || t("Contact in the conversation")}</strong> : null}
         <StatusBadge
           status={job?.status ?? (generating ? "running" : draft.reviewReason ? "review" : "draft")}
           label={
@@ -188,24 +186,17 @@ function Draft({
           }
         />
       </div>
-      <p className="social-muted">
-        {account?.name ?? draft.accountId} · {contact?.name ?? t("Contact in the conversation")}
-        {` · ${time(draft.createdAt)}`}
-      </p>
-      {draft.generation ? (
-        <p className="social-muted">
-          {t("Agent: {p0} · {p1} · {p2}", {
-            p0: HARNESS_TITLE[draft.generation.agent.provider],
-            p1: draft.generation.agent.model || t("default model"),
-            p2: {
-              queued: t("Waiting to generate"),
-              running: t("Generating"),
-              completed: t("Generated"),
-              review: t("Review required"),
-            }[draft.generation.status],
-          })}
-        </p>
-      ) : null}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
+        <span>{account?.name ?? draft.accountId}</span>
+        <span>
+          {draft.kind === "message"
+            ? t("Message draft")
+            : draft.kind === "comment"
+              ? t("Comment draft")
+              : t("Reply draft")}
+        </span>        <span>{t("Created")}: {time(draft.createdAt)}</span>
+      </div>
+
       {(editing ? media : draft.media)?.length ? (
         <details onToggle={(event) => setShowAttachments(event.currentTarget.open)}>
           <summary>
@@ -411,6 +402,20 @@ function Draft({
         <a href={job.url} target="_blank" rel="noreferrer">
           {t("View on platform")}
         </a>
+      ) : null}
+      {draft.generation ? (
+        <details className="text-ui-caption text-(--ui-text-secondary)"><summary>{t("Generation details")}</summary><p>
+          {t("Agent: {p0} · {p1} · {p2}", {
+            p0: HARNESS_TITLE[draft.generation.agent.provider],
+            p1: draft.generation.agent.model || t("default model"),
+            p2: {
+              queued: t("Waiting to generate"),
+              running: t("Generating"),
+              completed: t("Generated"),
+              review: t("Review required"),
+            }[draft.generation.status],
+          })}
+        </p></details>
       ) : null}
       {!editing ? (
         <div className="social-approval">

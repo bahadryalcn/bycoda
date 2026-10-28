@@ -27,6 +27,7 @@ import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { CreateBranchDialog } from "./CreateBranchDialog";
 import { GitPickerTrigger } from "./GitPickerTrigger";
 import { Popover } from "../../../shared/ui/Popover";
+import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { SwitchBranchDialog } from "./SwitchBranchDialog";
 
 type Props = {
@@ -551,9 +552,9 @@ function BranchList({
                 strokeWidth={1.75}
               />
             )}
-            <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium" : ""}`}>
+            <MiddleTruncate mode="text" className={`min-w-0 flex-1 ${selected ? "font-medium" : ""}`}>
               {row.branch.name}
-            </span>
+            </MiddleTruncate>
             {row.branch.remote ? (
               <span className="shrink-0 rounded bg-(--ui-surface) px-1.5 py-0.5 text-(length:--ui-font-caption) leading-4 text-(--ui-text-secondary)">
                 {row.branch.remote}

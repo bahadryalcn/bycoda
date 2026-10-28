@@ -147,7 +147,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
         </div>
         <StatusBadge
           status={plans.some((plan) => plan.enabled) ? "active" : "paused"}
-          label={`${plans.filter((plan) => plan.enabled).length} etkin plan`}
+          label={t("{p0} active plans", { p0: plans.filter((plan) => plan.enabled).length })}
         />
       </header>
       {!supported ? (
@@ -159,7 +159,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
       ) : (
         <>
           <SocialSetupEditor
-            inline={!plans.length}
+            inline={false}
             title={editingId ? t("Edit publishing plan") : t("Create automatic publishing plan")}
             editing={editVersion}
             description={t(
@@ -167,7 +167,7 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
             )}
           >
             <form
-              className="social-form social-plan-setup"
+              className="social-form !flex w-full max-w-3xl !flex-col !gap-4"
               onSubmit={(event) => {
                 const form = event.currentTarget;
                 field(event);
@@ -204,7 +204,8 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                 })();
               }}
             >
-              <div className="social-plan-content">
+              <div className="grid min-w-0 gap-3">
+                <h3 className="text-ui-secondary font-medium">{t("Account and content pool")}</h3>
                 <TextField
                   disabled={socialLocked}
                   label={t("Plan name")}
@@ -343,19 +344,6 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                     "Each campaign is shared once. The plan stops when the content pool ends; add new approved campaigns to continue.",
                   )}
                 </p>
-                <Button
-                  loading={pendingUi.is("publishing-plans.save-changes-as-paused")}
-                  type="submit"
-                  variant="secondary"
-                  disabled={socialLocked || !canSave}
-                >
-                  {editingId ? t("Save changes as paused") : t("Save plan as paused")}
-                </Button>
-                {!name.trim() || !account || !projectId || invalidPool ? (
-                  <small className="social-muted">
-                    {t("To save, choose a plan name, account, project and at least one campaign.")}
-                  </small>
-                ) : null}
               </div>
               <fieldset>
                 <legend>{t("When should it share?")}</legend>
@@ -468,6 +456,27 @@ export function PublishingPlans({ client, snapshot, projects, initialProject, ru
                   </Notice>
                 )}
               </fieldset>
+              <div className="flex min-w-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
+                <h3 className="text-ui-secondary font-medium">{t("Review the plan")}</h3>
+                <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">
+                  {account?.name || t("Choose an account")} · {projects.find((project) => project.id === projectId)?.name || projectId} · {t("{p0} campaigns", { p0: campaignIds.length })}
+                </p>
+                <p className="text-ui-caption text-(--ui-text-secondary)">{validation.schedule ? publishingScheduleSummary(validation.schedule) : validation.error}</p>
+                <p className="text-ui-caption text-(--ui-text-secondary)">{t("Saved paused. Review and activation are separate; saving does not publish.")}</p>
+                <Button
+                  loading={pendingUi.is("publishing-plans.save-changes-as-paused")}
+                  type="submit"
+                  variant="secondary"
+                  disabled={socialLocked || !canSave}
+                >
+                  {editingId ? t("Save changes as paused") : t("Save plan as paused")}
+                </Button>
+                {!name.trim() || !account || !projectId || invalidPool ? (
+                  <small className="social-muted">
+                    {t("To save, choose a plan name, account, project and at least one campaign.")}
+                  </small>
+                ) : null}
+              </div>
             </form>
           </SocialSetupEditor>
           <div className="social-columns">

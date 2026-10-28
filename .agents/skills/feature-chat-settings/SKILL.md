@@ -5,6 +5,34 @@ description: "Settings Chat inventory for conversation appearance, spelling, sen
 
 # Chat Settings and prompt library
 
+## H3 Settings reference implementation, 2026-10-28
+
+Owner conversation `55e5cc00-32d1-420a-ac03-bdb7f2a2af2d`, exact quote:
+
+> Ayarlar referans düzenini kalan sayfalara uygula.
+
+Uncommitted Settings-pages-B implementation: Chat uses ordered shared topics;
+conversation/writing precede translation and Voice. Optional sending/advanced
+help defaults closed locally and reveal still expands targets. The last legacy
+equal-topic subgrid and Chat-specific Group/Row skins have been removed.
+Continuation flags now subscribe to same/sibling changes with explicit write
+outcomes; local failed choices retain Retry. Conversation pacing/spelling/model
+options get local save recovery; Appearance receipts remain authoritative.
+
+Prompt templates open from a compact disclosure into a searchable bounded list
+and one selected editor. Name/body/trigger validation, IDs, limits, explicit Save,
+draft-only deletion and external conflict checks are retained. Window-local drafts
+survive closing/navigation. Unreadable/corrupt storage blocks writes and exposes
+read retry; validation selects/focuses the offending editor. Translation/reprompt
+distinguishes inherited value from reset and explains unsupported text actions.
+
+H1 Voice files and H6 prompt/translation runtime authority are untouched; related
+durable/read/runtime findings remain per-ID dependencies. Crews integration is
+an owned Settings wrapper only; H2 owns its actual consumers.
+Source identity, test edilmedi, single compiler result and morning scenarios:
+`temp/local/2026-10-28-settings-pages-b/handoff.json`. No runtime, native,
+installed, build or release acceptance is claimed.
+
 Make everyday chat preferences readable and prompt management discoverable without
 losing fields, drafts, execution boundaries or recovery. Keywords: Settings Chat,
 conversation view, width, wrap, transcript layout, anchor, streaming, spelling,

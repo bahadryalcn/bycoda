@@ -227,19 +227,20 @@ function FilePaneComponent({
                   active={focused && file.id === pane.activeFileId}
                   onMetaChange={(patch) => onTerminalMetaChange?.(file.id, patch)}
                 />
-              ) : isImagePath(file.path) ? (
+              ) : isImagePath(file.path) && !file.recoveredEditorDraft ? (
                 <BinaryFileView path={file.path} cwd={file.cwd} />
-              ) : mediaKind(file.path) ? (
+              ) : mediaKind(file.path) && !file.recoveredEditorDraft ? (
                 <MediaView
                   path={file.path}
                   active={file.id === pane.activeFileId}
                   visible={visible && file.id === pane.activeFileId}
                 />
-              ) : kind && !delimited ? (
+              ) : kind && !delimited && !file.recoveredEditorDraft ? (
                 <DocumentView path={file.path} cwd={file.cwd} />
               ) : (
                 <Editor
                   documentId={file.id}
+                  recoveredEditorDraft={file.recoveredEditorDraft}
                   path={file.path}
                   cwd={file.cwd}
                   showDiff={!!file.review}
@@ -331,7 +332,7 @@ function PlanSurface({
   if (!block || !plan) {
     return (
       <div className="grid h-full place-items-center p-6 text-center">
-        <p className="text-[13px] text-[var(--ui-text-secondary)]">
+        <p role="status" className="text-ui-secondary text-(--ui-text-secondary)">
           {t("This plan is no longer in the session.")}
         </p>
       </div>
@@ -380,10 +381,8 @@ function PlanSurface({
               motion="none"
               type="button"
               disabled={buildDisabled}
+              loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
-              className={`  flex  items-center gap-1.5 disabled:cursor-not-allowed  ${
-                session ? "" : ""
-              }   `}
             >
               <Play className="size-3" />
               {buildLabel}
@@ -408,6 +407,7 @@ function PlanSurface({
             cwd={session?.cwd ?? file.cwd}
           >
             <textarea
+              data-file-editor-source-active={active && mode === "source" ? "true" : "false"}
               aria-label={t("Plan markdown")}
               spellCheck={false}
               value={block.text}

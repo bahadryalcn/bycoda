@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Progress } from "../../../shared/ui/Progress";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { createNote } from "../../notes";
@@ -18,15 +18,7 @@ export function GitLoading({ text }: { text: string }) {
   );
 }
 
-export function GitFeedback({
-  kind = "error",
-  title,
-  detail,
-  stale,
-  onRetry,
-  onDismiss,
-  cwd,
-}: {
+type GitFeedbackProps = {
   kind?: "error" | "warning" | "success" | "info";
   title: string;
   detail?: string;
@@ -34,7 +26,23 @@ export function GitFeedback({
   onRetry?: () => void;
   onDismiss?: () => void;
   cwd?: string;
-}) {
+};
+
+export function GitFeedback(props: GitFeedbackProps) {
+  // Each diagnostic owns its pending actions and feedback, even when A is
+  // replaced by B and then returns before an old A request finishes.
+  return <GitFeedbackContent key={JSON.stringify([props.kind, props.title, props.detail, props.cwd])} {...props} />;
+}
+
+function GitFeedbackContent({
+  kind = "error",
+  title,
+  detail,
+  stale,
+  onRetry,
+  onDismiss,
+  cwd,
+}: GitFeedbackProps) {
   useLocale();
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -42,12 +50,13 @@ export function GitFeedback({
   const [open, setOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const alive = useRef(true);
+  const copyPending = useRef(false);
+  const notePending = useRef(false);
   useEffect(() => {
-    setCopied(false);
-    setSaved(false);
-    setOpen(false);
-    setCopyError(undefined);
-  }, [title, detail, cwd]);
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
   const context = [title, cwd, detail].filter(Boolean).join("\n\n");
   const branchInWorktree =
     kind === "error" && !!detail && /cannot delete branch[\s\S]*used by worktree/i.test(detail);
@@ -64,22 +73,21 @@ export function GitFeedback({
               ? "text-danger"
               : kind === "warning"
                 ? "text-warning"
-                : "text-[var(--color-content)]"
+                : "text-(--color-content)"
           }
         >
-          {detail ? (
-            <Button
-              variant="link"
-              tooltip={t("Details")}
-              onClick={() => setOpen(true)}
-              aria-haspopup="dialog"
-            >
-              {title}
-            </Button>
-          ) : (
-            title
-          )}
+          {title}
         </div>
+        {detail ? (
+          <Button
+            variant="link"
+            onClick={() => setOpen(true)}
+            aria-label={`${t("Details")}: ${title}`}
+            aria-haspopup="dialog"
+          >
+            {t("Details")}
+          </Button>
+        ) : null}
         {onRetry ? (
           <Button variant="secondary" onClick={onRetry}>
             {t("Retry")}
@@ -117,15 +125,18 @@ export function GitFeedback({
                 variant="link"
                 loading={copying}
                 onClick={async () => {
+                  if (copyPending.current) return;
+                  copyPending.current = true;
                   setCopying(true);
                   setCopyError(undefined);
                   try {
                     await copyText(detail);
-                    setCopied(true);
+                    if (alive.current) setCopied(true);
                   } catch (error) {
-                    setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current) setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
-                    setCopying(false);
+                    copyPending.current = false;
+                    if (alive.current) setCopying(false);
                   }
                 }}
               >
@@ -135,15 +146,18 @@ export function GitFeedback({
                 loading={saving}
                 disabled={saved}
                 onClick={async () => {
+                  if (notePending.current || saved) return;
+                  notePending.current = true;
                   setSaving(true);
                   setCopyError(undefined);
                   try {
                     await createNote({ title, body: context, sourceCwd: cwd });
-                    setSaved(true);
+                    if (alive.current) setSaved(true);
                   } catch (error) {
-                    setCopyError(error instanceof Error ? error.message : String(error));
+                    if (alive.current) setCopyError(error instanceof Error ? error.message : String(error));
                   } finally {
-                    setSaving(false);
+                    notePending.current = false;
+                    if (alive.current) setSaving(false);
                   }
                 }}
               >

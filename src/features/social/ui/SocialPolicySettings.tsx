@@ -76,10 +76,12 @@ export function SocialPolicySettings({
   client,
   policies = DEFAULT_SOCIAL_POLICIES,
   run,
+  executorLabel,
 }: {
   client: SocialClient;
   policies?: SocialPolicies;
   run: (action: () => Promise<unknown>) => Promise<boolean>;
+  executorLabel?: string;
 }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
@@ -135,6 +137,7 @@ export function SocialPolicySettings({
       aria-label={t("Social media agent and content settings")}
     >
       <h2>{t("AI and content")}</h2>
+      {executorLabel ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Settings for computer: {p0}", { p0: executorLabel })}</p> : null}
       <p className="social-muted">
         {t(
           "Choose the agent and content limits. Platforms without settings use the shared settings.",
@@ -160,12 +163,13 @@ export function SocialPolicySettings({
         </NativeSelect>
       </label>
       <p className="social-policy-effective">
-        {t("Active agent")}:{" "}
+        {t("Saved agent")}:{" "}
         {effective.agent
           ? `${HARNESS_TITLE[effective.agent.provider]} · ${effective.agent.model || t("default model")}`
           : t("AI off · verified fixed reply")}
         {scope !== "global" && !policies.platforms[scope]?.agent ? ` · ${t("shared setting")}` : ""}
       </p>
+      {isEdited(draft) ? <p role="status" className="text-ui-caption text-(--ui-tone-warning-fg)">{t("Unsaved changes · the saved policy remains active.")}</p> : null}
       {conflict ? (
         <Alert tone="danger">
           {t(
@@ -306,7 +310,7 @@ export function SocialPolicySettings({
                   placeholder={
                     scope !== "global" && policies.global[field]
                       ? t("Shared limit: {p0}", { p0: policies.global[field] })
-                      : t("No limit")
+                      : t("No additional limit")
                   }
                   description={
                     t("Saved limit: {p0}", { p0: effective[field] ?? t("no extra limit") }) +
@@ -317,6 +321,7 @@ export function SocialPolicySettings({
                 />
               ))}
             </div>
+            <p className="text-ui-caption text-(--ui-text-secondary)">{t("These are additional policy limits. Platform limits and send approval still apply.")}</p>
           </section>
           <div className="social-actions">
             <Button
@@ -334,7 +339,7 @@ export function SocialPolicySettings({
                 type="button"
                 onClick={reset}
               >
-                {t("Load saved settings")}
+                {t("Discard edits and load saved settings")}
               </Button>
             ) : null}
           </div>

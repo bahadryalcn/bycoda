@@ -5,6 +5,16 @@ import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
 import {
+  captureSessionOutputWrite,
+  acknowledgeSessionOutputWrite,
+  failSessionOutputWrite,
+  releaseSessionOutputWrite,
+  pendingSessionOutputSnapshots,
+  sessionOutputNeedsReplacement,
+  installSessionOutputMutationAccounting,
+  type SessionOutputWrite,
+} from "./sessionOutputProjection";
+import {
   rendererPersistenceDrain,
   type PersistenceScope,
   type PersistenceWork,
@@ -370,12 +380,17 @@ type LiveWriteOptions = {
   onStart?: () => void;
   onFailed?: () => void;
 };
-type LiveSlot = { session: Session; options: LiveWriteOptions };
+type LiveSlot = {
+  session: Session;
+  options: LiveWriteOptions;
+  outputWrite: SessionOutputWrite | null;
+};
 const pendingLiveWrites = new Map<string, LiveSlot>();
 
 const sessionPersistence = rendererPersistenceDrain.reuseModuleProducer("session-store", {
   flush: (scope, work) => flushSessionWritesStrict(scope, work),
 });
+installSessionOutputMutationAccounting((sessionId) => sessionPersistence.noteMutation([sessionId]));
 
 function enqueueSessionWrite<T>(
   sessionId: string,
@@ -385,7 +400,11 @@ function enqueueSessionWrite<T>(
   key = "transcript",
 ): Promise<T> {
   // Any other write carries newer data than a snapshot that has not started.
-  if (!live) pendingLiveWrites.delete(sessionId);
+  if (!live) {
+    const pending = pendingLiveWrites.get(sessionId);
+    if (pending) releaseSessionOutputWrite(pending.outputWrite);
+    pendingLiveWrites.delete(sessionId);
+  }
   return sessionPersistence.run(
     [sessionId],
     key,
@@ -444,31 +463,36 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
     return Promise.resolve();
   }
   const id = session.id;
+  const outputWrite = captureSessionOutputWrite(session);
   const pending = pendingLiveWrites.get(id);
   if (pending) {
     sessionPersistence.noteMutation([id]);
+    releaseSessionOutputWrite(pending.outputWrite);
     pending.session = session;
     pending.options = options;
+    pending.outputWrite = outputWrite;
     return Promise.resolve();
   }
-  const slot: LiveSlot = { session, options };
+  const slot: LiveSlot = { session, options, outputWrite };
   pendingLiveWrites.set(id, slot);
   return enqueueSessionWrite(
     id,
     async (work) => {
       // Discarded by a later write, or superseded by a newer slot.
       if (pendingLiveWrites.get(id) !== slot) {
+        releaseSessionOutputWrite(slot.outputWrite);
         work.fail(new Error("Live snapshot retired before persistence"));
         return;
       }
       pendingLiveWrites.delete(id);
       const { session: latest, options: latestOptions } = slot;
       if (deletedSessionIds.has(id) || latestOptions.shouldWrite?.() === false) {
+        failSessionOutputWrite(slot.outputWrite);
         work.fail(new Error("Live snapshot was not persisted"));
         return;
       }
-      latestOptions.onStart?.();
       try {
+        latestOptions.onStart?.();
         const finish = startPerformanceSpan("session-save");
         try {
           const blocks = incrementalBlocks(latest);
@@ -476,7 +500,11 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
           // Every acknowledged delta is durable. Full checkpoints only compact
           // the baseline; keep live recovery at 1.5s without rewriting history
           // every 48s. Eviction and unnormalized baselines still checkpoint now.
-          if (baseline?.normalized && baseline.writes < 256) {
+          if (
+            baseline?.normalized &&
+            baseline.writes < 256 &&
+            !sessionOutputNeedsReplacement(latest)
+          ) {
             const delta = buildSessionBlockDelta(baseline.blocks, blocks);
             const ack = await invoke<{ updatedAt: number; revision: number } | null>(
               "session_apply_delta",
@@ -497,6 +525,11 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               writes: baseline.writes + 1,
               normalized: true,
             });
+            acknowledgeSessionOutputWrite(slot.outputWrite, {
+              kind: "delta",
+              revision: ack.revision,
+              updatedAt: ack.updatedAt,
+            });
             finish({ blocks: delta.changes.length, revision: ack.revision });
           } else {
             const summary = await invoke<SessionSummary | null>("session_upsert", {
@@ -514,6 +547,13 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               writes: 0,
               normalized: true,
             });
+            if (summary.id === id)
+              acknowledgeSessionOutputWrite(slot.outputWrite, {
+                kind: "replace",
+                revision: summary.transcriptRevision!,
+                updatedAt: summary.updatedAt,
+              });
+            else failSessionOutputWrite(slot.outputWrite);
             work.confirmRecovery();
             finish({ blocks: blocks.length });
           }
@@ -522,12 +562,16 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
           throw error;
         }
       } catch (error) {
+        failSessionOutputWrite(slot.outputWrite);
         work.fail(error);
         latestOptions.onFailed?.();
       }
     },
     true,
-  );
+  ).catch((error) => {
+    failSessionOutputWrite(slot.outputWrite);
+    throw error;
+  });
 }
 
 /** The stored row's `updatedAt`, read without the load-time backfills (which
@@ -570,6 +614,7 @@ async function persistSession(
     return null;
   }
   const payload = sanitizeSessionForPersist(session);
+  const outputWrite = captureSessionOutputWrite(session);
   if (session.orchestrationLeadId) {
     sessionWriteLeadById.set(session.id, session.orchestrationLeadId);
   } else {
@@ -579,6 +624,7 @@ async function persistSession(
     session.id,
     async (work) => {
       if (deletedSessionIds.has(session.id)) {
+        failSessionOutputWrite(outputWrite);
         work.fail(new Error("Session was deleted before its queued save"));
         return null;
       }
@@ -599,6 +645,13 @@ async function persistSession(
             : {})),
       });
       if (summary) {
+        if (summary.id === session.id)
+          acknowledgeSessionOutputWrite(outputWrite, {
+            kind: "replace",
+            revision: summary.transcriptRevision!,
+            updatedAt: summary.updatedAt,
+          });
+        else failSessionOutputWrite(outputWrite);
         persistenceBaselines.set(session.id, {
           blocks: incrementalBlocks(session),
           updatedAt: summary.updatedAt,
@@ -610,13 +663,17 @@ async function persistSession(
         // A later delta alone cannot recover an earlier unconfirmed write.
         work.confirmRecovery();
       } else {
+        failSessionOutputWrite(outputWrite);
         work.fail(new Error("Session changed in another window; reload before saving"));
       }
       return summary;
     },
     false,
     parent,
-  );
+  ).catch((error) => {
+    failSessionOutputWrite(outputWrite);
+    throw error;
+  });
   return summary ? normalizeSummary(summary) : null;
 }
 
@@ -1266,6 +1323,14 @@ export async function flushSessionWritesStrict(
   scope: PersistenceScope = "profile",
   current?: PersistenceWork,
 ): Promise<void> {
+  // Flush actual accepted model projections even when their debounce/live
+  // interval has not admitted a DB job yet. A flush parent admits descendants;
+  // it does not turn ordinary storage ACKs into a Native/FULL checkpoint.
+  const pending = pendingSessionOutputSnapshots(scope === "profile" ? undefined : scope).filter(
+    (session) => shouldPersistSession(session) && !deletedSessionIds.has(session.id),
+  );
+  for (const session of pending)
+    await persistSession(session, undefined, false, undefined, current);
   await sessionPersistence.settle(scope, current);
 }
 

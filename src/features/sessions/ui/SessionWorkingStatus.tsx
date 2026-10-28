@@ -19,7 +19,7 @@ export function SessionWorkingStatus({ startedAt }: { startedAt?: number }) {
       title={t("Working")}
       className="inline-flex shrink-0 items-center gap-1 text-ui-micro text-(--color-active)"
     >
-      <TerminalSpinner className="inline-block w-3 select-none text-center text-ui-micro leading-none" />
+      <TerminalSpinner />
       {elapsed ? (
         <span className="shrink-0 tabular-nums">{elapsed}</span>
       ) : null}

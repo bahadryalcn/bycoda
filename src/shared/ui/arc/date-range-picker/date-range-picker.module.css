@@ -1,8 +1,19 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External placement shares the components layer so a caller utility can reposition the picker.
+   Its width is owned by the morphing surface (an inline motion value), so no size utility lives here.
+   Presentation (frame, type, ink, states) stays unlayered so a caller class cannot reskin it. */
+@layer components {
+  .root {
+    display: inline-block;
+    vertical-align: top;
+  }
+}
+
 .root {
   position: relative;
-  display: inline-block;
   height: var(--control-height-md);
-  vertical-align: top;
   color: var(--foreground);
   font-family: var(--font-body);
   font-size: var(--text-sm);
@@ -26,7 +37,8 @@
   box-sizing: border-box;
 }
 
-/* One material from trigger to panel. Size, corners, and offset come from springs; the border is an overlay so it never changes a measurement. */
+/* One material from trigger to panel. Size, corners, and offset come from springs; the border is an overlay so it never changes a measurement.
+   Closed, the surface is the field frame (the same roles as the Select trigger); open, it rises to the raised panel surface. */
 .surface {
   position: absolute;
   z-index: 2;
@@ -43,13 +55,41 @@
   content: "";
   position: absolute;
   inset: 0;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-control-border);
   border-radius: inherit;
   pointer-events: none;
   transition: border-color var(--duration-fast) var(--ease-standard);
 }
+.root:not([data-open]) .surface {
+  background: var(--ui-surface-muted);
+}
 .root[data-open] .surface {
   box-shadow: var(--shadow-floating);
+}
+.root[data-open] .surface::after {
+  border-color: var(--border);
+}
+/* Keyboard focus matches the text fields and Select: the border and a contained outline on the same role. */
+.root:not([data-open]):has(> .trigger:focus-visible) .surface::after {
+  border-color: var(--ui-field-border-focus);
+  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
+  outline-offset: -1px;
+}
+.root[data-invalid]:not([data-open]) .surface::after {
+  border-color: var(--danger);
+}
+.root[data-invalid]:not([data-open]):has(> .trigger:focus-visible) .surface::after {
+  outline-color: var(--danger);
+}
+.root[data-disabled] .surface {
+  background: var(--ui-control-disabled-surface);
+}
+.root[data-disabled] .surface::after {
+  border-color: var(--ui-control-disabled-border);
+}
+/* Read-only keeps normal ink and its resting boundary on a transparent frame, with no hover cue. */
+.root[data-readonly]:not([data-open], [data-disabled]) .surface {
+  background: transparent;
 }
 
 /* Trigger */
@@ -72,8 +112,21 @@
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
 }
-.trigger:disabled {
+/* The frame carries focus, so the trigger itself draws no second outer ring. */
+.trigger.trigger:focus-visible {
+  outline: none;
+}
+.root[data-readonly] .trigger {
   cursor: default;
+}
+.trigger:disabled {
+  cursor: not-allowed;
+}
+.root[data-disabled] .trigger,
+.root[data-disabled] .triggerIcon,
+.root[data-disabled] .chevron,
+.root[data-disabled] .value[data-empty] {
+  color: var(--ui-control-disabled-fg);
 }
 .trigger[inert] {
   pointer-events: none;
@@ -140,7 +193,7 @@
   top: 0;
   left: 0;
   border-radius: 12px;
-  background: color-mix(in oklab, var(--foreground) 6.5%, transparent);
+  background: var(--ui-surface-selected);
   pointer-events: none;
 }
 .preset {
@@ -223,6 +276,7 @@
   height: 32px;
   margin: 0;
   color: var(--foreground);
+  font-variant-numeric: tabular-nums;
   font-weight: 500;
   line-height: 32px;
   text-align: center;
@@ -332,13 +386,23 @@
 .day[data-today][data-edge]::after {
   background: var(--accent-foreground);
 }
+/* Today is a dot and heavier ink, a selected end is a filled disc, the range between is a band, and focus is a ring,
+   so no state depends on colour alone. A disabled day also loses its hover and press response. */
+.day[data-today] {
+  font-weight: 500;
+}
 .day:disabled {
   color: var(--text-muted);
-  cursor: default;
+  cursor: not-allowed;
   opacity: var(--ui-disabled-opacity, 0.5);
 }
 .day:focus-visible:not([data-edge]) > span {
-  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  background: var(--ui-surface-hover);
+}
+/* One class stronger than the shared [tabindex] focus rule, and inset so the viewport's clip never cuts it. */
+.day.day:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: -1px;
 }
 
 /* Footer: the formatted range and the two decisions. */
@@ -375,50 +439,9 @@
   align-items: center;
   gap: 6px;
 }
-.ghost,
-.primary {
-  display: inline-flex;
-  height: var(--control-height-sm);
-  align-items: center;
-  justify-content: center;
-  padding: 0 14px;
-  border: 0;
-  border-radius: var(--radius-control);
-  cursor: pointer;
-  font: inherit;
-  font-weight: 500;
-  white-space: nowrap;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard),
-    transform var(--duration-instant) var(--ease-standard),
-    opacity var(--duration-fast) var(--ease-standard);
-}
-.ghost {
-  background: transparent;
-  color: var(--text-secondary);
-}
-.primary {
-  min-width: 4.75rem;
-  background: var(--accent);
-  color: var(--accent-foreground);
-}
-.ghost:active,
-.primary:active:not(:disabled) {
-  transform: scale(0.97);
-}
-.primary:disabled {
-  opacity: var(--ui-disabled-opacity, 0.5);
-  cursor: default;
-}
-.ghost:focus-visible {
-  background: var(--surface-muted);
-  color: var(--foreground);
-}
 .preset:focus-visible,
 .navButton:focus-visible {
-  background: color-mix(in oklab, var(--foreground) 5%, transparent);
+  background: var(--ui-surface-hover);
   color: var(--foreground);
 }
 
@@ -476,31 +499,22 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .root:not([data-open]):has(> .trigger:hover:not(:disabled)) .surface {
-    background: color-mix(in oklab, var(--foreground) 3%, var(--surface-raised));
-  }
-  .root:not([data-open]):has(> .trigger:hover:not(:disabled)) .surface::after {
-    border-color: var(--border-strong);
+  .root:not([data-open], [data-readonly], [data-invalid]):has(> .trigger:hover:not(:disabled))
+    .surface::after {
+    border-color: var(--ui-field-border-hover);
   }
   .preset:hover {
     color: var(--foreground);
   }
   .preset:not([aria-pressed="true"]):hover {
-    background: color-mix(in oklab, var(--foreground) 4%, transparent);
+    background: var(--ui-surface-hover);
   }
   .navButton:hover:not(:disabled) {
-    background: color-mix(in oklab, var(--foreground) 6.5%, transparent);
+    background: var(--ui-surface-hover);
     color: var(--foreground);
   }
   .day:hover:not(:disabled):not([data-edge]) > span {
-    background: color-mix(in oklab, var(--foreground) 7%, transparent);
-  }
-  .ghost:hover {
-    background: var(--surface-muted);
-    color: var(--foreground);
-  }
-  .primary:hover:not(:disabled) {
-    background: var(--accent-strong);
+    background: var(--ui-surface-hover);
   }
 }
 
@@ -509,9 +523,7 @@
   .preset,
   .navButton,
   .day,
-  .day > span,
-  .ghost,
-  .primary {
+  .day > span {
     transition-duration: 0ms;
   }
 }

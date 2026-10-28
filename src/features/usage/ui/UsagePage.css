@@ -16,7 +16,7 @@
 
 .usage-toolbar h2,
 .usage-account h3 {
-  font-size: var(--text-ui-body);
+  font-size: var(--ui-font-body);
   font-weight: 500;
 }
 
@@ -27,18 +27,18 @@
 .usage-accounts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
-  align-items: stretch;
+  align-items: start;
   gap: 12px;
 }
 
 .usage-account {
   display: grid;
-  grid-template-rows: auto 1fr;
+  align-content: start;
   gap: 12px;
   min-inline-size: 0;
   padding: 16px;
   border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-xl);
+  border-radius: var(--ui-control-radius);
   background: var(--ui-surface);
 }
 
@@ -57,13 +57,13 @@
   gap: 6px;
   margin-block-end: 4px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
 }
 
 .usage-account-default {
   margin-inline-start: 8px;
   color: var(--ui-text-muted);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   font-weight: 400;
 }
 
@@ -78,7 +78,7 @@
 }
 
 .usage-quota-heading {
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
 }
 
 .usage-quota-heading p {
@@ -90,7 +90,7 @@
 
 .usage-quota-heading strong {
   color: var(--color-content);
-  font-size: var(--text-ui-title);
+  font-size: var(--ui-font-title);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
 }
@@ -98,7 +98,7 @@
 .usage-quota-reset {
   margin-block-start: 4px;
   color: var(--ui-text-secondary);
-  font-size: var(--text-ui-caption);
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
 }
 
@@ -116,23 +116,6 @@
 .usage-analysis [data-setting-id="cost-overview"],
 .usage-analysis [data-setting-id="provider-usage"] {
   padding-block-start: 0;
-}
-
-.bycoda-settings-workbench .bycoda-settings-form .usage-analysis .settings-group {
-  display: block;
-  padding-block: 0;
-  border-block-end: 0;
-}
-
-.usage-analysis .settings-group-heading > .settings-group-title {
-  flex-basis: min(100%, 20rem);
-}
-
-.bycoda-settings-workbench .bycoda-settings-form .usage-analysis .settings-group-heading {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: start;
-  padding-block: 0 12px;
 }
 
 .usage-page > section[aria-label] {

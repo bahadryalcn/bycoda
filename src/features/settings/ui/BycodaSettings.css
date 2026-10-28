@@ -3,29 +3,17 @@
   container-type: inline-size;
   container-name: settings-workbench;
 }
-.bycoda-settings-close {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  color: inherit;
-  opacity: 0.65;
+.bycoda-settings-titlebar {
+  min-block-size: max(40px, var(--ui-control-height-compact));
 }
-@media (hover: hover) and (pointer: fine) {
-  .bycoda-settings-close:hover {
-    opacity: 1;
-    background: var(--ui-surface-hover);
-  }
-}
-
 .bycoda-settings-toolbar {
   display: flex;
   flex-shrink: 0;
   justify-content: space-between;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 12px 20px;
+  gap: 8px;
+  padding: 8px 20px;
   border-block-end: 1px solid var(--color-stroke);
 }
 .bycoda-settings-toolbar-actions {
@@ -33,13 +21,11 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 .bycoda-settings-toolbar-actions label {
   inline-size: clamp(180px, 25cqw, 360px);
   max-inline-size: 100%;
-  height: 34px;
-  border-radius: 3px;
 }
 .bycoda-settings-body {
   display: flex;
@@ -85,15 +71,8 @@
   gap: 1px;
   min-width: 0;
 }
-.bycoda-settings-category-tabs > button {
-  inline-size: 100%;
-  justify-content: start;
-}
 .bycoda-settings-category-tabs > button > svg {
-  width: 15px;
-  height: 15px;
   flex: none;
-  opacity: 0.7;
 }
 .bycoda-settings-category-tabs > button > span {
   min-width: 0;
@@ -101,11 +80,7 @@
   text-overflow: ellipsis;
 }
 
-.bycoda-settings-category-tabs > button[aria-selected="true"] > svg {
-  opacity: 1;
-}
-
-@container (max-width: 760px) {
+@container settings-workbench (max-width: 760px) {
   .bycoda-settings-category-picker {
     display: block;
     min-inline-size: 0;
@@ -164,101 +139,141 @@
 .bycoda-settings-workbench .bycoda-settings-form {
   max-inline-size: none;
   margin-inline: auto;
-  padding: 28px clamp(16px, 3cqw, 40px) 64px;
+  padding: 20px clamp(16px, 3cqw, 40px) 48px;
 }
-.bycoda-settings-workbench .bycoda-settings-form > header {
-  margin-block-end: 12px;
-  padding-block-end: 18px;
+.bycoda-settings-workbench .settings-page-header,
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-block-end: 20px;
 }
-.bycoda-settings-workbench .bycoda-settings-form > header h1 {
-  letter-spacing: -0.025em;
+.bycoda-settings-workbench .settings-page-title,
+.settings-page-title {
+  margin: 0;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-content);
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group {
+.settings-group {
   display: block;
   min-inline-size: 0;
-  padding-block: 0 28px;
+  padding-block: 24px 0;
   border: 0;
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-heading {
+.settings-group:first-child {
+  padding-block-start: 0;
+}
+/* Topic collections supply their own gap; the shared Group owns this spacing
+   contract so individual settings pages never need to reskin its padding. */
+.settings-topics > .settings-group {
+  padding-block: 0;
+}
+.settings-group > .settings-group-heading {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 12px;
-  padding: 0 2px 10px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 16px;
+  padding-block-end: 8px;
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-heading h2 {
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-}
-.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-content {
-  align-self: start;
-  min-width: 0;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--ui-surface);
-}
-.bycoda-settings-workbench .bycoda-settings-form .settings-row {
-  padding: 14px 16px;
-  gap: 12px 24px;
-  align-items: center;
-}
-.bycoda-settings-workbench .bycoda-settings-form .settings-row:first-child {
-  padding-block-start: 14px;
-}
-.bycoda-settings-workbench .settings-description {
-  color: var(--ui-text-secondary);
-}
-.bycoda-settings-workbench .bycoda-settings-form .settings-group[data-settings-layout="full"] {
-  display: block;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .settings-group[data-settings-layout="full"]
-  > .settings-group-heading {
-  display: flex;
-  padding-block-end: 18px;
-}
-.bycoda-settings-workbench .settings-group[data-revealed] {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 6px;
-}
-.bycoda-settings-workbench .settings-row-control {
-  align-self: center;
-}
-
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  > [data-settings-layout="full"]
-  > .settings-group-content {
-  overflow: visible;
-}
-.bycoda-settings-workbench .settings-row-control > input {
-  max-width: 100%;
-}
-.bycoda-settings-workbench .settings-row-control {
-  max-width: 52%;
-  flex-shrink: 1;
-}
-.bycoda-settings-workbench .settings-row > .settings-row-label {
+.settings-group-title,
+.settings-row-label {
+  flex: 1;
+  min-inline-size: 0;
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .settings-row-control > * {
+.settings-title-line {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-heading h2,
+.settings-section-title,
+.settings-row-title {
+  margin: 0;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-content);
+}
+.settings-group-action {
+  flex-shrink: 0;
+  max-inline-size: 100%;
+}
+.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-content,
+.settings-group > .settings-group-content {
+  align-self: start;
+  min-inline-size: 0;
+  border: 1px solid var(--color-stroke);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  overflow: visible;
+  container: settings-group / inline-size;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+  padding: 16px;
+  gap: 12px 24px;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.settings-row:last-child {
+  border-block-end: 0;
+}
+.settings-description {
+  color: var(--ui-text-secondary);
+}
+.settings-scope,
+.settings-dependency {
+  margin: 4px 0 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.bycoda-settings-workbench .bycoda-settings-form .settings-group[data-revealed] > .settings-group-content,
+.settings-group[data-revealed] > .settings-group-content {
+  border-color: var(--ui-border-accent);
+}
+.settings-group[data-revealed] {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 4px;
+}
+.settings-row[data-revealed] {
+  background: var(--ui-surface-selected);
+}
+.settings-row-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  min-inline-size: 0;
+  max-inline-size: min(52%, 28rem);
+  flex-shrink: 1;
+  align-self: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.settings-row-control > * {
   max-width: 100%;
 }
-.bycoda-settings-workbench .settings-row-control:empty {
+.settings-row-control:empty {
   display: none;
 }
 
 /* Feedback follows the operation and never competes with its input or card. */
-.bycoda-settings-workbench .settings-row:has(> .settings-row-feedback) {
+.settings-row:has(> .settings-row-feedback) {
   flex-wrap: wrap;
 }
-.bycoda-settings-workbench .settings-row-feedback {
+.settings-row-feedback {
   flex-basis: 100%;
   grid-column: 1 / -1;
   min-inline-size: 0;
 }
-.bycoda-settings-workbench .settings-feedback {
+.settings-feedback {
   display: grid;
   grid-column: 1 / -1;
   flex-basis: 100%;
@@ -267,36 +282,22 @@
   inline-size: 100%;
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .settings-feedback > button {
+.settings-feedback > button {
   justify-self: start;
 }
-.bycoda-settings-workbench .settings-group-content > .settings-feedback {
+.settings-group-content > .settings-feedback {
   padding: 12px 16px;
 }
-.bycoda-settings-workbench .settings-group-feedback {
+.settings-group-feedback {
   padding: 12px 16px;
   border-block-start: 1px solid var(--color-stroke);
 }
-.bycoda-settings-workbench .settings-group-content > [role="alert"],
-.bycoda-settings-workbench .settings-row-control > [role="alert"] {
+.settings-group-content > [role="alert"],
+.settings-row-control > [role="alert"] {
   flex-basis: 100%;
   min-inline-size: 0;
   max-inline-size: 100%;
   overflow-wrap: anywhere;
-}
-.bycoda-settings-workbench .settings-templates > .settings-group-heading {
-  display: flex;
-  flex-wrap: wrap;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .settings-group[data-settings-layout="full"]
-  > .settings-group-heading {
-  flex-direction: row;
-  align-items: flex-start;
-}
-.bycoda-settings-workbench .settings-group-content {
-  overflow: visible;
 }
 .bycoda-settings-workbench .bycoda-settings-form .appearance-tuning .settings-row-control {
   max-width: 100%;
@@ -309,18 +310,6 @@
   .settings-row:has([role="switch"])
   .settings-row-control {
   align-self: center;
-}
-@container (max-width: 760px) {
-  .bycoda-settings-workbench .bycoda-settings-form .settings-row {
-    flex-wrap: wrap;
-    gap: 14px;
-  }
-  .bycoda-settings-workbench .settings-row > .settings-row-label {
-    flex-basis: 220px;
-  }
-  .bycoda-settings-workbench .settings-row-control {
-    max-width: 100%;
-  }
 }
 @container settings-workbench (max-width: 760px) {
   .bycoda-settings-toolbar {
@@ -367,56 +356,58 @@
     clip-path: inset(50%);
     white-space: nowrap;
   }
-  .bycoda-settings-workbench .bycoda-settings-form .settings-group {
+}
+@container settings-workbench (max-width: 520px) {
+  .bycoda-settings-toolbar {
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+  }
+  .bycoda-settings-toolbar-actions {
+    inline-size: 100%;
+  }
+  .bycoda-settings-workbench .settings-search {
+    flex: 1;
+    inline-size: auto;
+    min-inline-size: min(100%, 10rem);
   }
 }
-@container (max-width: 460px) {
-  .bycoda-settings-workbench .settings-row > .settings-row-label {
-    flex-basis: auto;
-  }
-  .bycoda-settings-workbench .bycoda-settings-form .settings-row {
+
+/* A row responds to its nearest topic container, or the caller's container for
+   standalone rows. This owns the former index.css settings behavior as well. */
+@container (width < 560px) {
+  .settings-row {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
   }
-  .bycoda-settings-workbench .bycoda-settings-form .settings-row-control {
-    max-width: 100%;
+  .settings-row-control {
+    max-inline-size: 100%;
     align-self: stretch;
     justify-content: flex-start;
   }
-  .bycoda-settings-workbench
-    .bycoda-settings-form
-    .settings-row:has(.settings-row-control > button[role="switch"]:only-child) {
+  .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
     flex-direction: row;
     align-items: center;
   }
-  .bycoda-settings-workbench
-    .bycoda-settings-form
-    .settings-row-control:has(> button[role="switch"]:only-child) {
+  .settings-row-control:has(> [role="switch"]:only-child) {
     align-self: center;
     flex-shrink: 0;
   }
 }
 
 /* Shared metadata wraps with its control instead of competing for its space. */
-.bycoda-settings-workbench .settings-hint {
+.settings-hint {
   margin-block-start: 6px;
   font-size: var(--ui-font-caption);
   line-height: 1.5;
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .settings-group-title,
-.bycoda-settings-workbench .settings-group-heading,
+.settings-group-title,
+.settings-group-heading,
 .bycoda-settings-toolbar-actions,
 .bycoda-settings-workbench .settings-search {
   min-inline-size: 0;
   max-inline-size: 100%;
-}
-.bycoda-settings-workbench .settings-row-control {
-  overflow-wrap: anywhere;
 }
 /* Reserve the expanded field's space in the intrinsically sized toolbar. */
 .bycoda-settings-workbench .settings-search {
@@ -424,13 +415,13 @@
   flex: none;
 }
 /* Group actions wrap before descriptions become an unreadable column. */
-.bycoda-settings-workbench .settings-group > .settings-group-heading > .settings-group-title {
+.settings-group > .settings-group-heading > .settings-group-title {
   flex-basis: min(100%, 20rem);
 }
-.bycoda-settings-workbench .settings-group-heading > :last-child {
+.settings-group-heading > :last-child {
   max-inline-size: 100%;
 }
-.bycoda-settings-workbench .settings-row-control > :is(input, textarea, select) {
+.settings-row-control > :is(input, textarea, select) {
   min-inline-size: 0;
 }
 .bycoda-settings-workbench .settings-advanced > .settings-subheading {
@@ -485,107 +476,8 @@
   cursor: auto;
 }
 
-/* Topic cards share both their heading track and their content track. */
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  :is(
-    .general-settings,
-    .chat-settings,
-    .workspace-settings,
-    .terminal-settings,
-    .appearance-section-body,
-    .notification-alert-settings
-  ) {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr));
-  gap: 12px 24px;
-  min-inline-size: 0;
-  align-items: stretch;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  :is(
-    .general-settings,
-    .chat-settings,
-    .workspace-settings,
-    .terminal-settings,
-    .appearance-section-body,
-    .notification-alert-settings
-  )
-  > :not(.settings-group) {
-  grid-column: 1 / -1;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  :is(
-    .general-settings,
-    .chat-settings,
-    .workspace-settings,
-    .terminal-settings,
-    .appearance-section-body,
-    .notification-alert-settings
-  )
-  > .settings-group[data-settings-layout] {
-  display: grid;
-  grid-template-rows: subgrid;
-  grid-row: span 2;
-  gap: 12px;
-  padding-block: 0;
-  margin-block: 0 12px;
-  align-self: stretch;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  :is(
-    .general-settings,
-    .chat-settings,
-    .workspace-settings,
-    .terminal-settings,
-    .appearance-section-body,
-    .notification-alert-settings
-  )
-  > .settings-group
-  > .settings-group-heading {
-  padding-block: 0;
-  align-items: start;
-}
-.bycoda-settings-workbench .chat-settings #setting-prompt-templates {
-  grid-column: 1 / -1;
-}
-/* Shell topics contain independent content, not paired heading/content tracks.
-   Stretching the local picker alongside a tall remote list leaves a large gap. */
-.bycoda-settings-workbench .bycoda-settings-form .terminal-settings {
-  grid-template-columns: minmax(0, 1fr);
-  align-content: start;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .terminal-settings
-  > .settings-group[data-settings-layout] {
-  display: block;
-  grid-row: auto;
-  align-self: start;
-}
-/* Match the named container that stacks rows in index.css. The wrapping basis
-   from the 760px rule is a width only while the row remains horizontal. */
-@container settings (width < 560px) {
-  .bycoda-settings-workbench .bycoda-settings-form .settings-row > .settings-row-label {
-    flex-basis: auto;
-  }
-  .bycoda-settings-workbench
-    .bycoda-settings-form
-    .settings-row:not(:has(> .settings-row-control > [role="switch"]:only-child)) {
-    align-items: stretch;
-  }
-}
 .bycoda-settings-workbench .settings-templates {
   padding: 16px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .notification-alert-settings {
-  grid-template-columns: repeat(
-    auto-fit,
-    minmax(min(100%, max(30rem, calc((100% - 24px) / 2))), 1fr)
-  );
 }
 .bycoda-settings-workbench .settings-templates > .settings-advanced {
   margin-block: 0 16px;

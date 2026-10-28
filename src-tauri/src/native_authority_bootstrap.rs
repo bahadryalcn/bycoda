@@ -140,6 +140,11 @@ impl HostBootstrap {
     pub(crate) fn directory(&self) -> &Path {
         &self.base
     }
+    /// Native-only selected-profile locator; never exposes its administrative credential.
+    pub(crate) fn recovery_endpoint(&self) -> Result<String, BootstrapError> {
+        self.assert_current()?;
+        Ok(format!("http://127.0.0.1:{}", self.credentials.port))
+    }
     pub(crate) fn assert_current(&self) -> Result<(), BootstrapError> {
         if credentials(&self.base)? != self.credentials {
             return Err(BootstrapError::ChangedHost);
@@ -316,3 +321,44 @@ fn post(credentials: &Credentials, body: &Value) -> Result<Vec<u8>, BootstrapErr
 #[cfg(test)]
 #[path = "native_authority_bootstrap_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod recovery_endpoint_tests {
+    use super::*;
+
+    #[test]
+    fn selected_recovery_endpoint_revalidates_record_without_exposing_credential() {
+        let temporary = std::env::temp_dir().canonicalize().unwrap();
+        let base = temporary.join(format!(
+            "bycoda-recovery-bootstrap-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&base).unwrap();
+        let secret = "isolatedNativeRecoveryFixtureSecret0123456789";
+        let record =
+            |port| json!({"pid":std::process::id(),"port":port,"secret":secret}).to_string();
+        std::fs::write(base.join("running.json"), record(3774)).unwrap();
+        let selected = HostBootstrap {
+            base: base.clone(),
+            credentials: credentials(&base).unwrap(),
+            description: serde_json::from_value(
+                json!({"version":1,"environmentId":"selected-host","qualified":false}),
+            )
+            .unwrap(),
+        };
+        let endpoint = selected.recovery_endpoint().unwrap();
+        assert_eq!(endpoint, "http://127.0.0.1:3774");
+        assert!(!endpoint.contains(secret));
+        std::fs::write(base.join("running.json"), record(3776)).unwrap();
+        assert_eq!(
+            selected.recovery_endpoint(),
+            Err(BootstrapError::ChangedHost)
+        );
+        assert_eq!(base.parent(), Some(temporary.as_path()));
+        assert!(!std::fs::symlink_metadata(&base)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        std::fs::remove_dir_all(base).unwrap();
+    }
+}

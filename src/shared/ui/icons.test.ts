@@ -50,3 +50,26 @@ it("hides decorative glyphs while allowing explicit accessible labels", () => {
     vi.unstubAllGlobals();
   }
 });
+it("keeps the 24px grid and the 1.75 token stroke as attribute defaults so stylesheets can still override them", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  const root = createRoot(host);
+  const { ChevronsDownUp, Link2 } = await import("./icons");
+  try {
+    act(() =>
+      root.render(createElement("div", null, createElement(ChevronsDownUp), createElement(Link2))),
+    );
+    const glyphs = [...host.querySelectorAll("svg")];
+    expect(glyphs).toHaveLength(2);
+    for (const svg of glyphs) {
+      expect(svg.getAttribute("width")).toBe("24");
+      expect(svg.getAttribute("height")).toBe("24");
+      expect(svg.getAttribute("stroke-width")).toBe("1.75");
+      expect(svg.getAttribute("aria-hidden")).toBe("true");
+      expect(svg.getAttribute("style")).toBeNull();
+    }
+  } finally {
+    act(() => root.unmount());
+    vi.unstubAllGlobals();
+  }
+});

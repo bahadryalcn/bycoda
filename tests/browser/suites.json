@@ -283,7 +283,12 @@
     {
       "id": "editor-selection",
       "config": "tests/browser/playwright.editor-selection.config.ts",
-      "files": ["editor-selection.spec.ts", "file-save.spec.ts", "file-tree.spec.ts"],
+      "files": [
+        "editor-selection.spec.ts",
+        "file-save.spec.ts",
+        "file-tree.spec.ts",
+        "editor-recovery.spec.ts"
+      ],
       "fixture": {
         "config": "tests/browser/vite.editor-selection.config.ts",
         "mode": "preview",
@@ -293,12 +298,22 @@
         {
           "name": "chromium",
           "browser": "chromium",
-          "files": ["editor-selection.spec.ts", "file-save.spec.ts", "file-tree.spec.ts"]
+          "files": [
+            "editor-selection.spec.ts",
+            "file-save.spec.ts",
+            "file-tree.spec.ts",
+            "editor-recovery.spec.ts"
+          ]
         },
         {
           "name": "webkit",
           "browser": "webkit",
-          "files": ["editor-selection.spec.ts", "file-save.spec.ts", "file-tree.spec.ts"]
+          "files": [
+            "editor-selection.spec.ts",
+            "file-save.spec.ts",
+            "file-tree.spec.ts",
+            "editor-recovery.spec.ts"
+          ]
         }
       ]
     },
@@ -1291,7 +1306,12 @@
     },
     {
       "config": "tests/browser/playwright.editor-selection.config.ts",
-      "files": ["editor-selection.spec.ts", "file-save.spec.ts", "file-tree.spec.ts"],
+      "files": [
+        "editor-selection.spec.ts",
+        "file-save.spec.ts",
+        "file-tree.spec.ts",
+        "editor-recovery.spec.ts"
+      ],
       "browsers": ["chromium"]
     },
     {

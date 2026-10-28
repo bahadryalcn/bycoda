@@ -118,6 +118,17 @@ Uncommitted on main over 83053d6b8 (shared checkout); no commit/build/install.
   installed/native acceptance. Feature adoption (FileTree, tab strips, path consumers,
   async pickers) stays with owning sessions.
 
+H1 night pass (2026-10-28, uncommitted over 4de508dea, NOT tested per owner rule):
+- Button reserves no empty icon slot for icon-less `loading` text actions.
+- `ActionHost` + `InlineAction` (Button `inset`) for row/tab/card actions: one host
+  highlight, transparent compact action, reveal on hover/focus/selection/touch.
+  Adopted by SearchInput clear, PasswordField reveal, TagInput/SearchableSelect chips
+  and TreeRow; feature migrations belong to their lines.
+- F3 contract: caller className sets placement only (`@layer components`).
+- UIF-06/07/08/16/19 and FloatingButtonGroup, ExpandingButtonGroup, ConfirmMorph,
+  InlineEdit, MorphSelect passes.
+Handoff: temp/local/2026-10-28-h1-shared-controls/handoff.json (+ handoff-F1/F2.md).
+
 ## Committed handoff references
 
 No new commit/build/install/release. Local brief:
@@ -158,3 +169,10 @@ Fixtures: `tests/browser/overlay-{popups,menus,feedback,media}.*` (suite
 role (Session 1), Button reserved spinner slot (Session 2), EmptyState `context`
 and Popover `flow` adoption by consumers, real native popup windows, touch devices,
 screen readers and installed inclusion.
+
+Follow-up H2-1b (2026-10-28, uncommitted, untested by owner rule "test yapmasınlar
+en iyisi kodları yazsınlar en son testi biz yaparız"): WorkingIndicator owns its
+color (`--color-active`, bars no longer follow currentColor) and `size="xs|sm|md"`
+on the icon scale; consumer color/width/font classes are inert. Consumer cleanup
+and `TerminalSpinner` size forwarding belong to the owning lines; see
+`temp/local/2026-10-28-overlays-impl/handoff.json`.

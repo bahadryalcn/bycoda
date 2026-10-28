@@ -701,7 +701,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const showAgentInTranscript = useCallback(
     (blockId: string) => {
       requestOpenSubagent(blockId);
-      navigateBlock(blockId);
+      return navigateBlock(blockId);
     },
     [navigateBlock],
   );
@@ -1712,9 +1712,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 ? () => stopBackground(subagentSheet.block?.tool?.callId)
                 : undefined
             }
+            onLoadRemoteBlock={onLoadRemoteBlock}
             onShowInTranscript={(blockId) => {
               closeSubagentSheet();
-              showAgentInTranscript(blockId);
+              const shown = showAgentInTranscript(blockId);
+              // Not in the transcript (virtualized away, filtered): keep the
+              // details open rather than losing the reader's context.
+              if (!shown) subagentSheet.open(blockId);
+              return shown;
             }}
             onOpenFile={onOpenFile}
             onOpenDiff={onOpenDiff}

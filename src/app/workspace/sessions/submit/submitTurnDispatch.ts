@@ -1,5 +1,6 @@
 import type { SubmitDeps, SubmitInput, SubmitPreflight, SubmitSetup } from "./submitTypes";
 import type { SubmitTurnEvents } from "./submitTurnEvents";
+import { prepareNativeOutputSession } from "./prepareNativeOutputSession";
 
 import { inboxAskPrompt } from "../../../../features/inbox/model/inboxAsk";
 import { announceSessionFinished } from "../../../../features/notifications/model/notifications";
@@ -199,12 +200,17 @@ export async function runSubmitDispatch(
         return;
       }
     }
-    const sendTurn = (
+    const sendTurn = async (
       text: string,
       turnAttachments = prepared,
       prepareText?: (text: string, runtimeInstructions?: string) => Promise<string>,
     ) => {
       if (turnGen.current.get(sessionId) !== gen) return Promise.resolve();
+      const nativeOutputSessionId = await prepareNativeOutputSession(
+        sessionId,
+        () => turnGen.current.get(sessionId) === gen,
+      );
+      if (turnGen.current.get(sessionId) !== gen) return;
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
       // A queued send waits for the provider from here on, not from its claim.
@@ -213,6 +219,7 @@ export async function runSubmitDispatch(
         harness: current.harness,
         lightweightWorktree,
         sessionId,
+        nativeOutputSessionId,
         cwd: workCwd,
         model: current.model,
         modelSettings: current.modelSettings,

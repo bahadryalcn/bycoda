@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { HARNESSES } from "../../sessions/model/session";
@@ -16,7 +16,7 @@ import {
   defaultTextActionChoice,
   type TranslationChoice,
 } from "../../sessions/model/translationPreferences";
-import { Group, Row } from "./settingsControls";
+import { Group, Row, SettingsFeedback } from "./settingsControls";
 
 const ModelPicker = lazy(() =>
   import("../../sessions/ui/ModelPicker").then((module) => ({ default: module.ModelPicker })),
@@ -35,10 +35,24 @@ export function TranslationSettings({
   const choice = reprompt ? repromptChoice : translationChoice;
   const saveChoice = reprompt ? saveDefaultRepromptChoice : saveDefaultTranslationChoice;
   const selected: TranslationChoice = choice ?? defaultTextActionChoice();
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [failedChoice, setFailedChoice] = useState<{ choice: TranslationChoice | undefined } | null>(null);
+  const commit = (next: TranslationChoice | undefined) => {
+    try {
+      saveChoice(next);
+      // The public writer currently swallows storage failures. Verify its exact
+      // serialized receipt without treating a failed read as an inherited value.
+      const raw = localStorage.getItem(reprompt ? "bycoda.reprompt.default.v1" : "bycoda.translation.default.v1");
+      if (raw !== JSON.stringify(next ?? null)) throw new Error(t("Could not save changes"));
+      setSaveError(null); setFailedChoice(null);
+    }
+    catch (error) { setSaveError(error instanceof Error ? error.message : String(error)); setFailedChoice({ choice: next }); }
+  };
   const control = (
     <Row
       id={reprompt ? "reprompt-model-default" : "translation-model-default"}
       label={reprompt ? t("Default reprompt model") : t("Default translation model")}
+      feedback={saveError ? <SettingsFeedback state="error" action={failedChoice ? <Button onClick={() => commit(failedChoice.choice)}>{t("Retry")}</Button> : undefined}>{saveError}</SettingsFeedback> : !canRunHarnessTextPrompt(selected.harness) ? <SettingsFeedback state="warning">{t("Selected model does not support text actions. Choose a supported model.")}</SettingsFeedback> : undefined}
       description={
         reprompt
           ? t(
@@ -51,7 +65,7 @@ export function TranslationSettings({
     >
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {!choice && (
-          <span className="text-[var(--ui-text-secondary)]">{t("Use default model")}</span>
+          <span className="text-ui-secondary text-(--ui-text-secondary)">{t("Default model")}</span>
         )}
         <Suspense fallback={<span>{t("Loading…")}</span>}>
           <ModelPicker
@@ -62,7 +76,7 @@ export function TranslationSettings({
             accountChoices
             allowedHarnesses={HARNESSES.filter(canRunHarnessTextPrompt)}
             onChange={(harness, model, accountId) =>
-              saveChoice({
+              commit({
                 harness,
                 model,
                 modelSettings: defaultModelSettings(resolveModel(harness, model)),
@@ -72,7 +86,7 @@ export function TranslationSettings({
               })
             }
             onSettingsChange={(modelSettings) =>
-              saveChoice({
+              commit({
                 ...selected,
                 providerAccountId:
                   choice?.providerAccountId ??
@@ -85,8 +99,8 @@ export function TranslationSettings({
           />
         </Suspense>
         {choice && (
-          <Button variant="link" onClick={() => saveChoice(undefined)}>
-            {t("Use default model")}
+          <Button variant="link" onClick={() => commit(undefined)}>
+            {t("Restore defaults")}
           </Button>
         )}
       </div>

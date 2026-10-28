@@ -344,6 +344,34 @@ describe("GitChangesPanel branch switching", () => {
 });
 
 describe("GitChangesPanel commit message generation", () => {
+  it("blocks deferred generation commits from the header while staging stays usable and preserves the draft after index changes", async () => {
+    vi.mocked(gitCommit).mockClear();
+    vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [
+      { ...changedFile("src/app.ts"), staged: true, unstaged: true },
+    ] }));
+    let finish!: (message: string) => void;
+    vi.mocked(generateCommitMessage).mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    await renderPanel("/generation-header-race");
+    await fillCommitMessage("Retained draft");
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Generate commit message"]')!.click());
+    await openBranchMenu();
+    const commitMenu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(button => button.textContent?.trim() === "Commit")!;
+    await act(async () => commitMenu.click());
+    const stagedCommit = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+      .find(button => button.textContent?.trim() === "Commit Staged")!;
+    expect(stagedCommit.disabled).toBe(true);
+    expect(gitCommit).not.toHaveBeenCalled();
+    await act(async () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })));
+    const stage = container.querySelector<HTMLButtonElement>('[aria-label="Stage Changes"]')!;
+    expect(stage.disabled).toBe(false);
+    await act(async () => stage.click());
+    expect(gitStageFile).toHaveBeenCalledWith("/generation-header-race", "src/app.ts");
+    await act(async () => finish("Stale generated message"));
+    expect(container.querySelector("textarea")?.value).toBe("Retained draft");
+    expect(container.textContent).toContain("Draft or changes changed during generation");
+    expect(gitCommit).not.toHaveBeenCalled();
+  });
   it.each(["project", "default"])(
     "uses the saved %s model and advisor for generation",
     async (scope) => {
@@ -426,7 +454,7 @@ describe("GitChangesPanel commit message generation", () => {
     expect(container.textContent).not.toContain("Provider authentication required");
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Git operation failed")!
+        .find((button) => button.textContent === "Details")!
         .click();
     });
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
@@ -537,7 +565,7 @@ it("keeps Sync progress on its action through remount and prevents duplicate req
   await renderPanel("/sync-feedback");
   const action = () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      button.textContent?.includes("Sync Changes"),
+      button.textContent?.includes("Push"),
     )!;
   await act(async () => {
     action().click();
@@ -612,7 +640,7 @@ it.each([
     ),
   );
   const sync = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-    button.textContent?.includes("Sync Changes"),
+    button.textContent?.includes(ahead && behind ? "Sync Changes" : behind ? "Pull" : "Push"),
   )!;
   expect(sync).toBeDefined();
   expect(sync.disabled).toBe(false);
@@ -627,7 +655,7 @@ it.each([
     expect(container.querySelector("header")?.textContent).not.toContain(
       `${direction === "unpushed" ? "↑" : "↓"}${count}`,
     );
-    expect(container.textContent).not.toContain(label);
+    expect(container.textContent).toContain(label);
   }
   expect(container.textContent).toContain(
     ahead && behind ? "Diverged from origin/feature/pull" : "No uncommitted changes",
@@ -1893,11 +1921,11 @@ describe("GitChangesPanel folder actions", () => {
     });
 
     expect(container.querySelector('[role="alert"]')?.textContent).toContain(
-      "Git operation failed",
+      "Couldn’t stage changes",
     );
     await act(async () => {
       [...container.querySelectorAll("button")]
-        .find((button) => button.textContent === "Git operation failed")!
+        .find((button) => button.textContent === "Details")!
         .click();
     });
     expect(document.querySelector('[role="dialog"] pre')?.textContent).toBe("Git index is locked");

@@ -1,6 +1,7 @@
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { WorkspaceFeatureGate } from "../../features/settings/ui/WorkspaceFeatureGate";
 import { useWorkspaceFeatures } from "../../features/settings/model/workspaceFeatures";
 import { ExpandingButtonGroup } from "../../shared/ui/ExpandingButtonGroup";
@@ -24,6 +25,7 @@ import {
   ChevronDown,
   ChevronRight,
   FolderPlus,
+  FolderTree,
   GitBranch,
   Internet,
   Inbox,
@@ -1481,10 +1483,9 @@ function ProjectSectionHeader({
       actions={
         <>
           {onAddGroup ? (
-            <Button
-              iconOnly
+            <InlineAction
+              reveal="always"
               label={t("New project group")}
-              variant="ghost"
               motion="none"
               type="button"
               data-no-drag
@@ -1494,10 +1495,10 @@ function ProjectSectionHeader({
                 const rect = event.currentTarget.getBoundingClientRect();
                 onAddGroup(rect.left, rect.bottom);
               }}
-              className="grid size-5 shrink-0 place-items-center"
+              className="shrink-0"
             >
               <FolderPlus className="icon-sm" strokeWidth={1.75} />
-            </Button>
+            </InlineAction>
           ) : null}
           {onAdd ? <AddProjectButton onOpenFolder={onAdd} /> : null}
         </>
@@ -1632,7 +1633,8 @@ function ProjectGroupSection({
       role="group"
       aria-label={group.name}
     >
-      <div
+      <ActionHost
+        selected={workspaceSelected}
         className={`project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
         style={{ backgroundColor: railBackgroundColor(loadRailBackgrounds(group.id).header) }}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
@@ -1711,6 +1713,7 @@ function ProjectGroupSection({
             <Button
               variant="ghost"
               selected={workspaceSelected}
+              data-action-primary
               motion="none"
               type="button"
               data-no-drag
@@ -1728,8 +1731,13 @@ function ProjectGroupSection({
             <span className={`${nameClassName} ps-1.5`}>{group.name}</span>
           )}
           {group.workspaceFile && !locked ? (
-            <span className="shrink-0 rounded bg-(--ui-surface-raised) px-1 text-ui-caption leading-4 text-(--ui-text-secondary) @max-[200px]/rail:hidden">
-              {t("Workspace")}
+            <span
+              role="img"
+              aria-label={t("Workspace")}
+              title={t("Workspace")}
+              className="grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[200px]/rail:hidden"
+            >
+              <FolderTree className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
             </span>
           ) : null}
           {group.workspaceFile && !locked ? (
@@ -1746,7 +1754,7 @@ function ProjectGroupSection({
                   : t("Linked to {p0}", { p0: group.workspaceFile })
               }
               className={`grid size-4 shrink-0 place-items-center ${
-                linkStatus ? "text-warning" : "text-(--ui-text-secondary)"
+                linkStatus ? "text-warning" : "text-(--ui-text-secondary) opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 group-data-[selected]:opacity-100 [@media(hover:none)]:opacity-100 [@media(pointer:coarse)]:opacity-100"
               } @max-[140px]/rail:hidden`}
             >
               {linkStatus ? (
@@ -1759,8 +1767,8 @@ function ProjectGroupSection({
         </div>
         <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
           {localPaths.length > 0 || (workspaceRoot && !locked) ? (
-            <Button
-              variant="ghost"
+            <InlineAction
+              label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
               motion="none"
               ref={gitAnchor}
               type="button"
@@ -1778,21 +1786,20 @@ function ProjectGroupSection({
                   );
                 } else setOverviewOpen((value) => !value);
               }}
-              size="sm"
-              className="min-w-6 shrink-0 tabular-nums"
+              className="shrink-0"
             >
               <GitBranch className="icon-xs" strokeWidth={1.75} />
-              {gitSummary.dirty > 0 ? (
-                <span className="text-warning">{gitSummary.dirty}</span>
-              ) : null}
-            </Button>
+            </InlineAction>
           ) : null}
-          <Button
-            iconOnly
+          {gitSummary.dirty > 0 ? (
+            <span className="shrink-0 tabular-nums text-ui-caption text-warning" title={gitTitle}>
+              {gitSummary.dirty}
+            </span>
+          ) : null}
+          <InlineAction
             label={
               locked ? t("Unlock {p0}", { p0: group.name }) : t("Lock {p0}", { p0: group.name })
             }
-            variant="ghost"
             motion="none"
             type="button"
             data-no-drag
@@ -1805,20 +1812,16 @@ function ProjectGroupSection({
               event.stopPropagation();
               onToggleLock();
             }}
-            className={`size-6 shrink-0 place-items-center ${
-              locked ? "grid" : "hidden group-hover:grid group-has-[button:focus-visible]:grid"
-            }`}
+            className="shrink-0"
           >
             {locked ? (
               <Lock className="icon-sm" strokeWidth={1.75} />
             ) : (
               <LockOpen className="icon-sm" strokeWidth={1.75} />
             )}
-          </Button>
-          <Button
-            iconOnly
+          </InlineAction>
+          <InlineAction
             label={t("{p0} group options", { p0: group.name })}
-            variant="ghost"
             motion="none"
             type="button"
             data-no-drag
@@ -1830,10 +1833,10 @@ function ProjectGroupSection({
               event.stopPropagation();
               openMenu(event.currentTarget);
             }}
-            className="hidden size-6 shrink-0 place-items-center group-hover:grid group-has-[button:focus-visible]:grid"
+            className="shrink-0"
           >
             <MoreHorizontal className="icon-md" strokeWidth={1.75} />
-          </Button>
+          </InlineAction>
         </div>
         {overviewOpen && !locked && !workspaceRoot ? (
           <GroupGitPopover
@@ -1847,7 +1850,7 @@ function ProjectGroupSection({
             onDismiss={() => setOverviewOpen(false)}
           />
         ) : null}
-      </div>
+      </ActionHost>
       <div
         ref={viewportRef}
         className="project-group-body"
@@ -1992,9 +1995,9 @@ function ProjectCard({
     : nameClassName;
 
   return (
-    <div
+    <ActionHost
       ref={(el) => sortable.setItemRef(item.path, el)}
-      data-selected={selected || undefined}
+      selected={selected || multiSelected}
       data-project-path={item.path}
       style={{
         backgroundColor: railBackgroundColor(loadRailBackgrounds(key).header),
@@ -2092,7 +2095,7 @@ function ProjectCard({
         className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left ${multi?.active ? "" : showReconnect ? "pe-12" : "pe-6"} @max-[140px]/rail:justify-center @max-[140px]/rail:pe-0!`}
       >
         <div
-          className={`project-card-logo grid size-4 shrink-0 place-items-center ${multi?.active ? "" : "transition-opacity group-hover:opacity-0"} @max-[140px]/rail:opacity-100!`}
+          className={`project-card-logo grid size-4 shrink-0 place-items-center ${multi?.active ? "" : "transition-opacity motion-reduce:transition-none group-hover:opacity-0 group-focus-within:opacity-0 group-data-[selected]:opacity-0 [@media(hover:none)]:opacity-0 [@media(pointer:coarse)]:opacity-0"} @max-[140px]/rail:opacity-100!`}
         >
           {logoPath && !busy ? (
             <ProjectLogoIcon
@@ -2116,7 +2119,7 @@ function ProjectCard({
             role="img"
             aria-label={t("Working")}
             title={t("Working")}
-            className="shrink-0 text-accent @max-[140px]/rail:hidden"
+            className="shrink-0 @max-[140px]/rail:hidden"
           >
             <TerminalSpinner />
           </span>
@@ -2171,10 +2174,9 @@ function ProjectCard({
       {!multi?.active ? (
         <>
           {showReconnect ? (
-            <Button
-              iconOnly
+            <InlineAction
+              reveal="always"
               label={t("{p0} Reconnect machine", { p0: connection })}
-              variant="ghost"
               motion="none"
               data-no-drag
               loading={remoteConnection.reconnecting}
@@ -2186,13 +2188,10 @@ function ProjectCard({
               className="absolute end-7 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
             >
               <Internet className="icon-sm" strokeWidth={1.75} aria-hidden />
-            </Button>
+            </InlineAction>
           ) : null}
-          <Button
-            iconOnly
+          <InlineAction
             label={t("Project options")}
-            size="sm"
-            variant="ghost"
             motion="none"
             type="button"
             data-no-drag
@@ -2210,15 +2209,12 @@ function ProjectCard({
                 multi && item.path !== "~" ? () => multi.toggle(item.path) : undefined,
               );
             }}
-            className="absolute end-1 top-1/2 grid size-6 -translate-y-1/2 place-items-center @max-[140px]/rail:hidden!"
+            className="absolute end-1 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
           >
             <MoreHorizontal className="icon-md" strokeWidth={1.75} />
-          </Button>
-          <Button
-            iconOnly
+          </InlineAction>
+          <InlineAction
             label={pinned ? t("Unpin project") : t("Pin project")}
-            size="sm"
-            variant="ghost"
             motion="none"
             type="button"
             data-no-drag
@@ -2229,17 +2225,17 @@ function ProjectCard({
               event.stopPropagation();
               onTogglePin(item.path);
             }}
-            className="absolute left-2 top-1/2 grid -translate-y-1/2 place-items-center opacity-0 pointer-events-none transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-has-[button:focus-visible]:pointer-events-auto group-has-[button:focus-visible]:opacity-100 @max-[140px]/rail:hidden!"
+            className="absolute left-2 top-1/2 -translate-y-1/2 @max-[140px]/rail:hidden!"
           >
             {pinned ? (
               <PinOff className="icon-sm" strokeWidth={1.75} />
             ) : (
               <Pin className="icon-sm" strokeWidth={1.75} />
             )}
-          </Button>
+          </InlineAction>
         </>
       ) : null}
-    </div>
+    </ActionHost>
   );
 }
 
@@ -2402,10 +2398,9 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button
-        iconOnly
+      <InlineAction
+        reveal="always"
         label={t("Open project")}
-        variant="ghost"
         motion="none"
         ref={anchor}
         type="button"
@@ -2415,10 +2410,10 @@ function AddProjectButton({ onOpenFolder }: { onOpenFolder: () => void }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="grid size-5 shrink-0 place-items-center"
+        className="shrink-0"
       >
         <Plus className="icon-sm" strokeWidth={1.75} />
-      </Button>
+      </InlineAction>
       {open ? (
         <DropdownMenu
           anchor={anchor}

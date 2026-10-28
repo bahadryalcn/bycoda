@@ -1,7 +1,17 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    min-width: 0;
+  }
+  .trigger {
+    width: 100%;
+  }
+}
 .field {
   display: grid;
   gap: var(--space-2);
-  min-width: 0;
 }
 .field label {
   font-size: var(--text-sm);
@@ -15,7 +25,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  width: 100%;
   min-height: var(--control-height-md);
   border: 1px solid var(--border);
   border-radius: var(--radius-control);

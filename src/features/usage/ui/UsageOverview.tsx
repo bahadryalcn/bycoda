@@ -58,6 +58,7 @@ import { formatMetric, formatUsagePercent, metricNames, PagedUsageTable } from "
 import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
+import { useRateLimitHistory } from "../../providers/model/rateLimitHistory";
 import "./UsageAnalytics.css";
 
 type Preset = "today" | "yesterday" | "7d" | "30d" | "90d" | "all" | "custom";
@@ -118,7 +119,6 @@ export function UsageOverview({
   const view = limitsOnly ? "limits" : selection.view;
   const setView = (next: string) => {
     setSelection({ view: next, revealed });
-    if (next === "projects") setDimension("project");
   };
   if (selection.revealed !== revealed) {
     setSelection({
@@ -146,7 +146,10 @@ export function UsageOverview({
   }
   const [filters, setFilters] = useState<UsageFilters>(emptyUsageFilters);
   const [metric, setMetric] = useState<UsageMetric>("cost");
-  const [dimension, setDimension] = useState<UsageDimension>("provider");
+  const [overviewDimension, setOverviewDimension] = useState<UsageDimension>("provider");
+  const [projectDimension, setProjectDimension] = useState<UsageDimension>("project");
+  const dimension = view === "projects" ? projectDimension : overviewDimension;
+  const setDimension = view === "projects" ? setProjectDimension : setOverviewDimension;
   const [resolution, setResolution] = useState<UsageResolution>("day");
   const [openFilters, setOpenFilters] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
@@ -159,6 +162,7 @@ export function UsageOverview({
   const filterAnchor = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((v) => v + 1)), []);
   const accounts = useMemo(() => PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts), [version]);
+  const quotaHistory = useRateLimitHistory();
   const pricing = useMemo(() => createUsagePricing(prices?.models), [prices]);
   const since = preset === "all" ? 0 : Math.max(0, previousUsageWindow(interval).start);
   const queryKey = `${since}:${interval.end}:${reload}:${refresh}:${version}`;
@@ -252,14 +256,14 @@ export function UsageOverview({
     () =>
       preset === "all"
         ? {
-            start: samples.reduce(
+            start: view === "limits" ? quotaHistory.reduce((first, sample) => Math.min(first, sample.at), interval.end - 86_400_000) : samples.reduce(
               (n, s) => Math.min(n, s.at),
               turns.reduce((n, turn) => Math.min(n, turn.startedAt), interval.end - 86_400_000),
             ),
             end: interval.end,
           }
         : interval,
-    [interval, preset, samples, turns],
+    [interval, preset, samples, turns, quotaHistory, view],
   );
   const filtered = useMemo(() => filterUsage(samples, filters, window), [samples, filters, window]);
   const previous = useMemo(
@@ -267,8 +271,11 @@ export function UsageOverview({
     [samples, filters, window],
   );
   const runtime = useMemo(
-    () => durationSamples(turns, window, filters, groupFor),
-    [turns, window, filters, groupFor],
+    () => durationSamples(turns, window, filters, groupFor).map((sample) => ({
+      ...sample,
+      accountLabel: accounts.find((account) => `${account.provider}:${account.id}` === sample.account)?.label ?? sample.accountLabel,
+    })),
+    [turns, window, filters, groupFor, accounts],
   );
   const sessions = useMemo(
     () => sessionUsage(turns, window, filters, pricing, groupFor),
@@ -331,9 +338,23 @@ export function UsageOverview({
       result.project.set(s.project, s.projectLabel);
       result.group.set(s.group, s.groupLabel);
     }
+    if (view === "limits") { result.provider.clear(); result.account.clear(); }
+    for (const account of accounts) {
+      if (view === "limits" && account.provider !== "codex" && account.provider !== "claude") continue;
+      result.provider.set(account.provider, account.provider);
+      result.account.set(`${account.provider}:${account.id}`, `${account.provider} · ${account.label}`);
+    }
     return result;
-  }, [samples, runtime]);
-  const activeFilters = Object.entries(filters).flatMap(([key, values]) =>
+  }, [samples, runtime, accounts, view]);
+  const quotaFilters = {
+    ...emptyUsageFilters(),
+    provider: filters.provider.filter((provider) => accounts.some((account) => account.provider === provider && (provider === "codex" || provider === "claude"))),
+    account: filters.account.filter((key) => accounts.some((account) => `${account.provider}:${account.id}` === key && (account.provider === "codex" || account.provider === "claude"))),
+  };
+  const effectiveFilters = view === "limits" ? quotaFilters : filters;
+  const filterKeys: (keyof UsageFilters)[] = view === "limits" ? ["provider", "account"] : Object.keys(filters) as (keyof UsageFilters)[];
+  const activeFilterCount = filterKeys.filter((key) => effectiveFilters[key].length > 0).length;
+  const activeFilters = Object.entries(effectiveFilters).filter(([key]) => filterKeys.includes(key as keyof UsageFilters)).flatMap(([key, values]) =>
     values.map((value: string) => ({ key: key as keyof UsageFilters, value })),
   );
   const names: Record<keyof UsageFilters, string> = {
@@ -405,7 +426,7 @@ export function UsageOverview({
     !firstLoad &&
     ((!!load.error && !hasCachedUsage) || (!accounts.length && load.turnsFailed && !load.turns));
   const stale = load.stale;
-  const partial = !unavailable && (load.failed > 0 || load.turnsFailed);
+  const partial = !unavailable && (load.failed > 0 || load.turnsFailed || !!load.turns?.truncated);
   const hasFilteredData = filtered.length > 0 || runtime.length > 0;
   const showAnalytics = !firstLoad && !unavailable;
   const metricUnavailable = metric === "duration" && load.turns === null;
@@ -444,7 +465,7 @@ export function UsageOverview({
           <p>
             {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            {load.refreshedAt > 0 &&
+            {view !== "limits" && load.refreshedAt > 0 &&
               !partial &&
               !unavailable &&
               ` · ${t("Updated")} ${new Date(load.refreshedAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })}`}
@@ -467,13 +488,13 @@ export function UsageOverview({
             ref={filterAnchor}
             variant="ghost"
             iconOnly
-            label={`${t("Filters")}${activeFilters.length ? ` (${activeFilters.length})` : ""}`}
+            label={`${t("Filters")}${activeFilterCount ? ` (${activeFilterCount})` : ""}`}
             selected={!!activeFilters.length}
             aria-haspopup="dialog"
             aria-expanded={openFilters}
             onClick={() => setOpenFilters(!openFilters)}
           >
-            <ListFilter className="icon-sm" />
+            <ListFilter aria-hidden strokeWidth={1.75} />
           </Button>
           {!limitsOnly && view !== "limits" && !unavailable && !partial && (
             <Button
@@ -483,7 +504,7 @@ export function UsageOverview({
               loading={refreshing}
               onClick={refreshData}
             >
-              <RefreshCw className="icon-sm" />
+              <RefreshCw aria-hidden strokeWidth={1.75} />
             </Button>
           )}
         </div>
@@ -554,14 +575,14 @@ export function UsageOverview({
                 </div>
               </>
             )}
-            {(Object.keys(filters) as (keyof UsageFilters)[]).map((key) => (
+            {filterKeys.map((key) => (
               <div key={key} className="grid min-w-0 gap-1">
                 <span className="text-ui-caption text-(--ui-text-secondary)">{t(names[key])}</span>
                 <SearchableSelect
                   multiple
                   label={t(names[key])}
                   placeholder={t("All")}
-                  value={filters[key]}
+                  value={effectiveFilters[key]}
                   options={[...options[key]].map(([value, label]) => ({ value, label: t(label) }))}
                   onChange={(values) => {
                     setFilters((f) => ({ ...f, [key]: values }));
@@ -573,7 +594,7 @@ export function UsageOverview({
             <Button
               variant="ghost"
               onClick={() => {
-                setFilters(emptyUsageFilters());
+                setFilters((current) => view === "limits" ? { ...current, provider: [], account: [] } : emptyUsageFilters());
                 setSelectedSession(null);
               }}
             >
@@ -596,6 +617,11 @@ export function UsageOverview({
           ]}
         />
       )}
+      {view !== "limits" ? (
+        <p className="usage-muted">
+          {t(metricNames[metric])} · {t(names[dimension])} · {t(({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" })[actualResolution])}
+        </p>
+      ) : <p className="usage-muted">{t("Provider and account filters apply to account limits and history. Local budget rules keep their own scope.")}</p>}
       {view !== "limits" && firstLoad && (
         <p role="status" className="usage-empty">
           {t("Loading usage…")}
@@ -629,6 +655,7 @@ export function UsageOverview({
               )}
             </p>
           )}
+          {load.turns?.truncated ? <p>{t("Session data is limited to the latest 50,000 turns. Select a shorter interval.")}</p> : null}
           <Button variant="ghost" loading={refreshing} onClick={refreshData}>
             {t("Refresh usage")}
           </Button>
@@ -678,7 +705,8 @@ export function UsageOverview({
                           ? "—"
                           : `${key === "cost" && unpriced.length ? "≥ " : ""}${formatMetric(totals[key], key)}`}
                       </strong>
-                      <small>
+                      {key === "cost" ? <small>{t("API-equivalent, not billed")} · {t("Priced token coverage")}: {totals.tokens ? formatUsagePercent((pricedTokens / totals.tokens) * 100) : "—"}</small> : null}
+                      <small hidden={key === "cost" && change == null}>
                         {change == null
                           ? t(
                               key === "cost"
@@ -811,7 +839,7 @@ export function UsageOverview({
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <Button variant="secondary" onClick={exportCsv}>
-                  <ArrowDownCircle className="icon-sm" />
+                  <ArrowDownCircle aria-hidden strokeWidth={1.75} />
                   {t("Export CSV")}
                 </Button>
               </div>
@@ -927,8 +955,8 @@ export function UsageOverview({
         </>
       )}
       <div hidden={view !== "limits"}>
-        {limits?.(filters)}
-        {limits && <QuotaHistory window={window} filters={filters} accounts={accounts} />}
+        {limits?.(quotaFilters)}
+        {limits && <QuotaHistory window={window} filters={quotaFilters} accounts={accounts} />}
       </div>
     </section>
   );

@@ -158,3 +158,28 @@ Preview/Source/Edit, preserving frontmatter, selection, drafts/save and valid
 code/table inner overflow. This is separate from retained FileEditor Source's
 confirmed ruler visibility/pointer escape.111 related existing tests/15 suites
 pass; audit only, actual Skills geometry/new UI/native acceptance pending.
+
+## H3 Settings Skills implementation, 2026-10-28 (uncommitted)
+
+SkillsPage retains visible collections during refresh and targets transfer
+revalidation to its destination. Focus refresh is coalesced; cancelled pending
+reads restart without clearing current rows. Discovery and policy errors remain
+beside their machine with targeted Retry; a confirmed copy is not replaced by an
+unrelated policy read failure. Transfer has a synchronous guard and rechecks
+the dirty-draft restriction. Unconfirmed copy outcomes request a target read.
+
+Unsaved draft text and its original comparison baseline use the existing
+window-lifetime retained-state owner, so leaving Settings does not silently drop
+edits or bypass disk-conflict comparison after returning. Split is a real paired
+editor/read-only source and rendered draft with independent panes and narrow
+stacking. Edit, original Preview/Source access and entry defaults are retained.
+Preview forwards document/cwd identity for support assets. Document footer state
+distinguishes loading/read failure/saving/dirty/known saved; read Retry preserves
+drafts. Off policy is expressed once when its switch is present; invocation
+restrictions and owner/provider gates remain distinct. Titles wrap visibly.
+
+Test edilmedi under the nightly owner rule. SK-01..08 scope, remaining
+consistency/native dependencies and morning acceptance are recorded in
+`temp/local/2026-10-28-settings-pages-b/tooling.json`. No skill was enabled,
+installed, copied, edited or deleted as a live operation by this implementation
+session; no tests/server/captures, build/install or release ran.

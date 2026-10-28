@@ -23,7 +23,6 @@
   gap: 12px;
   padding: 12px;
   color: var(--color-content);
-  background: var(--ui-surface);
   font-size: var(--ui-font-secondary);
 }
 .filterPanel h3 {
@@ -58,9 +57,11 @@
 }
 .list {
   border: 1px solid var(--color-stroke);
-  border-radius: 8px;
+  border-radius: var(--ui-control-radius);
   background: var(--ui-surface);
-  overflow: clip;
+  max-block-size: min(60dvh, 38rem);
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 .row {
   display: grid;
@@ -91,13 +92,19 @@
   font-weight: 500;
   overflow: clip;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .metadata,
 .details,
 .pagination {
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
+}
+.continuation {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
 }
 .metadata {
   overflow-wrap: anywhere;
@@ -110,7 +117,7 @@
   overflow-wrap: anywhere;
 }
 .details {
-  grid-column: 2 / -1;
+  grid-column: 2;
   grid-row: 2;
 }
 .row > .actions {

@@ -2,10 +2,15 @@ import { SettingsFeedback } from "./settingsControls";
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { ChevronLeft, ChevronRight, ImagePlus, Loader } from "../../../shared/ui/icons";
+import { ChevronLeft, ChevronRight, ImagePlus } from "../../../shared/ui/icons";
 import { CrewSettings, TabMotionSettings } from "./AppearanceBehaviorSettings";
-import { useId, useRef, useState, type ReactNode } from "react";
-import { AppearanceStudio, AppearanceInterface, AppearanceTypography } from "./AppearancePreviews";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import {
+  AccentUsagePreview,
+  AppearanceStudio,
+  AppearanceInterface,
+  AppearanceTypography,
+} from "./AppearancePreviews";
 
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
@@ -18,7 +23,7 @@ import { SessionListSettings } from "./SessionListSettings";
 import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../model/settings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { IS_LINUX } from "../../../platform/tauri/platform";
+import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
 import {
   ACCENT_COLOR_DEFAULT,
   BODY_GLASS_DEFAULT,
@@ -70,7 +75,7 @@ import {
 } from "../model/decorativeMotion";
 
 import { AdvancedSettings, Group, Row, Segmented, Slider, Toggle } from "./settingsControls";
-import { type AppearanceSettings } from "./useAppearanceSettings";
+import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
 import "./AppearanceSettings.css";
 
 export function AppearancePage({ appearance }: { appearance: AppearanceSettings }) {
@@ -82,11 +87,34 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
   const translucencyOff = glassDisabled || (!IS_LINUX && !appearance.windowGlass);
   const decorativeMotion = useDecorativeMotionPreference();
   const reducedMotion = usePrefersReducedMotion();
+  const topics = [
+    ["colors", "Theme and colors"],
+    ["reading", "Text and readability"],
+    ["layout", "Layout"],
+    ["translucency", "Translucency"],
+    ["backgrounds", "Backgrounds"],
+    ["motion", "Motion and crew"],
+  ] as const;
 
   return (
     <div className="appearance-settings">
-      <p className="appearance-save-note">{t("Changes save automatically")}</p>
+      <nav aria-label={t("Appearance")} className="flex flex-wrap items-center gap-1">
+        {topics.map(([id, title]) => (
+          <Button
+            key={id}
+            variant="link"
+            onClick={() => {
+              const topic = document.getElementById(`appearance-topic-${id}`);
+              topic?.focus({ preventScroll: true });
+              topic?.scrollIntoView({ block: "start" });
+            }}
+          >
+            {t(title)}
+          </Button>
+        ))}
+      </nav>
       <AppearanceSection
+        id="colors"
         title={t("Theme and colors")}
         description={[t("Theme palettes"), t("Accent color"), t("Custom surface colors")].join(
           " · ",
@@ -101,6 +129,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           >
             <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
           </Row>
+          <AccentUsagePreview />
         </Group>
         <AdvancedSettings
           title={t("Custom surface colors")}
@@ -163,15 +192,43 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
             </Row>
           </Group>
         </AdvancedSettings>
+        <AppearanceSaveFeedback
+          settingIds={["theme", "accent-color", "hue", "saturation", "dark-lightness"]}
+        />
       </AppearanceSection>
       <AppearanceSection
+        id="reading"
         title={t("Text and readability")}
         description={[t("Interface scale"), t("Fonts and code"), t("Contrast")].join(" · ")}
       >
+        {appearance.preferencesUnavailable ? (
+          <SettingsFeedback
+            state="warning"
+            action={<Button onClick={appearance.retryPreferenceRead}>{t("Retry")}</Button>}
+          >
+            {t(
+              "Appearance preferences are unavailable. Retry reading before replacing saved choices.",
+            )}
+          </SettingsFeedback>
+        ) : null}
+        {appearance.preferencesDirty ? (
+          <SettingsFeedback
+            state="error"
+            action={
+              <Button onClick={() => appearance.onPreferences(appearance.preferences)}>
+                {t("Retry save")}
+              </Button>
+            }
+          >
+            {t("Could not save changes. Your previous appearance remains active.")}
+          </SettingsFeedback>
+        ) : null}
         <AppearanceInterface appearance={appearance} />
         <AppearanceTypography appearance={appearance} />
+        <AppearanceSaveFeedback settingIds={["ui-scale", "diff-palette"]} />
       </AppearanceSection>
       <AppearanceSection
+        id="layout"
         title={t("Layout")}
         description={[t("Collapsed project rail"), t("Session list")].join(" · ")}
       >
@@ -185,7 +242,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
                 appearance.onCollapsedProjectRailMode(COLLAPSED_PROJECT_RAIL_MODE_DEFAULT)
               }
             >
-              {t("Reset layout")}
+              {t("Reset")}: {t("Collapsed project rail")}
             </Button>
           }
         >
@@ -220,11 +277,23 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
         <SessionListSettings />
       </AppearanceSection>
       <AppearanceSection
+        id="translucency"
         title={t("Translucency")}
         description={[t("Sidebar opacity"), t("Blur radius"), t("Main pane glass")].join(" · ")}
       >
         <Group
           title={t("Translucency")}
+          dependency={
+            glassDisabled
+              ? t(
+                  "Light mode always uses an opaque window, so these are off. Your dark-mode values are preserved.",
+                )
+              : !IS_LINUX && !appearance.windowGlass
+                ? t(
+                    "Let the desktop show through in dark mode. Off draws an opaque window, which is lighter on the GPU.",
+                  )
+                : undefined
+          }
           action={
             <Button
               variant="ghost"
@@ -286,6 +355,11 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           <Row
             id="blur"
             label={t("Blur radius")}
+            dependency={
+              !IS_MAC
+                ? t("Blur radius can be adjusted on macOS. Your saved value is preserved.")
+                : undefined
+            }
             description={t("Background blur behind the window.")}
           >
             <Slider
@@ -296,7 +370,7 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               min={SIDEBAR_BLUR_MIN}
               max={SIDEBAR_BLUR_MAX}
               onChange={appearance.onBlur}
-              disabled={translucencyOff}
+              disabled={translucencyOff || !IS_MAC}
             />
           </Row>
           <Row
@@ -334,15 +408,27 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
             />
           </Row>
         </Group>
+        <AppearanceSaveFeedback
+          settingIds={[
+            "sidebar-opacity",
+            "main-pane-opacity",
+            "blur",
+            "main-pane-glass",
+            "window-glass",
+          ]}
+        />
       </AppearanceSection>
       <AppearanceSection
+        id="backgrounds"
         title={t("Backgrounds")}
         description={[t("Chat background"), t("Live background")].join(" · ")}
       >
         <ChatBackgroundCard appearance={appearance} />
         <LiveBackgroundCard />
+        <AppearanceSaveFeedback settingIds={["chat-background", "live-background"]} />
       </AppearanceSection>
       <AppearanceSection
+        id="motion"
         title={t("Motion and crew")}
         description={[t("Tab animations"), t("Agent crew")].join(" · ")}
       >
@@ -374,22 +460,27 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
 
 /** Open topics preserve search targets and keep every preference directly available. */
 function AppearanceSection({
+  id,
   title,
-  description,
   children,
 }: {
+  id: string;
   title: string;
   description: string;
   children: ReactNode;
 }) {
   const headingId = useId();
   return (
-    <section className="appearance-section" aria-labelledby={headingId}>
+    <section
+      id={`appearance-topic-${id}`}
+      tabIndex={-1}
+      className="appearance-section"
+      aria-labelledby={headingId}
+    >
       <header className="appearance-section-heading">
         <h2 id={headingId}>{title}</h2>
-        <p>{description}</p>
       </header>
-      <div className="appearance-section-body">{children}</div>
+      <div className="appearance-section-body settings-topics">{children}</div>
     </section>
   );
 }
@@ -404,9 +495,7 @@ function LiveBackgroundCard() {
     <Group
       id="live-background"
       title={t("Live background")}
-      description={t(
-        "Subtle full-pane motion that responds while the AI works.",
-      )}
+      description={t("Subtle full-pane motion that responds while the AI works.")}
     >
       <div className="border-b border-stroke p-4">
         <div className="flex items-center gap-2">
@@ -476,6 +565,26 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
   const emptyVisibility = Math.round(appearance.chatBackgroundEmptyOpacity * 100);
   const sessionVisibility = Math.round(appearance.chatBackgroundSessionOpacity * 100);
   const busy = appearance.chatBackgroundBusy;
+  const [preview, setPreview] = useState<"empty" | "conversation">("empty");
+  const [decoded, setDecoded] = useState<{ src: string; state: "ready" | "error" } | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    let active = true;
+    const image = new Image();
+    image.onload = () => {
+      if (active) setDecoded({ src, state: "ready" });
+    };
+    image.onerror = () => {
+      if (active) setDecoded({ src, state: "error" });
+    };
+    image.src = src;
+    return () => {
+      active = false;
+      image.onload = null;
+      image.onerror = null;
+    };
+  }, [src]);
+  const imageState = decoded?.src === src ? decoded.state : "loading";
 
   return (
     <Group
@@ -503,30 +612,53 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
       description={t("An image behind your chat panes. It stays on this device.")}
     >
       <div className="border-b border-stroke p-4 last:border-b-0">
+        {hasImage ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-ui-caption text-(--ui-text-secondary)">{t("Preview")}</span>
+            <Segmented
+              label={t("Preview")}
+              value={preview}
+              onChange={setPreview}
+              options={[
+                { value: "empty", label: t("Empty only") },
+                { value: "conversation", label: t("Conversation") },
+              ]}
+            />
+          </div>
+        ) : null}
         <div className="overflow-hidden rounded-lg border border-stroke">
           {hasImage ? (
             <div
-              className={`relative h-36 ${appearance.newThreadBackgroundEffect === "gradient-blur" ? "bg-background-base" : ""}`}
+              className={`relative isolate h-36 overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
+              data-project-chat-background="false"
+              data-session-empty={preview === "empty"}
             >
-              {appearance.newThreadBackgroundEffect === "gradient-blur" ? (
-                <GradientBlurBackground
-                  className="gradient-blur-preview absolute inset-0"
-                  style={{ opacity: appearance.chatBackgroundEmptyOpacity }}
-                />
-              ) : (
+              {imageState === "loading" ? (
+                <div className="p-4">
+                  <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+                </div>
+              ) : imageState === "error" ? (
+                <div className="p-4">
+                  <SettingsFeedback state="error">
+                    {t("Image could not be loaded. Choose another image or remove it.")}
+                  </SettingsFeedback>
+                </div>
+              ) : appearance.newThreadBackgroundEffect === "gradient-blur" ? (
+                <GradientBlurBackground className="gradient-blur-preview absolute inset-0" />
+              ) : null}
+              {imageState === "ready" && preview === "conversation" ? (
                 <div
+                  className="relative flex h-full flex-col items-end justify-center gap-2 p-4"
                   aria-hidden
-                  className="size-full bg-cover bg-center bg-no-repeat"
-                  style={{
-                    backgroundImage: "var(--chat-background-image)",
-                    opacity: appearance.chatBackgroundEmptyOpacity,
-                  }}
-                />
-              )}
-              <span className="pointer-events-none absolute bottom-2 left-2 text-ui-micro text-(--ui-text-secondary)">
-                {t("Empty chat preview at ")}
-                {emptyVisibility}%
-              </span>
+                >
+                  <span className="max-w-[80%] rounded-md bg-(--ui-surface-selected) px-3 py-2 text-ui-secondary text-content">
+                    {t("Conversation")}
+                  </span>
+                  <span className="self-start rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-(--ui-text-secondary)">
+                    {PRODUCT_IDENTITY.displayName}
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="appearance-background-empty">
@@ -541,14 +673,18 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             </div>
           )}
         </div>
+        <p className="mt-2 text-ui-caption text-(--ui-text-secondary)">
+          {t("Preview only. Project backgrounds can override this image.")}
+        </p>
         {hasImage ? (
           <div className="mt-3 flex items-center justify-end gap-2">
             <Button
               className="shrink-0"
               onClick={() => void appearance.onChooseChatBackground()}
               disabled={busy}
+              loading={appearance.chatBackgroundOperation === "choose"}
+              loadingLabel={t("Loading…")}
             >
-              {busy ? <Loader className="icon-sm motion-safe:animate-spin" aria-hidden /> : null}
               {t("Change")}
             </Button>
             <Button
@@ -556,6 +692,8 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onClick={() => void appearance.onClearChatBackground()}
               disabled={busy}
               variant="danger"
+              loading={appearance.chatBackgroundOperation === "remove"}
+              loadingLabel={t("Loading…")}
             >
               {t("Remove")}
             </Button>
@@ -631,23 +769,23 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
               onChange={appearance.onChatBackgroundSessionOpacity}
             />
           </Row>
-          <Row
-            label={t("Background blur")}
-            description={t(
-              "Blurs the image behind chat panes, including project images. Haze keeps its own blur.",
-            )}
-          >
-            <Slider
-              label={t("Chat background blur")}
-              value={appearance.chatBackgroundBlur}
-              display={`${appearance.chatBackgroundBlur}px`}
-              min={CHAT_BACKGROUND_BLUR_MIN}
-              max={CHAT_BACKGROUND_BLUR_MAX}
-              onChange={appearance.onChatBackgroundBlur}
-            />
-          </Row>
         </>
       ) : null}
+      <Row
+        label={t("Background blur")}
+        scope={t(
+          "Blurs the image behind chat panes, including project images. Haze keeps its own blur.",
+        )}
+      >
+        <Slider
+          label={t("Chat background blur")}
+          value={appearance.chatBackgroundBlur}
+          display={`${appearance.chatBackgroundBlur}px`}
+          min={CHAT_BACKGROUND_BLUR_MIN}
+          max={CHAT_BACKGROUND_BLUR_MAX}
+          onChange={appearance.onChatBackgroundBlur}
+        />
+      </Row>
     </Group>
   );
 }

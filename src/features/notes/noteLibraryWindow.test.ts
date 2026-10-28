@@ -56,3 +56,27 @@ it("clamps a stale page after filtering or deletion", () => {
     total: 0,
   });
 });
+
+it("distinguishes rendered tag rows from unique notes and names bounded pages", () => {
+  const repeated = notes.slice(0, 2).map((note) => ({ ...note, tags: ["one", "two"] }));
+  const groups = groupNoteLibrary(repeated, "tag");
+  expect(windowNoteLibrary(groups, new Set(), 0, true)).toMatchObject({
+    rangeStart: 1,
+    rangeEnd: 6,
+    total: 6,
+    uniqueTotal: 2,
+    visibleUniqueCount: 2,
+    pageNumber: 1,
+    pageCount: 1,
+    hasPrevious: false,
+    hasNext: false,
+  });
+  expect(windowNoteLibrary(groups, new Set(groups.map((group) => group.key)), 0, true)).toMatchObject({
+    total: 2,
+    uniqueTotal: 2,
+    visibleUniqueCount: 0,
+  });
+  expect(windowNoteLibrary([], new Set(), 0, true)).toMatchObject({
+    rangeStart: 0, rangeEnd: 0, pageNumber: 0, pageCount: 0, uniqueTotal: 0,
+  });
+});

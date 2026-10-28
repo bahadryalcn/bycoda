@@ -67,7 +67,11 @@ function editorThemeStyles(dark: boolean) {
         color: "color-mix(in srgb, var(--color-content) 70%, transparent)",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-        backgroundColor: "color-mix(in srgb, var(--color-accent) 35%, transparent) !important",
+        // Overlay fill preserves the syntax glyphs rather than replacing their ink.
+        backgroundColor: "var(--ui-overlay-selection-background) !important",
+      },
+      "::selection": {
+        color: "inherit",
       },
       ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--color-content)",
@@ -111,6 +115,13 @@ function editorThemeStyles(dark: boolean) {
         color: "color-mix(in srgb, var(--color-content) 50%, transparent)",
         fontStyle: "normal",
         marginLeft: "8px",
+      },
+      "@media (forced-colors: active)": {
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
+          backgroundColor: "Highlight !important",
+          forcedColorAdjust: "auto",
+        },
+        "::selection": { backgroundColor: "Highlight !important", color: "HighlightText" },
       },
     },
     { dark },

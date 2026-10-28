@@ -5,6 +5,35 @@ description: Workbench clarity inventory for structural pane boundaries, main/pr
 
 # Workbench design and clarity
 
+## H4 Explorer/content follow-up, 2026-10-28
+
+The second H4 packet implements Explorer/file editor/preview consumers; its full
+surface checklist and acceptance limits are in
+`temp/local/2026-10-28-explorer-content-impl/handoff.json`. Sidebar's keyed root,
+workspace/session separation and stored layout remain intact. Source-only,
+uncommitted baseline `4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`; no audit closure,
+build, installation or runtime acceptance is implied. Test edilmedi per nightly
+RULES.md. H6 owns sessions Markdown and H5 owns Git/diff consumers.
+
+## H4 implementation, 2026-10-28
+
+Uncommitted on `main`, baseline `c03fa98d4819494a53ebfa61ff74320105bd05fc`.
+Sidebar/TitleBar pane edges consume the theme's panel/border roles. Sidebar,
+ProjectRail, TitleBar, recents, recovery, rail headers and SurfaceTabs consume
+the existing ActionHost/InlineAction contract. Detailed session titles lead;
+expanded folders do not imply selection. Main/project menus retain action IDs,
+native routing and permission gates through public menu adapters.
+Counts, warnings and dirty-file state remain independent of action reveal.
+
+Per-surface scope, source fingerprints, dependencies and morning checks:
+`temp/local/2026-10-28-h4-workbench/handoff.json`. Source implementation only;
+test edilmedi. RULES.md owner instruction postpones tests, fixtures, screenshots
+and native checks; only one final `pnpm check:web:fast` is permitted.
+Explorer/Git redesign and Servers/SSH remain separate owners. Shared text inset
+actions and ActionHost long-press presentation remain H1 dependencies. No build,
+installation, release or runtime acceptance is implied. User guide:
+`docs/guides/workbench.md`.
+
 ## Purpose and keywords
 
 Make the current task, content, actions and execution location immediately

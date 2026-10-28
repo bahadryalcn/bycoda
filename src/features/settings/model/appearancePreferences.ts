@@ -1,3 +1,9 @@
+import {
+  acceptAppearanceStorageChange,
+  registerAppearanceSaveFailure,
+  writeAppearanceValue,
+} from "./appearancePersistence";
+
 export const APPEARANCE_PREFERENCES_EVENT = "bycoda.appearancePreferencesChanged";
 const KEY = "bycoda.appearancePreferences.v1";
 export const INTERFACE_FONTS = ["System", "Segoe UI", "Arial", "Verdana"] as const;
@@ -48,15 +54,26 @@ export function normalizeAppearancePreferences(
       : "System",
     codeSize: bounded(value.codeSize, 13, 11, 18),
     codeTheme: value.codeTheme === "dracula" ? "dracula" : "github",
-    terminalFont: typeof value.terminalFont === "string"
-      ? Array.from(value.terminalFont).filter((char) => char.charCodeAt(0) >= 32 && char.charCodeAt(0) !== 127 && ![34, 39, 92].includes(char.charCodeAt(0))).join("").slice(0, 100)
-      : "",
+    terminalFont:
+      typeof value.terminalFont === "string"
+        ? Array.from(value.terminalFont)
+            .filter(
+              (char) =>
+                char.charCodeAt(0) >= 32 &&
+                char.charCodeAt(0) !== 127 &&
+                ![34, 39, 92].includes(char.charCodeAt(0)),
+            )
+            .join("")
+            .slice(0, 100)
+        : "",
     // Existing installations used the editor size until terminal preferences existed.
     terminalSize: bounded(value.terminalSize, bounded(value.codeSize, 13, 11, 18), 8, 40),
     terminalWeight: [300, 400, 500, 600, 700].includes(value.terminalWeight ?? 0)
-      ? value.terminalWeight! : 400,
+      ? value.terminalWeight!
+      : 400,
     terminalLineHeight: [1, 1.15, 1.35, 1.5].includes(value.terminalLineHeight ?? 0)
-      ? value.terminalLineHeight! : 1,
+      ? value.terminalLineHeight!
+      : 1,
     contrast: bounded(value.contrast, 100, 75, 150),
     controlDensity:
       value.controlDensity === "comfortable" || value.controlDensity === "touch"
@@ -67,11 +84,23 @@ export function normalizeAppearancePreferences(
     wordWrap: value.wordWrap === true,
   };
 }
+let lastKnownPreferences: AppearancePreferences | null = null;
+let preferenceReadUnavailable = false;
+export function appearancePreferencesReadUnavailable() {
+  return preferenceReadUnavailable;
+}
+
 export function loadAppearancePreferences(): AppearancePreferences {
   try {
-    return normalizeAppearancePreferences(JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {});
+    const value = normalizeAppearancePreferences(
+      JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {},
+    );
+    lastKnownPreferences = value;
+    preferenceReadUnavailable = false;
+    return value;
   } catch {
-    return { ...APPEARANCE_DEFAULTS };
+    preferenceReadUnavailable = true;
+    return lastKnownPreferences ?? { ...APPEARANCE_DEFAULTS };
   }
 }
 export function applyAppearancePreferences(value: AppearancePreferences) {
@@ -97,17 +126,67 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   );
   root.classList.toggle("appearance-word-wrap", value.wordWrap);
 }
-export function saveAppearancePreferences(value: AppearancePreferences) {
-  const next = normalizeAppearancePreferences(value);
-  localStorage.setItem(KEY, JSON.stringify(next));
-  applyAppearancePreferences(next);
-  window.dispatchEvent(new Event(APPEARANCE_PREFERENCES_EVENT));
-  return next;
+export function saveAppearancePreferences(
+  value: AppearancePreferences,
+  base = lastKnownPreferences,
+) {
+  const retry = () => {
+    try {
+      saveAppearancePreferences(value, base);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let readSucceeded = false;
+  try {
+    // Read the whole record before replacing it; merge only fields edited from the known base.
+    const current = normalizeAppearancePreferences(
+      JSON.parse(localStorage.getItem(KEY) ?? "{}") ?? {},
+    );
+    readSucceeded = true;
+    const edits = Object.fromEntries(
+      Object.entries(value).filter(
+        ([key, next]) => !base || next !== base[key as keyof AppearancePreferences],
+      ),
+    );
+    const next = normalizeAppearancePreferences({ ...current, ...edits });
+    preferenceReadUnavailable = false;
+    const notify = () => {
+      lastKnownPreferences = next;
+      applyAppearancePreferences(next);
+      window.dispatchEvent(new Event(APPEARANCE_PREFERENCES_EVENT));
+    };
+    if (
+      !writeAppearanceValue(
+        KEY,
+        JSON.stringify(next),
+        "appearance-preferences",
+        notify,
+        false,
+        retry,
+      )
+    )
+      throw new Error("Could not save appearance preferences.");
+    return next;
+  } catch (error) {
+    if (!readSucceeded) preferenceReadUnavailable = true;
+    registerAppearanceSaveFailure({
+      key: KEY,
+      value: null,
+      settingId: "appearance-preferences",
+      applied: false,
+      notify: () => {},
+      retry,
+    });
+    throw error;
+  }
 }
 export function initAppearancePreferences() {
   applyAppearancePreferences(loadAppearancePreferences());
   window.addEventListener("storage", (event) => {
     if (event.key === KEY || event.key === null) {
+      acceptAppearanceStorageChange(event.key);
       applyAppearancePreferences(loadAppearancePreferences());
       window.dispatchEvent(new Event(APPEARANCE_PREFERENCES_EVENT));
     }

@@ -21,7 +21,8 @@ import type {
 } from "react";
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from "motion/react";
 import type { TargetAndTransition, Variants } from "motion/react";
-import { Check, CircleAlert, Pencil, X } from "lucide-react";
+import { Button } from "../../Button";
+import { Check, CircleAlert, Pencil, X } from "../../icons";
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./inline-edit.module.css";
 
@@ -479,12 +480,7 @@ export function InlineEdit({
         tone: "error" as const,
         node: (
           <>
-            <CircleAlert
-              className={styles.messageIcon}
-              size={14}
-              strokeWidth={2}
-              aria-hidden="true"
-            />
+            <CircleAlert className={styles.messageIcon} aria-hidden="true" />
             <span>{error}</span>
           </>
         ),
@@ -495,12 +491,7 @@ export function InlineEdit({
           tone: "failed" as const,
           node: (
             <>
-              <CircleAlert
-                className={styles.messageIcon}
-                size={14}
-                strokeWidth={2}
-                aria-hidden="true"
-              />
+              <CircleAlert className={styles.messageIcon} aria-hidden="true" />
               <span>
                 {t("Could not save {p0}. The previous value was restored.", { p0: failed })}{" "}
                 <button type="button" className={styles.retry} onClick={retry}>
@@ -611,24 +602,32 @@ export function InlineEdit({
                 >
                   {slot === "edit" ? (
                     <span className={styles.actions}>
-                      <button
-                        type="button"
-                        className={styles.save}
-                        aria-label={t("Save {p0}", { p0: label })}
+                      {/* Shared Buttons: Save is the one primary action, Cancel is quiet. Pressing them keeps the field's focus, so
+                          a pointer press never counts as leaving (which would save); Tab still reaches both. */}
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        shape="pill"
+                        iconOnly
+                        motion="none"
+                        label={t("Save {p0}", { p0: label })}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={() => submit("button")}
                       >
-                        <Check size={15} strokeWidth={2} aria-hidden="true" />
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.cancel}
-                        aria-label={t("Cancel editing")}
+                        <Check aria-hidden="true" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        shape="pill"
+                        iconOnly
+                        motion="none"
+                        label={t("Cancel editing")}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={cancel}
                       >
-                        <X size={15} strokeWidth={2} aria-hidden="true" />
-                      </button>
+                        <X aria-hidden="true" />
+                      </Button>
                     </span>
                   ) : slot === "saving" ? (
                     <span className={styles.spinner} aria-hidden="true" />
@@ -637,17 +636,10 @@ export function InlineEdit({
                       <DrawnCheck reduced={reduced} />
                     </span>
                   ) : slot === "failed" ? (
-                    <CircleAlert
-                      className={styles.failedIcon}
-                      size={16}
-                      strokeWidth={1.75}
-                      aria-hidden="true"
-                    />
+                    <CircleAlert className={styles.failedIcon} aria-hidden="true" />
                   ) : (
                     <Pencil
                       className={styles.pencil}
-                      size={14}
-                      strokeWidth={1.75}
                       aria-hidden="true"
                       onClick={() => startEdit(shown.length)}
                     />

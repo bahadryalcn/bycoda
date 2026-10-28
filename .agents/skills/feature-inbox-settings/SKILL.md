@@ -5,6 +5,37 @@ description: Settings Inbox connection inventory for GitHub CLI, GitLab, Azure D
 
 # Inbox connection settings
 
+## H3 implementation, 2026-10-28 (uncommitted)
+
+Settings Inbox now consumes shared topic/row layout without page-local Group/Row skins.
+Only first-visited provider panels initialize; visited panels stay mounted with drafts and
+operations retained. Hidden Jira board discovery pauses while its saved state/roster stays.
+Existing tabs, keyboard/search reveal and permission/native credential owners remain.
+
+GitLab, Azure DevOps, Jira and Linear have explicit Edit/Cancel credential replacement
+through their existing validate-before-save APIs. Saved GitLab/ADO URLs are separate from
+editable drafts; failed replacement keeps the previous configured state and secret draft.
+Successful-only secret clearing and explicit disconnect remain. Configured is a neutral
+saved-presence badge. Status-read failures have their own error, so save/disconnect/help
+failures no longer become Check failed. No connectivity timestamp/account was invented.
+
+Jira projects reject obsolete request/account generations; same-account board refresh
+retains its previous roster/error recovery, while account changes clear mismatched data.
+Selectors expose loading and block editing during stale/pending discovery. The new local
+`useInboxScopePreference.ts` reads fresh durable scope before patching known IDs, preserves
+unknown IDs, verifies model save readback, keeps failed edit retry, follows same/sibling
+events and drops superseded retries. Unreadable scope has no authoritative selector/count.
+Background-sync remains a separate default-off opt-in with guarded read/save/readback.
+
+These are Settings-local protections; H7 model/Inbox-filter/board/unseen/mobile read
+fallbacks and account revisions remain their owners' follow-up. No actual credentials,
+scope/user data, remote service or native operation was changed by this worker.
+Per-IS/PR delivery is `temp/local/2026-10-28-settings-pages-b/providers.json`.
+**test edilmedi**: no tests/compiler/dev server/captures/build/live operations ran under
+the overnight exception. Morning checks must use fake credentials/isolated data and cover
+draft/replacement/failure, request races, same/sibling scope recovery, keyboard/density/
+theme/narrow views and separate native/Host/mobile permission enforcement.
+
 Purpose: configure this computer's Inbox integrations, understand saved account
 versus tested access and manage scope without losing drafts or silently widening
 visibility. Keywords: Settings Inbox, GitHub CLI, GitLab URL/token, Azure DevOps

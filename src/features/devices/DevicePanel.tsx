@@ -1,9 +1,10 @@
 import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
-import { t, useLocale } from "../../shared/i18n/technical";
+import { getLocale, t, useLocale } from "../../shared/i18n/technical";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
+import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Progress } from "../../shared/ui/Progress";
@@ -69,6 +70,34 @@ type AnnotationDraft = {
 // Layout/tool switches unmount the surface. Keep unfinished image edits in the
 // source conversation and machine scope, without retaining a device permission.
 const annotationDraftCache = new Map<string, Record<string, AnnotationDraft>>();
+/** Readable capture time and age for a retained frame; undefined when the Host sent no real timestamp. */
+function capturedLabel(capturedAt: string, now: number): string | undefined {
+  const at = Date.parse(capturedAt);
+  if (!Number.isFinite(at)) return undefined;
+  let locale: string | undefined;
+  try {
+    locale = getLocale();
+    new Intl.DateTimeFormat(locale);
+  } catch {
+    locale = undefined;
+  }
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  const relative = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "short" });
+  const age =
+    seconds < 5
+      ? relative.format(0, "second")
+      : seconds < 60
+        ? relative.format(-seconds, "second")
+        : seconds < 3600
+          ? relative.format(-Math.round(seconds / 60), "minute")
+          : relative.format(-Math.round(seconds / 3600), "hour");
+  const time = new Date(at).toLocaleTimeString(locale, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  return t("Captured {p0} · {p1}", { p0: time, p1: age });
+}
 const unavailableTransport = (cause: unknown) =>
   /RPC_HOST_UNAVAILABLE|host unavailable|host connection.*(?:closed|refused)/i.test(String(cause));
 
@@ -111,6 +140,9 @@ export function DevicePanel({
     text: string;
     error: boolean;
   }>();
+  // Set when the device action itself succeeded but the follow-up frame read failed.
+  const [actionCompleted, setActionCompleted] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const [x, setX] = useState(0);
   const [y, setY] = useState(0);
   const [surface, setSurface] = useState<
@@ -175,6 +207,7 @@ export function DevicePanel({
     setText("");
     setOutput("");
     setDeviceNotice(undefined);
+    setActionCompleted(false);
     setX(0);
     setY(0);
     setSurface(undefined);
@@ -216,6 +249,7 @@ export function DevicePanel({
       setOperation(name);
       setError(undefined);
       setErrorOperation(name);
+      if (name !== "addImage" && name !== "capture") setActionCompleted(false);
       try {
         // A live capture must finish before boot/stop/input or another capture.
         await capturePending.current?.catch(() => {});
@@ -276,6 +310,7 @@ export function DevicePanel({
       setText("");
       setOutput("");
       setDeviceNotice(undefined);
+      setActionCompleted(false);
       setConnectionUnavailable(false);
       setAnnotating(false);
       setSurface(undefined);
@@ -357,6 +392,7 @@ export function DevicePanel({
           if (!cancelled) {
             setFrame(value);
             if (errorOperationRef.current === "capture") setError(undefined);
+            setActionCompleted(false);
           }
         } catch (cause) {
           if (!cancelled) {
@@ -390,7 +426,7 @@ export function DevicePanel({
           return {
             output,
             frame: undefined,
-            error: `${t("Action completed. Refresh the frame to see the result.")} ${String(cause)}`,
+            error: String(cause),
           };
         }
       },
@@ -403,6 +439,7 @@ export function DevicePanel({
         if (value.error) {
           setErrorOperation("capture");
           setError(value.error);
+          setActionCompleted(true);
         }
       },
     );
@@ -481,6 +518,58 @@ export function DevicePanel({
   };
   const controlEnabled = canControl && !annotating;
   const captureFailed = !!error && errorOperation === "capture";
+  const stateLabel = (item: DeviceSummary) =>
+    item.physical
+      ? item.booted
+        ? t("Connected")
+        : t("Not ready")
+      : item.booted
+        ? t("Running")
+        : t("Stopped");
+  const bootDevice = () =>
+    void execute(
+      "boot",
+      () => api.boot(selected),
+      (value) => {
+        setSelected(value.id);
+        setLive(value.booted);
+        setDevices((items) => items.map((item) => (item.id === selected ? value : item)));
+      },
+    );
+  const refreshFrame = () =>
+    void execute(
+      "capture",
+      () => capture(selected),
+      (value) => {
+        setFrame(value);
+        setActionCompleted(false);
+      },
+    );
+  const shownFrame = annotating ? draft?.frame : frame;
+  const frameStateVisible = !!frame && (!live || annotating);
+  useEffect(() => {
+    if (!frameStateVisible) return;
+    setNow(Date.now());
+    const timer = setInterval(() => {
+      if (!document.hidden) setNow(Date.now());
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [frameStateVisible]);
+  const frameCaptured = shownFrame ? capturedLabel(shownFrame.capturedAt, now) : undefined;
+  // One concise reason why the Control and Mark groups are unavailable.
+  const toolbarReason = !device?.booted
+    ? undefined
+    : annotating
+      ? t("Finish marking to use control and capture.")
+      : connectionUnavailable
+        ? t("The device connection is unavailable. Refresh devices to reconnect.")
+        : !control
+          ? t("Turn on Allow device control for Home, text and apps.")
+          : !status?.agentInstalled
+            ? undefined
+            : !frame
+              ? t("Marking needs a captured frame.")
+              : undefined;
   return (
     <section
       className="host-tool-panel device-panel bycoda-arc"
@@ -492,7 +581,9 @@ export function DevicePanel({
           <summary>
             {discoveryError
               ? t("Could not load devices")
-              : captureFailed
+              : actionCompleted
+                ? t("Action completed; screen unavailable")
+                : captureFailed
                 ? t("Device screen unavailable")
                 : t("Device action failed")}
           </summary>
@@ -567,7 +658,7 @@ export function DevicePanel({
                   options={devices.map((item) => ({
                     value: item.id,
                     label: item.name,
-                    description: `${platformLabel(item.platform)} ${item.version} · ${item.booted ? t("Running") : t("Stopped")} · ${kindLabel(item)}`,
+                    description: `${platformLabel(item.platform)} ${item.version} · ${stateLabel(item)} · ${kindLabel(item)}`,
                     keywords: `${item.id} ${kindLabel(item)} ${item.version}`,
                   }))}
                 />
@@ -580,29 +671,6 @@ export function DevicePanel({
                       "No devices found. Connect an Android phone with USB debugging enabled, or create an emulator or simulator, then refresh.",
                     )}
               </p>
-            )}
-            {device && !device.booted && (
-              <Button
-                variant="primary"
-                loading={operation === "boot"}
-                hidden={device.physical}
-                disabled={unavailable("boot", !loadingDevices && !device.physical)}
-                onClick={() =>
-                  void execute(
-                    "boot",
-                    () => api.boot(selected),
-                    (value) => {
-                      setSelected(value.id);
-                      setLive(value.booted);
-                      setDevices((items) =>
-                        items.map((item) => (item.id === selected ? value : item)),
-                      );
-                    },
-                  )
-                }
-              >
-                {t("Boot")}
-              </Button>
             )}
             <Button
               variant="ghost"
@@ -627,6 +695,34 @@ export function DevicePanel({
               <MoreHorizontal className="icon-md" aria-hidden />
             </Button>
           </div>
+          {device && (
+            <p className="device-panel-summary" data-booted={device.booted}>
+              <span>
+                {platformLabel(device.platform)} {device.version}
+              </span>
+              <span>{kindLabel(device)}</span>
+              <strong>{stateLabel(device)}</strong>
+              {hostLabel ? <span className="device-panel-summary-host">{hostLabel}</span> : null}
+            </p>
+          )}
+          {actionCompleted && (
+            <Alert
+              inline
+              tone="warning"
+              title={t("Action completed")}
+              action={
+                <Button
+                  loading={operation === "capture"}
+                  disabled={unavailable("capture", canViewDevice && !annotating)}
+                  onClick={refreshFrame}
+                >
+                  {t("Refresh frame")}
+                </Button>
+              }
+            >
+              {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
+            </Alert>
+          )}
           <div className="device-panel-stage">
             <div className="device-panel-viewport">
               <div
@@ -736,7 +832,13 @@ export function DevicePanel({
                     {loadingDevices
                       ? t("Loading devices…")
                       : device && !device.booted
-                        ? t("Boot the selected device before viewing or controlling it.")
+                        ? device.physical
+                          ? t(
+                              "This phone is not available. Connect it with USB debugging enabled and unlocked, then refresh devices.",
+                            )
+                          : device.platform === "ios"
+                            ? t("Start this simulator to view or control it.")
+                            : t("Start this emulator to view or control it.")
                         : device?.booted && !error
                           ? live
                             ? t("Loading device screen…")
@@ -744,20 +846,49 @@ export function DevicePanel({
                           : devices.length && !selected
                             ? t("Select a device to view its screen.")
                             : null}
+                    {device && !device.booted && !loadingDevices && (
+                      <div className="device-panel-waiting-actions">
+                        {device.physical ? (
+                          <>
+                            <Button
+                              loading={operation === "refresh"}
+                              disabled={unavailable("refresh", !loadingDevices)}
+                              onClick={refreshDevices}
+                            >
+                              {t("Refresh devices")}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              aria-haspopup="dialog"
+                              onClick={(event) => openSurface("setup", event.currentTarget)}
+                            >
+                              {t("Setup and access")}
+                            </Button>
+                          </>
+                        ) : (
+                          <Button
+                            variant="primary"
+                            loading={operation === "boot"}
+                            disabled={unavailable("boot", !device.physical)}
+                            onClick={bootDevice}
+                          >
+                            {device.platform === "ios" ? t("Start simulator") : t("Start emulator")}
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             </div>
-            {frame && (!live || annotating) && (
-              <span
-                className="device-panel-frame-state"
-                title={(annotating ? draft?.frame : frame)?.capturedAt}
-              >
+            {frameStateVisible && (
+              <span className="device-panel-frame-state" title={shownFrame?.capturedAt}>
                 {annotating
                   ? t("Marking · Frozen frame")
                   : captureFailed || connectionUnavailable
                     ? t("Last frame · Not live")
                     : t("Paused")}
+                {frameCaptured ? ` · ${frameCaptured}` : ""}
               </span>
             )}
             {annotating && draft && (
@@ -848,94 +979,99 @@ export function DevicePanel({
             )}
           </div>
           <div className="device-panel-toolbar" role="toolbar" aria-label={t("Device actions")}>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Allow device control")}
-              tooltip={t("Allow device control")}
-              role="switch"
-              aria-checked={control}
-              selected={control && !annotating}
-              disabled={busy || !device?.booted}
-              onClick={() => {
-                setControl(annotating ? true : !control);
-                setAnnotating(false);
-              }}
-            >
-              <CursorMagicSelection className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Mark device screen")}
-              tooltip={t("Mark device screen")}
-              selected={annotating}
-              aria-pressed={annotating}
-              disabled={!frame || busy}
-              onClick={beginAnnotation}
-            >
-              <Pencil className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Home")}
-              tooltip={t("Home")}
-              loading={operation === "home"}
-              disabled={unavailable("home", canControlDevice && !annotating)}
-              onClick={() => action({ type: "home" })}
-            >
-              <Home className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Device text input")}
-              tooltip={t("Device text input")}
-              disabled={!controlEnabled}
-              aria-haspopup="dialog"
-              aria-expanded={surface === "text"}
-              onClick={(event) => openSurface("text", event.currentTarget)}
-            >
-              <Keyboard className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Choose app to open")}
-              tooltip={t("Choose app to open")}
-              disabled={!controlEnabled}
-              aria-haspopup="dialog"
-              aria-expanded={surface === "app"}
-              onClick={(event) => openSurface("app", event.currentTarget)}
-            >
-              <AppWindow className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="ghost"
-              iconOnly
-              label={t("Capture")}
-              tooltip={t("Capture")}
-              loading={operation === "capture"}
-              disabled={unavailable("capture", canViewDevice && !annotating)}
-              onClick={() => void execute("capture", () => capture(selected), setFrame)}
-            >
-              <ImagePlus className="icon-md" aria-hidden />
-            </Button>
-            <span className="device-panel-toolbar-spacer" />
-            {annotating && draft && onAddImage ? (
+            <div className="device-panel-group" role="group" aria-label={t("Control")}>
               <Button
                 variant="ghost"
                 iconOnly
-                label={t("Add marked image to draft")}
-                tooltip={t("Add marked image to draft")}
-                loading={operation === "addImage"}
-                disabled={unavailable("addImage")}
-                onClick={addImage}
+                label={t("Allow device control")}
+                tooltip={t("Allow device control")}
+                role="switch"
+                aria-checked={control}
+                selected={control && !annotating}
+                disabled={busy || !device?.booted}
+                onClick={() => {
+                  setControl(annotating ? true : !control);
+                  setAnnotating(false);
+                }}
               >
-                <MessageSquarePlus className="icon-md" aria-hidden />
+                <CursorMagicSelection className="icon-md" aria-hidden />
               </Button>
-            ) : (
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Home")}
+                tooltip={t("Home")}
+                loading={operation === "home"}
+                disabled={unavailable("home", canControlDevice && !annotating)}
+                onClick={() => action({ type: "home" })}
+              >
+                <Home className="icon-md" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Device text input")}
+                tooltip={t("Device text input")}
+                disabled={!controlEnabled}
+                aria-haspopup="dialog"
+                aria-expanded={surface === "text"}
+                onClick={(event) => openSurface("text", event.currentTarget)}
+              >
+                <Keyboard className="icon-md" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Choose app to open")}
+                tooltip={t("Choose app to open")}
+                disabled={!controlEnabled}
+                aria-haspopup="dialog"
+                aria-expanded={surface === "app"}
+                onClick={(event) => openSurface("app", event.currentTarget)}
+              >
+                <AppWindow className="icon-md" aria-hidden />
+              </Button>
+            </div>
+            <div className="device-panel-group" role="group" aria-label={t("Mark")}>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Mark device screen")}
+                tooltip={t("Mark device screen")}
+                selected={annotating}
+                aria-pressed={annotating}
+                disabled={!frame || busy}
+                onClick={beginAnnotation}
+              >
+                <Pencil className="icon-md" aria-hidden />
+              </Button>
+              {annotating && draft && onAddImage ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Add marked image to draft")}
+                  tooltip={t("Add marked image to draft")}
+                  loading={operation === "addImage"}
+                  disabled={unavailable("addImage")}
+                  onClick={addImage}
+                >
+                  <MessageSquarePlus className="icon-md" aria-hidden />
+                </Button>
+              ) : null}
+            </div>
+            <span className="device-panel-toolbar-spacer" />
+            <div className="device-panel-group" role="group" aria-label={t("View")}>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Capture")}
+                tooltip={t("Capture")}
+                loading={operation === "capture"}
+                disabled={unavailable("capture", canViewDevice && !annotating)}
+                onClick={() => void execute("capture", () => capture(selected), setFrame)}
+              >
+                <ImagePlus className="icon-md" aria-hidden />
+              </Button>
               <Button
                 variant="ghost"
                 iconOnly
@@ -955,8 +1091,9 @@ export function DevicePanel({
                   <Play className="icon-md" aria-hidden />
                 )}
               </Button>
-            )}
+            </div>
           </div>
+          {toolbarReason && <p className="device-panel-reason">{toolbarReason}</p>}
           {control && !status.agentInstalled && (
             <div className="device-panel-setup-control">
               <span>{t("Run setup with control enabled to install the control tools.")}</span>
@@ -1109,6 +1246,11 @@ export function DevicePanel({
                 maxLength={256}
                 onChange={(event) => setApp(event.target.value)}
               />
+              {device?.platform === "ios" ? (
+                <p>{t("iOS: enter the app name or bundle ID. Open the app before interacting with it.")}</p>
+              ) : device?.platform === "android" ? (
+                <p>{t("Android: enter Settings or an app package ID.")}</p>
+              ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
                 loading={operation === "openApp"}
@@ -1127,6 +1269,9 @@ export function DevicePanel({
                 maxLength={4096}
                 onChange={(event) => setText(event.target.value)}
               />
+              {windowsAndroid ? (
+                <p>{t("Android text input from Windows supports printable ASCII characters only.")}</p>
+              ) : null}
               <Button
                 disabled={unavailable("type", canControlDevice && !annotating && !!text)}
                 loading={operation === "type"}

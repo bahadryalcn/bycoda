@@ -1,14 +1,18 @@
 import { useMemo, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
+import { X } from "../../../shared/ui/icons";
 import type { CrewAgent, CrewRole, SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews } from "../model/crewClient";
-import { candidateLabel, libraryGroups } from "../model/crewRoster";
+import { libraryGroups } from "../model/crewRoster";
+import { CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
+import { hiddenSelection } from "./CrewLibrarySearch";
 import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 
 export type MemberPickerMode = "library" | "new";
@@ -53,18 +57,24 @@ export function CrewMemberPicker({
   const [query, setQuery] = useState("");
   const [group, setGroup] = useState("");
   const groups = useMemo(() => libraryGroups(data.agents), [data.agents]);
-  const matches = data.agents
-    .filter((agent) => !group || agent.groups?.includes(group))
-    .filter((agent) => {
-      const q = query.trim().toLocaleLowerCase();
-      return (
-        !q ||
-        `${agent.name} ${agent.instructions} ${(agent.groups ?? []).join(" ")}`
-          .toLocaleLowerCase()
-          .includes(q)
-      );
-    })
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Search matches what each row shows plus its instructions (CR-E06).
+  const matches = visibleLibraryMembers(data.agents, data.catalog, query, group);
+  // Picks survive query and group changes (CR-E07): name them and say what the filter hides.
+  const picked = useMemo(() => {
+    const byId = new Map(data.agents.map((agent) => [agent.id, agent]));
+    return selected
+      .flatMap((id) => byId.get(id) ?? [])
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [data.agents, selected]);
+  // Count only picks that still exist: a poll can remove a library profile.
+  const hiddenCount = hiddenSelection(
+    picked.map((agent) => agent.id),
+    matches,
+  ).length;
+  const clearFilters = () => {
+    setQuery("");
+    setGroup("");
+  };
   const toggle = (agent: SavedCrewAgent, on: boolean) =>
     onSelectedChange(on ? [...selected, agent.id] : selected.filter((id) => id !== agent.id));
   return (
@@ -100,8 +110,8 @@ export function CrewMemberPicker({
               <SearchInput
                 appearance="field"
                 containerClassName="min-w-48 flex-1"
-                aria-label={t("Search members")}
-                placeholder={t("Search members")}
+                aria-label={t("Search name, role, model or group")}
+                placeholder={t("Search name, role, model or group")}
                 value={query}
                 autoFocus
                 onChange={(event) => setQuery(event.target.value)}
@@ -118,10 +128,59 @@ export function CrewMemberPicker({
                 />
               ) : null}
             </div>
+            {picked.length > 0 ? (
+              <div
+                role="group"
+                aria-label={t("Selected members")}
+                className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-(--ui-tone-neutral-border) p-2"
+              >
+                <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
+                  <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
+                    {hiddenCount > 0
+                      ? t("{p0} selected, {p1} hidden by filter", {
+                          p0: picked.length,
+                          p1: hiddenCount,
+                        })
+                      : t("{p0} selected", { p0: picked.length })}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    {hiddenCount > 0 ? (
+                      <Button variant="ghost" size="sm" onClick={clearFilters}>
+                        {t("Clear filters")}
+                      </Button>
+                    ) : null}
+                    <Button variant="ghost" size="sm" onClick={() => onSelectedChange([])}>
+                      {t("Clear selection")}
+                    </Button>
+                  </span>
+                </div>
+                <ul className="flex max-h-20 min-w-0 flex-wrap gap-1 overflow-y-auto">
+                  {picked.map((agent) => (
+                    <li key={agent.id} className="min-w-0">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        aria-label={t("Remove {p0}", { p0: agent.name })}
+                        endIcon={<X className="icon-xs" />}
+                        onClick={() => toggle(agent, false)}
+                        className="max-w-48"
+                      >
+                        <span className="truncate">{agent.name}</span>
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {matches.length === 0 ? (
-              <p className="py-2 text-ui-caption text-(--ui-text-secondary)">
-                {t("No matching members.")}
-              </p>
+              <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 py-2">
+                <p className="text-ui-caption text-(--ui-text-secondary)">
+                  {t("No matching members.")}
+                </p>
+                <Button variant="ghost" size="sm" onClick={clearFilters}>
+                  {t("Clear filters")}
+                </Button>
+              </div>
             ) : (
               <ul
                 aria-label={t("Member library")}
@@ -140,15 +199,7 @@ export function CrewMemberPicker({
                           <span className="block truncate text-ui-body font-medium">
                             {agent.name}
                           </span>
-                          <span className="block truncate text-ui-caption text-(--ui-text-secondary)">
-                            {[
-                              roleLabel(agent.role),
-                              candidateLabel(data.catalog, agent.candidates[0]),
-                              agent.projectId ? t("This project") : t("All projects"),
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
+                          <CrewMemberMeta agent={agent} catalog={data.catalog} shortScope />
                         </span>
                         {agent.groups?.length ? (
                           <span className="flex max-w-[40%] flex-wrap justify-end gap-1">
@@ -174,7 +225,7 @@ export function CrewMemberPicker({
             catalog={data.catalog}
             agent={draft}
             onChange={onDraftChange}
-            groups={data.groupsSupported && saveToLibrary}
+            groups={data.groupsSupported}
             groupSuggestions={groups}
             nameError={nameError}
             autoFocus

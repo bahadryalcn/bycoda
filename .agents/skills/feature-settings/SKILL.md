@@ -5,6 +5,22 @@ description: "bycoda settings feature map: preferences, appearance, providers, n
 
 # Settings
 
+## H3 Settings pages B reference migration, 2026-10-28
+
+Inbox, Chat, Providers, Usage/Limits, MCP, Skills and Policies consume the shared
+reference; Crews receives only a Settings-owned integration wrapper while H2 owns
+its files. `settingsControls.tsx` remains the public owner and root's sole writing
+scope. Topic collection spacing lives in `BycodaSettings.css`; page composition
+does not authorize another Group/Row skin. All nine requested pages and individual
+audit IDs, plus remaining Settings inconsistencies, are recorded in
+`temp/local/2026-10-28-settings-pages-b/handoff.json`.
+
+No real provider/MCP/credential/budget mutation was executed. Permission gates,
+storage/defaults/validation, drafts and reveal remain owned by existing services.
+Test edilmedi under the overnight rule; only the final direct fast compiler is
+permitted. Source implementation remains uncommitted and at most REVIEW; native,
+installed and release acceptance remain separate.
+
 Purpose: make application, workspace and agent preferences discoverable, editable and recoverable without losing existing values or permission gates. Keywords: settings, preferences, General, Appearance, Notifications, Keybindings, Privacy, Workspace, Terminal, Connections, Source control, Inbox, Archive, Crews, Chat, Providers, Usage, Limits, MCP, Skills.
 
 ## Inventory and concurrency
@@ -594,3 +610,59 @@ suites pass with Diagnostics act warnings. Screenshot0.6.92/source unknown versu
 current source0.6.94 leaves installed inclusion unknown. Audit only; no app/live
 preference/OS/trace/clipboard/import/setup/guide/link/update/Host/index/branch/
 build/install/release action. Actual new UI/native/device acceptance pending.
+
+## H3 Settings reference implementation, 2026-10-28
+
+Owner, conversation `55e5cc00-32d1-420a-ac03-bdb7f2a2af2d`, exact quote:
+
+> bycoda Ayarlar ortak düzenini ve General referans sayfasını yeni tasarım anlayışımıza göre uygula.
+
+Implemented locally on shared `main` (observed HEAD
+`c03fa98d4819494a53ebfa61ff74320105bd05fc`), uncommitted:
+
+- `SettingsView.tsx`: compact, density-aware titlebar, named category groups and
+  shared Button alignment. Search/reveal, picker, keyboard controller, section
+  lifecycle and update footer retain their existing owners.
+- `settingsControls.tsx` / `BycodaSettings.css`: semantic Group/Row/PageHeader
+  classes, one feature-owned presentation, visible scope/dependency, local Alert
+  recovery. CSS imports with the facade for external consumers; each group owns
+  its responsive container. Controls retain their shared visual APIs.
+- `GeneralSettings.tsx` / `GeneralSettings.css`: independent preference/support
+  tracks, explicit install/restart action and target-local link retry/copy.
+  Other settings pages were not mass-migrated.
+
+FND-SETTINGS / styling F1 remains REVIEW, not closed: the forbidden global
+shadows at `src/styles/bycoda.css:80-87` and `src/styles/index.css:65-81` still
+need coordinator/theme removal. Existing category pane surface/edge is retained.
+The stronger feature selectors preserve intended precedence until that removal.
+No Host/Rust/persistence/default or permission change was needed.
+
+Test edilmedi: overnight RULES explicitly defer tests, servers and captures.
+One final `pnpm check:web:fast` result, file fingerprints, complete surface
+checklist, dependencies and morning checks are recorded in
+`temp/local/2026-10-28-h3-settings-reference/handoff.json` and its README.
+Native/mobile/installed inclusion remains unknown; no build/install/release.
+
+## H3 Settings pages A implementation, 2026-10-28
+
+Owner conversation `55e5cc00-32d1-420a-ac03-bdb7f2a2af2d`, exact quote:
+
+> Az önce kurduğun Ayarlar referans düzenini (SettingsView, settingsControls, General) şu sayfalara uygula.
+
+Appearance, Notifications, Keybindings, Privacy/security, Workspace, Terminal,
+Source control and Archive now consume the reference Group/Row presentation.
+`BycodaSettings.css` owns the `settings-topics` collection spacing contract;
+page files own composition, not another Group/Row skin. The legacy equal-topic
+subgrid no longer controls these pages. Individual cards and
+`temp/local/2026-10-28-settings-pages-a/handoff.json` record delivered behavior,
+per-ID dependencies, source identity and the morning acceptance checklist.
+
+Root integrates scoped `settings.ts` subscriptions/write outcomes/search anchors;
+the Appearance worker owns applied/durable outcomes and previews. Other workers
+own personal settings and workspace-related settings pages. H1/H4/H5 source
+boundaries remain; their repository policy, privacy/lock and history-state work
+is not claimed as delivered by a settings-only edit.
+
+Test edilmedi per overnight RULES. Only one direct fast compiler run is recorded
+in the packet; `check:web:fast` includes tests and is deliberately not invoked.
+All items are at most REVIEW. No native/device/installed or release acceptance.

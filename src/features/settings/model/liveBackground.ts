@@ -1,3 +1,8 @@
+import {
+  acceptAppearanceStorageChange,
+  readAppearanceValue,
+  writeAppearanceValue,
+} from "./appearancePersistence";
 import { useSyncExternalStore } from "react";
 import { clamp } from "../../../shared/lib/numbers";
 import { t } from "../../../shared/i18n";
@@ -144,7 +149,7 @@ keepLegacyDefault();
 
 export function loadLiveBackground(): LiveBackground {
   try {
-    const raw = localStorage.getItem(LIVE_BACKGROUND_KEY);
+    const raw = readAppearanceValue(LIVE_BACKGROUND_KEY);
     return isLiveBackground(raw)
       ? raw
       : raw !== null && Object.prototype.hasOwnProperty.call(LEGACY_SCENES, raw)
@@ -157,7 +162,7 @@ export function loadLiveBackground(): LiveBackground {
 
 export function loadLiveBackgroundIntensity(): number {
   try {
-    const raw = localStorage.getItem(LIVE_BACKGROUND_INTENSITY_KEY);
+    const raw = readAppearanceValue(LIVE_BACKGROUND_INTENSITY_KEY);
     const parsed = raw == null ? NaN : Number(raw);
     return Number.isFinite(parsed)
       ? clamp(parsed, LIVE_BACKGROUND_INTENSITY_MIN, LIVE_BACKGROUND_INTENSITY_MAX)
@@ -168,12 +173,10 @@ export function loadLiveBackgroundIntensity(): number {
 }
 
 function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // private mode / quota
-  }
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(LIVE_BACKGROUND_CHANGE_EVENT));
+  return writeAppearanceValue(key, value, "live-background", () => {
+    if (typeof window !== "undefined")
+      window.dispatchEvent(new Event(LIVE_BACKGROUND_CHANGE_EVENT));
+  });
 }
 
 export function saveLiveBackground(value: LiveBackground) {
@@ -196,6 +199,7 @@ function subscribe(listener: () => void): () => void {
       event.key === LIVE_BACKGROUND_KEY ||
       event.key === LIVE_BACKGROUND_INTENSITY_KEY
     ) {
+      acceptAppearanceStorageChange(event.key);
       listener();
     }
   };

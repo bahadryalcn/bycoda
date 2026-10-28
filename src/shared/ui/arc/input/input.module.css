@@ -1,9 +1,19 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .field {
+    min-width: 0;
+  }
+  .input {
+    width: 100%;
+  }
+}
 .field {
   display: grid;
   /* Label, control and message keep their own heights when a grid or flex parent
      stretches the field to a taller neighbour (e.g. one with helper text). */
   align-content: start;
-  min-width: 0;
 }
 .control {
   display: grid;
@@ -33,7 +43,6 @@
 }
 /* Focus answers with the border colour alone (no rings or halos); the field itself never changes size. */
 .input {
-  width: 100%;
   min-height: var(--control-height-md);
   padding: 0 var(--space-3);
   border: 1px solid var(--border-strong);

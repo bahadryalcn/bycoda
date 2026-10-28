@@ -1,5 +1,6 @@
 import { writeChild } from "../../core/child";
 import { parseJsonLine, parseRpcResponse, stringField } from "./piProtocol";
+import { captureNativeOutputWork, nativeOutputSink, trackNativeOutputWork, invalidateNativeOutputSession, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 
 type Pending = {
   resolve: (value: Record<string, unknown>) => void;
@@ -30,6 +31,7 @@ export class PiRpc {
       this.pending.delete(response.id);
       if (!pending) return;
       if (!response.success) {
+        captureNativeOutputWork()?.fail("pi-response-error");
         pending.reject(new Error(response.error || `${this.label} ${response.command} failed`));
         return;
       }
@@ -42,6 +44,7 @@ export class PiRpc {
   async request(
     command: Record<string, unknown>,
     timeoutMs = 15_000,
+    consume?: (value: Record<string, unknown>, work: NativeOutputWork | null) => Record<string, unknown> | Promise<Record<string, unknown>>,
   ): Promise<Record<string, unknown>> {
     if (this.closed) throw new Error(`${this.label} process is not running`);
     const id = stringField(command, "id") ?? `mc_${this.nextId++}`;
@@ -56,7 +59,10 @@ export class PiRpc {
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);
-          resolve(value);
+          if (!consume) { captureNativeOutputWork()?.fail("pi-response-consumer-untracked"); resolve(value); return; }
+          const work = captureNativeOutputWork();
+          const actual = Promise.resolve().then(nativeOutputSink(work, () => consume(value, work)));
+          void trackNativeOutputWork(actual, work).then(resolve, reject);
         },
         reject: (error) => {
           clearTimeout(timer);
@@ -76,6 +82,7 @@ export class PiRpc {
   close(error?: Error) {
     if (this.closed) return;
     this.closed = true;
+    invalidateNativeOutputSession(this.sessionId, "pi-client-closed");
     const err = error ?? new Error(`${this.label} process exited`);
     for (const pending of this.pending.values()) pending.reject(err);
     this.pending.clear();

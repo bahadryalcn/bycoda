@@ -1,6 +1,6 @@
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { Group, Row, Select, Slider } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
@@ -101,6 +101,37 @@ function WorkspacePreview({ scheme }: { scheme?: "system" | "light" | "dark" }) 
         </span>
       </span>
     </span>
+  );
+}
+
+/** Uses the real action, selection and bubble roles; clicks affect only this sample. */
+export function AccentUsagePreview() {
+  const [sent, setSent] = useState(false);
+  const [selected, setSelected] = useState(true);
+  return (
+    <div className="grid min-w-0 gap-3 p-4" role="group" aria-label={t("Preview")}>
+      <span className="text-ui-caption text-(--ui-text-secondary)">{t("Preview")}</span>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" tone="accent" aria-pressed={sent} onClick={() => setSent(!sent)}>
+          {t("Send")}
+        </Button>
+        <Button
+          variant="item"
+          selected={selected}
+          aria-pressed={selected}
+          onClick={() => setSelected(!selected)}
+        >
+          {t("Selection")}
+        </Button>
+      </div>
+      <div className="min-h-10" aria-live="polite">
+        {sent ? (
+          <p className="user-message-bubble m-0 w-fit max-w-full rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-content">
+            {t("Message")}
+          </p>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -371,18 +402,16 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
       <div className="appearance-type-sample" aria-label={t("Interface font")}>
         <span className="appearance-type-alphabet">Aa</span>
         <div>
-          <p>
-            {t(
-              "This is an example workspace. Your choices apply throughout the app and are saved automatically.",
-            )}
-          </p>
+          <p>{t("Navigation, messages, buttons and settings.")}</p>
           <span>ABCDEFGHIJKLMNOPQRSTUVWXYZ · 0123456789</span>
         </div>
       </div>
       <Row
         id="monospace-font"
         label={t("Monospace font")}
-        description={t("Code blocks, file editors and diffs. Terminals inherit this font unless overridden below.")}
+        description={t(
+          "Code blocks, file editors and diffs. Terminals inherit this font unless overridden below.",
+        )}
       >
         <Select
           label={t("Monospace font")}
@@ -391,11 +420,24 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           onChange={(codeFont) => a.onPreferences({ ...p, codeFont })}
         />
       </Row>
-      <Row id="code-theme" label={t("Code theme")}
-        description={t("Applies to editors, diffs and code blocks. Light appearance uses GitHub Light.")}>
-        <Select label={t("Code theme")} value={codeTheme}
-          options={[{ value: "github", label: "GitHub Dark default" }, { value: "dracula", label: "Dracula" }]}
-          onChange={(value) => a.onPreferences({ ...p, codeTheme: value === "dracula" ? "dracula" : "github" })} />
+      <Row
+        id="code-theme"
+        label={t("Code theme")}
+        description={t(
+          "Applies to editors, diffs and code blocks. Light appearance uses GitHub Light.",
+        )}
+      >
+        <Select
+          label={t("Code theme")}
+          value={codeTheme}
+          options={[
+            { value: "github", label: "GitHub Dark default" },
+            { value: "dracula", label: "Dracula" },
+          ]}
+          onChange={(value) =>
+            a.onPreferences({ ...p, codeTheme: value === "dracula" ? "dracula" : "github" })
+          }
+        />
       </Row>
       <Row id="code-font-size" label={t("Code font size")}>
         <Select
@@ -423,29 +465,76 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
           {" greet(name: string) {\n  return `${message}, ${name}`;\n}"}
         </code>
       </pre>
-      <Row id="terminal-font" label={t("Terminal font")}
-        description={t("Enter an installed font name, such as Cascadia Code or JetBrains Mono. Leave empty to inherit the monospace font.")}>
-        <TextField label={t("Terminal font")} hideLabel
-          value={p.terminalFont} placeholder={t("System default")}
-          onChange={(event) => a.onPreferences({ ...p, terminalFont: event.target.value })} />
+      <Row
+        id="terminal-font"
+        label={t("Terminal font")}
+        description={t(
+          "Enter an installed font name, such as Cascadia Code or JetBrains Mono. Leave empty to inherit the monospace font.",
+        )}
+      >
+        <TextField
+          label={t("Terminal font")}
+          hideLabel
+          value={p.terminalFont}
+          placeholder={t("System default")}
+          onChange={(event) => a.onPreferences({ ...p, terminalFont: event.target.value })}
+        />
       </Row>
-      <Row id="terminal-font-size" label={t("Terminal font size")}
-        description={t("Ctrl + mouse wheel zooms only the terminal under the pointer.")}>
-        <Slider label={t("Terminal font size")} value={p.terminalSize}
-          display={t("{p0} px", { p0: p.terminalSize })} min={8} max={40}
-          onChange={(terminalSize) => a.onPreferences({ ...p, terminalSize })} />
+      <Row
+        id="terminal-font-size"
+        label={t("Terminal font size")}
+        description={t("Ctrl + mouse wheel zooms only the terminal under the pointer.")}
+      >
+        <Slider
+          label={t("Terminal font size")}
+          value={p.terminalSize}
+          display={t("{p0} px", { p0: p.terminalSize })}
+          min={8}
+          max={40}
+          onChange={(terminalSize) => a.onPreferences({ ...p, terminalSize })}
+        />
       </Row>
       <Row id="terminal-font-weight" label={t("Terminal font weight")}>
-        <Select label={t("Terminal font weight")} value={String(p.terminalWeight)}
-          options={[{ value: "300", label: t("Light") }, { value: "400", label: t("Regular") },
-            { value: "500", label: t("Medium") }, { value: "600", label: t("Semibold") }, { value: "700", label: t("Bold") }]}
-          onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })} />
+        <Select
+          label={t("Terminal font weight")}
+          value={String(p.terminalWeight)}
+          options={[
+            { value: "300", label: t("Light") },
+            { value: "400", label: t("Regular") },
+            { value: "500", label: t("Medium") },
+            { value: "600", label: t("Semibold") },
+            { value: "700", label: t("Bold") },
+          ]}
+          onChange={(value) => a.onPreferences({ ...p, terminalWeight: Number(value) })}
+        />
       </Row>
       <Row id="terminal-line-height" label={t("Terminal line spacing")}>
-        <Select label={t("Terminal line spacing")} value={String(p.terminalLineHeight)}
-          options={[1, 1.15, 1.35, 1.5].map((value) => ({ value: String(value), label: `${value}×` }))}
-          onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })} />
+        <Select
+          label={t("Terminal line spacing")}
+          value={String(p.terminalLineHeight)}
+          options={[1, 1.15, 1.35, 1.5].map((value) => ({
+            value: String(value),
+            label: `${value}×`,
+          }))}
+          onChange={(value) => a.onPreferences({ ...p, terminalLineHeight: Number(value) })}
+        />
       </Row>
+      <pre
+        className="appearance-terminal-sample"
+        aria-label={t("Terminal font preview")}
+        style={{
+          fontFamily: p.terminalFont.trim()
+            ? `${JSON.stringify(p.terminalFont)}, monospace`
+            : "var(--font-mono)",
+          fontSize: p.terminalSize,
+          fontWeight: p.terminalWeight,
+          lineHeight: p.terminalLineHeight,
+        }}
+      >
+        <code>
+          {'bycoda $ echo "Hello, bycoda"\nHello, bycoda · 0123456789\nAa Bb Cc → [] {} ()'}
+        </code>
+      </pre>
     </Group>
   );
 }

@@ -295,12 +295,11 @@ describe("FileTree render isolation", () => {
       expect(vi.mocked(invoke).mock.calls.filter(([name]) => name === command)).toHaveLength(1);
     },
   );
-  it("exposes a file manager action for the project folder in the toolbar", async () => {
+  it("exposes a file manager action for the project folder in the header menu", async () => {
     await act(async () => render());
-    const reveal = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      /Finder|File Explorer|File Manager|Containing Folder/i.test(
-        button.getAttribute("aria-label") ?? "",
-      ),
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click());
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
+      /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
     )!;
     expect(reveal).toBeTruthy();
     await act(async () => reveal.click());
@@ -309,10 +308,9 @@ describe("FileTree render isolation", () => {
 
   it("shows tree-local progress while an operation is pending and ignores repeated requests", async () => {
     await act(async () => render());
-    const reveal = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
-      /Finder|File Explorer|File Manager|Containing Folder/i.test(
-        button.getAttribute("aria-label") ?? "",
-      ),
+    await act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Explorer actions"]')!.click());
+    const reveal = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((button) =>
+      /Finder|File Explorer|File Manager|Containing Folder/i.test(button.textContent ?? ""),
     )!;
     let finish!: () => void;
     vi.mocked(invoke).mockImplementationOnce(
@@ -558,6 +556,35 @@ describe("FileTree render isolation", () => {
 });
 
 describe("FileTree excluded files", () => {
+  it("explains retained hidden selection and includes its exact scope in delete confirmation", async () => {
+    directories.set(cwd, [file("first.ts"), file("debug.log", true)]);
+    await refreshDir(cwd);
+    saveShowExcludedFiles(true);
+    await act(async () => render());
+    await act(async () => row("debug.log").click());
+    await act(async () => row("first.ts").dispatchEvent(new MouseEvent("click", { bubbles: true, ctrlKey: true })));
+    act(() => saveShowExcludedFiles(false));
+    expect(row("debug.log")).toBeNull();
+    const scope = container.querySelector("[data-explorer-selection-scope]");
+    expect(scope?.textContent).toContain("Selected: 2");
+    expect(scope?.textContent).toContain("Selection includes hidden items: 1");
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    await press(row("first.ts"), { key: "Delete" });
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining(`${cwd}/debug.log`));
+    expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "delete_path")).toHaveLength(0);
+  });
+
+  it("distinguishes an excluded-only folder from an empty listing", async () => {
+    directories.set(cwd, [file("debug.log", true)]);
+    await refreshDir(cwd);
+    await act(async () => render());
+    expect(container.querySelector("[data-explorer-empty]")?.textContent).toContain("Only excluded files in this folder");
+    const show = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Show excluded files")!;
+    await act(async () => show.click());
+    expect(row("debug.log")).not.toBeNull();
+  });
+
   it("hides ignored entries by default and follows the setting", async () => {
     directories.set(cwd, [
       folder("dist", true),
@@ -671,6 +698,26 @@ describe("FileTree copies paths", () => {
   it("copies the selected path on Mod+Shift+C", async () => {
     await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
     expect(await navigator.clipboard.readText()).toBe(`${cwd}/first.ts`);
+  });
+
+  it("reports a rejected clipboard and false fallback, cleans the temporary field and retries exact text", async () => {
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new Error("clipboard denied"));
+    const previous = Object.getOwnPropertyDescriptor(document, "execCommand");
+    Object.defineProperty(document, "execCommand", { configurable: true, value: vi.fn(() => false) });
+    try {
+      await press(row("first.ts"), { key: "C", metaKey: true, shiftKey: true });
+      expect(container.textContent).toContain("Could not copy. Try again.");
+      expect(container.textContent).not.toContain("Copied");
+      expect(document.querySelector("textarea")).toBeNull();
+      const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+      await act(async () => retry.click());
+      expect(await navigator.clipboard.readText()).toBe(`${cwd}/first.ts`);
+      expect(container.textContent).toContain("Copied");
+    } finally {
+      write.mockRestore();
+      if (previous) Object.defineProperty(document, "execCommand", previous);
+      else Reflect.deleteProperty(document, "execCommand");
+    }
   });
 
   it("copies the project root path from the root row", async () => {
@@ -1037,9 +1084,16 @@ describe("FileTree multiple selection", () => {
     );
     failures.set(cwd, "refresh failed");
     await press(row("b.ts"), { key: "Delete" });
-    expect(props.onFileDeleted).toHaveBeenCalledExactlyOnceWith(`${cwd}/a.ts`);
-    expect(selected()).toEqual(["b.ts"]);
+    expect(props.onFileDeleted).toHaveBeenCalledTimes(2);
+    expect(selected()).toEqual([]);
     expect(container.textContent).toContain("refresh failed");
+    expect(container.textContent).toContain("File change saved. Refresh failed.");
+    failures.delete(cwd);
+    const retry = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(props.onFileDeleted).toHaveBeenCalledTimes(2);
+    expect(row("a.ts")).toBeNull();
+    expect(row("b.ts")).toBeNull();
   });
   it("retries only remaining cut files after a partial move failure", async () => {
     await click("a.ts");
@@ -1059,6 +1113,28 @@ describe("FileTree multiple selection", () => {
       `${cwd}/b.ts`,
       `${cwd}/b.ts`,
     ]);
+  });
+
+  it("retries listing only after a completed cut move, then moves only the remaining entry", async () => {
+    await click("a.ts");
+    await click("b.ts", { ctrlKey: true });
+    await press(row("b.ts"), { key: "x", ctrlKey: true });
+    failures.set(cwd, "listing failed");
+    failures.set(`${cwd}/b.ts`, "move failed");
+    await click("dest");
+    await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(props.onFileMoved).toHaveBeenCalledExactlyOnceWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
+    expect(container.textContent).toContain("File change saved. Refresh failed.");
+    failures.delete(cwd);
+    const retry = container.querySelector<HTMLButtonElement>('[role="alert"]:last-of-type button') ??
+      [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Retry")!;
+    await act(async () => retry.click());
+    expect(props.onFileMoved).toHaveBeenCalledTimes(1);
+    failures.delete(`${cwd}/b.ts`);
+    await press(row("dest"), { key: "v", ctrlKey: true });
+    expect(props.onFileMoved).toHaveBeenCalledTimes(2);
+    const moves = vi.mocked(invoke).mock.calls.filter(([command]) => command === "move_path");
+    expect(moves.map(([, args]) => (args as { from: string }).from)).toEqual([`${cwd}/a.ts`, `${cwd}/b.ts`, `${cwd}/b.ts`]);
   });
 
   it("moves all selected files on a pointer drop into a folder", async () => {

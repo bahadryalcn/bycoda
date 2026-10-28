@@ -167,3 +167,32 @@ Audit/design ready locally, uncommitted. Product implementation pending; install
 inclusion UNKNOWN. No app, preference, OS, approval, Host, index/branch, build,
 install or release change. Baseline is a source reference, not a delivered fix.
 Update user guides and immutable delivery references when behavior changes.
+
+## H3 Settings pages A implementation, 2026-10-28
+
+Uncommitted source delivery in the existing checkout; no release or installed
+inclusion claim. NotificationsSettings consumes the shared Group/Row owner with
+independent topic layout, a compact local-clock schedule, optional detail and
+preserved non-hour HH:mm. Failed sound/desktop/event/schedule writes return
+receipts and expose target-local retry instead of accepting optimistic success.
+Notification permission bridge failure/malformed output is unavailable; cache
+updates reject stale probe/request completions. Settings serializes reads and
+requests, supports read-only Refresh and requests permission only on user intent.
+Project rows expose distinguishing detail in visible text and accessible names,
+state visible/known scope and all-known bulk scope, offer Clear search and put
+category recovery beside its project. Existing reveal, selection, bounded scroll,
+provider identity, mute/date and delivery authority are preserved.
+
+Files: settings/ui/NotificationsSettings.tsx/.css; settings/model/sounds.ts;
+notifications/model/notifications.ts, notificationEvents.ts,
+dailySummarySettings.ts; notifications/ui/ProjectNotificationSettings.tsx.
+Regression source was added/updated but **test edilmedi** under the owner night
+rule. No compiler, browser/dev server, screenshots, OS notification or user-store
+operation was executed by this writer. Root owns the one final compiler run.
+NTF-01/02/09/11 and parts of NTF-10/17 are proposed REVIEW; history/request-center,
+project unreadable-store, taskbar, cached-summary privacy and sent identity remain
+explicit open owner dependencies. Windows unknown native permission can still
+appear granted; app-lifecycle freshness outside Settings remains a shell task.
+Per-ID changes, files, open work and morning checks are recorded in
+`temp/local/2026-10-28-settings-pages-a/personal.json`. New locale additions are
+prepared for root merge in personal-locales.json; no locale source was written.

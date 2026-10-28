@@ -8,17 +8,20 @@
 //! the panel hides. A non-activating panel takes keys while the other app
 //! stays active, and it can join a full-screen Space.
 
-mod delivery;
+use crate::quick_native::delivery;
+use crate::quick_native::launch::{
+    Admission, IntentRequest, LaunchLedger, LaunchWork, Receipt, ReceiptState,
+};
+pub use crate::quick_native::QuickLaunch;
+use crate::quick_native::{CaptureWork, QuickAttachment, QuickWindowOwner};
 pub mod git_popup;
-pub mod screenshots;
+pub(crate) use crate::quick_native::screenshots;
 
-use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
+    atomic::{AtomicBool, Ordering},
     Mutex, OnceLock,
 };
-use std::time::Duration;
 
 use objc2::runtime::{AnyClass, AnyObject, Bool, ClassBuilder, Sel};
 use objc2::{msg_send, sel, ClassType, MainThreadMarker};
@@ -27,7 +30,6 @@ use objc2_app_kit::{
     NSWindowStyleMask,
 };
 use objc2_foundation::NSObjectProtocol;
-use serde::{Deserialize, Serialize};
 use tauri::window::{Effect, EffectState, EffectsBuilder};
 use tauri::{
     AppHandle, Emitter, Manager, PhysicalPosition, State, WebviewUrl, WebviewWindow,
@@ -66,100 +68,19 @@ fn parse_shortcut(value: &str) -> Result<Shortcut, String> {
     Ok(shortcut)
 }
 
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct QuickLaunch {
-    prompt: String,
-    /// Create an unsent user draft instead of starting an agent turn.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    draft: bool,
-    /// Turn mode picked with a leading composer command, e.g. `plan`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    intent: Option<String>,
-    cwd: String,
-    harness: String,
-    /// Absent means the harness's default model.
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    model_settings: HashMap<String, String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    runtime_mode: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    workspace_mode: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    worktree_base: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    worktree_cwd: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    attachments: Vec<QuickAttachment>,
-    /// Bring the new session's window forward instead of starting it quietly.
-    reveal: bool,
-}
-
-/// Only disk-backed attachments cross webviews, never webview-local blob URLs.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct QuickAttachment {
-    id: String,
-    name: String,
-    mime_type: String,
-    kind: String,
-    size: u64,
-    path: String,
-}
-
 #[derive(Default)]
 pub struct QuickComposerState {
     pending: Mutex<delivery::LaunchQueue>,
-    capturing: AtomicBool,
+    launches: std::sync::Arc<Mutex<LaunchLedger>>,
+    capturing: std::sync::Arc<AtomicBool>,
     shortcut: Mutex<Option<Shortcut>>,
-    /// Bumped on every show and hide; a release only runs if nothing happened since.
-    visibility: AtomicU64,
 }
 
-/// A hidden composer and picker keep two web content processes alive. After a
-/// submission (the draft is consumed) or with the shortcut turned off, they are
-/// closed once unused this long; the next shortcut builds them again. A
-/// dismissed draft exists only in the webview, so a plain dismiss keeps them.
-const IDLE_RELEASE: Duration = Duration::from_secs(10 * 60);
-
-/// Cancels a pending release: the composer was shown or now holds a draft.
-fn invalidate_release(app: &AppHandle) {
-    app.state::<QuickComposerState>()
-        .visibility
-        .fetch_add(1, Ordering::SeqCst);
-}
-
-/// Call after hiding a composer that holds no draft.
-fn release_when_idle(app: &AppHandle) {
-    let state = app.state::<QuickComposerState>();
-    let generation = state.visibility.fetch_add(1, Ordering::SeqCst) + 1;
-    let app = app.clone();
-    std::thread::spawn(move || {
-        std::thread::sleep(IDLE_RELEASE);
-        let handle = app.clone();
-        let _ = app.run_on_main_thread(move || {
-            let state = handle.state::<QuickComposerState>();
-            if state.visibility.load(Ordering::SeqCst) != generation
-                || state.capturing.load(Ordering::SeqCst)
-            {
-                return;
-            }
-            let Some(panel) = handle.get_webview_window(QUICK_COMPOSER_LABEL) else {
-                return;
-            };
-            if panel.is_visible().unwrap_or(true) {
-                return;
-            }
-            if let Some(popup) = handle.get_webview_window(crate::window::QUICK_COMPOSER_GIT_LABEL)
-            {
-                let _ = popup.destroy();
-            }
-            let _ = panel.destroy();
-        });
-    });
-}
+// Hidden Quick webviews retain their unknown/current raw draft until explicit
+// application shutdown. A successful old launch, visibility, elapsed time or
+// shortcut-off is not proof that a newer prompt is durably captured or empty.
+// This trades hidden-window memory for preservation until Native raw receipts
+// can authorize exact physical-window retirement.
 
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
     app.manage(QuickComposerState::default());
@@ -283,7 +204,6 @@ pub fn quick_composer_set_enabled(
         if let Some(panel) = app.get_webview_window(QUICK_COMPOSER_LABEL) {
             git_popup::dismiss(&app, false);
             let _ = panel.hide();
-            release_when_idle(&app);
         }
     }
     Ok(())
@@ -337,6 +257,8 @@ pub async fn quick_composer_submit(
 
     validate_workspace(&request)?;
     validate_attachments(&request.attachments, &request.harness)?;
+    let admission =
+        crate::native_window_lifecycle::admit_window_buffers(&window.as_ref().window())?;
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     let handle = app.clone();
     app.run_on_main_thread(move || {
@@ -366,7 +288,6 @@ pub async fn quick_composer_submit(
                 .push(request, target.label().to_string());
             git_popup::dismiss(&handle, false);
             let _ = window.hide();
-            release_when_idle(&handle);
             if reveal {
                 let _ = target.unminimize();
                 let _ = target.show();
@@ -375,12 +296,178 @@ pub async fn quick_composer_submit(
             let _ = target.emit(LAUNCH, ());
             Ok(())
         })();
-        let _ = tx.try_send(result);
+        let _ = tx.try_send(admission.finish(result));
     })
     .map_err(|err| err.to_string())?;
     rx.recv()
         .await
         .ok_or_else(|| "Session submission was interrupted.".to_string())?
+}
+
+fn launch_owner(window: &WebviewWindow) -> Result<QuickWindowOwner, String> {
+    if window.label() != QUICK_COMPOSER_LABEL {
+        return Err("Only the quick composer can start quick sessions.".into());
+    }
+    QuickWindowOwner::get(&window.as_ref().window().resources_table())
+}
+fn current_launch_scope(
+    window: &WebviewWindow,
+    owner: &QuickWindowOwner,
+    scope: &crate::quick_native::LaunchScope,
+    instance: uuid::Uuid,
+) -> Result<(), String> {
+    if !owner.matches(&window.as_ref().window().resources_table())
+        || window
+            .app_handle()
+            .state::<crate::session_store::SessionStore>()
+            .native_instance_id()
+            != instance
+    {
+        return Err("QUICK_NATIVE_SCOPE_UNAVAILABLE".into());
+    }
+    owner.with_scope(scope, instance, |_| Ok(()))
+}
+
+#[tauri::command]
+pub fn quick_composer_launch_scope(
+    window: WebviewWindow,
+) -> Result<crate::quick_native::LaunchScopeView, String> {
+    let owner = launch_owner(&window)?;
+    owner.scope(
+        window
+            .app_handle()
+            .state::<crate::session_store::SessionStore>()
+            .native_instance_id(),
+    )
+}
+
+#[tauri::command]
+pub fn quick_composer_submit_status(
+    window: WebviewWindow,
+    query: IntentRequest,
+) -> Result<Receipt, String> {
+    let digest = query.digest()?;
+    let owner = launch_owner(&window)?;
+    let instance = window
+        .app_handle()
+        .state::<crate::session_store::SessionStore>()
+        .native_instance_id();
+    if current_launch_scope(&window, &owner, &query.scope, instance).is_err() {
+        return Ok(Receipt::unavailable(&query, &digest));
+    }
+    let state = window.app_handle().state::<QuickComposerState>();
+    let receipt = state
+        .launches
+        .lock()
+        .map_err(|_| "QUICK_LAUNCH_UNAVAILABLE")?
+        .status(&query, &digest)?;
+    current_launch_scope(&window, &owner, &query.scope, instance)?;
+    Ok(receipt)
+}
+
+/// Pending publication/fence advance precedes every possible delivery effect.
+/// The scheduled closure owns its work even when the IPC response is dropped.
+#[tauri::command]
+pub async fn quick_composer_submit_intent(
+    app: AppHandle,
+    window: WebviewWindow,
+    submission: IntentRequest,
+) -> Result<Receipt, String> {
+    let digest = submission.digest()?;
+    let owner = launch_owner(&window)?;
+    let instance = app
+        .state::<crate::session_store::SessionStore>()
+        .native_instance_id();
+    if current_launch_scope(&window, &owner, &submission.scope, instance).is_err() {
+        return Ok(Receipt::unavailable(&submission, &digest));
+    }
+    let ledger = app.state::<QuickComposerState>().launches.clone();
+    let admitted = owner.with_scope(&submission.scope, instance, |next| {
+        ledger
+            .lock()
+            .map_err(|_| "QUICK_LAUNCH_UNAVAILABLE".to_string())?
+            .reserve(next, &submission, &digest)
+    })?;
+    let Admission::Start(ticket) = admitted else {
+        let Admission::Existing(receipt) = admitted else {
+            unreachable!()
+        };
+        return Ok(receipt);
+    };
+    let mut work = LaunchWork::new(ledger, ticket);
+    // These failures are verified before scheduling/window creation/copy/enqueue.
+    let validation = (|| {
+        let request = &submission.request;
+        if (request.prompt.trim().is_empty() && request.attachments.is_empty())
+            || request.cwd.trim().is_empty()
+        {
+            return Err("Write a prompt and pick a project first.".to_string());
+        }
+        validate_workspace(request)?;
+        validate_attachments(&request.attachments, &request.harness)?;
+        let admission =
+            crate::native_window_lifecycle::admit_window_buffers(&window.as_ref().window())?;
+        current_launch_scope(&window, &owner, work.scope(), instance)?;
+        work.admitted(admission);
+        Ok(())
+    })();
+    if validation.is_err() {
+        return work.finish(ReceiptState::Failed);
+    }
+    let (tx, mut rx) = tauri::async_runtime::channel(1);
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let mut request = submission.request;
+        let result = (|| {
+            current_launch_scope(&window, &owner, work.scope(), instance)?;
+            let state = handle.state::<QuickComposerState>();
+            if !state
+                .pending
+                .lock()
+                .map_err(|err| err.to_string())?
+                .has_capacity()
+            {
+                // Callback executed and verified capacity before creating a
+                // window, copying captures or enqueueing. Explicit exact retry
+                // can recover once the queue drains; no ambiguity is inferred.
+                return work.finish(ReceiptState::Failed);
+            }
+            let target = target_or_create(launch_target(&handle), request.reveal, |reveal| {
+                crate::window::open_session_window(&handle, reveal)
+            })?;
+            screenshots::persist(&handle, &mut request.attachments)?;
+            current_launch_scope(&window, &owner, work.scope(), instance)?;
+            let reveal = request.reveal;
+            state
+                .pending
+                .lock()
+                .map_err(|err| err.to_string())?
+                .push_reserved(
+                    request,
+                    target.label().to_string(),
+                    work.delivery_id().to_owned(),
+                    Some(instance),
+                );
+            // Publish queued before emitting: an immediate real workspace ACK
+            // may now acknowledge this existing delivery, never just a timeout.
+            let receipt = work.finish(ReceiptState::Queued)?;
+            git_popup::dismiss(&handle, false);
+            let _ = window.hide();
+            if reveal {
+                let _ = target.unminimize();
+                let _ = target.show();
+                let _ = target.set_focus();
+            }
+            let _ = target.emit(LAUNCH, ());
+            Ok(receipt)
+        })();
+        // Any post-scheduling error drops LaunchWork as unknown; no resend.
+        let _ = tx.try_send(result);
+    })
+    .map_err(|err| err.to_string())?;
+    rx.recv()
+        .await
+        .ok_or_else(|| "Quick launch outcome is unknown.".to_string())?
 }
 
 fn validate_workspace(request: &QuickLaunch) -> Result<(), String> {
@@ -434,31 +521,43 @@ pub async fn quick_composer_capture(
     if window.label() != QUICK_COMPOSER_LABEL {
         return Err("Only the quick composer can capture an attachment.".into());
     }
-    if state.capturing.swap(true, Ordering::SeqCst) {
-        return Err("A screenshot is already in progress.".into());
-    }
+    let admission =
+        crate::native_window_lifecycle::admit_window_buffers(&window.as_ref().window())?;
+    let work = CaptureWork::claim(admission, state.capturing.clone())?;
     git_popup::dismiss(window.app_handle(), false);
     if let Err(err) = window.hide() {
-        state.capturing.store(false, Ordering::SeqCst);
-        return Err(err.to_string());
+        return work.finish(Err(err.to_string()));
     }
-    let result = tauri::async_runtime::spawn_blocking(capture_screenshot)
-        .await
-        .map_err(|err| err.to_string())
-        .and_then(|result| result);
-    if let Ok(Some(path)) = &result {
-        screenshots::register(window.app_handle(), path);
-    }
-    let panel = window.clone();
-    let restored = window.run_on_main_thread(move || present(&panel));
-    state.capturing.store(false, Ordering::SeqCst);
-    if let Err(err) = restored {
-        if let Ok(Some(path)) = &result {
-            screenshots::discard(window.app_handle(), path);
-        }
-        return Err(err.to_string());
-    }
-    result
+    // Everything after scheduling belongs to the worker, including registration,
+    // access grant and restore scheduling. Dropping the IPC waiter cannot skip
+    // those effects, clear the busy claim, or settle its admission prematurely.
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = capture_screenshot().and_then(|result| {
+            if let Some(path) = &result {
+                screenshots::register(window.app_handle(), path)?;
+                crate::file_access::grant_produced_file(
+                    window.app_handle(),
+                    std::path::Path::new(path),
+                    &std::env::temp_dir(),
+                    "bycoda-captures",
+                )?;
+            }
+            Ok(result)
+        });
+        let panel = window.clone();
+        let restored = window.run_on_main_thread(move || present(&panel));
+        let result = if let Err(err) = restored {
+            if let Ok(Some(path)) = &result {
+                screenshots::discard(window.app_handle(), path);
+            }
+            Err(err.to_string())
+        } else {
+            result
+        };
+        work.finish(result)
+    })
+    .await
+    .map_err(|err| err.to_string())?
 }
 
 fn capture_screenshot() -> Result<Option<String>, String> {
@@ -471,6 +570,13 @@ fn capture_screenshot() -> Result<Option<String>, String> {
         .arg(&path)
         .output();
     if path.is_file() {
+        // File bytes are flushed; this is still an ephemeral capture, not a
+        // profile/directory durability or Native migration checkpoint receipt.
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.sync_all())
+            .map_err(|err| err.to_string())?;
         return Ok(Some(path.to_string_lossy().into_owned()));
     }
     let _ = std::fs::remove_dir(dir);
@@ -497,9 +603,14 @@ pub fn quick_composer_take(
         .pending
         .lock()
         .map_err(|err| err.to_string())?
-        .claim(window.label(), |label| {
-            app.get_webview_window(label).is_some()
-        }))
+        .claim_for_store(
+            window.label(),
+            Some(
+                app.state::<crate::session_store::SessionStore>()
+                    .native_instance_id(),
+            ),
+            |label| app.get_webview_window(label).is_some(),
+        ))
 }
 
 #[tauri::command]
@@ -511,11 +622,27 @@ pub fn quick_composer_ack(
     if !crate::window::is_workspace_window(window.label()) {
         return Err("Only a workspace can acknowledge a session.".into());
     }
-    state
+    let acknowledged = state
         .pending
         .lock()
         .map_err(|err| err.to_string())?
-        .acknowledge(window.label(), &id);
+        .acknowledge_in_store(
+            window.label(),
+            &id,
+            Some(
+                window
+                    .app_handle()
+                    .state::<crate::session_store::SessionStore>()
+                    .native_instance_id(),
+            ),
+        );
+    if acknowledged {
+        state
+            .launches
+            .lock()
+            .map_err(|err| err.to_string())?
+            .acknowledge_existing(&id);
+    }
     Ok(())
 }
 
@@ -561,7 +688,6 @@ fn toggle(app: &AppHandle) {
                 git_popup::dismiss(&handle, false);
                 let _ = panel.hide();
                 // A dismissed draft lives only in this webview; keep it.
-                invalidate_release(&handle);
                 return;
             }
             show(&handle, &panel);
@@ -575,6 +701,8 @@ fn toggle(app: &AppHandle) {
 }
 
 fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
+    let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_LABEL)
+        .map_err(std::io::Error::other)?;
     let panel = WebviewWindowBuilder::new(
         app,
         QUICK_COMPOSER_LABEL,
@@ -606,6 +734,17 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     .focused(false)
     .build()?;
 
+    creation.created(&panel);
+    let identity = QuickWindowOwner::install(&mut panel.as_ref().window().resources_table())
+        .map_err(std::io::Error::other)?;
+    let handle = app.clone();
+    panel.on_window_event(move |event| {
+        if matches!(event, tauri::WindowEvent::Destroyed) {
+            identity.retire();
+            git_popup::retire(&handle, &identity);
+        }
+    });
+
     make_panel(&panel);
 
     // Keep the drop target visible when users switch apps to collect files.
@@ -614,7 +753,6 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 }
 
 fn show(app: &AppHandle, panel: &WebviewWindow) {
-    invalidate_release(app);
     place(app, panel);
     present(panel);
     let _ = panel.emit(SHOWN, ());

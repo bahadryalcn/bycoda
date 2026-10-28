@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import {
   ChevronDown,
@@ -327,7 +328,7 @@ function ProjectTerminalDockComponent({
             aria-orientation="vertical"
           >
             {dock.pane.files.map((file, index) => (
-              <div key={file.id} className="terminal-list-row" role="presentation">
+              <ActionHost key={file.id} selected={file.id === dock.pane.activeFileId} className="terminal-list-row" role="presentation">
                 <Button
                   variant="tab"
                   fullWidth
@@ -402,10 +403,8 @@ function ProjectTerminalDockComponent({
                 </Button>
                 <div className="terminal-row-actions">
                   {onSplitTerminal ? (
-                    <Button
-                      iconOnly
+                    <InlineAction
                       label={`${t("Split")} — ${terminalTabLabel(file)}`}
-                      variant="ghost"
                       motion="none"
                       type="button"
                       aria-label={`${t("Split")} — ${terminalTabLabel(file)}`}
@@ -413,12 +412,10 @@ function ProjectTerminalDockComponent({
                       onClick={() => splitTerminal(file.id)}
                     >
                       <SplitSquare className="size-3" strokeWidth={1.75} />
-                    </Button>
+                    </InlineAction>
                   ) : null}
-                  <Button
-                    iconOnly
+                  <InlineAction
                     label={`${t("Close")} — ${terminalTabLabel(file)}`}
-                    variant="ghost"
                     motion="none"
                     type="button"
                     aria-label={`${t("Close")} — ${terminalTabLabel(file)}`}
@@ -426,9 +423,9 @@ function ProjectTerminalDockComponent({
                     onClick={() => onCloseTerminal(file.id)}
                   >
                     <X className="size-3" strokeWidth={1.75} />
-                  </Button>
+                  </InlineAction>
                 </div>
-              </div>
+              </ActionHost>
             ))}
           </div>
         </aside>

@@ -1,10 +1,13 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
+import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
+import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent, type UIEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
 import {
@@ -35,6 +38,12 @@ type Group = {
   token: string | null;
   goal?: string;
   state?: string;
+  loaded: boolean;
+  pages: number;
+  error?: string;
+  stale?: boolean;
+  autoPaused?: boolean;
+  cursors?: string[];
 };
 type TransitionPick = {
   issue: JiraBoardIssue;
@@ -48,11 +57,15 @@ export function JiraBoardView({
   onSelect,
   onChanged,
   onIssuesLoaded,
+  onScopeChanged,
+  selectedIssueId,
 }: {
   revision: number;
   onSelect: (issue: JiraBoardIssue) => void;
   onChanged: () => void;
   onIssuesLoaded?: (issues: JiraBoardIssue[]) => void;
+  onScopeChanged?: () => void;
+  selectedIssueId?: string;
 }) {
   useLocale();
   const [boards, setBoards] = useState<JiraBoard[]>([]);
@@ -67,6 +80,9 @@ export function JiraBoardView({
   const [search, setSearch] = useRetainedState(`jira-board:${boardId}:search`, "");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [readingTransitions, setReadingTransitions] = useState(false);
+  const [readingGroup, setReadingGroup] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [reload, setReload] = useState(0);
@@ -76,9 +92,17 @@ export function JiraBoardView({
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [moveKey, setMoveKey] = useState<string | null>(null);
+  const [moveAnchor, setMoveAnchor] = useState<HTMLElement | null>(null);
   const generation = useRef(0);
   const mounted = useRef(true);
   const operation = useRef(false);
+  const readOperation = useRef(false);
+  const groupsRef = useRef(groups);
+  groupsRef.current = groups;
+  const scopeIdentity = useRef("");
+  const selectedScopeIdentity = useRef("");
+  const scopeChanged = useRef(onScopeChanged);
+  scopeChanged.current = onScopeChanged;
   const dragged = useRef<string | null>(null);
   const pointer = useRef<{ id: number; key: string; x: number; y: number; active: boolean } | null>(
     null,
@@ -98,6 +122,8 @@ export function JiraBoardView({
       setPick(null);
       setMoveKey(null);
       setBacklogUnavailable(false);
+      setExpanded(null);
+      scopeChanged.current?.();
       issuesLoaded.current?.([]);
       setPermissionsRevision((value) => value + 1);
     };
@@ -135,6 +161,20 @@ export function JiraBoardView({
 
   useEffect(() => {
     const request = ++generation.current;
+    const identity = `${boardId}:${mode}:${scope}:${permissionsRevision}`;
+    const changed = scopeIdentity.current !== identity;
+    scopeIdentity.current = identity;
+    const selectedIdentity = `${boardId}:${scope}:${permissionsRevision}`;
+    if (selectedScopeIdentity.current !== selectedIdentity) {
+      selectedScopeIdentity.current = selectedIdentity;
+      scopeChanged.current?.();
+    }
+    const previous = changed ? [] : groupsRef.current;
+    if (changed) {
+      setGroups([]);
+      setConfiguration(null);
+      setExpanded(null);
+    }
     if (!boardId) {
       setConfiguration(null);
       setGroups([]);
@@ -143,10 +183,11 @@ export function JiraBoardView({
     }
     if (operation.current) return;
     setLoading(true);
-    setConfiguration(null);
-    setGroups([]);
+    setError(null);
+    if (!changed) setGroups((old) => old.map((group) => ({ ...group, stale: true })));
     setPick(null);
     setMoveKey(null);
+    pointer.current = null;
     dragged.current = null;
     setDragKey(null);
     setHover(null);
@@ -160,7 +201,7 @@ export function JiraBoardView({
         setScope(actualScope);
         return;
       }
-      const definitions: Omit<Group, "issues" | "token">[] =
+      const definitions: Pick<Group, "id" | "name" | "scope" | "state" | "goal">[] =
         mode === "planning"
           ? [
               ...(board?.kind === "kanban"
@@ -188,41 +229,60 @@ export function JiraBoardView({
                 },
               },
             ];
-      const results = await Promise.allSettled(
-        definitions.map(async (group) => {
-          const page = await jiraBoardIssues(boardId, group.scope);
-          return { ...group, issues: page.issues, token: page.nextPageToken };
-        }),
-      );
-      if (request !== generation.current) return;
       const next: Group[] = [];
-      const failures: string[] = [];
-      results.forEach((result, index) => {
-        if (result.status === "fulfilled") next.push(result.value);
-        else if (
-          definitions[index].id === "backlog" &&
-          /backlogs? (?:are|is) not supported/i.test(message(result.reason))
-        ) {
-          setBacklogUnavailable(true);
-        } else failures.push(message(result.reason));
-      });
-      if (failures.length) setError(failures.join(" · "));
-      if (
-        !next.length &&
-        definitions.length === 1 &&
-        definitions[0].id === "backlog" &&
-        !failures.length
-      ) {
-        const page = await jiraBoardIssues(boardId, { scope: "board" });
-        if (request !== generation.current) return;
-        next.push({
-          id: "board",
-          name: t("Board"),
-          scope: { scope: "board" },
-          issues: page.issues,
-          token: page.nextPageToken,
-        });
+      // Refresh only already expanded groups, serially. Replay their existing
+      // page depth rather than collapsing later-page selection to page one.
+      for (const [index, definition] of definitions.entries()) {
+        const old = previous.find((group) => group.id === definition.id);
+        const open =
+          mode === "kanban" ||
+          (!changed && expanded ? expanded.includes(definition.id) : index === 0);
+        if (!open) {
+          next.push({
+            ...definition,
+            issues: old?.issues ?? [],
+            token: old?.token ?? null,
+            loaded: old?.loaded ?? false,
+            pages: old?.pages ?? 0,
+            cursors: old?.cursors,
+            stale: !!old?.loaded,
+          });
+          continue;
+        }
+        try {
+          const refreshed = await readDepth(definition, Math.max(old?.pages ?? 1, 1));
+          if (request !== generation.current) return;
+          next.push(refreshed);
+        } catch (reason) {
+          if (request !== generation.current) return;
+          if (
+            definition.id === "backlog" &&
+            /backlogs? (?:are|is) not supported/i.test(message(reason))
+          ) {
+            setBacklogUnavailable(true);
+            if (definitions.length === 1) {
+              const fallback = {
+                id: "board",
+                name: t("Board"),
+                scope: { scope: "board" as const },
+              };
+              next.push(await readDepth(fallback, 1));
+            }
+          } else {
+            next.push({
+              ...definition,
+              issues: old?.issues ?? [],
+              token: old?.token ?? null,
+              loaded: old?.loaded ?? false,
+              pages: old?.pages ?? 0,
+              cursors: old?.cursors,
+              stale: !!old?.loaded,
+              error: message(reason),
+            });
+          }
+        }
       }
+      if (request !== generation.current) return;
       setConfiguration(config);
       setGroups(next);
     })()
@@ -235,9 +295,52 @@ export function JiraBoardView({
     return () => {
       generation.current++;
     };
-  }, [boardId, board?.kind, mode, scope, reload, revision]);
+  }, [boardId, board?.kind, mode, scope, reload, revision, permissionsRevision]);
 
-  const allIssues = groups.flatMap((g) => g.issues);
+  async function readDepth(
+    definition: Pick<Group, "id" | "name" | "scope" | "state" | "goal">,
+    pages: number,
+  ): Promise<Group> {
+    const expectedGeneration = generation.current;
+    const issues: JiraBoardIssue[] = [];
+    const known = new Set<string>();
+    let token: string | null = null;
+    let count = 0;
+    let autoPaused = false;
+    const cursors = new Set<string>();
+    do {
+      const page = await jiraBoardIssues(boardId, definition.scope, token ?? undefined);
+      if (generation.current !== expectedGeneration || !mounted.current)
+        throw new Error("Stale Jira read");
+      count++;
+      for (const issue of page.issues) {
+        if (!known.has(issue.id)) {
+          known.add(issue.id);
+          issues.push(issue);
+        }
+      }
+      if (page.nextPageToken && (page.nextPageToken === token || cursors.has(page.nextPageToken)))
+        throw new Error(t("Jira pagination did not advance."));
+      token = page.nextPageToken;
+      autoPaused = page.issues.length === 0;
+      if (token) cursors.add(token);
+      // An empty filtered page must never start a cursor-draining loop.
+      if (!page.issues.length) break;
+    } while (token && count < pages);
+    return {
+      ...definition,
+      issues,
+      token,
+      loaded: true,
+      pages: count,
+      cursors: [...cursors],
+      autoPaused,
+    };
+  }
+
+  const allIssues = Array.from(
+    new Map(groups.flatMap((g) => g.issues).map((issue) => [issue.id, issue])).values(),
+  );
   useEffect(() => {
     if (!loading) issuesLoaded.current?.(groups.flatMap((group) => group.issues));
   }, [groups, loading]);
@@ -251,15 +354,15 @@ export function JiraBoardView({
         )
       : issues;
   };
-  const locked = busy || loading || pick !== null;
+  const locked = busy || loading || readingGroup !== null || pick !== null;
   const canRank =
     configuration?.rankFieldId != null &&
     !search.trim() &&
-    !groups.some((g) => g.token) &&
+    !groups.some((g) => g.token || !g.loaded || g.stale || g.error) &&
     loadHiddenJiraProjectIds().length === 0;
 
   async function mutate(action: () => Promise<void>) {
-    if (operation.current) return;
+    if (operation.current || readOperation.current) return;
     operation.current = true;
     const request = generation.current;
     setBusy(true);
@@ -315,6 +418,7 @@ export function JiraBoardView({
     const request = generation.current;
     operation.current = true;
     setBusy(true);
+    setReadingTransitions(true);
     setError(null);
     try {
       const choices = columnTransitions(await jiraIssueTransitions(issue.identifier), column);
@@ -322,6 +426,7 @@ export function JiraBoardView({
       // Keep the exact Jira workflow action explicit when several lead to a column.
       operation.current = false;
       setBusy(false);
+      setReadingTransitions(false);
       const available = choices.filter((c) => !c.requiresFields);
       if (choices.length === 1 && available.length === 1)
         await transition(issue, available[0].id, anchor);
@@ -330,7 +435,10 @@ export function JiraBoardView({
       if (request === generation.current) setError(message(reason));
     } finally {
       operation.current = false;
-      if (mounted.current) setBusy(false);
+      if (mounted.current) {
+        setBusy(false);
+        setReadingTransitions(false);
+      }
     }
   }
 
@@ -350,8 +458,10 @@ export function JiraBoardView({
 
   function pointerStart(event: PointerEvent<HTMLElement>, issue: JiraBoardIssue) {
     if (locked || event.button !== 0 || !(event.target instanceof Element)) return;
+    const handle = event.target.closest("[data-jira-drag-handle]");
+    if (event.pointerType === "touch" && !handle) return;
     const control = event.target.closest("button, input, select, a");
-    if (control && !control.classList.contains("jira-board-card-open")) return;
+    if (control && !handle && !control.classList.contains("jira-board-card-open")) return;
     pointer.current = {
       id: event.pointerId,
       key: issue.identifier,
@@ -359,13 +469,13 @@ export function JiraBoardView({
       y: event.clientY,
       active: false,
     };
-    event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function pointerMove(event: PointerEvent<HTMLElement>) {
     const p = pointer.current;
     if (!p || p.id !== event.pointerId || locked) return;
     if (!p.active && Math.hypot(event.clientX - p.x, event.clientY - p.y) < 6) return;
+    if (!p.active) event.currentTarget.setPointerCapture(event.pointerId);
     p.active = true;
     dragged.current = p.key;
     setDragKey(p.key);
@@ -397,6 +507,8 @@ export function JiraBoardView({
     dragged.current = null;
     setDragKey(null);
     setHover(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId))
+      event.currentTarget.releasePointerCapture(event.pointerId);
     if (!p.active) return;
     event.preventDefault();
     suppressClick.current = true;
@@ -432,10 +544,25 @@ export function JiraBoardView({
       ? group.issues.filter((i) => column.statusIds.includes(i.statusId))
       : group.issues;
     const position = ordered.findIndex((i) => i.identifier === issue.identifier);
+    const destinations =
+      mode === "kanban"
+        ? (configuration?.columns ?? []).filter(
+            (c) => c.statusIds.length > 0 && !c.statusIds.includes(issue.statusId),
+          )
+        : groups.filter((g) => g.id !== group.id);
+    const items: DropdownMenuItem[] = destinations.map((target, index) => ({
+      kind: "item",
+      id: `destination:${index}`,
+      label: target.name,
+    }));
+    if (canRank && position > 0)
+      items.push({ kind: "item", id: "earlier", label: t("Rank earlier") });
+    if (canRank && position >= 0 && position < ordered.length - 1)
+      items.push({ kind: "item", id: "later", label: t("Rank later") });
     return (
       <article
         key={issue.identifier}
-        className="jira-board-card"
+        className="jira-board-card rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface) p-2"
         data-dragging={dragKey === issue.identifier || undefined}
         data-drop={hover === id || undefined}
         data-jira-drop={id}
@@ -446,146 +573,178 @@ export function JiraBoardView({
         onPointerMove={pointerMove}
         onPointerUp={(event) => pointerEnd(event)}
         onPointerCancel={(event) => pointerEnd(event, true)}
+        onLostPointerCapture={(event) => pointerEnd(event, true)}
         onDragStart={(e) => e.preventDefault()}
       >
-        <Button
-          variant="item"
-          align="start"
-          className="jira-board-card-open"
-          type="button"
-          onClick={() => {
-            if (!suppressClick.current) onSelect(issue);
-          }}
+        <ActionHost
+          selected={issue.id === selectedIssueId}
+          className="flex min-w-0 items-start gap-1"
         >
-          <span className="jira-board-key">{issue.identifier}</span>
-          <span className="jira-board-summary">{issue.title}</span>
-        </Button>
-        <div className="jira-board-card-meta">
-          <span>{issue.state}</span>
-          <span>{issue.assignees[0]?.login ?? t("Unassigned")}</span>
+          <Button
+            variant="item"
+            align="start"
+            layout="stacked"
+            className="jira-board-card-open min-w-0 flex-1"
+            type="button"
+            onClick={() => {
+              if (!suppressClick.current) onSelect(issue);
+            }}
+          >
+            <span className="text-ui-secondary font-medium break-words [overflow-wrap:anywhere]">
+              {issue.title}
+            </span>
+            <span className="text-ui-caption text-(--ui-text-secondary)">{issue.identifier}</span>
+          </Button>
+          <InlineAction
+            reveal="always"
+            disabled={locked || items.length === 0}
+            label={t("Move {p0}", { p0: issue.identifier })}
+            aria-haspopup="menu"
+            aria-expanded={moveKey === id}
+            onClick={(event) => {
+              setMoveKey(moveKey === id ? null : id);
+              setMoveAnchor(event.currentTarget);
+            }}
+          >
+            <MoreHorizontal className="icon-sm" aria-hidden="true" />
+          </InlineAction>
+        </ActionHost>
+        <div className="mt-1 flex min-w-0 items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+          <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
+            {issue.state} · {issue.assignees[0]?.login ?? t("Unassigned")}
+          </span>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Drag {p0}", { p0: issue.identifier })}
+            disabled={locked}
+            motion="none"
+            data-jira-drag-handle=""
+            className="jira-board-drag-handle shrink-0"
+          >
+            <GripVertical className="icon-sm" aria-hidden="true" />
+          </Button>
         </div>
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={locked}
-          className="jira-board-move"
-          aria-label={t("Move {p0}", { p0: issue.identifier })}
-          onClick={() => setMoveKey(moveKey === issue.identifier ? null : issue.identifier)}
-        >
-          {t("Move")}
-        </Button>
-        {moveKey === issue.identifier ? (
-          <div className="jira-board-move-menu" aria-label={t("Move issue")}>
-            {mode === "kanban"
-              ? configuration?.columns
-                  .filter((c) => c.statusIds.length > 0 && !c.statusIds.includes(issue.statusId))
-                  .map((c, index) => (
-                    <Button
-                      variant="ghost"
-                      key={index}
-                      type="button"
-                      onClick={() => {
-                        setMoveKey(null);
-                        void dropColumn(
-                          issue,
-                          c,
-                          group.issues.filter((i) => c.statusIds.includes(i.statusId)),
-                        );
-                      }}
-                    >
-                      {c.name}
-                    </Button>
-                  ))
-              : groups
-                  .filter((g) => g.id !== group.id)
-                  .map((g) => (
-                    <Button
-                      variant="ghost"
-                      key={g.id}
-                      type="button"
-                      onClick={() => void dropGroup(issue, g)}
-                    >
-                      {g.name}
-                    </Button>
-                  ))}
-            {canRank && position > 0 ? (
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() =>
+        {moveKey === id && moveAnchor ? (
+          <DropdownMenu
+            anchor={moveAnchor}
+            label={t("Move {p0}", { p0: issue.identifier })}
+            items={items}
+            onClose={() => setMoveKey(null)}
+            onPick={(value) => {
+              setMoveKey(null);
+              if (value.startsWith("destination:")) {
+                const target = destinations[Number(value.split(":")[1])];
+                if (!target) return;
+                if ("statusIds" in target)
+                  void dropColumn(
+                    issue,
+                    target,
+                    group.issues.filter((i) => target.statusIds.includes(i.statusId)),
+                  );
+                else void dropGroup(issue, target);
+              } else {
+                const anchor =
+                  value === "earlier"
+                    ? { beforeKey: ordered[position - 1]?.identifier }
+                    : { afterKey: ordered[position + 1]?.identifier };
+                if (canRank)
                   void mutate(() =>
-                    jiraMoveIssue(boardId, issue.identifier, {
-                      target: "rank",
-                      beforeKey: ordered[position - 1].identifier,
-                    }),
-                  )
-                }
-              >
-                {t("Rank earlier")}
-              </Button>
-            ) : null}
-            {canRank && position >= 0 && position < ordered.length - 1 ? (
-              <Button
-                variant="ghost"
-                type="button"
-                onClick={() =>
-                  void mutate(() =>
-                    jiraMoveIssue(boardId, issue.identifier, {
-                      target: "rank",
-                      afterKey: ordered[position + 1].identifier,
-                    }),
-                  )
-                }
-              >
-                {t("Rank later")}
-              </Button>
-            ) : null}
-            <Button variant="ghost" type="button" onClick={() => setMoveKey(null)}>
-              {t("Cancel")}
-            </Button>
-          </div>
+                    jiraMoveIssue(boardId, issue.identifier, { target: "rank", ...anchor }),
+                  );
+              }
+            }}
+          />
         ) : null}
       </article>
     );
   }
 
-  async function loadMore(group: Group) {
-    if (!group.token || operation.current) return;
-    operation.current = true;
-    setBusy(true);
-    setError(null);
+  async function loadMore(group: Group, first = false) {
+    if ((!group.token && !first) || operation.current || readOperation.current || loading) return;
+    readOperation.current = true;
+    setReadingGroup(group.id);
     const request = generation.current;
     try {
-      const page = await jiraBoardIssues(boardId, group.scope, group.token);
+      const fresh = first ? await readDepth(group, Math.max(group.pages, 1)) : null;
+      const page = fresh ? null : await jiraBoardIssues(boardId, group.scope, group.token!);
       if (request !== generation.current) return;
-      if (page.nextPageToken === group.token)
+      if (
+        page?.nextPageToken &&
+        (page.nextPageToken === group.token || group.cursors?.includes(page.nextPageToken))
+      )
         throw new Error(t("Jira pagination did not advance."));
       setGroups((old) =>
         old.map((g) => {
           if (g.id !== group.id) return g;
+          if (fresh) return fresh;
           const known = new Set(g.issues.map((i) => i.id));
           return {
             ...g,
-            issues: [...g.issues, ...page.issues.filter((i) => !known.has(i.id))],
-            token: page.nextPageToken,
+            issues: [...g.issues, ...page!.issues.filter((i) => !known.has(i.id))],
+            token: page!.nextPageToken,
+            pages: g.pages + 1,
+            error: undefined,
+            cursors: [...(g.cursors ?? []), ...(page!.nextPageToken ? [page!.nextPageToken] : [])],
+            autoPaused: page!.issues.length === 0,
           };
         }),
       );
     } catch (reason) {
-      if (request === generation.current) setError(message(reason));
+      if (request === generation.current)
+        setGroups((old) =>
+          old.map((g) =>
+            g.id === group.id ? { ...g, error: message(reason), autoPaused: true } : g,
+          ),
+        );
     } finally {
-      operation.current = false;
-      if (mounted.current) {
-        setBusy(false);
-        if (request !== generation.current) setReload((n) => n + 1);
-      }
+      readOperation.current = false;
+      if (mounted.current) setReadingGroup(null);
     }
   }
 
+  function demand(event: UIEvent<HTMLElement>, group: Group) {
+    const surface = event.currentTarget;
+    if (surface.scrollHeight - surface.scrollTop - surface.clientHeight > 120) return;
+    if (group.token && !group.error && !group.autoPaused && !search.trim() && !locked)
+      void loadMore(group);
+  }
+
+  function groupRecovery(group: Group) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 py-2">
+        {group.stale && group.issues.length ? (
+          <p className="w-full text-ui-caption text-(--ui-text-secondary)">
+            {t("Showing last loaded data. Updates have not been verified.")}
+          </p>
+        ) : null}
+        {group.error ? (
+          <Alert tone="danger" className="min-w-0 flex-1" role="alert">
+            {group.error}
+          </Alert>
+        ) : null}
+        {group.token || !group.loaded || group.stale || group.error ? (
+          <Button
+            variant="ghost"
+            loading={readingGroup === group.id}
+            disabled={locked && readingGroup !== group.id}
+            onClick={() => void loadMore(group, !group.loaded || !!group.stale)}
+          >
+            {group.error ? t("Retry") : group.loaded ? t("Load more issues") : t("Load issues")}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <section className="jira-board-view" aria-label={t("Jira board")} aria-busy={loading || busy}>
-      <div className="jira-board-toolbar">
-        <label>
+    <section
+      className="jira-board-view flex min-h-0 min-w-0 flex-1 flex-col text-ui-caption text-(--ui-tone-neutral-fg)"
+      aria-label={t("Jira board")}
+      aria-busy={loading || busy}
+    >
+      <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
+        <label className="grid min-w-0 gap-1 text-ui-caption text-(--ui-text-secondary)">
           {t("Board")}
           <SearchableSelect
             label={t("Jira board")}
@@ -620,7 +779,7 @@ export function JiraBoardView({
           />
         </fieldset>
         {mode === "kanban" ? (
-          <label>
+          <label className="grid min-w-0 gap-1 text-ui-caption text-(--ui-text-secondary)">
             {t("Issue scope")}
             <SearchableSelect
               label={t("Issue scope")}
@@ -642,11 +801,13 @@ export function JiraBoardView({
             />
           </label>
         ) : null}
-        <label className="jira-board-search">
-          {t("Filter issues")}
+        <label className="grid min-w-40 flex-1 gap-1 text-ui-caption text-(--ui-text-secondary)">
+          {t("Filter loaded issues")}
           <SearchInput
             appearance="field"
+            fieldSize="sm"
             type="search"
+            aria-label={t("Filter loaded issues")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -654,7 +815,8 @@ export function JiraBoardView({
         <Button
           variant="ghost"
           type="button"
-          disabled={busy || pick !== null}
+          loading={loading}
+          disabled={busy || readingGroup !== null || pick !== null}
           onClick={() => {
             setError(null);
             setReload((n) => n + 1);
@@ -671,16 +833,25 @@ export function JiraBoardView({
         </p>
       ) : null}
       <div className="jira-board-status" role="status" aria-live="polite">
-        {busy
-          ? t("Saving to Jira…")
-          : loading
-            ? t("Loading Jira board…")
-            : notice ||
-              t("Drag cards to change status, sprint or rank. Use Move for keyboard access.")}
+        {readingTransitions
+          ? t("Loading…")
+          : busy
+            ? t("Saving to Jira…")
+            : loading
+              ? t("Loading Jira board…")
+              : readingGroup
+                ? t("Loading issues…")
+                : notice || t("{p0} loaded", { p0: allIssues.length })}
       </div>
-      {search.trim() ? (
+      {!canRank && configuration?.rankFieldId != null ? (
         <p className="jira-board-hint">
-          {t("Ranking is disabled while filtering. Status and sprint moves remain available.")}
+          {search.trim()
+            ? t("Ranking is disabled while filtering. Status and sprint moves remain available.")
+            : loadHiddenJiraProjectIds().length
+              ? t("Ranking is unavailable while projects are hidden.")
+              : t(
+                  "Ranking is unavailable until all board groups and pages are loaded and current.",
+                )}
         </p>
       ) : null}
       {error ? (
@@ -734,7 +905,7 @@ export function JiraBoardView({
         <p className="jira-board-hint">{t("No active or future sprints on this board.")}</p>
       ) : null}
       {mode === "kanban" ? (
-        <div className="jira-board-columns">
+        <div className="jira-board-columns flex min-h-0 flex-1 items-stretch gap-3 overflow-auto px-3 pb-3 pt-2">
           {configuration?.columns.map((column, index) => {
             const group = groups[0];
             if (!group) return null;
@@ -743,23 +914,37 @@ export function JiraBoardView({
             return (
               <section
                 key={index}
-                className="jira-board-column"
+                className="jira-board-column min-h-0 flex-1 basis-60 overflow-y-auto"
+                onScroll={(event) => demand(event, group)}
                 data-drop={hover === id || undefined}
                 aria-label={column.name}
                 data-jira-drop={id}
                 data-jira-group={group.id}
                 data-jira-column={index}
               >
-                <header>
-                  <h2>{column.name}</h2>
-                  <span>{visible(issues).length}</span>
+                <header className="sticky top-0 z-1 mb-2 flex min-w-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1 py-2">
+                  <h2 className="min-w-0 flex-1 break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
+                    {column.name}
+                  </h2>
+                  <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                    {group.loaded
+                      ? t("{p0} loaded", { p0: visible(issues).length })
+                      : t("Not loaded")}
+                    {group.token ? "+" : ""}
+                  </span>
                 </header>
                 {!column.statusIds.length ? (
                   <p className="jira-board-hint">{t("No statuses mapped to this column.")}</p>
                 ) : null}
                 {visible(issues).map((issue) => card(issue, group, column))}
-                {!visible(issues).length && column.statusIds.length ? (
-                  <p className="jira-board-empty">{t("No issues")}</p>
+                {group.loaded &&
+                !group.stale &&
+                !group.error &&
+                !visible(issues).length &&
+                column.statusIds.length ? (
+                  <p className="jira-board-empty">
+                    {search.trim() || group.token ? t("No matching loaded issues") : t("No issues")}
+                  </p>
                 ) : null}
               </section>
             );
@@ -768,9 +953,13 @@ export function JiraBoardView({
           groups[0].issues.some(
             (i) => !configuration?.columns.some((c) => c.statusIds.includes(i.statusId)),
           ) ? (
-            <section className="jira-board-column" aria-label={t("Unmapped statuses")}>
-              <header>
-                <h2>{t("Unmapped statuses")}</h2>
+            <section
+              className="jira-board-column min-h-0 flex-1 basis-60 overflow-y-auto"
+              aria-label={t("Unmapped statuses")}
+              onScroll={(event) => demand(event, groups[0])}
+            >
+              <header className="sticky top-0 z-1 mb-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1 py-2">
+                <h2 className="text-ui-secondary font-medium">{t("Unmapped statuses")}</h2>
               </header>
               {visible(
                 groups[0].issues.filter(
@@ -781,59 +970,100 @@ export function JiraBoardView({
           ) : null}
         </div>
       ) : (
-        <div className="jira-board-planning">
-          {groups.map((group) => (
-            <section
-              key={group.id}
-              className="jira-board-sprint"
-              data-drop={hover === group.id || undefined}
-              aria-label={group.name}
-              data-jira-drop={group.id}
-              data-jira-group={group.id}
-            >
-              <header>
-                <h2>{group.name}</h2>
-                {group.state ? (
-                  <span>{group.state === "active" ? t("Active sprint") : t("Future sprint")}</span>
+        <div
+          className="jira-board-planning min-h-0 flex-1 overflow-auto px-3 pb-3 pt-2"
+          onScroll={(event) => {
+            const surface = event.currentTarget;
+            const active = Array.from(
+              surface.querySelectorAll<HTMLElement>("[data-jira-expanded]"),
+            ).find((element) => {
+              const rect = element.getBoundingClientRect();
+              const parent = surface.getBoundingClientRect();
+              return rect.bottom >= parent.top && rect.bottom <= parent.bottom + 120;
+            });
+            const group = groups.find((candidate) => candidate.id === active?.dataset.jiraGroup);
+            if (group?.token && !group.error && !group.autoPaused && !search.trim() && !locked)
+              void loadMore(group);
+          }}
+        >
+          {groups.map((group, index) => {
+            const open = expanded ? expanded.includes(group.id) : index === 0;
+            const contentId = `jira-group-${boardId}-${group.id.replace(":", "-")}`;
+            return (
+              <section
+                key={group.id}
+                className="jira-board-sprint mb-3 rounded-(--radius-control) border border-(--ui-tone-neutral-border) p-2"
+                data-drop={hover === group.id || undefined}
+                aria-label={group.name}
+                data-jira-drop={group.id}
+                data-jira-group={group.id}
+                data-jira-expanded={open || undefined}
+              >
+                <header className="flex min-w-0 items-center gap-2">
+                  <Button
+                    variant="item"
+                    align="start"
+                    className="min-w-0 flex-1"
+                    aria-expanded={open}
+                    aria-controls={contentId}
+                    onClick={() => {
+                      const current = expanded ?? (groups[0] ? [groups[0].id] : []);
+                      setExpanded(
+                        open ? current.filter((id) => id !== group.id) : [...current, group.id],
+                      );
+                      if (!open && (!group.loaded || group.stale)) void loadMore(group, true);
+                    }}
+                  >
+                    {open ? (
+                      <ChevronDown className="icon-sm shrink-0" aria-hidden="true" />
+                    ) : (
+                      <ChevronRight className="icon-sm shrink-0" aria-hidden="true" />
+                    )}
+                    <span className="min-w-0 whitespace-normal break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
+                      {group.name}
+                    </span>
+                  </Button>
+                  {group.state ? (
+                    <span className="text-ui-caption text-(--ui-text-secondary)">
+                      {group.state === "active" ? t("Active sprint") : t("Future sprint")}
+                    </span>
+                  ) : null}
+                  <span className="shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                    {group.loaded
+                      ? t("{p0} loaded", { p0: visible(group.issues).length }) +
+                        (group.token ? "+" : "")
+                      : t("Not loaded")}
+                  </span>
+                </header>
+                {open ? (
+                  <div id={contentId}>
+                    {group.goal ? (
+                      <p className="px-1 pb-2 text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+                        {group.goal}
+                      </p>
+                    ) : null}
+                    {visible(group.issues).map((issue) => card(issue, group))}
+                    {group.loaded && !visible(group.issues).length ? (
+                      <p className="jira-board-empty">
+                        {search.trim() || group.token
+                          ? t("No matching loaded issues")
+                          : t("Drop issues here")}
+                      </p>
+                    ) : null}
+                    {groupRecovery(group)}
+                  </div>
                 ) : null}
-                <span>
-                  {visible(group.issues).length}
-                  {group.token ? "+" : ""}
-                </span>
-              </header>
-              {group.goal ? <p className="jira-board-hint">{group.goal}</p> : null}
-              {visible(group.issues).map((issue) => card(issue, group))}
-              {!visible(group.issues).length ? (
-                <p className="jira-board-empty">{t("Drop issues here")}</p>
-              ) : null}
-              {group.token ? (
-                <Button
-                  variant="ghost"
-                  type="button"
-                  disabled={locked}
-                  onClick={() => void loadMore(group)}
-                >
-                  {t("Load more issues")}
-                </Button>
-              ) : null}
-            </section>
-          ))}
+              </section>
+            );
+          })}
         </div>
       )}
-      {mode === "kanban" && groups[0]?.token ? (
-        <Button
-          variant="ghost"
-          type="button"
-          className="jira-board-load"
-          disabled={locked}
-          onClick={() => void loadMore(groups[0])}
-        >
-          {t("Load more issues")}
-        </Button>
+      {mode === "kanban" && groups[0] ? (
+        <div className="shrink-0 px-3">{groupRecovery(groups[0])}</div>
       ) : null}
-      {groups.some((g) => g.token) ? (
+      {groups.some((group) => group.token || !group.loaded) ? (
         <p className="jira-board-hint">
-          {t("More issues are available. Load all pages before ranking at the end.")}
+          {t("Showing loaded issues. Scroll for more or use Load more issues.")}
         </p>
       ) : null}
     </section>

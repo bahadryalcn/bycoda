@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-import { JobHistory, SocialHistory, socialJobExplanation } from "./SocialHistory";
+import { JobHistory, SocialHistory, socialJobExplanation, socialJobCancellation } from "./SocialHistory";
 import type { SocialJob } from "../model/social";
 
 let container: HTMLDivElement, root: Root;
@@ -23,6 +23,21 @@ it("distinguishes accepted messages, recipient delivery and accepted video proce
       preparation: { youtubeVideoId: "accepted-video" },
     } as SocialJob),
   ).toContain("Publication is not yet confirmed");
+});
+it("keeps submitted platform preparations out of cancellation like the Host guard", () => {
+  const queued = { status: "queued" } as SocialJob;
+  expect(socialJobCancellation(queued).allowed).toBe(true);
+  for (const preparation of [
+    { youtubeVideoId: "submitted" },
+    { tiktokPublishId: "submitted" },
+    { snapchatMedia: { spotlightId: "submitted" } },
+    { facebookReel: { stage: "submitted" } },
+  ]) {
+    const result = socialJobCancellation({ ...queued, preparation } as SocialJob);
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("cannot be recalled");
+  }
+  expect(socialJobCancellation({ ...queued, status: "running" }).allowed).toBe(false);
 });
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -93,7 +108,8 @@ it("filters visible results and offers retries only for confirmed failures", asy
   expect(container.querySelector('a[href^="javascript:"]')).toBeNull();
   const uncertain = container.querySelector('[data-status="review"].social-history-record')!;
   expect(uncertain.textContent).toContain("do not resend the same content");
-  expect(uncertain.querySelector("button")).toBeNull();
+  await act(async () => uncertain.querySelector<HTMLButtonElement>("button")!.click());
+  expect(container.querySelector('[data-social-job-detail]')?.textContent).not.toContain("Retry this target");
   await openFilters();
   const status = Array.from(document.querySelectorAll(".social-filter-panel label"))
     .find((label) => label.firstChild?.textContent === "Send status")!
@@ -103,8 +119,10 @@ it("filters visible results and offers retries only for confirmed failures", asy
     status.dispatchEvent(new Event("change", { bubbles: true }));
   });
   expect(container.querySelectorAll(".social-history-record")).toHaveLength(1);
+  await act(async () => container.querySelector<HTMLButtonElement>(".social-history-record button")!.click());
   await act(async () =>
-    container.querySelector<HTMLButtonElement>(".social-history-record button")!.click(),
+    Array.from(container.querySelectorAll<HTMLButtonElement>("[data-social-job-detail] button"))
+      .find((button) => button.textContent === "Retry this target")!.click(),
   );
   expect(request).toHaveBeenCalledExactlyOnceWith("jobs.retry", { id: "1" });
   expect(

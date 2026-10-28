@@ -46,18 +46,51 @@ type SessionsUpdate = Session[] | ((previous: Session[]) => Session[]);
 let applying = false;
 const nested: SessionsUpdate[] = [];
 const sessionIndexes = new WeakMap<readonly Session[], Map<string, Session>>();
+type SessionCommit = (
+  previous: readonly Session[],
+  next: readonly Session[],
+  reset: boolean,
+) => void;
+const commitObservers = new Set<SessionCommit>();
+
+/** Actual model commits, separate from the shell's throttled presentation. */
+export function subscribeSessionCommits(observer: SessionCommit): () => void {
+  commitObservers.add(observer);
+  return () => {
+    commitObservers.delete(observer);
+  };
+}
+function notifySessionCommit(
+  previous: readonly Session[],
+  next: readonly Session[],
+  reset: boolean,
+) {
+  for (const observer of commitObservers) {
+    try {
+      observer(previous, next, reset);
+    } catch (error) {
+      console.warn("Session commit observer failed", error);
+    }
+  }
+}
 
 function apply(update: SessionsUpdate): void {
   const previous = store.getState().sessions;
   const next = typeof update === "function" ? update(previous) : update;
   if (Object.is(next, previous)) return;
-  store.setState({ sessions: next, revision: store.getState().revision + 1 });
+  try {
+    store.setState({ sessions: next, revision: store.getState().revision + 1 });
+  } finally {
+    if (store.getState().sessions === next) notifySessionCommit(previous, next, false);
+  }
 }
 
 /** Boot and tests: replaces the sessions and the shell's view of them. */
 export function resetSessionsStore(initial: Session[]): void {
+  const previous = store.getState().sessions;
   if (store.getState().sessions !== initial)
     store.setState({ sessions: initial, revision: store.getState().revision + 1 });
+  notifySessionCommit(previous, initial, true);
   setShell(initial);
 }
 

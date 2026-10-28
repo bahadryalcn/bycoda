@@ -90,6 +90,26 @@ async function click(label: string) {
 }
 
 describe("session recovery navigation", () => {
+  it("keeps failed verification distinct from missing records and retries that read", async () => {
+    vi.mocked(getSession)
+      .mockRejectedValueOnce(new Error("history temporarily offline"))
+      .mockResolvedValueOnce(null);
+    render([], recovery, []);
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Could not verify this session.");
+    expect(container.textContent).toContain("history temporarily offline");
+    vi.mocked(getSession).mockResolvedValue(sessions[0]);
+    await click("Retry verification");
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(vi.mocked(getSession).mock.calls.filter(([id]) => id === "alpha")).toHaveLength(2);
+    expect(vi.mocked(getSession).mock.calls.filter(([id]) => id === "beta")).toHaveLength(1);
+  });
   it("keeps progress on the chosen recovery action and prevents duplicate requests", async () => {
     let finish!: () => void;
     onOpen.mockReturnValueOnce(
@@ -153,7 +173,7 @@ describe("session recovery navigation", () => {
   it("opens every project without a list count limit and restores layout separately", async () => {
     await click("Open all");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], false);
-    await click("Restore previous layout");
+    await click("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
   });
   it("opens only selected conversations", async () => {
@@ -164,7 +184,9 @@ describe("session recovery navigation", () => {
   it("preserves the list and enables retry after an open failure", async () => {
     onOpen.mockRejectedValueOnce(new Error("missing"));
     await click("Open all");
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain("preserved");
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Check the open tabs before retrying",
+    );
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
     await click("Open all");
     expect(container.querySelector('[role="alert"]')).toBeNull();
@@ -212,7 +234,10 @@ describe("session recovery navigation", () => {
       ],
     };
     render([], recovery, [failed, sessions[1]]);
-    expect(container.querySelector('[role="status"]')?.textContent).toContain("1 Failed");
+    expect(container.querySelector('[role="status"]')?.textContent).toContain(
+      "2 previous sessions · 2 need attention",
+    );
+    expect(container.textContent).toContain("Failed");
     const input = container.querySelector<HTMLInputElement>(
       'input[aria-label="Search recovered sessions"]',
     )!;
@@ -223,7 +248,7 @@ describe("session recovery navigation", () => {
       );
       input.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    await click("Restore previous layout");
+    await click("Restore chat layout");
     expect(onOpen).toHaveBeenLastCalledWith(["alpha", "beta"], true);
   });
   it("reads closed local conversations without reopening them to hide completed entries", async () => {

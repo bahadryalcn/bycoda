@@ -10,6 +10,7 @@ use tauri::{
     WindowEvent,
 };
 
+use crate::quick_native::{PopupWork, QuickWindowOwner};
 use crate::window::{QUICK_COMPOSER_GIT_LABEL, QUICK_COMPOSER_LABEL};
 
 const WIDTH: f64 = 320.0;
@@ -41,8 +42,33 @@ pub struct Request {
     anchor: Anchor,
 }
 
+struct Active {
+    request: Request,
+    parent: WebviewWindow,
+    popup: WebviewWindow,
+    parent_owner: QuickWindowOwner,
+    popup_owner: QuickWindowOwner,
+    presented: bool,
+    work: PopupWork,
+}
+impl Active {
+    fn current(&self) -> bool {
+        self.parent_owner
+            .matches(&self.parent.as_ref().window().resources_table())
+            && self
+                .popup_owner
+                .matches(&self.popup.as_ref().window().resources_table())
+    }
+    fn accepts(&self, owner: &QuickWindowOwner) -> bool {
+        self.parent_owner.same(owner) || self.popup_owner.same(owner)
+    }
+}
 #[derive(Default)]
-pub struct PopupState(Mutex<Option<Request>>, Mutex<Option<String>>);
+pub struct PopupState(Mutex<Option<Active>>);
+
+fn owner(window: &WebviewWindow) -> Result<QuickWindowOwner, String> {
+    QuickWindowOwner::get(&window.as_ref().window().resources_table())
+}
 
 #[tauri::command]
 pub async fn quick_git_open(
@@ -70,28 +96,51 @@ pub async fn quick_git_open(
     {
         return Err("Invalid picker request.".into());
     }
+    crate::quick_native::bounded_json_size(&request, 1024 * 1024)?;
+    let parent_owner = owner(&window)?;
+    let parent_admission =
+        crate::native_window_lifecycle::admit_window_buffers(&window.as_ref().window())?;
     let (tx, mut rx) = tauri::async_runtime::channel(1);
     let handle = app.clone();
     app.run_on_main_thread(move || {
         let result = (|| {
-            if !window.is_visible().unwrap_or(false) {
+            if !parent_owner.matches(&window.as_ref().window().resources_table())
+                || !window.is_visible().unwrap_or(false)
+            {
                 return Err("The composer is no longer visible.".into());
             }
             let popup = prepare(&handle, &window).map_err(|err| err.to_string())?;
-            *handle
+            let popup_owner = owner(&popup)?;
+            let popup_admission =
+                crate::native_window_lifecycle::admit_window_buffers(&popup.as_ref().window())?;
+            let active = Active {
+                request: request.clone(),
+                parent: window,
+                popup: popup.clone(),
+                parent_owner,
+                popup_owner,
+                presented: false,
+                work: PopupWork::new(parent_admission, popup_admission),
+            };
+            let previous = handle
                 .state::<PopupState>()
                 .0
                 .lock()
-                .map_err(|err| err.to_string())? = Some(request.clone());
-            *handle
-                .state::<PopupState>()
-                .1
-                .lock()
-                .map_err(|err| err.to_string())? = None;
+                .map_err(|err| err.to_string())?
+                .replace(active);
+            // No UI/barrier work while holding PopupState. Replacement settles
+            // only the exact old physical context, never a same-label lookup.
+            if let Some(previous) = previous {
+                let _ = previous.work.finish(Ok::<_, ()>(()));
+            }
             // A newly booting webview retrieves the same request with quick_git_state.
-            popup
+            let emitted = popup
                 .emit("quick_git_request", request)
-                .map_err(|err| err.to_string())
+                .map_err(|err| err.to_string());
+            if emitted.is_err() {
+                retire(&handle, &owner(&popup)?);
+            }
+            emitted
         })();
         let _ = tx.try_send(result);
     })
@@ -109,7 +158,14 @@ pub fn quick_git_state(
     if window.label() != QUICK_COMPOSER_GIT_LABEL {
         return Err("Only the picker can read its state.".into());
     }
-    Ok(state.0.lock().map_err(|err| err.to_string())?.clone())
+    let caller = owner(&window)?;
+    Ok(state
+        .0
+        .lock()
+        .map_err(|err| err.to_string())?
+        .as_ref()
+        .filter(|active| active.popup_owner.same(&caller) && active.current())
+        .map(|active| active.request.clone()))
 }
 
 /// Resize only the popup. The composer's frame and native glass never grow.
@@ -124,17 +180,28 @@ pub fn quick_git_fit(
         return Ok(());
     }
     let handle = app.clone();
+    let Ok(caller) = owner(&window) else {
+        return Err("Picker owner unavailable.".into());
+    };
     app.run_on_main_thread(move || {
         let state = handle.state::<PopupState>();
-        let request = state.0.lock().ok().and_then(|state| state.clone());
-        let Some(request) = request.filter(|request| request.id == id) else {
-            return;
-        };
-        let Some(parent) = handle.get_webview_window(QUICK_COMPOSER_LABEL) else {
+        let view = state.0.lock().ok().and_then(|mut state| {
+            state
+                .as_mut()
+                .filter(|active| {
+                    active.request.id == id && active.popup_owner.same(&caller) && active.current()
+                })
+                .map(|active| {
+                    let present = !active.presented;
+                    active.presented = true;
+                    (active.request.clone(), active.parent.clone(), present)
+                })
+        });
+        let Some((request, parent, should_present)) = view else {
             return;
         };
         if !parent.is_visible().unwrap_or(false) {
-            dismiss(&handle, false);
+            complete(&handle, Some(&caller), Some(&id), None, false, false);
             return;
         }
         let (Some(parent_ns), Some(popup_ns)) = (
@@ -154,13 +221,6 @@ pub fn quick_git_fit(
         popup_ns.displayIfNeeded();
         // Focus once for each opening, including reuse of an already visible panel.
         // Later content resizes must not steal focus.
-        let should_present = state.1.lock().is_ok_and(|mut presented| {
-            if presented.as_deref() == Some(id.as_str()) {
-                return false;
-            }
-            *presented = Some(id);
-            true
-        });
         if should_present {
             super::present(&window);
         }
@@ -200,14 +260,23 @@ pub fn quick_git_complete(
         return Err("Invalid picker window.".into());
     }
     let handle = app.clone();
+    let caller = owner(&window)?;
     app.run_on_main_thread(move || {
-        complete(&handle, Some(&id), choice, restore_focus, false);
+        complete(
+            &handle,
+            Some(&caller),
+            Some(&id),
+            choice,
+            restore_focus,
+            false,
+        );
     })
     .map_err(|err| err.to_string())
 }
 
 fn complete(
     app: &AppHandle,
+    caller: Option<&QuickWindowOwner>,
     id: Option<&str>,
     choice: Option<serde_json::Value>,
     restore_focus: bool,
@@ -218,18 +287,24 @@ fn complete(
         let Ok(mut state) = state.0.lock() else {
             return;
         };
-        if id.is_some_and(|id| state.as_ref().is_none_or(|request| request.id != id)) {
+        if state.as_ref().is_none_or(|active| {
+            !active.current()
+                || caller.is_some_and(|caller| !active.accepts(caller))
+                || id.is_some_and(|id| active.request.id != id)
+        }) {
             return;
         }
         state.take()
     };
-    if let Ok(mut presented) = state.1.lock() {
-        *presented = None;
-    }
-    if let Some(popup) = app.get_webview_window(QUICK_COMPOSER_GIT_LABEL) {
-        let _ = popup.hide();
-    }
-    if let (Some(request), Some(parent)) = (request, app.get_webview_window(QUICK_COMPOSER_LABEL)) {
+    if let Some(active) = request {
+        let Active {
+            request,
+            parent,
+            popup,
+            work,
+            ..
+        } = active;
+        let hidden = popup.hide().map_err(|err| err.to_string());
         if restore_focus && parent.is_visible().unwrap_or(false) {
             super::present(&parent);
         }
@@ -242,11 +317,12 @@ fn complete(
                         over_trigger(window.frame(), &request.anchor, NSEvent::mouseLocation())
                     })
             });
-        let _ = parent.emit(
+        let emitted = parent.emit(
             "quick_git_result",
             serde_json::json!({ "id": request.id, "choice": choice, "restoreFocus": restore_focus,
             "triggerKind": if trigger_click { Some(request.kind) } else { None } }),
         );
+        let _ = work.finish(hidden.and(emitted.map_err(|err| err.to_string())));
     }
 }
 
@@ -260,7 +336,25 @@ fn over_trigger(parent: NSRect, anchor: &Anchor, point: NSPoint) -> bool {
 }
 
 pub(super) fn dismiss(app: &AppHandle, restore_focus: bool) {
-    complete(app, None, None, restore_focus, false);
+    complete(app, None, None, None, restore_focus, false);
+}
+
+/// Exact old callbacks cannot consume a new physical popup's state. An actual
+/// destroyed/invalid context drops its two admissions as unknown, not success.
+pub(super) fn retire(app: &AppHandle, owner: &QuickWindowOwner) {
+    let retired = app
+        .state::<PopupState>()
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut active| {
+            if active.as_ref().is_some_and(|active| active.accepts(owner)) {
+                active.take()
+            } else {
+                None
+            }
+        });
+    drop(retired);
 }
 
 #[tauri::command]
@@ -269,12 +363,12 @@ pub fn quick_composer_dismiss(app: AppHandle, window: WebviewWindow) -> Result<(
         return Err("Invalid composer window.".into());
     }
     let handle = app.clone();
+    let caller = owner(&window)?;
     app.run_on_main_thread(move || {
-        dismiss(&handle, false);
+        complete(&handle, Some(&caller), None, None, false, false);
         let _ = window.hide();
-        // A dismissed draft lives only in this webview; keep it, but cancel a
-        // pending release scheduled before the composer was shown again.
-        super::invalidate_release(&handle);
+        // A dismissed draft lives only in this webview; keep it. There is no
+        // visibility/age-based destruction without a verified Native raw receipt.
     })
     .map_err(|err| err.to_string())
 }
@@ -285,6 +379,8 @@ pub(super) fn prepare(app: &AppHandle, parent: &WebviewWindow) -> tauri::Result<
     if let Some(popup) = app.get_webview_window(QUICK_COMPOSER_GIT_LABEL) {
         return Ok(popup);
     }
+    let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_GIT_LABEL)
+        .map_err(std::io::Error::other)?;
     let popup = WebviewWindowBuilder::new(
         app,
         QUICK_COMPOSER_GIT_LABEL,
@@ -312,23 +408,39 @@ pub(super) fn prepare(app: &AppHandle, parent: &WebviewWindow) -> tauri::Result<
     )
     .parent(parent)?
     .build()?;
+    creation.created(&popup);
+    let identity = QuickWindowOwner::install(&mut popup.as_ref().window().resources_table())
+        .map_err(std::io::Error::other)?;
     super::make_panel(&popup);
     // Attaching an AppKit child can affect its ordering even when the builder
     // requested invisibility. Keep the preloaded panel out until its first fit.
     popup.hide()?;
     let handle = app.clone();
-    let blurred = popup.clone();
     popup.on_window_event(move |event| {
-        if matches!(event, WindowEvent::Focused(false))
-            && handle
+        if matches!(event, WindowEvent::Destroyed) {
+            identity.retire();
+            retire(&handle, &identity);
+        } else if matches!(event, WindowEvent::Focused(false)) {
+            let blurred = handle
                 .state::<PopupState>()
-                .1
+                .0
                 .lock()
-                .is_ok_and(|presented| presented.is_some())
-            && blurred.is_visible().unwrap_or(false)
-            && !blurred.is_focused().unwrap_or(false)
-        {
-            complete(&handle, None, None, false, true);
+                .ok()
+                .and_then(|active| {
+                    active
+                        .as_ref()
+                        .filter(|active| {
+                            active.presented
+                                && active.popup_owner.same(&identity)
+                                && active.current()
+                        })
+                        .map(|active| active.popup.clone())
+                });
+            if blurred.is_some_and(|popup| {
+                popup.is_visible().unwrap_or(false) && !popup.is_focused().unwrap_or(false)
+            }) {
+                complete(&handle, Some(&identity), None, None, false, true);
+            }
         }
     });
     Ok(popup)

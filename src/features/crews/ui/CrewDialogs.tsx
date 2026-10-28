@@ -4,12 +4,14 @@ import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { Alert } from "../../../shared/ui/Alert";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { MessageSquare, Pencil, Play, Trash2 } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import type { CrewDefinition, CrewRun } from "../model/crew";
 import type { useProjectCrews } from "../model/crewClient";
 import { saveCrewAppearance } from "../model/crewAppearance";
 import { roleLabel } from "./CrewMemberForm";
+import { CrewRoleIcon } from "./CrewRoleIcon";
 
 export { CrewEditDialog } from "./CrewEditor";
 
@@ -56,14 +58,18 @@ export function StartCrewDialog({
       attempt: startRequest.current ?? undefined,
       ...next,
     });
+  // The last attempt ended without a receipt; retrying reuses its request ID.
+  const [sameRequestRetry, setSameRequestRetry] = useState(false);
   const setDefinitionId = (value: string) => {
     setDefinitionIdState(value);
     setStartedRun(undefined);
+    setSameRequestRetry(false);
     remember({ definitionId: value });
   };
   const setPrompt = (value: string) => {
     setPromptState(value);
     setStartedRun(undefined);
+    setSameRequestRetry(false);
     remember({ prompt: value });
   };
   const [pending, setPending] = useState(false);
@@ -106,6 +112,7 @@ export function StartCrewDialog({
       startDrafts.delete(draftKey);
       onClose();
     } catch (reason) {
+      setSameRequestRetry(!startRequest.current?.run);
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
       pendingGate.current = false;
@@ -123,12 +130,24 @@ export function StartCrewDialog({
         <>
           <span className="min-w-0 flex-1" />
           {onEdit && crew && !startedRun ? (
-            <Button variant="ghost" onClick={() => onEdit(definitionId)} disabled={pending}>
+            <Button
+              variant="ghost"
+              startIcon={<Pencil className="icon-sm" />}
+              onClick={() => onEdit(definitionId)}
+              disabled={pending}
+            >
               {t("Edit crew")}
             </Button>
           ) : null}
           <Button
             variant="primary"
+            startIcon={
+              startedRun?.coordinatorSessionId && onOpen ? (
+                <MessageSquare className="icon-sm" />
+              ) : (
+                <Play className="icon-sm" />
+              )
+            }
             disabled={pending || (!startedRun && (!crew || !prompt.trim()))}
             loading={pending}
             onClick={() => void start()}
@@ -139,7 +158,6 @@ export function StartCrewDialog({
       }
     >
       <div className="flex flex-col gap-3 p-4 pt-2">
-        {error && <Alert tone="danger">{error}</Alert>}
         {definitionId && !crew && !startedRun ? (
           <Alert tone="warning">{t("This crew is no longer available.")}</Alert>
         ) : null}
@@ -169,6 +187,21 @@ export function StartCrewDialog({
         <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("The first line becomes the work title. The coordinator plans and assigns the rest.")}
         </p>
+        {error ? (
+          // Beside the footer action that failed. A receipt or request ID is kept, so retrying is safe.
+          <Alert tone="danger">
+            <p className="break-words [overflow-wrap:anywhere]">{error}</p>
+            {startedRun?.coordinatorSessionId ? (
+              <p className="mt-1 text-ui-caption">
+                {t("The work was started. Retry opens its conversation.")}
+              </p>
+            ) : sameRequestRetry ? (
+              <p className="mt-1 text-ui-caption">
+                {t("Retry sends the same request, so the work is not started twice.")}
+              </p>
+            ) : null}
+          </Alert>
+        ) : null}
       </div>
     </Modal>
   );
@@ -196,7 +229,8 @@ function CrewRosterSummary({ crew }: { crew: CrewDefinition }) {
     <dl className="flex flex-wrap gap-x-4 gap-y-1 text-ui-caption">
       {groups.map((group) => (
         <div key={group.role} className="flex min-w-0 gap-1">
-          <dt className="text-(--ui-text-secondary)">
+          <dt className="flex items-center gap-1 text-(--ui-text-secondary)">
+            <CrewRoleIcon role={group.role} />
             {group.label}
             {group.names.length ? ":" : ""}
           </dt>
@@ -241,6 +275,7 @@ export function CrewDeleteDialog({
           </Button>
           <Button
             variant="danger"
+            startIcon={<Trash2 className="icon-sm" />}
             loading={pending}
             disabled={pending || activeWork > 0}
             onClick={async () => {

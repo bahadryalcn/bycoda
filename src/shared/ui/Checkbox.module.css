@@ -3,6 +3,14 @@
    The input is the hit area (larger in touch density), the ::before box is the visible
    control and ::after is the check or mixed dash. Fill and glyph come from the shared
    choice roles (--control-on / --control-glyph), identical to Switch and Radio. */
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .checkbox {
+    margin: 0;
+  }
+}
 .checkbox {
   --checkbox-box: var(--ui-control-checkbox-size);
   appearance: none;
@@ -11,7 +19,6 @@
   display: inline-grid;
   place-content: center;
   box-sizing: border-box;
-  margin: 0;
   border: 0;
   background: transparent;
   color: var(--control-glyph);

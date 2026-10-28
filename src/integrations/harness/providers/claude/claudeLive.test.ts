@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyHarnessEvent } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -95,7 +96,7 @@ async function startTurn(
     providerAccountId: options.providerAccountId,
     text: "explore the codebase",
     attachments: [],
-    onEvent: (event) => events.push(event),
+    onEvent: (event) => { captureNativeOutputEvent(sessionId, event); events.push(event); },
   });
 
   await waitFor(
@@ -2251,6 +2252,43 @@ describe("claude background tasks", () => {
     expect(readHarnessTaskOutput).toHaveBeenCalledTimes(reads);
   });
 
+  it("says the output is unavailable when the final read keeps failing", async () => {
+    readHarnessTaskOutput.mockClear();
+    readHarnessTaskOutput.mockResolvedValue({ text: "first line\n", truncated: false });
+    const { events, turn } = await startTurn("s1");
+    emitBackgroundBash();
+    emit({
+      type: "user",
+      tool_use_result: { outputFile: "/tmp/claude/project/tasks/b1.output" },
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "toolu_bash", content: "Running" }],
+      },
+    });
+    await waitFor(
+      () =>
+        events.some((e) => e.type === "tool.updated" && e.preview?.output === "first line\n"),
+      "live output",
+    );
+    readHarnessTaskOutput.mockRejectedValue(
+      Object.assign(new Error("denied"), { code: "EACCES" }),
+    );
+    emitBashFinished();
+    await waitFor(
+      () =>
+        events.some(
+          (e) => e.type === "tool.updated" && e.preview?.output?.includes("Output unavailable"),
+        ),
+      "unavailable note",
+    );
+    const note = events.find(
+      (e) => e.type === "tool.updated" && e.preview?.output?.includes("Output unavailable"),
+    );
+    // The last good output stays above the note.
+    expect(note?.type === "tool.updated" && note.preview?.output).toContain("first line");
+    emitFollowUpTurn("Finished");
+    await turn;
+  });
+
   it("rejects unrelated output paths and ignores late reads after cancellation", async () => {
     readHarnessTaskOutput.mockClear();
     const { events } = await startTurn("s1");
@@ -2818,4 +2856,18 @@ it("Claude çıkışı bekleyen onay ve soruyu çözer", async () => {
       events.some((event) => event.type === "question.resolved"),
     "interaction cleanup",
   );
+});
+
+it("preserves the original control-request lineage after an asynchronous user decision", async () => {
+ const {events,turn}=await startTurn("claude-causal");
+ const frame=JSON.stringify({type:"control_request",request_id:"causal-permission",request:{subtype:"can_use_tool",tool_name:"Read",tool_use_id:"causal-read",input:{file_path:"/tmp/causal"}}});
+ const inspect=nativeOutputFrame("claude-causal",frame,()=>onLine!(frame));
+ const asked=events.find(e=>e.type==="approval.requested")!;
+ expect(asked).toBeDefined();expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+ const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
+ respondClaudeApproval("claude-causal",asked.requestId,"allow");
+ await waitFor(()=>events.some(e=>e.type==="approval.resolved"),"causal approval settlement");
+ expect(getNativeOutputEventOrigin(events.find(e=>e.type==="approval.resolved")!)).toBe(origin);
+ await vi.waitFor(()=>expect(inspect().pendingCausalWork).toBe(0));
+ emit({type:"result",subtype:"success",session_id:"sess_1"});await turn;
 });

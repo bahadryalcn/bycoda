@@ -2334,3 +2334,126 @@ test.describe("shared control state matrix", () => {
     expect(readonly).not.toBe(disabled);
   });
 });
+
+test.describe("inline actions and caller placement (H1, written 2026-10-28, not yet run)", () => {
+  const background = (locator: Locator) =>
+    locator.evaluate((node) => getComputedStyle(node).backgroundColor);
+  const alpha = (color: string) => {
+    const match = color.match(/rgba?\(([^)]+)\)/);
+    const parts = match ? match[1]!.split(",").map((part) => Number(part.trim())) : [];
+    return parts.length === 4 ? parts[3]! : 1;
+  };
+
+  test("the host keeps one highlight while the pointer moves onto its inline action", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      await openMatrix(page, { theme });
+      const host = page.getByTestId("matrix-inline-tab-readme");
+      const close = page.getByTestId("matrix-inline-close-readme");
+      const tab = host.getByRole("tab");
+      await tab.hover();
+      const hovered = await background(host);
+      await close.hover();
+      expect(await background(host), `${theme}: host fill stays while over the action`).toBe(
+        hovered,
+      );
+      // The primary control never paints its own fill inside a host.
+      expect(alpha(await background(tab)), `${theme}: tab fill`).toBe(0);
+      // The action adds a translucent overlay, never an opaque square.
+      expect(alpha(await background(close)), `${theme}: close overlay`).toBeLessThan(1);
+      // A selected host keeps its selection fill under the hovered action.
+      const selected = page.getByTestId("matrix-inline-tab-panel");
+      const before = await background(selected);
+      await page.getByTestId("matrix-inline-close-panel").hover();
+      expect(await background(selected), `${theme}: selected host`).toBe(before);
+    }
+  });
+
+  test("inline actions reveal with the host, keyboard focus and selection", async ({ page }) => {
+    await openMatrix(page);
+    const opacity = (testId: string) =>
+      page.getByTestId(testId).evaluate((node) => Number(getComputedStyle(node).opacity));
+    await page.mouse.move(0, 0);
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(0);
+    // Selected and always-revealed rows show their actions at rest.
+    await expect.poll(() => opacity("matrix-inline-more-release")).toBe(1);
+    await expect.poll(() => opacity("matrix-inline-more-pinned")).toBe(1);
+    await page.getByTestId("matrix-inline-row-inbox").hover();
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(1);
+    await page.mouse.move(0, 0);
+    // Keyboard focus reveals a hidden action without hover.
+    await page.getByTestId("matrix-inline-row-inbox").getByRole("button").first().focus();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("matrix-inline-more-inbox")).toBeFocused();
+    await expect.poll(() => opacity("matrix-inline-more-inbox")).toBe(1);
+  });
+
+  test("inline actions never trigger the primary action, and middle click stays with the host", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const log = page.getByTestId("matrix-inline-log");
+    await page.getByTestId("matrix-inline-close-readme").click();
+    await expect(log).toHaveText("closed readme");
+    await expect(page.getByTestId("matrix-inline-tab-readme")).toHaveCount(0);
+    await page.getByTestId("matrix-inline-remove-pinned").click();
+    await expect(log).toHaveText("removed pinned");
+    await page.getByTestId("matrix-inline-close-panel").press("Enter");
+    await expect(log).toHaveText("closed panel");
+    await page.getByRole("button", { name: "Reset tabs" }).click();
+    await page.getByTestId("matrix-inline-tab-long").getByRole("tab").click({ button: "middle" });
+    await expect(log).toHaveText("closed long");
+  });
+
+  test("caller utilities change placement but not internal presentation", async ({ page }) => {
+    await openMatrix(page);
+    const field = page.getByTestId("matrix-placement-field");
+    const box = (await field.boundingBox())!;
+    expect(Math.round(box.width), "w-40 sets the field width").toBe(160);
+    const fieldStyle = await field.evaluate((node) => {
+      const css = getComputedStyle(node);
+      return { padding: css.paddingInlineStart, size: css.fontSize };
+    });
+    expect(fieldStyle.padding, "px-10 cannot restyle the field's padding").not.toBe("40px");
+    expect(fieldStyle.size, "text-ui-title cannot retype the field").not.toBe("16px");
+    expect(
+      Math.round((await page.getByTestId("matrix-placement-select").boundingBox())!.width),
+    ).toBe(160);
+    expect(
+      Math.round((await page.getByTestId("matrix-placement-button").boundingBox())!.width),
+    ).toBe(192);
+    const segments = page.getByRole("radiogroup", { name: "Placed segments", exact: true });
+    expect(await segments.evaluate((node) => getComputedStyle(node).marginInlineStart)).toBe(
+      "24px",
+    );
+  });
+
+  test("a text button without an icon reserves no empty slot and keeps its width while busy", async ({
+    page,
+  }) => {
+    await openMatrix(page);
+    const idle = page.getByTestId("matrix-loading-idle");
+    const busy = page.getByTestId("matrix-loading-busy");
+    const inset = (locator: Locator) =>
+      locator.evaluate((node) => {
+        const label = [...node.querySelectorAll("span")].find(
+          (span) => span.textContent === "Delete",
+        )!;
+        const padding = parseFloat(getComputedStyle(node).paddingInlineStart);
+        return label.getBoundingClientRect().left - node.getBoundingClientRect().left - padding;
+      });
+    // Only the padding precedes the label: no reserved 14-16px icon slot.
+    expect(await inset(idle)).toBeLessThan(2);
+    // Pending keeps the same width and the label in the accessible name.
+    expect(Math.round((await busy.boundingBox())!.width)).toBe(
+      Math.round((await idle.boundingBox())!.width),
+    );
+    await expect(busy).toHaveAttribute("aria-busy", "true");
+    await expect(busy).toHaveAccessibleName("Delete");
+    // With a start icon, the icon and the spinner share one slot.
+    await expect(
+      page.getByTestId("matrix-loading-icon").locator("[aria-hidden='true'] svg"),
+    ).toBeVisible();
+  });
+});

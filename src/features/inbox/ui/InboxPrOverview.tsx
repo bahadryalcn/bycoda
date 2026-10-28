@@ -186,20 +186,21 @@ export function InboxPrChangesGlance({
                   type="button"
                   title={file.path}
                   onClick={() => onOpenFile(file.path)}
-                  className="w-full min-w-0 text-left"
+                  align="start"
+                  className="w-full min-w-0"
                 >
                   <FileTypeIcon name={name} isDir={false} size={16} />
-                  <span className="flex min-w-0 flex-1 font-mono text-ui-caption">
+                  <span className="flex min-w-0 flex-1 flex-wrap font-mono text-ui-caption">
                     <span className="min-w-0 truncate text-(--ui-text-secondary)">{dir}</span>
-                    <span className="shrink-0 text-(--ui-text-secondary)">{name}</span>
+                    <span className="min-w-0 wrap-anywhere text-(--ui-text-secondary)">{name}</span>
                   </span>
                   <span
                     aria-hidden
                     className="flex h-1.5 shrink-0 overflow-hidden rounded-full @max-[420px]/linked:hidden"
                     style={{ width }}
                   >
-                    <span className="shrink-0 bg-diff-add/80" style={{ width: added }} />
-                    <span className="flex-1 bg-diff-del/80" />
+                    <span className="shrink-0 bg-diff-add" style={{ width: added }} />
+                    <span className="flex-1 bg-diff-del" />
                   </span>
                   <span className="flex w-20 shrink-0 items-center justify-end gap-1.5 text-ui-micro font-medium tabular-nums">
                     {file.additions > 0 ? (

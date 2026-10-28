@@ -165,6 +165,7 @@ import {
   subagentReport,
   subagentStatusLine,
   toolCallLabel,
+  isStoppedBlock,
   toolCallState,
   hasTurnCopyText,
   turnCopyText,
@@ -1382,7 +1383,6 @@ const Turn = memo(function Turn({
   canRewindMessage,
   onRewindMessage,
 }: TurnProps) {
-  const t = useT();
   const userBlock = turnUserBlock(turn, managed);
   const durationMs = userBlock?.durationMs;
   const proposals = turn.filter((block) => block.orchestration);
@@ -1478,21 +1478,12 @@ const Turn = memo(function Turn({
     ) : (
       <div key={item.block.id}>
         {item.block.remoteContent && onLoadRemoteBlock ? (
-          <div className="mx-4 mb-1 flex items-center gap-2">
-            <Button
-              motion="none"
-              variant="ghost"
-              type="button"
-
-              onClick={() =>
-                void onLoadRemoteBlock(item.block.id, item.block.remoteContent!.revision)
-              }
-            >
-              {t("Load full output (")}
-              {Math.max(1, Math.ceil(item.block.remoteContent.bytes / 1024))}
-              {t(" KB)")}
-            </Button>
-          </div>
+          <RemoteBlockLoad
+            blockId={item.block.id}
+            revision={item.block.remoteContent.revision}
+            bytes={item.block.remoteContent.bytes}
+            onLoad={onLoadRemoteBlock}
+          />
         ) : null}
         <TranscriptBlock
           block={item.block}
@@ -1752,6 +1743,70 @@ function backgroundLabel(tasks: string[]): string {
  * when it landed. The clock lives on the fold line above, from the first token
  * to the last, so it is not repeated here.
  */
+/** Explicit "load full output" control with pending, failure and retry states. */
+function RemoteBlockLoad({
+  blockId,
+  revision,
+  bytes,
+  onLoad,
+}: {
+  blockId: string;
+  revision: number;
+  bytes: number;
+  onLoad: (blockId: string, revision: number) => Promise<void> | void;
+}) {
+  const t = useT();
+  const [state, setState] = useState<"idle" | "pending" | "failed">("idle");
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  // A new revision is a different block body, so an earlier failure no longer applies.
+  useEffect(() => setState("idle"), [revision]);
+  const load = async () => {
+    if (state === "pending") return;
+    setState("pending");
+    try {
+      await onLoad(blockId, revision);
+      if (mounted.current) setState("idle");
+    } catch {
+      if (mounted.current) setState("failed");
+    }
+  };
+  return (
+    <div className="mx-4 mb-1 flex items-center gap-2">
+      <Button
+        motion="none"
+        variant="ghost"
+        type="button"
+        loading={state === "pending"}
+        disabled={state === "pending"}
+        onClick={() => void load()}
+      >
+        {state === "pending" ? (
+          t("Loading full output…")
+        ) : state === "failed" ? (
+          t("Retry")
+        ) : (
+          <>
+            {t("Load full output (")}
+            {Math.max(1, Math.ceil(bytes / 1024))}
+            {t(" KB)")}
+          </>
+        )}
+      </Button>
+      {state === "failed" ? (
+        <span role="alert" className="text-ui-caption text-(--ui-tone-danger-fg)">
+          {t("Could not load the full output.")}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function TurnDuration({
   elapsedMs,
   metrics,
@@ -2554,7 +2609,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
             {run.command}
           </span>
           {run.running ? (
-            <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-ui-micro text-(--ui-text-secondary)" />
+            <TerminalSpinner className="shrink-0" />
           ) : status ? (
             <span
               className={`shrink-0 text-ui-micro ${run.timedOut ? "text-(--ui-tone-warning-fg)" : "text-(--ui-tone-danger-fg)"}`}
@@ -4276,7 +4331,7 @@ function ActivityToolRow({
           >
             {summary}
           </div>
-          <ToolCallStatusIcon state={state} />
+          <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
           <Button
             motion="none"
             variant="ghost"
@@ -4313,7 +4368,7 @@ function ActivityToolRow({
         >
           {bare ? null : <ActivityToolIcon state={state} live={live} />}
           {summary}
-          {pending ? null : <ToolCallStatusIcon state={state} />}
+          {pending ? null : <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />}
         </div>
       )}
       {pending ? <ApprovalControls block={block} onApproval={onApproval} /> : null}
@@ -4366,7 +4421,7 @@ function BycodaCallRow({
         <BycodaMark className="size-3.5" />
         <span className="min-w-0 truncate">{command}</span>
       </span>
-      <ToolCallStatusIcon state={state} />
+      <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
       {hasResult ? (
         <ChevronRight
           className={`size-3.5 shrink-0 ${hasError ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} transition-transform ${errorOpen ? "rotate-90" : ""}`}
@@ -4428,8 +4483,16 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
-function ToolCallStatusIcon({ state }: { state: ToolCallState }) {
-  useLocale();
+function ToolCallStatusIcon({ state, stopped = false }: { state: ToolCallState; stopped?: boolean }) {
+  const t = useT();
+  // A call cut short on purpose settles as accepted, so mark it instead of reading as done.
+  if (stopped && state !== "rejected") {
+    return (
+      <span className="shrink-0 font-sans text-ui-micro text-(--ui-text-secondary)">
+        {t("Stopped")}
+      </span>
+    );
+  }
   if (state === "rejected") {
     return <X className="size-3.5 shrink-0 text-(--ui-tone-danger-fg)" strokeWidth={2} />;
   }
@@ -4775,7 +4838,7 @@ function HandoffDivider({ block }: { block: Block }) {
         >
           {preparing ? (
             <>
-              <TerminalSpinner className="inline-block w-3.5 shrink-0 select-none text-center text-ui-micro leading-none text-(--ui-text-secondary)" />
+              <TerminalSpinner className="shrink-0" />
               <Shimmer duration={1.4}>{label}</Shimmer>
             </>
           ) : (

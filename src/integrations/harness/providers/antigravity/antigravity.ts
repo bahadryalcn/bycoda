@@ -1,3 +1,4 @@
+import { runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, scheduleNativeOutputCallback, cancelNativeOutputCallback, type NativeOutputWork } from "../../core/nativeOutputDelivery";
 import { createRecyclingLifecycle } from "../../../../shared/lib/recyclingLifecycle";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
@@ -307,7 +308,7 @@ function settleLive(live: Live): void {
   live.muteUpdates = true;
   live.promptInFlight = false;
   if (live.watchdog) {
-    clearTimeout(live.watchdog);
+    cancelNativeOutputCallback(live.watchdog);
     live.watchdog = undefined;
   }
   for (const resolve of live.approvals.values()) resolve("deny");
@@ -323,8 +324,8 @@ function settleLive(live: Live): void {
 function noteActivity(live: Live): void {
   live.stallNotified = false;
   if (!live.promptInFlight) return;
-  if (live.watchdog) clearTimeout(live.watchdog);
-  live.watchdog = setTimeout(() => {
+  if (live.watchdog) cancelNativeOutputCallback(live.watchdog);
+  live.watchdog = scheduleNativeOutputCallback(() => {
     live.watchdog = undefined;
     if (liveByThread.get(live.threadId) !== live) return;
     if (!live.promptInFlight || live.approvals.size > 0) return;
@@ -387,7 +388,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
         .catch(() => undefined);
       return;
     }
-    void handleRequest(live, id, method, params).catch((error) => {
+    return handleRequest(live, id, method, params).catch((error) => {
       // A reply that could not be written is a transport failure: the provider
       // is still waiting for an answer that will never arrive. Fail the
       // generation so the owning turn unwinds instead of hanging on the prompt
@@ -440,6 +441,10 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
       antigravitySpawnCwd(path, input.cwd),
       undefined,
       "antigravity",
+      undefined,
+      undefined,
+      undefined,
+      input.nativeOutputSessionId,
     );
     if (retired()) throw new Error("Antigravity session stopped during startup");
     try {
@@ -644,36 +649,36 @@ async function setConfigOption(
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+const responseScope: { work: NativeOutputWork | null } = { work: null };
+const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
+try {
+
   try {
     const blocks = antigravityPromptBlocks(input.text, input.attachments);
     if (blocks.length === 0) return;
     live.promptInFlight = true;
-    noteActivity(live);
-    const result = await live.acp.request(
-      "session/prompt",
-      {
+    nativeOutputSink(responseScope.work, noteActivity)(live);
+    const result = await live.acp.request("session/prompt", {
         sessionId: live.acpSessionId,
         prompt: blocks,
-      },
-      PROMPT_TIMEOUT_MS,
-    );
+      }, PROMPT_TIMEOUT_MS, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
     const stopReason = asRecord(result)?.stopReason;
     if (live.cancelled || stopReason === "cancelled") return;
     // A fulfilled request is not necessarily a normal end: refusals,
     // truncations, and provider-specific reasons all surface as errors.
     if (stopReason != null && stopReason !== "end_turn") {
-      live.onEvent({
+      emitNative({
         type: "session.error",
         message: `Antigravity ended the turn (${String(stopReason)}).`,
       });
       return;
     }
-    live.onEvent({ type: "message.completed" });
-    live.onEvent({ type: "reasoning.completed" });
+    emitNative({ type: "message.completed" });
+    emitNative({ type: "reasoning.completed" });
   } catch (error) {
     if (live.cancelled) return;
     const failure = antigravityError(error);
-    live.onEvent({
+    emitNative({
       type: "session.error",
       message: failure.message,
     });
@@ -681,10 +686,12 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
   } finally {
     live.promptInFlight = false;
     if (live.watchdog) {
-      clearTimeout(live.watchdog);
+      cancelNativeOutputCallback(live.watchdog);
       live.watchdog = undefined;
     }
   }
+
+} finally { responseScope.work?.finish(); }
 }
 
 function handleNotification(live: Live, method: string, params: unknown) {
@@ -704,25 +711,30 @@ function handleNotification(live: Live, method: string, params: unknown) {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
   if (method === "session/request_permission") {
-    await handlePermission(live, id, params);
+    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
     return;
   }
   // Propagate: the caller turns a failed response write into a transport
   // failure for the active generation, so the provider cannot wedge waiting
   // for a reply that never left the pipe.
-  await live.acp.respondError(id, {
+  await nativeOutputSink(outputWork, () => live.acp.respondError(id, {
     code: -32601,
     message: `Method not found: ${method}`,
-  });
+  }))();
+
+});
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const request = permissionRequestFromAcp(params);
   // Protocol replies always flow; UI events are gated on the turn still being
   // live so a cancelled run cannot leave approval cards behind.
   if (request.callId && live.promptInFlight && !live.cancelled && !live.muteUpdates) {
-    live.onEvent({
+    emitNative({
       type: "tool.updated",
       callId: request.callId,
       title: request.title,
@@ -755,7 +767,7 @@ async function handlePermission(live: Live, id: number, params: unknown) {
       const pending = new Promise<ApprovalDecision>((resolve) => {
         live.approvals.set(id, resolve);
       });
-      live.onEvent({
+      emitNative({
         type: "approval.requested",
         requestId: id,
         title: request.title,
@@ -766,16 +778,18 @@ async function handlePermission(live: Live, id: number, params: unknown) {
       const decision = await pending;
       live.approvals.delete(id);
       // The approval wait itself was the silence; restart the stall clock.
-      noteActivity(live);
+      nativeOutputSink(outputWork, noteActivity)(live);
       // Always close the card — even a cancelled/exited turn must not leave a
       // pending approval rendered as actionable.
-      live.onEvent({ type: "approval.resolved", requestId: id, decision });
+      emitNative({ type: "approval.resolved", requestId: id, decision });
       optionId = live.cancelled
         ? null
         : permissionOptionId(decision, request.optionIds, request.optionKinds);
     }
   }
-  await live.acp.respond(id, {
+  await nativeOutputSink(outputWork, () => live.acp.respond(id, {
     outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" },
-  });
+  }))();
+
+});
 }

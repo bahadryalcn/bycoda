@@ -252,7 +252,7 @@ function ImageView({
           {copyError}
         </p>
       ) : null}
-      <footer className="flex min-h-8 shrink-0 flex-wrap items-center gap-3 border-t border-stroke px-3 text-[11px] text-[var(--ui-text-secondary)]">
+      <footer className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center gap-3 border-t border-(--ui-pane-border) px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
         <span className="tabular-nums">{natural ? `${natural.w} × ${natural.h}` : "—"}</span>
         <span className="tabular-nums">{formatFileSize(size)}</span>
         <span className="uppercase">{mime.replace(/^image\//, "")}</span>
@@ -382,9 +382,9 @@ function FileCard({
     <div className="grid h-full min-w-0 place-items-center overflow-auto p-6">
       <div className="w-full min-w-0 max-w-md text-center">
         {icon}
-        <p className="break-words text-[13px] text-content">{title}</p>
-        <p className="mt-1 text-[12px] leading-5 text-[var(--ui-text-secondary)]">{detail}</p>
-        <p className="mt-1 truncate font-mono text-[11px] text-[var(--ui-text-muted)]">
+        <p className="break-words text-ui-secondary text-content">{title}</p>
+        <p className="mt-1 text-ui-secondary text-(--ui-text-secondary)">{detail}</p>
+        <p className="mt-1 break-words font-mono text-ui-caption text-(--ui-text-muted)">
           {displayPath(path, cwd)}
         </p>
         {error ? (

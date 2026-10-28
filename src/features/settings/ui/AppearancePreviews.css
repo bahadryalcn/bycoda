@@ -187,6 +187,16 @@
   border-end-start-radius: inherit;
   border-end-end-radius: inherit;
 }
+.appearance-terminal-sample {
+  margin: 0;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: auto;
+  padding: 16px;
+  border-block-start: 1px solid var(--color-stroke);
+  color: var(--color-content);
+  background: var(--ui-surface);
+}
 .appearance-code-comment {
   color: var(--syntax-comment);
 }

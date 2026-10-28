@@ -1,3 +1,17 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External layout: callers can constrain the control with Tailwind utilities. The morphing surface, its measured geometry and the
+   field frame roles below stay unlayered. */
+@layer components {
+  .root {
+    min-inline-size: 0;
+  }
+  .anchor {
+    max-inline-size: 100%;
+  }
+}
+
 .root {
   --ms-h: var(--control-height-md);
   --ms-trigger-w: 0px;
@@ -5,7 +19,6 @@
   display: inline-grid;
   justify-items: start;
   gap: var(--space-2);
-  min-width: 0;
   color: var(--foreground);
   font-family: var(--font-body);
   font-size: var(--text-sm);
@@ -27,17 +40,16 @@
 .anchor {
   position: relative;
   height: var(--ms-h);
-  max-width: 100%;
 }
 
-/* One material for both states. The border is an overlay so it never changes a measurement. */
+/* One material for both states. The border is an overlay so it never changes a measurement. It uses the shared field roles: a
+   muted field surface and control boundary at rest, then hover, focus, invalid, read-only and disabled like TextField and Select. */
 .shape {
   position: absolute;
   top: 0;
   left: 0;
   overflow: clip;
-  background: var(--surface);
-  box-shadow: var(--shadow-resting);
+  background: var(--ui-surface-muted);
   transition:
     box-shadow var(--duration-considered) var(--ease-standard),
     background-color var(--duration-fast) var(--ease-standard);
@@ -47,7 +59,7 @@
   position: absolute;
   inset: 0;
   z-index: 2;
-  border: 1px solid var(--border);
+  border: 1px solid var(--ui-control-border);
   border-radius: inherit;
   pointer-events: none;
   transition: border-color var(--duration-fast) var(--ease-standard);
@@ -56,20 +68,51 @@
   right: 0;
   left: auto;
 }
+/* Open, the surface is the shared floating family: raised surface, popup boundary and elevation. */
 .root[data-open] .shape {
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-floating);
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-elevation-floating);
+}
+.root[data-open] .shape::after {
+  border-color: var(--color-stroke);
+}
+.root[data-readonly]:not([data-open]) .shape {
+  background: transparent;
+}
+.root[data-disabled] {
+  color: var(--ui-control-disabled-fg);
 }
 .root[data-disabled] .shape {
-  opacity: var(--ui-disabled-opacity, 0.5);
+  background: var(--ui-control-disabled-surface);
+}
+.root[data-disabled] .shape::after {
+  border-color: var(--ui-control-disabled-border);
 }
 @media (hover: hover) and (pointer: fine) {
-  .root:not([data-open], [data-disabled]) .shape:hover {
-    background: var(--surface-muted);
+  .root:not([data-open], [data-disabled], [data-readonly]) .shape:hover {
+    background: var(--ui-surface-hover);
   }
-  .root:not([data-open], [data-disabled]) .shape:hover::after {
-    border-color: var(--border-strong);
+  .root:not([data-open], [data-disabled], [data-readonly]) .shape:hover::after {
+    border-color: var(--ui-field-border-hover);
   }
+}
+/* Focus is on the frame, as in the core fields (border plus inset outline); the trigger and the search input draw none of their own. */
+.lid .trigger:focus-visible {
+  outline: none;
+}
+.root:has(.lid .trigger:focus-visible, .input:focus-visible) .shape::after {
+  border-color: var(--ui-field-border-focus);
+  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
+  outline-offset: -1px;
+}
+.root:has(.lid .trigger[aria-invalid="true"]) .shape::after {
+  border-color: var(--ui-tone-danger-fg);
+}
+.root:has(.lid .trigger[aria-invalid="true"]:focus-visible) .shape::after {
+  outline-color: var(--ui-tone-danger-fg);
+}
+.root[data-readonly] .lid .trigger {
+  cursor: default;
 }
 
 /* The lid is the trigger row. It stays at the top of the surface in both states and sits above the list, so a lifted label passes over it. */
@@ -109,6 +152,7 @@
   touch-action: manipulation;
 }
 .lid .trigger:disabled {
+  color: var(--ui-control-disabled-fg);
   cursor: not-allowed;
 }
 /* An invisible copy that says how wide the closed trigger wants to be. It sits in flow until the first measurement lands, so the server render already has the right size. */
@@ -167,8 +211,8 @@
   color: var(--text-secondary);
 }
 .icon > svg {
-  width: 16px;
-  height: 16px;
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
 }
 .icon > img {
   width: 20px;
@@ -182,12 +226,17 @@
   top: 50%;
   right: 12px;
   display: grid;
-  width: 16px;
-  height: 16px;
-  margin-top: -8px;
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
+  margin-top: calc(var(--ui-icon-md) / -2);
   place-items: center;
-  color: var(--text-muted);
+  color: var(--ui-text-muted);
   pointer-events: none;
+}
+.chevron > svg,
+.check > svg {
+  width: 100%;
+  height: 100%;
 }
 
 /* Search takes the lid's place when the list is long. */
@@ -204,7 +253,9 @@
 }
 .searchIcon {
   flex: none;
-  color: var(--text-muted);
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
+  color: var(--ui-text-muted);
 }
 .input {
   min-width: 0;
@@ -231,10 +282,14 @@
   padding: 0;
   border: 0;
   border-radius: var(--radius-pill);
-  background: color-mix(in oklab, var(--foreground) 8%, transparent);
-  color: var(--text-secondary);
+  background: var(--ui-surface-hover);
+  color: var(--ui-text-secondary);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+.clear > svg {
+  width: var(--ui-icon-sm);
+  height: var(--ui-icon-sm);
 }
 /* Sits exactly over the shared chevron, so the chevron closes the list in both lid states. */
 .closeHit {
@@ -250,11 +305,11 @@
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
 @media (hover: hover) and (pointer: fine) {
-  .closeHit:hover,
-  .clear:hover {
-    background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  .closeHit:hover {
+    background: var(--ui-surface-hover);
   }
   .clear:hover {
+    background: var(--ui-surface-pressed);
     color: var(--foreground);
   }
 }
@@ -302,7 +357,7 @@
   right: 0;
   left: 0;
   border-radius: var(--radius-control);
-  background: color-mix(in oklab, var(--foreground) 6.5%, transparent);
+  background: var(--color-selection);
   pointer-events: none;
 }
 
@@ -323,7 +378,7 @@
 .option {
   position: relative;
   display: flex;
-  min-height: 36px;
+  min-height: var(--ui-control-height-md);
   box-sizing: border-box;
   align-items: center;
   gap: var(--space-2);
@@ -361,8 +416,8 @@
 }
 .check {
   display: grid;
-  width: 16px;
-  height: 16px;
+  width: var(--ui-icon-md);
+  height: var(--ui-icon-md);
   flex: none;
   place-items: center;
   color: var(--foreground);
@@ -370,7 +425,7 @@
   transform: scale(0.6);
   transition:
     opacity var(--duration-fast) var(--ease-standard),
-    transform var(--duration-spring) var(--ease-spring);
+    transform var(--duration-fast) var(--ease-standard);
 }
 .check[data-on] {
   opacity: 1;

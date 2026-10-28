@@ -1,3 +1,4 @@
+import { runNativeOutputWork, nativeOutputSink, captureNativeOutputCurrentEvent } from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
@@ -573,16 +574,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       (event) => {
         if (live.muteUpdates) return;
         const turn = live.turnDone;
-        void handleEvent(live, event).catch((error: unknown) => {
+        void runNativeOutputWork(async (work) => { try { await handleEvent(live, event); } catch (error: unknown) {
           if (live.muteUpdates || live.turnDone !== turn) return;
           // Failed ancestry lookups or replies must end the turn visibly;
           // otherwise a child can remain blocked on an unanswered request.
-          live.onEvent({
+          nativeOutputSink(work, () => live.onEvent({
             type: "session.error",
             message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
-          });
-          finishActiveTurn(live);
-        });
+          }))();
+          nativeOutputSink(work, finishActiveTurn)(live);
+        }});
       },
       (error) => {
         if (live.muteUpdates || live.cancelled) return;
@@ -911,7 +912,9 @@ function pruneStreamCaches(live: Live): void {
 }
 
 async function handleEvent(live: Live, event: Record<string, unknown>): Promise<void> {
-  pruneStreamCaches(live);
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
+  nativeOutputSink(outputWork, pruneStreamCaches)(live);
   const type = typeof event.type === "string" ? event.type : "";
   const properties = asRecord(event.properties) ?? {};
   // Session lifecycle events establish ancestry, including nested subagents.
@@ -922,7 +925,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
     if (id) {
       const parentId = stringField(info, "parentID");
       live.sessionParentById.set(id, parentId);
-      pruneStreamCaches(live);
+      nativeOutputSink(outputWork, pruneStreamCaches)(live);
     }
     return;
   }
@@ -935,7 +938,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       (!payloadSessionId || live.messageSessionById.get(messageID) === payloadSessionId)
     ) {
       live.completedMessages.delete(messageID);
-      forgetStreamMessage(live, messageID);
+      nativeOutputSink(outputWork, forgetStreamMessage)(live, messageID);
     }
     return;
   }
@@ -964,7 +967,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
           pending.resolve({ kind: "skipped" });
         }
       }
-      for (const child of doomed) forgetSessionCache(live, child);
+      for (const child of doomed) nativeOutputSink(outputWork, forgetSessionCache)(live, child);
     }
     return;
   }
@@ -986,7 +989,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
     ((type === "session.status" && stringField(asRecord(properties.status), "type") === "idle") ||
       type === "session.idle")
   ) {
-    retireSessionMessages(live, payloadSessionId);
+    nativeOutputSink(outputWork, retireSessionMessages)(live, payloadSessionId);
   } else if (
     payloadSessionId &&
     (type.startsWith("message.") || type === "permission.asked" || type === "question.asked")
@@ -1012,22 +1015,22 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       }
       if (
         knownParent !== live.openCodeSessionId &&
-        !(await isDescendantSession(live, payloadSessionId))
+        !(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))
       )
         return;
       if (live.muteUpdates || live.cancelled) return;
-      handleSubagentEvent(live, payloadSessionId, type, properties);
+      nativeOutputSink(outputWork, handleSubagentEvent)(live, payloadSessionId, type, properties);
       return;
     }
     // Only blocking interactions are forwarded otherwise. In particular, a
     // child's idle/error event must never finish the parent's active turn.
     if (type !== "permission.asked" && type !== "question.asked") return;
     const turn = live.turnDone;
-    if (!(await isDescendantSession(live, payloadSessionId))) return;
+    if (!(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))) return;
     if (live.muteUpdates || live.turnDone !== turn) return;
   } else if (live.client.generation === "v2") {
     live.inbox.observe(type, properties);
-    if (gateAwaitedInbox(live, type, properties)) return;
+    if (nativeOutputSink(outputWork, gateAwaitedInbox)(live, type, properties)) return;
   }
 
   switch (type) {
@@ -1044,10 +1047,10 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       // A compaction assistant's usage describes the summarization call, not
       // the rebuilt context. Keep the previous meter value until a real turn
       // reports the post-compaction window level.
-      if (role === "assistant" && !hidden) emitContext(live, info);
+      if (role === "assistant" && !hidden) nativeOutputSink(outputWork, emitContext)(live, info);
       if (id && asRecord(info?.time)?.completed != null) {
         live.completedMessages.add(id);
-        pruneStreamCaches(live);
+        nativeOutputSink(outputWork, pruneStreamCaches)(live);
       }
       break;
     }
@@ -1056,7 +1059,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       const delta = streamTextDelta(properties.delta);
       if (!partID || !delta) break;
       const existing = live.partById.get(partID);
-      if (!existing || roleForPart(live, existing) !== "assistant") break;
+      if (!existing || nativeOutputSink(outputWork, roleForPart)(live, existing) !== "assistant") break;
       const previous = live.emittedTextByPartId.get(partID) ?? existing.text ?? "";
       const { nextText, deltaToEmit } = appendOpenCodeAssistantTextDelta(previous, delta);
       live.emittedTextByPartId.set(partID, nextText);
@@ -1064,7 +1067,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
         live.partById.set(partID, { ...existing, text: nextText });
       }
       const mapped = textDeltaEvent(existing, deltaToEmit);
-      if (mapped) live.onEvent(mapped);
+      if (mapped) emitNative(mapped);
       break;
     }
     case "message.part.updated": {
@@ -1073,10 +1076,10 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       live.partById.set(part.id, part);
       if (part.messageID)
         live.messageSessionById.set(part.messageID, payloadSessionId ?? live.openCodeSessionId);
-      if (roleForPart(live, part) === "assistant") {
-        emitAssistantText(live, part);
+      if (nativeOutputSink(outputWork, roleForPart)(live, part) === "assistant") {
+        nativeOutputSink(outputWork, emitAssistantText)(live, part);
       }
-      if (part.type === "tool") emitTool(live, part);
+      if (part.type === "tool") nativeOutputSink(outputWork, emitTool)(live, part);
       break;
     }
     case "permission.asked": {
@@ -1127,17 +1130,17 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
         }) || permissionTitle(permission, patterns);
       if (live.planning) {
         const decision = kind === "read" || kind === "search" ? "allow" : "deny";
-        await live.client.replyPermission(id, toOpenCodePermissionReply(decision));
+        await nativeOutputSink(outputWork, () => live.client.replyPermission(id, toOpenCodePermissionReply(decision)))();
         break;
       }
       if (live.runtimeMode === "full-access") {
-        await live.client.replyPermission(id, "once");
+        await nativeOutputSink(outputWork, () => live.client.replyPermission(id, "once"))();
         break;
       }
       const uiId = live.nextApprovalUiId++;
-      const pending = waitApproval(live, uiId, id, payloadSessionId ?? live.openCodeSessionId);
+      const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, payloadSessionId ?? live.openCodeSessionId);
       if (callId) {
-        live.onEvent({
+        emitNative({
           type: "tool.updated",
           callId,
           title,
@@ -1145,7 +1148,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
           preview,
         });
       }
-      live.onEvent({
+      emitNative({
         type: "approval.requested",
         requestId: uiId,
         title,
@@ -1162,14 +1165,14 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       if ([...live.questions.values()].some((pending) => pending.id === id)) break;
       const questions = questionsFromUnknown(properties);
       const uiId = live.nextApprovalUiId++;
-      const pending = waitQuestion(
+      const pending = nativeOutputSink(outputWork, waitQuestion)(
         live,
         uiId,
         id,
         questions,
         payloadSessionId ?? live.openCodeSessionId,
       );
-      showNextQuestion(live);
+      nativeOutputSink(outputWork, showNextQuestion)(live);
       await pending;
       break;
     }
@@ -1178,37 +1181,40 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
       const statusType = stringField(status, "type");
       if (statusType === "retry") {
         const message = stringField(status, "message");
-        if (message) live.onEvent({ type: "status", text: message });
+        if (message) emitNative({ type: "status", text: message });
         break;
       }
       if (statusType === "idle" && live.activeTurn) {
-        finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+        nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
       }
       break;
     }
     case "session.idle": {
       // v1 also emits this deprecated event; its turns end on session.status.
       if (live.client.generation === "v2" && live.activeTurn) {
-        finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+        nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
       }
       break;
     }
     case "session.error": {
       const message = sessionErrorMessage(properties.error);
-      live.onEvent({ type: "session.error", message });
+      emitNative({ type: "session.error", message });
       // A stale v2 failure with nothing waiting must not be saved as the next
       // turn's completion. v1 relies on that saved completion.
       if (live.client.generation !== "v2" || live.turnDone) {
-        finishActiveTurn(live);
+        nativeOutputSink(outputWork, finishActiveTurn)(live);
       }
       break;
     }
     default:
       break;
   }
+
+});
 }
 
 async function isDescendantSession(live: Live, sessionId: string): Promise<boolean> {
+return runNativeOutputWork(async () => {
   const visited = new Set<string>();
   let current: string | undefined = sessionId;
   while (current && !visited.has(current)) {
@@ -1223,6 +1229,8 @@ async function isDescendantSession(live: Live, sessionId: string): Promise<boole
     current = live.sessionParentById.get(current);
   }
   return false;
+
+}, { additionalInput: true });
 }
 
 export function openCodeAgentForTurn(input: {
@@ -1510,14 +1518,18 @@ async function waitApproval(
   id: string,
   sessionId: string,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
   const decision = await new Promise<ApprovalDecision>((resolve) => {
     live.approvals.set(uiId, { id, sessionId, resolve });
   });
   const sessionDeleted = live.approvals.get(uiId)?.sessionDeleted;
   live.approvals.delete(uiId);
-  live.onEvent({ type: "approval.resolved", requestId: uiId, decision });
+  emitNative({ type: "approval.resolved", requestId: uiId, decision });
   if (sessionDeleted) return;
-  await live.client.replyPermission(id, toOpenCodePermissionReply(decision));
+  await nativeOutputSink(outputWork, () => live.client.replyPermission(id, toOpenCodePermissionReply(decision)))();
+
+});
 }
 
 async function waitQuestion(
@@ -1527,20 +1539,27 @@ async function waitQuestion(
   questions: UserQuestion[],
   sessionId: string,
 ): Promise<void> {
+return runNativeOutputWork(async (outputWork) => {
+const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
+  const event: Extract<HarnessEvent, {type:"question.asked"}> = {
+    type:"question.asked",requestId:uiId,title:questionPromptTitle(questions) || "OpenCode question",questions,behavior:"blocking",dismissAction:"decline",
+  };
+  captureNativeOutputCurrentEvent(event);
   const reply = await new Promise<UserQuestionReply>((resolve) => {
     live.questions.set(uiId, {
       id,
       sessionId,
       questions,
+      event,
       resolve,
       deliver: async (reply) => {
         try {
           if (reply.kind === "answered")
-            await live.client.replyQuestion(
+            await nativeOutputSink(outputWork, () => live.client.replyQuestion(
               id,
               questions.map((question) => selectedAnswerLabels(question, reply)),
-            );
-          else await live.client.rejectQuestion(id);
+            ))();
+          else await nativeOutputSink(outputWork, () => live.client.rejectQuestion(id))();
         } catch (error) {
           if (error instanceof OpenCodeHttpError && [400, 422].includes(error.status)) {
             throw new QuestionReplyValidationError(
@@ -1554,13 +1573,15 @@ async function waitQuestion(
   });
   const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
   live.questions.delete(uiId);
-  live.onEvent({
+  emitNative({
     type: "question.resolved",
     requestId: uiId,
     decision: sessionDeleted || live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
     ...(reply.kind === "answered" ? { reply } : {}),
   });
-  showNextQuestion(live);
+  nativeOutputSink(outputWork, showNextQuestion)(live);
+
+});
 }
 
 function showNextQuestion(live: Live): void {
@@ -1569,15 +1590,7 @@ function showNextQuestion(live: Live): void {
   const next = live.questions.entries().next().value;
   live.visibleQuestionId = next?.[0] ?? null;
   if (!next) return;
-  const [requestId, { questions }] = next;
-  live.onEvent({
-    type: "question.asked",
-    requestId,
-    title: questionPromptTitle(questions) || "OpenCode question",
-    questions,
-    behavior: "blocking",
-    dismissAction: "decline",
-  });
+  if (next[1].event) live.onEvent(next[1].event);
 }
 
 function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {

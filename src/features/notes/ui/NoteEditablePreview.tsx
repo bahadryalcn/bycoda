@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Pencil } from "../../../shared/ui/icons";
 import {
   useDeferredValue,
@@ -37,6 +38,7 @@ export function NoteEditablePreview({
   onFocus: () => void;
 }) {
   useLocale();
+  const previewRoot = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState<{
     from: number;
     to: number;
@@ -86,9 +88,16 @@ export function NoteEditablePreview({
     onFocus();
   };
   const finish = () => {
+    const from = currentActive?.from;
     setActive(null);
     onEditingChange(false);
-    onSave();
+    // Leaving source-range editing is a view action. Changes have already
+    // reached the canonical draft/autosave owner; explicit Save stays separate.
+    requestAnimationFrame(() => {
+      previewRoot.current?.querySelector<HTMLElement>(
+        `[data-note-block-from="${from}"] [data-action-primary]`,
+      )?.focus();
+    });
   };
   const append = () => {
     const next = value.trim() && !value.endsWith("\n\n") ? `${value}\n\n` : value;
@@ -111,13 +120,15 @@ export function NoteEditablePreview({
       blocks
         .filter((block) => block.from >= from && block.to <= to)
         .map((block) => (
-          <div
+          <ActionHost
             key={block.key}
-            className="note-preview-block"
+            data-note-block-from={block.from}
+            className="note-preview-block items-start gap-1"
             style={{ contentVisibility: "auto", containIntrinsicSize: "auto 64px" }}
           >
             <div
               role="button"
+              data-action-primary
               tabIndex={0}
               aria-label={t("Edit note block")}
               className="note-preview-content"
@@ -135,7 +146,7 @@ export function NoteEditablePreview({
               }}
             >
               {block.definition ? (
-                <pre className="whitespace-pre-wrap text-[12px] text-content/70">{block.text}</pre>
+                <pre className="whitespace-pre-wrap text-ui-caption text-(--ui-text-secondary)">{block.text}</pre>
               ) : (
                 <AgentMarkdown
                   text={`${block.text}\n\n${referencesFor(block.text)}`}
@@ -144,18 +155,14 @@ export function NoteEditablePreview({
                 />
               )}
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
+            <InlineAction
               type="button"
-              iconOnly
               label={t("Edit note block")}
-              className="note-edit-block note-preview-edit"
               onClick={() => beginBlock.current(block.from, block.to)}
             >
-              <Pencil className="size-3.5" />
-            </Button>
-          </div>
+              <Pencil className="icon-sm" />
+            </InlineAction>
+          </ActionHost>
         )),
     [blocks, referencesFor, cwd],
   );
@@ -169,7 +176,7 @@ export function NoteEditablePreview({
   );
 
   return (
-    <div data-note-preview className="min-w-0 select-text">
+    <div ref={previewRoot} data-note-preview className="min-w-0 select-text">
       {currentActive ? (
         <>
           {before}
@@ -178,7 +185,7 @@ export function NoteEditablePreview({
               viewRef={viewRef}
               value={value.slice(currentActive.from, currentActive.to)}
               autoFocus
-              minHeight={96}
+              minHeight={24}
               showLineNumbers={false}
               onFocus={onFocus}
               onChange={(next) => {
@@ -202,7 +209,7 @@ export function NoteEditablePreview({
               className="note-edit-block"
               onClick={finish}
             >
-              {t("Done")}
+              {t("Read document")}
             </Button>
           </div>
           {after}

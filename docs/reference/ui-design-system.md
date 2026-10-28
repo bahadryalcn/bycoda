@@ -237,17 +237,69 @@ before the first await and clear pending on success and failure.
 Keep feedback local and stable: do not replace a populated screen with a spinner
 during refresh, move controls when progress appears, or repeat the same progress in
 a button, footer and toast. Quiet actions retain their visual hierarchy while busy.
-Text actions keep their label and contextual data visible beside the shared spinner;
-icon-only actions replace their icon. Pass `loading={pending}` in both idle and
-pending renders so the shared progress slot keeps the control's width stable.
+A text action with a `startIcon` swaps that icon for the shared spinner in the same
+slot and keeps its label visible. A text action without an icon reserves nothing at
+rest (no empty gap before the label); while pending it keeps its width and accessible
+name with the spinner centered over the label. Icon-only actions replace their icon.
+Pass `loading={pending}` in both idle and pending renders; the Button keeps its width
+stable in every case.
 Keep cancellation available where the operation supports it. Use determinate
 progress only when the operation supplies a real total.
+
+Ongoing agent, session, command or task work uses `WorkingIndicator`
+(`src/shared/ui/WorkingIndicator.tsx`; `TerminalSpinner` is a compatibility
+adapter). The component owns its color (`--color-active`) and size, so every working
+signal looks the same. Choose `size="xs" | "sm" | "md"` to match the icon slot it
+swaps with (`icon-xs` default, 12/14/16px); never pass text color, width, font-size
+or display utilities. `className` is for placement only; toggle visibility on a
+wrapper. It is decorative by default, with the surrounding status supplying the
+label; pass `label` only when nothing nearby announces the work. Reduced motion and
+the decorative-motion preference keep the bars still, and off-screen indicators
+pause. Pending Buttons use `loading`, not a WorkingIndicator.
+
+```tsx
+<span role="img" aria-label={t("Working")} title={t("Working")}>
+  <WorkingIndicator />
+</span>
+<WorkingIndicator size="sm" label={t("Running checks")} />
+```
 
 Success should be evident in the updated content or a concise local confirmation.
 Errors stay beside the failed operation with a useful recovery action and preserve
 the user's input. Loading, empty, unavailable, disconnected and failed are distinct
 states. Do not present a failed refresh as a successful empty result, or use a
 global notification as the only feedback for a foreground action.
+
+### Inline actions in rows, tabs and cards
+
+A tab, list row, tree row or card that holds small actions (close, remove, more) is
+one item with one highlight. Do not place a separate ghost Button over or beside the
+primary control; use `ActionHost` and `InlineAction` from `src/shared/ui/ActionHost.tsx`.
+
+| Part                                | Contract                                                                                                                                                                                                                                                                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ActionHost` (`selected?`)          | Paints hover, keyboard focus (`:has(:focus-visible)`) and selection for the whole item. Renders `data-action-host`; `className` sets placement, gap, padding and radius only.                                                                                                                                                                     |
+| Primary control                     | A direct child Button (or one with `data-action-primary`) or `TreeRow` drops its own fills inside a host, keeping its text, focus ring and selected-tab indicator. Feature controllers keep roles, selection, drag and keyboard navigation.                                                                                                       |
+| `InlineAction` (`label`, `reveal?`) | Shared Button `inset`: about 20px, small radius, transparent at rest, `--color-selection` hover and `--color-selection-strong` press/open, secondary ink to foreground. It never paints an opaque square over a hovered or selected host.                                                                                                         |
+| Reveal                              | `reveal="interaction"` (default) shows the action while its host is hovered, focused or selected; keyboard focus, an open menu and pending always show it, and touch input (`hover: none` / `pointer: coarse`) shows it permanently. Use `reveal="always"` for field adornments and chips. Counts, warnings and status are never hidden this way. |
+| Isolation                           | Pointer down, click, middle click, Enter/Space and drag start on an `InlineAction` do not reach the host, so closing never also selects or drags the item. Middle-click close belongs on the host.                                                                                                                                                |
+
+```tsx
+<ActionHost selected={active} onAuxClick={(event) => event.button === 1 && close(tab)}>
+  <Button variant="tab" role="tab" aria-selected={active} align="start" onClick={select}>
+    <TabLabel truncate="middle" title>
+      {tab.title}
+    </TabLabel>
+  </Button>
+  <InlineAction label={t("Close {p0}", { p0: tab.title })} onClick={() => close(tab)}>
+    <X aria-hidden />
+  </InlineAction>
+</ActionHost>
+```
+
+Shared adopters: SearchInput clear, PasswordField reveal, TagInput and SearchableSelect
+chip removal (`reveal="always"`), and `TreeRow` inside a host. Feature tab strips and
+rows migrate in their owning lines.
 
 ## Fields and choices
 
@@ -295,6 +347,35 @@ FileTree keeps selection, virtualization, rename and native drop authority.
 primary action is disabled (Commit/Amend). Loading and group aria-disabled gate
 both. Its default still derives the menu gate from primary disabled. Menu method
 selection never implies execution or bypasses a confirmation.
+
+Additional field and choice APIs: `SearchInputGroup size` / `SearchInput fieldSize`
+(`sm` toolbar default, `md` form height); `Select` option `disabled` (skipped by
+keyboard, a committed disabled value stays visible); `SearchableSelect`
+`loading`/`loadingLabel`/`error`/`onRetry`/`retryLabel`/`noOptionsLabel` (presentation
+only; callers own fetching); `Segment.disabled`; `TabLabel truncate="middle"`,
+`tail`, `title` and `TabDirtyDot`; `MiddleTruncate` (`mode`, `tail`, `title`) for long
+paths, branches and model names; TreeRow slots `TreeRowToggle`, `TreeRowIcon`,
+`TreeRowLabel` and `TreeRowTrailing`.
+
+### Style ownership: caller className sets placement only
+
+Every shared control uses one override contract. Its CSS module pins
+`@layer theme, base, components, utilities;` and places only the root's outer
+placement (width/inline size, min/max size, margins, `align-self`/`justify-self`,
+flex/grid placement) inside `@layer components`. Tailwind utilities passed through
+`className`/`fieldClassName` therefore win for placement. Internal presentation
+(height, padding, typography, color, border, radius and every interaction state)
+stays unlayered and owned by the component, so a caller class cannot reskin it.
+
+- Use explicit APIs for internal changes: `size`, `fieldSize`, `variant`, `tone`,
+  `align`, `selected`, `inset`, density and appearance props. Ask the owner for a
+  missing variant instead of overriding padding or font size.
+- Define each look once, in its component. Do not repeat a control's appearance in a
+  feature stylesheet, and do not use `!important` or class merging as a cascade fix.
+- Button keeps its long-standing layered box layout (sizing, alignment, icon-only
+  dimensions) for existing callers; its presentation is unlayered like the others.
+- `src/shared/ui/layerContract.test.ts` checks the module contract; the arc-controls
+  fixture section `matrix-placement` checks computed precedence on real controls.
 
 ## Semantic color contract
 

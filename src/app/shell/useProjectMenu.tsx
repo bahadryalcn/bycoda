@@ -108,7 +108,7 @@ import {
 } from "../../features/connections/model/connections";
 import { useNotificationProjects } from "../../features/notifications/hooks/useNotificationProjects";
 import { updateNotificationPreferences } from "../../features/notifications/model/notificationPreferences";
-import type { ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
+import type { ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { useGroupLock } from "../../features/group-lock/hooks/useGroupLock";
 import {
   getGroupLockView,
@@ -142,7 +142,7 @@ function projectMenuExtraItems(
   // A locked group is not offered as a destination.
   const lockedGroups = getGroupLockView().lock.lockedGroupIds;
   projectGroups = projectGroups.filter((group) => !lockedGroups.has(group.id));
-  const groupSubmenu: ExplorerMenuItem[] = [
+  const groupSubmenu: ContextMenuItem[] = [
     {
       kind: "item",
       id: "project-group:new",
@@ -212,18 +212,25 @@ function projectMenuExtraItems(
     ...(canReconnect
       ? [
           {
-            id: "reconnect-machine",
+            id: "machine",
             get label() {
-              return t("Reconnect machine");
+              return t("Machine");
             },
             icon: RefreshCw,
-          },
-          {
-            id: "edit-machine",
-            get label() {
-              return t("Edit machine…");
-            },
-            icon: Pencil,
+            submenu: [
+              {
+                kind: "item" as const,
+                id: "reconnect-machine",
+                label: t("Reconnect machine"),
+                icon: <RefreshCw className="size-3.5" strokeWidth={1.75} />,
+              },
+              {
+                kind: "item" as const,
+                id: "edit-machine",
+                label: t("Edit machine…"),
+                icon: <Pencil className="size-3.5" strokeWidth={1.75} />,
+              },
+            ],
           },
         ]
       : []),
@@ -665,6 +672,7 @@ export function useProjectMenu({
           restoreFocus();
         }}
         showActions={false}
+        ariaLabel={t("Project actions")}
         compactAppearance
         appearanceItems={[{ id: "background", label: t("Background image"), icon: ImagePlus }]}
         leadingAction={

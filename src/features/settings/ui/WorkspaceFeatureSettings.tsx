@@ -15,7 +15,7 @@ import {
   workspaceFeatureSettings,
   type WorkspaceFeatureId,
 } from "../model/workspaceFeatures";
-import { Row, Toggle } from "./settingsControls";
+import { Row, SettingsFeedback, Toggle } from "./settingsControls";
 
 export const WORKSPACE_FEATURE_CHOICES = [
   {
@@ -106,9 +106,20 @@ export function WorkspaceToolsHelp() {
 export function WorkspaceFeatureSettings() {
   useLocale();
   const features = useWorkspaceFeatures();
+  const [errors, setErrors] = useState<Partial<Record<WorkspaceFeatureId, boolean>>>({});
   return WORKSPACE_FEATURE_CHOICES.map(({ id, label }) => (
-    <Row key={id} id={id === "notes" ? "notes" : `workspace-${id}`} label={t(label)}>
-      <Toggle label={t(label)} on={features[id]} onChange={workspaceFeatureSettings[id].save} />
+    <Row
+      key={id}
+      id={id === "notes" ? "notes" : `workspace-${id}`}
+      label={t(label)}
+      dependency={id === "notes" ? t("Controls project notes and note references in the composer.") : undefined}
+      feedback={errors[id] ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
+    >
+      <Toggle label={t(label)} on={features[id]} onChange={(next) => {
+        const setting = workspaceFeatureSettings[id];
+        setting.save(next);
+        setErrors((current) => ({ ...current, [id]: setting.load() !== next }));
+      }} />
     </Row>
   ));
 }

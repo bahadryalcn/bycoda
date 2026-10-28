@@ -1,4 +1,8 @@
 import type { HarnessEvent } from "../../integrations/harness/core/types";
+import {
+  captureNativeOutputEvent,
+  failNativeOutputEvents,
+} from "../../integrations/harness/core/nativeOutputDelivery";
 
 export type ScheduledFlush = { kind: "raf" | "timeout"; id: number };
 
@@ -28,6 +32,7 @@ export class HarnessEventQueue {
   ) {}
 
   enqueue = (sessionId: string, event: HarnessEvent) => {
+    captureNativeOutputEvent(sessionId, event);
     const events = this.queued.get(sessionId);
     if (events) events.push(event);
     else this.queued.set(sessionId, [event]);
@@ -70,7 +75,15 @@ export class HarnessEventQueue {
       this.queued.delete(id);
     }
     this.schedulePending();
-    if (batches.size > 0) this.apply(batches);
+    if (batches.size > 0) {
+      try {
+        this.apply(batches);
+      } catch (error) {
+        for (const events of batches.values())
+          failNativeOutputEvents(events, "session-application-failed");
+        throw error;
+      }
+    }
   }
 
   private schedulePending() {

@@ -101,27 +101,44 @@ export function MarkdownViewShell({ mode, onModeChange, preview, source, actions
         </div>
       </div>
       <div className="relative min-h-0 min-w-0 flex-1">
-        <div
-          data-markdown-view-active={mode === "preview" ? "" : undefined}
-          className={
-            mode === "preview"
-              ? "absolute inset-0"
-              : "pointer-events-none invisible absolute inset-0"
-          }
-        >
+        <MarkdownViewPane name="preview" active={mode === "preview"}>
           {preview}
-        </div>
-        <div
-          data-markdown-view-active={mode === "source" ? "" : undefined}
-          className={
-            mode === "source"
-              ? "absolute inset-0"
-              : "pointer-events-none invisible absolute inset-0"
-          }
-        >
+        </MarkdownViewPane>
+        <MarkdownViewPane name="source" active={mode === "source"}>
           {source}
-        </div>
+        </MarkdownViewPane>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The inactive pane stays mounted (drafts, undo, selection, scroll and editor
+ * measurement carry over) but cannot paint or take input. Descendants such as the
+ * editor overview ruler force `visibility: visible` and `pointer-events: auto`, so
+ * inherited visibility alone is not enough: `inert` removes the subtree from
+ * focus, hit testing and the accessibility tree, and the inline opacity hides
+ * anything a descendant's own rules would still paint.
+ */
+export function MarkdownViewPane({
+  name,
+  active,
+  children,
+}: {
+  name: MarkdownViewMode;
+  active: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-markdown-view-pane={name}
+      data-markdown-view-active={active ? "" : undefined}
+      inert={!active}
+      aria-hidden={active ? undefined : true}
+      className={active ? "absolute inset-0" : "pointer-events-none invisible absolute inset-0"}
+      style={active ? undefined : { opacity: 0 }}
+    >
+      {children}
     </div>
   );
 }

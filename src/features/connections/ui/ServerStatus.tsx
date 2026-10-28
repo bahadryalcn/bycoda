@@ -20,7 +20,6 @@ import { RemoteConnectionDetails } from "./RemoteConnectionDetails";
 export function MachineStatus({
   machine,
   details = false,
-  compact = false,
   showDiagnostics = true,
 }: {
   machine: RemoteMachine;
@@ -62,19 +61,8 @@ export function MachineStatus({
       : indicator.tone === "connected" && !degraded
         ? "success"
         : "neutral";
-  // A healthy compact row keeps only the dot; every other state spells out its text.
-  const dotOnly =
-    compact &&
-    !details &&
-    !state.error &&
-    !degraded &&
-    !needsSignIn(state.status) &&
-    indicator.tone === "connected";
-  const badge = dotOnly ? (
-    <Badge variant="dot" size="sm" tone={tone} title={label}>
-      <span className="sr-only">{label}</span>
-    </Badge>
-  ) : (
+  // Health is always readable; SSH capability is a separate type label.
+  const badge = (
     <Badge variant="dot" size="sm" tone={tone} title={label}>
       {label}
     </Badge>

@@ -1,6 +1,6 @@
 //! Explicit isolated packaged-byte acceptance. Normal launches do not enter this mode.
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -332,16 +332,14 @@ mod tests {
         std::fs::create_dir(&outside).unwrap();
         std::os::unix::fs::symlink(&outside, root.join("alias")).unwrap();
         let nonce = "a".repeat(64);
-        assert!(
-            fresh_profile(
-                &root,
-                &root
-                    .join("alias")
-                    .join(format!("com.bycoda.desktop.smoke.{}", &nonce[..20])),
-                &nonce
-            )
-            .is_err()
-        );
+        assert!(fresh_profile(
+            &root,
+            &root
+                .join("alias")
+                .join(format!("com.bycoda.desktop.smoke.{}", &nonce[..20])),
+            &nonce
+        )
+        .is_err());
         assert!(root.starts_with(canonical(&std::env::temp_dir()).unwrap()));
         std::fs::remove_dir_all(root).unwrap();
     }

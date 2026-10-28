@@ -118,7 +118,7 @@ export function QuickPermissions({
           >
             <QuickPermissionIcon mode={mode} className="size-4 shrink-0" />
             <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-medium">{RUNTIME_MODE_LABEL[mode]}</span>
+              <span className="block text-ui-secondary font-medium">{RUNTIME_MODE_LABEL[mode]}</span>
               <span className="mt-0.5 block text-ui-micro text-(--ui-text-muted)">
                 {reason ? t("Unavailable: {p0}", { p0: reason }) : RUNTIME_MODE_HINT[mode]}
               </span>

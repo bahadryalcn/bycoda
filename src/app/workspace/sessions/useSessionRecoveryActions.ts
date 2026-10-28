@@ -1,7 +1,10 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
+import { useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
 import {
   getSessionRecovery,
+  eligibleRecoverySessions,
+  setRecoverySaveFailure,
+  getRecoverySaveFailure,
   removeRecoverySessions,
   setSessionRecovery,
   type SessionRecovery,
@@ -16,6 +19,7 @@ import type { useLockSnapshot } from "../../../features/group-lock/hooks/useGrou
 import type { ProjectReturnMemory } from "../../../features/projects/model/projectReturn";
 import type { WorkspaceTab } from "../../../features/workspace/model/layout";
 import type { ProjectTerminalDockState } from "../terminal/useProjectTerminalDockState";
+import { remoteSessionFor } from "../../../features/connections/model/connections";
 
 export interface SessionRecoveryActionsDeps {
   sessionRecovery: SessionRecovery | null;
@@ -52,6 +56,37 @@ export function useSessionRecoveryActions({
   tabsRef,
   activeTabIdRef,
 }: SessionRecoveryActionsDeps): SessionRecoveryActions {
+  const dismissSavePending = useRef(false);
+  const owner = useRef({});
+  const mounted = useRef(true);
+  const latest = useRef({ projectCwd, projectTerminals, lastDockSide, keepWorkspaceTab });
+  latest.current = { projectCwd, projectTerminals, lastDockSide, keepWorkspaceTab };
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (getRecoverySaveFailure()?.owner === owner.current) setRecoverySaveFailure(null);
+    };
+  }, []);
+  const persistDismissal = async () => {
+    if (!mounted.current || dismissSavePending.current) return;
+    dismissSavePending.current = true;
+    const context = latest.current;
+    try {
+      await saveWorkspaceSnapshot(collectWorkspaceSnapshot(
+        tabsRef.current, sessionsRef.current, activeTabIdRef.current,
+        context.projectCwd, projectReturnRef.current, context.projectTerminals,
+        context.lastDockSide ?? undefined, context.keepWorkspaceTab,
+      ));
+      if (mounted.current && getRecoverySaveFailure()?.owner === owner.current) setRecoverySaveFailure(null);
+    } catch {
+      if (mounted.current && (!getRecoverySaveFailure() || getRecoverySaveFailure()?.owner === owner.current)) {
+        setRecoverySaveFailure({ owner: owner.current, retry: persistDismissal });
+      }
+    } finally {
+      dismissSavePending.current = false;
+    }
+  };
   const closeRecovery = () => {
     setRecoveryOpen(false);
     const current = getSessionRecovery();
@@ -59,18 +94,7 @@ export function useSessionRecoveryActions({
     const next = { ...current, dismissed: true };
     setSessionRecovery(next);
     updateSessionRecovery(next);
-    void saveWorkspaceSnapshot(
-      collectWorkspaceSnapshot(
-        tabsRef.current,
-        sessionsRef.current,
-        activeTabIdRef.current,
-        projectCwd,
-        projectReturnRef.current,
-        projectTerminals,
-        lastDockSide ?? undefined,
-        keepWorkspaceTab,
-      ),
-    ).catch((error) => console.warn("Could not save session recovery", error));
+    void persistDismissal();
   };
   const removeRecoveredSessions = async (ids: string[]) => {
     const current = getSessionRecovery();
@@ -92,9 +116,10 @@ export function useSessionRecoveryActions({
       throw error;
     }
   };
-  const recoveryCount = sessionRecovery?.workspace.sessions.filter(
-    (stub) => !isProjectLockedIn(lockSnapshot, stub.cwd),
-  ).length ?? 0;
+  const recoveryCount = sessionRecovery ? eligibleRecoverySessions(
+    sessionRecovery, sessionsRef.current,
+    (cwd) => isProjectLockedIn(lockSnapshot, cwd), remoteSessionFor,
+  ).length : 0;
   const clearRecoveredSessions = async () => {
     const current = getSessionRecovery();
     if (!current) return;

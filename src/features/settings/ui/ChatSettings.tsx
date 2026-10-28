@@ -13,20 +13,23 @@ import {
 } from "../model/appearance";
 import {
   loadAutoContinueInterrupted,
+  subscribeAutoContinueInterrupted,
   loadModelControls,
   subscribeModelControls,
   loadResumeAtReset,
+  subscribeResumeAtReset,
   saveAutoContinueInterrupted,
   saveModelControls,
   saveResumeAtReset,
   type ModelControls,
 } from "../model/settings";
-import { AdvancedSettings, Group, Row, Segmented, Toggle } from "./settingsControls";
-import { saveComposerSpelling, useComposerSpelling } from "../model/composerSpelling";
+import { AdvancedSettings, Group, Row, Segmented, SettingsFeedback, Toggle } from "./settingsControls";
+import { Button } from "../../../shared/ui/Button";
+import { loadComposerSpelling, saveComposerSpelling, useComposerSpelling } from "../model/composerSpelling";
 import { TranslationSettings } from "./TranslationSettings";
 import { TemplatesSettings } from "./TemplatesSettings";
 import { ConversationDisplaySettings } from "./ConversationDisplaySettings";
-import type { AppearanceSettings } from "./useAppearanceSettings";
+import { AppearanceSaveFeedback, type AppearanceSettings } from "./useAppearanceSettings";
 import "./ChatSettings.css";
 import { VoiceSettings } from "../../voice/ui/VoiceSettings";
 
@@ -35,40 +38,42 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
   const spelling = useComposerSpelling();
   const [transcriptLayout, setTranscriptLayout] = useStoredPreferenceState(loadTranscriptLayout, subscribeTranscriptLayout);
   const [transcriptAnchor, setTranscriptAnchor] = useStoredPreferenceState(loadTranscriptAnchor, subscribeTranscriptAnchor);
-  const [resumeAtReset, setResumeAtReset] = useState(loadResumeAtReset);
-  const [autoContinue, setAutoContinue] = useState(loadAutoContinueInterrupted);
+  const [resumeAtReset, setResumeAtReset] = useStoredPreferenceState(loadResumeAtReset, subscribeResumeAtReset);
+  const [autoContinue, setAutoContinue] = useStoredPreferenceState(loadAutoContinueInterrupted, subscribeAutoContinueInterrupted);
+  const [failures, setFailures] = useState<Record<string, () => void>>({});
+  const commit = (id: string, write: () => boolean | void, read: () => unknown, next: unknown, update: () => void) => {
+    try {
+      if (write() === false || read() !== next) throw new Error("Preference not persisted");
+      update();
+      setFailures((current) => { const updated = { ...current }; delete updated[id]; return updated; });
+    } catch {
+      setFailures((current) => ({ ...current, [id]: () => commit(id, write, read, next, update) }));
+    }
+  };
+  const feedback = (id: string) => failures[id] ? <SettingsFeedback state="error" action={<Button onClick={failures[id]}>{t("Retry")}</Button>}>{t("Could not save changes")}</SettingsFeedback> : undefined;
   const [modelControls, setModelControls] = useStoredPreferenceState(loadModelControls, subscribeModelControls);
   const onTranscriptLayout = (next: TranscriptLayout) => {
-    saveTranscriptLayout(next);
-    setTranscriptLayout(next);
+    commit("transcript-layout", () => saveTranscriptLayout(next), loadTranscriptLayout, next, () => setTranscriptLayout(next));
   };
   const onTranscriptAnchor = (next: boolean) => {
-    saveTranscriptAnchor(next);
-    setTranscriptAnchor(next);
+    commit("anchor-prompts", () => saveTranscriptAnchor(next), loadTranscriptAnchor, next, () => setTranscriptAnchor(next));
   };
   const onResumeAtReset = (next: boolean) => {
-    saveResumeAtReset(next);
-    setResumeAtReset(next);
+    commit("resume-at-reset", () => saveResumeAtReset(next), loadResumeAtReset, next, () => setResumeAtReset(next));
   };
   const onAutoContinue = (next: boolean) => {
-    saveAutoContinueInterrupted(next);
-    setAutoContinue(next);
+    commit("auto-continue-interrupted", () => saveAutoContinueInterrupted(next), loadAutoContinueInterrupted, next, () => setAutoContinue(next));
   };
   const onModelControls = (next: ModelControls) => {
-    saveModelControls(next);
-    setModelControls(next);
+    commit("model-controls", () => saveModelControls(next), loadModelControls, next, () => setModelControls(next));
   };
   return (
-    <div className="chat-settings">
-      <VoiceSettings />
-      <Group title={t("Translation and reprompt")} layout="full">
-        <TranslationSettings embedded />
-        <TranslationSettings embedded action="reprompt" />
-      </Group>
-      <Group title={t("Conversation view")} layout="full">
+    <div className="chat-settings settings-topics">
+      <Group title={t("Conversation view")} layout="full" feedback={<AppearanceSaveFeedback settingIds={["appearance-preferences", "transcript-layout", "anchor-prompts", "streaming-text-mode"]} />}>
         <ConversationDisplaySettings appearance={appearance} />
         <Row
           id="transcript-layout"
+          feedback={feedback("transcript-layout")}
           label={t("Transcript layout")}
           description={t("Choose a wider transcript or compact chat bubbles.")}
         >
@@ -94,6 +99,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         </Row>
         <Row
           id="anchor-prompts"
+          feedback={feedback("anchor-prompts")}
           label={t("Anchor prompts to top")}
           description={t("Keep your latest prompt at the top while the reply appears below.")}
         >
@@ -108,6 +114,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
       <Group title={t("Composer")} layout="full">
         <Row
           id="composer-spelling"
+          feedback={feedback("composer-spelling")}
           label={t("Spelling and autocorrect")}
           description={t(
             "Enable spelling checks and automatic correction where supported by your platform.",
@@ -116,13 +123,14 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           <Toggle
             label={t("Spelling and autocorrect")}
             on={spelling}
-            onChange={saveComposerSpelling}
+            onChange={(next) => commit("composer-spelling", () => saveComposerSpelling(next), loadComposerSpelling, next, () => {})}
           />
         </Row>
         <AdvancedSettings
           id="follow-up"
           settingIds={["follow-up"]}
           title={t("Sending while working")}
+          defaultOpen={false}
         >
           <p className="chat-detail">
             {t(
@@ -131,13 +139,20 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           </p>
         </AdvancedSettings>
       </Group>
+      <Group title={t("Translation and reprompt")} layout="full">
+        <TranslationSettings embedded />
+        <TranslationSettings embedded action="reprompt" />
+      </Group>
+      <VoiceSettings />
       <AdvancedSettings
         title={t("Advanced conversation settings")}
+        defaultOpen={false}
         settingIds={["resume-at-reset", "auto-continue-interrupted", "model-controls"]}
       >
         <Group title={t("Continuation and model options")} layout="full">
           <Row
             id="resume-at-reset"
+            feedback={feedback("resume-at-reset")}
             dependency={t(
               "Automatic resumption requires the provider to report when its usage limit resets.",
             )}
@@ -150,6 +165,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           </Row>
           <Row
             id="auto-continue-interrupted"
+            feedback={feedback("auto-continue-interrupted")}
             label={t("Automatically continue interrupted turns")}
             description={t(
               "When {p0} quit in the middle of a turn and the transcript shows it was cut off, send Continue at the next launch. Turns that finished or are still running are never continued, and nothing is sent when you have queued messages. When off, the chat shows an Interrupted - Continue action instead.",
@@ -164,6 +180,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           </Row>
           <Row
             id="model-controls"
+            feedback={feedback("model-controls")}
             label={t("Extras summary")}
             description={t(
               "Keep the main model separate. Choose whether Extras also shows your active options.",
@@ -191,7 +208,9 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
           </Row>
         </Group>
       </AdvancedSettings>
-      <TemplatesSettings />
+      <AdvancedSettings title={t("Prompt templates")} settingIds={["prompt-templates"]} defaultOpen={false}>
+        <TemplatesSettings />
+      </AdvancedSettings>
     </div>
   );
 }

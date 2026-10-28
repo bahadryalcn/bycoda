@@ -1,0 +1,395 @@
+import { createHash, webcrypto } from "node:crypto";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import vectors from "./nativeOutputDelivery.fixture.json";
+import type {
+  NativeOutputChannel,
+  NativeOutputMetadata,
+  NativeOutputState,
+} from "./nativeOutputDelivery";
+
+beforeEach(() => {
+  vi.resetModules();
+  vi.stubGlobal("crypto", webcrypto);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+const ids = {
+  processEpoch: "11111111-1111-4111-8111-111111111111",
+  streamEpoch: "22222222-2222-4222-8222-222222222222",
+  storeInstance: "33333333-3333-4333-8333-333333333333",
+  ownerEpoch: "44444444-4444-4444-8444-444444444444",
+};
+// Independent Node Buffer codec, checked against Python goldens below.
+function wire(
+  channel: NativeOutputChannel,
+  items: readonly string[],
+  extra: Partial<NativeOutputMetadata> = {},
+): NativeOutputMetadata {
+  const count = Buffer.alloc(4);
+  count.writeUInt32LE(items.length);
+  const frame = Buffer.concat([
+    Buffer.from("bycoda-native-output-items-v1\0"),
+    Buffer.from([channel === "stdout" ? 1 : channel === "stderr" ? 2 : 3]),
+    count,
+    ...items.flatMap((item) => {
+      const value = Buffer.from(item);
+      const length = Buffer.alloc(8);
+      length.writeBigUInt64LE(BigInt(value.length));
+      return [length, value];
+    }),
+  ]);
+  return {
+    ...ids,
+    version: 1,
+    qualified: false,
+    sessionId: "session",
+    streamKind: channel === "sse" ? "sse" : "process",
+    sourceStoreId: "store",
+    sourceProfileId: "profile",
+    processId: channel === "sse" ? null : 42,
+    channel,
+    sequence: 1,
+    itemCount: items.length,
+    utf8Bytes: items.reduce((sum, item) => sum + Buffer.byteLength(item), 0),
+    payloadSha256: createHash("sha256").update(frame).digest("hex"),
+    digestEncoding: "bycoda-output-items-le/v1",
+    available: true,
+    unavailableReason: null,
+    ...extra,
+  };
+}
+function terminal(
+  metadata: NativeOutputMetadata,
+  extra: Partial<NativeOutputState> = {},
+): NativeOutputState {
+  const {
+    processEpoch,
+    streamEpoch,
+    streamKind,
+    sessionId,
+    logicalSessionId,
+    sourceStoreId,
+    sourceProfileId,
+    storeInstance,
+    processId,
+    ownerEpoch,
+  } = metadata;
+  return {
+    version: 1,
+    qualified: false,
+    processEpoch,
+    streamEpoch,
+    streamKind,
+    sessionId,
+    ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
+    sourceStoreId,
+    sourceProfileId,
+    storeInstance,
+    processId,
+    ownerEpoch,
+    lastSequence: metadata.sequence,
+    state: "sealed",
+    reason: null,
+    ...extra,
+  };
+}
+const load = () => import("./nativeOutputDelivery");
+
+it("matches independent Python framing vectors including BOM, Unicode, boundaries and an empty line", async () => {
+  const api = await load();
+  for (const vector of vectors.cases) {
+    const frame = api.frameNativeOutputItems(vector.channel as NativeOutputChannel, vector.items);
+    expect(Buffer.from(frame).toString("hex")).toBe(vector.frameHex);
+    expect(wire(vector.channel as NativeOutputChannel, vector.items).payloadSha256).toBe(
+      vector.sha256,
+    );
+    expect(wire(vector.channel as NativeOutputChannel, vector.items).utf8Bytes).toBe(
+      vector.utf8Bytes,
+    );
+  }
+  expect(() => api.frameNativeOutputItems("stdout", ["\ud800"])).toThrow("UTF8");
+  expect(() =>
+    api.frameNativeOutputItems("stdout", ["x".repeat(700_000), "x".repeat(700_000)]),
+  ).toThrow("CAPACITY");
+});
+
+it("distinguishes verified reception, callback delivery, real application and missing durable/provider proof", async () => {
+  const api = await load();
+  const items = ["hello", "漢"];
+  const metadata = wire("stdout", items);
+  const tokens = api.observeNativeOutputBatch("session", "stdout", items, metadata)!;
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].receivedThrough).toBe(1),
+  );
+  expect(api.inspectNativeOutputDelivery("session").streams[0].deliveredThrough).toBe(0);
+  const events = items.map((text) => ({ type: "message.delta", text }));
+  for (let i = 0; i < items.length; i++)
+    api.deliverNativeOutputItem(tokens[i], () =>
+      api.captureNativeOutputEvent("session", events[i]),
+    );
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    deliveredThrough: 1,
+    queuedEvents: 2,
+    appliedEvents: 0,
+  });
+  api.markNativeOutputEventsApplied("session", events);
+  api.markNativeOutputEventsApplied("session", events); // idempotent actual event receipts
+  api.observeNativeOutputState("session", terminal(metadata));
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    qualified: false,
+    coverage: "unverified",
+    streams: [{ appliedEvents: 2, applicationThrough: null, nativeState: "sealed" }],
+  });
+});
+
+it("keeps legacy delivery on a bad digest and permanently reports unavailable rather than fabricating an empty prefix", async () => {
+  const api = await load();
+  const items = ["original"];
+  const tokens = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    items,
+    wire("stdout", items, { payloadSha256: "0".repeat(64) }),
+  )!;
+  const handler = vi.fn();
+  api.deliverNativeOutputItem(tokens[0], () => handler(items[0]));
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe(
+      "payload-digest",
+    ),
+  );
+  expect(handler).toHaveBeenCalledExactlyOnceWith("original");
+  expect(api.inspectNativeOutputDelivery("session").streams[0].deliveredThrough).toBe(0);
+});
+
+it.each(["gap", "replay", "source", "channel", "owner"] as const)(
+  "rejects %s changes without suppressing an ordinary provider handler",
+  async (kind) => {
+    const api = await load();
+    const items = ["kept"];
+    const metadata = wire("stdout", items);
+    if (kind !== "gap") {
+      const tokens = api.observeNativeOutputBatch("session", "stdout", items, metadata)!;
+      api.deliverNativeOutputItem(tokens[0], () => {});
+    }
+    const changed = {
+      ...metadata,
+      sequence: kind === "gap" ? 2 : kind === "replay" ? 1 : 2,
+      ...(kind === "source" ? { storeInstance: "55555555-5555-4555-8555-555555555555" } : {}),
+      ...(kind === "channel" ? { streamKind: "sse" as const } : {}),
+      ...(kind === "owner" ? { ownerEpoch: null } : {}),
+    };
+    expect(api.observeNativeOutputBatch("session", "stdout", items, changed)).toBeUndefined();
+    expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).not.toBeNull();
+  },
+);
+
+it("does not infer final output from an unsealed EXIT hint, and rejects output after a final seal", async () => {
+  const api = await load();
+  const items = ["line"];
+  const metadata = wire("stdout", items);
+  const tokens = api.observeNativeOutputBatch("session", "stdout", items, metadata)!;
+  api.deliverNativeOutputItem(tokens[0], () => {});
+  api.observeNativeOutputState("session", terminal(metadata, { state: "unsealed" }));
+  expect(api.inspectNativeOutputDelivery("session").streams[0].nativeState).toBe("unsealed");
+  api.observeNativeOutputState("session", terminal(metadata));
+  api.observeNativeOutputBatch("session", "stdout", items, { ...metadata, sequence: 2 });
+  expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe(
+    "output-after-seal",
+  );
+});
+
+it("rejects a forged token, cross-session application and provider handler failures", async () => {
+  const api = await load();
+  const event = {};
+  api.deliverNativeOutputItem({ kind: "native-output-item" }, () =>
+    api.captureNativeOutputEvent("session", event),
+  );
+  const tokens = api.observeNativeOutputBatch("session", "stdout", ["x"], wire("stdout", ["x"]))!;
+  api.deliverNativeOutputItem(tokens[0], () => api.captureNativeOutputEvent("session", event));
+  api.markNativeOutputEventsApplied("other", [event]);
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    appliedEvents: 0,
+    unavailableReason: "event-session-changed",
+  });
+  const other = wire("stdout", ["x"], {
+    sessionId: "failure",
+    streamEpoch: "66666666-6666-4666-8666-666666666666",
+  });
+  const failureTokens = api.observeNativeOutputBatch("failure", "stdout", ["x"], other)!;
+  expect(() =>
+    api.deliverNativeOutputItem(failureTokens[0], () => {
+      throw new Error("parser");
+    }),
+  ).toThrow("parser");
+  expect(api.inspectNativeOutputDelivery("failure").streams[0].unavailableReason).toBe(
+    "handler-failed",
+  );
+});
+
+it("retains hash permits until actual work settles, even after invalidation", async () => {
+  const api = await load();
+  const waiting: Array<(value: ArrayBuffer) => void> = [];
+  vi.spyOn(crypto.subtle, "digest").mockImplementation(
+    () => new Promise<ArrayBuffer>((resolve) => waiting.push(resolve)),
+  );
+  for (let i = 0; i < 33; i++) {
+    const name = `session-${i}`;
+    const metadata = wire("stdout", ["x"], {
+      sessionId: name,
+      streamEpoch: `${i.toString(16).padStart(8, "0")}-2222-4222-8222-222222222222`,
+    });
+    api.observeNativeOutputBatch(name, "stdout", ["x"], metadata);
+  }
+  await vi.waitFor(() => expect(waiting).toHaveLength(32));
+  expect(api.inspectNativeOutputDelivery("session-32").streams[0].unavailableReason).toBe(
+    "renderer-capacity",
+  );
+  api.invalidateNativeOutputDelivery("closed");
+  api.observeNativeOutputBatch(
+    "after-close",
+    "stdout",
+    ["x"],
+    wire("stdout", ["x"], {
+      sessionId: "after-close",
+      streamEpoch: "77777777-7777-4777-8777-777777777777",
+    }),
+  );
+  expect(api.inspectNativeOutputDelivery("after-close").streams[0].unavailableReason).toBe(
+    "renderer-capacity",
+  );
+  const expected = Buffer.from(wire("stdout", ["x"]).payloadSha256, "hex");
+  for (const resolve of waiting)
+    resolve(expected.buffer.slice(expected.byteOffset, expected.byteOffset + expected.byteLength));
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session-0").streams[0].unavailableReason).toBe(
+      "closed",
+    ),
+  );
+});
+
+it("owns deferred descendants before scheduling and keeps original event origins through awaits", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["deferred"], wire("stdout", ["deferred"]))!;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const event = {};
+  let job!: Promise<void>;
+  api.deliverNativeOutputItem(item, () => {
+    job = api.runNativeOutputWork(async (work) => {
+      await held;
+      api.nativeOutputSink(work, () => api.captureNativeOutputEvent("session", event))();
+    });
+  });
+  expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
+  // A detached/expired observer cannot release actual work.
+  await Promise.race([job, Promise.resolve("waiter-deadline")]);
+  expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
+  release(); await job;
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  expect(origin).not.toBeNull();
+  expect(api.getNativeOutputEventOrigin(event)).toBe(origin);
+  const write = api.retainNativeOutputEventOrigin(origin, "session")!;
+  expect(write).not.toBeNull();
+  expect(api.retainNativeOutputEventOrigin({ kind: "native-output-origin" }, "session")).toBeNull();
+  write.finish(); write.finish();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,finishedCausalWork:2,applicationThrough:null});
+});
+
+it("a failed descendant stays unavailable and late use cannot acquire fresh event lineage", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["failure"], wire("stdout", ["failure"]))!;
+  let job!: Promise<unknown>;
+  let work: ReturnType<typeof api.captureNativeOutputWork> = null;
+  api.deliverNativeOutputItem(item, () => {
+    job = api.runNativeOutputWork(async (owned) => { work = owned; await Promise.resolve(); throw new Error("actual failure"); });
+  });
+  await expect(job).rejects.toThrow("actual failure");
+  const event = {};
+  work!.run(() => api.captureNativeOutputEvent("session", event));
+  expect(api.getNativeOutputEventOrigin(event)).toBeNull();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-work-rejected",applicationThrough:null});
+});
+
+it("keeps logical construction binding separate from opaque child routing and rejects target mismatch", async () => {
+  const api = await load();
+  const metadata = wire("stdout", ["logical"], { sessionId:"session#17", logicalSessionId:"session" });
+  const [item] = api.observeNativeOutputBatch("session#17", "stdout", ["logical"], metadata)!;
+  const event = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputEvent("session", event));
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  expect(api.retainNativeOutputEventOrigin(origin, "other")).toBeNull();
+  expect(api.retainNativeOutputEventOrigin(origin, "session#17")).toBeNull();
+  const own = api.retainNativeOutputEventOrigin(origin, "session")!;
+  expect(own).not.toBeNull(); own.finish();
+  api.observeNativeOutputState("session#17", terminal(metadata));
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({unavailableReason:"causal-session-changed",nativeState:"sealed",applicationThrough:null});
+});
+
+it("preserves an early queued origin across clone/requeue but rejects applied event replay", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["clone"], wire("stdout", ["clone"]))!;
+  const original = {}, clone = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputEvent("session", original));
+  const origin = api.getNativeOutputEventOrigin(original);
+  api.transferNativeOutputEventOrigin(original, clone);
+  api.captureNativeOutputEvent("session", clone);
+  expect(api.getNativeOutputEventOrigin(clone)).toBe(origin);
+  api.markNativeOutputEventsApplied("session", [clone]);
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({queuedEvents:1,appliedEvents:1});
+  api.captureNativeOutputEvent("session", clone);
+  expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe("event-requeued-after-apply");
+});
+
+it("bounds actual descendant leases and retains a capacity fault after successful settlements", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["many"], wire("stdout", ["many"]))!;
+  const jobs: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>[] = [];
+  api.deliverNativeOutputItem(item, () => {
+    for (let n=0;n<128;n++) jobs.push(api.captureNativeOutputWork()!);
+    expect(api.captureNativeOutputWork()).toBeNull();
+  });
+  expect(jobs.every(Boolean)).toBe(true);
+  expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(128);
+  for (const job of jobs) job.finish();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-work-capacity"});
+});
+
+it("accounts descendant file/HTTP input without treating its data as Native sealed output", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["poll"], wire("stdout", ["poll"]))!;
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputWork({additionalInput:true})!.finish());
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({additionalUnsealedInputs:1,unavailableReason:"additional-input-unsealed",applicationThrough:null});
+});
+
+it("owns a timer before scheduling and never releases a running callback on clear", async () => {
+  const api=await load(); vi.useFakeTimers();
+  const [item]=api.observeNativeOutputBatch("session","stdout",["timer"],wire("stdout",["timer"]))!;
+  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
+  const event={}; let timer!:ReturnType<typeof setTimeout>;
+  try {
+    api.deliverNativeOutputItem(item,()=>{ timer=api.scheduleNativeOutputCallback(async(work)=>{
+      await gate;
+      api.nativeOutputSink(work,()=>api.captureNativeOutputEvent("session",event))();
+    },10); });
+    expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
+    await vi.advanceTimersByTimeAsync(10);
+    api.cancelNativeOutputCallback(timer);
+    expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
+    release(); await Promise.resolve();await Promise.resolve();
+    expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
+    expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-timer-retired"});
+  } finally {vi.useRealTimers();}
+});
+
+it("retains active work when tracker ownership is invalidated for reload", async () => {
+  const api=await load();const [item]=api.observeNativeOutputBatch("session","stdout",["reload"],wire("stdout",["reload"]))!;
+  let work:ReturnType<typeof api.captureNativeOutputWork>=null;
+  api.deliverNativeOutputItem(item,()=>{work=api.captureNativeOutputWork();});
+  api.invalidateNativeOutputDelivery("tracker-reloaded");
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:1,unavailableReason:"tracker-reloaded"});
+  work!.finish();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"tracker-reloaded",applicationThrough:null});
+});

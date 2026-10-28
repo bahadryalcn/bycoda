@@ -36,6 +36,8 @@ function createEntry() {
     } as PanelState,
     listeners: new Set<() => void>(),
     generateAbort: { current: null as AbortController | null },
+    // Generation can survive panel remounts; its index identity must do so too.
+    generationIndex: { version: 0, identity: "" },
     backgroundFetch: null as Promise<unknown> | null,
     fileActions: {
       current: { tail: Promise.resolve(), size: 0, paths: [] as string[] },

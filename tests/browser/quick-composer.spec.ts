@@ -1,10 +1,9 @@
-import { mkdir } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 for (const [theme, width] of [
   ["light", 390],
   ["dark", 1000],
 ] as const) {
-  test(`quick composer shared controls ${theme} ${width}`, async ({ page }) => {
+  test(`quick composer shared controls ${theme} ${width}`, async ({ page }, info) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     await page.setViewportSize({ width, height: 900 });
@@ -42,7 +41,7 @@ for (const [theme, width] of [
       await page.evaluate(
         () =>
           (window as any).quickFixtureCalls.filter(
-            (call: any) => call.command === "quick_composer_submit",
+            (call: any) => call.command === "quick_composer_submit_intent",
           ).length,
       ),
     ).toBe(0);
@@ -50,7 +49,7 @@ for (const [theme, width] of [
       true,
     );
     await page.screenshot({
-      path: `temp/verification/2026-10-16-ui-system/W7-SHELL-quick-${theme}-${width}.png`,
+      path: info.outputPath(`quick-controls-${theme}-${width}.png`),
       animations: "disabled",
     });
     await page.getByRole("button", { name: "Start", exact: true }).dblclick();
@@ -59,7 +58,7 @@ for (const [theme, width] of [
         page.evaluate(
           () =>
             (window as any).quickFixtureCalls.filter(
-              (call: any) => call.command === "quick_composer_submit",
+              (call: any) => call.command === "quick_composer_submit_intent",
             ).length,
         ),
       )
@@ -73,7 +72,7 @@ for (const theme of ["light", "dark"]) {
   for (const width of [1280, 800]) {
     test(`quick composer inherits current checkout by default ${theme} ${width}`, async ({
       page,
-    }) => {
+    }, info) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/quick-composer.html?theme=${theme}`);
@@ -91,9 +90,8 @@ for (const theme of ["light", "dark"]) {
           ),
         ),
       ).toBe(false);
-      await mkdir("temp/verification/d1", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/d1/quick-current-${theme}-${width}.png`,
+        path: info.outputPath(`quick-current-${theme}-${width}.png`),
         animations: "disabled",
       });
     });
@@ -121,7 +119,7 @@ test("quick composer displays inherited worktree policy and an explicit current 
       page.evaluate(
         () =>
           (window as any).quickFixtureCalls.filter(
-            (call: any) => call.command === "quick_composer_submit",
+            (call: any) => call.command === "quick_composer_submit_intent",
           ).length,
       ),
     )
@@ -130,8 +128,8 @@ test("quick composer displays inherited worktree policy and an explicit current 
     await page.evaluate(
       () =>
         (window as any).quickFixtureCalls.find(
-          (call: any) => call.command === "quick_composer_submit",
-        ).args.request.workspaceMode,
+          (call: any) => call.command === "quick_composer_submit_intent",
+        ).args.submission.request.workspaceMode,
     ),
   ).toBe("current");
 });
@@ -153,3 +151,69 @@ test("quick composer keeps an explicit worktree blocked on a legacy Host and pre
   await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
   await expect(prompt).toHaveValue("Keep this failed worktree draft");
 });
+
+for (const theme of ["light", "dark"]) {
+  for (const width of [1280, 800]) {
+    test(`native intent pending, newer draft and unknown status retry ${theme} ${width}`, async ({
+      page,
+    }, info) => {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/quick-composer.html?theme=${theme}`);
+      const prompt = page.getByRole("textbox", { name: "Prompt", exact: true });
+      const count = (command: string) =>
+        page.evaluate(
+          (name) =>
+            (window as any).quickFixtureCalls.filter((call: any) => call.command === name).length,
+          command,
+        );
+      await page.evaluate(() => {
+        (window as any).quickFixture.hold = true;
+      });
+      await prompt.fill("Original accepted prompt");
+      await page.getByRole("button", { name: "Start", exact: true }).click();
+      await expect.poll(() => count("quick_composer_submit_intent")).toBe(1);
+      await prompt.fill("Newer unsent prompt kept through the old acknowledgment");
+      await page.screenshot({
+        path: info.outputPath(`quick-pending-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await page.evaluate(() => {
+        (window as any).quickFixture.hold = false;
+        (window as any).quickFixture.finish();
+      });
+      await expect(page.getByRole("button", { name: "Start", exact: true })).toBeEnabled();
+      await expect(prompt).toHaveValue("Newer unsent prompt kept through the old acknowledgment");
+      expect(
+        await page.evaluate(
+          () =>
+            (window as any).quickFixtureCalls.find(
+              (call: any) => call.command === "quick_composer_submit_intent",
+            ).args.submission.request.prompt,
+        ),
+      ).toBe("Original accepted prompt");
+      await page.screenshot({
+        path: info.outputPath(`quick-newer-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await page.evaluate(() => {
+        (window as any).quickFixture.fail = true;
+      });
+      await page.getByRole("button", { name: "Start", exact: true }).click();
+      await expect(page.getByRole("alert")).toBeVisible();
+      await expect(prompt).toHaveValue("Newer unsent prompt kept through the old acknowledgment");
+      await page.screenshot({
+        path: info.outputPath(`quick-unknown-${theme}-${width}.png`),
+        animations: "disabled",
+      });
+      await page.evaluate(() => {
+        (window as any).quickFixture.fail = false;
+      });
+      await page.getByRole("button", { name: "Start", exact: true }).click();
+      await expect(prompt).toHaveValue("");
+      expect(await count("quick_composer_submit_status")).toBe(1);
+      expect(await count("quick_composer_submit_intent")).toBe(2);
+      expect(await count("quick_composer_submit")).toBe(0);
+    });
+  }
+}

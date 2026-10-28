@@ -1,68 +1,84 @@
-.track {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  justify-content: center;
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External layout: callers can cap or stretch the card with Tailwind utilities. Presentation below stays unlayered. */
+@layer components {
+  .track {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    justify-content: center;
+  }
+  .card {
+    width: 100%;
+    max-width: var(--expandable-card-width, 100%);
+  }
+  .card[data-expanded="true"] {
+    max-width: var(--expandable-card-expanded-width, var(--expandable-card-width, 100%));
+  }
+  /* The measured destination width is applied once; layout projection supplies the transform. */
+  .card[data-measured] {
+    max-width: 100%;
+  }
 }
 .card {
-  width: 100%;
-  max-width: var(--expandable-card-width, 100%);
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid var(--color-stroke);
   border-radius: var(--radius-surface);
-  background: var(--surface);
-  box-shadow: var(--shadow-resting);
+  background: var(--ui-surface);
+  color: var(--foreground);
 }
-.card[data-expanded="true"] {
-  max-width: var(--expandable-card-expanded-width, var(--expandable-card-width, 100%));
-}
-/* The measured destination width is applied once; layout projection supplies the transform. */
-.card[data-measured] {
-  max-width: 100%;
-}
-/* The card clips the header to its corners, so the header's hover fill never changes shape while the card opens or closes. */
+
+/* The disclosure header is one real button. The card clips it to its corners, so the hover fill never changes shape while the card opens or closes. */
 .trigger {
   display: flex;
   width: 100%;
-  min-height: 64px;
+  min-block-size: var(--ui-control-height-lg);
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-5);
+  gap: var(--space-4);
   border: 0;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-5);
   background: transparent;
   color: var(--foreground);
   font: inherit;
-  text-align: left;
+  text-align: start;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: background-color var(--duration-fast) var(--ease-standard);
 }
+/* The card clips overflow, so the keyboard ring sits inside the header instead of being cut off. */
+.card .trigger:focus-visible {
+  outline-offset: calc(-1 * var(--ui-focus-width));
+}
 @media (hover: hover) and (pointer: fine) {
   .trigger:hover {
-    background: var(--surface-muted);
+    background: var(--ui-surface-hover);
   }
   .trigger:hover .arrow {
     color: var(--foreground);
   }
 }
 .trigger:active {
-  background: var(--surface-muted);
+  background: var(--ui-surface-pressed);
 }
 .copy {
+  display: grid;
   min-width: 0;
+  gap: var(--space-1);
 }
-.copy strong {
+.title {
   display: block;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
+  line-height: var(--ui-leading-secondary);
 }
 .description {
   display: block;
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: var(--text-xs);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
   font-variant-numeric: tabular-nums;
+  line-height: var(--ui-leading-caption);
 }
 .roll {
   position: relative;
@@ -85,8 +101,12 @@
   flex: 0 0 auto;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: var(--ui-text-muted);
   transition: color var(--duration-fast) var(--ease-standard);
+}
+.arrow > svg {
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
 }
 .card[data-expanded="true"] .arrow {
   color: var(--foreground);
@@ -96,18 +116,20 @@
   display: grid;
   grid-template-rows: 0fr;
   overflow: hidden;
-  box-shadow: inset 0 1px 0 var(--border);
-  background: var(--surface-muted);
-  color: var(--text-secondary);
-  font-size: var(--text-sm);
+  box-shadow: inset 0 1px 0 var(--color-stroke);
+  background: var(--ui-surface-muted);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: var(--ui-leading-secondary);
 }
 .panelClip {
   min-height: 0;
   overflow: hidden;
 }
+/* Reading room: a little more inset than the header, and a comfortable measure for prose. */
 .panelInner {
   max-width: none;
-  padding: var(--space-4) var(--space-5) var(--space-5);
+  padding: var(--space-5) var(--space-5) var(--space-6);
 }
 @media (prefers-reduced-motion: reduce) {
   .trigger,

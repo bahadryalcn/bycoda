@@ -14,14 +14,9 @@ import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row } from "../../settings/ui/settingsControls";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
-import {
-  candidateLabel,
-  catalogCandidate,
-  catalogModels,
-  libraryGroups,
-  newCrewMember,
-} from "../model/crewRoster";
-import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
+import { catalogCandidate, catalogModels, libraryGroups, newCrewMember } from "../model/crewRoster";
+import { CrewMemberMeta, visibleLibraryMembers } from "./CrewLibraryMemberMeta";
+import { CrewMemberForm } from "./CrewMemberForm";
 
 type CrewState = ReturnType<typeof useProjectCrews>;
 
@@ -52,17 +47,8 @@ export function CrewLibrary({
   const groupTrigger = useRef<HTMLButtonElement>(null);
   const groups = libraryGroups(data.agents);
   const activeGroup = groups.includes(group) ? group : "";
-  const q = query.trim().toLocaleLowerCase();
-  const agents = data.agents
-    .filter((agent) => !activeGroup || agent.groups?.includes(activeGroup))
-    .filter(
-      (agent) =>
-        !q ||
-        `${agent.name} ${agent.instructions} ${(agent.groups ?? []).join(" ")}`
-          .toLocaleLowerCase()
-          .includes(q),
-    )
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // Search matches what each row shows plus its instructions (CR-E06).
+  const agents = visibleLibraryMembers(data.agents, data.catalog, query, activeGroup);
   return (
     <>
       <Group
@@ -85,8 +71,8 @@ export function CrewLibrary({
             <SearchInput
               appearance="field"
               containerClassName="min-w-40 flex-1"
-              aria-label={t("Search members")}
-              placeholder={t("Search members")}
+              aria-label={t("Search name, role, model or group")}
+              placeholder={t("Search name, role, model or group")}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -122,30 +108,41 @@ export function CrewLibrary({
             description={t("Create one here, or save a crew member to the library from its crew.")}
           />
         ) : !agents.length ? (
-          <Row label={t("No matching members.")} />
+          <Row label={t("No matching members.")}>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setQuery("");
+                setGroup("");
+              }}
+            >
+              {t("Clear filters")}
+            </Button>
+          </Row>
         ) : (
           agents.map((agent) => (
             <Row
               key={agent.id}
               label={
-                <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="truncate">{agent.name}</span>
-                  {agent.groups?.map((name) => (
-                    <Badge key={name} size="sm">
-                      {name}
-                    </Badge>
-                  ))}
+                // Identity is data, not help text: it stays visible in the row.
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+                    <span className="truncate">{agent.name}</span>
+                    {agent.groups?.map((name) => (
+                      <Badge key={name} size="sm">
+                        {name}
+                      </Badge>
+                    ))}
+                  </span>
+                  <CrewMemberMeta agent={agent} catalog={data.catalog} />
                 </span>
               }
-              description={[
-                roleLabel(agent.role),
-                candidateLabel(data.catalog, agent.candidates[0]),
-                agent.projectId ? t("This project") : t("All projects on this host"),
-              ]
-                .filter(Boolean)
-                .join(" · ")}
             >
-              <Button variant="ghost" onClick={() => setEditing(agent)}>
+              <Button
+                variant="ghost"
+                aria-label={t("Edit {p0}", { p0: agent.name })}
+                onClick={() => setEditing(agent)}
+              >
                 {t("Edit")}
               </Button>
             </Row>

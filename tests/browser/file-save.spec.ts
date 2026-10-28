@@ -1,8 +1,68 @@
 import { expect, test } from "@playwright/test";
 
-test("native draft fixture retains actual source edits and retries storage without writing the file", async ({
+test("native draft save reporting never marks edits made during an older disk write as saved", async ({
   page,
 }) => {
+  await page.goto("/tests/browser/file-save.html?native-draft&hold-write");
+  await page.getByRole("tab", { name: "Source", exact: true }).click();
+  const editor = page.locator(".cm-content:visible");
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Older saved edit");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          !!(window as unknown as { fileSaveFixture: { releaseWrite: unknown } }).fileSaveFixture
+            .releaseWrite,
+      ),
+    )
+    .toBe(true);
+  await editor.click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type(" Newer unsaved edit");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (
+            window as unknown as {
+              fileSaveFixture: { nativeDraft: { payload: { text: string } } | null };
+            }
+          ).fileSaveFixture.nativeDraft?.payload.text,
+      ),
+    )
+    .toContain("Newer unsaved edit");
+  await page.evaluate(() => {
+    const fixture = (
+      window as unknown as { fileSaveFixture: { holdWrites: boolean; releaseWrite: () => void } }
+    ).fileSaveFixture;
+    fixture.holdWrites = false;
+    fixture.releaseWrite();
+  });
+  await expect(page.getByLabel("Disk writes")).toContainText("1: ");
+  await expect(page.getByLabel("Disk writes")).not.toContainText("Newer unsaved edit");
+  await expect(page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ })).toHaveAttribute(
+    "title",
+    /Unsaved changes/,
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { fileSaveFixture: { nativeDraft: { metadata: { state: string } } } })
+          .fileSaveFixture.nativeDraft.metadata.state,
+    ),
+  ).toBe("retained");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByLabel("Disk writes")).toContainText("2: ");
+  await expect(page.getByLabel("Disk writes")).toContainText("Newer unsaved edit");
+});
+
+test("native draft fixture retains actual source edits and retries storage without writing the file", async ({
+  page,
+}, info) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/file-save.html?native-draft&draft-error");
   await page.getByRole("tab", { name: "Source", exact: true }).click();
   const editor = page.locator(".cm-content:visible");
@@ -10,6 +70,20 @@ test("native draft fixture retains actual source edits and retries storage witho
   await page.keyboard.press("Control+End");
   await page.keyboard.type("Recovery-only edit");
   await expect(page.getByRole("alert")).toContainText("Draft recovery copy could not be confirmed");
+  for (const width of [1280, 800]) {
+    await page.setViewportSize({ width, height: 800 });
+    for (const light of [false, true]) {
+      await page.evaluate((light) => {
+        (
+          window as unknown as { fileSaveFixture: { setTheme: (light: boolean) => void } }
+        ).fileSaveFixture.setTheme(light);
+      }, light);
+      await page.screenshot({
+        path: info.outputPath(`draft-error-${width}-${light ? "light" : "dark"}.png`),
+        animations: "disabled",
+      });
+    }
+  }
   await expect(page.getByLabel("Disk writes")).toHaveText("0");
   await page.evaluate(() => {
     (window as unknown as { fileSaveFixture: { failDrafts: boolean } }).fileSaveFixture.failDrafts =
@@ -61,10 +135,9 @@ for (const width of [1280, 800]) {
       await page.getByRole("button", { name: "Restore draft", exact: true }).click();
       await expect(page.locator(".cm-content:visible")).toContainText("Saved recovery text");
       await expect(page.locator("footer [role=status]")).toContainText("Unsaved changes");
-      await expect(page.getByRole("tab", { name: "notes.md", exact: true })).toHaveAttribute(
-        "title",
-        /Unsaved changes/,
-      );
+      await expect(
+        page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+      ).toHaveAttribute("title", /Unsaved changes/);
       await expect(page.getByLabel("Disk writes")).toHaveText("0");
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -72,6 +145,9 @@ for (const width of [1280, 800]) {
       await page.screenshot({
         path: info.outputPath(`draft-restored-${width}-${light ? "light" : "dark"}.png`),
       });
+      // Observe a full autosave window: recovery requires a reviewed manual save.
+      await page.waitForTimeout(1100);
+      await expect(page.getByLabel("Disk writes")).toHaveText("0");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page.getByLabel("Disk writes")).toContainText("1: # Recovered notes");
       await expect(page.locator("footer [role=status]")).toHaveText("Saved");
@@ -155,10 +231,9 @@ for (const light of [false, true]) {
       true,
     );
     await expect(editor).toContainText("Keep my failed draft");
-    await expect(page.getByRole("tab", { name: "notes.md", exact: true })).toHaveAttribute(
-      "title",
-      /Unsaved changes/,
-    );
+    await expect(
+      page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+    ).toHaveAttribute("title", /Unsaved changes/);
     await expect(page.getByLabel("Disk writes")).toHaveText("0");
     await page.screenshot({
       path: info.outputPath(`save-error-${light ? "light" : "dark"}-320.png`),
@@ -173,10 +248,9 @@ for (const light of [false, true]) {
     await expect(page.getByLabel("Disk writes")).toContainText("1: ");
     await expect(page.getByLabel("Disk writes")).toContainText("Keep my failed draft");
     await expect(editor).toContainText("Keep my failed draft");
-    await expect(page.getByRole("tab", { name: "notes.md", exact: true })).not.toHaveAttribute(
-      "title",
-      /Unsaved changes/,
-    );
+    await expect(
+      page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+    ).not.toHaveAttribute("title", /Unsaved changes/);
   });
 }
 
@@ -194,22 +268,21 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await editor.click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("First edit");
-  await expect(page.getByRole("tab", { name: "notes.md", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ })).toHaveAttribute(
     "title",
     /Unsaved changes/,
   );
   await expect(
-    page.locator('button[aria-label="Close notes.md"] [aria-label="Unsaved changes"]'),
-  ).toBeVisible();
+    page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+  ).toHaveAccessibleName("notes.md Unsaved changes");
   await expect(page.locator("footer [role=status]")).toContainText("Unsaved changes");
   await page.keyboard.press("Control+s");
   const writes = page.getByLabel("Disk writes");
   await expect(writes).toContainText("1: ");
   await expect(writes).toContainText("First edit");
-  await expect(page.getByRole("tab", { name: "notes.md", exact: true })).not.toHaveAttribute(
-    "title",
-    /Unsaved changes/,
-  );
+  await expect(
+    page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+  ).not.toHaveAttribute("title", /Unsaved changes/);
   await page.keyboard.type(" second");
   await page.locator("button[data-explorer-root]").click();
   await page.keyboard.press("Control+s");
@@ -256,9 +329,8 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await page.keyboard.type(" autosaved");
   await expect(writes).toContainText("5: ");
   await expect(writes).toContainText("autosaved");
-  await expect(page.getByRole("tab", { name: "notes.md", exact: true })).not.toHaveAttribute(
-    "title",
-    /Unsaved changes/,
-  );
+  await expect(
+    page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
+  ).not.toHaveAttribute("title", /Unsaved changes/);
   expect(errors).toEqual([]);
 });

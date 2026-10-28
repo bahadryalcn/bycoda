@@ -163,27 +163,41 @@ compatible host, **Delete crew**.
 The editor has **Team (count)** and **Working settings** views. Give the crew a
 name and choose **This project** or **All projects** when creating it. All projects
 means projects on the same host. Team groups members by coordinator, specialist,
-reviewer and advisor. Add members from the searchable library or create a member;
-an empty crew also offers a starter team. **Role** is an editable specialty name;
-**Responsibility in the crew** determines orchestration. A valid crew has one
-coordinator, one reviewer, at least one specialist and at most 20 members.
+reviewer and advisor, with a count per group. Each row shows the member name first,
+then a responsibility icon and label, the model summary (**Fixed:** model or
+**Automatic:** number of candidates) and groups; select the row to edit it. Add
+members from the searchable library or create a member; an empty crew also offers
+a starter team. Unfinished additions (library picks and a started new member) are
+kept when you go back and return, until you add them or choose **Discard draft**.
+Picks keep the responsibility of the slot where you picked them. **Member name**
+accepts any name or professional role; **Responsibility in the crew** determines
+orchestration. A valid crew has one coordinator, one reviewer, at least one
+specialist and at most 20 members.
 
 A member editor contains instructions, fixed or automatic model choice, and
 advanced options. Fixed models use the normal provider/model picker and the
 model's supported settings. Automatic selection uses a searchable allowed-model
 list with owner cost and quality ratings. Switching a fixed model loads that
-model's own defaults. Groups help find library members and require a host that
-supports member groups. Inspect capabilities when needed; editing a capability
+model's own defaults. Candidates list their provider. Groups are member details
+that help find library members; they can be set on a new member whether or not you
+also save it to the library, and require a host that supports member groups. Inspect capabilities when needed; editing a capability
 declaration does not establish verified runtime access.
 
-**Working settings** contains the crew icon/color, automatic model priority
-(**Economy**, **Balanced**, **Quality**), highest cost and lowest quality allowed,
-whether unrated cost is allowed, and a bulk model choice for fixed members. The
-limits are **Members working at once** (1–4), **Assignments per job** (1–20), and
-**Minutes per assignment** (1–240). Permission switches control coordinator
-answers to member permission requests and provider-native subagents. These are
-execution policies, not provider billing caps. Appearance and rail visibility
-are device-local; the host stores execution definitions.
+**Working settings** is a compact page in this order. **Model eligibility** sets
+the highest cost and lowest quality allowed and whether unrated cost is allowed.
+These guards apply to every member, including fixed models, and the page lists the
+members the current limits block or narrow. Cost is a relative owner rating, not
+money: it filters individual models and also caps the combined worker and reviewer
+estimate for a job. **Automatic ranking** sets the priority (**Economy**,
+**Balanced**, **Quality**) for automatic members. **Models** applies one model to
+all fixed members in the draft and reports how many changed. **Execution limits**
+are **Members working at once** (1–4), **Assignments per job** (1–20) and
+**Minutes per assignment** (1–240). **Permissions** shows what each switch allows:
+coordinator answers to member permission requests, and provider-native subagents.
+These are execution policies, not provider billing caps. **Appearance** (crew
+icon/color) and rail visibility are device-local; an existing crew's appearance is
+saved on this device right away, and **Discard** does not undo it. The host stores
+execution definitions.
 
 Choose **Create crew** or **Save**, or **Save and start work** where offered.
 **Discard** restores the saved definition. Unsaved drafts survive closing the
@@ -202,7 +216,10 @@ another one.
 ## Member library and copies
 
 The Settings page's **Member library** offers **New member**, search, group
-filtering and member editing. Save a crew member to the library or explicitly
+filtering and member editing. Search matches the name, responsibility, model
+summary, candidate models, groups and instructions. When picking members to add,
+the picked members stay listed above the results, including those the current
+search or group hides, with **Clear selection** and **Clear filters**. Save a crew member to the library or explicitly
 update its source profile. Crews hold independent copies: a library edit reaches
 a crew only through an explicit update there. Group rename/delete updates the
 profiles, not the members' existence; deleting a group keeps the members. These
@@ -216,9 +233,16 @@ tasks and conversations remain available.
 ## Crew work and conversations
 
 Open **Crew work** from Settings or the rail. The management dialog has a crew
-selector, **Ongoing**, **Finished** and **All** views, and a selectable work list.
-A selected work item shows its status, progress, decisions needed, blocked
-assignments, and coordinator, worker and reviewer conversations. Select a
+selector, **Ongoing** and **Finished** views, a search over the loaded work and a
+selectable work list with update times. The search and selection survive refreshes;
+switching crews clears the search. Each item shows its execution state (working,
+paused, active or finished) and, separately, whether it needs you (**Needs
+decision**, **Needs review** or **Blocked**); a paused run can still need a
+decision and stays answerable. A selected work item shows progress, decisions
+needed, blocked assignments, and coordinator, worker and reviewer conversations
+with member names and models from that run. **This work's team** is the team
+fixed when the work started; editing the saved crew only changes future work. When
+the host provides only the request's first line, the detail says so. Select a
 conversation to open it. The session sidebar keeps managed conversations grouped
 instead of duplicating them in the ordinary Sessions list.
 

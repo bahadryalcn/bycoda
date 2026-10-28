@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AcpHandlers } from "../../core/acp";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
@@ -81,7 +82,7 @@ it("switches to advertised plan mode and restores the prior mode for Build", asy
     30_000,
   );
   await sendGenericAcpTurn(input("build"));
-  expect(mock.request).toHaveBeenLastCalledWith("session/prompt", expect.anything());
+  expect(mock.request).toHaveBeenLastCalledWith("session/prompt", expect.anything(), 0, expect.any(Function));
   expect(mock.request).toHaveBeenCalledWith(
     "session/set_mode",
     { sessionId: "native-session", modeId: "default" },
@@ -212,4 +213,18 @@ it("does not prompt or create a replacement session when load fails; retry keeps
   });
   await sendGenericAcpTurn(input("build"));
   expect(events).toContainEqual({ type: "message.delta", text: "Retry answer" });
+});
+
+
+it("retains a permission's real write after its UI callback returns", async () => {
+ const {genericAcpAdapter}=await import("./genericAcpAdapter");
+ await sendGenericAcpTurn({...input(undefined),runtimeMode:"supervised",onEvent:event=>{captureNativeOutputEvent("generic-plan",event);events.push(event);}});
+ const inspect=nativeOutputFrame("generic-plan","permission",()=>{void mock.handlers.onRequest!(777,"session/request_permission",{toolCall:{title:"causal permission"},options:[{optionId:"yes",kind:"allow_once"}]});});
+ const asked=events.find(e=>e.type==="approval.requested")!;const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
+ let release!:()=>void;mock.respond.mockImplementationOnce(()=>new Promise<void>(resolve=>{release=resolve;}));
+ genericAcpAdapter.respondApproval!("generic-plan",777,"allow");
+ expect(inspect().pendingCausalWork).toBe(1);expect(events.some(e=>e.type==="approval.resolved")).toBe(false);
+ release();await vi.waitFor(()=>expect(events.some(e=>e.type==="approval.resolved")).toBe(true));
+ expect(getNativeOutputEventOrigin(events.find(e=>e.type==="approval.resolved")!)).toBe(origin);
+ expect(inspect().pendingCausalWork).toBe(0);
 });

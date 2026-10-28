@@ -1,3 +1,4 @@
+import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -81,6 +82,20 @@ describe("Pi live session", () => {
       }
       return { data: {} };
     });
+  });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])("holds %s agent-end continuation until the actual stats read ends", async flavor => {
+    const sessionId=flavor.id+"-causal-end";const events:HarnessEvent[]=[];
+    const original=mocks.request.getMockImplementation()!;let release!:(value:Record<string,unknown>)=>void;
+    mocks.request.mockImplementation((command,...args)=>command.type==="get_session_stats"?new Promise(resolve=>{release=resolve;}):original(command,...args));
+    const done=sendTurn(flavor,{sessionId,cwd:"/repo",model:flavor.id+":default",runtimeMode:"supervised",text:"hi",attachments:[],onEvent:event=>{captureNativeOutputEvent(sessionId,event);events.push(event);}});
+    await vi.waitFor(()=>expect(mocks.request.mock.calls.some(([command])=>command.type==="prompt")).toBe(true));
+    const frame={type:"agent_end"};const inspect=nativeOutputFrame(sessionId,JSON.stringify(frame),()=>mocks.frames.at(-1)!(frame));
+    expect(inspect().pendingCausalWork).toBe(1);await vi.waitFor(()=>expect(release).toBeDefined());
+    expect(events.some(e=>e.type==="message.completed")).toBe(false);
+    release({data:{}});await done;
+    const completed=events.find(e=>e.type==="message.completed")!;expect(getNativeOutputEventOrigin(completed)).not.toBeNull();
+    expect(inspect().pendingCausalWork).toBe(0);await stopSession(flavor,sessionId);
   });
 
   it.each([PI_FLAVOR, OMP_FLAVOR])(

@@ -275,7 +275,7 @@ function PrCheckRow({
           <span
             data-check-name
             title={check.name}
-            className={`min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-body font-medium leading-snug text-(--ui-tone-neutral-fg)`}
+            className={`min-w-0 ${expanded ? "break-all" : "truncate"} text-ui-secondary font-medium text-(--ui-tone-neutral-fg)`}
           >
             {check.name}
           </span>
@@ -288,7 +288,7 @@ function PrCheckRow({
         {(!repairItem || expanded) && (failureMessage || failedStep) ? (
           <span
             title={subtitle}
-            className="mt-0.5 min-w-0 truncate text-ui-caption leading-relaxed text-(--ui-text-secondary) @max-[420px]/checks:text-ui-micro"
+            className={`mt-0.5 min-w-0 ${expanded ? "break-words" : "truncate"} text-ui-caption text-(--ui-text-secondary)`}
           >
             {subtitle}
           </span>
@@ -308,7 +308,7 @@ function PrCheckRow({
       tabIndex={-1}
       className={`min-w-0 rounded-(--radius-control) outline-none ${expanded ? "bg-(--ui-surface-hover)" : ""}`}
     >
-      <div className="group/check flex min-w-0 items-center gap-2 rounded-(--radius-control) px-2 py-2 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
+      <div className="group/check flex min-w-0 items-center gap-2 rounded-(--radius-control) px-2 py-1 hover:bg-(--ui-surface-hover) @max-[420px]/checks:gap-1">
         {expandable ? (
           <Button
             variant="item"
@@ -562,8 +562,9 @@ export function InboxPrChecks({
   }, [selection, selectionValid]);
   if (loading && !checks && !error) {
     return (
-      <div className="flex justify-center py-10 text-(--ui-text-secondary)">
+      <div role="status" className="flex items-center gap-2 py-5 text-ui-secondary text-(--ui-text-secondary)">
         <LoaderCircle className="icon-md animate-spin" strokeWidth={1.75} />
+        {t("Loading checks…")}
       </div>
     );
   }
@@ -622,19 +623,25 @@ export function InboxPrChecks({
           {checks.headOid.slice(0, 12)}
         </p>
       ) : null}
-      <div className="mb-3 flex min-w-0 flex-wrap items-start justify-between gap-3 px-2">
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2 px-2">
         <div className="min-w-0">
-          {rows.length ? (
-            <>
-              <h2 className="text-ui-heading font-medium leading-snug">{headline}</h2>
-              {summary ? (
-                <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
-                  {summary.charAt(0).toUpperCase() + summary.slice(1)}.
-                </p>
-              ) : null}
-              <span className="sr-only">{describeCheckCounts(counts)}</span>
-            </>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h2 className="text-ui-title font-medium leading-snug">{t(headline)}</h2>
+            {stale ? (
+              <span className="text-ui-caption text-(--ui-tone-warning-fg)">{t("Saved results")}</span>
+            ) : null}
+          </div>
+          {checks?.headOid ? (
+            <p className="mt-1 break-all text-ui-caption text-(--ui-text-secondary)">
+              {t("Checked commit")}: <span className="font-mono" title={checks.headOid}>{checks.headOid.slice(0, 12)}</span>
+            </p>
           ) : null}
+          {summary ? (
+            <p className="mt-1 text-ui-caption text-(--ui-text-secondary)">
+              {summary.charAt(0).toUpperCase() + summary.slice(1)}.
+            </p>
+          ) : null}
+          <span className="sr-only">{describeCheckCounts(counts)}</span>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {repair && rows.some((row) => row.state === "fail") ? (
@@ -679,6 +686,21 @@ export function InboxPrChecks({
           </Button>
         </div>
       </div>
+      {stale ? (
+        <Alert tone="warning" role={error ? "alert" : "status"}>
+          <p className="text-ui-caption font-medium">
+            {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
+          </p>
+          <p className="break-words text-ui-caption">
+            {error || t("Saved results may be out of date.")}
+          </p>
+          {error ? (
+            <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
+              {t("Retry loading checks")}
+            </Button>
+          ) : null}
+        </Alert>
+      ) : null}
       {repair ? (
         <CheckRepairProgress
           cwd={cwd}
@@ -697,11 +719,6 @@ export function InboxPrChecks({
           }}
         />
       ) : null}
-      {stale && error ? (
-        <p role="status" className="px-2 text-ui-caption text-(--ui-text-secondary)">
-          {t("Saved results may be out of date.")}
-        </p>
-      ) : null}
       {selection && selectionValid && repair ? (
         <CheckRepairForm
           key={`${selection.scope}:${JSON.stringify(selection.checks)}`}
@@ -716,7 +733,7 @@ export function InboxPrChecks({
         />
       ) : null}
       {rows.length > 0 ? (
-        <div className="flex items-center justify-between gap-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 py-1">
           <SegmentedControl
             label={t("Filter checks")}
             selectionRole="pressed"

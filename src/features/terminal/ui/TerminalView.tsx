@@ -1,5 +1,7 @@
 import { terminalOutputBuffer } from "../model/outputBuffer";
 import { terminalInput } from "../model/terminalInput";
+import { resolveTerminalCanvas, terminalRenderingPolicy } from "../model/terminalRenderingPolicy";
+import type { ISearchOptions } from "@xterm/addon-search";
 import { themePalette } from "../../../shared/theme/palette";
 import {
   APPEARANCE_PREFERENCES_EVENT,
@@ -169,41 +171,47 @@ const ANSI_LIGHT = {
   brightWhite: themePalette.solidInk,
 };
 
-function terminalTheme(light: boolean, scope?: HTMLElement, opaque = false) {
-  return {
-    background: opaque
-      ? cssColor(
-          "var(--terminal-canvas, var(--ui-surface))",
-          light ? themePalette.hexfafafa : themePalette.hex171717,
-          scope,
-        )
-      : themePalette.hex00000000,
+function terminalColors(light: boolean, scope: HTMLElement) {
+  const fallbackCanvas = cssColor(
+    "var(--terminal-canvas, var(--ui-surface))",
+    light ? themePalette.hexfafafa : themePalette.hex171717,
+    scope,
+  );
+  const policy = terminalRenderingPolicy({
+    canvas: resolveTerminalCanvas(scope, (color) => cssColor(color, "", scope)),
+    fallbackCanvas,
     foreground: cssColor(
       "var(--terminal-text, var(--color-content))",
       light ? themePalette.hex2e2e2e : themePalette.hexe8eef2,
       scope,
     ),
     cursor: cssColor(
-      "var(--color-accent)",
+      "var(--ui-focus-ring-color)",
       light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
       scope,
     ),
-    cursorAccent: cssColor(
-      "var(--terminal-canvas, var(--color-background-base))",
-      light ? themePalette.solidInk : themePalette.scrim,
-      scope,
-    ),
     selectionBackground: cssColor(
-      "var(--color-selection-strong)",
-      light ? themePalette.rgba_0_0_0_0_18 : themePalette.rgba_255_255_255_0_18,
+      "var(--ui-text-selection-background)",
+      themePalette.accent,
       scope,
     ),
-    selectionInactiveBackground: cssColor(
-      "var(--color-selection-subtle)",
-      light ? themePalette.rgba_0_0_0_0_08 : themePalette.rgba_255_255_255_0_08,
+    selectionForeground: cssColor(
+      "var(--ui-text-selection-foreground)",
+      themePalette.scrim,
       scope,
     ),
-    ...(light ? ANSI_LIGHT : ANSI_DARK),
+  });
+  const { minimumContrastRatio, canvasResolved, ...theme } = policy;
+  return {
+    minimumContrastRatio,
+    canvasResolved,
+    theme: { ...theme, ...(light ? ANSI_LIGHT : ANSI_DARK) },
+    searchDecorations: {
+      matchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
+      activeMatchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
+      matchOverviewRuler: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
+      activeMatchColorOverviewRuler: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
+    } satisfies ISearchOptions["decorations"],
   };
 }
 
@@ -221,21 +229,22 @@ function monoFont(): string {
  */
 const stoppingPtys = new Map<string, Promise<void>>();
 
-function oscColors(scope?: HTMLElement) {
+function oscColors(scope: HTMLElement) {
   const light = isLightScheme();
+  const { theme } = terminalColors(light, scope);
   return {
     fg: cssHexColor(
-      "var(--terminal-text, var(--color-content))",
+      theme.foreground,
       light ? themePalette.hex2e2e2e : themePalette.hexebebeb,
       scope,
     ),
     bg: cssHexColor(
-      "var(--terminal-canvas, var(--color-background-base))",
+      theme.cursorAccent,
       light ? themePalette.hexf7f7f7 : themePalette.hex171717,
       scope,
     ),
     cursor: cssHexColor(
-      "var(--color-accent)",
+      theme.cursor,
       light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
       scope,
     ),
@@ -340,6 +349,10 @@ export function TerminalView({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [terminal, setTerminal] = useState<Terminal | null>(null);
+  const [displayFontSize, setDisplayFontSize] = useState(fontSize ?? loadAppearancePreferences().terminalSize);
+  const [savedFontSize, setSavedFontSize] = useState(loadAppearancePreferences().terminalSize);
+  const [searchDecorations, setSearchDecorations] = useState<ISearchOptions["decorations"]>();
+  const resetFontSizeRef = useRef<() => void>(() => {});
   const [tool, setTool] = useState<TerminalTool>(null);
   const [shellReady, setShellReady] = useState(false);
   const [inputError, setInputError] = useState<string | null>(null);
@@ -361,23 +374,31 @@ export function TerminalView({
     if (!outer || !host) return;
 
     let preferences = loadAppearancePreferences();
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    const colors = terminalColors(isLightScheme(), outer);
+    outer.dataset.terminalCanvas = colors.canvasResolved ? "resolved" : "unresolved-backdrop";
     const term = new Terminal({
-      cursorBlink: true,
+      cursorBlink: !reducedMotion?.matches,
       cursorStyle: "bar",
       fontFamily: monoFont(),
       fontSize: typographyRef.current.fontSize ?? preferences.terminalSize,
       fontWeight: preferences.terminalWeight,
       lineHeight: typographyRef.current.lineHeight ?? preferences.terminalLineHeight,
-      minimumContrastRatio: typographyRef.current.lineHeight ? 4.5 : 1,
+      minimumContrastRatio: colors.minimumContrastRatio,
       letterSpacing: 0,
       scrollback: 5000,
       allowTransparency: true,
       smoothScrollDuration: 0,
-      theme: terminalTheme(isLightScheme(), outer, Boolean(typographyRef.current.lineHeight)),
+      theme: colors.theme,
       macOptionIsMeta: IS_MAC,
       linkHandler: { activate: activateTerminalLink },
     });
     term.open(host);
+    setDisplayFontSize(term.options.fontSize!);
+    setSavedFontSize(preferences.terminalSize);
+    setSearchDecorations(colors.searchDecorations);
+    const onMotionChange = () => { term.options.cursorBlink = !reducedMotion?.matches; };
+    reducedMotion?.addEventListener("change", onMotionChange);
     term.loadAddon(new WebLinksAddon(activateTerminalLink));
     termRef.current = term;
     setTerminal(term);
@@ -696,15 +717,14 @@ export function TerminalView({
     let themeFrame = 0;
     const applyTheme = () => {
       themeStale = false;
-      const theme = terminalTheme(
-        isLightScheme(),
-        outer,
-        Boolean(typographyRef.current.lineHeight),
-      );
-      const key = JSON.stringify(theme);
+      const next = terminalColors(isLightScheme(), outer);
+      const key = JSON.stringify(next);
       if (key === appliedTheme) return;
       appliedTheme = key;
-      term.options.theme = theme;
+      term.options.minimumContrastRatio = next.minimumContrastRatio;
+      term.options.theme = next.theme;
+      outer.dataset.terminalCanvas = next.canvasResolved ? "resolved" : "unresolved-backdrop";
+      setSearchDecorations(next.searchDecorations);
     };
     const onSchemeChange = () => {
       if (!visible || document.hidden) {
@@ -719,10 +739,12 @@ export function TerminalView({
     };
     window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
     const themeObserver = new MutationObserver(onSchemeChange);
-    themeObserver.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["class", "style"],
-    });
+    for (let node: HTMLElement | null = outer; node; node = node.parentElement) {
+      themeObserver.observe(node, {
+        attributes: true,
+        attributeFilter: ["class", "style"],
+      });
+    }
     const onTypographyChange = () => {
       const next = loadAppearancePreferences();
       if (next.terminalSize !== preferences.terminalSize) zoomSizeRef.current = null;
@@ -732,6 +754,8 @@ export function TerminalView({
         zoomSizeRef.current ?? typographyRef.current.fontSize ?? next.terminalSize;
       term.options.fontWeight = next.terminalWeight;
       term.options.lineHeight = typographyRef.current.lineHeight ?? next.terminalLineHeight;
+      setDisplayFontSize(term.options.fontSize!);
+      setSavedFontSize(next.terminalSize);
       applySizeRef.current();
     };
     window.addEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
@@ -745,6 +769,15 @@ export function TerminalView({
       if (size === term.options.fontSize) return;
       zoomSizeRef.current = size;
       term.options.fontSize = size;
+      setDisplayFontSize(size);
+      fontSizeCallback.current?.(size);
+      applySizeRef.current();
+    };
+    resetFontSizeRef.current = () => {
+      const size = loadAppearancePreferences().terminalSize;
+      zoomSizeRef.current = null;
+      term.options.fontSize = size;
+      setDisplayFontSize(size);
       fontSizeCallback.current?.(size);
       applySizeRef.current();
     };
@@ -872,6 +905,8 @@ export function TerminalView({
       host.removeEventListener("compositionend", onCompositionEnd);
       window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
       themeObserver.disconnect();
+      reducedMotion?.removeEventListener("change", onMotionChange);
+      resetFontSizeRef.current = () => {};
       if (themeFrame) cancelAnimationFrame(themeFrame);
       window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
       host.removeEventListener("wheel", onZoomWheel, true);
@@ -1025,7 +1060,7 @@ export function TerminalView({
     const preferences = loadAppearancePreferences();
     term.options.fontSize = fontSize ?? preferences.terminalSize;
     term.options.lineHeight = lineHeight ?? preferences.terminalLineHeight;
-    term.options.minimumContrastRatio = lineHeight ? 4.5 : 1;
+    setDisplayFontSize(term.options.fontSize!);
     applySizeRef.current();
   }, [fontSize, lineHeight]);
 
@@ -1064,6 +1099,10 @@ export function TerminalView({
       }}
     >
       <TerminalTools
+        fontSize={displayFontSize}
+        savedFontSize={savedFontSize}
+        onResetFontSize={() => resetFontSizeRef.current()}
+        searchDecorations={searchDecorations}
         terminalId={id}
         terminal={terminal}
         mode={tool}

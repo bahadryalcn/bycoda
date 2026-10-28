@@ -8,7 +8,11 @@ import type {
   EnvironmentReadOptions,
 } from "../domains/environment/service";
 import type { ProjectsReadOptions } from "../domains/projects/service";
-import { HostDomainAuthorizationError, HostDomainOutcomeError, type HostDomainContext } from "../domains/context";
+import {
+  HostDomainAuthorizationError,
+  HostDomainOutcomeError,
+  type HostDomainContext,
+} from "../domains/context";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
 
 export type HostDispatchErrorCode =
@@ -50,6 +54,7 @@ export type HostDispatchContext = {
   exposeQueueAttachments?: HostDomainContext["exposeQueueAttachments"];
   retargetTask?: HostDomainContext["retargetTask"];
   devServerAccess?: HostDomainContext["devServerAccess"];
+  nativeBufferRecovery?: HostDomainContext["nativeBufferRecovery"];
   /** Retains backend admission even when a client stops waiting for legacy I/O. */
   trackWork?: <T>(action: () => Promise<T>) => Promise<T>;
 };
@@ -183,6 +188,7 @@ export function createHostDispatcher(services: HostServices) {
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,
         devServerAccess: context.devServerAccess,
+        nativeBufferRecovery: context.nativeBufferRecovery,
       };
       try {
         const read = () =>
@@ -203,11 +209,16 @@ export function createHostDispatcher(services: HostServices) {
         if (cause instanceof HostDispatchError) throw cause;
         if (cause instanceof HostDomainOutcomeError) {
           await authorize(context, services.environmentId);
-          throw new HostDispatchError("service-unavailable", cause.message, { cause }, {
-            category: "unavailable",
-            retryable: false,
-            delivery: cause.delivery,
-          });
+          throw new HostDispatchError(
+            "service-unavailable",
+            cause.message,
+            { cause },
+            {
+              category: "unavailable",
+              retryable: false,
+              delivery: cause.delivery,
+            },
+          );
         }
         if (cause instanceof HostDomainAuthorizationError)
           throw new HostDispatchError(

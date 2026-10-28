@@ -3,7 +3,7 @@
 }
 
 .terminal-settings-note {
-  margin-block: 12px 20px;
+  margin: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);
   line-height: 1.6;
@@ -22,15 +22,16 @@
   overflow-wrap: anywhere;
 }
 
-.bycoda-settings-workbench .bycoda-settings-form .terminal-settings .settings-group {
-  padding-block: 20px;
+.terminal-settings-help {
+  display: grid;
+  gap: 8px;
+  padding-block-start: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
-
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .terminal-settings
-  .settings-group
-  > .settings-group-heading {
-  gap: 12px;
-  padding-block: 0 12px;
+.terminal-settings-help p,
+.terminal-settings-help h3 {
+  margin: 0;
 }

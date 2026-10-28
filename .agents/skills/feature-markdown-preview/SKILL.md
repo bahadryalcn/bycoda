@@ -5,6 +5,21 @@ description: Markdown file Preview/Source and scrollbar inventory for retained e
 
 # Markdown preview and scroll ownership
 
+## H4 file/editor implementation packet, 2026-10-28
+
+File-local MD and SEL-02 work, source fingerprints and per-record boundaries:
+`temp/local/2026-10-28-explorer-content-impl/handoff.json`. Baseline
+`4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`, shared `main`, uncommitted packet.
+Preserve the existing retained MarkdownViewPane contract from H6 and native
+draft-persistence changes in FileEditor/CodeMirrorEditor. Sessions Markdown
+renderers/shell belong to H6, source-control diff consumers to H5, Skills to H3
+and Notes to H7; file consumer delivery cannot close their records. Theme roles
+remain owned under src/styles and no theme files are changed by this packet.
+Test edilmedi under nightly RULES.md: real selection, active/inactive paint/hit
+testing, screenshots, input/native acceptance and suites remain morning checks.
+Only a final fast typecheck is permitted; see handoff for its actual result.
+Guide: `docs/guides/explorer-and-file-content.md`.
+
 ## Purpose, identity and scope
 
 Read/edit Markdown without ambiguous scroll controls or lost document state.
@@ -108,6 +123,17 @@ No dimensions or new defaults are selected by this card.
 
 ## Checks, blockers and handoff
 
+Local Native draft increment (2026-10-28): immutable source documents are admitted
+through `FileEditor.tsx` into `files/data/editorDraftPersistence.ts`, including
+hidden Source edits and Preview saves. Recovery text is a separate initial dirty
+document against its original disk baseline; normal `value` remains a saved
+baseline. Restored edits require manual save. Standard/inline/split editors share
+the boundary; conflict result text is captured but merge-region choices remain
+separate unfinished persistence work. Foreign-owner recovery/new-document opening
+and remote/web contracts remain open. Native observations remain unqualified.
+See Host runtime card, `docs/guides/editor-draft-recovery.md` and
+`temp/verification/2026-10-28-editor-producer/README.md` for exact evidence/limits.
+
 Register/brief: `temp/local/2026-10-27-markdown-scroll-audit/AUDIT.md` and
 REDESIGN.md; 12 records (two V+S/ten S),18-family checklist. Evidence:
 `temp/verification/2026-10-27-markdown-scroll-audit/EVIDENCE.md`.
@@ -141,3 +167,40 @@ Automatic/Inline/Split, effective-versus-saved truth, draft/undo/focus, hidden
 source containment and valid scroll owners. Sibling storage sync and swallowed
 save outcomes need explicit attention. This extension does not close or recount
 the12 scrollbar records. Audit only; no product or real app/native acceptance.
+
+### General local editor-copy recovery continuation, 2026-10-28
+
+The new local recovery catalog prepares a separate Native row and permanent file
+tab. `FileEditor` reads an exact prepared locator and checks current owner, pending,
+error, disposal and acknowledged revision/hash on both sides of the disk await.
+Changed/missing disk retains the historical baseline and explicit overwrite gate;
+watcher reads cannot clear it merely by matching the initially observed new disk.
+Recovered text starts dirty with autosave suppressed until a deliberate disk save.
+
+`CodeMirrorEditor` retains current text across child replacement through parent
+carry state. Dirty file moves capture current text/EOL/baseline without rewriting
+the historical recovery locator. Layout contains no plaintext. `FilePane` routes a
+recovered text copy to the editor even for image/media/document extensions.
+
+Evidence: `temp/verification/2026-10-28-editor-recovery/README.md`:204 source
+tests,21 browser scenarios and12 reviewed light/dark1280/800 captures. This local
+increment does not close the separate scrollbar/diff-toolbar audits above. Rich
+merge-region decisions, remote/web persistence, Native FS receipts and installed
+Native/platform/screen-reader acceptance remain open. Save reports retain text;
+all migration qualification remains false and no fence is retired.
+
+### Earlier path-only reports, 2026-10-28
+
+Recovered work now also inspects this local Native profile's earlier file
+path/dirty reports. They contain no edited text. Matching file-name recovery
+copies can be filtered in the existing catalog and opened through its unchanged
+new-tab/manual-save flow; matching names never settle or delete an earlier hold.
+The entry remains available when modern copies/conversations count0. All source
+reads and copy-filter actions recheck live group privacy and its synchronous
+invalidation identity, including a lock/unlock ABA before React renders.
+Root14 service/controller tests and27 Chromium recovery/save fixtures pass;
+light/dark1280/800 captures and independent privacy red/green proofs are retained
+in `temp/verification/2026-10-28-legacy-recovery-ui/`. Native/disk IPC is fake in
+the browser. This does not close rich merge/remote editor, Host-held recovery
+dispositions, installed Native or screen-reader acceptance. Source is uncommitted
+on main baseline4de508dea; no fence/default/floor or release is promoted.

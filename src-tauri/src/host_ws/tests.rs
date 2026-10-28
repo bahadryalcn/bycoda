@@ -1,4 +1,38 @@
 use super::*;
+
+#[test]
+fn native_profile_recovery_cannot_use_a_renderer_selected_generic_ws_route() {
+    let broker = HostWsBroker::default();
+    let route = NativeRoute::new(
+        "machine",
+        "environment",
+        "http://127.0.0.1:1",
+        "fixture-token",
+        "fixture-native-binding",
+    )
+    .unwrap();
+    for method in [
+        "native.buffers.recovery.list",
+        "native.buffers.recovery.read",
+        "native.buffers.recovery.status",
+    ] {
+        assert!(!HostWsBroker::supports_method(method));
+        assert!(!HostWsBroker::supports_params(method, &json!({})));
+        let error = broker
+            .begin_request(
+                &route,
+                "window",
+                method,
+                json!({}),
+                RequestOptions::default(),
+            )
+            .err()
+            .unwrap();
+        assert!(error.unsupported);
+        assert!(!error.uncertain);
+    }
+    assert!(broker.connections.lock().unwrap().is_empty());
+}
 use futures_util::{SinkExt, StreamExt};
 use std::io::{Read, Write};
 use std::{future::Future, sync::atomic::AtomicUsize};

@@ -69,6 +69,7 @@ export function SocialBrowserWorkspace({
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [statusError, setStatusError] = useState("");
   const [automateRegistration, setAutomateRegistration] = useState(true);
   const [registration, setRegistration] = useState<SocialRegistrationProfile>({
     accountKind: "brand",
@@ -77,6 +78,7 @@ export function SocialBrowserWorkspace({
     setRegistration({ accountKind: "brand" });
     setAcknowledged(false);
     setError("");
+    setStatusError("");
   }, [account.id, client]);
   const registrationInput = (): SocialRegistrationProfile =>
     Object.fromEntries(
@@ -119,16 +121,21 @@ export function SocialBrowserWorkspace({
       ? ["x", "instagram", "facebook", "linkedin", "youtube", "tiktok"].includes(account.platform)
       : !!SOCIAL_BROWSER_SITES[account.platform].routes[value],
   ).map((value) => ({ value, label: SOCIAL_BROWSER_LABELS[value] }));
-  const perform = async (action: () => Promise<unknown>) => {
+  const perform = async (action: () => Promise<unknown>, refreshOnly = false) => {
     if (busy) return;
     setBusy(true);
     setError("");
+    setStatusError("");
     try {
       await action();
-      await Promise.all([
-        query.refetch({ throwOnError: true }),
-        account.connected ? monitor.refetch({ throwOnError: true }) : Promise.resolve(),
-      ]);
+      try {
+        await Promise.all([
+          query.refetch({ throwOnError: true }),
+          account.connected ? monitor.refetch({ throwOnError: true }) : Promise.resolve(),
+        ]);
+      } catch {
+        setStatusError(refreshOnly ? t("Connection status could not be refreshed.") : t("Browser action completed. Its latest status could not be refreshed."));
+      }
     } catch {
       setError(
         t(
@@ -368,6 +375,10 @@ export function SocialBrowserWorkspace({
         </p>
       ) : null}
       {error ? <p role="alert">{error}</p> : null}
+      {statusError ? <div role="status" className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-tone-warning-fg)">
+        <span>{statusError}</span>
+        <Button variant="ghost" loading={busy} disabled={socialLocked} onClick={() => void perform(async () => undefined, true)}>{t("Refresh status")}</Button>
+      </div> : null}
       {openBlocker ? <p className="social-muted">{openBlocker}</p> : null}
       <div className="social-actions">
         <Button
@@ -407,7 +418,7 @@ export function SocialBrowserWorkspace({
           disabled={socialLocked || busy || query.isFetching}
           onClick={() =>
             void pendingUi.run("browser-workspace.refresh-status", () =>
-              perform(async () => undefined),
+              perform(async () => undefined, true),
             )
           }
         >

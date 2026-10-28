@@ -79,8 +79,13 @@ export function PagedUsageTable({
 }) {
   useLocale();
   const [page, setPage] = useState(0);
+  const [allMetrics, setAllMetrics] = useState(false);
   const [sort, setSort] = useState({ key: metric as string, direction: "desc" as "asc" | "desc" });
-  const total = rows.reduce((n, row) => n + Number(row[metric] ?? 0), 0);
+  const available = (row: Record<string, unknown>, key: UsageMetric) =>
+    row[key] != null && Number.isFinite(Number(row[key])) &&
+    !(key === "duration" ? row.timedSamples === 0 || row.timedTurns === 0 : row.logSamples === 0 || row.meteredTurns === 0) &&
+    !(key === "cost" && Number(row.unpricedTokens) > 0 && row.unpricedTokens === row.tokens);
+  const total = rows.reduce((n, row) => n + (available(row, metric) ? Number(row[metric]) : 0), 0);
   const ordered = [...rows].sort((a, b) => {
     const av = a[sort.key],
       bv = b[sort.key];
@@ -95,6 +100,13 @@ export function PagedUsageTable({
   const current = Math.min(page, lastPage);
   return (
     <>
+      <div className="usage-section-heading">
+        <span className="usage-muted">{rows.length.toLocaleString(getLocale())} {t("records")}</span>
+        <Button variant="ghost" aria-expanded={allMetrics} onClick={() => {
+          setAllMetrics(!allMetrics);
+          if (allMetrics) setSort({ key: metric, direction: "desc" });
+        }}>{t(allMetrics ? "Show fewer metrics" : "Show all metrics")}</Button>
+      </div>
       <SortableDataTable
         key={`${current}:${sort.key}:${sort.direction}`}
         caption={caption}
@@ -120,7 +132,7 @@ export function PagedUsageTable({
               ),
           },
           ...(
-            [
+            (allMetrics ? [
               "cost",
               "input",
               "output",
@@ -130,18 +142,14 @@ export function PagedUsageTable({
               ...(metric === "duration" || rows.some((r) => Number(r.duration) > 0)
                 ? ["duration"]
                 : []),
-            ] as UsageMetric[]
+            ] : [...new Set([metric, "cost", "tokens"])]) as UsageMetric[]
           ).map((key) => ({
             key,
             label: t(metricNames[key]),
             numeric: true,
             sortable: true,
             render: (_: unknown, row: Record<string, unknown>) =>
-              row[key] == null ||
-              (key === "duration" ? row.timedSamples === 0 : row.logSamples === 0) ||
-              (key === "cost" &&
-                Number(row.unpricedTokens) > 0 &&
-                row.unpricedTokens === row.tokens)
+              !available(row, key)
                 ? "—"
                 : `${key === "cost" && Number(row.unpricedTokens ?? row.unpricedTurns ?? 0) > 0 ? "≥ " : ""}${formatMetric(Number(row[key]), key)}`,
           })),
@@ -149,11 +157,11 @@ export function PagedUsageTable({
             key: "share",
             label: t("Share"),
             numeric: true,
-            render: (_, row) => formatUsagePercent(total ? (Number(row[metric]) / total) * 100 : 0),
+            render: (_, row) => available(row, metric) && !(metric === "cost" && rows.some((entry) => Number(entry.unpricedTokens ?? entry.unpricedTurns ?? 0) > 0)) ? formatUsagePercent(total ? (Number(row[metric]) / total) * 100 : 0) : "—",
           },
         ]}
       />
-      <div className="usage-pagination">
+      {lastPage > 0 ? <div className="usage-pagination">
         <span>
           {rows.length.toLocaleString(getLocale())} {t("records")} · {current + 1}/{lastPage + 1}
         </span>
@@ -167,7 +175,7 @@ export function PagedUsageTable({
         >
           {t("Next")}
         </Button>
-      </div>
+      </div> : null}
     </>
   );
 }

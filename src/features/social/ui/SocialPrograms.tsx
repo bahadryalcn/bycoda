@@ -134,7 +134,7 @@ const localInput = (at: number) => {
   return new Date(at - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 };
 
-export function SocialPrograms({ client, snapshot, projects, initialProject, run }: Props) {
+export function SocialPrograms({ client, snapshot, projects, initialProject, run, collectionManaged = false, selectionIntent, onSelectionChange }: Props & { collectionManaged?: boolean; selectionIntent?: { id: string; token: number }; onSelectionChange?: (id: string) => void }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   const [setupStep, setSetupStep] = useState(0);
@@ -151,6 +151,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
     [error, setError] = useState(""),
     [confirmed, setConfirmed] = useState(false);
   const [bulkLink, setBulkLink] = useState("");
+  const [suggestion, setSuggestion] = useState<{ config: ProgramConfig; questions: string[]; base: string }>();
   const [editVersion, setEditVersion] = useState(0);
   const displayDate = (at: number) =>
     dateTimeFormat(locale, {
@@ -163,6 +164,13 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
   const scope = socialQueryScope(client);
   const projectId = snapshot.programProjectId;
   const [selectedProgram, setSelectedProgram] = useState<string>();
+  const seenSelection = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!selectionIntent || seenSelection.current === selectionIntent.token) return;
+    seenSelection.current = selectionIntent.token;
+    setSelectedProgram(selectionIntent.id);
+    setConfirmed(false);
+  }, [selectionIntent]);
   const listKey = [...scope, "programs", projectId ?? ""];
   const detailKey = [...scope, "program", selectedProgram ?? ""];
   const enabled = !!snapshot.programsSupported && active && visible;
@@ -190,6 +198,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
   ) {
     const next = typeof value === "function" ? value(detail) : value;
     setSelectedProgram(next?.program.id);
+    if (next?.program.id) onSelectionChange?.(next.program.id);
     if (next) queryClient.setQueryData([...scope, "program", next.program.id], next);
   }
   const setPrograms = (list: SocialProgram[]) => queryClient.setQueryData(listKey, list);
@@ -239,13 +248,54 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
     key: K,
     value: ProgramConfig["schedule"][K],
   ) => set("schedule", { ...config.schedule, [key]: value });
+  const purposeMissing = !config.name.trim() || !config.projectId || !config.brief.topic.trim() ||
+    !config.brief.description.trim() || !config.accountIds.length ||
+    config.accountIds.some((id) => !snapshot.accounts.find((account) => account.id === id)?.grants[config.projectId]?.includes("draft"));
+  const scheduleMissing = !config.schedule.timeZone || !Number.isFinite(config.schedule.startsAt) || !config.schedule.days.length ||
+    (config.schedule.mode === "times" && !config.schedule.times.length);
+  const stepReason = setupStep === 0 && purposeMissing
+    ? t("Complete the name, project, brief and eligible target accounts before continuing.")
+    : setupStep === 1 && scheduleMissing ? t("Complete the time zone, start date, days and publishing times before continuing.") : "";
+  const goToStep = (next: number) => {
+    if (next > setupStep && (purposeMissing || (next > 1 && scheduleMissing))) {
+      setError(purposeMissing ? t("Complete the name, project, brief and eligible target accounts before continuing.") : t("Complete the time zone, start date, days and publishing times before continuing."));
+      return;
+    }
+    setError("");
+    setSetupStep(next);
+  };
+  const summarizeSuggestion = (key: string, value: ProgramConfig) => {
+    const scheduleDate = (at: number) => {
+      try { return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "short", timeZone: value.schedule.timeZone }).format(at); }
+      catch { return t("Invalid date or time zone — review the schedule."); }
+    };
+    const accountNames = (ids: string[]) => ids.map((id) => snapshot.accounts.find((account) => account.id === id)?.name ?? t("Removed account")).join(", ");
+    const mediaSummary = (media: CampaignVariant["media"]) => media.length ? media.map((item) => `${item.kind}: ${item.url || t("Uploaded media")}`).join(" · ") : t("No media");
+    switch (key) {
+      case "name": return value.name;
+      case "projectId": return projects.find((project) => project.id === value.projectId)?.name ?? t("Select project");
+      case "accountIds": return accountNames(value.accountIds);
+      case "brief": return [[t("Topic"), value.brief.topic], [t("Title"), value.brief.title], [t("Description"), value.brief.description], [t("Audience"), value.brief.audience], [t("Language"), value.brief.language], [t("Voice"), value.brief.voice], [t("Call to action"), value.brief.cta], [t("Link"), value.brief.link], [t("Verified facts"), value.brief.factIds.map((id) => snapshot.profiles.flatMap((profile) => profile.facts).find((fact) => fact.id === id)?.topic ?? id).join(", ")], [t("Content angles"), value.brief.angles?.join(", ")]].filter(([, text]) => !!text).map(([label, text]) => `${label}: ${text}`).join("\n");
+      case "textAgent": return value.textAgent ? `${value.textAgent.provider} · ${value.textAgent.model || t("Use project defaults")}` : t("Use project defaults");
+      case "image": return `${t(value.image.mode === "none" ? "No media" : value.image.mode === "generate" ? "Generate image" : "Existing media")} · ${value.image.aspectRatio}\n${value.image.mode === "generate" ? `${value.image.provider} · ${value.image.model || t("Use project defaults")}` : mediaSummary(value.image.media)}`;
+      case "schedule": return `${scheduleDate(value.schedule.startsAt)} · ${value.schedule.timeZone}\n${t("Days")}: ${value.schedule.days.map((day) => new Intl.DateTimeFormat(locale, { weekday: "short", timeZone: "UTC" }).format(Date.UTC(2024, 0, day))).join(", ")}\n${value.schedule.mode === "times" ? value.schedule.times.join(", ") : value.schedule.mode === "frequency" ? `${value.schedule.frequency} / ${t(value.schedule.period === "day" ? "Day" : "Week")}` : `${value.schedule.minIntervalMinutes}–${value.schedule.maxIntervalMinutes} ${t("Minutes")}`} · ${value.schedule.startTime}–${value.schedule.endTime}${value.schedule.endsAt ? `\n${t("End date")}: ${scheduleDate(value.schedule.endsAt)}` : ""}`;
+      case "limits": return `${t("Daily posts")}: ${value.limits.dailyPosts} · ${t("Daily generations")}: ${value.limits.dailyGenerations}\n${t("Total generations")}: ${value.limits.totalGenerations} · ${t("Image generations")}: ${value.limits.maxImageGenerations}`;
+      case "totalPosts": return value.totalPosts === null ? t("Unlimited") : String(value.totalPosts);
+      case "strategy": return t(value.strategy === "unique" ? "New content for each post" : value.strategy === "repeat" ? "Repeat approved content" : "Rotate approved content pool");
+      case "poolCampaignIds": return value.poolCampaignIds.map((id) => snapshot.campaigns.find((campaign) => campaign.id === id)?.name ?? id).join(", ");
+      case "approval": return `${t(value.approval.mode === "approved" ? "Approved" : value.approval.mode === "semi" ? "Semi-approved: first sample and plan" : "Automatic")} · ${value.approval.steps.map((step) => t(steps[step] ?? step)).join(", ")}`;
+      case "mediaOverrides": return Object.entries(value.mediaOverrides ?? {}).map(([id, media]) => `${accountNames([id])}: ${mediaSummary(media)}`).join("\n");
+      case "youtube": return value.youtube ? t("YouTube settings changed. Review the exact settings below.") : t("Use project defaults");
+      default: return t("Review the exact settings below.");
+    }
+  };
   if (!snapshot.programsSupported) return null;
   return (
     <section className="social-programs" aria-label={t("AI campaign programs")}>
       {error || refreshError ? <Notice kind="error">{error || String(refreshError)}</Notice> : null}
       <SocialSetupEditor
         inline={!programs.length}
-        title={edit ? t("Edit campaign program") : t("Create AI campaign")}
+        title={edit ? t("Edit campaign program") : t("Generate from a brief")}
         editing={editVersion}
       >
         <form
@@ -287,15 +337,57 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                   variant="tab"
                   aria-current={setupStep === index ? "step" : undefined}
                   aria-pressed={setupStep === index}
-                  onClick={() => setSetupStep(index)}
+                  onClick={() => goToStep(index)}
                 >
                   {t(label)}
                 </Button>
               ),
             )}
           </nav>
+          <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-ui-caption text-(--ui-text-secondary)" aria-label={t("Content readiness")}>
+            <span>{t("Text model")}: {config.textAgent?.model || t("Use project defaults")}</span>
+            <span>{t("Media")}: {t(config.image.mode === "none" ? "No media" : config.image.mode === "generate" ? "Generate image" : "Existing media")}</span>
+            <span>{features ? t("Model and platform availability loaded") : t("Availability has not been checked")}</span>
+                <Button
+                  loading={pendingUi.is("programs.check-model-and-platform-availability")}
+                  disabled={socialLocked}
+                  variant="secondary"
+                  type="button"
+                  onClick={() =>
+                    void pendingUi.run("programs.check-model-and-platform-availability", () =>
+                      run(async () =>
+                        setFeatures(await client.request<ProgramFeatures>("programs.features")),
+                      ),
+                    )
+                  }
+                >
+                  {t("Check model and platform availability")}
+                </Button>
+          </div>
+          {config.accountIds.length ? <ul className="m-0 flex min-w-0 list-none flex-col gap-2 p-0 text-ui-caption" aria-label={t("Account readiness")}>
+            {config.accountIds.map((id) => {
+              const account = snapshot.accounts.find((item) => item.id === id);
+              const formats = features?.formats[id];
+              const override = config.mediaOverrides?.[id];
+              const generating = override === undefined && config.image.mode === "generate";
+              const media = override ?? (config.image.mode === "existing" ? config.image.media : []);
+              const requiredFormats = generating ? ["image"] : media.length ? [...new Set(media.map((item) => item.kind))] : ["text"];
+              const unsupported = formats ? requiredFormats.filter((format) => !formats.formats.includes(format)) : [];
+              const imageCapability = features?.images.filter((image) => config.image.provider === "automatic" || image.provider === config.image.provider);
+              return <li key={id} className="min-w-0 break-words border-b border-(--ui-border) pb-2">
+                <strong className="font-medium">{account?.name ?? t("Removed account")}</strong> · {account ? names[account.platform] : ""}
+                <p>{account?.grants[config.projectId]?.includes("draft") ? t("Draft access available") : t("Draft access to the selected project is required.")} · {account?.connected ? account.paused ? t("Account paused") : t("Connected") : t("Connect this account before publishing.")}</p>
+                <p>{t("Supported formats")}: {formats ? formats.formats.join(", ") || t("No supported formats reported") : t("Unknown — check model and platform availability.")} {unsupported.length ? `${t("Selected media is not supported")}: ${unsupported.join(", ")}` : formats ? t("Selected media matches the reported formats.") : ""}</p>
+                {formats?.reason ? <p>{formats.reason}</p> : null}
+                {formats?.requiresReview ? <p>{t("Publication review is required for this account.")}</p> : null}
+                {formats && !formats.allowsRepeat && config.strategy === "repeat" ? <p>{t("Repeated content is not allowed for this account.")}</p> : null}
+                {generating ? <p>{t("Image generation")}: {imageCapability ? imageCapability.some((image) => image.available) ? t("Provider available; generated media still requires review.") : imageCapability.map((image) => image.reason).join(" · ") || t("No image provider is available.") : t("Unknown — check model and platform availability.")}</p> : <p>{t("Media")}: {media.length ? media.map((item) => item.kind).join(", ") : t("No media")}</p>}
+                <p>{t("Text model availability is checked when generation starts. These format checks do not authorize publishing.")}</p>
+              </li>;
+            })}
+          </ul> : null}
           <div className="social-program-step" data-program-step="0" hidden={setupStep !== 0}>
-            <details className="social-program-advanced social-program-assistant" open>
+            <details className="social-program-advanced social-program-assistant">
               <summary>{t("Describe the campaign to AI")}</summary>
               <TextareaField
                 disabled={socialLocked}
@@ -316,8 +408,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                         config: ProgramConfig;
                         questions: string[];
                       }>("programs.suggest", { config, instructions });
-                      setConfig(result.config);
-                      setQuestions(result.questions);
+                      setSuggestion({ config: result.config, questions: result.questions, base: JSON.stringify(config) });
                     }),
                   )
                 }
@@ -328,6 +419,19 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 <p key={i}>{q}</p>
               ))}
             </details>
+            {suggestion ? <Notice kind="info" title={t("Review suggested settings")}>
+              <p>{t("Your current brief is unchanged until you apply these settings.")}</p>
+              <dl className="grid min-w-0 gap-2 text-ui-caption">
+                {Object.keys(suggestion.config).filter((key) => JSON.stringify(suggestion.config[key as keyof ProgramConfig]) !== JSON.stringify(config[key as keyof ProgramConfig])).map((key) => (
+                  <div key={key} className="min-w-0"><dt className="font-medium">{t(({ name: "Campaign name", projectId: "Project", accountIds: "Target accounts", brief: "Purpose and content", textAgent: "Text model", image: "AI models and media", strategy: "Content strategy", poolCampaignIds: "Content pool", approval: "Approval and limits", schedule: "Publishing schedule", totalPosts: "Total posts", limits: "Generation limits", youtube: "YouTube", mediaOverrides: "Media" } as Record<string, string>)[key] ?? key)}</dt>
+                    <dd className="m-0 whitespace-pre-wrap break-words">{summarizeSuggestion(key, suggestion.config)}<details className="mt-1"><summary>{t("Exact settings")}</summary><pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words">{JSON.stringify(suggestion.config[key as keyof ProgramConfig], null, 2)}</pre></details></dd>
+                  </div>
+                ))}
+              </dl>
+              {suggestion.base !== JSON.stringify(config) ? <p>{t("Settings changed while the suggestion was prepared. Request a new suggestion to preserve your edits.")}</p> : null}
+              <div className="social-actions"><Button disabled={socialLocked || suggestion.base !== JSON.stringify(config)} onClick={() => { setConfig(suggestion.config); setQuestions(suggestion.questions); setPreview([]); setSuggestion(undefined); }}>{t("Apply suggested settings")}</Button>
+                <Button variant="ghost" onClick={() => setSuggestion(undefined)}>{t("Keep current settings")}</Button></div>
+            </Notice> : null}
             <fieldset>
               <legend>{t("Purpose and content")}</legend>
               <div className="social-program-grid">
@@ -386,6 +490,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 options={snapshot.accounts.map((a) => ({
                   value: a.id,
                   label: `${names[a.platform]} · ${a.name}`,
+                  description: !config.projectId ? t("Select a project first.") : !a.grants[config.projectId]?.includes("draft") ? t("Draft access to the selected project is required.") : !a.connected ? t("Content can be prepared; connect this account before publishing.") : undefined,
                   disabled: !a.grants[config.projectId]?.includes("draft"),
                 }))}
               />
@@ -493,21 +598,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                     )}
                 />
 
-                <Button
-                  loading={pendingUi.is("programs.check-model-and-platform-availability")}
-                  disabled={socialLocked}
-                  variant="secondary"
-                  type="button"
-                  onClick={() =>
-                    void pendingUi.run("programs.check-model-and-platform-availability", () =>
-                      run(async () =>
-                        setFeatures(await client.request<ProgramFeatures>("programs.features")),
-                      ),
-                    )
-                  }
-                >
-                  {t("Check model and platform availability")}
-                </Button>
+
                 {features ? (
                   <ul>
                     {config.accountIds.map((id) => (
@@ -1238,6 +1329,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </fieldset>
           </div>
           <footer className="social-program-setup-actions">
+            {stepReason ? <p role="status" className="w-full text-ui-caption text-(--ui-text-secondary)">{stepReason}</p> : null}
             {setupStep > 0 ? (
               <Button
                 disabled={socialLocked}
@@ -1250,10 +1342,10 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             ) : null}
             {setupStep < 2 ? (
               <Button
-                disabled={socialLocked}
+                disabled={socialLocked || !!stepReason}
                 variant="primary"
                 type="button"
-                onClick={() => setSetupStep((step) => step + 1)}
+                onClick={() => goToStep(setupStep + 1)}
               >
                 {t("Continue")}
               </Button>
@@ -1283,8 +1375,8 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
           </footer>
         </form>
       </SocialSetupEditor>
-      <div className={programs.length ? "social-program-workspace" : undefined}>
-        <div className="social-program-list">
+      <div className={!collectionManaged && programs.length ? "social-program-workspace" : undefined}>
+        {!collectionManaged ? <div className="social-program-list">
           {programs.map((p) => (
             <Button
               variant="tab"
@@ -1309,7 +1401,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
               </span>
             </Button>
           ))}
-        </div>
+        </div> : null}
         {detail ? (
           <section className="social-program-detail">
             <header className="social-record-heading">

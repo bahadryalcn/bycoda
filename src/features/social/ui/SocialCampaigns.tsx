@@ -12,16 +12,18 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SocialFilters } from "./SocialFilters";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
+import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { SocialPrograms } from "./SocialPrograms";
 import { TikTokPublishingFields } from "./TikTokPublishingFields";
 import { XMediaFields } from "./XMediaFields";
 import { MetaPublishingFields } from "./MetaPublishingFields";
 import { FacebookReelFields, validFacebookReel } from "./FacebookReelFields";
 import { SocialUploadImagePreview } from "./SocialUploadImagePreview";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { SocialProgram } from "../model/socialProgram";
 import { socialQueryScope } from "../model/socialQuery";
 import type {
   CampaignVariant,
@@ -85,17 +87,30 @@ export function Campaigns({
   initialProject,
   run,
   onFilterChange,
-}: Props) {
+  accountIntent,
+  projectIntent,
+}: Props & { accountIntent?: { accountId: string; token: number }; projectIntent?: { projectId: string; token: number } }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const queryClient = useQueryClient();
   const [view, setView] = useState<"manual" | "ai">("manual");
   const active = useContext(SocialPanelActiveContext);
+  const visible = useQueryVisible();
+  const programIntentToken = useRef(0);
+  const [programIntent, setProgramIntent] = useState<{ id: string; token: number }>();
+  const programsQuery = useQuery({
+    queryKey: [...socialQueryScope(client), "programs", snapshot.programProjectId ?? ""],
+    queryFn: () => client.request<SocialProgram[]>("programs.list", snapshot.programProjectId ? { projectId: snapshot.programProjectId } : {}),
+    enabled: !!snapshot.programsSupported && active && visible,
+    staleTime: 5_000,
+    refetchInterval: active && visible ? 5_000 : false,
+  });
   const [selectedProjects, setSelectedProjects] = useState<string[]>(
     initialProject ? [initialProject] : [],
   );
   const [variants, setVariants] = useState<CampaignVariant[]>([]);
+  const [openVariant, setOpenVariant] = useState("");
   const [name, setName] = useState("");
   const [editingId, setEditingId] = useState<string>();
   const [editingRevision, setEditingRevision] = useState<number>();
@@ -134,6 +149,23 @@ export function Campaigns({
     selectedProjects.every((id) =>
       snapshot.accounts.find((account) => account.id === accountId)?.grants[id]?.includes("draft"),
     );
+  const seenAccountIntent = useRef<number | undefined>(undefined);
+  const [intendedAccount, setIntendedAccount] = useState("");
+  useEffect(() => {
+    if (!accountIntent || seenAccountIntent.current === accountIntent.token) return;
+    setView("manual");
+    setIntendedAccount(accountIntent.accountId);
+    const account = snapshot.accounts.find((item) => item.id === accountIntent.accountId);
+    // A navigation intent may arrive before this panel's snapshot. Resolve it
+    // once the target exists, without replacing any in-progress variants.
+    if (!account) return;
+    seenAccountIntent.current = accountIntent.token;
+    if (!account || !selectedProjects.length || !selectedProjects.every((id) => account.grants[id]?.includes("draft"))) return;
+    setVariants((current) => current.some((item) => item.accountId === account.id) ? current : [...current, {
+      accountId: account.id, text: "", media: [], factIds: [], scheduledAt: Date.now(),
+      ...(account.platform === "youtube" ? { youtube: { ...youtubeDefaults } } : {}),
+    }]);
+  }, [accountIntent, snapshot.accounts, selectedProjects]);
   const accountFor = (variant: CampaignVariant) =>
     snapshot.accounts.find((account) => account.id === variant.accountId);
   const apiLinkedInUpload = (variant: CampaignVariant) => {
@@ -307,23 +339,46 @@ export function Campaigns({
       : undefined;
   return (
     <div className="social-page social-campaign-page">
+      <SearchableSelect
+        label={t("Loaded content")}
+        value={view === "ai" && programIntent ? `program:${programIntent.id}` : `campaign:${selectedId}`}
+        options={[
+          ...visibleCampaigns.map((campaign) => ({ value: `campaign:${campaign.id}`, label: campaign.name, description: `${t("One-time content")} · ${stateLabel(campaign) ?? t(({ draft: "Draft", queued: "Scheduled", running: "Sending", succeeded: "Sent", partial: "Partially sent", failed: "Failed", review: "Needs review", paused: "Paused", cancelled: "Cancelled" } as Record<string, string>)[campaignState(campaign, snapshot.jobs, snapshot.campaignStates)] ?? "Draft")} · ${t("{p0} projects · {p1} accounts", { p0: campaign.projectIds.length, p1: campaign.variants.length })}` })),
+          ...(programsQuery.data ?? []).map((program) => ({ value: `program:${program.id}`, label: program.name, description: `${t("Recurring content")} · ${program.enabled ? t("Active") : program.cancelled ? t("Cancelled") : t("Paused")}` })),
+        ]}
+        onChange={(value) => {
+          if (value.startsWith("program:")) {
+            setProgramIntent({ id: value.slice(8), token: ++programIntentToken.current });
+            setView("ai");
+          } else {
+            setSelectedId(value.slice(9));
+            setPreview(null);
+            setApprovalConfirmed(false);
+            setView("manual");
+          }
+        }}
+        searchLocale={getLocale()}
+      />
+      {snapshot.pages?.campaigns?.total !== undefined && snapshot.pages.campaigns.total > snapshot.campaigns.length ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("{p0} of {p1} one-time items loaded. Search or filter to find more content.", { p0: snapshot.campaigns.length, p1: snapshot.pages.campaigns.total })}</p> : null}
+      {programsQuery.isLoading ? <p role="status" className="text-ui-caption">{t("Loading recurring content…")}</p> : null}
+      {programsQuery.isError ? <Notice kind="error">{t("Recurring content could not be loaded. One-time content remains available.")} <Button variant="link" onClick={() => void programsQuery.refetch()} loading={programsQuery.isFetching}>{t("Retry")}</Button></Notice> : null}
       {snapshot.programsSupported ? (
-        <nav className="social-campaign-modes" aria-label={t("Campaigns")}>
+        <nav className="social-campaign-modes" aria-label={t("Prepare content")}>
           <SegmentedControl
-            label={t("Campaigns")}
+            label={t("Prepare content")}
             selectionRole="pressed"
             value={view}
             onValueChange={(next) => setView(next === "ai" ? "ai" : "manual")}
             options={[
-              { value: "ai", label: t("AI campaigns") },
-              { value: "manual", label: t("Campaigns") },
+              { value: "manual", label: t("Write content") },
+              { value: "ai", label: t("Generate from a brief") },
             ]}
           />
         </nav>
       ) : null}
       <div hidden={view !== "ai"}>
         <SocialPanelActiveContext.Provider value={active && view === "ai"}>
-          <SocialPrograms {...{ client, snapshot, projects, initialProject, run }} />
+          <SocialPrograms {...{ client, snapshot, projects, initialProject, run }} collectionManaged selectionIntent={programIntent} onSelectionChange={(id) => setProgramIntent((current) => current?.id === id ? current : { id, token: ++programIntentToken.current })} />
         </SocialPanelActiveContext.Provider>
       </div>
       <div className="social-campaign-manual" hidden={view !== "manual"}>
@@ -359,7 +414,7 @@ export function Campaigns({
           </span>
         </div>
         <Composer
-          title={editingId ? t("Edit campaign draft") : t("New campaign")}
+          title={editingId ? t("Edit campaign draft") : t("Prepare content")}
           onOpen={() => {
             void queryClient.invalidateQueries({
               queryKey: [...socialQueryScope(client), "tiktok-creator"],
@@ -372,6 +427,15 @@ export function Campaigns({
         >
           <form
             className="social-form"
+            onInvalidCapture={(event) => {
+              const input = event.target as HTMLElement;
+              const owner = input.closest<HTMLElement>("[data-content-account]");
+              if (owner?.dataset.contentAccount) {
+                event.preventDefault();
+                setOpenVariant(owner.dataset.contentAccount);
+                requestAnimationFrame(() => input.focus());
+              }
+            }}
             onSubmit={(event) => {
               const form = event.currentTarget;
               field(event);
@@ -439,6 +503,10 @@ export function Campaigns({
               })();
             }}
           >
+            {intendedAccount ? <Notice kind="info">
+              {t("Preparing for account: {p0}", { p0: snapshot.accounts.find((item) => item.id === intendedAccount)?.name ?? t("Removed account") })}
+              {!variants.some((item) => item.accountId === intendedAccount) ? <p>{t("Select a project with draft access, then add this account to the targets.")}</p> : null}
+            </Notice> : null}
             <TextField
               disabled={socialLocked}
               label={t("Campaign name")}
@@ -491,10 +559,13 @@ export function Campaigns({
               </Notice>
             ) : null}
             {variants.map((variant) => (
-              <fieldset key={variant.accountId} className="social-variant">
+              <fieldset key={variant.accountId} className="social-variant" data-content-account={variant.accountId}>
                 <legend>
+                  <Button variant="link" aria-expanded={variant.accountId === (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} onClick={() => setOpenVariant(variant.accountId)}>
                   {snapshot.accounts.find((account) => account.id === variant.accountId)?.name}
+                  </Button>
                 </legend>
+                <div hidden={variant.accountId !== (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} className="flex min-w-0 flex-col gap-3">
                 {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
                 "youtube" ? (
                   <>
@@ -701,20 +772,6 @@ export function Campaigns({
                     }
                   />
                 ) : null}
-                <details className="social-settings">
-                  <summary>{t("One-time publish time, media and link")}</summary>
-                  <TextField
-                    disabled={socialLocked}
-                    label={t("Link")}
-                    type="url"
-                    placeholder="https://"
-                    value={variant.link ?? ""}
-                    onChange={(event) =>
-                      update(variant.accountId, {
-                        link: event.target.value || undefined,
-                      })
-                    }
-                  />
                   <TextField
                     disabled={socialLocked}
                     label={t("One-time schedule time · this computer's time zone")}
@@ -727,6 +784,22 @@ export function Campaigns({
                       })
                     }
                   />
+                  <p className="text-ui-caption text-(--ui-text-secondary)">{t("Time zone")}: {Intl.DateTimeFormat().resolvedOptions().timeZone}</p>
+                <details className="social-settings">
+                  <summary>{t("Media and link")}</summary>
+                  <TextField
+                    disabled={socialLocked}
+                    label={t("Link")}
+                    type="url"
+                    placeholder="https://"
+                    value={variant.link ?? ""}
+                    onChange={(event) =>
+                      update(variant.accountId, {
+                        link: event.target.value || undefined,
+                      })
+                    }
+                  />
+
                   {accountFor(variant)?.connection !== "browser" &&
                   !snapshot.accounts.some(
                     (account) =>
@@ -964,6 +1037,7 @@ export function Campaigns({
                     {t("Remove this account from the campaign")}
                   </Button>
                 </div>
+                </div>
               </fieldset>
             ))}
             <p className="social-muted">
@@ -1016,7 +1090,7 @@ export function Campaigns({
             </div>
           </form>
         </Composer>
-        <div className="social-columns">
+        <div className="flex min-w-0 flex-col gap-3">
           <section>
             <h2 className="sr-only">
               {t("Campaigns")} <small>{snapshot.campaigns.length}</small>
@@ -1055,44 +1129,6 @@ export function Campaigns({
                 </label>
               </SocialFilters>
             </div>
-            {snapshot.campaigns.length ? (
-              visibleCampaigns.map((campaign) => (
-                <Button
-                  disabled={socialLocked}
-                  type="button"
-                  variant="tab"
-                  className="social-row"
-                  aria-pressed={selectedId === campaign.id}
-                  key={campaign.id}
-                  onClick={() => {
-                    setSelectedId(campaign.id);
-                    setPreview(null);
-                    setApprovalConfirmed(false);
-                  }}
-                >
-                  <strong>{campaign.name}</strong>
-                  <StatusBadge
-                    status={campaignState(campaign, snapshot.jobs, snapshot.campaignStates)}
-                    label={stateLabel(campaign)}
-                  />
-                  <span>
-                    {t("{p0} projects · {p1} accounts", {
-                      p0: campaign.projectIds.length,
-                      p1: campaign.variants.length,
-                    })}
-                  </span>
-                </Button>
-              ))
-            ) : (
-              <Empty title={t("Prepare your first campaign")}>
-                {t("Use New campaign to pick projects and accounts and prepare your content.")}
-              </Empty>
-            )}
-            {snapshot.campaigns.length && !visibleCampaigns.length ? (
-              <Empty title={t("No matching campaign")}>
-                {t("Change the search or the status filter.")}
-              </Empty>
-            ) : null}
           </section>
           {showCampaignPreview ? (
             <section>
@@ -1115,6 +1151,15 @@ export function Campaigns({
                       label={stateLabel(selected)}
                     />
                   </header>
+                  {selectedJobs.length ? <section className="mb-3 flex min-w-0 flex-col gap-2" aria-label={t("Post results")}>
+                    <h3 className="text-ui-secondary font-medium">{t("Post results")} · {selectedJobs.length}</h3>
+                    <p className="text-ui-caption text-(--ui-text-secondary)">{t("These are existing target outcomes. Review failures or uncertain results before starting any further work.")}</p>
+                    <JobList
+                      snapshot={snapshot}
+                      campaignId={selected.id}
+                      client={client}
+                      run={run}
+                    />                  </section> : null}
                   <div className="social-campaign-content">
                     <div className="social-campaign-previews">
                       {selected.variants.map((variant) => (
@@ -1193,6 +1238,7 @@ export function Campaigns({
                                   active={active}
                                 />
                               ) : null}
+                              {!(media.kind === "image" && media.uploadId && !media.url) ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Preview unavailable for this media. Review its exact properties before approval.")}</p> : null}
                               <p>
                                 {media.kind === "document"
                                   ? t("PDF document")
@@ -1238,7 +1284,7 @@ export function Campaigns({
                         className="social-workflow-steps"
                         aria-label={t("Publish approval and scheduling")}
                       >
-                        <h3>{t("Review and publish")}</h3>
+                        <h3>{selectedJobs.length ? t("Review remaining work") : t("Review and publish")}</h3>
                         {currentPreview && canApprove ? (
                           <label className="social-check">
                             <Checkbox
@@ -1382,17 +1428,7 @@ export function Campaigns({
                       ) : null}
                     </aside>
                   </div>
-                  <details className="social-campaign-results">
-                    <summary>
-                      {t("Post results")} <small>{selectedJobs.length}</small>
-                    </summary>
-                    <JobList
-                      snapshot={snapshot}
-                      campaignId={selected.id}
-                      client={client}
-                      run={run}
-                    />
-                  </details>
+
                 </>
               ) : (
                 <Empty title={t("Campaign preview")}>
@@ -1406,11 +1442,16 @@ export function Campaigns({
         </div>
       </div>
       <section className="social-page-secondary">
+        <p className="text-ui-caption text-(--ui-text-secondary)">{t("Verified facts belong to the project selected below.")}
+          {selected ? ` ${t("Selected content projects")}: ${selected.projectIds.map((id) => projects.find((project) => project.id === id)?.name ?? t("Project")).join(", ")}` : ""}
+        </p>
+
         <ProjectProfile
           client={client}
           profiles={snapshot.profiles}
           projects={projects}
           initialProject={initialProject}
+          projectIntent={projectIntent}
           run={run}
         />
       </section>
@@ -1422,18 +1463,31 @@ function ProjectProfile({
   profiles,
   projects,
   initialProject,
+  projectIntent,
   run,
 }: {
   client: SocialClient;
   profiles: SocialProjectProfile[];
   projects: HostProject[];
   initialProject?: string;
+  projectIntent?: { projectId: string; token: number };
   run: Run;
 }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const [projectId, setProjectId] = useState(initialProject ?? projects[0]?.id ?? "");
+  const factsRef = useRef<HTMLDetailsElement>(null);
+  const seenProjectIntent = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!projectIntent || seenProjectIntent.current === projectIntent.token) return;
+    if (!projects.some((project) => project.id === projectIntent.projectId)) return;
+    seenProjectIntent.current = projectIntent.token;
+    setProjectId(projectIntent.projectId);
+    if (factsRef.current) factsRef.current.open = true;
+    const frame = requestAnimationFrame(() => factsRef.current?.scrollIntoView({ block: "nearest" }));
+    return () => cancelAnimationFrame(frame);
+  }, [projectIntent, projects]);
   const activeProject = projects.some((project) => project.id === projectId)
     ? projectId
     : (projects[0]?.id ?? "");
@@ -1463,7 +1517,7 @@ function ProjectProfile({
       facts,
     });
   return (
-    <details className="social-form">
+    <details ref={factsRef} className="social-form">
       <summary>{t("Product information and verified announcements")}</summary>
       <p className="social-muted">
         {t(

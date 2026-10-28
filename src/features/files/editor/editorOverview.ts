@@ -250,7 +250,8 @@ export function attachSplitOverview(split: MergeView): () => void {
     },
     {
       interactive: true,
-      band: true,
+      // The native shared scroller is the only viewport thumb. This strip is ticks.
+      band: false,
       beforeDraw: () => {
         // Sits left of the native scrollbar and never over it.
         ruler.dom.style.right = `${scrollbarGutter(scroller)}px`;

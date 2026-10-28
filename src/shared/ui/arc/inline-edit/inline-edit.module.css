@@ -1,9 +1,19 @@
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer theme, base, components, utilities;
+
+/* External layout: callers can constrain or place the field with Tailwind utilities. The text/field metrics shared by display
+   and input, the frame states and the action slot below stay unlayered. */
+@layer components {
+  .root {
+    min-inline-size: 0;
+  }
+}
+
 .root {
   --pad-x: 8px;
   --pad-y: 3px;
   position: relative;
   display: grid;
-  min-width: 0;
   margin-inline-start: calc(-1 * (var(--pad-x) + 1px));
   font-family: var(--font-body);
   letter-spacing: var(--tracking-body);
@@ -28,7 +38,8 @@
   display: block;
   min-width: 0;
   margin: 0;
-  padding-inline-end: 66px;
+  /* Two compact actions, their gap and the offset from the frame: room is reserved in every state. */
+  padding-inline-end: calc(2 * var(--ui-control-height-sm) + var(--space-1) + var(--space-2));
   color: var(--ink);
   font-family: var(--font-body);
   font-size: var(--size);
@@ -37,7 +48,7 @@
   letter-spacing: var(--tracking-body);
 }
 .root[data-multiline] .line {
-  padding-inline-end: 38px;
+  padding-inline-end: calc(var(--ui-control-height-sm) + var(--space-3));
 }
 .box {
   position: relative;
@@ -125,8 +136,16 @@
   overflow: hidden;
   caret-color: var(--foreground);
 }
-/* The frame carries the focus ring for the field, so the field itself never draws a second one. */
-.control:focus-visible {
+/* The frame carries the focus indication for the field (border and inset outline, as in TextField), so the field itself never draws a second one. */
+.root .control:focus-visible {
+  outline: none;
+}
+.root:has(.control:focus-visible) .frame {
+  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
+  outline-offset: -1px;
+}
+.root[data-invalid]:has(.control:focus-visible) .frame {
+  outline-color: var(--ui-tone-danger-fg);
 }
 .control::placeholder {
   color: var(--text-muted);
@@ -159,7 +178,7 @@ textarea.control {
 }
 @media (hover: hover) and (pointer: fine) {
   .display:not([aria-disabled="true"]):hover ~ .frame {
-    background: var(--surface-muted);
+    background: var(--ui-surface-hover);
   }
   .pencil {
     opacity: 0;
@@ -177,7 +196,7 @@ textarea.control {
   background: var(--ui-surface-muted);
 }
 .root[data-invalid] .frame {
-  border-color: var(--danger);
+  border-color: var(--ui-tone-danger-fg);
 }
 .root[data-flash="on"] .frame {
   border-color: var(--ui-tone-danger-border);
@@ -192,74 +211,36 @@ textarea.control {
 .slot {
   position: absolute;
   top: 50%;
-  left: calc(100% + 6px);
+  left: calc(100% + var(--space-2));
   display: grid;
-  min-height: 28px;
-  margin-top: -14px;
+  min-height: var(--ui-control-height-sm);
+  margin-top: calc(var(--ui-control-height-sm) / -2);
   pointer-events: auto;
 }
 .root[data-multiline] .slot {
   top: 0;
-  left: calc(100% + 8px);
-  margin-top: calc(var(--pad-y) + var(--leading) / 2 - 13px);
+  left: calc(100% + var(--space-2));
+  margin-top: calc(var(--pad-y) + var(--leading) / 2 - var(--ui-control-height-sm) / 2);
 }
 .slotItem {
   display: grid;
   grid-area: 1 / 1;
-  min-height: 28px;
+  min-height: var(--ui-control-height-sm);
   place-items: center start;
 }
+/* Save and Cancel are shared icon Buttons; this only lays them out. */
 .actions {
   display: flex;
-  gap: 4px;
+  gap: var(--space-1);
 }
 .root[data-multiline] .actions {
   flex-direction: column;
 }
-.save,
-.cancel {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition:
-    background-color var(--duration-fast) var(--ease-standard),
-    color var(--duration-fast) var(--ease-standard),
-    border-color var(--duration-fast) var(--ease-standard),
-    transform var(--duration-instant) var(--ease-standard);
-}
-.save {
-  background: var(--foreground);
-  color: var(--background);
-}
-.cancel {
-  border-color: var(--border);
-  background: var(--surface);
-  color: var(--text-secondary);
-}
-.save:active,
-.cancel:active {
-  transform: scale(0.96);
-}
-@media (hover: hover) and (pointer: fine) {
-  .save:hover {
-    background: color-mix(in oklab, var(--foreground) 86%, var(--background));
-  }
-  .cancel:hover {
-    border-color: var(--border-strong);
-    background: var(--surface-muted);
-    color: var(--foreground);
-  }
-}
 .pencil {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
   margin-left: 2px;
-  color: var(--text-muted);
+  color: var(--ui-text-muted);
   cursor: pointer;
 }
 .spinner {
@@ -276,11 +257,13 @@ textarea.control {
   display: grid;
   margin-left: 1px;
   place-items: center;
-  color: var(--success);
+  color: var(--ui-tone-success-fg);
 }
 .failedIcon {
+  inline-size: var(--ui-icon-md);
+  block-size: var(--ui-icon-md);
   margin-left: 1px;
-  color: var(--danger);
+  color: var(--ui-tone-danger-fg);
 }
 
 /* The message row opens from a true zero; its spacing lives inside the clipped slot. */
@@ -303,12 +286,14 @@ textarea.control {
   line-height: var(--leading-body);
 }
 .message[data-tone="error"] {
-  color: var(--danger);
+  color: var(--ui-tone-danger-fg);
 }
 .messageIcon {
   flex: none;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
   margin-top: 2px;
-  color: var(--danger);
+  color: var(--ui-tone-danger-fg);
 }
 .retry {
   margin: 0 0 0 2px;
@@ -349,8 +334,6 @@ textarea.control {
     border-top-color: transparent;
   }
   .layer,
-  .save,
-  .cancel,
   .pencil {
     transition: none;
   }

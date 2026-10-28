@@ -27,13 +27,13 @@ import { clearProjectLogo, pickAndSetProjectLogo } from "../../projects/model/pr
 import { TAB_GROUP_COLORS } from "../model/tabGroups";
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
 import { Popover } from "../../../shared/ui/Popover";
-import { MenuRow as SharedMenuRow, menuRowClassName } from "../../../shared/ui/MenuRow";
+import { MenuRow as SharedMenuRow } from "../../../shared/ui/MenuRow";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectIconPicker } from "../../projects/ui/ProjectIconPicker";
 import { RailBackgroundControls } from "../../projects/ui/RailBackgroundControls";
 import type { RailBackgrounds } from "../model/tabGroups";
 import { MOD } from "../../../platform/tauri/platform";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 
 export type TabGroupMenuAction =
   | "new-tab"
@@ -50,7 +50,7 @@ export type TabGroupMenuExtraItem = {
   danger?: boolean;
   sepBefore?: boolean;
   disabled?: boolean;
-  submenu?: ExplorerMenuItem[];
+  submenu?: ContextMenuItem[];
 };
 
 type Props = {
@@ -288,8 +288,8 @@ export function TabGroupMenu({
             />
           </Button>
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] text-content/50">{t("Project logo")}</p>
-            <p className="truncate text-[12px] text-content/70">
+            <p className="text-ui-caption text-(--ui-text-muted)">{t("Project logo")}</p>
+            <p className="truncate text-ui-secondary text-(--ui-text-secondary)">
               {logoPath ? t("Shown in tabs and composer") : t("Optional — replaces folder icon")}
             </p>
           </div>
@@ -360,7 +360,7 @@ export function TabGroupMenu({
       ) : null}
       {appearanceItems?.length ? (
         <>
-          <div role="separator" className="my-1 h-px bg-content/10" />
+          <div role="separator" className="my-1 h-px bg-stroke" />
           {appearanceItems.map((item) => (
             <MenuRow key={item.id} item={item} onPick={() => pickExtra(item.id)} />
           ))}
@@ -393,7 +393,7 @@ export function TabGroupMenu({
         onContextMenu={(e) => e.preventDefault()}
         onMouseEnter={cancelSubmenuClose}
         onMouseLeave={scheduleSubmenuClose}
-        className="bycoda-arc overflow-y-auto overscroll-contain p-2"
+        className="bycoda-arc overflow-y-auto overscroll-contain p-1"
       >
         {leadingAction ? (
           <>
@@ -405,7 +405,7 @@ export function TabGroupMenu({
               }}
               onPick={() => pickExtra(leadingAction.id)}
             />
-            <div role="separator" className="my-1 h-px bg-content/10" />
+            <div role="separator" className="my-1 h-px bg-stroke" />
           </>
         ) : null}
         <TextField
@@ -445,7 +445,7 @@ export function TabGroupMenu({
 
         {showActions ? (
           <>
-            <div className="my-1 h-px bg-content/10" />
+            <div role="separator" className="my-1 h-px bg-stroke" />
 
             {ITEMS.slice(0, 2).map((item) => (
               <MenuRow
@@ -456,7 +456,7 @@ export function TabGroupMenu({
               />
             ))}
 
-            <div className="my-1 h-px bg-content/10" />
+            <div role="separator" className="my-1 h-px bg-stroke" />
 
             {ITEMS.slice(2, 4).map((item) => (
               <MenuRow
@@ -467,7 +467,7 @@ export function TabGroupMenu({
               />
             ))}
 
-            <div className="my-1 h-px bg-content/10" />
+            <div role="separator" className="my-1 h-px bg-stroke" />
 
             {ITEMS.slice(4).map((item) => (
               <MenuRow
@@ -482,11 +482,11 @@ export function TabGroupMenu({
 
         {extraItems && extraItems.length > 0 ? (
           <>
-            <div className="my-1 h-px bg-content/10" />
+            <div role="separator" className="my-1 h-px bg-stroke" />
             {extraItems.map((item) => (
               <Fragment key={item.id}>
                 {item.sepBefore ? (
-                  <div role="separator" className="my-1 h-px bg-content/10" />
+                  <div role="separator" className="my-1 h-px bg-stroke" />
                 ) : null}
                 <MenuRow
                   item={item}
@@ -534,9 +534,8 @@ export function TabGroupMenu({
         </Popover>
       ) : null}
       {submenu?.item.submenu ? (
-        <ExplorerMenu
+        <ContextMenu
           className="bycoda-arc"
-          rowClassName={menuRowClassName}
           anchor={submenu.anchor}
           ownerId={menuId}
           ariaLabel={submenu.item.label}
@@ -586,11 +585,11 @@ function MenuRow({
         }
       }}
     >
-      <Icon className="size-3.5 shrink-0 text-content/55" strokeWidth={1.75} />
+      <Icon className="size-3.5 shrink-0" strokeWidth={1.75} />
       <span className={`min-w-0 flex-1 leading-label ${item.description ? "py-2" : "truncate"}`}>
         {item.label}
         {item.description ? (
-          <span className="mt-1 block text-[11px] leading-snug text-content/60">
+          <span className="mt-1 block text-ui-caption text-(--ui-text-secondary)">
             {item.description}
           </span>
         ) : null}
@@ -598,12 +597,12 @@ function MenuRow({
       {item.submenu ? (
         <ChevronRight
           data-branch-indicator
-          className="size-3.5 shrink-0 text-content/50"
+          className="size-3.5 shrink-0"
           strokeWidth={1.75}
         />
       ) : null}
       {item.shortcut ? (
-        <span className="shrink-0 text-[11px] text-content/40">{item.shortcut}</span>
+        <span className="shrink-0 text-ui-caption text-(--ui-text-muted)">{item.shortcut}</span>
       ) : null}
     </SharedMenuRow>
   );

@@ -1,3 +1,8 @@
+/* Pin Tailwind's layer order even when this stylesheet loads before the global one. */
+@layer theme, base, components, utilities;
+
+/* The panel's width belongs to this dialog's identity and sits in front of the Popover frame's own utilities,
+   so it stays unlayered; only the trigger's text and the form rhythm are defined here. */
 .date-time-range-panel {
   inline-size: min(24rem, calc(100vw - 24px));
   max-inline-size: 100%;
@@ -11,16 +16,24 @@
   min-inline-size: 0;
 }
 .date-time-range-panel h3 {
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
   color: var(--color-content);
 }
 .date-time-range-panel p {
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
+}
+.date-time-range-panel p[role="alert"] {
+  color: var(--ui-tone-danger-fg);
 }
 .date-time-range-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: end;
   gap: 8px;
+}
+/* Both instants stay aligned as digits change. */
+.date-time-range-value {
+  font-variant-numeric: tabular-nums;
 }

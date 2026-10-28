@@ -2,6 +2,7 @@
 // plain English and out of the product locale catalogs. FIXTURE evidence only: current public adapters with
 // memory-only state, never installed/native acceptance.
 import { useMemo, useState, type ReactNode } from "react";
+import { ActionHost, InlineAction } from "../../src/shared/ui/ActionHost";
 import { Button } from "../../src/shared/ui/Button";
 import { ButtonGroup } from "../../src/shared/ui/ButtonGroup";
 import { SplitButton } from "../../src/shared/ui/SplitButton";
@@ -12,6 +13,7 @@ import { Select } from "../../src/shared/ui/Select";
 import { Switch } from "../../src/shared/ui/Switch";
 import { SegmentedControl } from "../../src/shared/ui/SegmentedControl";
 import { NumberField } from "../../src/shared/ui/NumberField";
+import { DateRangePicker } from "../../src/shared/ui/DateRangePicker";
 import { PasswordField } from "../../src/shared/ui/PasswordField";
 import { RadioGroup } from "../../src/shared/ui/RadioGroup";
 import { TagInput } from "../../src/shared/ui/TagInput";
@@ -45,6 +47,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  X,
 } from "../../src/shared/ui/icons";
 
 export type ControlMatrixLayout = "default" | "narrow" | "short";
@@ -414,6 +417,10 @@ function FieldsMatrix() {
           error={"Enter a value between 0 and 20"}
           defaultValue={40}
         />
+        <NumberField label="Number at its maximum" defaultValue={20} min={0} max={20} />
+        <NumberField label="Read only number" readOnly defaultValue={5} />
+        <NumberField label="Disabled number" disabled defaultValue={5} />
+        <NumberField label="Number without steppers" steppers={false} defaultValue={3} />
         <TextareaField label="Matrix text area" rows={2} description="Helper for a text area" />
         <TextareaField label="Text area with error" rows={2} error={"A description is required"} />
         <TextareaField
@@ -423,6 +430,16 @@ function FieldsMatrix() {
           defaultValue="Selectable text"
         />
         <TextareaField label="Disabled text area" rows={2} disabled />
+      </MatrixGroup>
+      <MatrixGroup
+        name="Date range states"
+        testId="matrix-field-dates"
+        className="flex min-w-0 flex-wrap items-start gap-2"
+      >
+        <DateRangePicker label="Matrix range" />
+        <DateRangePicker label="Disabled range" disabled />
+        <DateRangePicker label="Read only range" readOnly />
+        <DateRangePicker label="Invalid range" invalid />
       </MatrixGroup>
       <MatrixGroup name={"Inline editing"} testId="matrix-field-inline">
         <InlineEdit label="Matrix title" value={title} onSave={(next) => setTitle(next)} />
@@ -1024,6 +1041,223 @@ function TreeMatrix() {
   );
 }
 
+const INLINE_TABS = [
+  { id: "readme", name: "README.md" },
+  { id: "panel", name: "GitChangesPanel.tsx", dirty: true },
+  { id: "long", name: "A tab with a very long title that has to truncate.tsx" },
+];
+const INLINE_ROWS = [
+  { id: "inbox", name: "Review the inbox triage", meta: "3 open" },
+  { id: "release", name: "Prepare release notes", meta: "Today" },
+  { id: "pinned", name: "Pinned row keeps its action visible", meta: "Pinned", always: true },
+];
+
+/** Rows, tabs and cards that own their highlight while holding compact inline actions. */
+function InlineActionsMatrix() {
+  const [tabs, setTabs] = useState(INLINE_TABS);
+  const [activeTab, setActiveTab] = useState("panel");
+  const [activeRow, setActiveRow] = useState("release");
+  const [log, setLog] = useState("");
+  const close = (id: string) => {
+    setTabs((current) => current.filter((tab) => tab.id !== id));
+    setLog(`closed ${id}`);
+  };
+  return (
+    <MatrixSection name="Inline actions" testId="matrix-inline">
+      <MatrixGroup
+        name="Tab and close"
+        testId="matrix-inline-tabs"
+        className="flex min-w-0 items-center gap-1"
+      >
+        <div role="tablist" aria-label="Inline tabs" className="flex min-w-0 items-center gap-1">
+          {tabs.map((tab) => (
+            <ActionHost
+              key={tab.id}
+              selected={tab.id === activeTab}
+              data-testid={`matrix-inline-tab-${tab.id}`}
+              className="max-w-56 pe-1"
+              // Middle click closes the tab; it never reaches the close action twice.
+              onAuxClick={(event) => {
+                if (event.button === 1) close(tab.id);
+              }}
+            >
+              <Button
+                variant="tab"
+                role="tab"
+                aria-selected={tab.id === activeTab}
+                motion="none"
+                align="start"
+                className="min-w-0 flex-1"
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setLog(`selected ${tab.id}`);
+                }}
+              >
+                <TabLabel truncate="middle" title>
+                  {tab.name}
+                </TabLabel>
+                {tab.dirty ? <TabDirtyDot /> : null}
+              </Button>
+              <InlineAction
+                label={`Close ${tab.name}`}
+                data-testid={`matrix-inline-close-${tab.id}`}
+                onClick={() => close(tab.id)}
+              >
+                <X aria-hidden />
+              </InlineAction>
+            </ActionHost>
+          ))}
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          motion="none"
+          onClick={() => {
+            setTabs(INLINE_TABS);
+            setLog("reset");
+          }}
+        >
+          Reset tabs
+        </Button>
+      </MatrixGroup>
+      <MatrixGroup
+        name="Rows and actions"
+        testId="matrix-inline-rows"
+        className="grid w-80 max-w-full grid-cols-1 gap-0.5"
+      >
+        {INLINE_ROWS.map((row) => (
+          <ActionHost
+            key={row.id}
+            selected={row.id === activeRow}
+            data-testid={`matrix-inline-row-${row.id}`}
+            className="pe-1"
+          >
+            <Button
+              variant="item"
+              motion="none"
+              align="start"
+              aria-current={row.id === activeRow ? "true" : undefined}
+              className="min-w-0 flex-1"
+              onClick={() => {
+                setActiveRow(row.id);
+                setLog(`opened ${row.id}`);
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate">{row.name}</span>
+              <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
+                {row.meta}
+              </span>
+            </Button>
+            <InlineAction
+              label={`More actions for ${row.name}`}
+              reveal={row.always ? "always" : "interaction"}
+              data-testid={`matrix-inline-more-${row.id}`}
+              onClick={() => setLog(`more ${row.id}`)}
+            >
+              <MoreHorizontal aria-hidden />
+            </InlineAction>
+            <InlineAction
+              label={`Remove ${row.name}`}
+              reveal={row.always ? "always" : "interaction"}
+              data-testid={`matrix-inline-remove-${row.id}`}
+              onClick={() => setLog(`removed ${row.id}`)}
+            >
+              <X aria-hidden />
+            </InlineAction>
+          </ActionHost>
+        ))}
+      </MatrixGroup>
+      <MatrixGroup
+        name="Tree row and action"
+        testId="matrix-inline-tree"
+        className="w-72 max-w-full"
+      >
+        {/* A row and its action are siblings in the host (no nested interactives); the
+            host paints the selected fill. Tree semantics stay with the feature controller. */}
+        <div>
+          <ActionHost selected data-testid="matrix-inline-tree-row" className="pe-1">
+            <TreeRow depth={1} role="button" aria-label="selected file.ts">
+              <TreeRowToggle />
+              <TreeRowIcon>
+                <File className="size-3.5" aria-hidden />
+              </TreeRowIcon>
+              <TreeRowLabel>selected file.ts</TreeRowLabel>
+            </TreeRow>
+            <InlineAction
+              label="More actions for selected file.ts"
+              onClick={() => setLog("more tree")}
+            >
+              <MoreHorizontal aria-hidden />
+            </InlineAction>
+          </ActionHost>
+        </div>
+      </MatrixGroup>
+      <p data-testid="matrix-inline-log" className="text-ui-caption text-(--ui-text-secondary)">
+        {log || "No action yet"}
+      </p>
+    </MatrixSection>
+  );
+}
+
+/** F3 contract: caller utilities change placement only; internal presentation stays owned. */
+function PlacementMatrix() {
+  return (
+    <MatrixSection name="Caller placement" testId="matrix-placement">
+      <MatrixGroup
+        name="Width and margin utilities"
+        testId="matrix-placement-group"
+        className="grid min-w-0 grid-cols-1 gap-2"
+      >
+        <TextField
+          label="Placed field"
+          className="w-40 px-10 text-ui-title"
+          data-testid="matrix-placement-field"
+        />
+        <Select
+          label="Placed select"
+          value="a"
+          className="w-40"
+          data-testid="matrix-placement-select"
+          options={[
+            { value: "a", label: "Alpha" },
+            { value: "b", label: "Beta" },
+          ]}
+          onValueChange={() => undefined}
+        />
+        <SegmentedControl
+          label="Placed segments"
+          value="one"
+          className="ms-6"
+          options={[
+            { value: "one", label: "One" },
+            { value: "two", label: "Two" },
+          ]}
+          onValueChange={() => undefined}
+        />
+        <Button className="w-48" motion="none" data-testid="matrix-placement-button">
+          Placed button
+        </Button>
+        {/* ConfirmDialog-style action: a loading contract but no icon reserves no empty slot. */}
+        <div className="flex gap-2">
+          <Button loading={false} variant="primary" tone="danger" data-testid="matrix-loading-idle">
+            Delete
+          </Button>
+          <Button loading variant="primary" tone="danger" data-testid="matrix-loading-busy">
+            Delete
+          </Button>
+          <Button
+            loading={false}
+            startIcon={<Copy aria-hidden />}
+            data-testid="matrix-loading-icon"
+          >
+            Copy
+          </Button>
+        </div>
+      </MatrixGroup>
+    </MatrixSection>
+  );
+}
+
 function TextMatrix() {
   const [now] = useState(() => Date.now());
   const path = "src/shared/ui/SearchableSelect.tsx";
@@ -1125,6 +1359,8 @@ export function ControlStateMatrix({
         <ChoicesMatrix />
         <NavigationMatrix />
         <TreeMatrix />
+        <InlineActionsMatrix />
+        <PlacementMatrix />
         <TextMatrix />
       </div>
     </div>

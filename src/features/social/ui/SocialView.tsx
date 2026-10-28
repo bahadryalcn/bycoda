@@ -96,8 +96,8 @@ import type { SocialClient } from "../model/socialClient";
 import { TelegramChannelConnection } from "./TelegramChannelConnection";
 import { scopeSocialSnapshot } from "../model/socialWorkspace";
 
-type Tab = "Accounts" | "Campaigns" | "Inbox" | "Audience" | "Automations" | "Settings";
-const tabs: Tab[] = ["Accounts", "Campaigns", "Inbox", "Audience", "Automations", "Settings"];
+type Tab = "Accounts" | "Campaigns" | "Inbox" | "Audience" | "Automations" | "Activity" | "Settings";
+const tabs: Tab[] = ["Campaigns", "Inbox", "Automations", "Audience", "Activity", "Accounts", "Settings"];
 function accountTypeLabel(id: string) {
   return (
     {
@@ -125,10 +125,11 @@ function permissionLabels(): Record<string, string> {
 function tabLabel(tab: Tab) {
   return {
     Accounts: t("Accounts"),
-    Campaigns: t("Campaigns"),
+    Campaigns: t("Prepare content"),
     Inbox: t("Inbox"),
     Audience: t("Audience"),
-    Automations: t("Automations"),
+    Automations: t("Plans and replies"),
+    Activity: t("Activity"),
     Settings: t("Settings"),
   }[tab];
 }
@@ -145,6 +146,7 @@ function workspaceSection(tab: Tab, automationMode: string): Section {
     );
   return (
     {
+      Activity: "history",
       Accounts: "accounts",
       Campaigns: "campaigns",
       Inbox: "inbox",
@@ -175,6 +177,7 @@ const tabIcons = {
   Inbox: InboxIcon,
   Audience: MessageMultiple,
   Automations: Zap,
+  Activity: RefreshCw,
   Settings: Settings,
 };
 /** Sentinel stored in browser availability state; the visible text is translated when rendered. */
@@ -496,7 +499,9 @@ export function SocialView({
         actionMessages[lastAction.current]?.() ??
         t("Operation completed; results updated.");
       if (currentMachine.current === id) {
-        const fresh = await refresh(id, false, true);
+        let fresh = false;
+        try { fresh = await refresh(id, false, true); }
+        catch (cause) { setLoadError(cause instanceof Error ? cause.message : String(cause)); }
         setNotice(
           fresh
             ? completedMessage
@@ -516,11 +521,11 @@ export function SocialView({
   const activeProject = projects.find((project) => pathKey(project.cwd) === pathKey(cwd))?.id;
   const scoped = useMemo(() => scopeSocialSnapshot(snapshot, filter), [snapshot, filter]);
   const openHistory = () => {
-    setTab("Automations");
+    setTab("Activity");
     setAutomationMode("history");
     setNotice("");
     setVisited((current) =>
-      current.includes("Automations") ? current : [...current, "Automations"],
+      current.includes("Activity") ? current : [...current, "Activity"],
     );
   };
   const host = hostWorkspaces.current.get(machineId);
@@ -600,7 +605,7 @@ export function SocialView({
               />
             </div>
             <div className="social-header-field social-project-filter">
-              <span>{t("Project")}</span>
+              <span>{t("Project filter")}</span>
               <SearchableSelect
                 label={t("Project filter")}
                 value={filter}
@@ -769,6 +774,7 @@ export function SocialView({
                   <span aria-hidden="true" className="social-nav-count">
                     {
                       {
+                        Activity: scoped.pages?.jobs?.total ?? scoped.jobs.length,
                         Accounts: scoped.accounts.length,
                         Campaigns: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
                         Inbox: scoped.pages?.threads?.total ?? scoped.threads.length,
@@ -995,12 +1001,18 @@ function WorkspacePanels({
     run = host.run!;
   const initialProject =
     filter || projects.find((project) => pathKey(project.cwd) === pathKey(cwd))?.id;
+  const intentSequence = useRef(0);
+  const [contentIntent, setContentIntent] = useState<{ accountId: string; token: number }>();
+  const [historyIntent, setHistoryIntent] = useState<{ accountId: string; token: number }>();
+  const [projectIntent, setProjectIntent] = useState<{ projectId: string; token: number }>();
+  const executorLabel = machines.find((machine) => machine.id === host.machineId)?.name ?? host.machineId;
   const feedback = { busy, error, notice };
   const props = (section: Section): Props => ({
     client,
     run,
     projects,
     initialProject,
+    onOpenContent: (projectId) => { if (projectId) setProjectIntent({ projectId, token: ++intentSequence.current }); onNavigate("Campaigns"); },
     snapshot: scopeSocialSnapshot(host.snapshots.get(section)!, filter)!,
     onFilterChange: (collection, next) => onCollectionFilter(section, collection, next),
   });
@@ -1010,12 +1022,14 @@ function WorkspacePanels({
     <fieldset className="social-workspace social-workspace-root">
       {present("Accounts", "accounts") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Accounts"}>
-          <Accounts {...props("accounts")} onOpenHistory={onOpenHistory} onNavigate={onNavigate} />
+          <Accounts {...props("accounts")}
+            onPrepare={(accountId) => { setContentIntent({ accountId, token: ++intentSequence.current }); onNavigate("Campaigns"); }}
+            onOpenHistory={(accountId) => { if (accountId) setHistoryIntent({ accountId, token: ++intentSequence.current }); onOpenHistory(); }} />
         </RetainedSocialPanel>
       ) : null}
       {present("Campaigns", "campaigns") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Campaigns"}>
-          <Campaigns {...props("campaigns")} />
+          <Campaigns {...props("campaigns")} accountIntent={contentIntent} projectIntent={projectIntent} />
         </RetainedSocialPanel>
       ) : null}
       {present("Inbox", "inbox") ? (
@@ -1039,7 +1053,7 @@ function WorkspacePanels({
               ["publish", t("Sharing plans")],
               ["reply", t("Reply rules")],
               ["sending", t("Sending controls")],
-              ["history", t("Activity history")],
+
             ].map(([value, label]) => (
               <Button
                 disabled={socialLocked}
@@ -1074,17 +1088,14 @@ function WorkspacePanels({
               {...feedback}
               active={active && tab === "Automations" && automationMode === "sending"}
             >
-              <SocialSendingControls {...props("sending")} />
+              <SocialSendingControls {...props("sending")} executorLabel={executorLabel} />
             </RetainedSocialPanel>
           ) : null}
-          {host.snapshots.has("history") ? (
-            <RetainedSocialPanel
-              {...feedback}
-              active={active && tab === "Automations" && automationMode === "history"}
-            >
-              <SocialHistory {...props("history")} />
-            </RetainedSocialPanel>
-          ) : null}
+        </RetainedSocialPanel>
+      ) : null}
+      {(visited.includes("Activity") || visited.includes("Automations")) && host.snapshots.has("history") ? (
+        <RetainedSocialPanel {...feedback} active={active && (tab === "Activity" || (tab === "Automations" && automationMode === "history"))}>
+          <SocialHistory {...props("history")} accountIntent={historyIntent} />
         </RetainedSocialPanel>
       ) : null}
       {present("Settings", "settings") ? (
@@ -1095,6 +1106,7 @@ function WorkspacePanels({
         >
           <SocialPolicySettings
             client={client}
+            executorLabel={executorLabel}
             policies={host.snapshots.get("settings")?.policies ?? DEFAULT_SOCIAL_POLICIES}
             run={run}
           />
@@ -1144,7 +1156,7 @@ function HostStatus({
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   return (
-    <div className="social-scheduling-help">
+    <div className="social-scheduling-help" data-ready={ready || undefined}>
       <Button
         disabled={socialLocked}
         ref={trigger}
@@ -1158,7 +1170,7 @@ function HostStatus({
         onClick={() => setOpen(!open)}
       >
         <span className="social-status-dot" data-online={online} aria-hidden="true" />
-        {ready ? null : <span className="social-host-label">{label}</span>}
+        <span className="social-host-label">{label}</span>
       </Button>
       {open ? (
         <Popover
@@ -1198,15 +1210,32 @@ function HostStatus({
   );
 }
 
+function AccountCapabilities({ capabilities }: { capabilities: SocialSnapshot["capabilities"][string] }) {
+  const common = new Set(["publish", "reply", "inbox.read", "message.start"]);
+  const rows = (items: typeof capabilities) => <ul className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">{items.map((cap) => (
+    <li key={cap.operation} className="flex min-w-0 flex-col gap-1 py-2">
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2"><span className="text-ui-caption font-medium">{operations[cap.operation]}</span><StatusBadge status={cap.status} /></div>
+      <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{cap.reason}</p>
+      {cap.source ? <a className="text-ui-caption underline" href={cap.source} target="_blank" rel="noreferrer">{t("Official documentation")}</a> : null}
+    </li>
+  ))}</ul>;
+  const extra = capabilities.filter((cap) => !common.has(cap.operation));
+  return <>
+    {rows(capabilities.filter((cap) => common.has(cap.operation)))}
+    {extra.length ? <details><summary className="cursor-pointer text-ui-caption">{t("Other operations")} · {extra.length}</summary>{rows(extra)}</details> : null}
+    {!capabilities.length ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Operation availability has not been loaded.")}</p> : null}
+  </>;
+}
+
 function Accounts({
   client,
   snapshot,
   projects,
   initialProject,
-  run,
-  onNavigate,
+  run: runWorkspace,
+  onPrepare,
   onOpenHistory,
-}: Props & { onNavigate?: (tab: Tab) => void; onOpenHistory?: () => void }) {
+}: Props & { onPrepare?: (accountId: string) => void; onOpenHistory?: (accountId?: string) => void }) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -1218,6 +1247,22 @@ function Accounts({
     initialProject ? [initialProject] : [],
   );
   const [selected, setSelected] = useState(() => snapshot.accounts[0]?.id ?? "");
+  const [localOutcome, setLocalOutcome] = useState<{ success: boolean; refreshFailed?: boolean; text: string } | null>(null);
+  const localIdentity = useRef({ client, selected });
+  localIdentity.current = { client, selected };
+  const run: Run = useCallback(async (work, message) => {
+    const identity = localIdentity.current;
+    let failure = "";
+    let completed = false;
+    const success = await runWorkspace(async () => {
+      try { await work(); completed = true; }
+      catch (cause) { failure = cause instanceof Error ? cause.message : String(cause); throw cause; }
+    }, message);
+    if (localIdentity.current.client === identity.client && localIdentity.current.selected === identity.selected)
+      setLocalOutcome({ success: success || completed, refreshFailed: completed && !success, text: completed && !success ? t("Account operation completed. Its latest status could not be refreshed.") : success ? message ?? t("Account operation completed. Review the current connection status.") : failure || t("Account operation failed. Your entries are preserved.") });
+    return success || completed;
+  }, [runWorkspace]);
+  useEffect(() => setLocalOutcome(null), [selected, client]);
   const [availabilityError, setAvailabilityError] = useState("");
   const [availability, setAvailability] = useState<
     Record<string, { configured: boolean; reason: string }>
@@ -1468,7 +1513,8 @@ function Accounts({
               <Button
                 disabled={socialLocked}
                 type="button"
-                variant="tab"
+                variant="item"
+                layout="stacked"
                 className="social-row"
                 aria-pressed={selected === item.id}
                 key={item.id}
@@ -1500,7 +1546,11 @@ function Accounts({
         <section className="social-account-detail">
           {account ? (
             <>
-              <h2>{account.name}</h2>
+              <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+                <h2 className="min-w-0 wrap-anywhere text-ui-title font-medium">{account.name}</h2>
+                <span className="text-ui-caption text-(--ui-text-secondary)">{names[account.platform]} · {account.connection === "browser" ? t("Browser connection") : t("Official API")}</span>
+              </div>
+              {localOutcome ? <Notice kind={localOutcome.refreshFailed ? "warning" : localOutcome.success ? "success" : "error"} title={localOutcome.text} /> : null}
               <div className="social-account-overview">
                 <StatusBadge
                   status={
@@ -1511,51 +1561,29 @@ function Accounts({
                   {names[account.platform]} ·{" "}
                   {account.connection === "browser" ? t("Browser connection") : t("API connection")}
                 </span>
-                {account.connected && onNavigate ? (
+                {account.connected && onPrepare ? (
                   <div className="social-actions">
                     <Button
                       disabled={socialLocked}
                       variant="primary"
                       type="button"
-                      onClick={() => onNavigate("Campaigns")}
+                      onClick={() => onPrepare?.(account.id)}
                     >
-                      {t("Prepare post")}
+                      {t("Prepare content")}
                     </Button>
                     <Button
                       disabled={socialLocked}
                       variant="secondary"
                       type="button"
-                      onClick={onOpenHistory}
+                      onClick={() => onOpenHistory?.(account.id)}
                     >
                       {t("View history")}
                     </Button>
                   </div>
                 ) : null}
               </div>
-              {account.connected ? (
-                <section className="social-account-capabilities">
-                  <h3>{t("What you can do with this account")}</h3>
-                  <div className="social-capability-grid">
-                    {(snapshot.capabilities[account.id] ?? [])
-                      .filter((cap) =>
-                        ["publish", "reply", "inbox.read", "message.start"].includes(cap.operation),
-                      )
-                      .map((cap) => (
-                        <div key={cap.operation}>
-                          <span>{operations[cap.operation]}</span>
-                          <StatusBadge status={cap.status} />
-                        </div>
-                      ))}
-                  </div>
-                  {account.connection === "browser" && account.platform === "x" ? (
-                    <p className="social-muted">
-                      {t(
-                        "Posting and replying to posts are supported. Mentions and legacy web messaging are followed through recognized reply formats; encrypted Chat is not supported.",
-                      )}
-                    </p>
-                  ) : null}
-                </section>
-              ) : null}
+              <section className="flex min-w-0 flex-col gap-3" aria-label={t("Connection")}>
+                <h3 className="text-ui-secondary font-medium">{t("Connection")}</h3>
               <SocialBrowserWorkspace key={account.id} account={account} client={client} />
               {
                 <details className="social-connection" open={!account.connected || undefined}>
@@ -2006,6 +2034,7 @@ function Accounts({
                   ) : null}
                 </Collapsible>
               )}
+              </section>
               <div className="social-actions">
                 <Button
                   loading={pendingUi.is("accounts.resume-account")}
@@ -2080,41 +2109,14 @@ function Accounts({
                   </div>
                 </div>
               ) : null}
-              <details className="social-form">
-                <summary>{t("Supported operations")}</summary>
-                <p className="social-muted">
-                  {account.executorId === snapshot.executorId
-                    ? t("This account is connected on the selected computer.")
-                    : t("This account is connected on another computer.")}
-                </p>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>{t("Operation")}</th>
-                      <th>{t("Status / reason")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {snapshot.capabilities[account.id]?.map((cap) => (
-                      <tr key={cap.operation}>
-                        <td>{operations[cap.operation]}</td>
-                        <td>
-                          <StatusBadge status={cap.status} />
-                          <details>
-                            <summary>{t("Details")}</summary>
-                            <p>{cap.reason}</p>
-                            <a href={cap.source} target="_blank" rel="noreferrer">
-                              {t("Official documentation")}
-                            </a>
-                          </details>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </details>
+              <section className="flex min-w-0 flex-col gap-2" aria-label={t("Effective operations")}>
+                <h3 className="text-ui-secondary font-medium">{t("Effective operations")}</h3>
+                <p className="text-ui-caption text-(--ui-text-secondary)">{account.executorId === snapshot.executorId ? t("This account is connected on the selected computer.") : t("This account is connected on another computer.")}</p>
+                <AccountCapabilities capabilities={snapshot.capabilities[account.id] ?? []} />
+              </section>
               <details className="social-form social-account-permissions" open>
                 <summary>{t("Project access")}</summary>
+                <p className="text-ui-caption text-(--ui-text-secondary)">{t("Project grants control permission. They do not establish a platform connection or approve a send.")}</p>
                 <form
                   className="social-form"
                   onSubmit={(event) => {

@@ -22,6 +22,7 @@ import {
 } from "../../projects/model/projectTerminal";
 import { normalizeProjectPath } from "../../projects/model/recents";
 import { pathKey } from "../../../shared/lib/paths";
+import { parseRecoveredEditorDraft } from "../../files/model/editorDraftRecovery";
 import type { ServerTerminalRestore } from "../../connections/model/serverTerminalRestore";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { parseRemotePath, remotePath } from "../../connections/model/remoteProjects";
@@ -567,6 +568,12 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   if (typeof value.id !== "string" || !value.id) return null;
   if (typeof value.path !== "string" || !value.path) return null;
   if (typeof value.cwd !== "string" || !value.cwd) return null;
+  const recoveredEditorDraft = parseRecoveredEditorDraft(value.recoveredEditorDraft);
+  if (
+    "recoveredEditorDraft" in value &&
+    (!recoveredEditorDraft || recoveredEditorDraft.documentId !== value.id)
+  )
+    return null;
   const plan = sanitizePlan(value.plan);
   const hasReleaseNotes = "releaseNotes" in value;
   const releaseNotes = sanitizeReleaseNotes(value.releaseNotes);
@@ -576,6 +583,17 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   const sessionChanges = sanitizeSessionChanges(value.sessionChanges);
   const hasRemoteFile = "remoteFile" in value;
   const remoteFile = sanitizeRemoteFile(value.remoteFile);
+  if (
+    recoveredEditorDraft &&
+    (value.plan != null ||
+      hasReleaseNotes ||
+      hasCommit ||
+      hasSessionChanges ||
+      hasRemoteFile ||
+      value.terminal === true ||
+      value.agent != null)
+  )
+    return null;
   if (hasReleaseNotes && !releaseNotes) return null;
   if (hasCommit && !commit) return null;
   if (hasSessionChanges && !sessionChanges) return null;
@@ -623,6 +641,7 @@ function sanitizeFile(raw: unknown): FilePaneTab | null {
   }
   return {
     id: value.id,
+    ...(recoveredEditorDraft ? { recoveredEditorDraft } : {}),
     path: remoteOwner ? remotePath(remoteOwner.environmentId, value.path) : value.path,
     cwd: remoteOwner ? remotePath(remoteOwner.environmentId, value.cwd) : value.cwd,
     ...(value.external === true ? { external: true } : {}),

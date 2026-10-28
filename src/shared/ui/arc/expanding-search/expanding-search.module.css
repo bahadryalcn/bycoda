@@ -1,7 +1,14 @@
+@layer theme, base, components, utilities;
+/* F3 contract: caller className may change placement (width, margins, flex/grid
+   placement), layered below Tailwind utilities; presentation below stays unlayered. */
+@layer components {
+  .root {
+    inline-size: 100%;
+    min-inline-size: var(--control-height-sm);
+  }
+}
 .root {
   position: relative;
-  inline-size: 100%;
-  min-inline-size: var(--control-height-sm);
   block-size: var(--control-height-sm);
   pointer-events: none;
 }

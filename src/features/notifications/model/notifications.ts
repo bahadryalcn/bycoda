@@ -29,7 +29,7 @@ export const subscribeNotificationsEnabled = (onChange: () => void) => subscribe
 /** Rust emits this with the session id when a notification is clicked. */
 export const NOTIFICATION_CLICK_EVENT = "bycoda:notification-click";
 
-export type NotificationPermission = "prompt" | "granted" | "denied" | "unsupported";
+export type NotificationPermission = "prompt" | "granted" | "denied" | "unsupported" | "unavailable";
 
 export function loadNotificationsEnabled(): boolean {
   try {
@@ -41,17 +41,25 @@ export function loadNotificationsEnabled(): boolean {
   }
 }
 
-export function saveNotificationsEnabled(value: boolean) {
+export function saveNotificationsEnabled(value: boolean): boolean {
   try {
     localStorage.setItem(KEY, value ? "1" : "0");
   } catch {
-    // private mode / quota
+    return false;
   }
-  if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent<boolean>(NOTIFICATIONS_CHANGE_EVENT, { detail: value }));
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent<boolean>(NOTIFICATIONS_CHANGE_EVENT, { detail: value }));
+  return true;
 }
 
 let permission: NotificationPermission = "prompt";
+let permissionEpoch = 0;
+
+function permissionResult(value: unknown): NotificationPermission {
+  return value === "prompt" || value === "granted" || value === "denied" || value === "unsupported"
+    ? value
+    : "unavailable";
+}
 
 /** Last permission the OS reported; refreshed by the probes below. */
 export function cachedNotificationPermission(): NotificationPermission {
@@ -59,21 +67,27 @@ export function cachedNotificationPermission(): NotificationPermission {
 }
 
 export async function probeNotificationPermission(): Promise<NotificationPermission> {
+  const epoch = ++permissionEpoch;
+  let result: NotificationPermission;
   try {
-    permission = await invoke<NotificationPermission>("notification_permission");
+    result = permissionResult(await invoke<NotificationPermission>("notification_permission"));
   } catch {
-    permission = "unsupported";
+    result = "unavailable";
   }
+  if (epoch === permissionEpoch) permission = result;
   return permission;
 }
 
 /** Shows the OS prompt when undecided; otherwise reports the current state. */
 export async function requestNotificationPermission(): Promise<NotificationPermission> {
+  const epoch = ++permissionEpoch;
+  let result: NotificationPermission;
   try {
-    permission = await invoke<NotificationPermission>("request_notification_permission");
+    result = permissionResult(await invoke<NotificationPermission>("request_notification_permission"));
   } catch {
-    permission = "unsupported";
+    result = "unavailable";
   }
+  if (epoch === permissionEpoch) permission = result;
   return permission;
 }
 

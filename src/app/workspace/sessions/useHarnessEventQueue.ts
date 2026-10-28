@@ -1,7 +1,12 @@
 import { useLayoutEffect, useState, type MutableRefObject } from "react";
 import { HarnessEventQueue } from "../../model/harnessFlush";
+import { recordAppliedSessionOutput } from "../../../features/sessions/data/sessionOutputProjection";
 import { TranscriptPool } from "../../../features/sessions/ui/TranscriptPool";
 import { applyHarnessEvents } from "../../../integrations/harness";
+import {
+  failNativeOutputEvents,
+  markNativeOutputEventsApplied,
+} from "../../../integrations/harness/core/nativeOutputDelivery";
 import { discardQuestionDraft } from "../../../features/sessions/model/questionDrafts";
 import type { UserQuestionPrompt } from "../../../features/sessions/model/userQuestion";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
@@ -89,10 +94,18 @@ export function useHarnessEventQueue({
             }
             return session;
           });
-          if (!next.some((session, index) => session !== prev[index])) return;
-          sessionsRef.current = next;
-          if (!isTextOnlyChange(prev, next)) syncDockBadge(next);
-          setSessions(next);
+          if (next.some((session, index) => session !== prev[index])) {
+            sessionsRef.current = next;
+            if (!isTextOnlyChange(prev, next)) syncDockBadge(next);
+            setSessions(next);
+          }
+          for (const [sessionId, events] of batches) {
+            const applied = next.find((session) => session.id === sessionId);
+            if (applied) {
+              markNativeOutputEventsApplied(sessionId, events);
+              recordAppliedSessionOutput(applied, events);
+            } else failNativeOutputEvents(events, "session-application-missing");
+          }
         },
       ),
   );

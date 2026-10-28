@@ -335,3 +335,61 @@ acceptance remain unverified in this audit. No build/install/release or commit.
 Nine explicit Git RPCs now share host/domains/git/service.ts and neutral git.ts DTOs across HTTP/WS. Existing Git algorithms/gates remain owners; grant is rechecked after the real repo mutex and project/worktree resolution. Broad workspace.run Git tools remain unconverted. TempGit staging checks do not prove installed source-control acceptance.
 
 Source only, uncommitted; no build/install/release stamp. Current full checklist and overlapping evidence: feature-host-runtime/SKILL.md and the local IMPLEMENTATION ledger.
+
+## H3 global Git preferences consumer, 2026-10-28
+
+Settings-only change in `src/features/settings/ui/SourceControlSettings.tsx`:
+generation scope is visible, metadata uses shared typography, and diff preference
+saves read back the owner store with local failure feedback. Generation model
+persistence outcomes and repository policy/worktree lifecycle findings stay with
+their current source owners; H3 does not edit source-control/workspaces feature
+files. Per-ID SC-01..13 dependencies and morning acceptance are in
+`temp/local/2026-10-28-settings-pages-a/workspace.json`.
+
+Test edilmedi under the nightly owner rule; no Git operation, test, fixture,
+capture, build/install/release or installed-source acceptance by H3.
+
+## H5 Git panel and diff toolbar implementation, 2026-10-28
+
+Owner session `11a29e09-1ce7-412e-b34c-309f94174bd5`:
+"Git paneli ve diff araç çubuğu audit'lerini uygula. Audit'i tekrarlama."
+T2 source packet, shared main baseline `4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`.
+Three native workers plus root source review; one writer per file. Previous H3
+preferences and other lanes' dirty changes were preserved.
+
+| Records | Delivered source | Status and remaining acceptance |
+| --- | --- | --- |
+| GIT-01/03 | GitChangesPanel compact responsive commit grid and explicit upstream/incoming/outgoing semantics; SplitButton eligibility remains independent. | REVIEW; actual geometry and all publication/confirmation states pending. |
+| GIT-02/10 | GitFeedback explicit Details; diagnostic-keyed local state and guarded late copy/note completions. Panel mutation failures identify their operation. | REVIEW; deferred completion tests written, not run. Unrelated header-menu failure titles retain their existing generic fallback. |
+| GIT-04 | Collision-aware parent emphasis, shared MiddleTruncate and exact relative ARIA path in list rows; 28px virtualization retained. Branch/worktree/diff headers retain readable path tails. | REVIEW; repeated basenames, 81+ entries, keyboard/touch and narrow rendering pending. |
+| GIT-05/06 | SourceControl discovery loading/failure/Details/Retry covers initial/single and cached multi-checkout states. WorkspaceSourceControl exposes exact review target; retained selection and usable panel preserved. | GIT-05 partial: H4 Sidebar totals still root-scoped; H4 must label/synchronize. |
+| GIT-07 | All commit variants block generation synchronously; checkout-retained generation identity and stage revision reject stale generated text while staging remains available. | REVIEW; deferred generation/index/remount/commit regressions written, not run. |
+| GIT-08/09 | Filter results explicitly count staged/unstaged entries; repository-wide All scope and selected-entry scope remain distinct. | REVIEW; partially staged and hidden selection/bulk confirmation acceptance pending. |
+| GIT-11 | GitGenerationSettings optional effective provider/model/default-account and override/global/automatic provenance. Account subscriptions use existing read-only provider APIs. | REVIEW; no live provider/auth execution claimed. Draft and reset behavior retained. |
+| GIT-12 | Workspace activity owner is H4 Sidebar/LiveAgentsPreview integration. | Dependency only; H5 did not edit shell/session files. |
+| DT-01/02/03 | DiffLayoutToggle compact shared icon Button + checked radio DropdownMenu; UnifiedDiffView compact toolbar/header and shared inline file/gutter actions. | REVIEW; shared consumer change routes to existing diff wrappers; H4/H7 acceptance separate. |
+| DT-04 | Auto/inline/split, 900px actual width and zero-width retention preserved. | REVIEW; original/conflict editor guards remain H4-owned. |
+| DT-05 | Source-control diffLayout adapter retains Settings writer/key/event, verifies persisted value and subscribes to same/sibling-window changes; local save Retry/Cancel. | H3 direct Settings subscription still needs sibling storage events; diff consumers synchronize through adapter. |
+| DT-06 | Owned split-diff assertions migrated to menuitemradio; persistence/sync tests written. | H4 FileEditorSplitDiff tests still need owner migration. No test run tonight. |
+
+Additional owned consumers: CheckoutList uses ActionHost/InlineAction for delete,
+and SwitchBranchDialog retains its draft while exposing generation/cancel outside
+the textarea with the shared activity indicator. Existing native delete/commit/
+stash/checkout confirmations and callbacks remain authoritative.
+
+Only source-control files, this card, a user guide and additive locale keys were
+changed. No files/editor, Sidebar, Inbox, shared control, src/styles, Settings,
+Host or native source was edited. No actual Git mutation was executed.
+
+Single type-only fast check `pnpm exec tsc-rs --noEmit --fast`: PASS. The named
+`check:web:fast` script also runs vitest, so only its compiler component was used
+under the night rule. Test edilmedi: suites, fixtures, screenshots, servers,
+light/dark1280/800/narrow/reduced-motion/native/installed acceptance remain pending.
+Final pending/cancel edits in GitChangesPanel.tsx and CheckoutHeader.module.css
+overlapped the compiler run; their final snapshot inclusion is UNKNOWN. No second
+check ran. Final fingerprints identify the delivered source separately.
+
+Handoff: `temp/local/2026-10-28-source-control-impl/handoff.json`; final source
+fingerprints and morning scenarios are adjacent. User guide:
+`docs/guides/source-control.md`. No delivery commit/build/install/release exists;
+source inclusion UNKNOWN, requested state REVIEW, canonical TODO untouched.

@@ -414,6 +414,9 @@ function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
   if (status === "stopped") {
     return <Square className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
   }
+  if (status === "interrupted") {
+    return <CircleAlert className="size-3 shrink-0 text-(--ui-tone-warning-fg)" strokeWidth={2} />;
+  }
   return (
     <span
       aria-hidden

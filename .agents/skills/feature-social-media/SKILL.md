@@ -145,3 +145,77 @@ Local uncommitted design/audit delivery on baseline
 families are tracked; runtime migration is pending. No blanket backend rewrite,
 new platform entitlement or real send is authorized by the visual direction.
 Further capabilities beyond the preserved workflow remain separate proposals.
+
+## H7 source implementation, 2026-10-28
+
+Supersedes audit-only implementation status for SOA01–12, SOC-C01–11 and
+SOH01–13, not their runtime acceptance. Owner in current session
+`28955f17-306b-4eee-b0e0-99d148ba36c3`, exact quote:
+"Sosyal medya yeniden tasarımını uygula. Audit'i tekrarlama."
+Package `2026-10-28-social-impl`; shared dirty main baseline
+`4de508deabfdae8fd9a8c4c35ab7c4032b5924e9`. Social sources were clean at start.
+Source remains uncommitted; no build/install/release or installed inclusion.
+
+- Accounts/shell/policy: named task destinations and peer Activity; the legacy
+  Automations/history route shares one retained history owner. Account intent
+  reaches content/history; project intent reaches verified facts without changing
+  project authorization or the global filter. One capability representation
+  groups common/other operations and keeps reasons/source. Identity, connection,
+  platform support, project grants and approval remain separate. Settings names
+  its computer and saved versus edited policy; No additional limit is qualified.
+  Account/browser confirmed action success is separate from failed status reads.
+- Content: one searchable Loaded content selector routes campaign:/program:
+  identities to retained detail/composers, with honest partial-load/error/retry
+  and visibility-controlled cached reads. Write/generate are task choices, not
+  merged Host entities. AI changes are staged for readable review/application;
+  concurrent configuration edits reject stale suggestions, exact structure is
+  optional detail. Actual account grant/connection/format/media readiness and
+  local step requirements are visible. Missing text-model health is not invented.
+  Per-account fields stay mounted, required schedule/timezone is direct,
+  existing target outcomes lead partially sent work and sent evidence stays
+  immutable. Unsupported media previews retain exact properties. Draft/bulk
+  recipients lead content and explicit approval adds the reviewed draft to the
+  send queue; frozen batch/retry-only-failed behavior remains.
+- Activity: compact dated rows and selected result, inline Created, optional
+  meaningful diagnostics, direct error/uncertainty/recovery and full exact target/
+  content/media/URL. Dispatch acceptance, delivery/read and platform processing
+  remain distinct. Receipt failures are visible and never create another send.
+  Current UI cancellation mirrors Host exclusions, including submitted Snapchat
+  Spotlight/Facebook Reel, while Host remains authoritative. Contact event
+  language is localized; recorded kinds/identifiers stay inspectable.
+- Plans/replies/Inbox/People: bounded plan task editor with review and Save paused
+  after schedule, retaining finite ordered pool/completed prefixes/revision
+  activation. Rule account/project/verified-fact prerequisites precede optional
+  AI overrides; facts detour closes/parks the form without discarding it. People
+  empty states open the existing Add form or Import with JSON/1 MiB/permission
+  explanation before file selection. Inbox owns polling state/control, local
+  eligible refresh/clear actions, readable conversation identity and manual read
+  retry; operation history no longer dominates the reading pane. Computer-wide
+  sending remains a separate named control with original confirmation/stop gates.
+
+No real platform/account/policy/credential/approval/send/retry/cancel operation
+was executed. No Host/Rust/mobile/global shared control/theme change. Existing
+service IDs, consent, expected revisions, exact reviewed content, platform
+options, queued work and Host isolation remain authoritative. Missing en/tr keys
+were appended only. Native subagents used disjoint source ownership; root
+integrated shared feature presentation/CSS and independently reviewed changes.
+Claims API unavailable; project sessions/clean Social starting state inspected.
+
+Every record **test edilmedi**. RULES.md forbids suites, fixtures/dev servers and
+screenshots tonight. Root ran one `pnpm exec tsc-rs --noEmit --fast` compiler
+stage because check:web:fast also runs Vitest. One missing required inline prop
+was corrected afterward with inline=false; no rerun or clean final pass claimed.
+Morning acceptance: social suite/focused account/browser/policy/campaign/program/
+draft/bulk/history/plan/rule/Inbox/People checks, light/dark 1280/800/narrow,
+long data, keyboard/touch/reduced motion and partial/failed/uncertain states.
+Update obsolete browser expectations that hide Created while preserving safety
+assertions. Fake services only for mutations; native/installed/publication proof
+remains separate.
+
+Concrete API limits: Host does not serialize cancellation eligibility/reason
+(`host/social.ts`, jobs.cancel); current frontend predicate mirrors it and needs
+future shared authority to prevent drift. ProgramFeatures exposes image/provider
+and account-format metadata, not text-model health; UI says health is checked at
+generation. No unsupported readiness is claimed. Full 36-ID ledger, source
+fingerprints, checks and next actions:
+`temp/local/2026-10-28-social-impl/handoff.json`.
