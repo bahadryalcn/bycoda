@@ -788,7 +788,6 @@ export function CopyBranchNameButton({ branch }: { branch: string }) {
     generation.current += 1;
     pending.current = false;
     clearTimer();
-    setOutcome(null);
     return () => {
       generation.current += 1;
       clearTimer();

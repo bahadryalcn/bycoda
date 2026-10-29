@@ -1,19 +1,12 @@
-import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { NativeSelect, Select } from "../../../shared/ui/Select";
+import { Select } from "../../../shared/ui/Select";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
-import { TextField } from "../../../shared/ui/TextField";
-import { Checkbox } from "../../../shared/ui/Checkbox";
-import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { socialQueryScope } from "../model/socialQuery";
-import { SocialPanelActiveContext } from "./socialContext";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
+import { Accounts } from "./SocialAccounts";
 import { Campaigns } from "./SocialCampaigns";
 import { Audience, Rules } from "./SocialManagement";
 import { Inbox } from "./SocialInbox";
@@ -26,44 +19,15 @@ import {
   Empty,
   Notice,
   StatusBadge,
-  Composer,
-  closeComposer,
-  Projects,
-  field,
-  names,
-  operations,
-  type Run,
   type Props,
 } from "./socialShared";
-import { invoke } from "@tauri-apps/api/core";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import {
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
-import { remoteRequest } from "../../connections/model/connections";
+import { useRef, useState } from "react";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
+import type { RemoteMachine } from "../../connections/model/protocol";
 import { pathKey } from "../../../shared/lib/paths";
-import { socialClient } from "../model/socialClient";
 import {
-  SOCIAL_PLATFORMS,
-  SOCIAL_API_ACCOUNT_TYPES,
-  SOCIAL_BROWSER_ACCOUNT_TYPES,
-  PROFILE_ONLY_PLATFORMS,
-  TOKEN_PLATFORMS,
-  type SocialAccount,
   type SocialSnapshot,
-  type SocialOperation,
   type SocialCollection,
-  type SocialWorkspaceQuery,
-  type SocialWorkspaceResponse,
-  type SocialWorkspaceFilters,
   type SocialCollectionFilter,
 } from "../model/social";
 import "./social.css";
@@ -76,6 +40,7 @@ import {
   X,
   Link,
   Share,
+  Home,
   Inbox as InboxIcon,
   MessageMultiple,
   Zap,
@@ -83,47 +48,23 @@ import {
   MoreHorizontal,
 } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { accountConnectionStatus } from "../model/accountConnection";
 import { SocialAuthority } from "./SocialAuthority";
 import { SocialPolicySettings } from "./SocialPolicySettings";
-import { SocialBrowserWorkspace } from "./SocialBrowserWorkspace";
+import { SocialToday } from "./SocialToday";
+import type { AttentionTarget } from "../model/socialAttention";
 import { DEFAULT_SOCIAL_POLICIES } from "../model/socialPolicy";
-import {
-  createRefreshScheduler,
-  type RefreshScheduler,
-} from "../../automations/model/refreshScheduler";
-import type { SocialClient } from "../model/socialClient";
-import { TelegramChannelConnection } from "./TelegramChannelConnection";
 import { scopeSocialSnapshot } from "../model/socialWorkspace";
+import {
+  useSocialWorkspaceController,
+  type HostWorkspaceState,
+  type Section,
+  type Tab,
+} from "./useSocialWorkspaceController";
 
-type Tab = "Accounts" | "Campaigns" | "Inbox" | "Audience" | "Automations" | "Activity" | "Settings";
-const tabs: Tab[] = ["Campaigns", "Inbox", "Automations", "Audience", "Activity", "Accounts", "Settings"];
-function accountTypeLabel(id: string) {
-  return (
-    {
-      member: t("Member"),
-      professional: t("Professional"),
-      page: t("Page"),
-      channel: t("Channel"),
-      organization: t("Organization account"),
-      public_profile: t("Public profile"),
-      business: t("Business"),
-      bot: t("Bot"),
-    } as Record<string, string>
-  )[id];
-}
-function permissionLabels(): Record<string, string> {
-  return {
-    read: t("Read"),
-    draft: t("Draft"),
-    publish: t("Sharing"),
-    reply: t("Reply"),
-    message: t("Message"),
-    comment: t("Comment"),
-  };
-}
+const tabs: Tab[] = ["Today", "Campaigns", "Inbox", "Automations", "Audience", "Activity", "Accounts", "Settings"];
 function tabLabel(tab: Tab) {
   return {
+    Today: t("Today"),
     Accounts: t("Accounts"),
     Campaigns: t("Prepare content"),
     Inbox: t("Inbox"),
@@ -133,45 +74,8 @@ function tabLabel(tab: Tab) {
     Settings: t("Settings"),
   }[tab];
 }
-type Section = NonNullable<SocialWorkspaceQuery["section"]>;
-function workspaceSection(tab: Tab, automationMode: string): Section {
-  if (tab === "Automations")
-    return (
-      (
-        { publish: "plans", reply: "rules", history: "history", sending: "sending" } as Record<
-          string,
-          Section
-        >
-      )[automationMode] ?? "plans"
-    );
-  return (
-    {
-      Activity: "history",
-      Accounts: "accounts",
-      Campaigns: "campaigns",
-      Inbox: "inbox",
-      Audience: "audience",
-      Settings: "settings",
-    } as const
-  )[tab];
-}
-type HostWorkspaceState = {
-  machineId: string;
-  snapshots: Map<Section, SocialSnapshot>;
-  cursors: Map<string, SocialWorkspaceResponse>;
-  projects: HostProject[];
-  projectsLoaded: boolean;
-  snapshot: SocialSnapshot | null;
-  tab: Tab;
-  visited: Tab[];
-  filter: string;
-  offsets: SocialWorkspaceQuery["offsets"];
-  automationMode: string;
-  collectionFilters: Partial<Record<Section, SocialWorkspaceFilters>>;
-  client?: SocialClient;
-  run?: Run;
-};
 const tabIcons = {
+  Today: Home,
   Accounts: Link,
   Campaigns: Share,
   Inbox: InboxIcon,
@@ -179,37 +83,6 @@ const tabIcons = {
   Automations: Zap,
   Activity: RefreshCw,
   Settings: Settings,
-};
-/** Sentinel stored in browser availability state; the visible text is translated when rendered. */
-const HOST_BROWSER_UNSUPPORTED = "host-browser-unsupported";
-const actionMessages: Record<string, () => string> = {
-  "accounts.create": () => t("Account added. Complete the connection."),
-  "accounts.grant": () => t("Project permissions saved."),
-  "accounts.pause": () => t("Account run state updated."),
-  "accounts.disconnect": () => t("Account disconnected."),
-  "campaigns.create": () => t("Campaign draft saved."),
-  "campaigns.update": () => t("Campaign updated. Approve the current content again."),
-  "campaigns.approve": () => t("Campaign content approved."),
-  "campaigns.schedule": () => t("Post queued. Track the result in Activity history."),
-  "campaigns.pause": () => t("Campaign run state updated."),
-  "contacts.upsert": () => t("Contact details saved."),
-  "contacts.import": () => t("Contacts imported."),
-  "segments.create": () => t("Contact group created."),
-  "replies.draft": () => t("Reply draft ready. Review and approve it."),
-  "messages.draft": () => t("Message draft ready. Review and approve it."),
-  "comments.draft": () => t("Comment draft ready. Review and approve it."),
-  "drafts.update": () => t("Draft updated; the earlier send approval was removed."),
-  "drafts.approve": () => t("Draft approved. Ready to send."),
-  "replies.send": () => t("Reply queued. Track the send result in Activity history."),
-  "messages.send": () => t("Message queued. Track the send result in Activity history."),
-  "comments.send": () => t("Comment queued. Track the send result in Activity history."),
-  "jobs.cancel": () => t("Queued job cancelled."),
-  "jobs.retry": () => t("Failed job queued again."),
-  "thread.assign": () => t("Conversation project updated."),
-  "policy.update": () => t("Agent and content limits saved."),
-  "automations.create": () => t("Reply rule saved. Activate it when you are ready."),
-  "automations.activate": () => t("Reply rule activated."),
-  "automations.pause": () => t("Reply rule paused."),
 };
 export function SocialView({
   cwd,
@@ -226,322 +99,24 @@ export function SocialView({
 }) {
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
-  const [machines, setMachines] = useState<RemoteMachine[]>([]);
-  const [machineId, setMachineId] = useState("");
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const headerMenuRef = useRef<HTMLButtonElement>(null);
-  const [snapshot, setSnapshot] = useState<SocialSnapshot | null>(null);
-  const [projects, setProjects] = useState<HostProject[]>([]);
-  const [tab, setTab] = useState<Tab>("Accounts");
-  const [error, setError] = useState("");
-  const [loadError, setLoadError] = useState("");
-  const [updatedAt, setUpdatedAt] = useState(0);
-  const [stale, setStale] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [retryKey, setRetryKey] = useState(0);
-  const [visited, setVisited] = useState<Tab[]>(["Accounts"]);
-  const selectTab = (item: Tab) => {
-    setNotice("");
-    setError("");
-    setTab(item);
-    setVisited((current) => (current.includes(item) ? current : [...current, item]));
-  };
-  const [automationMode, setAutomationMode] = useState("publish");
-  const [filter, setFilter] = useState("");
-  const [offsets, setOffsets] = useState<SocialWorkspaceQuery["offsets"]>({});
-  const [collectionFilters, setCollectionFilters] = useState<
-    Partial<Record<Section, SocialWorkspaceFilters>>
-  >({});
-  const hostWorkspaces = useRef(new Map<string, HostWorkspaceState>());
-  const scheduler = useRef<RefreshScheduler | null>(null);
-  const scheduledQuery = useRef("");
-  const forceRefresh = useRef(false);
-  const refreshProjects = useRef(false);
-  const refreshSucceeded = useRef(false);
-  const legacyHosts = useRef(new Set<string>());
-  const section = workspaceSection(tab, automationMode);
-  const query = useRef<SocialWorkspaceQuery>({ section });
-  query.current = {
-    section,
-    ...(filter ? { projectId: filter } : {}),
-    offsets,
-    filters: collectionFilters[section] ?? {},
-  };
-  const running = useRef(false);
   const root = useRef<HTMLDivElement>(null);
-  const epoch = useRef(0);
-  const currentMachine = useRef(machineId);
-  const lastAction = useRef("");
-  const loadedMachine = useRef("");
-  const retainedSnapshot = useRef(snapshot);
-  retainedSnapshot.current = snapshot;
-  currentMachine.current = machineId;
-  const client = useMemo(() => {
-    const base = socialClient(machineId);
-    const request: typeof base.request = async <T,>(
-      action: string,
-      input?: Record<string, unknown>,
-      requestId?: string,
-    ) => {
-      lastAction.current = action;
-      return base.request<T>(action, input, requestId);
-    };
-    return { ...base, request };
-  }, [machineId]);
-  const readWorkspace = useCallback(async (id: string, isCurrent: () => boolean) => {
-    const version = ++epoch.current;
-    const host = hostWorkspaces.current.get(id)!;
-    const input = query.current;
-    const queryKey = JSON.stringify(input);
-    const force = forceRefresh.current;
-    const withProjects = refreshProjects.current || !host.projectsLoaded;
-    forceRefresh.current = false;
-    refreshProjects.current = false;
-    const base = socialClient(id);
-    const read = async (): Promise<SocialWorkspaceResponse> => {
-      if (!legacyHosts.current.has(id)) {
-        try {
-          return await base.workspaceSnapshot(
-            {
-              ...input,
-              ...(force ? {} : { cursor: host.cursors.get(queryKey)?.cursor }),
-            },
-            force,
-          );
-        } catch (value) {
-          if (!String(value).includes("Unsupported social operation")) throw value;
-          legacyHosts.current.add(id);
-        }
-      }
-      return { cursor: "", unchanged: false, snapshot: await base.snapshot() };
-    };
-    if (force || !retainedSnapshot.current) setRefreshing(true);
-    const answers = await Promise.allSettled([
-      read(),
-      withProjects
-        ? remoteRequest<HostProject[]>(id, "projects.list", {}, force)
-        : Promise.resolve(host.projects),
-    ]);
-    if (!isCurrent() || version !== epoch.current || currentMachine.current !== id) return;
-    setStale(answers.some((answer) => answer.status === "rejected"));
-    if (answers[0].status === "fulfilled") {
-      const result = answers[0].value;
-      const next = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
-      if (!next) throw new Error(t("The Social Media refresh response is incomplete."));
-      host.cursors.set(queryKey, { ...result, snapshot: next });
-      if (host.cursors.size > 16) host.cursors.delete(host.cursors.keys().next().value!);
-      host.snapshot = next;
-      if (legacyHosts.current.has(id)) {
-        for (const key of [
-          "accounts",
-          "campaigns",
-          "inbox",
-          "audience",
-          "plans",
-          "rules",
-          "history",
-          "sending",
-          "settings",
-        ] as Section[])
-          host.snapshots.set(key, next);
-      } else host.snapshots.set(input.section!, next);
-      setSnapshot(next);
-      setLoadError("");
-      setUpdatedAt(Date.now());
-    } else {
-      setLoadError(String(answers[0].reason));
-    }
-    if (answers[1].status === "fulfilled") {
-      host.projects = answers[1].value;
-      host.projectsLoaded = true;
-      setProjects(answers[1].value);
-    } else if (answers[0].status === "fulfilled") {
-      const reason = answers[1].reason;
-      setLoadError(
-        t("Project list could not be refreshed: {p0}", {
-          p0: reason instanceof Error ? reason.message : String(reason),
-        }),
-      );
-    }
-    setLoading(false);
-    setRefreshing(false);
-    refreshSucceeded.current = answers.every((answer) => answer.status === "fulfilled");
-  }, []);
-  const refresh = useCallback(async (id: string, interactive = false, withProjects = false) => {
-    if (id !== currentMachine.current || !scheduler.current) return false;
-    forceRefresh.current ||= interactive;
-    refreshProjects.current ||= interactive || withProjects;
-    if (interactive) setRefreshing(true);
-    await scheduler.current.refresh();
-    return id === currentMachine.current && refreshSucceeded.current;
-  }, []);
-  useEffect(() => {
-    let alive = true;
-    if (!retainedSnapshot.current) setLoading(true);
-    const previousFocus = document.activeElement as HTMLElement | null;
-    const load = async () => {
-      await invoke("local_host_connect").catch(() => undefined);
-      const list = await invoke<RemoteMachine[]>("remote_machines");
-      if (!alive) return;
-      const authority = await invoke<{ authorityMachineId?: string }>(
-        "social_authority_status",
-      ).catch(() => null);
-      if (!alive) return;
-      setMachines(list);
-      const saved = localStorage.getItem("bycoda.social.host");
-      const preferred =
-        list.find((machine) => machine.id === (authority?.authorityMachineId ?? saved)) ??
-        list.find(isLocalSyncMachine) ??
-        list[0];
-      if (preferred) setMachineId(preferred.id);
-      else
-        setLoadError(
-          t(
-            "Connect a bycoda Host for Social Media. The queue does not run while the Host is offline.",
-          ),
-        );
-    };
-    void load()
-      .catch((value) => alive && setLoadError(String(value)))
-      .finally(() => alive && setLoading(false));
-    if (!retainedSnapshot.current) root.current?.focus();
-    return () => {
-      alive = false;
-      ++epoch.current;
-      previousFocus?.focus();
-    };
-  }, [retryKey]);
-  useEffect(() => {
-    if (!machineId) return;
-    localStorage.setItem("bycoda.social.host", machineId);
-    if (loadedMachine.current !== machineId) {
-      loadedMachine.current = machineId;
-      let host = hostWorkspaces.current.get(machineId);
-      if (!host) {
-        host = {
-          machineId,
-          snapshots: new Map(),
-          cursors: new Map(),
-          projects: [],
-          projectsLoaded: false,
-          snapshot: null,
-          tab: "Accounts",
-          visited: ["Accounts"],
-          filter: "",
-          offsets: {},
-          automationMode: "publish",
-          collectionFilters: {},
-        };
-        hostWorkspaces.current.set(machineId, host);
-      }
-      retainedSnapshot.current = host.snapshot;
-      setSnapshot(host.snapshot);
-      setProjects(host.projects);
-      setFilter(host.filter);
-      setOffsets(host.offsets);
-      setTab(host.tab);
-      setVisited(host.visited);
-      setAutomationMode(host.automationMode);
-      setCollectionFilters(host.collectionFilters);
-      query.current = {
-        section: workspaceSection(host.tab, host.automationMode),
-        ...(host.filter ? { projectId: host.filter } : {}),
-        offsets: host.offsets,
-        filters: host.collectionFilters[workspaceSection(host.tab, host.automationMode)] ?? {},
-      };
-      setError("");
-      setLoadError("");
-      setNotice("");
-      setStale(false);
-      setLoading(!host.snapshot);
-      setUpdatedAt(0);
-    }
-    scheduledQuery.current = JSON.stringify(query.current);
-    const nextScheduler = createRefreshScheduler({
-      run: (isCurrent) =>
-        document.hidden ? Promise.resolve() : readWorkspace(machineId, isCurrent),
-      intervalMs: 15_000,
-      hiddenIntervalMs: 60_000,
-    });
-    scheduler.current = nextScheduler;
-    const onVisibility = () => nextScheduler.visibilityChanged();
-    document.addEventListener("visibilitychange", onVisibility);
-    nextScheduler.start();
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      nextScheduler.stop();
-      ++epoch.current;
-      if (scheduler.current === nextScheduler) scheduler.current = null;
-    };
-  }, [machineId, readWorkspace]);
-  useEffect(() => {
-    const key = JSON.stringify(query.current);
-    if (!machineId || scheduledQuery.current === key) return;
-    scheduledQuery.current = key;
-    setRefreshing(true);
-    void refresh(machineId);
-  }, [machineId, tab, automationMode, filter, offsets, collectionFilters, refresh]);
-  const run: Run = async (work, successMessage) => {
-    if (running.current) return false;
-    running.current = true;
-    setBusy(true);
-    setError("");
-    setNotice("");
-    lastAction.current = "";
-    const id = machineId;
-    try {
-      await work();
-      const completedMessage =
-        successMessage ??
-        actionMessages[lastAction.current]?.() ??
-        t("Operation completed; results updated.");
-      if (currentMachine.current === id) {
-        let fresh = false;
-        try { fresh = await refresh(id, false, true); }
-        catch (cause) { setLoadError(cause instanceof Error ? cause.message : String(cause)); }
-        setNotice(
-          fresh
-            ? completedMessage
-            : `${completedMessage} ${t("The list could not be refreshed; showing the latest data.")}`,
-        );
-      }
-      return true;
-    } catch (value) {
-      if (currentMachine.current === id)
-        setError(value instanceof Error ? value.message : String(value));
-      return false;
-    } finally {
-      setBusy(false);
-      running.current = false;
-    }
-  };
+  const {
+    machines,
+    machineId,
+    snapshot,
+    scoped,
+    projects,
+    section,
+    tab,
+    filter,
+    status: { loading, refreshing, stale, busy, error, loadError, notice, updatedAt },
+    hosts,
+    sectionLoaded,
+    actions,
+  } = useSocialWorkspaceController({ rootRef: root });
   const activeProject = projects.find((project) => pathKey(project.cwd) === pathKey(cwd))?.id;
-  const scoped = useMemo(() => scopeSocialSnapshot(snapshot, filter), [snapshot, filter]);
-  const openHistory = () => {
-    setTab("Activity");
-    setAutomationMode("history");
-    setNotice("");
-    setVisited((current) =>
-      current.includes("Activity") ? current : [...current, "Activity"],
-    );
-  };
-  const host = hostWorkspaces.current.get(machineId);
-  if (host && loadedMachine.current === machineId) {
-    Object.assign(host, {
-      tab,
-      visited,
-      filter,
-      offsets,
-      automationMode,
-      client,
-      run,
-      projects,
-      collectionFilters,
-    });
-  }
   const sendingMode: { label: string; tone: "neutral" | "success" | "warning" } = !snapshot
     ? { label: "", tone: "neutral" }
     : snapshot.stopped
@@ -588,8 +163,13 @@ export function SocialView({
             </h1>
           </div>
           <div className="social-header-controls">
-            <div className="social-header-field">
+            <div className="social-header-field" data-single={machines.length <= 1 || undefined}>
               <span>{t("Computer")}</span>
+              {machines.length <= 1 ? (
+                <strong className="social-header-value">
+                  {machines[0] && !isLocalSyncMachine(machines[0]) ? machines[0].name : t("This computer")}
+                </strong>
+              ) : (
               <SearchableSelect
                 value={machineId}
                 disabled={socialLocked || busy}
@@ -600,19 +180,17 @@ export function SocialView({
                   value: machine.id,
                   label: isLocalSyncMachine(machine) ? t("This computer") : machine.name,
                 }))}
-                onChange={(nextValue) => setMachineId(nextValue)}
+                onChange={actions.selectMachine}
                 searchLocale={getLocale()}
               />
+              )}
             </div>
             <div className="social-header-field social-project-filter">
               <span>{t("Project filter")}</span>
               <SearchableSelect
                 label={t("Project filter")}
                 value={filter}
-                onChange={(next) => {
-                  setFilter(next);
-                  setOffsets({});
-                }}
+                onChange={actions.setProjectFilter}
                 options={[
                   { value: "", label: t("All projects") },
                   ...projects.map((project) => ({
@@ -636,13 +214,7 @@ export function SocialView({
                 size="sm"
                 aria-label={t("Sending controls: {p0}", { p0: sendingMode.label })}
                 title={t("Sending controls")}
-                onClick={() => {
-                  setTab("Automations");
-                  setAutomationMode("sending");
-                  setVisited((current) =>
-                    current.includes("Automations") ? current : [...current, "Automations"],
-                  );
-                }}
+                onClick={actions.openSending}
               >
                 <Badge size="sm" tone={sendingMode.tone}>
                   {sendingMode.label}
@@ -690,8 +262,7 @@ export function SocialView({
                     size="sm"
                     disabled={socialLocked || busy}
                     onClick={() => {
-                      setFilter(activeProject);
-                      setOffsets({});
+                      actions.setProjectFilter(activeProject);
                       setHeaderMenuOpen(false);
                     }}
                   >
@@ -704,7 +275,7 @@ export function SocialView({
                   size="sm"
                   type="button"
                   onClick={() => {
-                    openHistory();
+                    actions.openHistory();
                     setHeaderMenuOpen(false);
                   }}
                 >
@@ -722,10 +293,7 @@ export function SocialView({
               disabled={socialLocked || busy || refreshing || !machineId}
               title={refreshing ? t("Refreshing…") : t("Refresh")}
               data-refreshing={refreshing}
-              onClick={() => {
-                setNotice("");
-                void refresh(machineId, true);
-              }}
+              onClick={actions.refreshNow}
             >
               <RefreshCw className="icon-md" aria-hidden="true" />
             </Button>
@@ -751,7 +319,7 @@ export function SocialView({
             options={tabs.map((item) => ({ value: item, label: tabLabel(item) }))}
             onValueChange={(value) => {
               const next = tabs.find((item) => item === value);
-              if (next) selectTab(next);
+              if (next) actions.selectTab(next);
             }}
           />
         </div>
@@ -766,11 +334,11 @@ export function SocialView({
                 key={item}
                 title={tabLabel(item)}
                 aria-current={tab === item ? "page" : undefined}
-                onClick={() => selectTab(item)}
+                onClick={() => actions.selectTab(item)}
               >
                 <Icon className="social-nav-icon" aria-hidden="true" />
                 <span className="social-nav-label">{tabLabel(item)}</span>
-                {item !== "Settings" && scoped
+                {item !== "Settings" && item !== "Today" && scoped
                   ? (() => {
                       const count = {
                         Activity: scoped.pages?.jobs?.total ?? scoped.jobs.length,
@@ -784,16 +352,13 @@ export function SocialView({
                             scoped.publishingPlans?.length ??
                             0),
                         Settings: 0,
+                        Today: 0,
                       }[item];
-                      return (
-                        <span
-                          aria-hidden="true"
-                          className="social-nav-count"
-                          data-empty={count === 0 ? "" : undefined}
-                        >
+                      return count ? (
+                        <span aria-hidden="true" className="social-nav-count">
                           {count}
                         </span>
-                      );
+                      ) : null;
                     })()
                   : null}
               </Button>
@@ -817,11 +382,7 @@ export function SocialView({
               variant="secondary"
               loading={!busy && !error && refreshing}
               disabled={socialLocked || busy || loading || (!error && refreshing)}
-              onClick={() => {
-                if (error) setError("");
-                else if (machineId) void refresh(machineId, true);
-                else setRetryKey((value) => value + 1);
-              }}
+              onClick={actions.retry}
             >
               {error ? t("Dismiss notice") : t("Try again")}
             </Button>
@@ -838,12 +399,10 @@ export function SocialView({
               snapshot={scoped}
               section={section}
               disabled={busy || refreshing}
-              onPage={(collection, offset) =>
-                setOffsets((previous) => ({ ...previous, [collection]: offset }))
-              }
+              onPage={actions.setPage}
             />
           ) : null}
-          {Array.from(hostWorkspaces.current.entries()).map(([id, host]) =>
+          {hosts.map(([id, host]) =>
             host.client && host.run ? (
               <RetainedSocialPanel
                 key={id}
@@ -860,28 +419,17 @@ export function SocialView({
                   busy={busy}
                   error={error}
                   notice={notice}
-                  onOpenHistory={openHistory}
-                  onSelect={setMachineId}
-                  onNavigate={(next) => {
-                    if (next === "Automations") setAutomationMode("publish");
-                    setTab(next);
-                    setVisited((current) =>
-                      current.includes(next) ? current : [...current, next],
-                    );
-                  }}
-                  onAutomationMode={setAutomationMode}
-                  onCollectionFilter={(targetSection, collection, next) => {
-                    setCollectionFilters((previous) => ({
-                      ...previous,
-                      [targetSection]: { ...previous[targetSection], [collection]: next },
-                    }));
-                    setOffsets((previous) => ({ ...previous, [collection]: 0 }));
-                  }}
+                  onOpenHistory={actions.openHistory}
+                  onOpenSending={actions.openSending}
+                  onSelect={actions.selectMachine}
+                  onNavigate={actions.navigate}
+                  onAutomationMode={actions.setAutomationMode}
+                  onCollectionFilter={actions.setCollectionFilter}
                 />
               </RetainedSocialPanel>
             ) : null,
           )}
-          {!scoped || !hostWorkspaces.current.get(machineId)?.snapshots.has(section) ? (
+          {!sectionLoaded ? (
             loading || refreshing || !!scoped ? (
               <div className="social-initial-loading">
                 <Notice kind="loading" title={t("Loading Social Media workspace")} />
@@ -980,6 +528,7 @@ function WorkspacePanels({
   notice,
   onNavigate,
   onOpenHistory,
+  onOpenSending,
   onSelect,
   onAutomationMode,
   onCollectionFilter,
@@ -993,6 +542,7 @@ function WorkspacePanels({
   notice: string;
   onNavigate: (tab: Tab) => void;
   onOpenHistory: () => void;
+  onOpenSending: () => void;
   onSelect: (id: string) => void;
   onAutomationMode: (mode: string) => void;
   onCollectionFilter: (
@@ -1012,7 +562,10 @@ function WorkspacePanels({
   const [contentIntent, setContentIntent] = useState<{ accountId: string; token: number }>();
   const [historyIntent, setHistoryIntent] = useState<{ accountId: string; token: number }>();
   const [projectIntent, setProjectIntent] = useState<{ projectId: string; token: number }>();
-  const executorLabel = machines.find((machine) => machine.id === host.machineId)?.name ?? host.machineId;
+  const hostMachine = machines.find((machine) => machine.id === host.machineId);
+  const executorLabel = hostMachine?.name ?? host.machineId;
+  const machineLabel = hostMachine && isLocalSyncMachine(hostMachine) ? t("This computer") : executorLabel;
+  const [programIntent, setProgramIntent] = useState<{ id: string; token: number }>();
   const feedback = { busy, error, notice };
   const props = (section: Section): Props => ({
     client,
@@ -1020,6 +573,7 @@ function WorkspacePanels({
     projects,
     initialProject,
     onOpenContent: (projectId) => { if (projectId) setProjectIntent({ projectId, token: ++intentSequence.current }); onNavigate("Campaigns"); },
+    onOpenSettings: () => onNavigate("Settings"),
     snapshot: scopeSocialSnapshot(host.snapshots.get(section)!, filter)!,
     onFilterChange: (collection, next) => onCollectionFilter(section, collection, next),
   });
@@ -1027,6 +581,25 @@ function WorkspacePanels({
     visited.includes(tab) && host.snapshots.has(section);
   return (
     <fieldset className="social-workspace social-workspace-root">
+      {present("Today", "accounts") ? (
+        <RetainedSocialPanel {...feedback} active={active && tab === "Today"}>
+          <SocialToday
+            client={client}
+            run={run}
+            projects={projects}
+            projectFilter={filter}
+            machineLabel={machineLabel}
+            snapshot={scopeSocialSnapshot(host.snapshots.get("accounts")!, filter)!}
+            onNavigate={(target: AttentionTarget | "Audience") =>
+              target === "Sending" ? onOpenSending() : onNavigate(target)
+            }
+            onOpenProgram={(id) => {
+              setProgramIntent({ id, token: ++intentSequence.current });
+              onNavigate("Campaigns");
+            }}
+          />
+        </RetainedSocialPanel>
+      ) : null}
       {present("Accounts", "accounts") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Accounts"}>
           <Accounts {...props("accounts")}
@@ -1036,7 +609,14 @@ function WorkspacePanels({
       ) : null}
       {present("Campaigns", "campaigns") ? (
         <RetainedSocialPanel {...feedback} active={active && tab === "Campaigns"}>
-          <Campaigns {...props("campaigns")} accountIntent={contentIntent} projectIntent={projectIntent} />
+          <Campaigns
+            {...props("campaigns")}
+            accountIntent={contentIntent}
+            projectIntent={projectIntent}
+            programIntent={programIntent}
+            machineLabel={machineLabel}
+            onOpenSettings={() => onNavigate("Settings")}
+          />
         </RetainedSocialPanel>
       ) : null}
       {present("Inbox", "inbox") ? (
@@ -1129,24 +709,6 @@ function WorkspacePanels({
     </fieldset>
   );
 }
-function Collapsible({
-  collapsed,
-  summary,
-  children,
-}: {
-  collapsed: boolean;
-  summary: string;
-  children: ReactNode;
-}) {
-  return collapsed ? (
-    <details className="social-form">
-      <summary>{summary}</summary>
-      {children}
-    </details>
-  ) : (
-    <>{children}</>
-  );
-}
 function HostStatus({
   label,
   online,
@@ -1217,1005 +779,3 @@ function HostStatus({
   );
 }
 
-function AccountCapabilities({ capabilities }: { capabilities: SocialSnapshot["capabilities"][string] }) {
-  const common = new Set(["publish", "reply", "inbox.read", "message.start"]);
-  const rows = (items: typeof capabilities) => <ul className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">{items.map((cap) => (
-    <li key={cap.operation} className="flex min-w-0 flex-col gap-1 py-2">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2"><span className="text-ui-caption font-medium">{operations[cap.operation]}</span><StatusBadge status={cap.status} /></div>
-      <p className="wrap-anywhere text-ui-caption text-(--ui-text-secondary)">{cap.reason}</p>
-      {cap.source ? <a className="text-ui-caption underline" href={cap.source} target="_blank" rel="noreferrer">{t("Official documentation")}</a> : null}
-    </li>
-  ))}</ul>;
-  const extra = capabilities.filter((cap) => !common.has(cap.operation));
-  return <>
-    {rows(capabilities.filter((cap) => common.has(cap.operation)))}
-    {extra.length ? <details><summary className="cursor-pointer text-ui-caption">{t("Other operations")} · {extra.length}</summary>{rows(extra)}</details> : null}
-    {!capabilities.length ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Operation availability has not been loaded.")}</p> : null}
-  </>;
-}
-
-function Accounts({
-  client,
-  snapshot,
-  projects,
-  initialProject,
-  run: runWorkspace,
-  onPrepare,
-  onOpenHistory,
-}: Props & { onPrepare?: (accountId: string) => void; onOpenHistory?: (accountId?: string) => void }) {
-  const pendingUi = useSocialPending();
-  const socialLocked = useSocialContext(SocialLockContext);
-  useLocale();
-  const [oauthOperations, setOAuthOperations] = useState<SocialOperation[]>(["publish"]);
-  const [resourceId, setResourceId] = useState("");
-  const [platform, setPlatform] = useState<SocialAccount["platform"]>("x");
-  const [newConnection, setNewConnection] = useState<"browser" | "api">("browser");
-  const [selectedProjects, setSelectedProjects] = useState<string[]>(
-    initialProject ? [initialProject] : [],
-  );
-  const [selected, setSelected] = useState(() => snapshot.accounts[0]?.id ?? "");
-  const [localOutcome, setLocalOutcome] = useState<{ success: boolean; refreshFailed?: boolean; text: string } | null>(null);
-  const localIdentity = useRef({ client, selected });
-  localIdentity.current = { client, selected };
-  const run: Run = useCallback(async (work, message) => {
-    const identity = localIdentity.current;
-    let failure = "";
-    let completed = false;
-    const success = await runWorkspace(async () => {
-      try { await work(); completed = true; }
-      catch (cause) { failure = cause instanceof Error ? cause.message : String(cause); throw cause; }
-    }, message);
-    if (localIdentity.current.client === identity.client && localIdentity.current.selected === identity.selected)
-      setLocalOutcome({ success: success || completed, refreshFailed: completed && !success, text: completed && !success ? t("Account operation completed. Its latest status could not be refreshed.") : success ? message ?? t("Account operation completed. Review the current connection status.") : failure || t("Account operation failed. Your entries are preserved.") });
-    return success || completed;
-  }, [runWorkspace]);
-  useEffect(() => setLocalOutcome(null), [selected, client]);
-  const [availabilityError, setAvailabilityError] = useState("");
-  const [availability, setAvailability] = useState<
-    Record<string, { configured: boolean; reason: string }>
-  >({});
-  const [browserAvailability, setBrowserAvailability] = useState<{
-    available: boolean;
-    reason: string;
-  }>();
-  const [browserRisk, setBrowserRisk] = useState(false);
-  const [grantProject, setGrantProject] = useState(initialProject ?? projects[0]?.id ?? "");
-  const [grantPermissions, setGrantPermissions] = useState<string[]>(
-    () => snapshot.accounts[0]?.grants[initialProject ?? projects[0]?.id ?? ""] ?? [],
-  );
-  const [disconnecting, setDisconnecting] = useState(false);
-  const retainedGrantAccount = useRef(selected);
-  const retainedBrowserAccount = useRef("");
-  useEffect(() => {
-    let alive = true;
-    void client
-      .oauthAvailability()
-      .then((value) => {
-        if (alive) {
-          setAvailability(value);
-          setAvailabilityError("");
-        }
-      })
-      .catch(() => {
-        if (alive)
-          setAvailabilityError(t("Connection settings could not be read. Try again with Refresh."));
-      });
-    return () => {
-      alive = false;
-    };
-  }, [client.oauthAvailability, snapshot.accounts]);
-  const account = snapshot.accounts.find((item) => item.id === selected);
-  useEffect(() => {
-    if (retainedGrantAccount.current !== account?.id) {
-      retainedGrantAccount.current = account?.id ?? "";
-      setResourceId("");
-      if (account) setGrantPermissions(account.grants[grantProject] ?? []);
-      setDisconnecting(false);
-    }
-  }, [account?.id]);
-  const browserAccount = account?.id ?? "";
-  const apiAccountType =
-    !!account &&
-    (SOCIAL_API_ACCOUNT_TYPES[account.platform] as readonly string[]).includes(account.accountType);
-  const queryClient = useQueryClient();
-  const scope = socialQueryScope(client);
-  const active = useContext(SocialPanelActiveContext);
-  const visible = useQueryVisible();
-  const oauthKey = [...scope, "oauth", selected];
-  const browserKey = [...scope, "browser", browserAccount];
-  type OAuth = Awaited<ReturnType<SocialClient["oauthStatus"]>>;
-  type Browser = Awaited<ReturnType<SocialClient["browserStatus"]>>;
-  const oauthQuery = useQuery<OAuth | null>({
-    queryKey: oauthKey,
-    queryFn: async ({ signal }) => {
-      try {
-        const value = await client.oauthStatus(selected);
-        signal.throwIfAborted();
-        return value;
-      } catch {
-        signal.throwIfAborted();
-        return {
-          status: "failed",
-          candidates: [],
-          error: t("Connection status could not be read. Try again with Check connection."),
-        };
-      }
-    },
-    enabled:
-      active &&
-      visible &&
-      !!selected &&
-      !!account &&
-      apiAccountType &&
-      !TOKEN_PLATFORMS.includes(account.platform),
-    staleTime: 5_000,
-    refetchInterval: (query) => (query.state.data?.status === "waiting" ? 5_000 : false),
-  });
-  const browserQuery = useQuery<Browser | null>({
-    queryKey: browserKey,
-    queryFn: async ({ signal }) => {
-      const value = await client.browserStatus(browserAccount);
-      signal.throwIfAborted();
-      return value;
-    },
-    enabled: active && visible && !!browserAccount,
-    staleTime: 3_000,
-    refetchInterval: (query) => (query.state.data?.status === "waiting" ? 3_000 : false),
-  });
-  const oauth = oauthQuery.data ?? null;
-  const browser = browserQuery.data ?? null;
-  const setOAuth = (value: OAuth | null) => queryClient.setQueryData(oauthKey, value);
-  const setBrowser = (value: Browser | null) => queryClient.setQueryData(browserKey, value);
-  const connectedSeen = useRef("");
-  useEffect(() => {
-    const connected = oauth?.status === "connected" || browser?.status === "connected";
-    const key = `${scope[1]}:${selected}`;
-    if (connected && connectedSeen.current !== key) {
-      connectedSeen.current = key;
-      if (!account?.connected) void run(async () => undefined);
-    } else if (!connected) connectedSeen.current = "";
-  }, [oauth?.status, browser?.status, selected, account?.connected, scope[1], run]);
-  useEffect(() => {
-    if (retainedBrowserAccount.current !== browserAccount) {
-      retainedBrowserAccount.current = browserAccount;
-      setBrowserRisk(false);
-    }
-    if (!browserAccount || !active || !visible) return;
-    let alive = true;
-    void client
-      .browserAvailability()
-      .then((value) => alive && setBrowserAvailability(value))
-      .catch(
-        () =>
-          alive &&
-          setBrowserAvailability({
-            available: false,
-            reason: HOST_BROWSER_UNSUPPORTED,
-          }),
-      );
-    return () => {
-      alive = false;
-    };
-  }, [browserAccount, active, visible, client]);
-  return (
-    <div className="social-page social-accounts-page">
-      <div className="social-section-heading">
-        <h2>{t("Accounts")}</h2>
-        <span className="social-muted">
-          {snapshot.accounts.length === 1
-            ? t("1 account")
-            : t("{p0} accounts", { p0: snapshot.accounts.length })}
-        </span>
-      </div>
-      <Composer title={t("Add account")}>
-        <form
-          onSubmit={(event) => {
-            const form = event.currentTarget;
-            const data = field(event);
-            void pendingUi
-              .run("accounts.add-account", () =>
-                run(async () => {
-                  const created = await client.request<SocialAccount>("accounts.create", {
-                    platform,
-                    name: data.get("name"),
-                    accountType: data.get("type"),
-                    connection:
-                      newConnection === "browser"
-                        ? "browser"
-                        : TOKEN_PLATFORMS.includes(platform)
-                          ? "token"
-                          : "oauth",
-                    projectIds: selectedProjects,
-                  });
-                  setSelected(created.id);
-                  setOAuth(null);
-                }),
-              )
-              .then((success) => {
-                if (success) {
-                  form.reset();
-                  closeComposer(form);
-                }
-              });
-          }}
-          className="social-form"
-        >
-          <label>
-            {t("Platform")}
-            <SearchableSelect
-              disabled={socialLocked}
-              label={t("Platform")}
-              triggerProps={{ "aria-label": t("Platform") }}
-              value={platform}
-              onChange={(value) => setPlatform(value as SocialAccount["platform"])}
-              options={SOCIAL_PLATFORMS.map((id) => ({ value: id, label: names[id] }))}
-            />
-          </label>
-          <fieldset disabled={socialLocked}>
-            <legend>{t("Connection method")}</legend>
-            <SegmentedControl
-              label={t("Connection method")}
-              value={newConnection}
-              selectionRole="radio"
-              onValueChange={(value) => setNewConnection(value === "api" ? "api" : "browser")}
-              options={[
-                { value: "browser", label: t("Browser connection") },
-                { value: "api", label: t("API connection") },
-              ]}
-            />
-          </fieldset>
-          <TextField
-            disabled={socialLocked}
-            label={t("Account name")}
-            name="name"
-            required
-            maxLength={200}
-          />
-          <label>
-            {t("Account type")}
-            <NativeSelect disabled={socialLocked} name="type" key={`${platform}:${newConnection}`}>
-              {(newConnection === "browser"
-                ? SOCIAL_BROWSER_ACCOUNT_TYPES[platform]
-                : SOCIAL_API_ACCOUNT_TYPES[platform]
-              ).map((id) => (
-                <option key={id} value={id}>
-                  {accountTypeLabel(id)}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          <Projects
-            projects={projects}
-            selected={selectedProjects}
-            onChange={setSelectedProjects}
-          />
-          <Button
-            loading={pendingUi.is("accounts.add-account")}
-            disabled={socialLocked}
-            variant="primary"
-            type="submit"
-          >
-            {t("Add account")}
-          </Button>
-          {!selectedProjects.length ? (
-            <small>
-              {t("If you select a project, it gets read and draft permission on the account.")}
-            </small>
-          ) : null}
-        </form>
-      </Composer>
-      <div
-        className="social-columns social-account-workspace"
-        data-single={snapshot.accounts.length <= 1}
-      >
-        <section hidden={snapshot.accounts.length <= 1}>
-          <h2>{t("Connected accounts")}</h2>
-          {!snapshot.accounts.length ? (
-            <Empty title={t("Add your first account")} icon={Link}>
-              {t("Start with Add account, then complete the platform connection.")}
-            </Empty>
-          ) : null}
-          <div className="social-list">
-            {snapshot.accounts.map((item) => (
-              <Button
-                disabled={socialLocked}
-                type="button"
-                variant="item"
-                layout="stacked"
-                className="social-row"
-                aria-pressed={selected === item.id}
-                key={item.id}
-                onClick={() => {
-                  setSelected(item.id);
-                  setOAuthOperations(["publish"]);
-                  setResourceId("");
-                  setGrantPermissions(item.grants[grantProject] ?? []);
-                  setOAuth(null);
-                  setBrowser(null);
-                }}
-              >
-                <strong>{item.name}</strong>
-                <span>
-                  {names[item.platform]} ·{" "}
-                  {availabilityError
-                    ? t("Connection check needed")
-                    : accountConnectionStatus(
-                        item,
-                        availability[item.platform],
-                        item.id === selected ? oauth?.status : undefined,
-                      )}
-                  {item.paused ? ` · ${t("Paused")}` : ""}
-                </span>
-              </Button>
-            ))}
-          </div>
-        </section>
-        <section className="social-account-detail">
-          {account ? (
-            <>
-              <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-2">
-                <h2 className="min-w-0 wrap-anywhere text-ui-title font-medium">{account.name}</h2>
-                <span className="text-ui-caption text-(--ui-text-secondary)">{names[account.platform]} · {account.connection === "browser" ? t("Browser connection") : t("Official API")}</span>
-              </div>
-              {localOutcome ? <Notice kind={localOutcome.refreshFailed ? "warning" : localOutcome.success ? "success" : "error"} title={localOutcome.text} /> : null}
-              <div className="social-account-overview">
-                <StatusBadge
-                  status={
-                    account.paused ? "paused" : account.connected ? "connected" : "disconnected"
-                  }
-                />
-                <span>
-                  {names[account.platform]} ·{" "}
-                  {account.connection === "browser" ? t("Browser connection") : t("API connection")}
-                </span>
-                {account.connected && onPrepare ? (
-                  <div className="social-actions">
-                    <Button
-                      disabled={socialLocked}
-                      variant="primary"
-                      type="button"
-                      onClick={() => onPrepare?.(account.id)}
-                    >
-                      {t("Prepare content")}
-                    </Button>
-                    <Button
-                      disabled={socialLocked}
-                      variant="secondary"
-                      type="button"
-                      onClick={() => onOpenHistory?.(account.id)}
-                    >
-                      {t("View history")}
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
-              <section className="flex min-w-0 flex-col gap-3" aria-label={t("Connection")}>
-                <h3 className="text-ui-secondary font-medium">{t("Connection")}</h3>
-              <SocialBrowserWorkspace key={account.id} account={account} client={client} />
-              {
-                <details className="social-connection" open={!account.connected || undefined}>
-                  <summary>{t("Manage browser connection")}</summary>
-                  <strong>
-                    {account.connected && account.connection === "browser"
-                      ? account.platform === "x"
-                        ? t("X account connected")
-                        : t("Account connected")
-                      : account.platform === "x"
-                        ? t("Connect your X account")
-                        : t("Connect {p0} in the browser", { p0: names[account.platform] })}
-                  </strong>
-                  <details>
-                    <summary>{t("How the browser connection works")}</summary>
-                    <p>
-                      {account.platform === "x"
-                        ? t(
-                            "Because the X API is paid, you can connect the account with your own X session. A separate Edge/Chrome window opens on the selected host; you sign in to X there yourself and close the window. Your password is never entered into bycoda. Approved posts are shared in the background with this session. Only post/image sharing and replies to a post ID are supported. Mentions and legacy web messaging are read through recognized reply formats; encrypted Chat is not supported. Continuous publishing and replies depend on an active publishing program and automation rules.",
-                          )
-                        : t(
-                            "Use your own web session without an API subscription. Sign in in the separate Edge/Chrome window and close it when finished. The host verifies the saved identity. Supported actions use the existing approval queue; account identity, recipient and platform acknowledgement are checked before success is recorded.",
-                          )}
-                    </p>
-                  </details>
-                  {account.platform === "linkedin" && account.accountType === "organization" ? (
-                    <TextField
-                      label={t("LinkedIn Page ID or URL name")}
-                      value={resourceId}
-                      maxLength={100}
-                      placeholder="bycoda"
-                      disabled={socialLocked || browser?.status === "waiting"}
-                      onChange={(event) => setResourceId(event.target.value.trim())}
-                    />
-                  ) : null}
-                  <Notice kind="warning" title={t("Risk confirmation for browser connection")}>
-                    {account.platform === "x"
-                      ? t(
-                          "This method is unofficial. If X detects automation, it may restrict or suspend the account.",
-                        )
-                      : t(
-                          "Browser automation is unofficial. The platform may require manual verification or restrict the account.",
-                        )}
-                  </Notice>
-                  <label className="social-inline-check">
-                    <Checkbox
-                      disabled={socialLocked}
-                      checked={browserRisk}
-                      onChange={(event) => setBrowserRisk(event.target.checked)}
-                    />
-                    {t("I understand the risk; use the browser session for this account")}
-                  </label>
-                  {browserAvailability && !browserAvailability.available ? (
-                    <p>
-                      {browserAvailability.reason === HOST_BROWSER_UNSUPPORTED
-                        ? t(
-                            "The selected host does not support browser-session connections. Update the Host and press Refresh.",
-                          )
-                        : t("Microsoft Edge or Google Chrome was not found on the selected host.")}
-                    </p>
-                  ) : null}
-                  <div className="social-actions">
-                    <Button
-                      loading={pendingUi.is("accounts.sign-in-again-in-the-browser")}
-                      type="button"
-                      variant="primary"
-                      disabled={
-                        socialLocked ||
-                        !browserRisk ||
-                        !browserAvailability?.available ||
-                        (account.platform === "linkedin" &&
-                          account.accountType === "organization" &&
-                          !/^web:linkedin:company:[\w-]+$/.test(account.platformId) &&
-                          !/^[\w-]{1,100}$/.test(resourceId)) ||
-                        browser?.status === "waiting"
-                      }
-                      onClick={() =>
-                        void pendingUi.run("accounts.sign-in-again-in-the-browser", () =>
-                          run(async () => {
-                            await queryClient.cancelQueries({ queryKey: browserKey });
-                            const status = await (account.platform === "linkedin" &&
-                            account.accountType === "organization"
-                              ? client.browserBegin(account.id, resourceId || undefined)
-                              : client.browserBegin(account.id));
-                            await queryClient.cancelQueries({ queryKey: browserKey });
-                            setBrowser(status);
-                          }),
-                        )
-                      }
-                    >
-                      {account.connected && account.connection === "browser"
-                        ? t("Sign in again in the browser")
-                        : account.platform === "x"
-                          ? t("Sign in to X in the browser")
-                          : t("Sign in in the browser")}
-                    </Button>
-                    <Button
-                      loading={pendingUi.is("accounts.check-browser-connection")}
-                      disabled={socialLocked}
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        void pendingUi.run("accounts.check-browser-connection", () =>
-                          run(async () => {
-                            setBrowserAvailability(await client.browserAvailability());
-                            setBrowser(await client.browserStatus(account.id));
-                          }),
-                        )
-                      }
-                    >
-                      {t("Check browser connection")}
-                    </Button>
-                  </div>
-                  {browser && browser.status !== "idle" ? (
-                    <p role="status">
-                      {browser.error ||
-                        (
-                          {
-                            waiting:
-                              account.platform === "x"
-                                ? t(
-                                    "Sign in to X in the Chrome window that opened (Google sign-in works too). Close the window yourself when you are done; bycoda then checks the session.",
-                                  )
-                                : t(
-                                    "Complete sign-in and any verification in the opened browser. Close that window when finished; bycoda then verifies the saved account identity.",
-                                  ),
-                            connected:
-                              account.platform === "x"
-                                ? t("X account connected with the browser session.")
-                                : t("Account connected"),
-                            failed: t("Connection failed"),
-                          } as Record<string, string>
-                        )[browser.status]}
-                    </p>
-                  ) : null}
-                </details>
-              }
-              {apiAccountType && TOKEN_PLATFORMS.includes(account.platform) ? (
-                <div className="social-connection">
-                  <strong>
-                    {availabilityError ||
-                      accountConnectionStatus(account, availability[account.platform])}
-                  </strong>
-                  <p>
-                    {account.platform === "telegram" && account.accountType === "channel"
-                      ? t(
-                          "Publish to a verified Telegram channel with its administrator bot. Channel monitoring and private messages are separate capabilities.",
-                        )
-                      : account.platform === "telegram"
-                        ? t(
-                            "Read and reply to text messages with a bot account. Reading is off when a webhook already exists; bycoda does not delete other apps' webhooks.",
-                          )
-                        : t(
-                            "Reply to incoming text messages with a WhatsApp Business account within the 24-hour reply window. Personal accounts, template messages and bulk first messages are not supported.",
-                          )}
-                  </p>
-                  <details>
-                    <summary>{t("Host connection settings")}</summary>
-                    <p>
-                      {t(
-                        "Add the keys to the environment settings of the selected host service. The connect button verifies the account identity on the platform.",
-                      )}
-                    </p>
-                    <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_TOKEN</code>
-                    <br />
-                    <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_APPROVED=1</code>
-                    {account.platform === "whatsapp" ? (
-                      <>
-                        <br />
-                        <code>BYCODA_SOCIAL_WHATSAPP_PHONE_NUMBER_ID</code>
-                        <br />
-                        <code>BYCODA_SOCIAL_WHATSAPP_CLIENT_SECRET</code>
-                        <br />
-                        <code>BYCODA_SOCIAL_WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>
-                        <p>
-                          {t(
-                            "Meta webhook address: /social/webhooks/whatsapp. Subscribe to the messages field on the business account.",
-                          )}
-                        </p>
-                      </>
-                    ) : null}
-                  </details>
-                  {account.platform === "telegram" && account.accountType === "channel" ? (
-                    <TelegramChannelConnection
-                      key={account.id}
-                      account={account}
-                      client={client}
-                      disabled={
-                        socialLocked ||
-                        !availability[account.platform]?.configured ||
-                        !!availabilityError
-                      }
-                      onRefresh={() => run(async () => undefined)}
-                    />
-                  ) : (
-                    <div className="social-actions">
-                      <Button
-                        loading={pendingUi.is("accounts.reconnect-host-account")}
-                        type="button"
-                        variant="primary"
-                        disabled={
-                          socialLocked ||
-                          !availability[account.platform]?.configured ||
-                          !!availabilityError
-                        }
-                        onClick={() =>
-                          void pendingUi.run("accounts.reconnect-host-account", () =>
-                            run(async () => {
-                              await client.tokenConnect(account.id);
-                            }),
-                          )
-                        }
-                      >
-                        {account.connected
-                          ? t("Reconnect host account")
-                          : t("Connect host account")}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : !apiAccountType ||
-                (account.platform === "x" &&
-                  account.connected &&
-                  account.connection === "browser") ? null : (
-                <Collapsible
-                  collapsed={account.platform === "x"}
-                  summary={t("Connect with the official X API (requires a paid developer app)")}
-                >
-                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? (
-                    <p role="note">
-                      {t(
-                        "This connection verifies the profile identity and lets you prepare drafts. Publishing, comments and inbox operations are not supported yet.",
-                      )}
-                    </p>
-                  ) : null}
-                  <div className="social-connection" role="status">
-                    <strong>
-                      {availabilityError
-                        ? t("Connection check needed")
-                        : accountConnectionStatus(
-                            account,
-                            availability[account.platform],
-                            oauth?.status,
-                          )}
-                    </strong>
-                    <p>
-                      {availabilityError ||
-                        (availability[account.platform] === undefined
-                          ? t("Checking platform connection settings…")
-                          : !availability[account.platform].configured
-                            ? t(
-                                "{p0} connection is not ready. Configure the platform app and its redirect address on the selected host.",
-                                { p0: names[account.platform] },
-                              )
-                            : !account.connected && oauth?.status === "waiting"
-                              ? t(
-                                  "Sign in to your account and grant permission on the platform page that opened. The result is checked here automatically. If the page did not open, try again with Connect in browser.",
-                                )
-                              : !account.connected && oauth?.status === "selection"
-                                ? t(
-                                    "The platform verified your account. Choose the account you want to connect from the list below.",
-                                  )
-                                : account.connected &&
-                                    account.expiresAt &&
-                                    account.expiresAt < Date.now()
-                                  ? t(
-                                      "The connection expired. Grant permission to your account again with Reconnect in browser.",
-                                    )
-                                  : account.connected
-                                    ? t(
-                                        "Account connected. Manage operations and project permissions below.",
-                                      )
-                                    : t(
-                                        "Select permissions and press Connect in browser. Sign in to your account and grant permission on the platform page that opens; the result is checked here automatically.",
-                                      ))}
-                    </p>
-                    {availability[account.platform]?.configured === false ? (
-                      <details>
-                        <summary>{t("Setup requirements")}</summary>
-                        <p>
-                          {t(
-                            "These settings are not your social account password. Details from the platform developer app are added to the selected host service; do not enter secret keys here.",
-                          )}
-                        </p>
-                        <ul>
-                          <li>{t("App Client ID")}</li>
-                          <li>
-                            {account.platform === "x"
-                              ? t(
-                                  "Client Secret for apps that use a secret (optional for public PKCE)",
-                                )
-                              : t("App Client Secret")}
-                          </li>
-                          <li>
-                            {t(
-                              "Redirect address registered on the platform and reachable by the host",
-                            )}
-                          </li>
-                        </ul>
-                        <p>
-                          {t(
-                            "The host service environment settings use the names below. The settings cannot be edited in the app yet; add them through the host setup.",
-                          )}
-                        </p>
-                        <code>BYCODA_SOCIAL_{account.platform.toUpperCase()}_CLIENT_ID</code>
-                        <br />
-                        <code>
-                          BYCODA_SOCIAL_{account.platform.toUpperCase()}
-                          _CLIENT_SECRET
-                        </code>
-                        <br />
-                        <code>
-                          BYCODA_SOCIAL_{account.platform.toUpperCase()}
-                          _REDIRECT_URI
-                        </code>
-                        <p>
-                          {t("Redirect address path on the host:")}{" "}
-                          <code>/social/oauth/{account.platform}/callback</code>.{" "}
-                          {t("The same address must also be registered in the platform app.")}
-                        </p>
-                        <p>{t("After updating the host settings, press Refresh.")}</p>
-                      </details>
-                    ) : null}
-                  </div>
-                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
-                    <fieldset className="social-checks">
-                      <legend>{t("Capabilities requested through OAuth")}</legend>
-                      {(snapshot.capabilities[account.id] ?? [])
-                        .filter((capability) => capability.status !== "unsupported")
-                        .map((capability) => (
-                          <label key={capability.operation}>
-                            <Checkbox
-                              disabled={socialLocked}
-                              checked={oauthOperations.includes(capability.operation)}
-                              onChange={(event) =>
-                                setOAuthOperations((current) =>
-                                  event.target.checked
-                                    ? [...current, capability.operation]
-                                    : current.filter((item) => item !== capability.operation),
-                                )
-                              }
-                            />
-                            {operations[capability.operation]}
-                          </label>
-                        ))}
-                    </fieldset>
-                  )}
-                  {PROFILE_ONLY_PLATFORMS.includes(account.platform) ? null : (
-                    <p>
-                      {t(
-                        "Only the permissions of the selected API products are requested. Platform approval and webhook subscription are required separately.",
-                      )}
-                    </p>
-                  )}
-                  {account.accountType === "organization" ? (
-                    <TextField
-                      disabled={socialLocked}
-                      label={t("LinkedIn organization ID")}
-                      inputMode="numeric"
-                      value={resourceId}
-                      onChange={(event) => setResourceId(event.target.value)}
-                    />
-                  ) : null}
-                  <div className="social-actions">
-                    <Button
-                      loading={pendingUi.is("accounts.reconnect-in-browser")}
-                      type="button"
-                      variant="primary"
-                      disabled={
-                        socialLocked ||
-                        (!oauthOperations.length &&
-                          !PROFILE_ONLY_PLATFORMS.includes(account.platform)) ||
-                        !!availabilityError ||
-                        !availability[account.platform]?.configured ||
-                        (account.accountType === "organization" && !/^\d+$/.test(resourceId))
-                      }
-                      onClick={() =>
-                        void pendingUi.run("accounts.reconnect-in-browser", () =>
-                          run(async () => {
-                            await queryClient.cancelQueries({ queryKey: oauthKey });
-                            const begin = await client.oauthBegin(
-                              account.id,
-                              account.accountType === "organization" ? resourceId : undefined,
-                              oauthOperations,
-                            );
-                            // A waiting poll may have started while begin was in flight.
-                            await queryClient.cancelQueries({ queryKey: oauthKey });
-                            setOAuth({ status: "waiting", candidates: [] });
-                            await openUrl(begin.url);
-                          }),
-                        )
-                      }
-                    >
-                      {account.connected ? t("Reconnect in browser") : t("Connect in browser")}
-                    </Button>
-                    <Button
-                      loading={pendingUi.is("accounts.check-connection")}
-                      disabled={socialLocked}
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        void pendingUi.run("accounts.check-connection", () =>
-                          run(async () => setOAuth(await client.oauthStatus(account.id))),
-                        )
-                      }
-                    >
-                      {t("Check connection")}
-                    </Button>
-                  </div>
-                  {oauth && availability[account.platform]?.configured ? (
-                    <div className="social-connection" role="status">
-                      <p>
-                        {oauth.error ||
-                          (
-                            {
-                              idle: t(
-                                "Connection not started. If platform setup is complete, start with Connect in browser.",
-                              ),
-                              waiting: t(
-                                "Waiting for account permission in the browser. Grant permission on the platform page that opened. If the page did not open, try again with Connect in browser.",
-                              ),
-                              selection: t("Choose the verified account"),
-                              connected: t("Account connected"),
-                              failed: t("Connection failed"),
-                            } as Record<string, string>
-                          )[oauth.status]}
-                      </p>
-                      {(oauth.candidates ?? []).map((candidate) => (
-                        <Button
-                          loading={pendingUi.is(`accounts.connect:${candidate.id}`)}
-                          disabled={socialLocked}
-                          type="button"
-                          variant="secondary"
-                          key={candidate.id}
-                          onClick={() =>
-                            void pendingUi.run(`accounts.connect:${candidate.id}`, () =>
-                              run(async () => {
-                                await client.oauthSelect(account.id, candidate.id);
-                                await queryClient.invalidateQueries({ queryKey: oauthKey });
-                              }),
-                            )
-                          }
-                        >
-                          {t("{p0} · Connect", { p0: candidate.name })}
-                        </Button>
-                      ))}
-                    </div>
-                  ) : null}
-                </Collapsible>
-              )}
-              </section>
-              <div className="social-actions">
-                <Button
-                  loading={pendingUi.is("accounts.resume-account")}
-                  disabled={socialLocked}
-                  type="button"
-                  variant="secondary"
-                  onClick={() =>
-                    void pendingUi.run("accounts.resume-account", () =>
-                      run(() =>
-                        client.request("accounts.pause", {
-                          accountId: account.id,
-                          paused: !account.paused,
-                        }),
-                      ),
-                    )
-                  }
-                >
-                  {account.paused ? t("Resume account") : t("Pause account")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="danger"
-                  className="ml-auto"
-                  disabled={socialLocked || !account.connected}
-                  onClick={() => setDisconnecting(true)}
-                >
-                  {t("Remove connection")}
-                </Button>
-              </div>
-              {disconnecting ? (
-                <div
-                  className="social-confirm"
-                  role="group"
-                  aria-label={t("Disconnect confirmation")}
-                >
-                  <p>
-                    {t("{p0} will be disconnected and sending from this account will stop.", {
-                      p0: account.name,
-                    })}
-                  </p>
-                  <div className="social-actions">
-                    <Button
-                      loading={pendingUi.is("accounts.confirm-disconnect")}
-                      disabled={socialLocked}
-                      type="button"
-                      variant="danger"
-                      onClick={() =>
-                        void (async () => {
-                          if (
-                            await pendingUi.run("accounts.confirm-disconnect", () =>
-                              run(() =>
-                                client.request("accounts.disconnect", {
-                                  accountId: account.id,
-                                }),
-                              ),
-                            )
-                          )
-                            setDisconnecting(false);
-                        })()
-                      }
-                    >
-                      {t("Confirm disconnect")}
-                    </Button>
-                    <Button
-                      disabled={socialLocked}
-                      type="button"
-                      variant="secondary"
-                      onClick={() => setDisconnecting(false)}
-                    >
-                      {t("Cancel")}
-                    </Button>
-                  </div>
-                </div>
-              ) : null}
-              <section className="flex min-w-0 flex-col gap-2" aria-label={t("Effective operations")}>
-                <h3 className="text-ui-secondary font-medium">{t("Effective operations")}</h3>
-                <p className="text-ui-caption text-(--ui-text-secondary)">{account.executorId === snapshot.executorId ? t("This account is connected on the selected computer.") : t("This account is connected on another computer.")}</p>
-                <AccountCapabilities capabilities={snapshot.capabilities[account.id] ?? []} />
-              </section>
-              <details className="social-form social-account-permissions" open>
-                <summary>{t("Project access")}</summary>
-                <p className="text-ui-caption text-(--ui-text-secondary)">{t("Project grants control permission. They do not establish a platform connection or approve a send.")}</p>
-                <form
-                  className="social-form"
-                  onSubmit={(event) => {
-                    field(event);
-                    void pendingUi.run("accounts.save-permissions", () =>
-                      run(() =>
-                        client.request("accounts.grants", {
-                          accountId: account.id,
-                          projectId: grantProject,
-                          permissions: grantPermissions,
-                        }),
-                      ),
-                    );
-                  }}
-                >
-                  <label>
-                    {t("Project")}
-                    <SearchableSelect
-                      disabled={socialLocked}
-                      value={grantProject}
-                      label={t("Project")}
-                      options={projects.map((project) => ({
-                        value: project.id,
-                        label: project.name,
-                      }))}
-                      onChange={(nextValue) => {
-                        setGrantProject(nextValue);
-                        setGrantPermissions(account.grants[nextValue] ?? []);
-                      }}
-                      searchLocale={getLocale()}
-                    />
-                  </label>
-                  <fieldset className="social-checks">
-                    <legend>{t("Reading and sending are separate permissions")}</legend>
-                    {[
-                      ["read", t("Can read")],
-                      ["draft", t("Prepare drafts")],
-                      ["publish", t("Publish")],
-                      ["reply", t("Can reply")],
-                      ["message", t("New message")],
-                      ["comment", t("Post a comment")],
-                    ].map(([id, label]) => (
-                      <label key={id}>
-                        <Checkbox
-                          disabled={socialLocked}
-                          checked={grantPermissions.includes(id)}
-                          onChange={(event) =>
-                            setGrantPermissions(
-                              event.target.checked
-                                ? [...grantPermissions, id]
-                                : grantPermissions.filter((item) => item !== id),
-                            )
-                          }
-                        />
-                        {label}
-                      </label>
-                    ))}
-                  </fieldset>
-                  <Button
-                    loading={pendingUi.is("accounts.save-permissions")}
-                    type="submit"
-                    variant="secondary"
-                    disabled={socialLocked || !grantProject}
-                  >
-                    {t("Save permissions")}
-                  </Button>
-                  <p className="social-muted">
-                    {t("Current permissions:")}{" "}
-                    {Object.entries(account.grants)
-                      .map(
-                        ([id, allowed]) =>
-                          `${projects.find((item) => item.id === id)?.name ?? id}: ${allowed.map((permission) => permissionLabels()[permission] ?? permission).join(", ") || t("none")}`,
-                      )
-                      .join("; ")}
-                  </p>
-                </form>
-              </details>
-            </>
-          ) : (
-            <Empty
-              title={
-                snapshot.accounts.length ? t("Manage your account") : t("Add your first account")
-              }
-              icon={Link}
-            >
-              {snapshot.accounts.length
-                ? t("Select an account to see its connection status and project access.")
-                : t("Start with Add account, then complete the platform connection.")}
-            </Empty>
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}

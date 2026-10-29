@@ -52,7 +52,7 @@ export function UserLinkPreview({
       />
     );
   }
-  return <GenericLinkPreview link={link} />;
+  return <GenericLinkPreview key={link.url} link={link} />;
 }
 
 function GenericLinkPreview({ link }: { link: UserLink }) {
@@ -62,8 +62,6 @@ function GenericLinkPreview({ link }: { link: UserLink }) {
 
   useEffect(() => {
     let cancelled = false;
-    setMetadata(null);
-    setFaviconFailed(false);
     void fetchLinkPreviewMetadata(link.url)
       .then((value) => {
         if (!cancelled) setMetadata(value);

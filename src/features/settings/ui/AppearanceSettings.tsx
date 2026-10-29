@@ -4,9 +4,10 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ChevronLeft, ChevronRight, ImagePlus } from "../../../shared/ui/icons";
 import { CrewSettings, TabMotionSettings } from "./AppearanceBehaviorSettings";
+import { AccentReadabilityControl } from "./AccentReadabilityControl";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  AccentUsagePreview,
+  AppearancePreview,
   AppearanceStudio,
   AppearanceInterface,
   AppearanceTypography,
@@ -93,6 +94,9 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
   const glassDisabled = useColorScheme() === "light";
   // Off on Windows/macOS means an opaque window: the translucency values do not apply.
   const translucencyOff = glassDisabled || (!IS_LINUX && !appearance.windowGlass);
+  const accentIsDefault =
+    !appearance.accentColor ||
+    appearance.accentColor.toLowerCase() === ACCENT_COLOR_DEFAULT.toLowerCase();
   const decorativeMotion = useDecorativeMotionPreference();
   const reducedMotion = usePrefersReducedMotion();
   const topics = [
@@ -152,30 +156,27 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           </Button>
         ))}
       </nav>
-      <AppearanceSection id="colors" title={t("Theme and colors")}>
-        <AppearanceStudio appearance={appearance} />
-        <Group title={t("Accent")}>
+      <AppearanceSection id="colors" title={t("Theme and colors")} layout="colors">
+        <AppearanceStudio appearance={appearance}>
           <Row
             id="accent-color"
             label={t("Accent color")}
-            description={t("Used for the composer send button and your message bubbles.")}
-            scope={accentSourceLabel(appearance)}
+            description={t("Used for the composer send button, selected text and accent actions.")}
+            scope={accentIsDefault ? undefined : accentSourceLabel(appearance)}
           >
             <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
           </Row>
-          <AccentUsagePreview />
-        </Group>
+          <AccentReadabilityControl />
+        </AppearanceStudio>
+        <AppearancePreview />
         <AdvancedSettings
           title={t("Custom surface colors")}
           settingIds={["hue", "saturation", "dark-lightness"]}
         >
-          <p className="settings-help-text">
-            {t("Hue and saturation tint every surface. Lightness only moves the dark theme.")}
-          </p>
           <Row
             id="hue"
             label={t("Hue")}
-            description={t("Base hue for accents and tinted surfaces.")}
+            description={t("Hue and saturation tint every surface. Lightness only moves the dark theme.")}
           >
             <Slider
               label={t("Hue")}
@@ -498,10 +499,13 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
 function AppearanceSection({
   id,
   title,
+  layout,
   children,
 }: {
   id: string;
   title: string;
+  /** `colors` places the live preview beside the controls when the page is wide enough. */
+  layout?: "colors";
   children: ReactNode;
 }) {
   return (
@@ -511,7 +515,9 @@ function AppearanceSection({
       className="appearance-section"
       aria-label={title}
     >
-      <div className="appearance-section-body settings-topics">{children}</div>
+      <div className="appearance-section-body settings-topics" data-appearance-layout={layout}>
+        {children}
+      </div>
     </section>
   );
 }

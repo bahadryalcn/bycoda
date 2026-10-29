@@ -111,6 +111,13 @@ export function JiraBoardView({
   const suppressClick = useRef(false);
   const issuesLoaded = useRef(onIssuesLoaded);
   issuesLoaded.current = onIssuesLoaded;
+  /** Commits settled groups and reports their issues from the same place. */
+  const commitGroups = (update: Group[] | ((old: Group[]) => Group[])) => {
+    const next = typeof update === "function" ? update(groupsRef.current) : update;
+    groupsRef.current = next;
+    setGroups(next);
+    issuesLoaded.current?.(next.flatMap((group) => group.issues));
+  };
   const board = boards.find((b) => b.id === boardId);
   useEffect(() => {
     const changed = () => {
@@ -178,7 +185,7 @@ export function JiraBoardView({
     }
     if (!boardId) {
       setConfiguration(null);
-      setGroups([]);
+      commitGroups([]);
       setLoading(false);
       return;
     }
@@ -196,6 +203,7 @@ export function JiraBoardView({
     setDragKey(null);
     setHover(null);
     setBacklogUnavailable(false);
+    let committed = false;
     void (async () => {
       const config = await jiraBoardConfiguration(boardId);
       if (request !== generation.current) return;
@@ -288,13 +296,17 @@ export function JiraBoardView({
       }
       if (request !== generation.current) return;
       setConfiguration(config);
-      setGroups(next);
+      committed = true;
+      commitGroups(next);
     })()
       .catch((reason) => {
         if (request === generation.current) setError(message(reason));
       })
       .finally(() => {
-        if (request === generation.current) setLoading(false);
+        if (request !== generation.current) return;
+        setLoading(false);
+        // A read that ended without committing still releases the loading hold.
+        if (!committed) issuesLoaded.current?.(groupsRef.current.flatMap((group) => group.issues));
       });
     return () => {
       generation.current++;
@@ -345,9 +357,6 @@ export function JiraBoardView({
   const allIssues = Array.from(
     new Map(groups.flatMap((g) => g.issues).map((issue) => [issue.id, issue])).values(),
   );
-  useEffect(() => {
-    if (!loading) issuesLoaded.current?.(groups.flatMap((group) => group.issues));
-  }, [groups, loading]);
   const visible = (issues: JiraBoardIssue[]) => {
     const query = search.trim().toLocaleLowerCase();
     return query
@@ -683,7 +692,7 @@ export function JiraBoardView({
         (page.nextPageToken === group.token || group.cursors?.includes(page.nextPageToken))
       )
         throw new Error(t("Jira pagination did not advance."));
-      setGroups((old) =>
+      commitGroups((old) =>
         old.map((g) => {
           if (g.id !== group.id) return g;
           if (fresh) return fresh;
@@ -705,7 +714,7 @@ export function JiraBoardView({
         const backlogUnsupported =
           group.id === "backlog" && /backlogs? (?:are|is) not supported/i.test(message(reason));
         if (backlogUnsupported) setBacklogUnavailable(true);
-        setGroups((old) =>
+        commitGroups((old) =>
           old.map((g) =>
             g.id !== group.id
               ? g

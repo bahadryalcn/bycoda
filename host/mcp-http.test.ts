@@ -16,6 +16,7 @@ import { SOCIAL_TOOLS, socialToolName } from "../src/features/social/model/socia
 import { SOCIAL_TOOL_SCHEMAS } from "./social-tools";
 import { SharedBrowser } from "./shared-browser";
 import { ConversationWorkspaceTools } from "./conversation-workspace-tools";
+import { parseLocalSessionLink } from "../src/features/sessions/model/localSessionReference";
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -23,7 +24,7 @@ afterEach(async () => {
   vi.unstubAllEnvs();
 });
 
-async function setup() {
+async function setup(providers: Parameters<typeof createHostServer>[1] = []) {
   const dir = mkdtempSync(join(tmpdir(), "bycoda-mcp-http-"));
   const desktopPath = join(dir, "desktop.db");
   vi.stubEnv("BYCODA_DESKTOP_DB", desktopPath);
@@ -45,7 +46,7 @@ async function setup() {
       answer: () => {},
     },
   });
-  const server = await createHostServer(engine, []);
+  const server = await createHostServer(engine, providers);
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const device = await store.issueDevice("Owner");
@@ -101,6 +102,100 @@ async function setup() {
   };
   return { store, engine, project, foreign, server, tokens, grant, rpc, send, url, desktopPath };
 }
+
+it("returns the same verified Host references through scoped RPC and external MCP while preserving read authority", async () => {
+  const s = await setup();
+  const created = await s.engine.command({
+    type: "create",
+    workspaceMode: "current",
+    commandId: "reference-test",
+    projectId: s.project.id,
+    harness: "codex",
+    model: "fixture",
+    runtimeMode: "supervised",
+  });
+  const snapshot = await s.store.session(created.sessionId);
+  snapshot.revision += 1;
+  snapshot.session.title = "Title [escaped]";
+  snapshot.session.blocks = [
+    { id: "turn-one", role: "user", text: "U".repeat(7000) },
+    { id: "private", role: "reasoning", text: "private evidence" },
+    { id: "answer", role: "assistant", text: "A".repeat(7000) },
+  ];
+  await s.store.save(snapshot, { type: "test" });
+  const scoped = (
+    await s.server.conversationAccess.issueSessionGrant(created.sessionId)
+  ).token;
+  const external = (await s.grant({ conversation: ["read"] })).token;
+  const listing = (
+    await s.rpc(
+      "conversation.tools.call",
+      { action: "sessions.list", input: {} },
+      scoped,
+    )
+  ).body.result;
+  const entry = listing.sessions.find(
+    (row: any) => row.id === created.sessionId,
+  );
+  expect(parseLocalSessionLink(entry.link)).toEqual({
+    locator: {
+      kind: "host",
+      environmentId: s.store.environmentId,
+      sessionId: created.sessionId,
+    },
+  });
+  const externalList = await s.send(external, "tools/call", {
+    name: "conversation_sessions_list",
+    arguments: {},
+  });
+  expect(
+    JSON.parse(externalList.body.result.content[0].text).sessions.find(
+      (row: any) => row.id === created.sessionId,
+    ).link,
+  ).toBe(entry.link);
+  for (const token of [scoped, external]) {
+    const reply = await s.send(token, "tools/call", {
+      name: "conversation_sessions_read",
+      arguments: { sessionId: created.sessionId, maxChars: 200, limit: 1 },
+    });
+    const page = JSON.parse(reply.body.result.content[0].text);
+    expect(page.link).toBe(entry.link);
+    expect(parseLocalSessionLink(page.turns[0].link)?.turnId).toBe("turn-one");
+    expect(page.turns[0].user.text).toHaveLength(200);
+    expect(JSON.stringify(page)).not.toContain("private evidence");
+    const denied = await s.send(token, "tools/call", {
+      name: "conversation_sessions_send",
+      arguments: { sessionId: created.sessionId, prompt: "Not authorized" },
+    });
+    expect(denied.body.result?.isError ?? !!denied.body.error).toBe(true);
+  }
+  const foreign = (await s.grant({ conversation: ["read"] }, s.foreign.id))
+    .token;
+  const denied = await s.send(foreign, "tools/call", {
+    name: "conversation_sessions_read",
+    arguments: { sessionId: created.sessionId },
+  });
+  expect(denied.body.result.isError).toBe(true);
+});
+
+it("returns Native owner references from the mixed external catalog without migrating sessions", async () => {
+  const s = await setup(["codex"]);
+  const db = new DatabaseSync(s.desktopPath);
+  try {
+    db.exec("CREATE TABLE sessions(id TEXT PRIMARY KEY,cwd TEXT,harness TEXT,model TEXT,model_settings TEXT,provider_session_id TEXT,runtime_mode TEXT,title TEXT,blocks_json TEXT,created_at INTEGER,updated_at INTEGER,has_user_message INTEGER DEFAULT 1,is_draft INTEGER DEFAULT 0); CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY,source_store_id TEXT,source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'native-store','native-profile')");
+    db.prepare("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,blocks_json,created_at,updated_at) VALUES(?,?,'codex','fixture','supervised',?,?,1,1)").run("native-target", s.project.cwd, "Native title", JSON.stringify([{id: "native-turn", role: "user", text: "Read without migration"}]));
+    const { token } = await s.grant({conversation: ["read"]});
+    const list = await s.send(token, "tools/call", {name: "conversation_sessions_list", arguments: {}});
+    const rows = JSON.parse(list.body.result.content[0].text).sessions;
+    expect(parseLocalSessionLink(rows[0].link)?.locator).toEqual({kind: "native", sourceStoreId: "native-store", sourceProfileId: "native-profile", sessionId: "native-target"});
+    const reply = await s.send(token, "tools/call", {name: "conversation_sessions_read", arguments: {sessionId: "native-target"}});
+    const page = JSON.parse(reply.body.result.content[0].text);
+    expect(page.link).toBe(rows[0].link);
+    expect(parseLocalSessionLink(page.turns[0].link)?.turnId).toBe("native-turn");
+    expect(await s.store.sessionAuthority("native-target")).toBeUndefined();
+    expect(db.prepare("SELECT title FROM sessions WHERE id='native-target'").get()?.title).toBe("Native title");
+  } finally { db.close(); }
+});
 
 it("rechecks owner authority after token creation preparation without blocking revocation", async () => {
   const s = await setup();

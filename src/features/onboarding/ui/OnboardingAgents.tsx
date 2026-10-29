@@ -224,10 +224,11 @@ export function OnboardingAgents({
                   {t("Show in picker")}
                 </label>
                 {provider !== "acp" ? (
-                  <ProviderBinaryControl provider={provider} onPathSaved={refresh} />
+                  <ProviderBinaryControl key={provider} provider={provider} onPathSaved={refresh} />
                 ) : null}
                 {supportsProviderAccounts(provider) ? (
                   <TerminalProfileDiscovery
+                    key={provider}
                     provider={provider}
                     disabled={checking}
                     autoDiscover

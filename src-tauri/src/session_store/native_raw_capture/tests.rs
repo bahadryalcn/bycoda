@@ -5,6 +5,9 @@ use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 
+#[path = "tests_v3.rs"]
+mod v3;
+
 struct FileDb {
     root: PathBuf,
     base: PathBuf,

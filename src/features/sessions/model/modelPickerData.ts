@@ -11,12 +11,17 @@ type ModelGroup = {
   models: Array<{ item: AgentModel; index: number }>;
 };
 
+/**
+ * Stable menu order: Reasoning, then Fast / service tier, then the remaining model
+ * options, then the secondary Context and Advisor/subagent groups. The order never
+ * depends on usage, so a learned position stays put between opens.
+ */
 const SETTING_ORDER = [
   "effort",
   "reasoning",
   "reasoningEffort",
-  "serviceTier",
   "fast",
+  "serviceTier",
   "thinking",
   "variant",
   "agent",
@@ -27,6 +32,59 @@ const SETTING_ORDER = [
   "subagentModel",
   "subagentPolicy",
 ];
+
+/** Menu/Extras grouping: model options first, then the rarer Context and delegation groups. */
+export type SettingGroupId = "model" | "context" | "delegation";
+const CONTEXT_SETTINGS = new Set(["context", "autoCompact", "autoCompactWindow"]);
+const DELEGATION_SETTINGS = new Set(["advisor", "subagentModel", "subagentPolicy"]);
+
+/** English titles of the secondary groups; callers translate them. */
+export const SETTING_GROUP_TITLE: Record<SettingGroupId, string> = {
+  model: "Model",
+  context: "Context",
+  delegation: "Advisor and subagents",
+};
+
+export function settingGroupId(setting: ModelSetting): SettingGroupId {
+  if (CONTEXT_SETTINGS.has(setting.id)) return "context";
+  if (DELEGATION_SETTINGS.has(setting.id)) return "delegation";
+  return "model";
+}
+
+/** Settings split into the ordered groups, empty groups dropped. */
+export function groupSettings(
+  settings: readonly ModelSetting[],
+): Array<{ id: SettingGroupId; settings: ModelSetting[] }> {
+  return (["model", "context", "delegation"] as const)
+    .map((id) => ({ id, settings: settings.filter((setting) => settingGroupId(setting) === id) }))
+    .filter((group) => group.settings.length > 0);
+}
+
+/** The select or toggle that carries the Fast state, when the model offers a real on/off pair. */
+export function fastSetting(model: AgentModel): ModelSetting | undefined {
+  return model.settings?.find(
+    (setting) =>
+      setting.id === "fast" ||
+      setting.id === "serviceTier" ||
+      /^fast( mode)?$/i.test(setting.label),
+  );
+}
+
+/** Values that switch Fast on and off; absent when the setting is not a plain Fast pair. */
+export function fastToggleValues(
+  setting: ModelSetting | undefined,
+): { on: string; off: string } | undefined {
+  if (!setting) return undefined;
+  const on = setting.options.find(
+    (option) => /^(true|fast|priority)$/i.test(option.value) || /^(on|fast)$/i.test(option.label),
+  )?.value;
+  const off = setting.options.find(
+    (option) =>
+      /^(false|default|standard|normal)$/i.test(option.value) ||
+      /^(off|standard|normal)$/i.test(option.label),
+  )?.value;
+  return on != null && off != null ? { on, off } : undefined;
+}
 
 /** Toolbar pill order: reasoning level first, then the remaining controls. */
 const PILL_ORDER = [
@@ -40,6 +98,8 @@ const PILL_ORDER = [
   "context",
   "advisor",
 ];
+
+const REASONING_IDS = new Set(["effort", "reasoning", "reasoningEffort"]);
 
 export function isEffortSetting(setting: ModelSetting): boolean {
   return isEffortSettingId(setting.id);
@@ -83,8 +143,9 @@ export function pillSettings(model: AgentModel): ModelSetting[] {
   });
 }
 
+/** One display name per setting meaning, whatever label the provider catalog uses. */
 export function settingLabel(setting: ModelSetting): string {
-  return setting.id === "effort" || setting.id === "reasoning" ? "Effort" : setting.label;
+  return REASONING_IDS.has(setting.id) ? "Reasoning" : setting.label;
 }
 
 export function settingValue(setting: ModelSetting, values: Record<string, string>): string {

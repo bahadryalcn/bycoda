@@ -26,6 +26,9 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
+import { modelRowKey } from "../model/modelListReconcile";
+import { useOpenSessionKey } from "./useOpenSessionKey";
 import {
   getModelSnapshot,
   getPickerVisibilitySnapshot,
@@ -159,10 +162,6 @@ export function SecondOpinionButton({
   );
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const [modelActive, setModelActive] = useState(0);
-  const [effortActive, setEffortActive] = useState(0);
-  const [menuLevel, setMenuLevel] = useState<"providers" | "models" | "effort">("providers");
   const [button, setButton] = useState<HTMLButtonElement | null>(null);
   const [activeRow, setActiveRow] = useState<HTMLButtonElement | null>(null);
   const [activeModelRow, setActiveModelRow] = useState<HTMLButtonElement | null>(null);
@@ -179,6 +178,26 @@ export function SecondOpinionButton({
       includeCurrent,
     });
   }, [from, includeCurrent, probed, availabilityVersion, visibilityVersion]);
+
+  // Provider navigation and the open submenu restart whenever the menu opens or the targets change.
+  const openKey = useOpenSessionKey(open);
+  const providersKey = `${openKey}:${targets.join(",")}`;
+  const [active, setActive] = useKeyedActiveIndex(providersKey, targets.length, 0);
+  const [levelState, setLevelState] = useState<{
+    key: string;
+    level: "providers" | "models" | "effort";
+  }>({ key: providersKey, level: "providers" });
+  const menuLevel = levelState.key === providersKey ? levelState.level : "providers";
+  const setMenuLevel = (
+    next: "providers" | "models" | "effort" | ((level: typeof menuLevel) => typeof menuLevel),
+  ) =>
+    setLevelState((previous) => ({
+      key: providersKey,
+      level:
+        typeof next === "function"
+          ? next(previous.key === providersKey ? previous.level : "providers")
+          : next,
+    }));
 
   const activeHarness = targets[active];
   const models = useMemo(() => {
@@ -197,6 +216,23 @@ export function SecondOpinionButton({
         ? fromModel
         : preferredModelId(activeHarness)
       : undefined;
+  // The highlighted model is kept by identity for this provider and preferred model, so a catalog
+  // refresh that reorders or regrows `models` neither resets nor moves it.
+  const modelsKey = `${providersKey}\u0000${activeHarness ?? ""}\u0000${preferred ?? ""}`;
+  const [modelChoice, setModelChoice] = useState<{ key: string; id: string } | null>(null);
+  const preferredIndex = Math.max(
+    0,
+    models.findIndex((model) => model.id === preferred),
+  );
+  const chosenIndex =
+    modelChoice && modelChoice.key === modelsKey
+      ? models.findIndex((model) => model.id === modelChoice.id)
+      : -1;
+  const modelActive = chosenIndex >= 0 ? chosenIndex : preferredIndex;
+  const setModelActive = (index: number) => {
+    const model = models[index];
+    if (model) setModelChoice({ key: modelsKey, id: model.id });
+  };
   const activeModel = models[modelActive];
   const activeEffort = activeModel ? modelEffortSetting(activeModel) : undefined;
   const selectedEffortValue = activeEffort
@@ -204,6 +240,14 @@ export function SecondOpinionButton({
       ? (fromSettings?.[activeEffort.id] ?? activeEffort.value)
       : activeEffort.value
     : undefined;
+  const [effortActive, setEffortActive] = useKeyedActiveIndex(
+    `${openKey}\u0000${activeModel ? modelRowKey(activeModel) : ""}\u0000${selectedEffortValue ?? ""}`,
+    activeEffort?.options.length ?? 0,
+    Math.max(
+      0,
+      activeEffort?.options.findIndex((option) => option.value === selectedEffortValue) ?? 0,
+    ),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -214,29 +258,6 @@ export function SecondOpinionButton({
     if (!open || !activeHarness) return;
     void refreshHarnessCatalogs([activeHarness]);
   }, [open, activeHarness]);
-
-  useEffect(() => {
-    setActive(0);
-    setMenuLevel("providers");
-  }, [open, targets.join(",")]);
-
-  useEffect(() => {
-    if (!activeHarness) {
-      setModelActive(0);
-      return;
-    }
-    const index = models.findIndex((model) => model.id === preferred);
-    setModelActive(index >= 0 ? index : 0);
-  }, [activeHarness, preferred, models]);
-
-  useEffect(() => {
-    if (!activeEffort) {
-      setEffortActive(0);
-      return;
-    }
-    const index = activeEffort.options.findIndex((option) => option.value === selectedEffortValue);
-    setEffortActive(index >= 0 ? index : 0);
-  }, [activeEffort, selectedEffortValue]);
 
   useEffect(() => {
     activeModelRow?.scrollIntoView({ block: "nearest" });
@@ -302,7 +323,7 @@ export function SecondOpinionButton({
 
   const moveModel = (dir: 1 | -1) => {
     if (models.length === 0) return;
-    setModelActive((index) => (index + dir + models.length) % models.length);
+    setModelActive((modelActive + dir + models.length) % models.length);
   };
 
   const moveEffort = (dir: 1 | -1) => {

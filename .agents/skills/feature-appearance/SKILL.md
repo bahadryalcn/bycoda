@@ -89,6 +89,19 @@ LiveBackground, decorativeMotion, collapsedProjectRail, crew theme, reset/defaul
 - Live picker/renderers: `src/features/settings/ui/LiveBackgroundPicker.tsx`,
   `LiveBackgroundCanvas.tsx`, `LiveBackgroundCanvas.css`, `GradientBlurBackground.tsx`.
   Thirteen choices incl None, six image effects, scope/opacity/blur and intensity.
+- Scene artwork refresh 2026-10-30 (owner, this session: "Live backgrounddaki arka
+  planlar çok iyi gözükmüyor ... profesyonel daha iyi görünümler istiyorum"): all twelve
+  scenes redrawn in `src/features/settings/ui/live-background/` (reactBitsSurface,
+  neuralTree, thoughtWeaver, dotGrid, codeRain, latentFace, asciiMask, asciiMaskArt).
+  Colors stay content/accent tokens; low-contrast accents fall back to content. Idle
+  stays still for 2D scenes (settles ~2 s after a reply); WebGL scenes idle at 12 fps.
+  Uncommitted; captures `temp/verification/2026-10-29-live-bg/final/`.
+  ASCII mask follow-up (owner, same session: "yapay zeka gibi futuristik birşey olmalı yüz
+  hatlarını yada omuzu istemiyorum film gibi düşün"): the scene is now an AI core, an
+  accent-lit lens with a bezel, orbit rings with hex readouts and a HUD scale. It sleeps dim
+  at rest and pulses with the reply rhythm (former mouth poses). Scene ID, label and
+  description are unchanged; the label "ASCII mask" no longer matches the artwork (proposal:
+  rename it with a catalog update).
 - Layout consumers: `src/features/sessions/model/sessionListDisplay.ts`,
   `src/features/sessions/ui/SessionFiltersMenu.tsx`,
   `src/app/workspace/layout/useWorkspaceChromeFlags.ts`,
@@ -218,3 +231,13 @@ Host/index/branch/build/install/release change delivered by this extension.
 135 existing tests/13 suites pass, with retained native-invoke/remote/skill-policy
 and React act diagnostics from fixtures. They do not measure actual color roles,
 selection/contrast or installed behavior. Full check limits are in its evidence.
+
+## VIS 2026-10-29: color scheme, accent readability, single preview
+
+Delivered in source (uncommitted; fixture and unit evidence only, no installed-build check):
+
+- Appearance "Theme and colors" is one "Color scheme" group: Mode, six palette tiles, accent row and the new Accent readability row, with a single "Reset colors" action (`AppearancePreviews.tsx`, `AppearanceSettings.tsx`).
+- One live preview replaces the earlier duplicated samples. It uses published roles only: selection pair, accent solid/on-solid via the shared primary Button, surface and composer roles.
+- Accent readability is `Auto | Strong` (`AccentReadabilityControl.tsx`, stored in the appearance preferences, applied as `data-accent-readability`). WCAG targets are 4.5:1 for Auto and 7:1 for Strong. The solid accent fill is never recoloured; only text, selection and on-solid foreground adapt.
+- "Reset colors" also returns accent readability to Auto; its scope text names it. "Restore defaults" already did through `APPEARANCE_DEFAULTS`.
+- Checks: `SettingsView.test.ts` indexed-setting render passes with the control mounted. Screenshot evidence is under `temp/verification/vis-integration/` (fixture evidence).

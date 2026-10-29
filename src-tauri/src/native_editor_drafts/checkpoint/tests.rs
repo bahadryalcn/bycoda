@@ -16,6 +16,8 @@ use serde_json::json;
 use std::path::PathBuf;
 use tauri::ResourceTable;
 
+mod browser_raw_v3;
+
 struct Fixture {
     store: SessionStore,
     resources: ResourceTable,
@@ -114,6 +116,40 @@ impl Drop for Directory {
 fn raw(value: Value) -> RawCaptureArtifact {
     RawCaptureArtifact::parse(value.to_string(), "A").unwrap()
 }
+
+#[test]
+fn v3_notes_candidates_never_supply_file_ack_or_complete_the_editor_roster() {
+    let f = Fixture::new();
+    let metadata = f.put(1, "actual file\n");
+    let mut value = captured(&metadata, "actual file\n");
+    value["version"] = json!(3);
+    value["producerEpochs"]["notes"] = json!(2);
+    value["producers"][0]["id"] = json!(4);
+    let mut forged_note = value["producers"][0].clone();
+    forged_note["id"] = json!(5);
+    forged_note["kind"] = json!("note-editor");
+    forged_note["snapshot"]["text"] = json!("dirty Notes body must not bind the file\r\n");
+    value["producers"]
+        .as_array_mut()
+        .unwrap()
+        .push(forged_note.clone());
+    let receipt = f.validate(&raw(value.clone())).unwrap().unwrap();
+    assert_eq!(receipt["validatedCount"], 1);
+    assert_eq!(receipt["unverifiedCount"], 0);
+    assert_eq!(receipt["qualified"], false);
+    assert_eq!(receipt["rosterComplete"], false);
+
+    value["producers"] = json!([forged_note]);
+    let notes_only = raw(value);
+    let receipt = f.validate(&notes_only).unwrap().unwrap();
+    assert_eq!(receipt["validatedCount"], 0);
+    assert_eq!(receipt["unverifiedCount"], 0);
+    assert_eq!(receipt["qualified"], false);
+    assert_eq!(receipt["rosterComplete"], false);
+    assert!(notes_only
+        .raw()
+        .contains("dirty Notes body must not bind the file"));
+}
 fn captured(metadata: &DraftMetadata, text: &str) -> Value {
     json!({"version":2,"kind":"mounted-native-input-capture","qualified":false,"sessionId":"A",
         "snapshots":[],"producerCoverage":"unknown","producerEpochs":{"parent":0,"editor":1},
@@ -147,7 +183,12 @@ fn parent(
             service_epoch: &uuid::Uuid::new_v4().to_string(),
             round_id: &uuid::Uuid::new_v4().to_string(),
             window_epoch,
-            scope: &NativeCheckpointScope::new("environment", "A", "migration", 0)?,
+            scope: &NativeCheckpointScope::new(
+                "environment",
+                artifact.session_id(),
+                "migration",
+                0,
+            )?,
             row_identity: row,
             expected: &expected,
             fingerprint: &expected.fingerprint()?,

@@ -8,6 +8,8 @@ import { projectDisplayName } from "../../features/projects/model/projectNames";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useLocale, useT } from "../../shared/i18n";
 import { Modal } from "../../shared/ui/Modal";
+import { DropdownMenu, type DropdownMenuItem } from "../../shared/ui/DropdownMenu";
+import { EmptyState } from "../../shared/ui/EmptyState";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import {
   sessionDisplayTitle,
@@ -31,7 +33,7 @@ import { formatRelative } from "../../features/sessions/model/recentSessions";
 import { useVisibleProjects } from "../../features/group-lock/hooks/useGroupLock";
 import type { WorkspaceSessionStub } from "../../features/workspace/model/workspaceSnapshot";
 import { getSession } from "../../features/sessions/data/sessionStore";
-import { Search, Trash2 } from "../../shared/ui/icons";
+import { MoreHorizontal, Search, X } from "../../shared/ui/icons";
 import "./session-recovery.css";
 
 const stubPath = (stub: WorkspaceSessionStub) => stub.cwd;
@@ -76,6 +78,9 @@ export function SessionRecoveryPanel({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState("");
+  const [errorArea, setErrorArea] = useState<"open" | "list">("open");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuAnchor = useRef<HTMLButtonElement>(null);
   const [filter, setFilter] = useState<"attention" | "all">("attention");
   const [stored, setStored] = useState<Map<string, Session | null | "error">>(() => new Map());
   const [readErrors, setReadErrors] = useState<Map<string, string>>(() => new Map());
@@ -216,6 +221,7 @@ export function SessionRecoveryPanel({
     setPending(true);
     setError("");
     setOpenOutcome(null);
+    setErrorArea("open");
     try {
       await onOpen(ids, layout);
       onClose();
@@ -254,6 +260,7 @@ export function SessionRecoveryPanel({
     setPendingAction(action);
     setPending(true);
     setError("");
+    setErrorArea("list");
     try {
       await onRemove(ids);
       setSelected((previous) => new Set([...previous].filter((id) => !ids.includes(id))));
@@ -265,41 +272,113 @@ export function SessionRecoveryPanel({
       setPending(false);
     }
   };
+  const hiddenCount = rows.length - shown.length;
+  const listMaintenancePending =
+    pendingAction === "remove-selected" ||
+    pendingAction === "clear-completed" ||
+    pendingAction === "clear-all";
+  const menuItems: DropdownMenuItem[] = [
+    {
+      kind: "item",
+      id: "remove-selected",
+      label: t("Remove {p0} selected from list", { p0: selectedIds.length }),
+      description:
+        hiddenSelectedCount > 0
+          ? t("Conversation history is kept. {p0} selected outside this view stay listed.", {
+              p0: hiddenSelectedCount,
+            })
+          : t("Conversation history is kept."),
+      disabled: selectedIds.length === 0,
+    },
+    {
+      kind: "item",
+      id: "clear-completed",
+      label: t("Remove {p0} completed from list", { p0: completedIds.length }),
+      description: t("Done and idle entries only. Conversation history is kept."),
+      disabled: completedIds.length === 0,
+    },
+    { kind: "sep" },
+    {
+      kind: "item",
+      id: "clear-all",
+      label: t("Clear recovery list ({p0})", { p0: rows.length }),
+      description: t(
+        "Removes every entry, including those not shown. Conversation history is kept.",
+      ),
+      danger: true,
+      disabled: rows.length === 0,
+    },
+  ];
+  const pickMaintenance = (id: string) => {
+    if (id === "remove-selected") void remove(selectedIds, "remove-selected");
+    else if (id === "clear-completed") void remove(completedIds, "clear-completed");
+    else if (id === "clear-all")
+      void remove(
+        rows.map((row) => row.stub.id),
+        "clear-all",
+      );
+  };
+  const primaryOpensSelected = selectedIds.length > 0;
+  const listError = error && errorArea === "list" ? error : "";
+  const openError = error && errorArea === "open" ? error : "";
   const content = (
-    <div className="session-recovery flex min-h-0 flex-col gap-2 p-3" aria-busy={pending}>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
-        {t("Opening tabs does not restart work. Removing entries keeps conversation history.")}
-      </p>
-      <p className="text-ui-secondary" role="status">
-        {t("{p0} previous sessions · {p1} need attention", {
-          p0: rows.length,
-          p1: attentionCount,
-        })}
-      </p>
-      <SegmentedControl
-        label={t("Session filters")}
-        value={filter}
-        onValueChange={(value) => setFilter(value as "attention" | "all")}
-        options={[
-          { value: "attention", label: t("Needs attention"), accessory: attentionCount },
-          { value: "all", label: t("All sessions"), accessory: rows.length },
-        ]}
-      />
-      <SearchInputGroup appearance="field">
-        <Search className="size-3.5 shrink-0" aria-hidden="true" />
-        <SearchInput
-          focusOwner="group"
-          aria-label={t("Search recovered sessions")}
-          placeholder={t("Search recovered sessions")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+    <div className="session-recovery recovery-pane" aria-busy={pending}>
+      <div className="recovery-toolbar">
+        <SegmentedControl
+          label={t("Session filters")}
+          value={filter}
+          onValueChange={(value) => setFilter(value as "attention" | "all")}
+          options={[
+            { value: "attention", label: t("Needs attention"), accessory: attentionCount },
+            { value: "all", label: t("All sessions"), accessory: rows.length },
+          ]}
         />
-      </SearchInputGroup>
-      <div
-        role="status"
-        className="flex flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)"
-      >
-        <span>{t("{p0} matching", { p0: shown.length })}</span>
+        <SearchInputGroup appearance="field" className="recovery-toolbar-search">
+          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <SearchInput
+            focusOwner="group"
+            aria-label={t("Search recovered sessions")}
+            placeholder={t("Search recovered sessions")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </SearchInputGroup>
+        <Button
+          ref={menuAnchor}
+          variant="ghost"
+          iconOnly
+          label={t("Recovery list maintenance")}
+          tooltip={t("Recovery list maintenance")}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          disabled={pending && !listMaintenancePending}
+          loading={listMaintenancePending}
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+        </Button>
+        {menuOpen ? (
+          <DropdownMenu
+            anchor={menuAnchor}
+            label={t("Recovery list maintenance")}
+            returnFocusRef={menuAnchor}
+            width={280}
+            items={menuItems}
+            onPick={pickMaintenance}
+            onClose={() => setMenuOpen(false)}
+          />
+        ) : null}
+      </div>
+      <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+        <span>
+          {t("{p0} previous sessions · {p1} need attention", {
+            p0: rows.length,
+            p1: attentionCount,
+          })}
+        </span>
+        {hiddenCount > 0 ? (
+          <span>{t("Showing {p0} of {p1}", { p0: shown.length, p1: rows.length })}</span>
+        ) : null}
         {selected.size > 0 ? (
           <>
             <span>{t("{p0} selected in this view", { p0: selectedIds.length })}</span>
@@ -317,243 +396,253 @@ export function SessionRecoveryPanel({
           </>
         ) : null}
       </div>
-      <div className="recovery-actions">
-        <Button
-          variant="secondary"
-          size="sm"
-          motion="none"
-          disabled={pending || !rows.length}
-          loading={pendingAction === "open-all"}
-          title={t("Includes recovered sessions hidden by search or filters.")}
-          onClick={() =>
-            void open(
-              rows.map((row) => row.stub.id),
-              false,
-              "open-all",
-            )
-          }
-        >
-          {t("Open all")} ({rows.length})
-        </Button>
-        {selectedIds.length ? (
-          <>
-            <Button
-              variant="secondary"
-              size="sm"
-              motion="none"
-              disabled={pending}
-              loading={pendingAction === "open-selected"}
-              onClick={() => void open(selectedIds)}
-            >
-              {t("Open selected")} ({selectedIds.length})
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              motion="none"
-
-              disabled={pending}
-              loading={pendingAction === "remove-selected"}
-              onClick={() => void remove(selectedIds, "remove-selected")}
-            >
-              {t("Remove selected")}
-            </Button>
-          </>
-        ) : null}
-      </div>
-      {error ? (
+      {listError ? (
         <Alert tone="danger" role="alert">
-          {error}
-          {openOutcome ? (
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-ui-caption">
-              <span>
-                {t("{p0} opened · {p1} already open · {p2} remaining", {
-                  p0: openOutcome.opened.length,
-                  p1: openOutcome.alreadyOpen.length,
-                  p2: openOutcome.failed.length,
-                })}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={pending}
-                loading={pendingAction === "retry-open"}
-                onClick={() =>
-                  void open(
-                    openOutcome.acknowledgmentFailed
-                      ? [...openOutcome.opened, ...openOutcome.alreadyOpen, ...openOutcome.failed]
-                      : openOutcome.failed,
-                    false,
-                    "retry-open",
-                  )
-                }
-              >
-                {t("Retry")}
-              </Button>
-            </div>
-          ) : null}
+          {listError}
         </Alert>
       ) : null}
-      <ul
-        className="recovery-list min-h-0 overflow-y-auto overscroll-contain divide-y divide-stroke"
-        aria-label={t("Recovered sessions")}
-      >
-        {shown.map(({ stub, title, status, machine, activityAt, verification, readError }) => (
-          <li key={stub.id}>
-            <ActionHost
-              selected={selected.has(stub.id)}
-              className="recovery-row flex flex-wrap items-start gap-2 py-2"
-            >
-              <Checkbox
-                checked={selected.has(stub.id)}
-                disabled={pending}
-                aria-label={t("Select {p0}", { p0: title })}
-                onChange={() => toggle(stub.id)}
-              />
-              <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
-              <div className="min-w-0 basis-48 flex-1">
-                <div className="break-words text-ui-secondary font-medium" title={title}>
-                  {title}
-                </div>
-                <details
-                  className="break-words text-ui-caption text-(--ui-text-secondary)"
-                  title={`${stub.cwd} · ${HARNESS_TITLE[stub.harness]} ${stub.model}`}
+      <div className="recovery-body">
+        {shown.length ? (
+          <ul className="recovery-list divide-y divide-stroke" aria-label={t("Recovered sessions")}>
+            {shown.map(({ stub, title, status, machine, activityAt, verification, readError }) => (
+              <li key={stub.id}>
+                <ActionHost
+                  selected={selected.has(stub.id)}
+                  className="recovery-row flex flex-wrap items-start gap-2 py-2"
                 >
-                  <summary className="cursor-pointer">
-                    {projectDisplayName(stub.cwd)} · {machine}
-                  </summary>
-                  <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
-                  <p>
-                    {HARNESS_TITLE[stub.harness]} · {stub.model}
-                  </p>
-                </details>
-                <div className="text-ui-caption text-(--ui-text-secondary)">
-                  <span
-                    className={
-                      status === "failed"
-                        ? "font-medium text-danger"
-                        : status === "interrupted" || status === "input" || status === "retrying"
-                          ? "font-medium text-warning"
-                          : status === "working"
-                            ? "font-medium text-accent"
-                            : status === "done"
-                              ? "text-success"
-                              : ""
-                    }
-                  >
-                    {t(labels[status])}
-                  </span>{" "}
-                  ·{" "}
-                  {activityAt
-                    ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
-                    : t("Recovered {p0}", { p0: formatRelative(recovery.capturedAt, Date.now()) })}
-                </div>
-                {verification ? (
-                  <div className="break-words text-ui-caption text-(--ui-text-secondary)">
-                    <span>{verification}</span>
-                    {readError ? (
-                      <>
-                        <details>
-                          <summary>{t("Details")}</summary>
-                          <p className="select-text [overflow-wrap:anywhere]">{readError}</p>
-                        </details>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={pending}
-                          onClick={() => retryRead(stub.id)}
-                        >
-                          {t("Retry verification")}
-                        </Button>
-                      </>
+                  <Checkbox
+                    checked={selected.has(stub.id)}
+                    disabled={pending}
+                    aria-label={t("Select {p0}", { p0: title })}
+                    onChange={() => toggle(stub.id)}
+                  />
+                  <HarnessIcon harness={stub.harness} className="size-4 shrink-0" />
+                  <div className="min-w-0 basis-48 flex-1">
+                    <div className="break-words text-ui-secondary font-medium" title={title}>
+                      {title}
+                    </div>
+                    <details
+                      className="break-words text-ui-caption text-(--ui-text-secondary)"
+                      title={`${stub.cwd} · ${HARNESS_TITLE[stub.harness]} ${stub.model}`}
+                    >
+                      <summary className="cursor-pointer">
+                        {projectDisplayName(stub.cwd)} · {machine}
+                      </summary>
+                      <p className="select-text [overflow-wrap:anywhere]">{stub.cwd}</p>
+                      <p>
+                        {HARNESS_TITLE[stub.harness]} · {stub.model}
+                      </p>
+                    </details>
+                    <div className="text-ui-caption text-(--ui-text-secondary)">
+                      <span
+                        className={
+                          status === "failed"
+                            ? "font-medium text-danger"
+                            : status === "interrupted" || status === "input" || status === "retrying"
+                              ? "font-medium text-warning"
+                              : status === "working"
+                                ? "font-medium text-accent"
+                                : status === "done"
+                                  ? "text-success"
+                                  : ""
+                        }
+                      >
+                        {t(labels[status])}
+                      </span>{" "}
+                      ·{" "}
+                      {activityAt
+                        ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
+                        : t("Recovered {p0}", {
+                            p0: formatRelative(recovery.capturedAt, Date.now()),
+                          })}
+                    </div>
+                    {verification ? (
+                      <div className="break-words text-ui-caption text-(--ui-text-secondary)">
+                        <span>{verification}</span>
+                        {readError ? (
+                          <>
+                            <details>
+                              <summary>{t("Details")}</summary>
+                              <p className="select-text [overflow-wrap:anywhere]">{readError}</p>
+                            </details>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={pending}
+                              onClick={() => retryRead(stub.id)}
+                            >
+                              {t("Retry verification")}
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    {openOutcome?.failed.includes(stub.id) ? (
+                      <p className="text-ui-caption text-danger">
+                        {t("Could not open this session.")}
+                      </p>
                     ) : null}
                   </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    motion="none"
+                    disabled={pending}
+                    loading={pendingAction === `open:${stub.id}`}
+                    onClick={() => void open([stub.id], false, `open:${stub.id}`)}
+                  >
+                    {t("Open")}
+                  </Button>
+                  <InlineAction
+                    reveal="always"
+                    label={t("Remove {p0} from recovery list", { p0: title })}
+                    motion="none"
+                    className="recovery-remove"
+                    disabled={pending}
+                    loading={pendingAction === `remove:${stub.id}`}
+                    aria-label={t("Remove {p0} from recovery list", { p0: title })}
+                    title={t("Remove from recovery list. Conversation history is kept.")}
+                    onClick={() => void remove([stub.id], `remove:${stub.id}`)}
+                  >
+                    <X className="size-4" aria-hidden="true" />
+                  </InlineAction>
+                </ActionHost>
+              </li>
+            ))}
+          </ul>
+        ) : rows.length === 0 ? (
+          <EmptyState
+            context="panel"
+            kind="empty"
+            title={t("No recovered sessions")}
+            description={t("Nothing is waiting to be reopened.")}
+          />
+        ) : query ? (
+          <EmptyState
+            context="panel"
+            kind="filtered"
+            title={t("No matching sessions")}
+            description={t("No recovered session matches “{p0}”.", { p0: query.trim() })}
+            action={
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
+                  {t("Clear search")}
+                </Button>
+                {filter === "attention" && attentionCount < rows.length ? (
+                  <Button variant="ghost" size="sm" onClick={() => setFilter("all")}>
+                    {t("Search all sessions")}
+                  </Button>
                 ) : null}
-                {openOutcome?.failed.includes(stub.id) ? (
-                  <p className="text-ui-caption text-danger">{t("Could not open this session.")}</p>
-                ) : null}
+              </>
+            }
+          />
+        ) : (
+          <EmptyState
+            context="panel"
+            kind="filtered"
+            title={t("No sessions need attention")}
+            description={t("{p0} other recovered sessions are available.", { p0: rows.length })}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setFilter("all")}>
+                {t("Show all sessions")}
+              </Button>
+            }
+          />
+        )}
+      </div>
+      <div className="recovery-footer border-t border-stroke">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {hiddenCount > 0
+            ? t("Open all opens all {p0} recovered sessions, including {p1} not shown here.", {
+                p0: rows.length,
+                p1: hiddenCount,
+              })
+            : t("Open all opens all {p0} recovered sessions.", { p0: rows.length })}{" "}
+          {t(
+            "Opening tabs does not restart work. Restore chat layout also brings back your earlier chat splits.",
+          )}
+        </p>
+        {openError ? (
+          <Alert tone="danger" role="alert">
+            {openError}
+            {openOutcome ? (
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-ui-caption">
+                <span>
+                  {t("{p0} opened · {p1} already open · {p2} remaining", {
+                    p0: openOutcome.opened.length,
+                    p1: openOutcome.alreadyOpen.length,
+                    p2: openOutcome.failed.length,
+                  })}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  loading={pendingAction === "retry-open"}
+                  onClick={() =>
+                    void open(
+                      openOutcome.acknowledgmentFailed
+                        ? [...openOutcome.opened, ...openOutcome.alreadyOpen, ...openOutcome.failed]
+                        : openOutcome.failed,
+                      false,
+                      "retry-open",
+                    )
+                  }
+                >
+                  {t("Retry")}
+                </Button>
               </div>
+            ) : null}
+          </Alert>
+        ) : null}
+        <div className="recovery-actions">
+          <Button
+            variant="secondary"
+            size="sm"
+            motion="none"
+            disabled={pending || !rows.length}
+            loading={pendingAction === "restore"}
+            onClick={() =>
+              void open(
+                rows.map((row) => row.stub.id),
+                true,
+                "restore",
+              )
+            }
+          >
+            {t("Restore chat layout")}
+          </Button>
+          <span className="recovery-actions-end flex flex-wrap items-center gap-2">
+            {primaryOpensSelected ? (
               <Button
-                variant="secondary"
+                variant="primary"
                 size="sm"
                 motion="none"
                 disabled={pending}
-                loading={pendingAction === `open:${stub.id}`}
-                onClick={() => void open([stub.id], false, `open:${stub.id}`)}
+                loading={pendingAction === "open-selected"}
+                onClick={() => void open(selectedIds)}
               >
-                {t("Open")}
+                {t("Open selected")} ({selectedIds.length})
               </Button>
-              <InlineAction
-                reveal="always"
-                label={t("Remove {p0} from recovery list", { p0: title })}
-                motion="none"
-                className="recovery-remove"
-                disabled={pending}
-                loading={pendingAction === `remove:${stub.id}`}
-                aria-label={t("Remove {p0} from recovery list", { p0: title })}
-                title={t("Remove from recovery list")}
-                onClick={() => void remove([stub.id], `remove:${stub.id}`)}
-              >
-                <Trash2 className="size-4" aria-hidden="true" />
-              </InlineAction>
-            </ActionHost>
-          </li>
-        ))}
-      </ul>
-      {!shown.length ? (
-        <p role="status" className="text-ui-secondary text-(--ui-text-secondary)">
-          {t(
-            filter === "attention" && !query
-              ? "No sessions need recovery."
-              : "No matching sessions",
-          )}
-        </p>
-      ) : null}
-      <div className="recovery-actions border-t border-stroke pt-3">
-        <Button
-          variant="secondary"
-          size="sm"
-          motion="none"
-
-          disabled={pending || !rows.length}
-          loading={pendingAction === "restore"}
-          onClick={() =>
-            void open(
-              rows.map((row) => row.stub.id),
-              true,
-              "restore",
-            )
-          }
-        >
-          {t("Restore chat layout")}
-        </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          motion="none"
-
-          disabled={pending || !completedIds.length}
-          loading={pendingAction === "clear-completed"}
-          onClick={() => void remove(completedIds, "clear-completed")}
-        >
-          {t("Clear completed")}
-        </Button>
-        <Button
-          variant="secondary"
-          tone="danger"
-          size="sm"
-          motion="none"
-          disabled={pending || !rows.length}
-          loading={pendingAction === "clear-all"}
-          onClick={() =>
-            void remove(
-              rows.map((row) => row.stub.id),
-              "clear-all",
-            )
-          }
-        >
-          {t("Clear list")}
-        </Button>
+            ) : null}
+            <Button
+              variant={primaryOpensSelected ? "secondary" : "primary"}
+              size="sm"
+              motion="none"
+              disabled={pending || !rows.length}
+              loading={pendingAction === "open-all"}
+              onClick={() =>
+                void open(
+                  rows.map((row) => row.stub.id),
+                  false,
+                  "open-all",
+                )
+              }
+            >
+              {t("Open all")} ({rows.length})
+            </Button>
+          </span>
+        </div>
       </div>
     </div>
   );

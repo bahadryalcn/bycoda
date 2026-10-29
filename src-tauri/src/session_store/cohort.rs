@@ -100,6 +100,27 @@ impl StoreBinding {
         }
         Ok(())
     }
+
+    fn verify_connection(&self, connection: &Connection) -> Result<(), String> {
+        self.verify()?;
+        #[cfg(windows)]
+        {
+            // Check the actual SQLite-owned handle, not another open of its path.
+            // This is identity evidence only; it does not close unknown actors.
+            let (identity, links) = os::connection_identity(connection)?;
+            if identity != self.physical_file_id || links != 1 {
+                return Err(
+                    "Native writer SQLite connection physical identity does not match".into(),
+                );
+            }
+            self.verify()?;
+        }
+        #[cfg(not(windows))]
+        let _ = connection;
+        // Other platforms retain the existing cooperative path-binding checks.
+        // They are not represented as direct connection-handle attestation.
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -561,13 +582,21 @@ impl RegisteredConnection {
             .ok_or("In-memory stores have no physical writer cohort")?;
         Inspection::begin(&registration.record.binding.canonical_path)
     }
+    pub(super) fn verify_connection(&self, connection: &Connection) -> Result<(), String> {
+        self.registration
+            .as_ref()
+            .ok_or("In-memory stores have no physical writer connection binding")?
+            .record
+            .binding
+            .verify_connection(connection)
+    }
     pub(super) fn initialization(&self) -> Result<Initialization, String> {
         let registration = self
             .registration
             .as_ref()
             .ok_or("In-memory stores have no physical initialization lock")?;
         let binding = &registration.record.binding;
-        binding.verify()?;
+        binding.verify_connection(&self.connection)?;
         let path = binding.registry()?.join("initialization.lock");
         let file = os::safe_file(&path, true, false)?;
         if file
@@ -599,7 +628,7 @@ impl RegisteredConnection {
         if os::file_identity(&current)?.0 != os::file_identity(&file)?.0 {
             return Err("Native writer initialization lock changed".into());
         }
-        binding.verify()?;
+        binding.verify_connection(&self.connection)?;
         Ok(Initialization { _file: file })
     }
 }
@@ -618,3 +647,7 @@ impl DerefMut for RegisteredConnection {
 #[cfg(test)]
 #[path = "cohort_tests.rs"]
 mod tests;
+
+#[cfg(all(test, windows))]
+#[path = "cohort_connection_tests.rs"]
+mod connection_tests;

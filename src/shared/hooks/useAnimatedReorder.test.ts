@@ -9,6 +9,8 @@ function tabAt(left: number, top: number, parentElement: HTMLElement) {
   const captured = new Set<number>();
   return {
     parentElement,
+    getAttribute: () => null,
+    textContent: "",
     getBoundingClientRect: () => ({
       left,
       right: left + 100,
@@ -129,8 +131,16 @@ beforeEach(() => {
   });
   const classes = new Set<string>();
   vi.stubGlobal("window", browser);
+  // Only the live region is created here; the drag feedback badge is not exercised by these gestures.
+  const liveRegion = { style: {}, dataset: {}, isConnected: true, setAttribute: vi.fn() };
+  vi.stubGlobal("HTMLElement", class {});
   vi.stubGlobal("document", {
-    body: { style: { cursor: "", setProperty: vi.fn(), removeProperty: vi.fn() } },
+    activeElement: null,
+    createElement: () => liveRegion,
+    body: {
+      append: vi.fn(),
+      style: { cursor: "", setProperty: vi.fn(), removeProperty: vi.fn() },
+    },
     documentElement: {
       classList: {
         add: (name: string) => classes.add(name),

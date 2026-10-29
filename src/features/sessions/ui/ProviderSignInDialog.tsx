@@ -1,5 +1,5 @@
 import { useT } from "../../../shared/i18n";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { loginHarness } from "../../../integrations/harness/core/auth";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { Modal } from "../../../shared/ui/Modal";
@@ -21,32 +21,36 @@ export function ProviderSignInDialog({
   completeDescription,
 }: Props) {
   const t = useT();
-  const [state, setState] = useState<ProviderSignInState>("idle");
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setState("idle");
-    setError(null);
-  }, [harness, accountId]);
+  // The attempt belongs to the provider account it started for; another account starts idle.
+  const ownerKey = `${harness}\u0000${accountId ?? ""}`;
+  const [attempt, setAttempt] = useState<{
+    key: string;
+    state: ProviderSignInState;
+    error: string | null;
+  }>({ key: ownerKey, state: "idle", error: null });
+  const current = attempt.key === ownerKey ? attempt : null;
+  const state: ProviderSignInState = current?.state ?? "idle";
+  const error = current?.error ?? null;
 
   const signIn = useCallback(() => {
-    setState("running");
-    setError(null);
+    setAttempt({ key: ownerKey, state: "running", error: null });
     void loginHarness(harness, accountId).then(
       () => {
-        setState("complete");
+        setAttempt({ key: ownerKey, state: "complete", error: null });
         onSignedIn?.();
       },
       (reason: unknown) => {
-        setState("error");
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : `Could not sign in to ${HARNESS_TITLE[harness]}.`,
-        );
+        setAttempt({
+          key: ownerKey,
+          state: "error",
+          error:
+            reason instanceof Error
+              ? reason.message
+              : `Could not sign in to ${HARNESS_TITLE[harness]}.`,
+        });
       },
     );
-  }, [harness, accountId, onSignedIn]);
+  }, [harness, accountId, ownerKey, onSignedIn]);
 
   return (
     <Modal

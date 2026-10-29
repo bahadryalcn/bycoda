@@ -421,11 +421,9 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
   const authRequired = Boolean(session.authRequired && loginState !== "complete");
   const canLogin = authRequired && supportsHarnessLogin(session.harness);
 
-  useEffect(() => {
-    if (!session.authRequired && loginState === "complete") {
-      setLoginState("idle");
-    }
-  }, [loginState, session.authRequired]);
+  // A finished sign-in is forgotten once the session no longer needs auth, so a
+  // later auth failure shows the sign-in prompt again.
+  if (!session.authRequired && loginState === "complete") setLoginState("idle");
 
   const dismiss = useDismissPopover(setOpen, trigger);
 

@@ -57,6 +57,11 @@ import { InlineBlameToggle, useInlineBlameUnavailableReason } from "./InlineBlam
 
 import { CodeMirrorEditor, type EditorCarry } from "./CodeMirrorEditor";
 import {
+  fileSourceEditorKey,
+  fileSourceEditorProps,
+  type FileSourceEditorContract,
+} from "./fileSourceEditorProps";
+import {
   exactMountedEditorDraftReceipt,
   useMountedEditorClosure,
   type EditorWorkTicket,
@@ -205,8 +210,13 @@ export function FileEditor({
   }, [active, requestSave]);
   const openingRef = useRef(false);
   const [openingChrome, setOpeningChrome] = useState(false);
-  const [chromeError, setChromeError] = useState<string | null>(null);
-  useEffect(() => setChromeError(null), [path]);
+  // The message belongs to the path it was raised for, so another file shows none.
+  const [chromeFailure, setChromeFailure] = useState<{ path: string; message: string } | null>(
+    null,
+  );
+  const chromeError = chromeFailure?.path === path ? chromeFailure.message : null;
+  const setChromeError = (message: string | null) =>
+    setChromeFailure(message === null ? null : { path, message });
   const goLive = async () => {
     if (openingRef.current) return;
     openingRef.current = true;
@@ -1164,6 +1174,31 @@ export function FileEditor({
     </span>
   );
   const hasMarkdownShell = Boolean(markdown || svg || html);
+  // One document/save/recovery/capture binding list for the plain file and the
+  // Markdown/SVG/HTML Source pane; they differ only in the view arguments below.
+  const sourceEditorKey = fileSourceEditorKey(documentId, reloadKey, editorRevision);
+  const sourceEditorContract: FileSourceEditorContract = {
+    path,
+    cwd,
+    relativePath,
+    content: loadState.content,
+    initialDraft: recoveredText,
+    recoveryReviewRef,
+    pendingDiskRef,
+    retainedState: retainedEditor,
+    showDiff,
+    gitOriginal,
+    navigation,
+    onDirtyChange: dirtyChange,
+    onErrorCountChange: errorCountChange,
+    onSave: save,
+    saveRequestRef,
+    onStageGit: showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined,
+    onDocumentChange: captureDraft,
+    captureObserver: editorClosure,
+    onEdit: edited,
+    onOpenFile,
+  };
 
   return (
     <div ref={editorRootRef} className="flex h-full min-h-0 min-w-0 flex-col">
@@ -1307,59 +1342,20 @@ export function FileEditor({
               className="flex h-full min-h-0 min-w-0 flex-col"
             >
               <CodeMirrorEditor
-                key={`${documentId}:${reloadKey}:${editorRevision}`}
-                retainedState={retainedEditor}
-                path={path}
-                cwd={cwd}
-                commentPath={relativePath}
-                value={loadState.content}
-                initialDraft={recoveredText}
-                initialDirty={recoveredText !== undefined && recoveryReviewRef.current}
-                showDiff={showDiff}
-                gitOriginal={gitOriginal}
-                active={active && mode === "source"}
-                navigation={navigation}
-                onDirtyChange={dirtyChange}
-                onErrorCountChange={errorCountChange}
-                onSave={save}
-                saveRequestRef={saveRequestRef}
-                canAutosave={() => !pendingDiskRef.current && !recoveryReviewRef.current}
-                onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
-                onDocChange={docChange}
-                onDocumentChange={captureDraft}
-                captureObserver={editorClosure}
-                onEdit={edited}
-                shown={shown && mode === "source"}
-                onOpenFile={onOpenFile}
+                key={sourceEditorKey}
+                {...fileSourceEditorProps(sourceEditorContract, {
+                  active: active && mode === "source",
+                  shown: shown && mode === "source",
+                  onDocChange: docChange,
+                })}
               />
             </div>
           }
         />
       ) : (
         <CodeMirrorEditor
-          key={`${documentId}:${reloadKey}:${editorRevision}`}
-          retainedState={retainedEditor}
-          path={path}
-          cwd={cwd}
-          commentPath={relativePath}
-          value={loadState.content}
-          initialDraft={recoveredText}
-          initialDirty={recoveredText !== undefined && recoveryReviewRef.current}
-          showDiff={showDiff}
-          gitOriginal={gitOriginal}
-          active={active}
-          saveRequestRef={saveRequestRef}
-          navigation={navigation}
-          onDirtyChange={dirtyChange}
-          onErrorCountChange={errorCountChange}
-          onSave={save}
-          onDocumentChange={captureDraft}
-          captureObserver={editorClosure}
-          onEdit={edited}
-          shown={shown}
-          canAutosave={() => !pendingDiskRef.current && !recoveryReviewRef.current}
-          onStageGit={showDiff && gitDiff?.kind === "unstaged" ? stageGit : undefined}
-          onOpenFile={onOpenFile}
+          key={sourceEditorKey}
+          {...fileSourceEditorProps(sourceEditorContract, { active, shown })}
         />
       )}
       {chromeError ? (

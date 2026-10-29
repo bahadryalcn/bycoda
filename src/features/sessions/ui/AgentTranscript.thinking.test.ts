@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
-import { ActivityThinkingRow } from "./AgentTranscript";
+import { ActivityThinkingRow } from "./AgentTranscriptActivity";
 import { setLanguagePreference, t } from "../../../shared/i18n";
 
 it("shows a localized generic heading when reasoning is open and restores its collapsed preview", async () => {

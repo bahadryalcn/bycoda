@@ -1,0 +1,78 @@
+/* Today: what needs attention now, what is coming up, and the AI entry. Real Host data only. */
+.social-today {
+  display: grid;
+  flex: 1 1 100%;
+  gap: 1.25rem;
+  min-inline-size: 0;
+  align-content: start;
+}
+.social-today-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+.social-today h2 {
+  margin: 0 0 0.5rem;
+  font: var(--ui-font-heading) var(--font-sans);
+}
+.social-today-list {
+  display: grid;
+  gap: 0.125rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.social-today-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--ui-radius-card);
+}
+.social-today-row:hover {
+  background: var(--ui-surface-panel);
+}
+.social-today-row > div {
+  min-inline-size: 0;
+}
+.social-today-row strong {
+  display: block;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.social-today-row small {
+  display: block;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+.social-today-row[data-tone="danger"] strong {
+  color: var(--color-danger);
+}
+.social-today-when {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  white-space: nowrap;
+}
+.social-today-quiet {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.social-today-failures {
+  margin-block: 0.25rem 0;
+  padding-inline-start: 1.125rem;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.social-today-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.social-today-sources {
+  display: grid;
+  gap: 0.375rem;
+}

@@ -1,5 +1,5 @@
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { useCallback, useEffect, useState, type ComponentProps } from "react";
+import { useCallback, useState, type ComponentProps } from "react";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { DocumentView } from "./DocumentView";
@@ -12,8 +12,9 @@ const FileEditor = lazySurface(async () => ({
 /** Table inspection must not remove the existing editable CSV/TSV source. */
 export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) {
   useLocale();
-  const [mode, setMode] = useState<"preview" | "source">(props.showDiff ? "source" : "preview");
-  const [sourceMounted, setSourceMounted] = useState(!!props.showDiff);
+  const wantsSource = !!(props.navigation || props.showDiff);
+  const [mode, setMode] = useState<"preview" | "source">(wantsSource ? "source" : "preview");
+  const [sourceMounted, setSourceMounted] = useState(wantsSource);
   const [dirty, setDirty] = useState(false);
   const reportDirty = useCallback(
     (path: string, changed: boolean) => {
@@ -22,12 +23,21 @@ export function DelimitedFileView(props: ComponentProps<typeof FileEditorType>) 
     },
     [props.onDirtyChange],
   );
-  useEffect(() => {
+  // Navigating to a location or opening a diff switches to the editable source view.
+  const [seenSourceRequest, setSeenSourceRequest] = useState({
+    navigation: props.navigation,
+    showDiff: props.showDiff,
+  });
+  if (
+    seenSourceRequest.navigation !== props.navigation ||
+    seenSourceRequest.showDiff !== props.showDiff
+  ) {
+    setSeenSourceRequest({ navigation: props.navigation, showDiff: props.showDiff });
     if (props.navigation || props.showDiff) {
       setSourceMounted(true);
       setMode("source");
     }
-  }, [props.navigation, props.showDiff]);
+  }
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center border-b border-stroke px-3 py-1.5">

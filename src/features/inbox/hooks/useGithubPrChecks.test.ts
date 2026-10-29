@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
+import { focusManager } from "@tanstack/react-query";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useGithubPrChecks, type GithubPrChecksView } from "./useGithubPrChecks";
 import type { GithubPrChecks } from "../model/githubPrChecks";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
 
 const { fetchGithubPrChecks } = vi.hoisted(() => ({
   fetchGithubPrChecks: vi.fn(),
@@ -17,6 +19,7 @@ function Consumer(props: Params) {
   view = useGithubPrChecks(props);
   return null;
 }
+const Wrapped = withQueryClient(Consumer);
 
 const base: Params = {
   cwd: "/tmp/web",
@@ -62,7 +65,6 @@ beforeEach(() => {
   root = createRoot(container);
 });
 afterEach(() => {
-  delete (document as { hidden?: boolean }).hidden;
   act(() => {
     root.unmount();
   });
@@ -72,18 +74,19 @@ afterEach(() => {
 });
 
 const render = (props: Params) =>
-  act(async () => root.render(createElement(Consumer, { ...props })));
-const rerender = (props: Params) =>
-  act(async () => root.render(createElement(Consumer, { ...props })));
+  act(async () => root.render(createElement(Wrapped, { ...props })));
+const rerender = render;
 const flush = () => act(async () => {});
 const advance = (ms: number) =>
   act(async () => {
     await vi.advanceTimersByTimeAsync(ms);
   });
 
+/** The query client follows the focus manager for hidden-document ticks and visibility refreshes. */
 function setHidden(value: boolean) {
-  Object.defineProperty(document, "hidden", { configurable: true, value });
+  focusManager.setFocused(!value);
 }
+const show = () => act(async () => setHidden(false));
 
 it("loads once on mount for open PRs whatever the revision is", async () => {
   fetchGithubPrChecks.mockResolvedValue(checks("a", ["pass"]));
@@ -147,10 +150,7 @@ it("skips hidden ticks and refreshes when the document becomes visible again", a
   setHidden(true);
   await advance(90_000);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
-  setHidden(false);
-  await act(async () => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
+  await show();
   await flush();
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
 });
@@ -160,11 +160,9 @@ it("loads closed PRs only on mount and on manual refresh", async () => {
   await render({ ...base, open: false });
   await flush();
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
-  setHidden(false);
+  setHidden(true);
   await advance(90_000);
-  await act(async () => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
+  await show();
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
   await act(async () => {
     view?.refresh();
@@ -210,25 +208,49 @@ it("drops a late answer after the PR changed and replaces with the new headOid",
   expect(view?.checks?.checks.map((entry) => entry.state)).toEqual(["pass"]);
 });
 
-it("coalesces a revision refresh that lands mid-flight into one follow-up", async () => {
+it("starts a replacement read for a revision that lands mid-flight and ignores the older answer", async () => {
   const first = deferred<GithubPrChecks>();
   fetchGithubPrChecks.mockReturnValueOnce(first.promise);
   await render(base);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
   fetchGithubPrChecks.mockResolvedValue(checks("rev2"));
   await rerender({ ...base, revision: 1 });
-  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
-  await act(async () => {
-    first.resolve(checks("rev1"));
-  });
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
   await flush();
   expect(view?.checks?.headOid).toBe("rev2");
+  await act(async () => {
+    first.resolve(checks("rev1"));
+  });
+  await flush();
+  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
+  expect(view?.checks?.headOid).toBe("rev2");
   expect(view?.loading).toBe(false);
   expect(view?.refreshing).toBe(false);
+  expect(view?.stale).toBe(false);
 });
 
-it("coalesces repeated manual refreshes during a request into one retry", async () => {
+it("keeps the previous head on screen as stale when its revision replacement fails", async () => {
+  fetchGithubPrChecks.mockResolvedValueOnce(checks("a", ["pass"]));
+  await render(base);
+  await flush();
+  const replacement = deferred<GithubPrChecks>();
+  fetchGithubPrChecks.mockReturnValueOnce(replacement.promise);
+  await rerender({ ...base, revision: 1 });
+  expect(view?.checks?.headOid).toBe("a");
+  expect(view?.stale).toBe(true);
+  expect(view?.refreshing).toBe(true);
+  expect(view?.error).toBeNull();
+  await act(async () => {
+    replacement.reject(new Error("rate limited"));
+  });
+  await flush();
+  expect(view?.checks?.headOid).toBe("a");
+  expect(view?.stale).toBe(true);
+  expect(view?.refreshing).toBe(false);
+  expect(view?.error).toBe("rate limited");
+});
+
+it("joins repeated manual refreshes into the running request and retries on demand", async () => {
   const first = deferred<GithubPrChecks>();
   fetchGithubPrChecks.mockReturnValueOnce(first.promise);
   await render(base);
@@ -237,23 +259,32 @@ it("coalesces repeated manual refreshes during a request into one retry", async 
     view?.refresh();
   });
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    first.reject(new Error("offline"));
+  });
+  await flush();
+  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
+  expect(view?.error).toBe("offline");
+  expect(view?.checks).toBeNull();
+  expect(view?.loading).toBe(false);
   fetchGithubPrChecks.mockResolvedValue(checks("b"));
   await act(async () => {
-    first.reject(new Error("stale"));
+    view?.refresh();
   });
-  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
   await flush();
+  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
   expect(view?.checks?.headOid).toBe("b");
+  expect(view?.error).toBeNull();
   expect(view?.stale).toBe(false);
 });
 
-it("does not launch a queued poll while the document is hidden", async () => {
+it("does not start another read when a poll tick joins a request and the document is hidden afterwards", async () => {
   setHidden(false);
   const pending = deferred<GithubPrChecks>();
   fetchGithubPrChecks.mockReturnValueOnce(pending.promise);
   await render(base);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
-  // The tick lands mid-flight and queues an automatic follow-up.
+  // The tick lands mid-flight and joins the running request.
   await advance(30_000);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
   setHidden(true);
@@ -263,17 +294,14 @@ it("does not launch a queued poll while the document is hidden", async () => {
   await flush();
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
   // Becoming visible picks the polling back up.
-  setHidden(false);
   fetchGithubPrChecks.mockResolvedValue(checks("a"));
-  await act(async () => {
-    document.dispatchEvent(new Event("visibilitychange"));
-  });
+  await show();
   await flush();
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(2);
   expect(view?.checks?.headOid).toBe("a");
 });
 
-it("does not launch a queued poll after the PR closes, manual refresh still works", async () => {
+it("does not poll after the PR closes, manual refresh still works", async () => {
   setHidden(false);
   const pending = deferred<GithubPrChecks>();
   fetchGithubPrChecks.mockReturnValueOnce(pending.promise);
@@ -285,6 +313,7 @@ it("does not launch a queued poll after the PR closes, manual refresh still work
     pending.resolve(checks("a"));
   });
   await flush();
+  await advance(90_000);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(1);
   fetchGithubPrChecks.mockResolvedValue(checks("b"));
   await act(async () => {
@@ -295,7 +324,24 @@ it("does not launch a queued poll after the PR closes, manual refresh still work
   expect(view?.checks?.headOid).toBe("b");
 });
 
-it("never lets requests overlap and drops a queued follow-up on unmount", async () => {
+it("reports nothing and never reads while disabled", async () => {
+  fetchGithubPrChecks.mockResolvedValue(checks("a"));
+  await render({ ...base, enabled: false });
+  await act(async () => {
+    view?.refresh();
+  });
+  await advance(90_000);
+  expect(fetchGithubPrChecks).not.toHaveBeenCalled();
+  expect(view).toMatchObject({
+    checks: null,
+    loading: false,
+    refreshing: false,
+    error: null,
+    stale: false,
+  });
+});
+
+it("never lets requests overlap and starts nothing after unmount", async () => {
   let active = 0;
   let maxActive = 0;
   fetchGithubPrChecks.mockImplementation(async () => {
@@ -319,6 +365,7 @@ it("never lets requests overlap and drops a queued follow-up on unmount", async 
   await act(async () => {
     view?.refresh();
   });
+  expect(fetchGithubPrChecks).toHaveBeenCalledTimes(3);
   await act(async () => {
     root.unmount();
   });
@@ -326,6 +373,7 @@ it("never lets requests overlap and drops a queued follow-up on unmount", async 
     pending.resolve(checks("late"));
   });
   await flush();
+  await advance(90_000);
   expect(fetchGithubPrChecks).toHaveBeenCalledTimes(3);
   expect(maxActive).toBe(1);
 });

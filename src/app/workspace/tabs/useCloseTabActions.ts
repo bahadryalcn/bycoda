@@ -19,6 +19,7 @@ import {
 import { type Session } from "../../../features/sessions/model/session";
 import { confirmWorkspaceClose } from "../../model/closeConfirmation";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import type { useTabActivation } from "./useTabActivation";
 
 export interface CloseTabActionDeps {
@@ -155,13 +156,18 @@ export function useCloseTabActions({
         let state;
         while ((state = readClose())) {
           if (state.unsaved.length) {
+            const unsavedFiles = state.unsaved;
             if (
               !(await confirmWorkspaceClose(() =>
-                confirmDiscardUnsaved("Close this tab with unsaved files?"),
+                confirmDiscardUnsaved({
+                  title: t("Close tab with unsaved files?"),
+                  confirmLabel: t("Discard and close"),
+                  files: unsavedFiles,
+                }),
               ))
             )
               return;
-            for (const file of state.unsaved) approvedDirty.add(file.id);
+            for (const file of unsavedFiles) approvedDirty.add(file.id);
             continue;
           }
           if (state.terminals.length) {
@@ -292,7 +298,12 @@ export function useCloseTabActions({
         if (
           !(await confirmWorkspaceClose(
             unsaved.length > 0
-              ? () => confirmDiscardUnsaved("Close these tabs with unsaved files?")
+              ? () =>
+                    confirmDiscardUnsaved({
+                      title: t("Close tabs with unsaved files?"),
+                      confirmLabel: t("Discard and close"),
+                      files: unsaved,
+                    })
               : undefined,
             terminals.length > 0 ? () => confirmCloseTerminals(terminals) : undefined,
           ))

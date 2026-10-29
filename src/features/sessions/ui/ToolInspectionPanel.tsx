@@ -1,7 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useT } from "../../../shared/i18n";
 import { copyMessage } from "../../../platform/tauri/clipboard";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
@@ -35,9 +36,6 @@ export function hasToolInspection(block: Block): boolean {
 /** Mounted only after an explicit disclosure; never reads today's file as historical output. */
 export function ToolInspectionPanel({ block }: { block: Block }) {
   const t = useT();
-  const [copyState, setCopyState] = useState<"idle" | "pending" | "copied" | "failed">("idle");
-  const copying = useRef(false);
-  const copyGeneration = useRef(0);
   const sections = useMemo(() => {
     const preview = boundedToolPreview(block.tool?.preview);
     const inspection = preview?.inspection;
@@ -102,40 +100,10 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   ].filter((notice): notice is string => !!notice);
   const bodyText = sections.map((section) => section.text).join("\n\n");
   const copyText = bodyText ? [bodyText, ...copyNotices].join("\n\n") : "";
-  const resetTimer = useRef<number | null>(null);
-  const clearResetTimer = () => {
-    if (resetTimer.current != null) window.clearTimeout(resetTimer.current);
-    resetTimer.current = null;
-  };
-  useEffect(() => {
-    copyGeneration.current += 1;
-    copying.current = false;
-    clearResetTimer();
-    setCopyState("idle");
-    return () => {
-      copyGeneration.current += 1;
-      clearResetTimer();
-    };
-  }, [block.id, copyText]);
+  // Streaming output changes the copied text, so any outcome or copy in flight belongs to the old text.
+  const feedback = useCopyFeedback({ resetKeys: [block.id, copyText], successMs: 2000 });
   const copy = () => {
-    if (copying.current) return;
-    copying.current = true;
-    const generation = copyGeneration.current;
-    setCopyState("pending");
-    void copyMessage(copyText).then(
-      () => {
-        if (copyGeneration.current !== generation) return;
-        copying.current = false;
-        setCopyState("copied");
-        clearResetTimer();
-        resetTimer.current = window.setTimeout(() => setCopyState("idle"), 2000);
-      },
-      () => {
-        if (copyGeneration.current !== generation) return;
-        copying.current = false;
-        setCopyState("failed");
-      },
-    );
+    feedback.copy(() => copyMessage(copyText));
   };
 
   // One quiet code-block surface: the sections are spaced, not ruled, and the
@@ -162,7 +130,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
               </h4>
               {index === 0 ? (
                 <div className="flex items-center gap-2">
-                  {copyState === "failed" ? (
+                  {feedback.failed ? (
                     <span role="status" className="text-ui-caption text-(--ui-tone-danger-fg)">
                       {t("Copy failed")}
                     </span>
@@ -171,10 +139,10 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                     variant="ghost"
                     type="button"
                     disabled={!copyText}
-                    loading={copyState === "pending"}
+                    loading={feedback.pending}
                     onClick={copy}
                   >
-                    {t(copyState === "copied" ? "Copied" : "Copy")}
+                    {t(feedback.copied ? "Copied" : "Copy")}
                   </Button>
                 </div>
               ) : null}

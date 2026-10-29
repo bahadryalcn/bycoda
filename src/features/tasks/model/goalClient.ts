@@ -214,6 +214,15 @@ export function boardGoalsFromHost(
 
 const lastBoardGoals: LastGoodLists<BoardGoal> = new Map();
 
+/** Keeps a machine's last-known goals in step with a mutation its host
+ * acknowledged, so a later failed read cannot show the earlier state again. */
+export function rememberBoardGoal(goal: BoardGoal, removed = false): void {
+  const known = lastBoardGoals.get(goal.machineId);
+  if (!known) return;
+  const others = known.filter((entry) => entry.id !== goal.id);
+  lastBoardGoals.set(goal.machineId, removed ? others : [...others, goal]);
+}
+
 /** Each machine's goals. A machine that does not answer keeps its last
  * successful list, flagged stale; `down` machines are not asked. */
 export function listBoardGoalResults(

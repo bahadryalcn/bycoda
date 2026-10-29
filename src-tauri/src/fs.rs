@@ -12,7 +12,10 @@ use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::dirs_home;
+use crate::native_window_lifecycle::{admit_window_buffers, run_admitted_blocking};
 mod attachment_reads;
+#[cfg(test)]
+mod buffer_actor_tests;
 mod text_admission;
 use crate::git_conflicts::{
     find_git_dir, git_unmerged_checked_for, git_unmerged_for, side_stage, stage_has_side,
@@ -130,17 +133,22 @@ pub struct ProjectLocation {
 /// A rename preserves the directory identity. We only inspect direct siblings
 /// of the missing path, which keeps this bounded and avoids a filesystem watch
 /// or a broad disk search.
-#[tauri::command(async)]
-pub fn resolve_project_location(
+#[tauri::command]
+pub async fn resolve_project_location(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     identity: Option<String>,
 ) -> Result<Option<ProjectLocation>, String> {
-    let location = resolve_project_location_sync(&path, identity.as_deref())?;
-    if let Some(location) = &location {
-        crate::file_access::authorize(&app, &expand_home(&location.path), true)?;
-    }
-    Ok(location)
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let location = resolve_project_location_sync(&path, identity.as_deref())?;
+        if let Some(location) = &location {
+            crate::file_access::authorize(&app, &expand_home(&location.path), true)?;
+        }
+        Ok(location)
+    })
+    .await
 }
 
 fn resolve_project_location_sync(
@@ -7407,38 +7415,43 @@ fn already_exists(label: &str) -> String {
 
 /// Create a file or folder under `parent`. `name` may contain `/` or `\` to
 /// nest. Returns the created path.
-#[tauri::command(async)]
-pub fn create_path(
+#[tauri::command]
+pub async fn create_path(
     app: AppHandle,
+    window: tauri::Window,
     parent: String,
     name: String,
     is_dir: bool,
 ) -> Result<String, String> {
-    let parent_dir = expand_home(&parent);
-    let dest = resolve_under(&parent_dir, &name)?;
-    crate::file_access::require(&app, &dest, true)?;
-    let label = file_label(&dest, &name);
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        let parent_dir = expand_home(&parent);
+        let dest = resolve_under(&parent_dir, &name)?;
+        crate::file_access::require(&app, &dest, true)?;
+        let label = file_label(&dest, &name);
 
-    if dest.exists() {
-        return Err(already_exists(&label));
-    }
-
-    if is_dir {
-        std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
-    } else {
-        if let Some(dir) = dest.parent() {
-            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        if dest.exists() {
+            return Err(already_exists(&label));
         }
-        std::fs::File::create_new(&dest).map_err(|e| {
-            if e.kind() == ErrorKind::AlreadyExists {
-                already_exists(&label)
-            } else {
-                e.to_string()
-            }
-        })?;
-    }
 
-    Ok(dest.to_string_lossy().into_owned())
+        if is_dir {
+            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+        } else {
+            if let Some(dir) = dest.parent() {
+                std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            }
+            std::fs::File::create_new(&dest).map_err(|e| {
+                if e.kind() == ErrorKind::AlreadyExists {
+                    already_exists(&label)
+                } else {
+                    e.to_string()
+                }
+            })?;
+        }
+
+        Ok(dest.to_string_lossy().into_owned())
+    })
+    .await
 }
 
 pub(crate) fn expand_home(path: &str) -> PathBuf {
@@ -7613,15 +7626,28 @@ fn git_url_repo_name(url: &str) -> Option<String> {
 }
 
 /// First few lines of a text file for tool previews.
-#[tauri::command(async)]
-pub fn read_file_preview(
+#[tauri::command]
+pub async fn read_file_preview(
+    window: tauri::Window,
     path: String,
+    max_lines: usize,
+    start_line: Option<usize>,
+) -> Result<Vec<String>, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        read_file_preview_sync(&path, max_lines, start_line)
+    })
+    .await
+}
+
+fn read_file_preview_sync(
+    path: &str,
     max_lines: usize,
     start_line: Option<usize>,
 ) -> Result<Vec<String>, String> {
     use std::io::{BufRead, BufReader};
 
-    let path = expand_home(&path);
+    let path = expand_home(path);
     let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     if !meta.is_file() {
         return Err("Not a file".into());
@@ -7671,8 +7697,16 @@ fn file_mtime_ms(meta: &std::fs::Metadata) -> Option<u64> {
 }
 
 /// Metadata only — used to notice disk changes on currently open editors.
-#[tauri::command(async)]
-pub fn stat_files(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
+#[tauri::command]
+pub async fn stat_files(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<Vec<FileMtime>, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || stat_files_sync(paths)).await
+}
+
+fn stat_files_sync(paths: Vec<String>) -> Result<Vec<FileMtime>, String> {
     if paths.len() > MAX_STAT_FILES {
         return Err("Too many paths".into());
     }
@@ -7704,8 +7738,16 @@ pub struct PathInfo {
 }
 
 /// Metadata for files the composer is attaching (picker, drop, paste).
-#[tauri::command(async)]
-pub fn inspect_paths(paths: Vec<String>) -> Vec<PathInfo> {
+#[tauri::command]
+pub async fn inspect_paths(
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<Vec<PathInfo>, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || Ok(inspect_paths_sync(paths))).await
+}
+
+fn inspect_paths_sync(paths: Vec<String>) -> Vec<PathInfo> {
     paths
         .into_iter()
         .filter_map(|path| inspect_path_sync(&path))
@@ -7730,13 +7772,17 @@ fn inspect_path_sync(path: &str) -> Option<PathInfo> {
 
 /// Base64-encode a file so vision images can be sent inline over ACP.
 #[tauri::command]
-pub async fn read_file_base64(app: AppHandle, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn read_file_base64(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), false)?;
         read_file_base64_sync(&path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn read_file_base64_sync(path: &str) -> Result<String, String> {
@@ -7762,33 +7808,35 @@ fn read_file_base64_sync(path: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn read_attachment_chunk(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     size: u64,
     offset: u64,
     length: u64,
 ) -> Result<AttachmentChunk, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let path = crate::file_access::require(&app, &expand_home(&path), false)?;
         attachment_reads::read_chunk(&path, size, offset, length)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Hash the acknowledged prefix with a fixed buffer, outside the renderer thread.
 #[tauri::command]
 pub async fn hash_attachment_prefix(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     size: u64,
     offset: u64,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let path = crate::file_access::require(&app, &expand_home(&path), false)?;
         attachment_reads::hash_prefix(&path, size, offset)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Read a file as raw bytes for the image viewer.
@@ -7799,14 +7847,15 @@ pub async fn hash_attachment_prefix(
 #[tauri::command]
 pub async fn read_binary_file(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
 ) -> Result<tauri::ipc::Response, String> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    let bytes = run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), false)?;
         read_binary_file_sync(&path)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -7851,10 +7900,12 @@ fn document_image_path(root: &Path, relative: &str) -> Result<PathBuf, String> {
 #[tauri::command]
 pub async fn read_project_image(
     app: AppHandle,
+    window: tauri::Window,
     root: String,
     path: String,
 ) -> Result<tauri::ipc::Response, String> {
-    let bytes = tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    let bytes = run_admitted_blocking(admission, move || {
         use std::io::Read;
         let path = document_image_path(&expand_home(&root), &path)?;
         crate::file_access::require(&app, &path, false)?;
@@ -7872,8 +7923,7 @@ pub async fn read_project_image(
         }
         Ok::<_, String>(bytes)
     })
-    .await
-    .map_err(|e| e.to_string())??;
+    .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -7886,20 +7936,17 @@ pub async fn write_attachment(
     data: String,
 ) -> Result<String, String> {
     let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        admission.finish((|| {
-            let path = write_attachment_sync(&name, &data)?;
-            crate::file_access::grant_produced_file(
-                &app,
-                Path::new(&path),
-                &std::env::temp_dir(),
-                "bycoda-attachments",
-            )?;
-            Ok(path)
-        })())
+    run_admitted_blocking(admission, move || {
+        let path = write_attachment_sync(&name, &data)?;
+        crate::file_access::grant_produced_file(
+            &app,
+            Path::new(&path),
+            &std::env::temp_dir(),
+            "bycoda-attachments",
+        )?;
+        Ok(path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
@@ -7949,10 +7996,12 @@ fn write_attachment_sync(name: &str, data: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn save_generated_image(
     app: AppHandle,
+    window: tauri::Window,
     data: String,
     name: String,
 ) -> Result<GeneratedImageAsset, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let asset = save_generated_image_sync(&app, &data, &name)?;
         crate::file_access::grant_produced_file(
             &app,
@@ -7963,7 +8012,6 @@ pub async fn save_generated_image(
         Ok(asset)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn save_generated_image_sync(
@@ -8027,10 +8075,16 @@ fn save_generated_image_sync(
 }
 
 #[tauri::command]
-pub async fn delete_generated_images(app: AppHandle, paths: Vec<String>) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || delete_generated_images_sync(&app, &paths))
-        .await
-        .map_err(|e| e.to_string())?
+pub async fn delete_generated_images(
+    app: AppHandle,
+    window: tauri::Window,
+    paths: Vec<String>,
+) -> Result<(), String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
+        delete_generated_images_sync(&app, &paths)
+    })
+    .await
 }
 
 pub(crate) fn delete_generated_images_sync(
@@ -8350,8 +8404,14 @@ fn rename_path_sync(path: &str, name: &str) -> Result<String, String> {
 
 /// Rename `path` to `name` (relative to the current parent; `/` nests).
 #[tauri::command]
-pub async fn rename_path(app: AppHandle, path: String, name: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn rename_path(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+    name: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&path);
         crate::file_access::require(&app, &source, true)?;
         let parent = source.parent().ok_or("File has no parent directory")?;
@@ -8360,7 +8420,6 @@ pub async fn rename_path(app: AppHandle, path: String, name: String) -> Result<S
         rename_path_sync(&path, &name)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn delete_path_sync(path: &str) -> Result<(), String> {
@@ -8376,13 +8435,17 @@ fn delete_path_sync(path: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn delete_path(app: AppHandle, path: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn delete_path(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<(), String> {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), true)?;
         delete_path_sync(&path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn dir_contains(dir: &Path, dest_parent: &Path) -> bool {
@@ -8426,10 +8489,12 @@ fn copy_path_checked(
 #[tauri::command]
 pub async fn copy_path(
     app: AppHandle,
+    window: tauri::Window,
     from: String,
     dest_parent: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
         let parent = expand_home(&dest_parent);
         crate::file_access::require(&app, &source, false)?;
@@ -8439,7 +8504,6 @@ pub async fn copy_path(
         })
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn move_path_sync(from: &str, dest_parent: &str) -> Result<String, String> {
@@ -8469,10 +8533,12 @@ fn move_path_sync(from: &str, dest_parent: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn move_path(
     app: AppHandle,
+    window: tauri::Window,
     from: String,
     dest_parent: String,
 ) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         let source = expand_home(&from);
         let parent = expand_home(&dest_parent);
         crate::file_access::require(&app, &source, true)?;
@@ -8482,7 +8548,6 @@ pub async fn move_path(
         move_path_sync(&from, &dest_parent)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(async)]
@@ -9008,7 +9073,7 @@ mod tests {
         let path_string = path.to_string_lossy().into_owned();
         let missing = dir.0.join("gone.md").to_string_lossy().into_owned();
 
-        let stats = stat_files(vec![
+        let stats = stat_files_sync(vec![
             path_string.clone(),
             missing.clone(),
             dir.0.to_string_lossy().into_owned(),
@@ -9166,7 +9231,7 @@ mod tests {
         let dir = tmp("inspect-paths");
         let file = dir.0.join("notes.md");
         std::fs::write(&file, "hello\n").unwrap();
-        let infos = inspect_paths(vec![
+        let infos = inspect_paths_sync(vec![
             file.to_string_lossy().into_owned(),
             dir.0.to_string_lossy().into_owned(),
         ]);

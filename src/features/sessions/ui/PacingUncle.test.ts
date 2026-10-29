@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { saveCrewTheme } from "../../settings/model/settings";
 import { PacingUncle } from "./PacingUncle";
 
 const state = vi.hoisted(() => ({ motion: true, paint: vi.fn() }));
@@ -12,6 +13,7 @@ vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 let root: Root;
 let container: HTMLDivElement;
 beforeEach(() => {
+  localStorage.removeItem("bycoda.crewTheme");
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.motion = true;
@@ -68,5 +70,56 @@ describe("pacing uncle animation gate", () => {
     expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
     render(true);
     expect(state.paint).toHaveBeenLastCalledWith(expect.anything(), 180, 32, walked, "classic");
+  });
+});
+
+describe("pacing character follows the crew theme", () => {
+  const theme = () => state.paint.mock.lastCall?.[4];
+  it("shows the classic rosary uncle when no appearance was ever chosen", () => {
+    expect(localStorage.getItem("bycoda.crewTheme")).toBeNull();
+    render();
+    expect(theme()).toBe("classic");
+  });
+  it.each(["banana", "", "Star-Wars", "null"])(
+    "falls back to the classic uncle for an invalid stored theme %j",
+    (value) => {
+      localStorage.setItem("bycoda.crewTheme", value);
+      render();
+      expect(theme()).toBe("classic");
+    },
+  );
+  it.each(["lotr", "star-wars"] as const)("shows the %s character when it is chosen", (value) => {
+    localStorage.setItem("bycoda.crewTheme", value);
+    render();
+    expect(theme()).toBe(value);
+  });
+  it("switches character on a theme change without a stale frame or extra timers", () => {
+    render();
+    expect(theme()).toBe("classic");
+    act(() => saveCrewTheme("lotr"));
+    expect(theme()).toBe("lotr");
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => saveCrewTheme("star-wars"));
+    expect(theme()).toBe("star-wars");
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => saveCrewTheme("classic"));
+    expect(theme()).toBe("classic");
+    expect(vi.getTimerCount()).toBe(1);
+  });
+  it("keeps the chosen character as a still frame without timers under reduced motion", () => {
+    localStorage.setItem("bycoda.crewTheme", "star-wars");
+    state.motion = false;
+    render();
+    expect(theme()).toBe("star-wars");
+    expect(vi.getTimerCount()).toBe(0);
+    act(() => saveCrewTheme("lotr"));
+    expect(theme()).toBe("lotr");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+  it("is decoration only: hidden from assistive technology and never takes pointer input", () => {
+    render();
+    const canvas = container.querySelector("canvas")!;
+    expect(canvas.getAttribute("aria-hidden")).toBe("true");
+    expect(canvas.className).toContain("pointer-events-none");
   });
 });

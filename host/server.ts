@@ -52,6 +52,7 @@ import {
 import { probeNativeCodexImageCapability } from "./social-images";
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { sessionConversationPage } from "../src/features/agent-app/model/sessionConversation";
+import { localSessionLinkFields, type LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createEnvironmentService } from "./domains/environment/service";
 import { createProjectsService } from "./domains/projects/service";
@@ -625,6 +626,16 @@ export async function createHostServer(
   const inHost = async (id: string) => {
     return !!(await engine.store.sessionAuthority(id));
   };
+  const localSessionReference = async (
+    id: string,
+  ): Promise<LocalSessionLocator | undefined> =>
+    (await inHost(id))
+      ? {
+          kind: "host",
+          environmentId: engine.store.environmentId,
+          sessionId: id,
+        }
+      : await desktop.localSessionReferenceAsync(id);
   const desktopDelete = new DesktopDelete();
   const sessionQueues = new SessionQueues(engine.store.db);
   const writerTransfers = new Set<string>();
@@ -1513,6 +1524,7 @@ export async function createHostServer(
     refreshLogSources,
     conversationWorkspace,
     projectSessions: projectSessionList,
+    sessionReference: localSessionReference,
   });
   // The service reads this only after composition has finished. An explicit
   // return type keeps metadata inference independent of the dispatcher that
@@ -2492,14 +2504,24 @@ export async function createHostServer(
                       throw new Error("Session authority revoked.");
                     result = {
                       cwd: project.cwd,
-                      sessions: list.map((session) => ({
-                        id: session.id,
-                        title: session.title,
-                        harness: session.harness,
-                        model: session.model,
-                        busy: session.status === "running",
-                        hasDraft: !!session.draft,
-                      })),
+                      sessions: await Promise.all(
+                        list.map(async (session) => {
+                          const locator = await localSessionReference(
+                            session.id,
+                          );
+                          return {
+                            id: session.id,
+                            title: session.title,
+                            harness: session.harness,
+                            model: session.model,
+                            busy: session.status === "running",
+                            hasDraft: !!session.draft,
+                            ...(locator
+                              ? localSessionLinkFields(locator, session.title)
+                              : {}),
+                          };
+                        }),
+                      ),
                     };
                   } else {
                     const target = await featureSession(String(args.sessionId));
@@ -2508,8 +2530,10 @@ export async function createHostServer(
                     result = sessionConversationPage(
                       { ...target.session, busy: target.status === "running" },
                       args,
+                      await localSessionReference(target.session.id),
                     );
                   }
+                  if (!(await scopedDeviceAuthorized())) throw new Error("Session authority revoked.");
                 } else if (action === "skills.search")
                   result = searchHarnessSkills(
                     sessionWorkCwd((await featureSession(boundPrincipal.sessionId)).session),

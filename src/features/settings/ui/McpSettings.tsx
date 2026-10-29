@@ -6,7 +6,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { confirmInApp } from "../../../shared/model/appConfirm";
 import {
   useCallback,
   useEffect,
@@ -293,7 +293,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const stateKey = `mcp-connections:${pathKey(cwd)}`;
   const [filter, setFilter] = useRetainedState<Filter>(`${stateKey}:filter`, "all");
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
-  const [visibleCount, setVisibleCount] = useState(BATCH_SIZE);
+  const [reveal, setReveal] = useState({ key: "", count: BATCH_SIZE });
   const listRoot = useRef<HTMLDivElement>(null);
   const continuation = useRef<HTMLDivElement>(null);
   const [showAllProviders, setShowAllProviders] = useRetainedState(
@@ -345,11 +345,23 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     };
   }, [refresh]);
 
+  const filterProviders = showAllProviders
+    ? PROVIDERS
+    : PROVIDERS.filter(
+        (provider) =>
+          servers.some((server) => server.provider === provider) ||
+          (provider === filter && (loading || !!error || !!claudeError)),
+      );
+  // A stored provider filter that no longer has servers falls back to "all" without rewriting it.
+  const effectiveFilter: Filter =
+    loading || error || claudeError || filter === "all" || filterProviders.includes(filter)
+      ? filter
+      : "all";
   const visible = useMemo(() => {
     const search = query.trim().toLocaleLowerCase();
     return servers.filter(
       (server) =>
-        (filter === "all" || server.provider === filter) &&
+        (effectiveFilter === "all" || server.provider === effectiveFilter) &&
         (!search ||
           [
             server.name,
@@ -363,30 +375,29 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             .toLocaleLowerCase()
             .includes(search)),
     );
-  }, [filter, servers, query]);
+  }, [effectiveFilter, servers, query]);
+  // The revealed page size belongs to the current filter and query and starts over when either changes.
+  const revealKey = `${effectiveFilter}
+${query}`;
+  const visibleCount = reveal.key === revealKey ? reveal.count : BATCH_SIZE;
+  const revealMore = useCallback(
+    (limit: number) =>
+      setReveal((current) => ({
+        key: revealKey,
+        count: Math.min((current.key === revealKey ? current.count : BATCH_SIZE) + BATCH_SIZE, limit),
+      })),
+    [revealKey],
+  );
   const pageServers = visible.slice(0, visibleCount);
-  useEffect(() => setVisibleCount(BATCH_SIZE), [filter, query]);
   useEffect(() => {
     if (!continuation.current || !listRoot.current || visibleCount >= visible.length || typeof IntersectionObserver === "undefined") return;
     let cancelled = false;
     const observer = new IntersectionObserver((entries) => {
-      if (!cancelled && entries.some((entry) => entry.isIntersecting)) setVisibleCount((count) => Math.min(count + BATCH_SIZE, visible.length));
+      if (!cancelled && entries.some((entry) => entry.isIntersecting)) revealMore(visible.length);
     }, { root: listRoot.current, rootMargin: "160px" });
     observer.observe(continuation.current);
     return () => { cancelled = true; observer.disconnect(); };
-  }, [visible.length, visibleCount, query, filter]);
-  const filterProviders = showAllProviders
-    ? PROVIDERS
-    : PROVIDERS.filter(
-        (provider) =>
-          servers.some((server) => server.provider === provider) ||
-          (provider === filter && (loading || !!error || !!claudeError)),
-      );
-
-  useEffect(() => {
-    if (loading || error || claudeError) return;
-    if (filter !== "all" && !filterProviders.includes(filter)) setFilter("all");
-  }, [filter, filterProviders, loading, error, claudeError]);
+  }, [visible.length, visibleCount, revealMore]);
 
   async function login(server: ServerRow) {
     if (busyRef.current) return;
@@ -416,14 +427,15 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
     setError("");
     try {
       if (
-        !(await ask(
-          t("Remove {p0} from {p1} scope?", { p0: server.name, p1: scopeLabel(selectedScope) }),
-          {
-            get title() {
-              return t("Remove MCP server");
-            },
-          },
-        ))
+        !(await confirmInApp({
+          title: t("Remove MCP server?"),
+          message: t(
+            "“{p0}” is removed from the {p1} scope. Conversations that use it lose its tools; you can add it again later.",
+            { p0: server.name, p1: scopeLabel(selectedScope) },
+          ),
+          confirmLabel: t("Remove server"),
+          tone: "danger",
+        }))
       )
         return;
       await invoke("claude_mcp_remove", {
@@ -479,25 +491,22 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             type="search"
             placeholder={t("Search MCP servers")}
             value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setVisibleCount(BATCH_SIZE);
-            }}
+            onChange={(event) => setQuery(event.target.value)}
           />
         </div>
         <Button
           ref={filterAnchor}
           iconOnly
           label={t("Filters")}
-          selected={filter !== "all" || showAllProviders}
+          selected={effectiveFilter !== "all" || showAllProviders}
           aria-expanded={filtersOpen}
           aria-haspopup="dialog"
           onClick={() => setFiltersOpen(!filtersOpen)}
         >
           <ListFilter className="icon-sm" />
         </Button>
-        {filter !== "all" ? (
-          <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[filter]}</span>
+        {effectiveFilter !== "all" ? (
+          <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[effectiveFilter]}</span>
         ) : null}
       </div>
       {filtersOpen ? (
@@ -521,11 +530,8 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
                   variant="tab"
                   motion="none"
                   type="button"
-                  aria-pressed={filter === provider}
-                  onClick={() => {
-                    setFilter(provider);
-                    setVisibleCount(BATCH_SIZE);
-                  }}
+                  aria-pressed={effectiveFilter === provider}
+                  onClick={() => setFilter(provider)}
                 >
                   {provider === "all" ? (
                     <Globe className="icon-sm" />
@@ -553,12 +559,11 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             </Button>
             <Button
               variant="secondary"
-              disabled={filter === "all" && !showAllProviders && !query}
+              disabled={effectiveFilter === "all" && !showAllProviders && !query}
               onClick={() => {
                 setFilter("all");
                 setQuery("");
                 setShowAllProviders(false);
-                setVisibleCount(BATCH_SIZE);
               }}
             >
               {t("Reset filters")}
@@ -567,7 +572,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         </Popover>
       ) : null}
       {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={() => void refresh()}>{t("Retry")}</Button>}>{servers.length ? `${t("Showing the last successful result.")} ` : ""}{error}</SettingsFeedback> : null}
-      {claudeError && (filter === "all" || filter === "claude") ? (
+      {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
         <SettingsFeedback state="warning">
           {t("Claude connection status unavailable: ")} {claudeError}
         </SettingsFeedback>
@@ -578,7 +583,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         <SettingsFeedback state="empty">
           {query.trim()
             ? t("No MCP servers match your search.")
-            : filter === "all"
+            : effectiveFilter === "all"
               ? t("No MCP servers configured. Add a server or choose another project.")
               : t("No MCP servers configured for this provider.")}
         </SettingsFeedback>
@@ -708,7 +713,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             </div>
           ))}
           {visibleCount < visible.length ? <div ref={continuation} className={styles.continuation}>
-            <Button variant="ghost" onClick={() => setVisibleCount((count) => count + BATCH_SIZE)}>{t("Show more connections")}</Button>
+            <Button variant="ghost" onClick={() => revealMore(visible.length)}>{t("Show more connections")}</Button>
           </div> : null}
         </div>
       )}
@@ -755,7 +760,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
       {addOpen ? (
         <AddServerModal
           cwd={cwd}
-          initialProvider={filter === "all" ? "claude" : filter}
+          initialProvider={effectiveFilter === "all" ? "claude" : effectiveFilter}
           onClose={() => setAddOpen(false)}
           onAdded={refresh}
         />

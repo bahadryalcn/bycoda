@@ -892,6 +892,8 @@ pub fn run() {
             session_store::session_search_content,
             session_store::cancel_session_search,
             session_store::session_get,
+            session_store::references::session_reference_get,
+            session_store::references::session_reference_resolve,
             session_store::session_delete,
             session_store::session_set_archived,
             session_store::session_set_pinned,

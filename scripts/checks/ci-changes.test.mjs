@@ -43,6 +43,24 @@ test("every literal Rust include outside src-tauri keeps native and package chec
   }
 });
 
+test("the shared physical store crate selects its Host and Native dependents", () => {
+  for (const file of [
+    "packages/physical-store-admission/Cargo.toml",
+    "packages/physical-store-admission/src/os.rs",
+    "packages/physical-store-admission/tests/coordination.rs",
+    "packages/physical-store-admission-node/src/lib.rs",
+    "packages/physical-store-admission-node/index.mjs",
+    "packages/physical-store-admission-node/package.json",
+  ]) {
+    const result = classifyChanges([file]);
+    assert.equal(result.full, false, file);
+    for (const gate of ["web", "host", "native", "rpm", "scripts"])
+      assert.equal(result.gates[gate], true, `${file}: ${gate}`);
+    assert.equal(result.gates.browser, false, file);
+    assert.equal(result.gates.python, false, file);
+  }
+});
+
 test("unknown, malformed or unavailable changes fail open; mobile stays independent", () => {
   for (const input of [
     null,

@@ -32,6 +32,14 @@ import { filesFromClipboard } from "../../sessions/model/attachments";
 import { schemeExtensions } from "../../files/editor/editorChrome";
 import { editorSearch, openReplacePanel } from "../../files/editor/editorSearch";
 import { markdownEdit, type MarkdownCommand } from "../markdownCommands";
+import type {
+  NativeInputObserver,
+  NativeInputRegistration,
+  NativeInputPublication,
+} from "../../../shared/lib/native-input-observer";
+import { consumeNativeInputPublication } from "../../../shared/lib/native-input-observer";
+import { installEditorInputGate } from "../../files/ui/useMountedEditorClosure";
+import { canRetainNoteInputText } from "../notesInputOwners";
 
 export type NoteEditorViewRef = { current: EditorView | null };
 
@@ -87,6 +95,8 @@ export function NoteMarkdownEditor({
   showLineNumbers = true,
   onFocus,
   label,
+  inputObserver,
+  inputPublication,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -99,6 +109,8 @@ export function NoteMarkdownEditor({
   showLineNumbers?: boolean;
   onFocus?: () => void;
   label?: string;
+  inputObserver?: NativeInputObserver;
+  inputPublication?: NativeInputPublication;
 }) {
   useLocale();
   const hostRef = useRef<HTMLDivElement>(null);
@@ -110,6 +122,7 @@ export function NoteMarkdownEditor({
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onPasteImagesRef = useRef(onPasteImages);
+  const inputRef = useRef<NativeInputRegistration | null>(null);
   valueRef.current = value;
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
@@ -119,6 +132,8 @@ export function NoteMarkdownEditor({
     const host = hostRef.current;
     if (!host) return;
     documentValue.current = normalizeLineBreaks(valueRef.current);
+    let composing = false;
+    let settling = false;
     const view = new EditorView({
       doc: documentValue.current,
       parent: host,
@@ -163,7 +178,29 @@ export function NoteMarkdownEditor({
           ]),
         ),
         EditorView.domEventHandlers({
+          compositionstart: () => {
+            composing = true;
+            inputRef.current?.changed();
+          },
+          compositionend: () => {
+            composing = false;
+            settling = true;
+            inputRef.current?.changed();
+            view.requestMeasure({
+              read: () => null,
+              write: () => {
+                if (viewRef.current === view && !view.compositionStarted) {
+                  settling = false;
+                  inputRef.current?.changed();
+                }
+              },
+            });
+          },
           paste: (event) => {
+            if (inputRef.current && !inputRef.current.allowed()) {
+              event.preventDefault();
+              return true;
+            }
             const onImages = onPasteImagesRef.current;
             if (!onImages) return false;
             const images = filesFromClipboard(event.clipboardData).filter((file) =>
@@ -179,6 +216,8 @@ export function NoteMarkdownEditor({
           drop: (event) => [...(event.dataTransfer?.types ?? [])].includes("Files"),
         }),
         EditorView.updateListener.of((update) => {
+          if (update.docChanged || update.startState.readOnly !== update.state.readOnly)
+            inputRef.current?.changed();
           if (!update.docChanged) return;
           if (update.transactions.every((tr) => tr.annotation(externalChange))) {
             return;
@@ -189,13 +228,72 @@ export function NoteMarkdownEditor({
         }),
       ],
     });
+    let gate: ReturnType<typeof installEditorInputGate> | undefined;
+    const registration = inputObserver?.attach(
+      () => ({
+        snapshot: {
+          inputKind: "codemirror",
+          text: view.state.doc.toString(),
+          canonicalValue: valueRef.current,
+          readOnly: view.state.readOnly,
+          composing,
+          settling,
+          compositionStarted: view.compositionStarted,
+        },
+        ...(composing ||
+        settling ||
+        view.compositionStarted ||
+        normalizeLineBreaks(valueRef.current) !== view.state.doc.toString()
+          ? { busy: "notes-view-reconciliation" }
+          : {}),
+      }),
+      {
+        canClose: () => !composing && !settling && !view.compositionStarted,
+        close: (closed) => gate?.setClosed(closed),
+      },
+    );
+    inputRef.current = registration ?? null;
+    gate = installEditorInputGate(
+      view,
+      registration ? { ...registration, attach: () => {} } : undefined,
+    );
+    if (registration && !registration.allowed()) gate.setClosed(true);
+    // These actual public paths include prebuilt/filter:false transactions.
+    // Refuse a new document before CM mutates; a failed projection remains held.
+    const update = view.update;
+    const setState = view.setState;
+    const budgetedUpdate: EditorView["update"] = (transactions) => {
+      const next = transactions[transactions.length - 1]?.newDoc;
+      if (
+        next &&
+        transactions.some((transaction) => transaction.docChanged) &&
+        !canRetainNoteInputText(inputObserver, next.toString())
+      )
+        return;
+      update.call(view, transactions);
+    };
+    const budgetedState: EditorView["setState"] = (state) => {
+      if (
+        !state.doc.eq(view.state.doc) &&
+        !canRetainNoteInputText(inputObserver, state.doc.toString())
+      )
+        return;
+      setState.call(view, state);
+    };
+    view.update = budgetedUpdate;
+    view.setState = budgetedState;
     viewRef.current = view;
     if (initial.current.autoFocus) view.focus();
     return () => {
+      registration?.unregister();
+      if (view.update === budgetedUpdate) view.update = update;
+      if (view.setState === budgetedState) view.setState = setState;
+      gate?.release();
+      if (inputRef.current === registration) inputRef.current = null;
       viewRef.current = null;
       view.destroy();
     };
-  }, [viewRef]);
+  }, [viewRef, inputObserver]);
 
   // A layout effect, so no keystroke can land between the render and the sync
   // and be overwritten by the older text.
@@ -204,9 +302,14 @@ export function NoteMarkdownEditor({
     if (!view) return;
     const next = normalizeLineBreaks(value);
     // The local update listener already materialized this exact document for onChange.
-    if (next === documentValue.current) return;
     const current = view.state.doc.toString();
-    if (next === current) return;
+    if (next === current) {
+      documentValue.current = next;
+      if (inputObserver && inputPublication)
+        if (!consumeNativeInputPublication(inputPublication, inputObserver, value))
+          inputRef.current?.external(() => {});
+      return;
+    }
     // Replace only what differs so the caret and undo history stay useful.
     const limit = Math.min(next.length, current.length);
     let start = 0;
@@ -217,21 +320,44 @@ export function NoteMarkdownEditor({
       currentEnd -= 1;
       nextEnd -= 1;
     }
-    documentValue.current = next;
-    view.dispatch({
-      changes: {
-        from: start,
-        to: currentEnd,
-        insert: next.slice(start, nextEnd),
-      },
-      annotations: externalChange.of(true),
-    });
-  }, [value, viewRef]);
+    const apply = () => {
+      view.dispatch({
+        changes: {
+          from: start,
+          to: currentEnd,
+          insert: next.slice(start, nextEnd),
+        },
+        annotations: externalChange.of(true),
+      });
+      if (view.state.doc.toString() !== next)
+        throw new Error("Notes document projection did not apply");
+      documentValue.current = next;
+    };
+    if (inputObserver && inputPublication) {
+      let attempted = false;
+      const owned = consumeNativeInputPublication(inputPublication, inputObserver, value, () => {
+        attempted = true;
+        apply();
+      });
+      if (!owned) {
+        // A stale proof grants nothing: preserve the incoming canonical value
+        // through the ordinary external path. An attempted projection with an
+        // unknown outcome must not run a second time.
+        inputRef.current?.external(attempted ? () => {} : apply);
+      }
+    } else {
+      if (inputRef.current) inputRef.current.external(apply);
+      else apply();
+    }
+  }, [value, viewRef, inputObserver, inputPublication]);
 
   useEffect(() => {
-    viewRef.current?.dispatch({
-      effects: schemeConfig.current.reconfigure(schemeExtensions(scheme)),
-    });
+    const apply = () =>
+      viewRef.current?.dispatch({
+        effects: schemeConfig.current.reconfigure(schemeExtensions(scheme)),
+      });
+    if (inputRef.current) inputRef.current.external(apply);
+    else apply();
   }, [scheme, viewRef]);
 
   return <div ref={hostRef} data-note-editor className="min-w-0" onFocus={onFocus} />;
@@ -402,24 +528,28 @@ export function NoteMarkdownToolbar({
             >
               {TOOLBAR_GROUPS.map((group) => (
                 <section key={group.label} aria-label={t(group.label)}>
-                  <h3 className="px-2 py-1 text-ui-caption font-medium text-(--ui-text-secondary)">{t(group.label)}</h3>
+                  <h3 className="px-2 py-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+                    {t(group.label)}
+                  </h3>
                   <div className="grid grid-cols-2 gap-0.5">
-                    {TOOLBAR.filter((item) => group.commands.includes(item.command)).map(({ command, label, icon: Icon }) => (
-                      <Button
-                        key={command}
-                        variant="ghost"
-                        size="sm"
-                        align="start"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => {
-                          run((view) => runMarkdownCommand(view, command));
-                          setExpanded(false);
-                        }}
-                      >
-                        <Icon className="icon-sm" />
-                        {label}
-                      </Button>
-                    ))}
+                    {TOOLBAR.filter((item) => group.commands.includes(item.command)).map(
+                      ({ command, label, icon: Icon }) => (
+                        <Button
+                          key={command}
+                          variant="ghost"
+                          size="sm"
+                          align="start"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            run((view) => runMarkdownCommand(view, command));
+                            setExpanded(false);
+                          }}
+                        >
+                          <Icon className="icon-sm" />
+                          {label}
+                        </Button>
+                      ),
+                    )}
                   </div>
                 </section>
               ))}

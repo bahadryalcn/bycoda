@@ -1,5 +1,6 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
+import { fieldDescribedBy, fieldMessageIds } from "./arc/lib/field-ids";
 import styles from "./Field.module.css";
 
 /** `form` is the comfortable label-above composition; `compact` is the toolbar/inline-filter one. */
@@ -25,23 +26,7 @@ export interface FieldProps {
   children: ReactNode | ((control: FieldControlProps) => ReactNode);
 }
 
-/** Ids a field owner must give its control so the error is described first and the help second. */
-export function fieldMessageIds(id: string, parts: { description?: string; error?: string }) {
-  return {
-    description: parts.description ? `${id}-description` : undefined,
-    error: parts.error ? `${id}-error` : undefined,
-  };
-}
-
-/** `aria-describedby` for a control inside a Field: caller ids, then error, then help. */
-export function fieldDescribedBy(
-  id: string,
-  parts: { description?: string; error?: string },
-  extra?: string,
-) {
-  const ids = fieldMessageIds(id, parts);
-  return [extra, ids.error, ids.description].filter(Boolean).join(" ") || undefined;
-}
+export { fieldDescribedBy, fieldMessageIds };
 
 /**
  * The one label - control - help - error composition for fields that do not own it themselves

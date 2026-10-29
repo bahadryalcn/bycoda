@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -162,7 +163,9 @@ export function ImageAnnotationCanvas({
   const failed = failure?.src === src && failure.attempt === attempt;
   const descriptionId = useId();
   const annotationsRef = useRef(annotations);
-  annotationsRef.current = annotations;
+  useLayoutEffect(() => {
+    annotationsRef.current = annotations;
+  });
   const fit = fitImageAnnotation(natural.width, natural.height, available.width, available.height);
 
   const updateDraft = (mark: ImageAnnotationMark | undefined) => {
@@ -171,8 +174,13 @@ export function ImageAnnotationCanvas({
     setDraft(mark);
     if (was !== (mark !== undefined)) onDraftingChange?.(mark !== undefined);
   };
-  useEffect(() => {
+  // A new frame, tool or disabled state drops the in-progress mark (adjusted during render).
+  const [draftBasis, setDraftBasis] = useState({ src, tool, disabled });
+  if (draftBasis.src !== src || draftBasis.tool !== tool || draftBasis.disabled !== disabled) {
+    setDraftBasis({ src, tool, disabled });
     setDraft(undefined);
+  }
+  useLayoutEffect(() => {
     draftRef.current = undefined;
     activePointer.current = undefined;
     const node = image.current;

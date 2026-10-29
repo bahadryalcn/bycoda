@@ -4,6 +4,7 @@ import { ShortcutKbd } from "../../../shared/ui/ShortcutKbd";
 import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Search } from "../../../shared/ui/icons";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { appName } from "../../../shared/lib/appName";
 import {
   useEffect,
@@ -137,7 +138,6 @@ export function FilePicker({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const [query, setQuery] = useState(initialQuery);
-  const [active, setActive] = useState(0);
   const [files, setFiles] = useState(() => peekFiles() ?? []);
   const [loading, setLoading] = useState(() => peekFiles() == null);
   const [error, setError] = useState<string | null>(null);
@@ -181,16 +181,20 @@ export function FilePicker({
       .sort((a, b) => b.score - a.score);
   }, [actionQuery, paletteMode, cwd, stopBackgroundWork, arrangeLayout]);
   const optionCount = paletteMode ? actionResults.length : results.length;
-  const activeIndex = Math.min(active, Math.max(0, optionCount - 1));
+  // Opening (or retargeting) the picker restarts it from the initial query and
+  // the first row; a shrinking result list clamps the highlighted row.
+  const sessionKey = open ? `${cwd}|${initialQuery}` : null;
+  const [seenSessionKey, setSeenSessionKey] = useState<string | null>(null);
+  if (seenSessionKey !== sessionKey) {
+    setSeenSessionKey(sessionKey);
+    if (sessionKey !== null) {
+      setQuery(initialQuery);
+      setRetrying(false);
+      setError(null);
+    }
+  }
+  const [activeIndex, setActive] = useKeyedActiveIndex(sessionKey ?? "closed", optionCount);
   const rankingPending = !paletteMode && deferredQuery !== query;
-
-  useEffect(() => {
-    if (!open) return;
-    setQuery(initialQuery);
-    setActive(0);
-    setRetrying(false);
-    setError(null);
-  }, [open, cwd, initialQuery]);
 
   useEffect(() => {
     if (!open) return;
@@ -226,10 +230,6 @@ export function FilePicker({
       cancelled = true;
     };
   }, [open, cwd, initialQuery, retry]);
-
-  useEffect(() => {
-    setActive((index) => (optionCount === 0 ? 0 : Math.min(index, optionCount - 1)));
-  }, [optionCount]);
 
   useEffect(() => {
     if (!open) return;

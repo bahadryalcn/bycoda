@@ -49,10 +49,8 @@ export function useTranscriptSelection(
   const dismissSelection = useCallback(() => setSelection(null), []);
 
   useEffect(() => {
-    if (!enabled || !root) {
-      dismissSelection();
-      return;
-    }
+    // Cleanup of the previous run already dismissed the selection.
+    if (!enabled || !root) return;
 
     let pointerSelecting = false;
 
@@ -165,5 +163,5 @@ export function useTranscriptSelection(
     };
   }, [dismissSelection, enabled, root]);
 
-  return { selection, dismissSelection };
+  return { selection: enabled && root ? selection : null, dismissSelection };
 }

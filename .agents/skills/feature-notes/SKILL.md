@@ -5,6 +5,51 @@ description: Notes library and editing inventory for project grouping, full-body
 
 # Notes
 
+## Input-conservation continuation, 2026-10-29
+
+Uncommitted shared main at761196a6, source0.6.94. Known renderer inputs now join
+their distinct Notes closure family; this does not reserve the feature. The external
+React refactor held Notes and shared InlineEdit/TagInput writes during this freeze.
+Later VIS23 menu edits in `NotesView.tsx` and `noteLibraryMenu.ts` were preserved
+after the original Notes writer reviewed input ownership, recovery, image memo
+and deletion admission. New menu acceptance remains with that UI owner.
+
+| Surface                                | Current implementation                                                                                                                                                  |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Library, session dock, retained drafts | `notesInputOwners.ts`, `useNoteInput.ts`, `noteDrafts.ts`: distinct logical owners and exact private text, tags, loaded baselines and pending work                      |
+| Source, Preview, title and tags        | `ui/NoteMarkdownEditor.tsx`, `NoteEditablePreview.tsx`, `NotesView.tsx`, `SessionNotesPanel.tsx`: actual mounted input/IME state and private control observation        |
+| Save/result/render                     | `useNoteDetail.ts`, `notes.ts`: actual original work, exact Native DTO provenance and explicitly derived summary/detail publications; unrelated refresh/ABA invalidates |
+| Recovery and unmount                   | `ui/NoteDraftRecoveryNotice.tsx`, `noteDrafts.ts`: retained drafts wait for accepted picker/save work; retired views never write into replacements                      |
+| Images and Markdown asset reads        | `noteImages.ts`, `ui/useNoteImageInsertion.ts`, sessions `AgentMarkdown.tsx`: original picker/Native continuation and centralized admitted path resolution              |
+| Bulk deletion                          | `ui/NotesView.tsx`: one accepted batch per actual owner, frozen selected identities and individual authoritative outcomes; failed rows stay selected                    |
+| Service-only Native requests           | `noteServiceIntents.ts`: bounded original six-command request data, true Promise/bookkeeping lifetime, unresolved errors and post-success application outcomes          |
+
+The actual Native effect gate remains mandatory. Private work/publication proofs
+are never raw data or transferable authority. Session-scoped retention is distinct
+from Notes-row/image durability and cross-device migration. New typing remains
+usable during passive capture; closure can temporarily make owned inputs readonly.
+Preparation never sends, saves, normalizes or commits composition on the user's behalf.
+
+Private retirement preserves exact raw/whitespace, IME, pending originals and
+same-key older generations. Clean acknowledged input can prune normally.
+The64-record/64MiB conservative data budget refuses new effects without evicting
+unknown input. HMR retains originals and holds capture after implementation changes.
+Recovery Copy/Open are explicit; they do not save, apply or replay retained input.
+Image work preserves partial successes even when a later FileReader/conversion
+fails. Original saved-asset lookup completes before Markdown publication, and
+ambiguous outcomes retain exact asset/request diagnostics without replay.
+
+The current explicit Notes manifest has18 paths (17 original plus the external
+menu dependency): `notes/vis-current-dependencies/source-cohort.json` under
+`temp/verification/2026-10-29-notes-input-closure/`. Historical248/18 author and
+independent89/4 checks refer to their original sources. Current browser acceptance
+passed40/40 cases with40 captures in both themes at1280/800. All40 exact raw
+artifacts passed checked Native FULL, retained read and new-Store historical read;
+this does not prove process-exit, installed GUI or physical durability.
+Normal desktop/Host/mobile types and Native Clippy passed. Complete actor/alias
+coverage, same-store Host Node writer admission, physical/native/installed/mobile
+acceptance, coherent restore and both Native durability lanes remain open.
+
 ## Purpose and scope
 
 Find, read, write and reuse notes with clear ownership and reliable recovery.
@@ -202,3 +247,29 @@ copy recovery during editing and explicit chat attachment. Full 18-ID ledger,
 fingerprints and H6 dependencies: `temp/local/2026-10-28-notes-impl/handoff.json`.
 Live claims API unavailable; sessions and initially clean Notes sources inspected.
 Native subagents used with exclusive file ownership; no other session awaited.
+
+### Native admission continuation, 2026-10-29
+
+This separate runtime slice changes `src-tauri/src/notes.rs`, not the prior
+Notes visual composition. Actual injected-Window admission precedes Notes upsert,
+link, delete, abandoned-recovery cleanup, image copy and image access grant.
+The four SQL-only read commands retain their existing behavior. SQL guards drop
+before completion. Image copy and post-copy grant remain owned by the actual
+worker after a dropped waiter. A committed delete still returns success when
+best-effort asset cleanup fails, while the failed observation cannot certify idle.
+Original CAS conflicts, normalization, recovery ownership and permission checks
+are preserved; sourceSessionId is data, not admission authority.
+
+The new11 actual SQL/file/barrier regressions and24 existing Notes tests passed
+within Root's final973-test scoped Native run;30 platform fixtures were ignored.
+Normal desktop/Host tsc-rs, scoped Clippy with warnings denied, rustfmt and the
+independent final source review passed. See exact scope/source identity in
+`temp/verification/2026-10-29-buffer-actors-root/ROOT-REPORT.md`. These checks do
+not renew the older Notes UI screenshots/browser/physical-device acceptance.
+
+Notes UI closure is still incomplete: library and session-dock draft stores are
+separate; detached queues, Source/preview, InlineEdit title and TagInput private
+drafts require their actual input/operation ports. Host Notes can separately
+write the same physical database and has no Native-window admission handoff.
+Neither these Native tests nor a saved row proves complete Notes/Native Buffers
+coverage, restart-safe dirty-draft recovery or cross-device migration.

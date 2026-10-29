@@ -112,20 +112,24 @@ test("cleanup updates the list and survives closing the dialog", async ({ page }
   await page.setViewportSize({ width: 360, height: 640 });
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
-  await dialog.getByRole("button", { name: "Clear completed", exact: true }).click();
+  const maintain = async (name: RegExp) => {
+    await dialog.getByRole("button", { name: "Recovery list maintenance", exact: true }).click();
+    await page.getByRole("menuitem", { name }).click();
+  };
+  await maintain(/^Remove \d+ completed from list$/);
   const allSessions = dialog.getByRole("radio", { name: /All sessions/ });
   await allSessions.click();
   await expect(allSessions).toBeChecked();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
   await dialog.getByRole("checkbox").first().check();
-  await dialog.getByRole("button", { name: "Remove selected", exact: true }).click();
+  await maintain(/^Remove 1 selected from list$/);
   await expect(dialog.getByRole("checkbox")).toHaveCount(5);
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await page.screenshot({ path: "temp/verification/2026-10-13-session-recovery/narrow.png" });
   await dialog.getByRole("button", { name: "Close", exact: true }).click();
   await page.getByRole("button", { name: "Recovered sessions 24" }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(5);
-  await dialog.getByRole("button", { name: "Clear list", exact: true }).click();
+  await maintain(/^Clear recovery list \(\d+\)$/);
   await expect(dialog.getByRole("checkbox")).toHaveCount(0);
 });
 

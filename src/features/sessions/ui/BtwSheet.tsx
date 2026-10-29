@@ -107,6 +107,8 @@ export function useBtwConversation({
   const inputClosed = useParentInputsClosed(parentSessionId);
   const [requestedOpen, setRequestedOpen] = useState(false);
   const open = requestedOpen && available;
+  // Availability can vanish without an explicit close; drop the request so it cannot reopen later.
+  if (!available && requestedOpen) setRequestedOpen(false);
   // Stay mounted while the close animation plays.
   const [rendered, setRendered] = useState(false);
   if (open && !rendered) setRendered(true);
@@ -144,19 +146,36 @@ export function useBtwConversation({
 
   const turns = useMemo(() => groupTurns(blocks, managed), [blocks, managed]);
   const entries = useMemo(() => sessionBtwThreads(blocks, managed), [blocks, managed]);
+  // Drafts and the optimistic message are placeholders until the persisted thread shows up.
+  const pendingDrafts = useMemo(() => {
+    const persistedIds = new Set(entries.map(({ thread }) => thread.id));
+    return drafts.filter((draft) => !persistedIds.has(draft.id));
+  }, [drafts, entries]);
+  const pendingOptimistic = useMemo(
+    () =>
+      optimistic &&
+      !entries.some(
+        ({ thread }) =>
+          thread.id === optimistic.threadId &&
+          thread.messages.some((message) => message.id === optimistic.message.id),
+      )
+        ? optimistic
+        : null,
+    [optimistic, entries],
+  );
   const tabs = useMemo(() => {
     const next: BtwTab[] = entries.map(({ thread, turn }) => ({
       id: thread.id,
       turn,
       thread,
     }));
-    for (const draft of drafts) {
+    for (const draft of pendingDrafts) {
       if (next.some((tab) => tab.id === draft.id)) continue;
       const turn = turns.find((entry) => entry[0]?.id === draft.turnId);
       if (turn) next.push({ id: draft.id, turn });
     }
     return next.map((tab) => {
-      const pending = optimistic?.threadId === tab.id ? optimistic : null;
+      const pending = pendingOptimistic?.threadId === tab.id ? pendingOptimistic : null;
       return {
         ...tab,
         question:
@@ -165,7 +184,7 @@ export function useBtwConversation({
         status: tab.thread?.status ?? (pending ? "running" : undefined),
       };
     });
-  }, [drafts, entries, optimistic, turns]);
+  }, [pendingDrafts, entries, pendingOptimistic, turns]);
   const active = tabs.find((tab) => tab.id === activeId) ?? tabs[tabs.length - 1];
   const activeTabId = active?.id ?? null;
   const persisted = active?.thread;
@@ -174,7 +193,8 @@ export function useBtwConversation({
   const baseModelFor = (tab: BtwTab) =>
     tab.turn.find((block) => block.role === "user")?.turnModel?.id ?? model;
 
-  const optimisticForTab = optimistic?.threadId === activeTabId ? optimistic.message : undefined;
+  const optimisticForTab =
+    pendingOptimistic?.threadId === activeTabId ? pendingOptimistic.message : undefined;
   const persistedMessages = persisted?.messages ?? NO_MESSAGES;
   // Stable while nothing changes, so the transcript is not re-fed each render.
   const messages = useMemo(
@@ -191,31 +211,6 @@ export function useBtwConversation({
     if (persisted?.modelSettings) return persisted.modelSettings;
     return preferredModelSettings(resolveModel(composerHarness, selectedModel), modelSettings);
   }, [composerHarness, draftModelSettings, modelSettings, persisted?.modelSettings, selectedModel]);
-
-  useEffect(() => {
-    if (!available) setRequestedOpen(false);
-  }, [available]);
-
-  useEffect(() => {
-    if (
-      optimistic &&
-      entries.some(
-        ({ thread }) =>
-          thread.id === optimistic.threadId &&
-          thread.messages.some((message) => message.id === optimistic.message.id),
-      )
-    ) {
-      setOptimistic(null);
-    }
-  }, [optimistic, entries]);
-
-  useEffect(() => {
-    const persistedIds = new Set(entries.map(({ thread }) => thread.id));
-    setDrafts((current) => {
-      const pending = current.filter((draft) => !persistedIds.has(draft.id));
-      return pending.length === current.length ? current : pending;
-    });
-  }, [entries]);
 
   const finishClose = () => {
     parentChanged();

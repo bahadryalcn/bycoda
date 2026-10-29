@@ -886,6 +886,27 @@ it("offers the branch, check and review options on a new task", async () => {
   expect(form.textContent).toContain("Reviewer instructions");
 });
 
+it("shows one Working branch and worktree heading and keeps the machine limit apart from the task", async () => {
+  host([], LIMIT_CAPABILITIES, [], [], LIMITS);
+  await render();
+  await act(async () => button(container, "New task")!.click());
+  const form = document.querySelector('form[aria-label="New task"]')!;
+  const visible = Array.from(form.querySelectorAll("summary, legend")).filter(
+    (node) =>
+      node.textContent?.trim() === "Working branch and worktree" &&
+      !node.classList.contains("sr-only"),
+  );
+  expect(visible.map((node) => node.tagName)).toEqual(["SUMMARY"]);
+  // Machine-wide settings save at once and say so, outside the task's own option group.
+  const limit = form.querySelector(".task-form-limit");
+  expect(limit?.closest(".task-form-options")).toBeNull();
+  expect(limit?.textContent).toContain("it is not part of this task");
+  // Without a description the footer says why starting is unavailable.
+  expect(form.querySelector(".task-form-footer")?.textContent).toContain(
+    "Add a description to start this with an agent.",
+  );
+});
+
 it.each(["local", "remote"])(
   "defaults a task in global scope to this computer and routes an explicit %s choice",
   async (destination) => {

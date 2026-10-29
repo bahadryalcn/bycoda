@@ -379,11 +379,13 @@ export function SearchView({
   const optionId = (index: number) => `${listId}-option-${index}`;
   const capacity = resultCapacity.context === selectionContext ? Math.max(resultCapacity.rows, rowCount) : rowCount;
 
-  useEffect(() => {
-    if (deferredTrimmed !== trimmed) return;
-    setResultCapacity((current) => current.context === selectionContext && current.rows >= rowCount
-      ? current : { context: selectionContext, rows: current.context === selectionContext ? Math.max(current.rows, rowCount) : rowCount });
-  }, [deferredTrimmed, trimmed, selectionContext, rowCount]);
+  // The list never shrinks within one search context, so the panel keeps its height.
+  if (deferredTrimmed === trimmed && !(resultCapacity.context === selectionContext && resultCapacity.rows >= rowCount)) {
+    setResultCapacity({
+      context: selectionContext,
+      rows: resultCapacity.context === selectionContext ? Math.max(resultCapacity.rows, rowCount) : rowCount,
+    });
+  }
 
   useEffect(() => {
     if (!resultsCurrent) return;

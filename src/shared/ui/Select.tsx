@@ -14,6 +14,7 @@ import { Popover } from "./Popover";
 import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 import { ComboboxChoice } from "./arc/combobox/combobox";
 import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
+import { useKeyedActiveIndex } from "../hooks/useKeyedActiveIndex";
 
 export type SelectChoice = {
   value: string;
@@ -97,8 +98,15 @@ export function Select({
   ...triggerProps
 }: SelectProps) {
   const [open, setOpen] = useState(false);
+  // A disabled select cannot stay open: close during render so re-enabling does not reopen it.
+  if (disabled && open) setOpen(false);
   const expanded = open && !disabled;
-  const [active, setActive] = useState(() => initialActive(options, value));
+  // Keyboard cursor restarts on open / committed-value change, not on a new `options` array.
+  const [active, setActive] = useKeyedActiveIndex(
+    `${open}:${value}`,
+    options.length,
+    () => initialActive(options, value),
+  );
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
@@ -108,15 +116,6 @@ export function Select({
   const composed = visibleLabel || Boolean(description) || Boolean(error);
   const selected = options.find((option) => option.value === value);
   const activeId = options[active] != null ? `${listId}-opt-${active}` : undefined;
-
-  useEffect(() => {
-    if (disabled) setOpen(false);
-  }, [disabled]);
-
-  useEffect(() => {
-    if (!open) return;
-    setActive(initialActive(options, value));
-  }, [open, value, options]);
 
   useEffect(() => {
     if (!open) return;

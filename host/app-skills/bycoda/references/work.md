@@ -5,6 +5,12 @@
   and others) in a project. Sessions run on the host and survive closing the app.
 - `sessions.list` / `sessions.read` read other conversations in this project, a few
   exchanges per page; page older with `nextBefore`. They are read-only.
+- At the first mention of another session, use the exact returned `markdownReference`
+  (or `link`). Never construct a target from a title, provider ID or guessed session ID.
+  `sessions.read` also returns references for its stable `turnId` values. Read a
+  session before describing its work. A found/read reference does not mean a
+  coordination request was sent, acknowledged or agreed. Opening a reference
+  grants no send authority and never starts migration or agent work.
 - Owner-only UI: provider handoff, message queue edits, rewind to a checkpoint,
   compact, account switching.
 

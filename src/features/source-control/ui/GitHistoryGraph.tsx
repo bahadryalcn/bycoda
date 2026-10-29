@@ -16,7 +16,6 @@ import {
   Suspense,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   ChevronDown,
@@ -51,10 +50,9 @@ import { GitGraphDialog } from "./GitGraphDialog";
 import { GitGraphList, type GraphListItem } from "./GitGraphList";
 import { GraphSearchInput } from "./GitGraphParts";
 import { RefNameDialog } from "./RefNameDialog";
-import { appName } from "../../../shared/lib/appName";
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback, GitLoading } from "./GitFeedback";
-import { confirmNative } from "../model/gitConfirmation";
+import { confirmGitAction } from "../model/gitConfirmation";
 const GitGraphWorkspace = lazy(() =>
   import("./GitGraphWorkspace").then((module) => ({
     default: module.GitGraphWorkspace,
@@ -199,13 +197,14 @@ export function GitHistoryGraph({
       case "reset-mixed":
         return run(() => gitReset(cwd, sha, "mixed"));
       case "reset-hard": {
-        const confirmed = await ask(
-          t(
-            "Reset the current branch to {p0} and discard all uncommitted changes? This cannot be undone.",
+        const confirmed = await confirmGitAction({
+          title: t("Hard reset to {p0}?", { p0: commit.shortSha }),
+          message: t(
+            "The current branch moves to {p0} and all uncommitted changes are discarded. This can’t be undone.",
             { p0: commit.shortSha },
           ),
-          { title: appName(), kind: "warning", okLabel: t("Reset") },
-        );
+          confirmLabel: t("Hard reset"),
+        });
         if (confirmed) await run(() => gitReset(cwd, sha, "hard"));
         return;
       }
@@ -259,7 +258,11 @@ export function GitHistoryGraph({
   const discardResolution = async () => {
     if (
       resolutionDirty &&
-      !(await confirmNative(t("Discard the unsaved conflict resolution?"), t("Discard")))
+      !(await confirmGitAction({
+        title: t("Discard conflict resolution?"),
+        message: t("Your unsaved edits to the conflict resolution will be discarded."),
+        confirmLabel: t("Discard"),
+      }))
     )
       return false;
     if (resolutionDirty) setResolutionReset((value) => value + 1);

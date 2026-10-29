@@ -88,11 +88,11 @@ export function useProviderSignInPrompts({ active, sessions, sessionsRef }: Prov
     seenProviderSignInRequests.add(activeProviderSignInRequest.key);
     setProviderSignInRequest(activeProviderSignInRequest);
   }, [activeProviderSignInRequest, seenProviderSignInRequests]);
-  useEffect(() => {
-    if (providerSignInRequest && active?.id !== providerSignInRequest.sessionId) {
-      setProviderSignInRequest(null);
-    }
-  }, [active?.id, providerSignInRequest]);
+  // A request belongs to the session it was raised for. Drop it while rendering
+  // once another session is active, so returning later does not resurrect it.
+  const visibleProviderSignInRequest =
+    providerSignInRequest?.sessionId === active?.id ? providerSignInRequest : null;
+  if (visibleProviderSignInRequest !== providerSignInRequest) setProviderSignInRequest(null);
 
   // Choosing a signed-out or expired account opens its sign-in instead of
   // letting the next turn fail. Re-checked after the read: the user may have
@@ -123,7 +123,7 @@ export function useProviderSignInPrompts({ active, sessions, sessionsRef }: Prov
   return {
     providerAccountRecovery,
     setProviderAccountRecovery,
-    providerSignInRequest,
+    providerSignInRequest: visibleProviderSignInRequest,
     setProviderSignInRequest,
     promptProviderAccountSignIn,
   };

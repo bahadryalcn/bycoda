@@ -1,0 +1,80 @@
+/* Product knowledge: a one-line summary on the daily screen, managed in its own dialog. */
+.social-knowledge-row {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
+}
+.social-knowledge-row > div {
+  min-inline-size: 0;
+}
+.social-knowledge-row strong {
+  display: block;
+  font-weight: 500;
+}
+.social-knowledge-row small {
+  display: block;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+.social-knowledge {
+  display: grid;
+  gap: 1.25rem;
+  padding: 1rem;
+}
+.social-knowledge-field {
+  display: grid;
+  gap: 0.25rem;
+  max-inline-size: 28rem;
+}
+.social-knowledge-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.social-knowledge-heading h3 {
+  margin: 0;
+}
+.social-knowledge-facts {
+  display: grid;
+  gap: 0.75rem;
+}
+.social-knowledge-list {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.social-knowledge-list li {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
+}
+.social-knowledge-list li > div {
+  display: grid;
+  gap: 0.125rem;
+  min-inline-size: 0;
+}
+.social-knowledge-list strong {
+  font-weight: 500;
+}
+.social-knowledge-list span,
+.social-knowledge-list small {
+  overflow-wrap: anywhere;
+}
+.social-knowledge-list small {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

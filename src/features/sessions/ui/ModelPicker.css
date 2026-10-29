@@ -3,3 +3,41 @@
   min-inline-size: min(250px, calc(100vw - 18px));
   max-inline-size: min(320px, calc(100vw - 18px));
 }
+
+/* Field presentation: the trigger answers a labelled form question, so it fills the row,
+   reads left to right and carries the same neutral field frame as Select. The selectors are
+   one step stronger than the shared Button states so the frame and fill stay put on hover. */
+button.model-picker-field-trigger[data-model-picker-presentation="field"] {
+  min-block-size: var(--ui-control-height-md);
+  padding-inline: var(--space-3, 0.75rem);
+  border: 1px solid var(--ui-control-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-muted);
+  font-size: var(--ui-font-body);
+  justify-content: flex-start;
+  text-align: start;
+}
+button.model-picker-field-trigger[data-model-picker-presentation="field"] > .model-picker-field-chevron {
+  margin-inline-start: auto;
+}
+@media (hover: hover) and (pointer: fine) {
+  button.model-picker-field-trigger[data-model-picker-presentation="field"]:hover:not(:disabled) {
+    border-color: var(--ui-field-border-hover);
+    background: var(--ui-surface-muted);
+  }
+}
+button.model-picker-field-trigger[data-model-picker-presentation="field"][aria-expanded="true"],
+button.model-picker-field-trigger[data-model-picker-presentation="field"]:active:not(:disabled) {
+  border-color: var(--ui-field-border-hover);
+  background: var(--ui-surface-muted);
+}
+button.model-picker-field-trigger[data-model-picker-presentation="field"]:focus-visible {
+  border-color: var(--ui-field-border-focus);
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+}
+button.model-picker-field-trigger[data-model-picker-presentation="field"]:disabled {
+  color: var(--ui-control-disabled-fg);
+  background: var(--ui-control-disabled-surface);
+  border-color: var(--ui-control-disabled-border);
+}

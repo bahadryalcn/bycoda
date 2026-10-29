@@ -117,7 +117,13 @@ export function useProjectRemoval({
               !confirmedDirtyIds.has(file.id),
           );
         if (unsaved.length > 0) {
-          if (!(await confirmDiscardUnsaved("Close these tabs with unsaved files?"))) {
+          if (
+            !(await confirmDiscardUnsaved({
+              title: t("Close tabs with unsaved files?"),
+              confirmLabel: t("Discard and close"),
+              files: unsaved,
+            }))
+          ) {
             // Bulk/group callers must stop, rather than marking this project
             // removed and proceeding with the rest of their selection.
             throw new Error(t("Cancelled"));

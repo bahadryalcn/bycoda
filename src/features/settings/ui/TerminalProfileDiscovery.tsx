@@ -1,7 +1,7 @@
 import { SettingsFeedback } from "./settingsControls";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { UserRound } from "../../../shared/ui/icons";
@@ -53,15 +53,13 @@ export function TerminalProfileDiscovery({
   const providerRevision = useRef(0);
   const operationBusy = useRef(false);
 
-  useLayoutEffect(() => {
-    providerRevision.current += 1;
-    operationBusy.current = false;
-    setOpenPopover(false);
-    setActiveOperation(null);
-    setProfiles(null);
-    setError(null);
-    setMessage(null);
-  }, [provider]);
+  // Callers key this control by provider; unmounting retires in-flight operations.
+  useEffect(() => {
+    const revision = providerRevision;
+    return () => {
+      revision.current += 1;
+    };
+  }, []);
 
   useEffect(() => {
     if (!autoDiscover || disabled) return;

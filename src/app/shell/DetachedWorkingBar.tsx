@@ -37,14 +37,14 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
   const menuId = useId();
   const count = agents.length;
   const summary = `${count} ${count === 1 ? "conversation" : "conversations"}`;
+  // The menu cannot stay open with nothing to list. Closed while rendering so it
+  // does not reopen when agents return.
+  if (!count && open) setOpen(false);
 
   useEffect(() => () => dragCleanup.current?.(), []);
   useEffect(() => {
     if (open) menu.current?.querySelector<HTMLButtonElement>("[role=menuitem]")?.focus();
   }, [open]);
-  useEffect(() => {
-    if (!count) setOpen(false);
-  }, [count]);
 
   const dismiss = () => {
     setOpen(false);
@@ -121,7 +121,7 @@ export function DetachedWorkingBar({ agents, onSelectAgent }: Props) {
           setWindowError(error instanceof Error ? error.message : String(error)),
         );
       }}
-      className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-stroke [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
+      className={`flex h-8 min-w-0 shrink-0 select-none items-center gap-2 border-b border-(--ui-pane-border) [padding-inline-start:0.75rem] ${dragging ? "cursor-grabbing" : "cursor-grab"}`}
     >
       <span className="text-ui-micro text-(--ui-text-secondary)">{t("Working")}</span>
       <Button

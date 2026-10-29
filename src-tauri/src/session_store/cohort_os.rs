@@ -77,53 +77,43 @@ pub(super) fn process_start() -> Result<Option<String>, String> {
 }
 
 pub(super) fn file_identity(file: &File) -> Result<(String, u64), String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{
-            FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
-            BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO,
-        };
-        let mut links: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-        let mut identity: FILE_ID_INFO = unsafe { std::mem::zeroed() };
-        if unsafe { GetFileInformationByHandle(file.as_raw_handle() as _, &mut links) } == 0
-            || unsafe {
-                GetFileInformationByHandleEx(
-                    file.as_raw_handle() as _,
-                    FileIdInfo,
-                    &mut identity as *mut _ as _,
-                    std::mem::size_of::<FILE_ID_INFO>() as u32,
-                )
-            } == 0
-        {
-            return Err("Native writer physical file identity is unavailable".into());
-        }
-        let bytes = identity.FileId.Identifier;
-        let id = bytes
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>();
-        Ok((
-            format!("windows-file:{:016x}:{id}", identity.VolumeSerialNumber),
-            links.nNumberOfLinks as u64,
-        ))
+    let (identity, links) = bycoda_physical_store_admission::PhysicalFileId::inspect(file)
+        .map_err(|_| "Native writer physical file identity is unavailable".to_owned())?;
+    Ok((identity.native_format().to_owned(), links))
+}
+
+#[cfg(windows)]
+pub(super) fn connection_identity(
+    connection: &rusqlite::Connection,
+) -> Result<(String, u64), String> {
+    use std::os::windows::io::BorrowedHandle;
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+
+    let mut handle = std::ptr::null_mut::<std::ffi::c_void>();
+    // SAFETY: the connection is borrowed for this synchronous call. SQLite writes
+    // its main database's own HANDLE to an initialized pointer-sized output.
+    // The standard Windows VFS file-control operation performs no SQL mutation.
+    let status = unsafe {
+        rusqlite::ffi::sqlite3_file_control(
+            connection.handle(),
+            c"main".as_ptr(),
+            rusqlite::ffi::SQLITE_FCNTL_WIN32_GET_HANDLE,
+            (&mut handle as *mut *mut std::ffi::c_void).cast(),
+        )
+    };
+    if status != rusqlite::ffi::SQLITE_OK || handle.is_null() || handle == INVALID_HANDLE_VALUE {
+        return Err("Native writer SQLite connection handle identity is unavailable".into());
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = file
-            .metadata()
-            .map_err(|_| "Native writer file identity cannot be read")?;
-        Ok((
-            format!("unix-file:{}:{}", metadata.dev(), metadata.ino()),
-            metadata.nlink(),
-        ))
-    }
-    #[cfg(not(any(windows, unix)))]
-    {
-        let _ = file;
-        Err("Native writer physical file identity is unsupported".into())
-    }
+    // SAFETY: the successful VFS result is SQLite-owned and remains valid while
+    // this borrowed connection is alive. Duplicate it; never take ownership of
+    // or close the original SQLite handle, nor carry that borrow across an await.
+    let borrowed = unsafe { BorrowedHandle::borrow_raw(handle) };
+    let file = File::from(
+        borrowed
+            .try_clone_to_owned()
+            .map_err(|_| "Native writer SQLite connection identity cannot be inspected")?,
+    );
+    file_identity(&file)
 }
 
 pub(super) fn safe_file(path: &Path, create: bool, fresh: bool) -> Result<File, String> {

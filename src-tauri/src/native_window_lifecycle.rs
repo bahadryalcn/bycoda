@@ -13,6 +13,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, Resource, ResourceTable, Webview, WebviewWindow};
 
+mod admitted_work;
+pub(crate) use admitted_work::run as run_admitted_blocking;
+
 const SLOT_NAME: &str = "bycoda.native-window-lifecycle";
 
 /// The physical Window owns this slot. Reusing a label creates a new resource
@@ -499,8 +502,19 @@ pub(crate) enum NativeWriteAdmission {
 
 impl NativeWriteAdmission {
     pub(crate) fn finish<T, E>(self, result: Result<T, E>) -> Result<T, E> {
+        self.finish_observed(result, Ok(()))
+    }
+
+    /// Native-only observation may withhold idle proof without changing an
+    /// already-authoritative public result (for example SQL delete + cleanup).
+    pub(crate) fn finish_observed<T, E>(
+        self,
+        result: Result<T, E>,
+        observation: Result<(), ()>,
+    ) -> Result<T, E> {
         if let Self::Tracked(operation) = self {
-            let _ = operation.finish(result.as_ref().map(|_| ()).map_err(|_| ()));
+            let tracked = result.as_ref().map(|_| ()).map_err(|_| ()).and(observation);
+            let _ = operation.finish(tracked);
         }
         result
     }
@@ -580,6 +594,15 @@ pub(crate) fn persistence_write<T>(
     window: &tauri::Window,
     work: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
+    persistence_write_observed(window, || (work(), Ok(())))
+}
+
+/// The public command result can be authoritative even when best-effort work
+/// failed. That native observation withholds qualification; it grants no retry.
+pub(crate) fn persistence_write_observed<T>(
+    window: &tauri::Window,
+    work: impl FnOnce() -> (Result<T, String>, Result<(), ()>),
+) -> Result<T, String> {
     let admission = {
         let barrier = window.app_handle().try_state::<WindowBarrier>();
         let resources = window.resources_table();
@@ -587,7 +610,8 @@ pub(crate) fn persistence_write<T>(
             .map_err(|error| error.to_string())?
     };
     // Resource/token locks are released; work's SQL guard drops before finish.
-    admission.finish(work())
+    let (result, observation) = work();
+    admission.finish_observed(result, observation)
 }
 
 /// The actual native command's mutation key, not a separate caller-chosen scope.
@@ -617,12 +641,22 @@ pub(crate) fn session_persistence_write<T>(
 pub(crate) fn admit_window_buffers(window: &tauri::Window) -> Result<NativeWriteAdmission, String> {
     let barrier = window.app_handle().try_state::<WindowBarrier>();
     let resources = window.resources_table();
-    admit_lane(
-        &resources,
-        barrier.as_ref().map(|state| state.inner()),
-        NativeLane::Buffers,
-    )
-    .map_err(|error| error.to_string())
+    admit_buffer_resources(&resources, barrier.as_ref().map(|state| state.inner()))
+}
+
+fn admit_buffer_resources(
+    resources: &ResourceTable,
+    barrier: Option<&WindowBarrier>,
+) -> Result<NativeWriteAdmission, String> {
+    admit_lane(resources, barrier, NativeLane::Buffers).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+pub(crate) fn test_admit_window_buffers(
+    resources: &ResourceTable,
+    barrier: Option<&WindowBarrier>,
+) -> Result<NativeWriteAdmission, String> {
+    admit_buffer_resources(resources, barrier)
 }
 
 fn ensure_slot(

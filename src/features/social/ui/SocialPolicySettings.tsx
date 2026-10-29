@@ -6,9 +6,9 @@ import { Alert } from "../../../shared/ui/Alert";
 import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { Notice } from "./socialShared";
-import { REMOTE_PROVIDERS } from "../../connections/model/protocol";
+import { SocialModelField } from "./SocialModelField";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import {
   SOCIAL_PLATFORMS,
@@ -92,31 +92,19 @@ export function SocialPolicySettings({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const savingRef = useRef(false);
-  const version = JSON.stringify(policies);
   const value = scope === "global" ? policies.global : (policies.platforms[scope] ?? {});
-  const draft = drafts[scope] ?? draftFor(value);
+  // Refreshes may update other scopes during editing: only edited drafts are preserved,
+  // unedited ones always read the current saved value.
+  const keptDraft = (stored: Draft | undefined) =>
+    stored && isEdited(stored) ? stored : draftFor(value);
+  const draft = keptDraft(drafts[scope]);
   const conflict = isEdited(draft) && policyKey(draft.base) !== policyKey(value);
   const effective = scope === "global" ? policies.global : effectiveSocialPolicy(policies, scope);
-
-  // Refreshes may update other scopes during editing. Preserve edited drafts.
-  useEffect(() => {
-    setDrafts((current) => {
-      const next = { ...current };
-      let changed = false;
-      for (const key of Object.keys(next) as Scope[]) {
-        if (next[key] && !isEdited(next[key])) {
-          delete next[key];
-          changed = true;
-        }
-      }
-      return changed ? next : current;
-    });
-  }, [version]);
 
   const update = (changes: Partial<Omit<Draft, "base">>) => {
     setDrafts((current) => ({
       ...current,
-      [scope]: { ...(current[scope] ?? draftFor(value)), ...changes },
+      [scope]: { ...keptDraft(current[scope]), ...changes },
     }));
     setError("");
     setNotice("");
@@ -138,11 +126,6 @@ export function SocialPolicySettings({
     >
       <h2>{t("AI and content")}</h2>
       {executorLabel ? <p className="text-ui-caption text-(--ui-text-secondary)">{t("Settings for computer: {p0}", { p0: executorLabel })}</p> : null}
-      <p className="social-muted">
-        {t(
-          "Choose the agent and content limits. Platforms without settings use the shared settings.",
-        )}
-      </p>
       <label className="social-policy-scope">
         {t("Settings scope")}
         <NativeSelect
@@ -260,34 +243,13 @@ export function SocialPolicySettings({
         }}
       >
         <fieldset className="social-workspace">
-          <label>
-            {t("AI agent")}
-            <NativeSelect
-              disabled={saving || socialLocked}
-              value={draft.provider}
-              onChange={(event) => update({ provider: event.target.value, model: "" })}
-            >
-              <option value="">
-                {scope === "global" ? t("Do not use AI") : t("Use the shared agent setting")}
-              </option>
-              {REMOTE_PROVIDERS.map((id) => (
-                <option key={id} value={id}>
-                  {HARNESS_TITLE[id]}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          <details className="social-settings">
-            <summary>{t("Customize the model")}</summary>
-            <TextField
-              label={t("AI model")}
-              value={draft.model}
-              disabled={saving || socialLocked || !draft.provider}
-              maxLength={200}
-              placeholder={t("Empty: the agent's default model")}
-              onChange={(event) => update({ model: event.target.value })}
-            />
-          </details>
+          <SocialModelField
+            label={t("AI agent and model")}
+            inheritLabel={scope === "global" ? t("Do not use AI") : t("Use the shared agent setting")}
+            disabled={saving || socialLocked}
+            value={{ provider: draft.provider, model: draft.model }}
+            onChange={(next) => update(next)}
+          />
           <section className="social-policy-limits">
             <h3>{t("Character limits")}</h3>
             <div className="social-field-grid">

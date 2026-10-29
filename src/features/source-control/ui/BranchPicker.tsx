@@ -22,6 +22,7 @@ import {
   notifyGitChanged,
   type GitBranchInfo,
 } from "../../../platform/tauri/fs";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { CreateBranchDialog } from "./CreateBranchDialog";
@@ -71,7 +72,6 @@ export function BranchPicker({
   useLocale();
   const [open, setOpen] = useState(initialOpen);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const [busy, setBusy] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [checkoutBusy] = useGitPanelState(cwd, "busy");
@@ -117,13 +117,6 @@ export function BranchPicker({
   };
 
   useEffect(() => {
-    if (!open) return;
-    setQuery("");
-    setError(null);
-    setActive(0);
-  }, [open]);
-
-  useEffect(() => {
     // Popover measures itself off-screen behind `visibility: hidden` before
     // placing it; focusing during that pass is a no-op in real browsers, so
     // wait a frame for the popover to actually be visible.
@@ -132,10 +125,20 @@ export function BranchPicker({
     return () => cancelAnimationFrame(id);
   }, [open]);
 
-  useEffect(() => {
-    // The parent disables git controls during our fetch too; keep its results
-    // and errors in this picker while the shared operation lock is held.
-    if (enabled || fetching) return;
+  // The parent disables git controls during our fetch too; keep its results
+  // and errors in this picker while the shared operation lock is held.
+  const disabledIdle = !enabled && !fetching;
+  if (
+    disabledIdle &&
+    (open ||
+      creating ||
+      query !== "" ||
+      error !== null ||
+      busy ||
+      blocked !== null ||
+      blockedError !== null ||
+      blockedBusy !== null)
+  ) {
     setOpen(false);
     setCreating(false);
     setQuery("");
@@ -144,7 +147,7 @@ export function BranchPicker({
     setBlocked(null);
     setBlockedError(null);
     setBlockedBusy(null);
-  }, [enabled, fetching]);
+  }
 
   const createName = query.trim();
   const createTaken = (projectBranches?.branches ?? []).some(
@@ -172,9 +175,9 @@ export function BranchPicker({
     }));
   }, [branch, projectBranches, query]);
 
-  useEffect(() => {
-    setActive((i) => (rows.length === 0 ? 0 : Math.min(i, rows.length - 1)));
-  }, [rows.length]);
+  // Navigation restarts whenever the picker opens or the query changes; a
+  // shrinking list clamps the highlighted row during render.
+  const [active, setActive] = useKeyedActiveIndex(`${open}:${query}`, rows.length);
 
   const applySwitch = (pending: PendingSwitch) =>
     pending.kind === "create"
@@ -315,6 +318,8 @@ export function BranchPicker({
             dismiss(true);
             return;
           }
+          setQuery("");
+          setError(null);
           setOpen(true);
         }}
         label={label}
@@ -394,7 +399,6 @@ export function BranchPicker({
               className="min-w-0 flex-1"
               onChange={(e) => {
                 setQuery(e.target.value);
-                setActive(0);
                 setError(null);
               }}
               onKeyDown={onSearchKey}

@@ -115,7 +115,15 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
   const [port, setPort] = useState(launch?.input.expectedPort?.toString() ?? "");
   const [restartCommand, setRestartCommand] = useState("");
   const [restartCwd, setRestartCwd] = useState("");
-  const [startResult, setStartResult] = useState<DevServerStartResult>();
+  // A start result from this panel replaces the launch's result until the next launch result.
+  const [localStart, setLocalStart] = useState<{
+    base: DevServerStartResult | undefined;
+    result: DevServerStartResult | undefined;
+  }>();
+  const setStartResult = (result: DevServerStartResult | undefined) =>
+    setLocalStart({ base: launch?.result, result });
+  const startResult =
+    localStart && localStart.base === launch?.result ? localStart.result : launch?.result;
   const alive = useRef(false);
   const pending = useRef(false);
   const scanFlight = useRef<Promise<boolean> | undefined>(undefined);
@@ -233,10 +241,8 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh]);
   useEffect(() => {
-    if (launch?.result) {
-      setStartResult(launch.result);
-      if (launch.result.server) void action("refresh", () => refresh(true));
-    }
+    // A finished launch started a server outside this panel's own requests; rescan for it.
+    if (launch?.result?.server) void action("refresh", () => refresh(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launch?.result]);
 

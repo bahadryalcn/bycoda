@@ -102,8 +102,8 @@
 }
 .root:has(.lid .trigger:focus-visible, .input:focus-visible) .shape::after {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
 }
 .root:has(.lid .trigger[aria-invalid="true"]) .shape::after {
   border-color: var(--ui-tone-danger-fg);

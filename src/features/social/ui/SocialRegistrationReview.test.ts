@@ -7,7 +7,7 @@ import type {
   SocialBrowserWorkflow,
   SocialRegistrationReview as Review,
 } from "../model/socialBrowser";
-import { SocialRegistrationReview } from "./SocialRegistrationReview";
+import { SocialRegistrationReview, registrationReviewKey } from "./SocialRegistrationReview";
 
 let element: HTMLDivElement, root: Root;
 const workflow: SocialBrowserWorkflow = {
@@ -61,6 +61,7 @@ const render = async (record = workflow) =>
   act(async () =>
     root.render(
       createElement(SocialRegistrationReview, {
+        key: registrationReviewKey(client, "page", record),
         accountId: "page",
         workflow: record,
         client,

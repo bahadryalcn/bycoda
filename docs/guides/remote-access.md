@@ -23,6 +23,29 @@ read-only. Work already accepted can finish; preparation does not send a new
 message, save a file or commit an unfinished IME composition on your behalf.
 Cancellation waits for the Native preparation to release its input gates.
 
+Pending local file, attachment or Notes operations can prevent preparation from
+completing. Closing their initiating view or losing a reply does not cancel the
+original work or make it safe to repeat. These checks do not move Notes or their
+unsaved edits to another computer; that migration remains unavailable.
+
+If a Host Notes request loses its reply while the operation is still running,
+later Notes requests stay queued until the original operation really finishes.
+A failed response alone does not mean it is safe to repeat the save.
+
+Preparation can also retain unsaved Notes from the library, session dock and
+closed editor views, including unfinished titles or tags. It keeps those inputs
+as private recovery data. It does not save the note, insert an image or apply a
+recovery choice. A pending operation keeps its original result even after its
+view closes; an uncertain outcome is held for reconciliation without replay.
+
+If a Notes field closes with unconfirmed input, **Retained note input** lets you
+copy its exact text and open the note to check it. Reusing that input is an
+explicit choice. Empty text, spaces and unfinished composition are preserved;
+opening the note does not automatically apply or save them. When private recovery
+capacity is full, new operations wait while the retained input stays available.
+When inserting several images, a later failure preserves references to images
+already saved so their outcome can be checked before another attempt.
+
 For a local project, open its project menu and choose **New conversation on this
 computer's Host**. bycoda connects to this computer's Host before opening the new
 conversation. Send the first message to create it there. The project and selected

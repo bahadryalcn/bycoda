@@ -2,7 +2,7 @@ import { NumberField } from "../../shared/ui/NumberField";
 import { TextField } from "../../shared/ui/TextField";
 import { TextareaField } from "../../shared/ui/TextareaField";
 import { getLocale, t, useLocale } from "../../shared/i18n/technical";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { Alert } from "../../shared/ui/Alert";
 import { Button } from "../../shared/ui/Button";
@@ -99,20 +99,38 @@ function capturedLabel(capturedAt: string, now: number): string | undefined {
 const unavailableTransport = (cause: unknown) =>
   /RPC_HOST_UNAVAILABLE|host unavailable|host connection.*(?:closed|refused)/i.test(String(cause));
 
-/** RPC only: opening this panel starts viewing; control remains opt-in. */
-export function DevicePanel({
-  api,
-  hostLabel,
-  onAddDevice,
-  onAddImage,
-  draftScope,
-}: {
+type DevicePanelProps = {
   api: DevicePanelApi;
   hostLabel?: string;
   onAddDevice?: (device: DeviceSummary) => Promise<void>;
   onAddImage?: (device: DeviceSummary, frame: DeviceFrame, comment: string) => Promise<void>;
   draftScope?: string;
-}) {
+};
+
+const apiKeys = new WeakMap<object, number>();
+let nextApiKey = 0;
+function apiKeyFor(api: DevicePanelApi): number {
+  let key = apiKeys.get(api);
+  if (key === undefined) {
+    key = nextApiKey++;
+    apiKeys.set(api, key);
+  }
+  return key;
+}
+
+/** RPC only: opening this panel starts viewing; control remains opt-in. */
+export function DevicePanel(props: DevicePanelProps) {
+  // A new Host API (conversation or machine switch) starts a fresh surface.
+  return <DevicePanelSurface key={apiKeyFor(props.api)} {...props} />;
+}
+
+function DevicePanelSurface({
+  api,
+  hostLabel,
+  onAddDevice,
+  onAddImage,
+  draftScope,
+}: DevicePanelProps) {
   useLocale();
   const [status, setStatus] = useState<DeviceHostStatus>();
   const [devices, setDevices] = useState<DeviceSummary[]>([]);
@@ -120,7 +138,8 @@ export function DevicePanel({
   const [frame, setFrame] = useState<DeviceFrame>();
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
   const [live, setLive] = useState(false);
-  const [busy, setBusy] = useState(false);
+  // The surface starts by reading the Host status in the effect below.
+  const [busy, setBusy] = useState(true);
   const [operation, setOperation] = useState<DeviceOperation>();
   const [loadingDevices, setLoadingDevices] = useState(false);
   const [error, setError] = useState<string>();
@@ -153,19 +172,24 @@ export function DevicePanel({
   const [annotations, setAnnotationState] = useState<Record<string, AnnotationDraft>>(() =>
     draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {},
   );
+  const annotationsRef = useRef(annotations);
+  useLayoutEffect(() => {
+    annotationsRef.current = annotations;
+  }, [annotations]);
   const setAnnotations = (
     change:
       | Record<string, AnnotationDraft>
       | ((value: Record<string, AnnotationDraft>) => Record<string, AnnotationDraft>),
   ) => {
-    setAnnotationState((current) => {
-      const next = typeof change === "function" ? change(current) : change;
-      if (draftScope) {
-        annotationDraftCache.delete(draftScope);
-        if (Object.keys(next).length) annotationDraftCache.set(draftScope, next);
-      }
-      return next;
-    });
+    // Compute from the latest drafts and retain them in the module cache here,
+    // not inside a state updater that React may repeat or discard.
+    const next = typeof change === "function" ? change(annotationsRef.current) : change;
+    annotationsRef.current = next;
+    if (draftScope) {
+      annotationDraftCache.delete(draftScope);
+      if (Object.keys(next).length) annotationDraftCache.set(draftScope, next);
+    }
+    setAnnotationState(next);
   };
   const gesture = useRef<{
     x: number;
@@ -188,32 +212,6 @@ export function DevicePanel({
   }, []);
   useEffect(() => {
     let active = true;
-    pending.current = null;
-    capturePending.current = null;
-    setBusy(false);
-    setOperation(undefined);
-    setLoadingDevices(false);
-    setError(undefined);
-    setErrorOperation("status");
-    setStatus(undefined);
-    setDevices([]);
-    setSelected("");
-    setFrame(undefined);
-    setLive(false);
-    setControl(false);
-    setApp("");
-    setText("");
-    setOutput("");
-    setDeviceNotice(undefined);
-    setActionCompleted(false);
-    setX(0);
-    setY(0);
-    setSurface(undefined);
-    setAnnotating(false);
-    setAnnotationState(draftScope ? (annotationDraftCache.get(draftScope) ?? {}) : {});
-    setConnectionUnavailable(false);
-    setZoom(1);
-    setBusy(true);
     void (async () => {
       try {
         let value = await api.status();

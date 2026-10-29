@@ -193,3 +193,9 @@ exact source anchors and boundary.
 Project directory/browse/createDirectory/open now share the existing projects service and neutral projects.ts DTOs across HTTP/WS. Creation rechecks grant immediately before mkdir; open retains DB transaction authorization. Existing directory/root navigation is preserved; no UI or native picker redesign is implied.
 
 Source only, uncommitted; no build/install/release stamp. Current full checklist and overlapping evidence: feature-host-runtime/SKILL.md and the local IMPLEMENTATION ledger.
+
+## VIS 2026-10-29: flyout search
+
+Delivered in source (uncommitted; unit evidence only):
+
+- The compact Projects flyout filters its own list through `projectFilter` (`ProjectRail.tsx`); the separate project picker was removed from the compact flyout, so there is one search and one list. Per-project actions (including delete) remain on the flyout rows. Covered by `SidebarRename.test.ts`.

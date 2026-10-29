@@ -34,6 +34,10 @@ vi.mock("../../../platform/tauri/fs", () => ({
   gitCommitFileDiff: api.diff,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: api.ask }));
+vi.mock("../../../shared/model/appConfirm", () => ({
+  confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+    api.ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+}));
 vi.mock("../../sessions/model/checkpoint", () => ({
   sessionCheckpointStatus: api.checkpoint,
   sessionCheckpointFileDiff: api.checkpointDiff,
@@ -138,8 +142,12 @@ it.each(["modified", "untracked"])(
     await act(async () => {
       await props().onDiscardFile!(props().files[0].id);
     });
-    expect(api.ask.mock.calls[0][0]).toContain(
-      status === "untracked" ? "Delete untracked file a.txt?" : "Discard changes in a.txt?",
+    expect(api.ask).toHaveBeenCalledWith(
+      expect.stringContaining("“a.txt”"),
+      expect.objectContaining({
+        title: status === "untracked" ? "Delete untracked file?" : "Discard changes?",
+        okLabel: status === "untracked" ? "Delete file" : "Discard changes",
+      }),
     );
     expect(api.discard).not.toHaveBeenCalled();
     expect(api.notify).not.toHaveBeenCalled();

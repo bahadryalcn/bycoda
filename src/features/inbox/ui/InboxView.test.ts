@@ -6,14 +6,18 @@ import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 import { clearInboxCache, githubWorkItemDetails, type InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
 import {
-  InboxDetail,
+  InboxDetail as RawInboxDetail,
   inboxStatusMark,
   inboxShowsFullFileDiff,
-  LinkedWorkItemPanel,
+  LinkedWorkItemPanel as RawLinkedWorkItemPanel,
 } from "./InboxView";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+
+const InboxDetail = withQueryClient(RawInboxDetail);
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 function item(overrides: Partial<InboxItem> = {}): InboxItem {
   return {

@@ -37,9 +37,7 @@ export const COMPOSER_TIP_INTERVAL = 20_000;
 /** One quiet reveal for the whole hint; the text is complete from the first frame. */
 function TipText({ text, animate }: { text: string; animate: boolean }) {
   const [settled, setSettled] = useState(!animate);
-  useEffect(() => {
-    if (!animate) setSettled(true);
-  }, [animate]);
+  if (!animate && !settled) setSettled(true);
 
   return (
     <p

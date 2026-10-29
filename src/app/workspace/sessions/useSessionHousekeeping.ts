@@ -16,19 +16,25 @@ export interface SessionHousekeepingDeps {
   sessions: Session[];
   btwRequestsRef: MutableRefObject<Map<string, { sessionId: string; controller: AbortController }>>;
   notesEnabled: boolean;
+  notesViewOpen: boolean;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;
 }
 
 /**
- * Btw request pruning and unmount cleanup, notes-panel gating and idle surface
- * preloads. Four effects in their original order; they run where the first was declared.
+ * Btw request pruning and unmount cleanup, notes-panel gating (render-time) and idle
+ * surface preloads. The effects keep their original order; they run where the first was declared.
  */
 export function useSessionHousekeeping({
   sessions,
   btwRequestsRef,
   notesEnabled,
+  notesViewOpen,
   setNotesViewOpen,
 }: SessionHousekeepingDeps): void {
+  // The notes view cannot stay open once notes are disabled. Adjusted while
+  // rendering so no frame shows a disabled panel; nothing is persisted for it.
+  if (!notesEnabled && notesViewOpen) setNotesViewOpen(false);
+
   useEffect(() => {
     const liveSessionIds = new Set(sessions.map((session) => session.id));
     for (const [key, request] of btwRequestsRef.current) {
@@ -50,10 +56,6 @@ export function useSessionHousekeeping({
     },
     [],
   );
-
-  useEffect(() => {
-    if (!notesEnabled) setNotesViewOpen(false);
-  }, [notesEnabled]);
 
   useEffect(
     () =>

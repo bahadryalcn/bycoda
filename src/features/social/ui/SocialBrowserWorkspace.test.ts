@@ -6,7 +6,7 @@ import { withQueryClient } from "../../../../tests/browser/queryTest";
 import type { SocialAccount } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import type { SocialBrowserWorkflow } from "../model/socialBrowser";
-import { SocialBrowserWorkspace } from "./SocialBrowserWorkspace";
+import { SocialBrowserWorkspace, socialBrowserWorkspaceKey } from "./SocialBrowserWorkspace";
 import { SocialPanelActiveContext } from "./socialContext";
 
 const status = vi.fn(),
@@ -259,7 +259,13 @@ it("clears registration details when the selected account changes", async () => 
   });
   expect(email.value).toBe("fixture@example.com");
   await act(async () =>
-    root.render(createElement(Component, { account: { ...account, id: "other" }, client })),
+    root.render(
+      createElement(Component, {
+        key: socialBrowserWorkspaceKey(client, { id: "other" }),
+        account: { ...account, id: "other" },
+        client,
+      }),
+    ),
   );
   expect(element.querySelector<HTMLInputElement>('input[type="email"]')?.value ?? "").toBe("");
   expect(advance).not.toHaveBeenCalled();
@@ -338,8 +344,22 @@ it("prepares and continues the exact LinkedIn Page profile and clears its public
   ).toBeNull();
   await act(async () =>
     root.render(
-      createElement(Component, { account: { ...linkedIn, id: "linkedin-other" }, client }),
+      createElement(Component, {
+        key: socialBrowserWorkspaceKey(client, { id: "linkedin-other" }),
+        account: { ...linkedIn, id: "linkedin-other" },
+        client,
+      }),
     ),
+  );
+  // The re-keyed workspace starts closed with the default action, as the account detail does.
+  await open();
+  await act(async () =>
+    element.querySelector<HTMLButtonElement>('[aria-haspopup="listbox"]')!.click(),
+  );
+  await act(async () =>
+    [...document.body.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+      .find((item) => item.textContent === "Sign up")!
+      .click(),
   );
   for (const label of ["Registration email", "Page name", "Username", "Page category"])
     expect(field(label).value).toBe("");

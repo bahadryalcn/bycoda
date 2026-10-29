@@ -73,3 +73,26 @@ it("keeps small filtered results available when the previous page becomes invali
   expect(host.querySelector("nav")).toBeNull();
   expect(host.textContent).toContain("Task 0");
 });
+
+it("marks the task whose detail is open and shows its status as a badge", () => {
+  const rows = tasks.slice(0, 2).map((task, index) => ({
+    ...task,
+    status: index === 0 ? "blocked" : "todo",
+  })) as BoardTask[];
+  act(() =>
+    root.render(
+      createElement(TaskList, {
+        tasks: rows,
+        selected: new Set<string>(),
+        selection: false,
+        activeKey: "local:task-0",
+        onOpen: vi.fn(),
+        onToggle: vi.fn(),
+      }),
+    ),
+  );
+  const items = host.querySelectorAll("li");
+  expect(items[0].hasAttribute("data-active")).toBe(true);
+  expect(items[1].hasAttribute("data-active")).toBe(false);
+  expect(items[0].textContent).toContain("Blocked");
+});

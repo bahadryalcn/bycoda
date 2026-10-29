@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -15,6 +16,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import { NotePreviewParser, notePreviewReferences, replacePreviewBlock } from "../previewBlocks";
 import { NoteMarkdownEditor } from "./NoteMarkdownEditor";
+import type { NativeInputObserver } from "../../../shared/lib/native-input-observer";
 
 export function NoteEditablePreview({
   value,
@@ -26,6 +28,9 @@ export function NoteEditablePreview({
   onPasteImages,
   onEditingChange,
   onFocus,
+  inputObserver,
+  stateObserver,
+  canMutate,
 }: {
   value: string;
   cwd?: string;
@@ -36,6 +41,9 @@ export function NoteEditablePreview({
   onPasteImages: (files: File[]) => void;
   onEditingChange: (editing: boolean) => void;
   onFocus: () => void;
+  inputObserver?: NativeInputObserver;
+  stateObserver?: NativeInputObserver;
+  canMutate?: () => boolean;
 }) {
   useLocale();
   const previewRoot = useRef<HTMLDivElement>(null);
@@ -51,6 +59,24 @@ export function NoteEditablePreview({
   callbacks.current = { onEditingChange };
   // A source edit or host update invalidates the selected source range.
   const currentActive = localValue.current === value ? active : null;
+  const inputState = useRef({ value, active: currentActive });
+  useLayoutEffect(() => {
+    inputState.current = { value, active: currentActive };
+  });
+  useLayoutEffect(() => {
+    const registration = stateObserver?.attach(
+      () => ({
+        snapshot: {
+          inputKind: "preview-range",
+          value: inputState.current.value,
+          active: inputState.current.active,
+        },
+        ...(inputState.current.active && !viewRef.current ? { busy: "notes-view-loading" } : {}),
+      }),
+      { canClose: () => true, close: () => {} },
+    );
+    return () => registration?.unregister();
+  }, [stateObserver, viewRef]);
   rangeRef.current = currentActive ? { from: currentActive.from, to: currentActive.to } : null;
   useEffect(() => {
     if (localValue.current !== value) {
@@ -76,6 +102,7 @@ export function NoteEditablePreview({
   const blocks = useMemo(() => parser.current!.parse(previewValue), [previewValue]);
   const referencesFor = useMemo(() => notePreviewReferences(blocks), [blocks]);
   const start = (from: number, to: number) => {
+    if (canMutate && !canMutate()) return;
     if (!currentActive && deferredValue !== value) return;
     if (currentActive && from >= currentActive.previewTo) {
       const shift = currentActive.to - currentActive.previewTo;
@@ -94,12 +121,13 @@ export function NoteEditablePreview({
     // Leaving source-range editing is a view action. Changes have already
     // reached the canonical draft/autosave owner; explicit Save stays separate.
     requestAnimationFrame(() => {
-      previewRoot.current?.querySelector<HTMLElement>(
-        `[data-note-block-from="${from}"] [data-action-primary]`,
-      )?.focus();
+      previewRoot.current
+        ?.querySelector<HTMLElement>(`[data-note-block-from="${from}"] [data-action-primary]`)
+        ?.focus();
     });
   };
   const append = () => {
+    if (canMutate && !canMutate()) return;
     const next = value.trim() && !value.endsWith("\n\n") ? `${value}\n\n` : value;
     localValue.current = next;
     setActive({
@@ -146,7 +174,9 @@ export function NoteEditablePreview({
               }}
             >
               {block.definition ? (
-                <pre className="whitespace-pre-wrap text-ui-caption text-(--ui-text-secondary)">{block.text}</pre>
+                <pre className="whitespace-pre-wrap text-ui-caption text-(--ui-text-secondary)">
+                  {block.text}
+                </pre>
               ) : (
                 <AgentMarkdown
                   text={`${block.text}\n\n${referencesFor(block.text)}`}
@@ -182,6 +212,7 @@ export function NoteEditablePreview({
           {before}
           <div className="note-active-block">
             <NoteMarkdownEditor
+              inputObserver={inputObserver}
               viewRef={viewRef}
               value={value.slice(currentActive.from, currentActive.to)}
               autoFocus
@@ -189,6 +220,7 @@ export function NoteEditablePreview({
               showLineNumbers={false}
               onFocus={onFocus}
               onChange={(next) => {
+                if (canMutate && !canMutate()) return;
                 const updated = replacePreviewBlock(
                   value,
                   currentActive.from,

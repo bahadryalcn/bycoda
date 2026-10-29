@@ -62,12 +62,12 @@
   color: var(--text-muted);
 }
 @media (hover: hover) and (pointer: fine) {
-  .input:hover:not(:disabled, [aria-invalid="true"]) {
-    border-color: var(--foreground);
+  .input:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) {
+    border-color: var(--ui-field-border-hover, var(--foreground));
   }
 }
 .input:focus-visible {
-  border-color: var(--foreground);
+  border-color: var(--ui-field-border-focus, var(--foreground));
 }
 .input[aria-invalid="true"] {
   border-color: var(--danger);

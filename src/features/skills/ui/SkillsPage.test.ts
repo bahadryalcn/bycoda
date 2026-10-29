@@ -16,6 +16,13 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ ask: vi.fn() }));
+vi.mock("../../../shared/model/appConfirm", async () => {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return {
+    confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+      ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+  };
+});
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({
     isMaximized: async () => false,

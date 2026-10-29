@@ -92,7 +92,9 @@ test("compact navigation keeps workspace tabs in place and groups project and ap
       await page.setViewportSize({ width, height: 800 });
       await expect(projects).toBeInViewport();
       await expect(tools).toBeInViewport();
-      expect(await projects.textContent()).toContain("Projects");
+      // The collapsed rail is icon-only: the name lives in the accessible name and tooltip.
+      expect((await projects.textContent())?.trim()).toBe("");
+      await expect(projects).toHaveAttribute("title", "Projects and groups");
       for (const label of ["Sessions", "Explorer", "Changes"]) {
         const tab = tabNamed(label);
         await expect(tab).toBeVisible();

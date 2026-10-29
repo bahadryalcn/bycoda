@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
@@ -38,6 +38,12 @@ type Props = {
   children: ReactNode;
 };
 
+/** The part of `list` that is still among the `current` project paths. */
+function stillListed(list: string[], current: string[]): string[] {
+  const available = new Set(current.map(pathKey));
+  return list.filter((path) => available.has(pathKey(path)));
+}
+
 export function ProjectMultiSelect({
   paths,
   groups,
@@ -59,21 +65,19 @@ export function ProjectMultiSelect({
   const [error, setError] = useState(false);
   const [deleting, setDeleting] = useState<string[] | null>(null);
   const latestPaths = useRef(paths);
-  const deletionStarted = useRef(false);
+  const [deletionStarted, setDeletionStarted] = useState(false);
   latestPaths.current = paths;
   // A bulk removal can succeed for some projects before another fails. Keep
   // the failed/unprocessed part selected and retryable as the rail updates.
-  useEffect(() => {
-    if (!deleting || !deletionStarted.current) return;
-    const available = new Set(paths.map(pathKey));
-    const remaining = deleting.filter((path) => available.has(pathKey(path)));
+  if (deleting && deletionStarted) {
+    const remaining = stillListed(deleting, paths);
     if (remaining.length !== deleting.length) setDeleting(remaining.length ? remaining : null);
-  }, [paths, deleting]);
+  }
   const chosen = paths.filter((path) => stored.has(pathKey(path)));
   const active = chosen.length > 0;
   const selected = new Set(chosen.map(pathKey));
   const reset = () => {
-    deletionStarted.current = false;
+    setDeletionStarted(false);
     setStored(new Set());
     setAnchor(null);
     setMenu(null);
@@ -163,7 +167,7 @@ export function ProjectMultiSelect({
     else if (id === "clear") reset();
     else if (id === "up" || id === "down") onMove(selected, id === "up" ? -1 : 1);
     else if (id === "delete" && canDelete) {
-      deletionStarted.current = false;
+      setDeletionStarted(false);
       setDeleting([...chosen]);
     } else if (id === "ungrouped") moveTo(null);
     else if (id.startsWith("group:")) moveTo(id.slice(6));
@@ -274,12 +278,11 @@ export function ProjectMultiSelect({
           confirmDisabled={!deletionValid}
           onConfirm={async () => {
             if (!deletionValid) return;
-            deletionStarted.current = true;
+            setDeletionStarted(true);
             try {
               await onRemove?.([...deleting]);
             } catch (reason) {
-              const available = new Set(latestPaths.current.map(pathKey));
-              const remaining = deleting.filter((path) => available.has(pathKey(path)));
+              const remaining = stillListed(deleting, latestPaths.current);
               setDeleting(remaining.length ? remaining : null);
               throw reason;
             }

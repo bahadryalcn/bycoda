@@ -6,7 +6,6 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
@@ -14,7 +13,13 @@ import { ToolHeader } from "../../../app/shell/ToolNavigation";
 import { filterCodeHostScopes, useCodeHostScopes } from "../model/codeHostScopes";
 import { prefetchInboxItem } from "../model/inboxPrefetch";
 import { t, useLocale } from "../../../shared/i18n";
-import { INBOX_VISIBLE_POLL_MS } from "../model/inboxPolling";
+import { useInboxCollection } from "../hooks/useInboxCollection";
+import { useProviderConnections } from "../hooks/useProviderConnections";
+import { useInboxProviderScopes } from "../hooks/useInboxProviderScopes";
+import { useInboxSourceSelection } from "../hooks/useInboxSourceSelection";
+import { useGithubWorkItem } from "../hooks/useGithubWorkItem";
+import { useLinkedTarget, useLinkedTargetItem } from "../hooks/useLinkedTarget";
+import { visibleInboxItems } from "../model/inboxVisibleItems";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
@@ -55,36 +60,24 @@ import { useDragResize } from "../../../shared/hooks/useDragResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import {
-  githubStatus,
-  githubWorkItem,
-  GITHUB_WORK_ITEM_FRESH_MS,
   gitlabAttentionLabel,
   inboxItemKey,
   inboxItemRef,
-  inboxListFetchedAt,
   inboxProjectsForRail,
-  listInboxItems,
-  peekGithubWorkItem,
-  peekInboxList,
   formatRelativeTime,
   type InboxItem,
-  type InboxProviderErrors,
   type InboxQuery,
 } from "../model/githubTasks";
 import {
-  applyInboxFilters,
   connectableInboxSources,
   hasActiveInboxFilters,
   loadInboxConnections,
   linearProjectOptions,
   inboxFetchState,
   loadInboxFilters,
-  loadInboxSource,
   pruneInboxFilters,
   saveInboxFilters,
-  resolveInboxSource,
   saveInboxConnections,
-  saveInboxSource,
   DEFAULT_INBOX_FILTERS,
   visibleInboxSources,
   INBOX_SOURCE_LABELS,
@@ -101,7 +94,6 @@ import { type RecentProject } from "../../projects/model/recents";
 import { type LinkedWorkItem } from "../../sessions/model/session";
 import type { SessionSummary } from "../../sessions/data/sessionStore";
 import {
-  inboxItemMatchesLinkedWorkItem,
   linkedWorkItemInboxKey,
   relatedSessionsForInboxItem,
 } from "../../sessions/model/sessionWorkItem";
@@ -109,31 +101,11 @@ import {
   isInboxEntryUnseen,
   markInboxItemSeen,
   markInboxItemsSeen,
-  rememberInboxItems,
   useInboxSeenTick,
 } from "../model/inboxSeen";
 import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
-import {
-  LINEAR_CHANGE_EVENT,
-  linearConnected,
-  listLinearTeams,
-  readHiddenLinearTeamIds,
-  subscribeLinearScope,
-  saveHiddenLinearTeamIds,
-  type LinearTeam,
-} from "../model/linear";
-import {
-  JIRA_CHANGE_EVENT,
-  jiraConnected,
-  jiraBackgroundSyncEnabled,
-  listJiraProjects,
-  readHiddenJiraProjectIds,
-  subscribeJiraScope,
-  saveHiddenJiraProjectIds,
-  type JiraProject,
-} from "../model/jira";
-import { GITLAB_CHANGE_EVENT, gitlabConnected } from "../model/gitlab";
-import { AZUREDEVOPS_CHANGE_EVENT, azureDevOpsConnected } from "../model/azureDevOps";
+import { saveHiddenLinearTeamIds } from "../model/linear";
+import { saveHiddenJiraProjectIds } from "../model/jira";
 import {
   loadTabGroupColors,
   loadTabGroupCustomColors,
@@ -169,25 +141,6 @@ const LINKED_PANEL_DEFAULT_WIDTH = 520;
 let rememberedWidth = DEFAULT_WIDTH;
 
 let rememberedLinkedPanelWidth = LINKED_PANEL_DEFAULT_WIDTH;
-
-function peekInboxForRail(recents: RecentProject[], cwd: string) {
-  const projects = inboxProjectsForRail(recents, cwd);
-  const filters = pruneInboxFilters(
-    loadInboxFilters(),
-    projects.map((project) => project.path),
-  );
-  const linearHidden = readHiddenLinearTeamIds();
-  const jiraHidden = readHiddenJiraProjectIds();
-  // An unreadable saved scope must not surface a cached unscoped list.
-  if (!linearHidden || !jiraHidden) return null;
-  return peekInboxList(projects, {
-    assignedToMe: filters.assignedToMe,
-    state: inboxFetchState(filters),
-    search: "",
-    linearHiddenTeamIds: linearHidden,
-    jiraHiddenProjectIds: jiraHidden,
-  });
-}
 
 function InboxSourceTab({
   source,
@@ -272,28 +225,17 @@ export function InboxView({
   const [groupColors] = useState(loadTabGroupColors);
   const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
-  const [searchInput, setSearchInput] = useRetainedState(`${viewStateKey}:search`, "");
-  const deferredSearch = useDeferredValue(searchInput);
-  const queryClient = useQueryClient();
+  const [retainedSearch, setRetainedSearch] = useRetainedState(`${viewStateKey}:search`, "");
   const queryVisible = useQueryVisible();
-  const forceRead = useRef(false);
-  const retryFailedRead = useRef(false);
-  const [items, setItems] = useState<InboxItem[]>(
-    () => peekInboxForRail(recents, cwd)?.items ?? [],
-  );
-  const [loading, setLoading] = useState(() => peekInboxForRail(recents, cwd) == null);
   const [refreshAction, setRefreshAction] = useState<"toolbar" | "retry" | null>(null);
   const refreshActionRef = useRef<"toolbar" | "retry" | null>(null);
   const [readStatusError, setReadStatusError] = useState<string | null>(null);
   const [failedReadItem, setFailedReadItem] = useState<InboxItem | null>(null);
-  const [providerErrors, setProviderErrors] = useState<InboxProviderErrors>(
-    () => peekInboxForRail(recents, cwd)?.errors ?? {},
-  );
   const [refresh, setRefresh] = useState(0);
   const requestRefresh = (action: "toolbar" | "retry", retryFailedOnly = false) => {
     if (refreshActionRef.current) return;
     refreshActionRef.current = action;
-    retryFailedRead.current = retryFailedOnly;
+    collection.setRetryFailedOnly(retryFailedOnly);
     setRefreshAction(action);
     setRefresh((value) => value + 1);
   };
@@ -310,24 +252,59 @@ export function InboxView({
       if (boardIssueOrigin.current?.isConnected) boardIssueOrigin.current.focus();
     });
   };
-  const [jiraAutomaticSync, setJiraAutomaticSync] = useState(jiraBackgroundSyncEnabled);
   useEffect(() => {
     const reload = () => setRefresh((value) => value + 1);
     window.addEventListener(WORKSPACE_REFRESH_EVENT, reload);
     return () => window.removeEventListener(WORKSPACE_REFRESH_EVENT, reload);
   }, []);
-  const targetSelectionKey = target ? linkedWorkItemInboxKey(target) : null;
-  const [connections, setConnections] = useState(loadInboxConnections);
-  const [source, setSource] = useState(() =>
-    pullRequestsOnly
-      ? ("github" as InboxSource)
-      : resolveInboxSource(loadInboxSource(), connections),
-  );
-  const [selectedKey, setSelectedKey] = useRetainedState<string | null>(
+  // Provider status reads (mount and provider-change events) are generation
+  // guarded in useProviderConnections: opening Settings unmounts this view, so a
+  // token set there lands on the way back in, and only the newest read writes
+  // the last-known copy used to seed the next mount.
+  const { connections } = useProviderConnections(loadInboxConnections, saveInboxConnections);
+  const { source, selectSource, revealSource } = useInboxSourceSelection({
+    pullRequestsOnly,
+    connections,
+  });
+  const {
+    linearScope,
+    linearHiddenTeamIds,
+    linearTeams,
+    jiraScope,
+    jiraHiddenProjectIds,
+    jiraProjects,
+    jiraAutomaticSync,
+  } = useInboxProviderScopes({
+    source,
+    onScopeChange: () => setRefresh((value) => value + 1),
+  });
+  const linked = useLinkedTarget({
+    target,
+    onReveal: () => {
+      revealSource("github");
+      setDetailOpen(true);
+    },
+  });
+  const { targetSelectionKey } = linked;
+  const searchInput = linked.searchPinned ? "" : retainedSearch;
+  const deferredSearch = useDeferredValue(searchInput);
+  const [retainedKey, setSelectedKey] = useRetainedState<string | null>(
     `${viewStateKey}:${source}:selected`,
     targetSelectionKey,
   );
-  const [targetItem, setTargetItem] = useState<InboxItem | null>(null);
+  // The selection stays the user's own choice; a linked target only pins it.
+  const selectedKey = linked.pinnedKey ?? retainedKey;
+  /** Hands the pinned target over to the user's retained selection and search. */
+  const releaseTarget = () => {
+    if (!linked.pinnedKey) return;
+    setSelectedKey(linked.pinnedKey);
+    setRetainedSearch("");
+    linked.releaseTarget();
+  };
+  const setSearchInput = (value: string) => {
+    releaseTarget();
+    setRetainedSearch(value);
+  };
   const [filters, setFilters] = useState(() => {
     const saved = loadInboxFilters();
     return pullRequestsOnly
@@ -341,18 +318,9 @@ export function InboxView({
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement | null>(null);
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
-  // `null` means the saved scope cannot be read; fetches then fail closed.
-  const [linearScope, setLinearScope] = useState(readHiddenLinearTeamIds);
-  const linearHiddenTeamIds = useMemo(() => linearScope ?? [], [linearScope]);
-  const [linearTeams, setLinearTeams] = useState<LinearTeam[]>([]);
-  const [jiraScope, setJiraScope] = useState(readHiddenJiraProjectIds);
-  const jiraHiddenProjectIds = useMemo(() => jiraScope ?? [], [jiraScope]);
-  const [jiraProjects, setJiraProjects] = useState<JiraProject[]>([]);
-  const prevRefresh = useRef(refresh);
 
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
-  const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
   const activeFilters = useMemo(
     () =>
       pruneInboxFilters(
@@ -425,14 +393,6 @@ export function InboxView({
   });
 
   useEffect(() => {
-    if (!target) return;
-    setSource("github");
-    setSearchInput("");
-    setSelectedKey(targetSelectionKey);
-    setDetailOpen(true);
-  }, [target, targetSelectionKey, setSelectedKey, setSearchInput]);
-
-  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented || hasActiveOverlay()) return;
       event.preventDefault();
@@ -451,99 +411,6 @@ export function InboxView({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [connectMenuOpen, filterMenu]);
 
-  useEffect(() => {
-    return subscribeLinearScope(() => {
-      setLinearScope(readHiddenLinearTeamIds());
-      setRefresh((value) => value + 1);
-    });
-  }, []);
-
-  useEffect(() => {
-    return subscribeJiraScope(() => {
-      setJiraScope(readHiddenJiraProjectIds());
-      setJiraAutomaticSync(jiraBackgroundSyncEnabled());
-      setRefresh((value) => value + 1);
-    });
-  }, []);
-
-  useEffect(() => {
-    const onChange = () => setRefresh((value) => value + 1);
-    window.addEventListener(GITLAB_CHANGE_EVENT, onChange);
-    window.addEventListener(AZUREDEVOPS_CHANGE_EVENT, onChange);
-    return () => {
-      window.removeEventListener(GITLAB_CHANGE_EVENT, onChange);
-      window.removeEventListener(AZUREDEVOPS_CHANGE_EVENT, onChange);
-    };
-  }, []);
-
-  // The mount read does the real work: opening Settings unmounts this view, so
-  // a token set there lands on the way back in. Reads can also overlap, and
-  // only the newest may write, or a slow earlier answer restores a stale one.
-  useEffect(() => {
-    let cancelled = false;
-    let latest = 0;
-    const read = () => {
-      const generation = ++latest;
-      void Promise.allSettled([
-        githubStatus(),
-        linearConnected(),
-        jiraConnected(),
-        gitlabConnected(),
-        azureDevOpsConnected(),
-      ]).then(([github, linear, jira, gitlab, azuredevops]) => {
-        if (cancelled || generation !== latest) return;
-        setConnections((prev) => ({
-          github: github.status === "fulfilled" ? github.value.connected : prev.github,
-          linear: linear.status === "fulfilled" ? linear.value.connected : prev.linear,
-          jira: jira.status === "fulfilled" ? jira.value.connected : prev.jira,
-          gitlab: gitlab.status === "fulfilled" ? gitlab.value.connected : prev.gitlab,
-          azuredevops:
-            azuredevops.status === "fulfilled" ? azuredevops.value.connected : prev.azuredevops,
-        }));
-      });
-    };
-    read();
-    window.addEventListener(LINEAR_CHANGE_EVENT, read);
-    window.addEventListener(JIRA_CHANGE_EVENT, read);
-    window.addEventListener(GITLAB_CHANGE_EVENT, read);
-    window.addEventListener(AZUREDEVOPS_CHANGE_EVENT, read);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(LINEAR_CHANGE_EVENT, read);
-      window.removeEventListener(JIRA_CHANGE_EVENT, read);
-      window.removeEventListener(GITLAB_CHANGE_EVENT, read);
-      window.removeEventListener(AZUREDEVOPS_CHANGE_EVENT, read);
-    };
-  }, []);
-
-  useEffect(() => {
-    saveInboxConnections(connections);
-  }, [connections]);
-
-  // The initial source is resolved against cached status, so storage can still
-  // name a provider this view has already fallen back from.
-  useEffect(() => {
-    if (!pullRequestsOnly) saveInboxSource(source);
-    // Mount only: the temporary switch to GitHub for a linked target must not
-    // be persisted.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Disconnecting can pull the tab out from under the current selection.
-  useEffect(() => {
-    const available = visibleInboxSources(connections).filter(
-      (candidate) => !pullRequestsOnly || !isTrackerSource(candidate),
-    );
-    const next = pullRequestsOnly
-      ? available.includes(source)
-        ? source
-        : (available[0] ?? "github")
-      : resolveInboxSource(source, connections);
-    if (next === source) return;
-    setSource(next);
-    if (!pullRequestsOnly) saveInboxSource(next);
-  }, [connections, source, pullRequestsOnly]);
-
   const visibleSources = visibleInboxSources(connections).filter(
     (source) => !pullRequestsOnly || !isTrackerSource(source),
   );
@@ -551,133 +418,21 @@ export function InboxView({
   const sourceAvailable = visibleSources.includes(source);
   const noSourcesConnected = visibleSources.length === 0;
 
-  // The roster has to come from Linear, not from the fetched issues: hiding a
-  // team drops its issues, so a derived list could never offer it back.
-  useEffect(() => {
-    if (source !== "linear") return;
-    let cancelled = false;
-    void listLinearTeams()
-      .then((teams) => {
-        if (!cancelled) setLinearTeams(teams);
-      })
-      .catch(() => {
-        if (!cancelled) setLinearTeams([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [source, linearHiddenTeamIds]);
-
-  // Same for Jira: hidden projects are excluded from the fetch itself.
-  useEffect(() => {
-    if (source !== "jira") return;
-    let cancelled = false;
-    void listJiraProjects()
-      .then((next) => {
-        if (!cancelled) setJiraProjects(next);
-      })
-      .catch(() => {
-        if (!cancelled) setJiraProjects([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [source, jiraHiddenProjectIds]);
-
-  const inboxQueryKey = useMemo(
-    () => ["inbox", "list", projects, fetchQuery] as const,
-    [projects, fetchQuery],
-  );
-  const inboxQuery = useQuery({
-    queryKey: inboxQueryKey,
-    queryFn: async ({ signal }) => {
-      const force = forceRead.current;
-      forceRead.current = false;
-      const retryFailedOnly = retryFailedRead.current;
-      retryFailedRead.current = false;
-      const cached = peekInboxList(projects, fetchQuery);
-      try {
-        return await listInboxItems(projects, fetchQuery, {
-          force,
-          retryFailedOnly,
-          onProgress: (result) => {
-            if (!signal.aborted) queryClient.setQueryData(inboxQueryKey, result);
-          },
-        });
-      } catch (reason) {
-        if (cached) return cached;
-        const message = reason instanceof Error ? reason.message : String(reason);
-        return {
-          items: [] as InboxItem[],
-          errors: {
-            github: message,
-            linear: message,
-            jira: message,
-            gitlab: message,
-            azuredevops: message,
-          },
-        };
-      }
-    },
-    initialData: () => peekInboxList(projects, fetchQuery) ?? undefined,
-    initialDataUpdatedAt: () => inboxListFetchedAt(projects, fetchQuery),
-    // Reopening checks the shared cache's real age, including background reads.
-    // listInboxItems skips provider calls while that cache is still fresh.
-    refetchOnMount: "always",
+  const collection = useInboxCollection({
+    projects,
+    fetchQuery,
     enabled: queryVisible,
-    staleTime: INBOX_VISIBLE_POLL_MS,
-    refetchInterval: (query) => {
-      if (source === "jira" && !jiraAutomaticSync) return false;
-      // A cached read on entry must not start another full five-minute wait.
-      // Failed reads use the regular interval rather than a tight retry loop.
-      if (Object.keys(query.state.data?.errors ?? {}).length > 0) return INBOX_VISIBLE_POLL_MS;
-      const fetchedAt = inboxListFetchedAt(projects, fetchQuery);
-      return fetchedAt
-        ? Math.max(1000, fetchedAt + INBOX_VISIBLE_POLL_MS - Date.now())
-        : INBOX_VISIBLE_POLL_MS;
+    automaticRefresh: !(source === "jira" && !jiraAutomaticSync),
+    refresh,
+    onRefreshSettled: () => {
+      refreshActionRef.current = null;
+      setRefreshAction(null);
     },
-    retry: false,
   });
-  useEffect(() => {
-    setItems(inboxQuery.data?.items ?? []);
-    setProviderErrors(inboxQuery.data?.errors ?? {});
-    setLoading(inboxQuery.isPending);
-  }, [inboxQuery.data, inboxQuery.isPending, inboxQuery.isFetching]);
-  useEffect(() => {
-    if (refresh === prevRefresh.current) return;
-    prevRefresh.current = refresh;
-    forceRead.current = true;
-    void queryClient.invalidateQueries({ queryKey: inboxQueryKey }).finally(() => {
-      if (prevRefresh.current === refresh) {
-        refreshActionRef.current = null;
-        setRefreshAction(null);
-      }
-    });
-  }, [refresh, inboxQueryKey, queryClient]);
+  const { items, providerErrors, loading } = collection;
+  const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
 
-  useEffect(() => {
-    if (!target || items.some((item) => inboxItemMatchesLinkedWorkItem(item, target))) {
-      return;
-    }
-    let cancelled = false;
-    void githubWorkItem(cwd, target.repo, target.kind, target.number, {
-      maxAgeMs: GITHUB_WORK_ITEM_FRESH_MS,
-    })
-      .then((item) => {
-        if (cancelled) return;
-        setTargetItem({
-          ...item,
-          projectPath: cwd,
-          provider: "github",
-        });
-      })
-      .catch(() => {
-        // The normal Inbox remains usable when an exact lookup is unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd, items, target, targetSelectionKey]);
+  const { targetItem, patchTargetItem } = useLinkedTargetItem({ target, cwd, items });
 
   const sessionCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -693,60 +448,51 @@ export function InboxView({
     const saved = markInboxItemSeen({ key, updatedAt: item.updatedAt });
     setFailedReadItem(saved ? null : item);
     setReadStatusError(saved ? null : "Could not save read status. Please try again.");
+    releaseTarget();
     setSelectedKey(key);
     setDetailOpen(true);
   });
-  const visibleItems = useMemo(() => {
-    if (!sourceAvailable) return [];
-    const visible = filterCodeHostScopes(
-      applyInboxFilters(
-        pullRequestsOnly ? items.filter((item) => item.kind === "pr") : items,
-        activeFilters,
-        deferredSearch,
-        Date.now(),
+  const {
+    provider: codeScopesProvider,
+    scopes: codeScopesLoaded,
+    hidden: codeScopesHidden,
+  } = codeScopes;
+  const visibleItems = useMemo(
+    () =>
+      visibleInboxItems({
+        items,
+        pullRequestsOnly,
+        prSort,
+        filters: activeFilters,
+        search: deferredSearch,
         source,
-      ),
-      codeScopes.provider,
-      codeScopes.scopes,
-      codeScopes.hidden,
-    );
-    if (pullRequestsOnly)
-      return [...visible].sort((a, b) =>
-        prSort === "title"
-          ? a.title.localeCompare(b.title)
-          : Date.parse(b.updatedAt) - Date.parse(a.updatedAt),
-      );
-    if (!target || source !== "github") return visible;
-    const targeted =
-      items.find((item) => inboxItemMatchesLinkedWorkItem(item, target)) ??
-      (targetItem && inboxItemMatchesLinkedWorkItem(targetItem, target) ? targetItem : null);
-    if (!targeted || visible.includes(targeted)) return visible;
-    return [targeted, ...visible];
-  }, [
-    pullRequestsOnly,
-    prSort,
-    activeFilters,
-    items,
-    deferredSearch,
-    source,
-    sourceAvailable,
-    target,
-    targetItem,
-    codeScopes.provider,
-    codeScopes.scopes,
-    codeScopes.hidden,
-  ]);
+        sourceAvailable,
+        codeScopes: {
+          provider: codeScopesProvider,
+          scopes: codeScopesLoaded,
+          hidden: codeScopesHidden,
+        },
+        target,
+        targetItem,
+        now: Date.now(),
+      }),
+    [
+      pullRequestsOnly,
+      prSort,
+      activeFilters,
+      items,
+      deferredSearch,
+      source,
+      sourceAvailable,
+      target,
+      targetItem,
+      codeScopesProvider,
+      codeScopesLoaded,
+      codeScopesHidden,
+    ],
+  );
 
   const inboxSeenTick = useInboxSeenTick();
-  useEffect(() => {
-    rememberInboxItems(
-      items.map((item) => ({
-        key: inboxItemKey(item),
-        updatedAt: item.updatedAt,
-        projectPath: item.projectPath,
-      })),
-    );
-  }, [items]);
   const sourceEntries = useMemo(
     () =>
       sourceAvailable
@@ -766,7 +512,7 @@ export function InboxView({
 
   const sourceError = providerErrors[source] ?? null;
   // Full pages mean older items may not be loaded; the list reads have no total.
-  const sourceLimited = inboxQuery.data?.limited?.includes(source) ?? false;
+  const sourceLimited = collection.limited?.includes(source) ?? false;
 
   // Local filters cannot retarget an open public-comment composer. Resolve the
   // selected identity from allowed loaded data before considering a default.
@@ -779,21 +525,14 @@ export function InboxView({
   const waitingForTarget = !!targetSelectionKey && selectedKey === targetSelectionKey;
   const selected = selectedByKey ?? (waitingForTarget || selectedKey ? null : visibleItems[0]) ?? null;
   const selectedOutsideFilters = !!selected && !visibleItems.some((entry) => inboxItemKey(entry) === inboxItemKey(selected));
-  const updateInboxItem = useCallback((next: InboxItem) => {
-    const key = inboxItemKey(next);
-    setItems((current) => current.map((entry) => (inboxItemKey(entry) === key ? next : entry)));
-    queryClient.setQueryData<Awaited<ReturnType<typeof listInboxItems>>>(
-      inboxQueryKey,
-      (current) =>
-        current
-          ? {
-              ...current,
-              items: current.items.map((entry) => (inboxItemKey(entry) === key ? next : entry)),
-            }
-          : current,
-    );
-    setTargetItem((current) => (current && inboxItemKey(current) === key ? next : current));
-  }, []);
+  const { updateItem } = collection;
+  const updateInboxItem = useCallback(
+    (next: InboxItem) => {
+      updateItem(next);
+      patchTargetItem(next);
+    },
+    [updateItem, patchTargetItem],
+  );
   const shownItemCount = listWindowSize(visibleItems.length, listLimit);
   const shownItems = visibleItems.slice(0, shownItemCount);
   const hasMoreItems = shownItemCount < visibleItems.length;
@@ -822,22 +561,6 @@ export function InboxView({
     return () => observer.disconnect();
   }, [hasMoreItems, shownItemCount]);
 
-  useEffect(() => {
-    if (loading) return;
-    if (!selected) {
-      // An unavailable identity must not silently become the first remaining
-      // result. A deliberate row selection is required after removal.
-      return;
-    }
-    const key = inboxItemKey(selected);
-    // Keep waiting while the exact cache-miss lookup loads. Otherwise the
-    // current list's first row replaces the requested key.
-    if (targetSelectionKey && selectedKey === targetSelectionKey && key !== targetSelectionKey) {
-      return;
-    }
-    if (key !== selectedKey) setSelectedKey(key);
-  }, [loading, selected, selectedKey, targetSelectionKey, setSelectedKey]);
-
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
       next,
@@ -849,10 +572,10 @@ export function InboxView({
 
   const onSourceChange = (next: InboxSource) => {
     setDetailOpen(false);
+    releaseTarget();
     setSelectedKey(null);
     setBoardIssue(null);
-    setSource(next);
-    if (!pullRequestsOnly) saveInboxSource(next);
+    selectSource(next);
   };
 
   const onFilterButtonClick = (event: ReactMouseEvent<HTMLButtonElement>) => {
@@ -1369,12 +1092,7 @@ export function LinkedWorkItemPanel({
   const logos = useTabGroupLogos();
   const projects = useMemo(() => inboxProjectsForRail(recents, cwd), [cwd, recents]);
   const projectOptions = useMemo(() => inboxProjectOptions(projects, logos), [logos, projects]);
-  const cachedItem = peekGithubWorkItem(target.repo, target.kind, target.number, cwd);
-  const [item, setItem] = useState<InboxItem | null>(() =>
-    cachedItem ? { ...cachedItem, projectPath: cwd, provider: "github" } : null,
-  );
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(cachedItem == null);
+  const { item, error, loading, setItem } = useGithubWorkItem(target, cwd);
   const resize = useDragResize({
     min: LINKED_PANEL_MIN_WIDTH,
     max: () =>
@@ -1392,31 +1110,6 @@ export function LinkedWorkItemPanel({
       rememberedLinkedPanelWidth = width;
     },
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    const cached = peekGithubWorkItem(target.repo, target.kind, target.number, cwd);
-    setItem(cached ? { ...cached, projectPath: cwd, provider: "github" } : null);
-    setError(null);
-    setLoading(cached == null);
-    void githubWorkItem(cwd, target.repo, target.kind, target.number, {
-      maxAgeMs: GITHUB_WORK_ITEM_FRESH_MS,
-    })
-      .then((next) => {
-        if (cancelled) return;
-        setItem({ ...next, projectPath: cwd, provider: "github" });
-      })
-      .catch((reason: unknown) => {
-        if (cancelled) return;
-        setError(reason instanceof Error ? reason.message : String(reason));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [cwd, target.kind, target.number, target.repo]);
 
   useEffect(() => {
     if (!visible) return;

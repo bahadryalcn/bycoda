@@ -122,6 +122,10 @@ import {
   type CollapsedProjectRailMode,
 } from "../model/settings";
 
+function useThemeStorageState<T>(load: () => T) {
+  return useStoredPreferenceState(load, subscribeThemeStorage);
+}
+
 export type AppearanceSettings = ReturnType<typeof useAppearanceSettings>;
 
 export function useAppearanceSettings(
@@ -185,57 +189,31 @@ export function useAppearanceSettings(
       setPreferencesUnavailable(appearancePreferencesReadUnavailable());
     }
   }, []);
-  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
-  const [accentColor, setAccentColor] = useState(loadAccentColor);
-  const [opacity, setOpacity] = useState(loadSidebarOpacity);
-  const [mainOpacity, setMainOpacity] = useState(loadMainOpacity);
-  const [blur, setBlur] = useState(loadSidebarBlur);
-  const [themeHue, setThemeHue] = useState(loadThemeHue);
-  const [themeSaturation, setThemeSaturation] = useState(loadThemeSaturation);
-  const [themeDarkLightness, setThemeDarkLightness] = useState(loadThemeDarkLightness);
-  useEffect(() => {
-    const sync = () => {
-      setThemePreference(loadThemePreference());
-      setAccentColor(loadAccentColor());
-      setThemeHue(loadThemeHue());
-      setThemeSaturation(loadThemeSaturation());
-      setThemeDarkLightness(loadThemeDarkLightness());
-      setOpacity(loadSidebarOpacity());
-      setMainOpacity(loadMainOpacity());
-      setBlur(loadSidebarBlur());
-      setBodyGlass(loadBodyGlass());
-      setWindowGlass(loadWindowGlass());
-      setChatBackgroundPath(loadChatBackgroundPath());
-      setChatBackgroundEmptyOpacity(loadChatBackgroundEmptyOpacity());
-      setChatBackgroundSessionOpacity(loadChatBackgroundSessionOpacity());
-      setChatBackgroundScope(loadChatBackgroundScope());
-      setChatBackgroundBlur(loadChatBackgroundBlur());
-      setDiffPalette(loadDiffPalette());
-      setBackgroundEffect(loadNewThreadBackgroundEffect());
-    };
-    const unsubscribe = subscribeThemeStorage(sync);
-    sync();
-    return unsubscribe;
-  }, []);
-  const [bodyGlass, setBodyGlass] = useState(loadBodyGlass);
-  const [windowGlass, setWindowGlass] = useState(loadWindowGlass);
-  const [showExcludedFiles, setShowExcludedFiles] = useState(loadShowExcludedFiles);
-  useEffect(
-    () => subscribeShowExcludedFiles(() => setShowExcludedFiles(loadShowExcludedFiles())),
-    [],
+  const [themePreference, setThemePreference] = useThemeStorageState(loadThemePreference);
+  const [accentColor, setAccentColor] = useThemeStorageState(loadAccentColor);
+  const [opacity, setOpacity] = useThemeStorageState(loadSidebarOpacity);
+  const [mainOpacity, setMainOpacity] = useThemeStorageState(loadMainOpacity);
+  const [blur, setBlur] = useThemeStorageState(loadSidebarBlur);
+  const [themeHue, setThemeHue] = useThemeStorageState(loadThemeHue);
+  const [themeSaturation, setThemeSaturation] = useThemeStorageState(loadThemeSaturation);
+  const [themeDarkLightness, setThemeDarkLightness] = useThemeStorageState(loadThemeDarkLightness);
+  const [bodyGlass, setBodyGlass] = useThemeStorageState(loadBodyGlass);
+  const [windowGlass, setWindowGlass] = useThemeStorageState(loadWindowGlass);
+  const [showExcludedFiles, setShowExcludedFiles] = useStoredPreferenceState(
+    loadShowExcludedFiles,
+    subscribeShowExcludedFiles,
   );
-  const [chatBackgroundPath, setChatBackgroundPath] = useState(loadChatBackgroundPath);
-  const [chatBackgroundEmptyOpacity, setChatBackgroundEmptyOpacity] = useState(
+  const [chatBackgroundPath, setChatBackgroundPath] = useThemeStorageState(loadChatBackgroundPath);
+  const [chatBackgroundEmptyOpacity, setChatBackgroundEmptyOpacity] = useThemeStorageState(
     loadChatBackgroundEmptyOpacity,
   );
-  const [chatBackgroundSessionOpacity, setChatBackgroundSessionOpacity] = useState(
+  const [chatBackgroundSessionOpacity, setChatBackgroundSessionOpacity] = useThemeStorageState(
     loadChatBackgroundSessionOpacity,
   );
-  const [chatBackgroundBlur, setChatBackgroundBlur] = useState(loadChatBackgroundBlur);
-  const [diffPalette, setDiffPalette] = useState<DiffPalette>(loadDiffPalette);
-  const [chatBackgroundScope, setChatBackgroundScope] =
-    useState<ChatBackgroundScope>(loadChatBackgroundScope);
-  const [newThreadBackgroundEffect, setBackgroundEffect] = useState<NewThreadBackgroundEffect>(
+  const [chatBackgroundBlur, setChatBackgroundBlur] = useThemeStorageState(loadChatBackgroundBlur);
+  const [diffPalette, setDiffPalette] = useThemeStorageState(loadDiffPalette);
+  const [chatBackgroundScope, setChatBackgroundScope] = useThemeStorageState(loadChatBackgroundScope);
+  const [newThreadBackgroundEffect, setBackgroundEffect] = useThemeStorageState(
     loadNewThreadBackgroundEffect,
   );
   const [chatBackgroundBusy, setChatBackgroundBusy] = useState(false);
@@ -244,13 +222,11 @@ export function useAppearanceSettings(
   >(null);
   const chatBackgroundPending = useRef(false);
   const [chatBackgroundError, setChatBackgroundError] = useState<string | null>(null);
-  const [uiScale, setUiScale] = useState(loadUiScale);
+  const [uiScale, setUiScale] = useStoredPreferenceState(loadUiScale, subscribeUiScale);
   const [storedCollapsedProjectRailMode, setStoredCollapsedProjectRailMode] =
     useStoredPreferenceState(loadCollapsedProjectRailMode, subscribeCollapsedProjectRailMode);
   const collapsedProjectRailMode =
     controlledCollapsedProjectRailMode ?? storedCollapsedProjectRailMode;
-
-  useEffect(() => subscribeUiScale(() => setUiScale(loadUiScale())), []);
 
   const onThemePreference = useCallback((next: ThemePreference) => {
     applyThemePreference(next, { animate: true });

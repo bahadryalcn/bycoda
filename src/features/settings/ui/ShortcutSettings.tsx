@@ -8,6 +8,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 
 import { RotateCcw, ListFilter } from "../../../shared/ui/icons";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -45,7 +46,10 @@ import { Group, Row, RevealedSetting, Select, SettingsFeedback } from "./setting
 import { ShortcutRecorder } from "../../../shared/ui/ShortcutRecorder";
 
 export type ShortcutModifier = "metaKey" | "ctrlKey" | "altKey" | "shiftKey";
-type ShortcutFeedback = { state: "loading" | "success" | "error"; message: string };
+type ShortcutFeedback =
+  | { state: "loading" }
+  | { state: "success" }
+  | { state: "error"; message: string };
 type ShortcutFeedbackProps = { onFeedbackChange?: (feedback: ShortcutFeedback | null) => void };
 
 export function shortcutModifier(event: KeyboardEvent): ShortcutModifier | null {
@@ -74,7 +78,7 @@ export function ShortcutEditor({
   onDisable: () => void | Promise<void>;
   onReset: () => void | Promise<void>;
 } & ShortcutFeedbackProps) {
-  const locale = useLocale();
+  useLocale();
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -91,19 +95,6 @@ export function ShortcutEditor({
     altKey: false,
     shiftKey: false,
   });
-  useEffect(() => {
-    onFeedbackChange?.(
-      error
-        ? { state: "error", message: error }
-        : busy || saved
-          ? {
-              state: busy ? "loading" : "success",
-              message: busy ? t("Saving…") : t("Saved"),
-            }
-          : null,
-    );
-  }, [onFeedbackChange, error, busy, saved, locale]);
-
   const run = async (action: () => void | Promise<void>) => {
     if (pending.current) return;
     pending.current = true;
@@ -111,11 +102,15 @@ export function ShortcutEditor({
     setBusy(true);
     setError(null);
     setSaved(false);
+    onFeedbackChange?.({ state: "loading" });
     try {
       await action();
       setSaved(true);
+      onFeedbackChange?.({ state: "success" });
     } catch (reason) {
-      setError(t("Could not save shortcut: {p0}", { p0: String(reason) }));
+      const message = t("Could not save shortcut: {p0}", { p0: String(reason) });
+      setError(message);
+      onFeedbackChange?.({ state: "error", message });
     } finally {
       setBusy(false);
       pending.current = false;
@@ -133,6 +128,7 @@ export function ShortcutEditor({
     setPreview("");
     setError(null);
     setSaved(false);
+    onFeedbackChange?.(null);
     setRecording(true);
   };
 
@@ -151,6 +147,7 @@ export function ShortcutEditor({
       if (event.code === "Escape") {
         setRecording(false);
         setError(null);
+        onFeedbackChange?.(null);
         return;
       }
       // Delete disables, but only on its own so Cmd+Delete still records.
@@ -194,7 +191,7 @@ export function ShortcutEditor({
       window.removeEventListener("keydown", onKeyDown, true);
       window.removeEventListener("keyup", onKeyUp, true);
     };
-  }, [onApply, onDisable, recording]);
+  }, [onApply, onDisable, onFeedbackChange, recording]);
 
   return (
     <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
@@ -272,6 +269,7 @@ export function ShortcutEditor({
             onClick={() => {
               setRecording(false);
               setError(null);
+              onFeedbackChange?.(null);
             }}
           >
             {t("Cancel")}
@@ -294,17 +292,14 @@ export function QuickComposerShortcutEditor({
   onFeedbackChange,
 }: { onSaved?: () => void } & ShortcutFeedbackProps = {}) {
   useLocale();
-  const [shortcut, setShortcut] = useState(loadQuickComposerShortcut);
-  const [enabled, setEnabled] = useState(loadQuickComposerEnabled);
-  useEffect(() => {
-    const refresh = () => {
-      setEnabled(loadQuickComposerEnabled());
-      setShortcut(loadQuickComposerShortcut());
-    };
-    const stopEnabled = subscribeQuickComposerEnabled(refresh);
-    const stopShortcut = subscribeQuickComposerShortcut(refresh);
-    return () => { stopEnabled(); stopShortcut(); };
-  }, []);
+  const [shortcut, setShortcut] = useStoredPreferenceState(
+    loadQuickComposerShortcut,
+    subscribeQuickComposerShortcut,
+  );
+  const [enabled, setEnabled] = useStoredPreferenceState(
+    loadQuickComposerEnabled,
+    subscribeQuickComposerEnabled,
+  );
   const persist = async (nextEnabled: boolean, nextShortcut: string, writeShortcut = true, writeEnabled = false) => {
     const previousEnabled = loadQuickComposerEnabled();
     const previousShortcut = loadQuickComposerShortcut();
@@ -438,7 +433,13 @@ function KeybindingSettingsRow({
       }
       feedback={
         feedback ? (
-          <SettingsFeedback state={feedback.state}>{feedback.message}</SettingsFeedback>
+          <SettingsFeedback state={feedback.state}>
+            {feedback.state === "loading"
+              ? t("Saving…")
+              : feedback.state === "success"
+                ? t("Saved")
+                : feedback.message}
+          </SettingsFeedback>
         ) : null
       }
     >
@@ -456,6 +457,18 @@ function KeybindingSettingsRow({
       )}
     </Row>
   );
+}
+
+/** Rows change with the overrides and with the Quick composer's own stored state. */
+function subscribeKeybindingRows(onChange: () => void) {
+  const stopBindings = subscribeKeybindings(onChange);
+  const stopEnabled = subscribeQuickComposerEnabled(onChange);
+  const stopShortcut = subscribeQuickComposerShortcut(onChange);
+  return () => {
+    stopBindings();
+    stopEnabled();
+    stopShortcut();
+  };
 }
 
 export function KeybindingsPage() {
@@ -477,14 +490,10 @@ export function KeybindingsPage() {
       setStatus("all");
     }
   }
-  const [overrides, setOverrides] = useState(loadKeybindingOverrides);
-  useEffect(() => {
-    const refresh = () => setOverrides({ ...loadKeybindingOverrides() });
-    const stopBindings = subscribeKeybindings(refresh);
-    const stopEnabled = subscribeQuickComposerEnabled(refresh);
-    const stopShortcut = subscribeQuickComposerShortcut(refresh);
-    return () => { stopBindings(); stopEnabled(); stopShortcut(); };
-  }, []);
+  const [overrides, setOverrides] = useStoredPreferenceState(
+    loadKeybindingOverrides,
+    subscribeKeybindingRows,
+  );
   const allRows = useMemo(() => currentKeybindings(), [overrides, locale]);
   const categories = [...new Set(KEYBINDINGS.map((row) => row.command.split(":")[0]))];
   const isModified = (command: string) =>

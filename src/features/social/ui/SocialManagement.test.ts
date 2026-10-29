@@ -242,17 +242,25 @@ describe("Social management workflows", () => {
   });
   it("keeps unsaved profile fields separate for each project and preserves failed fact edits", async () => {
     await render(Campaigns, snapshot());
-    const profileDetails = Array.from(container.querySelectorAll("details")).find(
-      (item) =>
-        item.querySelector("summary")?.textContent ===
-        "Product information and verified announcements",
+    // Product knowledge is managed in its own dialog; its drafts survive closing it.
+    await click("Manage");
+    const dialog = document.body;
+    const profileForm = Array.from(dialog.querySelectorAll("form")).find(
+      (item) => item.querySelector("h3")?.textContent === "Product profile",
     )!;
-    await change(control("Product name", profileDetails), "Unsaved Alpha");
-    await change(control("Project", profileDetails), "b");
-    expect(control("Product name", profileDetails).value).toBe("Beta project");
-    await change(control("Project", profileDetails), "a");
-    expect(control("Product name", profileDetails).value).toBe("Unsaved Alpha");
-    const factForm = form("Add verified fact");
+    await change(control("Product name", profileForm), "Unsaved Alpha");
+    await change(control("Project", dialog), "b");
+    expect(control("Product name", dialog).value).toBe("Beta project");
+    await change(control("Project", dialog), "a");
+    expect(control("Product name", dialog).value).toBe("Unsaved Alpha");
+    await act(async () =>
+      Array.from(dialog.querySelectorAll("button"))
+        .find((item) => item.textContent === "Add verified fact")!
+        .click(),
+    );
+    const factForm = Array.from(dialog.querySelectorAll("form")).find(
+      (item) => item.querySelector("h3")?.textContent === "Add verified fact",
+    )!;
     await change(control("Fact topic", factForm), "Saved topic");
     await change(control("Verified, announceable fact", factForm), "Saved text");
     await change(control("Verification source", factForm), "Saved source");
@@ -289,6 +297,34 @@ describe("Social management workflows", () => {
         (item) => item.textContent === "Save draft",
       )?.disabled,
     ).toBe(true);
+  });
+  it("previews a contact file, skips invalid rows and imports only the valid mapped fields", async () => {
+    await render(Audience, snapshot());
+    const input = container.querySelector<HTMLInputElement>('input[type="file"]')!;
+    const file = new File(
+      [
+        JSON.stringify([
+          { accountId: "account", platformId: "u1", name: "Ada", projectIds: ["a"], consent: { allowed: true } },
+          { accountId: "nobody", platformId: "u2", name: "Bob", projectIds: ["a"] },
+        ]),
+      ],
+      "contacts.json",
+      { type: "application/json" },
+    );
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    await act(async () => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await act(async () => undefined);
+    expect(request.mock.calls.some((call) => call[0] === "contacts.import")).toBe(false);
+    expect(container.textContent).toContain("1 contacts ready");
+    expect(container.textContent).toContain("Unknown account on this computer.");
+    expect(container.textContent).toContain("Consent and eligibility are never taken from a file.");
+    await click("Import 1 valid contacts");
+    const call = request.mock.calls.find((item) => item[0] === "contacts.import")!;
+    expect(call[1]).toEqual({
+      contacts: [{ accountId: "account", platformId: "u1", name: "Ada", projectIds: ["a"] }],
+    });
   });
   it("checks the current account policy before drafting and keeps rejected content", async () => {
     await render(Audience, snapshot());

@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { documentErrorMessage } from "../model/documentViewer";
 import { loadSpreadsheet } from "../model/spreadsheetClient";
 import type { Spreadsheet } from "../model/spreadsheet";
@@ -11,6 +11,7 @@ type State =
   | { status: "loading" }
   | { status: "ready"; book: Spreadsheet }
   | { status: "error"; message: string };
+type SourceState = { source: object; state: State };
 
 export default function SheetViewer({
   bytes,
@@ -22,25 +23,32 @@ export default function SheetViewer({
   fitContent?: boolean;
 }) {
   useLocale();
-  const [state, setState] = useState<State>({ status: "loading" });
-  const [active, setActive] = useState(0);
+  // State belongs to the bytes/format it was produced from, so a new source starts
+  // from loading and the first sheet without a reset effect.
+  const source = useMemo(() => ({}), [bytes, format]);
+  const [loaded, setLoaded] = useState<SourceState | null>(null);
+  const [chosen, setChosen] = useState<{ source: object; index: number } | null>(null);
+  const state: State = loaded && loaded.source === source ? loaded.state : { status: "loading" };
+  const active = chosen && chosen.source === source ? chosen.index : 0;
+  const setActive = (index: number) => setChosen({ source, index });
   const id = useId();
 
   useEffect(() => {
-    setState({ status: "loading" });
-    setActive(0);
     const controller = new AbortController();
     loadSpreadsheet(bytes, controller.signal, undefined, undefined, format).then(
       (book) => {
-        if (!controller.signal.aborted) setState({ status: "ready", book });
+        if (!controller.signal.aborted) setLoaded({ source, state: { status: "ready", book } });
       },
       (cause) => {
         if (!controller.signal.aborted)
-          setState({ status: "error", message: documentErrorMessage(cause) });
+          setLoaded({
+            source,
+            state: { status: "error", message: documentErrorMessage(cause) },
+          });
       },
     );
     return () => controller.abort();
-  }, [bytes, format]);
+  }, [bytes, format, source]);
 
   if (state.status === "loading") {
     return (

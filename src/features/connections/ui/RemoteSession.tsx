@@ -36,15 +36,11 @@ import {
   attachmentOwnerId,
   attachmentOwnershipScope,
   retryAttachmentOwnershipReleases,
-  retireClosedAttachmentOwners,
 } from "../model/attachmentOwnership";
-import { desktopAttachmentInventory } from "../model/desktopAttachmentInventory";
 import { getComposerAttachments, subscribeComposerDrafts } from "../../sessions/model/draftCache";
-import { subscribePersistedComposerDrafts } from "../../sessions/data/composerDraftStore";
 import { snapshotWeight } from "../model/snapshotWeight";
 import {
   deleteRemotePageCache,
-  readRemotePageCache,
   flushRemotePageCache,
   writeRemotePageCache,
 } from "../model/remotePageCache";
@@ -69,6 +65,8 @@ import {
 } from "../../workspaces/ui/WorkspaceRewindPreview";
 import type { AgentModel } from "../../sessions/model/models";
 import { isModelEnabled } from "../../sessions/model/models";
+import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
+import { resetRemoteModelCatalogCacheForTests, useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
 import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
 import { ModelSourceContext, type ModelSource } from "../../sessions/ui/modelSource";
@@ -118,7 +116,10 @@ import {
 import { followUpRefusalEvent, type QueueEvent } from "../model/queueState";
 import { isLeaseHeld } from "../../sync/model/runLease";
 import { remoteTurnInterrupted } from "../model/remoteRecovery";
-import { forgetRemoteQueue, subscribePersistedRemoteQueues } from "../model/useRemoteQueue";
+import { forgetRemoteQueue } from "../model/useRemoteQueue";
+import { useAttachmentOwnerReconcile } from "../model/useAttachmentOwnerReconcile";
+import { useQueuedSendDrain } from "../model/useQueuedSendDrain";
+import { useRemotePageCacheRestore } from "../model/useRemotePageCacheRestore";
 import { useSharedRemoteQueue } from "../model/useSharedRemoteQueue";
 import {
   registerDeliveryResolver,
@@ -148,7 +149,6 @@ import {
   type CommandReceipt,
   type HostCommand,
   type HostDescriptor,
-  type HostModelCatalog,
   type HostSession,
   type RemoteAttachment,
   type RemoteMachine,
@@ -196,14 +196,12 @@ type OptimisticTurn = {
 const noop = () => {};
 const cachedSessionSnapshots = new Map<string, HostSession>();
 const cachedDescriptors = new Map<string, HostDescriptor>();
-const cachedCatalogs = new Map<string, HostModelCatalog>();
 function boundedSet<K, V>(cache: Map<K, V>, key: K, value: V, limit = 64) {
   cache.delete(key);
   cache.set(key, value);
   while (cache.size > limit) cache.delete(cache.keys().next().value!);
 }
 const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
-const catalogKey = (machineId: string, projectId: string) => JSON.stringify([machineId, projectId]);
 function rememberSessionSnapshot(key: string, snapshot: HostSession, environmentId?: string) {
   const existing = cachedSessionSnapshots.get(key);
   if (existing === snapshot) return;
@@ -229,7 +227,7 @@ function rememberSessionSnapshot(key: string, snapshot: HostSession, environment
 export function resetRemoteSessionCachesForTests() {
   cachedSessionSnapshots.clear();
   cachedDescriptors.clear();
-  cachedCatalogs.clear();
+  resetRemoteModelCatalogCacheForTests();
 }
 
 /** Fetches a host conversation into the snapshot cache, so its tab opens with
@@ -401,14 +399,12 @@ function ConnectedRemoteSession({
   const connection = useRemoteConnection(owner?.environmentId ?? project.key);
   const [error, setError] = useState("");
   const [sessionId, setSessionId] = useState(() => owner?.created ? owner.sessionId : remoteSessionFor(shell.id));
-  const boundSession = useRef(sessionId);
-  const bindingVersion = useRef(0);
-  const deletedHostBinding = useRef<string | undefined>(undefined);
   const remoteBindingKey = JSON.stringify([machine.id, machine.environmentId, sessionId]);
-  const currentRemoteBindingKey = useRef(remoteBindingKey);
-  currentRemoteBindingKey.current = remoteBindingKey;
+  // One writer (this component) owns the binding generation; reads and
+  // operations capture its version/token and re-check before applying results.
+  const [bindingGen] = useState(() => new RemoteBindingGeneration(sessionId, remoteBindingKey));
+  bindingGen.track(remoteBindingKey);
   const boundOwner = useRef(`${machine.id}:${machine.environmentId}`);
-  const deletingSession = useRef<string | undefined>(undefined);
   useEffect(() => {
     const changed = () => {
       const binding = hostSessionBinding(shell);
@@ -416,17 +412,16 @@ function ConnectedRemoteSession({
       const owner = `${machine.id}:${machine.environmentId}`;
       if (owner !== boundOwner.current) {
         boundOwner.current = owner;
-        deletedHostBinding.current = undefined;
+        bindingGen.clearDeleted();
         setRemoteDeleted(false);
       }
-      if (next !== boundSession.current) {
-        bindingVersion.current++;
-        deletedHostBinding.current = undefined;
+      if (next !== bindingGen.session) {
+        bindingGen.advance();
         historyPageRequest.current = null;
         forceTailRead.current = true;
         setPageCacheOnly(false);
         setRemoteHistoryLoading(false);
-        boundSession.current = next;
+        bindingGen.bind(next);
         setStarting(undefined);
         setUnseenSend(undefined);
         setChanges(undefined);
@@ -489,42 +484,38 @@ function ConnectedRemoteSession({
   };
   const refreshOwnerContent = () => {
     if (
-      deletedHostBinding.current === currentRemoteBindingKey.current ||
+      bindingGen.currentDeleted() ||
       contentRefreshInFlight.current
     )
       return;
     beginOwnerVerification();
     setRefresh((value) => value + 1);
   };
-  useEffect(() => {
-    if (!sessionId) return;
-    let current = true;
-    void readRemotePageCache({ environmentId: machine.environmentId, sessionId }).then((cached) => {
-      if (
-        !current ||
-        !cached ||
-        snapshotRef.current ||
-        deletedHostBinding.current === currentRemoteBindingKey.current
-      )
-        return;
-      const saved = cached as HostSession;
+  useRemotePageCacheRestore({
+    environmentId: machine.environmentId,
+    sessionId,
+    hasSnapshot: () => !!snapshotRef.current,
+    isDeleted: () => bindingGen.currentDeleted(),
+    restore: (cached) => {
       // The disk projection has a clipped block window; invalidate any poll
       // closure that may have captured an earlier in-memory baseline.
       forceTailRead.current = true;
-      snapshotRef.current = saved;
-      setSnapshot(saved);
+      snapshotRef.current = cached;
+      setSnapshot(cached);
       setPageCacheOnly(true);
       publishRemoteDataState({ phase: "stale" });
-    });
-    return () => {
-      current = false;
-    };
-  }, [machine.environmentId, sessionId]);
-  const [catalog, setCatalog] = useState<HostModelCatalog | undefined>(() =>
-    cachedCatalogs.get(catalogKey(machine.id, project.projectId)),
-  );
-  const [catalogError, setCatalogError] = useState("");
-  const [catalogRefresh, setCatalogRefresh] = useState(0);
+    },
+  });
+  const {
+    catalog,
+    error: catalogError,
+    refresh: refreshCatalog,
+  } = useRemoteModelCatalog({
+    scope: { machineId: machine.id, environmentId: machine.environmentId, projectId: project.projectId },
+    enabled: !!descriptor && visible,
+    hostEnvironmentId: descriptor?.environmentId,
+    request: ownerRequest,
+  });
   const [selectedCwd, setSelectedCwd] = useState(
     () => remotePendingWorktree(shell.id) ?? (owner ? shell.worktreeCwd : undefined) ?? project.cwd,
   );
@@ -672,70 +663,18 @@ function ConnectedRemoteSession({
         : undefined,
     [sharedQueueEnabled, activeSessionId],
   );
-  useEffect(() => {
-    if (!ownership || !online || !queue.loaded) return;
-    let stopped = false;
-    let chain = Promise.resolve();
-    let draftIds = "";
-    let queueIds = "";
-    const reconcile = () => {
-      chain = chain
-        .catch(() => {})
-        .then(async () => {
-          if (stopped) return;
-          const sources = await desktopAttachmentInventory(
-            ownership,
-            machine.id,
-            machine.environmentId,
-            shell.id,
-            project.key,
-            sharedQueueEnabled ? undefined : activeSessionId,
-          );
-          if (stopped) return;
-          await ownership.reconcileDurable(sources);
-          await retireClosedAttachmentOwners(
-            machine.id,
-            machine.environmentId,
-            ownership,
-            sources,
-            (method, params) => ownerRequest(method, params),
-          );
-        });
-      void chain.catch(console.warn);
-    };
-    const releaseDraft = subscribePersistedComposerDrafts((id, files) => {
-      const next = JSON.stringify(files.map((file) => file.id).sort());
-      if (id === shell.id && draftIds !== next) {
-        draftIds = next;
-        reconcile();
-      }
-    });
-    const releaseQueue = subscribePersistedRemoteQueues((key, value) => {
-      const next = JSON.stringify(
-        value.messages.flatMap((row) => row.attachments.map((file) => file.id)).sort(),
-      );
-      if (key === activeSessionId && queueIds !== next) {
-        queueIds = next;
-        reconcile();
-      }
-    });
-    reconcile();
-    return () => {
-      stopped = true;
-      releaseDraft();
-      releaseQueue();
-    };
-  }, [
+  useAttachmentOwnerReconcile({
     ownership,
     online,
-    queue.loaded,
-    machine.id,
-    machine.environmentId,
-    shell.id,
-    project.key,
+    queueLoaded: queue.loaded,
+    machineId: machine.id,
+    environmentId: machine.environmentId,
+    shellId: shell.id,
+    projectKey: project.key,
     sharedQueueEnabled,
     activeSessionId,
-  ]);
+    request: (method, params) => ownerRequest(method, params),
+  });
   const reservedFollowUp = useRef<RemoteQueueDraft | undefined>(undefined);
   const followUpGeneration = useRef(0);
   // `desktop` records transcript synchronization, including host-created chats.
@@ -749,28 +688,28 @@ function ConnectedRemoteSession({
     !!descriptor?.capabilities.includes("sessions.steer") &&
     !!hostSession &&
     ["codex", "claude", "cursor", "opencode", "pi", "omp", "hermes"].includes(hostSession.harness);
-  // An accepted turn stays on screen until a sync shows the host's copy, so
-  // the transcript never drops it for a moment in between.
-  useEffect(() => {
-    if (starting && !starting.failed && hasHostBlock(starting.commandId)) setStarting(undefined);
-  }, [hostSession, starting]);
   // A draft being removed leaves the transcript at once, as it does locally,
   // and returns if the host turns the removal down.
   const [removingDraft, setRemovingDraft] = useState<string>();
-  useEffect(() => {
-    if (removingDraft && !hostSession?.blocks.some((block) => block.id === removingDraft))
-      setRemovingDraft(undefined);
-  }, [hostSession, removingDraft]);
-  useEffect(() => {
-    if (
-      unseenSend &&
-      hostSession?.id === unseenSend.sessionId &&
-      hostSession.blocks.some((block) => block.id === unseenSend.commandId)
-    )
-      setUnseenSend((current) =>
-        current?.commandId === unseenSend.commandId ? undefined : current,
-      );
-  }, [hostSession, unseenSend]);
+  // An accepted turn stays on screen until a sync shows the host's copy, so
+  // the transcript never drops it for a moment in between. What is shown is
+  // already derived from the snapshot (`startingActive`, `unseenActive`,
+  // `leavingDrafts`); the stored overlays are released here, during render and
+  // not in an effect, the moment the snapshot confirms the block (or, for a
+  // removed draft, no longer has it). Releasing is permanent on purpose: if a
+  // later rewind drops the block again, the overlay must not come back as a
+  // phantom message that keeps the chat busy. Failure paths clear their own
+  // overlay in the handlers (`launch`, `run`, `removeDraft`, `discardSession`)
+  // or keep it as `failed`, which this never touches.
+  if (starting && !starting.failed && hasHostBlock(starting.commandId)) setStarting(undefined);
+  if (removingDraft && !hostSession?.blocks.some((block) => block.id === removingDraft))
+    setRemovingDraft(undefined);
+  if (
+    unseenSend &&
+    hostSession?.id === unseenSend.sessionId &&
+    hostSession.blocks.some((block) => block.id === unseenSend.commandId)
+  )
+    setUnseenSend(undefined);
 
   useEffect(() => {
     let disposed = false;
@@ -778,19 +717,15 @@ function ConnectedRemoteSession({
     let contentRetryTimer: ReturnType<typeof setTimeout> | undefined;
     let unsubscribeChannel: (() => void) | undefined;
     const bindingKey = remoteBindingKey;
-    let deletedOnHost = deletedHostBinding.current === bindingKey;
+    let deletedOnHost = bindingGen.isDeleted(bindingKey);
     let controlChannelFailed = false;
     let failed = 0;
     let polling = false;
     let ownerReadPending = false;
     let ownerResetGeneration = 0;
     const historyGeneration = createRemoteHistoryGeneration();
-    const version = bindingVersion.current;
-    const stale = () =>
-      disposed ||
-      deletedHostBinding.current === bindingKey ||
-      version !== bindingVersion.current ||
-      (!!sessionId && deletingSession.current === sessionId);
+    const token = bindingGen.capture(bindingKey, sessionId);
+    const stale = () => disposed || bindingGen.isStale(token);
     // Every request carries the expected host identity; describe again only
     // after a failure, when the host may have been replaced.
     let described = false;
@@ -798,7 +733,7 @@ function ConnectedRemoteSession({
     const poll = async (application?: { isCurrent(): boolean }) => {
       if (
         disposed ||
-        deletedHostBinding.current === bindingKey ||
+        bindingGen.isDeleted(bindingKey) ||
         application?.isCurrent() === false
       )
         return;
@@ -858,7 +793,7 @@ function ConnectedRemoteSession({
                 const hint = changes.sessions.find((entry) => entry.sessionId === sessionId);
                 if (hint?.deleted) {
                   deletedOnHost = true;
-                  deletedHostBinding.current = bindingKey;
+                  bindingGen.markDeleted(bindingKey);
                   clearTimeout(timer);
                   if (contentRetryTimer) clearTimeout(contentRetryTimer);
                   unsubscribeChannel?.();
@@ -1128,7 +1063,7 @@ function ConnectedRemoteSession({
         setOnline(true);
         reportRemoteMachineStatus(machine.id, true);
         // A catalog request that failed while offline is retried on recovery.
-        if (failed) setCatalogRefresh((value) => value + 1);
+        if (failed) refreshCatalog();
         failed = 0;
         if (next && sessionId)
           rememberSessionSnapshot(snapshotKey(machine.id, sessionId), next, machine.environmentId);
@@ -1214,7 +1149,7 @@ function ConnectedRemoteSession({
         );
     };
     const onVisibility = () => {
-      if (deletedHostBinding.current === bindingKey) return;
+      if (bindingGen.isDeleted(bindingKey)) return;
       clearTimeout(timer);
       if (visibleRef.current && !document.hidden) beginOwnerVerification();
       if (polling) {
@@ -1262,39 +1197,13 @@ function ConnectedRemoteSession({
   useEffect(
     () =>
       subscribeRemoteRecovered(() => {
-        if (deletedHostBinding.current === currentRemoteBindingKey.current) return;
+        if (bindingGen.currentDeleted()) return;
         beginOwnerVerification();
         setRefresh((value) => value + 1);
-        setCatalogRefresh((value) => value + 1);
+        refreshCatalog();
       }),
     [],
   );
-
-  useEffect(() => {
-    if (!descriptor || !visible) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const load = () =>
-      void ownerRequest<HostModelCatalog>("models.list", {
-        projectId: project.projectId,
-        progressive: true,
-      })
-        .then((value) => {
-          if (disposed) return;
-          boundedSet(cachedCatalogs, catalogKey(machine.id, project.projectId), value);
-          setCatalog(value);
-          setCatalogError("");
-          if (value.pending?.length) timer = setTimeout(load, 1000);
-        })
-        .catch((reason) => {
-          if (!disposed) setCatalogError(String(reason));
-        });
-    load();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  }, [machine.id, descriptor?.environmentId, project.projectId, catalogRefresh, visible]);
 
   const providers = useMemo(
     () => (descriptor?.providers ?? []).filter(isRemoteProvider),
@@ -1423,7 +1332,7 @@ function ConnectedRemoteSession({
       generation !== submissionGeneration.current
     )
       return undefined;
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     const owner = Symbol();
     sendingOwner.current = owner;
     sendingRef.current = true;
@@ -1497,7 +1406,7 @@ function ConnectedRemoteSession({
         if (command.type === "create" && !preparingTurn.current)
           adoptCreatedSession(
             receipt.sessionId,
-            alive.current && version === bindingVersion.current,
+            alive.current && version === bindingGen.version,
           );
         clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
         const handedOff =
@@ -1506,7 +1415,7 @@ function ConnectedRemoteSession({
           ownership.finishJob(`submit:${handedOff}`);
           void ownership.replaceDurable(`submit:${handedOff}`, []).catch(console.warn);
         }
-        if (alive.current && version === bindingVersion.current) {
+        if (alive.current && version === bindingGen.version) {
           setStarting((current) =>
             current?.commandId === optimistic?.commandId ? undefined : current,
           );
@@ -1517,7 +1426,7 @@ function ConnectedRemoteSession({
             pendingRemoteCommand(
               project.key,
               machine.environmentId,
-              boundSession.current ?? null,
+              bindingGen.session ?? null,
               shell.id,
             ),
           );
@@ -1534,7 +1443,7 @@ function ConnectedRemoteSession({
             { ...next, sessionId: receipt.sessionId },
             shell.id,
           );
-        adoptCreatedSession(receipt.sessionId, version === bindingVersion.current);
+        adoptCreatedSession(receipt.sessionId, version === bindingGen.version);
       }
       clearPendingRemoteCommand(project.key, machine.environmentId, command.commandId);
       const handedOff =
@@ -1543,7 +1452,7 @@ function ConnectedRemoteSession({
         ownership.finishJob(`submit:${handedOff}`);
         void ownership.replaceDurable(`submit:${handedOff}`, []).catch(console.warn);
       }
-      if (!alive.current || version !== bindingVersion.current) return receipt;
+      if (!alive.current || version !== bindingGen.version) return receipt;
       if (receipt.runId) {
         setUnseenSend((current) =>
           current?.commandId === command.commandId ? { ...current, runId: receipt.runId } : current,
@@ -1611,7 +1520,7 @@ function ConnectedRemoteSession({
       return receipt;
     } catch (reason) {
       reportRemoteConnection(machine.environmentId, "session", reason);
-      if (!alive.current || version !== bindingVersion.current) return undefined;
+      if (!alive.current || version !== bindingGen.version) return undefined;
       const message = String(reason);
       lastRunFailure.current = message;
       if (message.includes("Host rejected request:")) {
@@ -1643,8 +1552,8 @@ function ConnectedRemoteSession({
   // A conversation that was only a draft goes with it, as a local one does,
   // and the tab starts over as a new conversation.
   const discardSession = async (id: string) => {
-    const version = bindingVersion.current;
-    deletingSession.current = id;
+    const version = bindingGen.version;
+    bindingGen.beginDiscard(id);
     try {
       await sessionAccessForMachine(machine.id, false, true, machine.environmentId).delete(
         id,
@@ -1653,24 +1562,24 @@ function ConnectedRemoteSession({
       );
       cachedSessionSnapshots.delete(snapshotKey(machine.id, id));
       forgetRemoteQueue(id);
-      if (!alive.current || version !== bindingVersion.current) return;
+      if (!alive.current || version !== bindingGen.version) return;
       setSnapshot(undefined);
       rememberRemoteSession(shell.id);
       onSnapshot?.(shell.id, undefined);
     } catch (reason) {
-      if (!alive.current || version !== bindingVersion.current) return;
-      deletingSession.current = undefined;
+      if (!alive.current || version !== bindingGen.version) return;
+      bindingGen.endDiscard();
       setRefresh((value) => value + 1);
       setRemovingDraft(undefined);
       setError(String(reason).replace(/^Error: /, ""));
     }
   };
 
-  // Not a reset for the REMOTE_HISTORY_CHANGE handler above: `boundSession` is
+  // Not a reset for the REMOTE_HISTORY_CHANGE handler above: `bindingGen.session` is
   // set first, so the binding it then reads is already ours and the optimistic
   // turn, `starting` and the snapshot survive our own bind.
   const openSession = (id: string) => {
-    boundSession.current = id;
+    bindingGen.bind(id);
     rememberRemoteSession(shell.id, id);
     setSessionId(id);
   };
@@ -1748,7 +1657,7 @@ function ConnectedRemoteSession({
     uploaded?: RemoteAttachment[],
     generation = submissionGeneration.current,
   ) => {
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     const refs = turn.draftBlockId
       ? []
       : (uploaded ??
@@ -1760,7 +1669,7 @@ function ConnectedRemoteSession({
           onProgress: (_id, offset, size) => {
             if (
               alive.current &&
-              version === bindingVersion.current &&
+              version === bindingGen.version &&
               generation === submissionGeneration.current
             )
               setUploadProgress({ offset, size });
@@ -1768,7 +1677,7 @@ function ConnectedRemoteSession({
         })));
     if (
       !alive.current ||
-      version !== bindingVersion.current ||
+      version !== bindingGen.version ||
       generation !== submissionGeneration.current
     ) {
       ownership?.finishJob(`submit:${turn.commandId}`);
@@ -1803,7 +1712,7 @@ function ConnectedRemoteSession({
   };
 
   const startSession = async (turn: OptimisticTurn, generation = submissionGeneration.current) => {
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     // The host lists the new session before the create receipt binds it to this
     // tab; the intent keeps the rail, openers and tab cleanup from claiming it.
     const createIntent = beginRemoteCreate(
@@ -1830,7 +1739,7 @@ function ConnectedRemoteSession({
       );
       if (
         !alive.current ||
-        version !== bindingVersion.current ||
+        version !== bindingGen.version ||
         generation !== submissionGeneration.current
       )
         return;
@@ -1842,7 +1751,7 @@ function ConnectedRemoteSession({
         onProgress: (_id, offset, size) => {
           if (
             alive.current &&
-            version === bindingVersion.current &&
+            version === bindingGen.version &&
             generation === submissionGeneration.current
           )
             setUploadProgress({ offset, size });
@@ -1850,7 +1759,7 @@ function ConnectedRemoteSession({
       });
       if (
         !alive.current ||
-        version !== bindingVersion.current ||
+        version !== bindingGen.version ||
         generation !== submissionGeneration.current
       )
         return;
@@ -1899,12 +1808,12 @@ function ConnectedRemoteSession({
         undefined,
         generation,
       );
-      if (version !== bindingVersion.current || generation !== submissionGeneration.current) return;
+      if (version !== bindingGen.version || generation !== submissionGeneration.current) return;
       if (!receipt) {
         if (alive.current) setStarting({ ...turn, failed: true });
         return;
       }
-      if (version !== bindingVersion.current) return;
+      if (version !== bindingGen.version) return;
       if (atomic) return;
       const sent = await run(
         { ...followup, sessionId: receipt.sessionId },
@@ -1915,14 +1824,14 @@ function ConnectedRemoteSession({
       );
       if (
         alive.current &&
-        version === bindingVersion.current &&
+        version === bindingGen.version &&
         generation === submissionGeneration.current
       )
         if (!sent) setStarting({ ...turn, failed: true });
     } catch (reason) {
       if (
         alive.current &&
-        version === bindingVersion.current &&
+        version === bindingGen.version &&
         generation === submissionGeneration.current
       ) {
         setError(String(reason));
@@ -1997,7 +1906,7 @@ function ConnectedRemoteSession({
     leaseWait.current = Date.now() + delay;
     clearTimeout(leaseTimer.current);
     leaseTimer.current = setTimeout(() => {
-      if (alive.current) setDrainRetry((value) => value + 1);
+      if (alive.current) retryDrain();
     }, delay);
   };
   const queueForLease = (turn: OptimisticTurn): boolean => {
@@ -2042,7 +1951,7 @@ function ConnectedRemoteSession({
       setStarting(undefined);
       return false;
     }
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     void dispatchTurn(hostSession.id, turn, undefined, generation)
       .then((receipt) => {
         onAcceptance?.(!!receipt);
@@ -2052,7 +1961,7 @@ function ConnectedRemoteSession({
         }
         if (
           alive.current &&
-          version === bindingVersion.current &&
+          version === bindingGen.version &&
           generation === submissionGeneration.current
         )
           if (!receipt) {
@@ -2066,7 +1975,7 @@ function ConnectedRemoteSession({
         onAcceptance?.(false);
         if (
           alive.current &&
-          version === bindingVersion.current &&
+          version === bindingGen.version &&
           generation === submissionGeneration.current
         ) {
           setError(String(reason));
@@ -2114,21 +2023,21 @@ function ConnectedRemoteSession({
     options?: ComposerTurnOptions,
     generation = submissionGeneration.current,
   ) => {
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     const outcome = await sendAfterReconnect({
       status: connection.status,
       reconnect: () => connection.reconnect(),
       ready: whenOnline,
       send: () =>
         alive.current &&
-        version === bindingVersion.current &&
+        version === bindingGen.version &&
         generation === submissionGeneration.current &&
         launchRef.current(turn, generation),
     });
     if (
       outcome.sent ||
       !alive.current ||
-      version !== bindingVersion.current ||
+      version !== bindingGen.version ||
       generation !== submissionGeneration.current
     )
       return;
@@ -2187,10 +2096,10 @@ function ConnectedRemoteSession({
       return false;
     }
     if (sendingRef.current || preparingRef.current) return false;
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     const failed = (reason: unknown) => {
       reportRemoteConnection(machine.environmentId, "session", reason);
-      if (alive.current && version === bindingVersion.current)
+      if (alive.current && version === bindingGen.version)
         setError(String(reason).replace(/^Error: /, ""));
     };
     setError("");
@@ -2219,7 +2128,7 @@ function ConnectedRemoteSession({
         },
         !!managedCreation,
       );
-      if (!alive.current || version !== bindingVersion.current) return undefined;
+      if (!alive.current || version !== bindingGen.version) return undefined;
       const cwd = workspace?.path ?? selectedCwd;
       return run({
         type: "create",
@@ -2319,7 +2228,7 @@ function ConnectedRemoteSession({
     ) {
       const generation = followUpGeneration.current;
       const submission = submissionGeneration.current;
-      const version = bindingVersion.current;
+      const version = bindingGen.version;
       const targetSessionId = hostSession.id;
       const runId = snapshot.runId;
       const unsent = {
@@ -2386,7 +2295,7 @@ function ConnectedRemoteSession({
             onProgress: (_id, offset, size) => {
               if (
                 alive.current &&
-                version === bindingVersion.current &&
+                version === bindingGen.version &&
                 generation === followUpGeneration.current
               )
                 setUploadProgress({ offset, size });
@@ -2394,10 +2303,10 @@ function ConnectedRemoteSession({
           });
           if (
             !alive.current ||
-            version !== bindingVersion.current ||
+            version !== bindingGen.version ||
             generation !== followUpGeneration.current
           ) {
-            if (alive.current && version === bindingVersion.current) await holdFollowUp("pause");
+            if (alive.current && version === bindingGen.version) await holdFollowUp("pause");
             return;
           }
           const receipt = await run({
@@ -2416,13 +2325,13 @@ function ConnectedRemoteSession({
           if (
             !receipt &&
             alive.current &&
-            version === bindingVersion.current &&
+            version === bindingGen.version &&
             pendingRemoteCommand(project.key, machine.environmentId, targetSessionId, shell.id)
               ?.commandId !== commandId
           )
             await holdFollowUp();
         } catch (reason) {
-          if (alive.current && version === bindingVersion.current) {
+          if (alive.current && version === bindingGen.version) {
             if (await holdFollowUp(undefined, String(reason)))
               setError(t("Could not deliver the follow-up: {p0}", { p0: String(reason) }));
           }
@@ -2432,7 +2341,7 @@ function ConnectedRemoteSession({
           if (reservedFollowUp.current === unsent) reservedFollowUp.current = undefined;
           if (submission === submissionGeneration.current) {
             preparingRef.current = false;
-            if (alive.current && version === bindingVersion.current) {
+            if (alive.current && version === bindingGen.version) {
               setFollowUpPreparing(false);
               setUploadProgress(undefined);
             }
@@ -2516,85 +2425,24 @@ function ConnectedRemoteSession({
     working,
     changing: !!changes,
   });
-  const [drainRetry, setDrainRetry] = useState(0);
-  const submitRef = useRef(submit);
-  submitRef.current = submit;
   // Send the head of the queue once the turn is over and the machine is
-  // reachable. A held queue loses nothing: it simply waits for both.
-  useEffect(() => {
-    if (!nextQueued || pageCacheOnly || remoteDeleted) return;
-    if (!remoteIntentAuthorityMatches(nextQueued, snapshot)) {
-      queue.pause();
-      setError(
-        t(
-          "This queued request belongs to an earlier session authority. Review it and create a new message to continue.",
-        ),
-      );
-      return;
-    }
-    const target = nextQueued.modelTarget;
-    if (
-      target &&
-      saved &&
-      (!sameQueuedModelTarget(target, {
-        harness: saved.harness,
-        model: saved.model,
-        modelSettings: saved.settings,
-      }) || (owner && target.providerAccountId !== undefined && target.providerAccountId !== (saved.providerAccountId ?? "default")))
-    ) {
-      if (
-        !providers.includes(target.harness as RemoteProvider) ||
-        (target.harness !== saved.harness &&
-          !descriptor?.capabilities.includes("sessions.harnessSwitch"))
-      ) {
-        setError(t("The queued message's provider is unavailable on this machine."));
-        return;
-      }
-      setChanges({
-        ...remoteIntentAuthority(nextQueued),
-        harness: target.harness as RemoteProvider,
-        model: target.model,
-        settings: { ...target.modelSettings },
-        mode: saved.mode,
-        ...(owner && target.providerAccountId !== undefined ? { providerAccountId: target.providerAccountId === "default" ? null : target.providerAccountId } : {}),
-      });
-      return;
-    }
-    const timer = setTimeout(() => {
-      const currentQueue = queue.current();
-      if (
-        currentQueue.status === "paused" ||
-        currentQueue.status === "restored" ||
-        currentQueue.status === "resuming" ||
-        currentQueue.messages[0] !== nextQueued ||
-        Date.now() < leaseWait.current
-      )
-        return;
-      const accepted = submitRef.current(
-        nextQueued.text,
-        nextQueued.attachments,
-        {
-          intent: nextQueued.intent,
-        },
-        false,
-        undefined,
-        nextQueued.id,
-      );
-      if (accepted) queue.sent(nextQueued.id);
-      else setDrainRetry((value) => value + 1);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [
-    nextQueued,
-    drainRetry,
-    saved?.harness,
-    saved?.model,
-    saved?.settings,
-    providers,
-    descriptor?.capabilities,
+  // reachable. A held queue loses nothing: it simply waits for both. The send
+  // itself stays in `submit`; the hook only schedules it.
+  const { retryDrain } = useQueuedSendDrain({
+    next: nextQueued,
     pageCacheOnly,
-    snapshot?.authorityGeneration,
-  ]);
+    remoteDeleted,
+    authorityGeneration: snapshot?.authorityGeneration,
+    saved,
+    ownerBound: !!owner,
+    providers,
+    capabilities: descriptor?.capabilities,
+    queue,
+    leaseWait,
+    submit,
+    requestChange: setChanges,
+    reportError: setError,
+  });
 
   // After a restart or a reconnect: a run this app saw working that the host
   // now reports as lost is continued once, when the setting says so.
@@ -2667,11 +2515,12 @@ function ConnectedRemoteSession({
       probed: () => !!descriptor,
       // The host re-probes when a provider CLI changes or its catalog ages,
       // so each picker opening asks again.
-      refresh: () => setCatalogRefresh((value) => value + 1),
+      refresh: refreshCatalog,
     };
   }, [
     catalog,
     catalogError,
+    refreshCatalog,
     descriptor,
     providers,
     machine.environmentId,
@@ -2811,12 +2660,12 @@ function ConnectedRemoteSession({
       );
       return;
     }
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     if (!stopped) setStarting((current) => (current ? { ...current, failed: false } : current));
     const receipt = recovered
       ? await run(pending, undefined, undefined, recovered)
       : await run(pending);
-    if (receipt && pending.type === "create" && !stopped && version === bindingVersion.current) {
+    if (receipt && pending.type === "create" && !stopped && version === bindingGen.version) {
       const next = pendingRemoteCommand(
         project.key,
         machine.environmentId,
@@ -2862,7 +2711,7 @@ function ConnectedRemoteSession({
               },
               run: () => {
                 const turn = { ...starting, failed: false };
-                const version = bindingVersion.current;
+                const version = bindingGen.version;
                 const generation = ++submissionGeneration.current;
                 setStarting(turn);
                 preparingRef.current = true;
@@ -2873,7 +2722,7 @@ function ConnectedRemoteSession({
                     .then((sent) => {
                       if (
                         alive.current &&
-                        version === bindingVersion.current &&
+                        version === bindingGen.version &&
                         generation === submissionGeneration.current
                       )
                         if (!sent) setStarting({ ...turn, failed: true });
@@ -2881,7 +2730,7 @@ function ConnectedRemoteSession({
                     .catch((reason) => {
                       if (
                         alive.current &&
-                        version === bindingVersion.current &&
+                        version === bindingGen.version &&
                         generation === submissionGeneration.current
                       ) {
                         setError(String(reason));
@@ -2915,7 +2764,7 @@ function ConnectedRemoteSession({
                   get label() {
                     return t("Retry");
                   },
-                  run: () => setCatalogRefresh((value) => value + 1),
+                  run: () => refreshCatalog(),
                 },
               }
             : undefined;
@@ -2963,7 +2812,7 @@ function ConnectedRemoteSession({
     const inFlight = pendingRemoteCommand(
       project.key,
       machine.environmentId,
-      boundSession.current ?? null,
+      bindingGen.session ?? null,
       shell.id,
     );
     if (inFlight?.type === "send" || inFlight?.type === "compact" || inFlight?.type === "create")
@@ -3106,7 +2955,7 @@ function ConnectedRemoteSession({
       requestedSessionId !== shell.id ||
       !current ||
       current.session.workspaceId !== workspaceId ||
-      current.session.id !== boundSession.current ||
+      current.session.id !== bindingGen.session ||
       current.status === "running" ||
       sendingRef.current ||
       preparingRef.current ||
@@ -3117,7 +2966,7 @@ function ConnectedRemoteSession({
     )
       throw new Error(t("Wait for this session to finish before undoing the rewind."));
     const targetSessionId = current.session.id;
-    const version = bindingVersion.current;
+    const version = bindingGen.version;
     const owner = Symbol();
     rewindOwner.current = owner;
     sendingOwner.current = owner;
@@ -3126,8 +2975,8 @@ function ConnectedRemoteSession({
     setRewinding(true);
     const stillCurrent = () =>
       alive.current &&
-      boundSession.current === targetSessionId &&
-      bindingVersion.current === version &&
+      bindingGen.session === targetSessionId &&
+      bindingGen.version === version &&
       rewindOwner.current === owner;
     try {
       const undoSession = { ...current.session, id: shell.id, cwd: project.key };
@@ -3210,7 +3059,7 @@ function ConnectedRemoteSession({
       return false;
     const owner = Symbol();
     const targetSessionId = hostSession.id;
-    const targetBindingVersion = bindingVersion.current;
+    const targetBindingVersion = bindingGen.version;
     const targetBinding = remoteBindingKey;
     const known = snapshot;
     rewindOwner.current = owner;
@@ -3235,9 +3084,9 @@ function ConnectedRemoteSession({
       if (receipt.sessionId !== targetSessionId || receipt.revision <= known.revision) return false;
       const stillCurrent = () =>
         alive.current &&
-        boundSession.current === targetSessionId &&
-        bindingVersion.current === targetBindingVersion &&
-        currentRemoteBindingKey.current === targetBinding &&
+        bindingGen.session === targetSessionId &&
+        bindingGen.version === targetBindingVersion &&
+        bindingGen.key === targetBinding &&
         rewindOwner.current === owner;
       const pages =
         !!descriptor.capabilities.includes("sessions.pages") ||
@@ -3286,8 +3135,8 @@ function ConnectedRemoteSession({
     } catch (reason) {
       if (
         alive.current &&
-        bindingVersion.current === targetBindingVersion &&
-        boundSession.current === targetSessionId
+        bindingGen.version === targetBindingVersion &&
+        bindingGen.session === targetSessionId
       ) {
         reportRemoteConnection(machine.environmentId, "session", reason);
         setError(String(reason).replace(/^Error: /, ""));
@@ -3358,15 +3207,14 @@ function ConnectedRemoteSession({
   const loadEarlierRemote = async (): Promise<number> => {
     const current = snapshotRef.current;
     if (!sessionId || !current?.history || historyPageRequest.current) return 0;
-    const binding = bindingVersion.current;
+    const token = bindingGen.capture(remoteBindingKey, sessionId);
+    const binding = token.version;
     const request = { revision: current.revision, before: current.history.before, binding };
     historyPageRequest.current = request;
     const stillCurrent = () =>
       alive.current &&
-      deletedHostBinding.current !== remoteBindingKey &&
+      bindingGen.isBound(token) &&
       historyPageRequest.current === request &&
-      bindingVersion.current === binding &&
-      boundSession.current === sessionId &&
       snapshotRef.current?.revision === current.revision &&
       snapshotRef.current?.history?.before === current.history?.before;
     setRemoteHistoryLoading(true);
@@ -3390,8 +3238,7 @@ function ConnectedRemoteSession({
     } catch (reason) {
       if (
         alive.current &&
-        deletedHostBinding.current !== remoteBindingKey &&
-        bindingVersion.current === binding &&
+        bindingGen.isCurrent(token) &&
         historyPageRequest.current === request
       )
         setRemoteHistoryError(
@@ -3405,8 +3252,7 @@ function ConnectedRemoteSession({
         historyPageRequest.current = null;
         if (
           alive.current &&
-          deletedHostBinding.current !== remoteBindingKey &&
-          bindingVersion.current === binding
+          bindingGen.isCurrent(token)
         )
           setRemoteHistoryLoading(false);
       }
@@ -3421,7 +3267,7 @@ function ConnectedRemoteSession({
       loadingRemoteBlocks.current.has(blockId)
     )
       return;
-    const binding = bindingVersion.current;
+    const token = bindingGen.capture(remoteBindingKey, sessionId);
     const ownerSessionId = current.session.id;
     const stub = current.session.blocks.find((block) => block.id === blockId);
     if (!stub?.remoteContent || stub.remoteContent.revision !== revision) return;
@@ -3431,9 +3277,7 @@ function ConnectedRemoteSession({
       const latest = snapshotRef.current;
       if (
         !alive.current ||
-        deletedHostBinding.current === remoteBindingKey ||
-        bindingVersion.current !== binding ||
-        boundSession.current !== sessionId ||
+        !bindingGen.isBound(token) ||
         !full ||
         !latest ||
         latest.session.id !== ownerSessionId ||
@@ -3451,11 +3295,7 @@ function ConnectedRemoteSession({
       setSnapshot(next);
       onSnapshot?.(shell.id, next);
     } catch (reason) {
-      if (
-        alive.current &&
-        deletedHostBinding.current !== remoteBindingKey &&
-        bindingVersion.current === binding
-      )
+      if (alive.current && bindingGen.isCurrent(token))
         setRemoteHistoryError(
           t("Couldn’t load full output: {p0}", { p0: String(reason).replace(/^Error: /, "") }),
         );

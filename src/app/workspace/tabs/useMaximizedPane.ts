@@ -1,6 +1,5 @@
 import {
   useCallback,
-  useEffect,
   useState,
   type Dispatch,
   type MutableRefObject,
@@ -15,33 +14,37 @@ import { type Session } from "../../../features/sessions/model/session";
 
 export type MaximizedPaneState = { tabId: string; paneId: string } | null;
 
-/** Maximized pane state plus the effect that repairs it when tabs change. */
+/**
+ * Repairs a maximized pane against the current tabs: a pane that no longer
+ * exists clears it, and focus moving to another pane of the same tab follows.
+ * Returns the input when nothing needs repair.
+ */
+export function resolveMaximizedPane(
+  maximizedPane: MaximizedPaneState,
+  tabs: WorkspaceTab[],
+): MaximizedPaneState {
+  if (!maximizedPane) return maximizedPane;
+  const tab = tabs.find((entry) => entry.id === maximizedPane.tabId);
+  if (!tab) return null;
+  const leaves = leafIds(tab.layout);
+  if (!leaves.includes(maximizedPane.paneId)) return null;
+  if (tab.focusedId !== maximizedPane.paneId && leaves.includes(tab.focusedId))
+    return { tabId: tab.id, paneId: tab.focusedId };
+  return maximizedPane;
+}
+
+/**
+ * Maximized pane state, repaired against tabs while rendering. The stored state
+ * is adjusted in render (not in an effect) so toggles always compare against the
+ * repaired value and no stale frame commits.
+ */
 export function useMaximizedPane({ tabs }: { tabs: WorkspaceTab[] }): {
   maximizedPane: MaximizedPaneState;
   setMaximizedPane: Dispatch<SetStateAction<MaximizedPaneState>>;
 } {
-  const [maximizedPane, setMaximizedPane] = useState<{ tabId: string; paneId: string } | null>(
-    null,
-  );
-  useEffect(() => {
-    if (
-      maximizedPane &&
-      !tabs.some(
-        (tab) =>
-          tab.id === maximizedPane.tabId && leafIds(tab.layout).includes(maximizedPane.paneId),
-      )
-    )
-      setMaximizedPane(null);
-    else if (maximizedPane) {
-      const tab = tabs.find((entry) => entry.id === maximizedPane.tabId);
-      if (
-        tab &&
-        tab.focusedId !== maximizedPane.paneId &&
-        leafIds(tab.layout).includes(tab.focusedId)
-      )
-        setMaximizedPane({ tabId: tab.id, paneId: tab.focusedId });
-    }
-  }, [tabs, maximizedPane]);
+  const [stored, setMaximizedPane] = useState<MaximizedPaneState>(null);
+  const maximizedPane = resolveMaximizedPane(stored, tabs);
+  if (maximizedPane !== stored) setMaximizedPane(maximizedPane);
   return { maximizedPane, setMaximizedPane };
 }
 

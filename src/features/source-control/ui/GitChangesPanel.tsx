@@ -4,10 +4,6 @@ import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Popover } from "../../../shared/ui/Popover";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { collator } from "../../../shared/lib/intl";
-import { useVirtualizer, defaultRangeExtractor } from "@tanstack/react-virtual";
-import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { useOwnedTimeout } from "../../../shared/hooks/useOwnedTimeout";
 import { t, useLocale, useT } from "../../../shared/i18n/git";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
@@ -37,10 +33,6 @@ import {
   X,
 } from "../../../shared/ui/icons";
 import {
-  memo,
-  type CSSProperties,
-  createContext,
-  useContext,
   type MouseEvent as ReactMouseEvent,
   Suspense,
   lazy,
@@ -54,9 +46,6 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { selectTreePaths, type TreeSelectionModifiers } from "../../files/model/treeSelection";
-import { useChangedFileMenu } from "../../files/ui/useChangedFileMenu";
 import {
   GitHistoryGraph,
   GraphResizeSash,
@@ -99,7 +88,6 @@ import {
   gitSync,
   gitUnstageAll,
   gitUnstageFile,
-  subscribeGitChanged,
   type GitChangedFile,
   type GitChangeScope,
   type GitDiffIndex,
@@ -114,10 +102,9 @@ import {
   saveChangesView,
   type ChangesView,
 } from "../../settings/model/appearance";
-import { generateCommitMessage, generatePrContent } from "../../../integrations/harness";
+import { generatePrContent } from "../../../integrations/harness";
 import { invalidateWatchedFiles } from "../../files/model/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
-import { applyProjectDiffStats } from "../hooks/useProjectDiffStats";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import {
@@ -127,7 +114,6 @@ import {
 } from "../../connections/model/remoteCapabilities";
 import {
   remotePollDue,
-  reportRemoteLoad,
   useRemoteLoadFailure,
 } from "../../connections/model/remoteHealth";
 import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
@@ -136,7 +122,6 @@ import {
   commitBlockedMessage,
   needsLegacyConflictPoll,
   resolveConflictState,
-  sameConflicts,
   type ConflictRow,
 } from "../model/conflictSection";
 import { useConflictActions } from "../hooks/useConflictActions";
@@ -149,31 +134,26 @@ import {
 } from "../model/gitPanelState";
 import { useLegacyConflictStatus } from "../hooks/useLegacyConflictStatus";
 import { confirmNative, confirmDiscardFile } from "../model/gitConfirmation";
-import {
-  fetchGitIndex,
-  peekFullGitIndex,
-  invalidateGitIndex,
-  notifyGitChangedWith,
-  type GitChangeHint,
-} from "../model/gitIndexStore";
+import { invalidateGitIndex } from "../model/gitIndexStore";
 
 import { GitFeedback } from "./GitFeedback";
 import { useGitResource } from "../hooks/useGitResource";
 import {
   ACTIVE_PROJECT_REFRESH_MS,
-  GIT_PANEL_ENTRY_FRESH_MS,
-  GIT_PANEL_FOCUS_FRESH_MS,
   GITHUB_PR_FRESH_MS,
 } from "../model/gitRefreshPolicy";
-import { GitGenerationSettings, useGitGenerationChoice } from "./GitGenerationSettings";
+import { GitGenerationSettings } from "./GitGenerationSettings";
 import { Button } from "../../../shared/ui/Button";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
 import { TextareaField } from "../../../shared/ui/TextareaField";
-import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
+import { ChangeList } from "./GitChangesList";
+import { useDiffIndex, announceGitChange } from "../hooks/useDiffIndex";
+import { useCommitDraft } from "../hooks/useCommitDraft";
+
+export { ChangeList };
 
 export const GIT_POLL_MS = ACTIVE_PROJECT_REFRESH_MS;
 
@@ -182,21 +162,6 @@ let changesOpen = true;
 let conflictsOpen = true;
 let graphOpen = true;
 let changesView: ChangesView = loadChangesView();
-/** Folders the user collapsed in tree view, keyed `<kind>:<dir>`. */
-const collapsedDirs = new Set<string>();
-const indexByCwd = new Map<string, GitDiffIndex>();
-
-/** Observations already contain a fresh index; mutations need a new read. */
-let announcingObservedChange = false;
-
-function announceGitChange(cwd: string, scope: GitChangeScope, hint: GitChangeHint = {}) {
-  announcingObservedChange = hint.observed === true;
-  try {
-    notifyGitChangedWith(cwd, scope, hint);
-  } finally {
-    announcingObservedChange = false;
-  }
-}
 
 const ACTION_LABEL: Record<IndexAction, string> = {
   get stage() {
@@ -797,19 +762,8 @@ function ChangedFiles({
   const messageRef = useRef<HTMLTextAreaElement>(null);
   const runtime = gitPanelRuntime(cwd);
   const generateAbortRef = runtime.generateAbort;
-  // Generation and staging may outlive/remount the visible panel; the checkout
-  // runtime owns both the observed identity and synchronous mutation revision.
   const generationMutation = runtime.generationIndex;
-  generationMutation.identity = JSON.stringify([index?.branch, index?.head, index?.files]);
-  // Generating reads the changes without touching the index, so it does not
-  // take `busy` and files can be staged while it runs.
-  const [generating, setGenerating] = useGitPanelState(cwd, "generating");
   const fileActions = runtime.fileActions;
-  const [message, setMessage] = useGitPanelState(cwd, "message");
-  const [generationChoice, setGenerationChoice, hasGenerationOverride] =
-    useGitGenerationChoice(cwd);
-  const [amendTarget, setAmendTarget] = useGitPanelState(cwd, "amendTarget");
-  const amend = amendTarget !== null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [stagedExpanded, setStagedExpanded] = useState(stagedOpen);
   const [changesExpanded, setChangesExpanded] = useState(changesOpen);
@@ -867,6 +821,29 @@ function ChangedFiles({
     !!index?.branch && !!index.defaultBranch && index.branch === index.defaultBranch;
   const committing = busy === "commit" || busy === "pr";
   const canGenerate = files.length > 0 && !committing && !isRemoteProjectPath(cwd);
+  const fail = (error: unknown, operation = "Git operation failed") => {
+    const text = error instanceof Error ? error.message : String(error);
+    setGitFeedback(cwd, {
+      kind: "error",
+      get title() {
+        return t(operation);
+      },
+      detail: text,
+    });
+  };
+  const {
+    message,
+    setMessage,
+    generating,
+    amend,
+    generationChoice,
+    setGenerationChoice,
+    hasGenerationOverride,
+    generate,
+    cancelGenerate,
+    toggleAmend: toggleAmendDraft,
+    clearDraft,
+  } = useCommitDraft({ cwd, index, textHarness, canGenerate, fail });
   const canCommit =
     (staged.length > 0 || amend) &&
     message.trim().length > 0 &&
@@ -896,14 +873,6 @@ function ChangedFiles({
   // own eligibility checks and every checkout retains its own message.
   const canEditMessage = !committing && !generating;
 
-  useEffect(() => {
-    if (!amendTarget || !index) return;
-    if (amendTarget.branch === index?.branch && amendTarget.head === index?.head) {
-      return;
-    }
-    setAmendTarget(null);
-    setMessage("");
-  }, [amendTarget, index?.branch, index?.head]);
   const canOpenMenu = !!index?.branch && !busy;
 
   useEffect(() => {
@@ -931,17 +900,6 @@ function ChangedFiles({
     changesView = view === "tree" ? "list" : "tree";
     saveChangesView(changesView);
     setView(changesView);
-  };
-
-  const fail = (error: unknown, operation = "Git operation failed") => {
-    const text = error instanceof Error ? error.message : String(error);
-    setGitFeedback(cwd, {
-      kind: "error",
-      get title() {
-        return t(operation);
-      },
-      detail: text,
-    });
   };
 
   const recordPrActivity = (number = pr?.number) => {
@@ -1117,62 +1075,9 @@ function ChangedFiles({
     setPending(null);
   };
 
-  const generate = async () => {
-    if (!canGenerate || generateAbortRef.current || runtime.state.busy === "commit" || runtime.state.busy === "pr") return;
-    const controller = new AbortController();
-    const draft = runtime.state.message;
-    const context = generationMutation.identity;
-    const mutation = generationMutation.version;
-    generateAbortRef.current = controller;
-    setGenerating(true);
-    setGitFeedback(cwd, null);
-    try {
-      const generated = generationChoice
-        ? await generateCommitMessage(cwd, textHarness, controller.signal, generationChoice)
-        : await generateCommitMessage(cwd, textHarness, controller.signal);
-      if (!controller.signal.aborted && generateAbortRef.current === controller) {
-        if (runtime.state.message !== draft || generationMutation.identity !== context ||
-            generationMutation.version !== mutation) {
-          setGitFeedback(cwd, { kind: "info", title: t("Draft or changes changed during generation. Generate again when ready.") });
-          return;
-        }
-        if (!generated.trim())
-          throw new Error("The provider returned an empty commit message. Retry generation.");
-        setMessage(generated);
-      }
-    } catch (error) {
-      if (!controller.signal.aborted) fail(error, "Couldn’t generate commit message");
-    } finally {
-      if (generateAbortRef.current === controller) {
-        generateAbortRef.current = null;
-        setGenerating(false);
-      }
-    }
-  };
-
-  const cancelGenerate = () => {
-    generateAbortRef.current?.abort();
-    generateAbortRef.current = null;
-    setGenerating(false);
-  };
-
   const toggleAmend = async () => {
     setMenuOpen(false);
-    if (amend) {
-      setAmendTarget(null);
-      return;
-    }
-    try {
-      const headMessage = await gitHeadMessage(cwd);
-      // The checkout owns the live draft, including edits made while Git reads HEAD.
-      if (!message.trim() && runtime.state.message === message) setMessage(headMessage);
-      setAmendTarget({
-        branch: index?.branch ?? null,
-        head: index?.head ?? null,
-      });
-    } catch (error) {
-      fail(error, "Couldn’t read commit message");
-    }
+    await toggleAmendDraft();
   };
 
   const confirmAmend = async (amending: boolean) => {
@@ -1220,8 +1125,7 @@ function ChangedFiles({
       // The commit is made: its files leave the list now, not after the push
       // and the reload that follow.
       if (index) showOptimistic(applyCommit(index, stageAll));
-      setMessage("");
-      setAmendTarget(null);
+      clearDraft();
       if (push || createPr) {
         setPending("Pushing…");
         await gitPush(cwd);
@@ -2082,16 +1986,6 @@ export function FileSection({
   );
 }
 
-type ChangeDir = {
-  name: string;
-  /** Path relative to the repo root; "" for the implicit root. */
-  path: string;
-  dirs: ChangeDir[];
-  files: GitChangedFile[];
-  /** Status shared by every descendant, or null when they differ. */
-  status: string | null;
-};
-
 async function remotePrContent(cwd: string) {
   const range = await gitRangeContext(cwd);
   const commits = range.commitSummary.trim();
@@ -2108,589 +2002,6 @@ async function remotePrContent(cwd: string) {
     .join("\n\n");
   return { title, body: body || title, base: range.base, head: range.head };
 }
-
-type ChangeRowProps = {
-  onOpenInEditor?: (path: string, pin?: boolean) => void;
-  files: GitChangedFile[];
-  collisionNames?: ReadonlySet<string>;
-  view: ChangesView;
-  kind: GitFileDiffKind;
-  selected?: string;
-  selectedKind?: GitFileDiffKind;
-  busy: string | null;
-  onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
-  onAction: (file: GitChangedFile, action: "stage" | "unstage" | "discard") => void;
-  onSelectionAction?: (
-    files: GitChangedFile[],
-    action: "stage" | "unstage" | "discard",
-  ) => void | Promise<void>;
-  onFolderAction: (relative: string, action: "stage" | "unstage") => void;
-};
-
-type ChangeSelection = {
-  paths: Set<string>;
-  select: (path: string, modifiers?: TreeSelectionModifiers, preserve?: boolean) => void;
-  targets: (file: GitChangedFile) => GitChangedFile[];
-  action: (file: GitChangedFile, action: "stage" | "unstage" | "discard") => void;
-};
-const ChangeSelectionCtx = createContext<ChangeSelection | null>(null);
-
-export function ChangeList({ files, view, ...rest }: ChangeRowProps) {
-  useLocale();
-  const [collapsedVersion, setCollapsedVersion] = useState(0);
-  const [focusedPath, setFocusedPath] = useState<string | null>(null);
-  const [scrollElement, setScrollElement] = useState<HTMLElement | null>(null);
-  const [scrollMargin, setScrollMargin] = useState(0);
-  const tree = useMemo(() => buildChangeTree(files), [files]);
-  const listRef = useRef<HTMLUListElement>(null);
-  const openFile = useStableCallback(rest.onOpenFile);
-  const openEditor = useStableCallback(rest.onOpenInEditor);
-  const fileAction = useStableCallback(rest.onAction);
-
-  const [paths, setPaths] = useState(() => new Set<string>());
-  const anchor = useRef<string | null>(null);
-  const visibleRows = useMemo(() => {
-    const result: Array<{ file?: GitChangedFile; dir?: ChangeDir; depth?: number }> = [];
-    const visit = (dir: ChangeDir, depth: number) => {
-      for (const child of dir.dirs) {
-        result.push({ dir: child, depth });
-        if (!collapsedDirs.has(`${rest.kind}:${child.path}`)) visit(child, depth + 1);
-      }
-      for (const file of dir.files) result.push({ file, depth });
-    };
-    if (view === "tree") visit(tree, 0);
-    else for (const file of files) result.push({ file });
-    return result;
-  }, [files, tree, view, rest.kind, collapsedVersion]);
-  const visiblePaths = useMemo(
-    () => visibleRows.flatMap((row) => (row.file ? [row.file.path] : [])),
-    [visibleRows],
-  );
-  const filesByPath = useMemo(() => new Map(files.map((file) => [file.path, file])), [files]);
-  const positions = useMemo(
-    () => new Map(visiblePaths.map((path, index) => [path, index + 1])),
-    [visiblePaths],
-  );
-  const focusedIndex = visibleRows.findIndex((row) => row.file?.path === focusedPath);
-  const virtual = useVirtualizer({
-    count: visibleRows.length,
-    getScrollElement: () => scrollElement,
-    estimateSize: () => 28,
-    getItemKey: (index) => visibleRows[index].file?.path ?? `dir:${visibleRows[index].dir!.path}`,
-    enabled: visibleRows.length > 80 && !!scrollElement,
-    overscan: 8,
-    scrollMargin,
-    rangeExtractor: (range) => {
-      const indexes = defaultRangeExtractor(range);
-      if (focusedIndex >= 0 && !indexes.includes(focusedIndex)) indexes.push(focusedIndex);
-      return indexes.sort((a, b) => a - b);
-    },
-  });
-  const virtualized = visibleRows.length > 80;
-  useLayoutEffect(() => {
-    const list = listRef.current;
-    if (!list) return;
-    let parent = list.parentElement;
-    while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY))
-      parent = parent.parentElement;
-    setScrollElement(parent);
-    const measure = () => {
-      if (!parent) return;
-      const margin =
-        list.getBoundingClientRect().top - parent.getBoundingClientRect().top + parent.scrollTop;
-      setScrollMargin((previous) => (Math.abs(previous - margin) < 0.5 ? previous : margin));
-    };
-    measure();
-    // Preceding sections and container resizes can move the list without a
-    // React render. Observe their sizes instead of forcing layout every render.
-    const observer = new ResizeObserver(measure);
-    for (let element: HTMLElement | null = list; element; element = element.parentElement) {
-      observer.observe(element);
-      const owner: HTMLElement | null = element.parentElement;
-      if (owner)
-        for (const sibling of owner.children)
-          if (sibling instanceof HTMLElement && sibling !== element) observer.observe(sibling);
-      if (element === parent) break;
-    }
-    return () => observer.disconnect();
-  }, [view, rest.kind, virtualized]);
-  const toggleDir = useStableCallback((path: string) => {
-    const key = `${rest.kind}:${path}`;
-    if (collapsedDirs.has(key)) collapsedDirs.delete(key);
-    else collapsedDirs.add(key);
-    setCollapsedVersion((value) => value + 1);
-  });
-  const focusPath = (path: string) => {
-    setFocusedPath(path);
-    const index = visibleRows.findIndex((row) => row.file?.path === path);
-    if (virtualized) virtual.scrollToIndex(index, { align: "auto" });
-    const focus = () =>
-      listRef.current
-        ?.querySelector<HTMLButtonElement>(`[data-git-file="${CSS.escape(path)}"]`)
-        ?.focus({ preventScroll: true });
-    const mounted = listRef.current?.querySelector(`[data-git-file="${CSS.escape(path)}"]`);
-    if (mounted) focus();
-    else requestAnimationFrame(focus);
-  };
-
-  useEffect(() => {
-    const valid = new Set(files.map((file) => file.path));
-    setPaths((current) =>
-      [...current].every((path) => valid.has(path))
-        ? current
-        : new Set([...current].filter((path) => valid.has(path))),
-    );
-    if (anchor.current && !valid.has(anchor.current)) anchor.current = null;
-  }, [files]);
-  const select = useStableCallback(
-    (path: string, modifiers: TreeSelectionModifiers = {}, preserve = false) => {
-      setFocusedPath(path);
-      if (preserve && paths.has(path)) return;
-      const previousAnchor = anchor.current;
-      const visible = modifiers.shiftKey ? visiblePaths : [];
-      setPaths((current) => selectTreePaths(current, path, previousAnchor, visible, modifiers));
-      if (!modifiers.shiftKey) anchor.current = path;
-    },
-  );
-  const selectedFiles = useMemo(() => files.filter((file) => paths.has(file.path)), [files, paths]);
-  const targets = useStableCallback((file: GitChangedFile) =>
-    paths.has(file.path) ? selectedFiles : [file],
-  );
-  const action = useStableCallback(
-    (file: GitChangedFile, kind: "stage" | "unstage" | "discard") => {
-      const chosen = targets(file);
-      if (rest.onSelectionAction) void rest.onSelectionAction(chosen, kind);
-      else for (const target of chosen) rest.onAction(target, kind);
-    },
-  );
-  const renderRow = (index: number, style?: CSSProperties) => {
-    const row = visibleRows[index];
-    return row.file ? (
-      <ChangeRow
-        key={`${rest.kind}:${row.file.path}`}
-        file={row.file}
-        collision={rest.collisionNames?.has(basename(row.file.relative))}
-        active={isActive(row.file, rest.selected, rest.selectedKind, rest.kind)}
-        busy={rest.busy === row.file.relative || !!rest.busy?.startsWith("folder:")}
-        kind={rest.kind}
-        depth={row.depth}
-        style={style}
-        position={positions.get(row.file.path)}
-        total={visiblePaths.length}
-        onOpenFile={openFile}
-        onOpenInEditor={rest.onOpenInEditor ? openEditor : undefined}
-        onAction={fileAction}
-      />
-    ) : (
-      <ChangeDirRow
-        key={`dir:${row.dir!.path}`}
-        dir={row.dir!}
-        depth={row.depth!}
-        {...rest}
-        style={style}
-        open={!collapsedDirs.has(`${rest.kind}:${row.dir!.path}`)}
-        onToggle={toggleDir}
-      />
-    );
-  };
-  const content = virtualized
-    ? virtual.getVirtualItems().map((item) =>
-        renderRow(item.index, {
-          position: "absolute",
-          insetBlockStart: 0,
-          insetInlineStart: 0,
-          width: "100%",
-          height: 28,
-          transform: `translateY(${item.start - scrollMargin}px)`,
-        }),
-      )
-    : visibleRows.map((_, index) => renderRow(index));
-  const context = useMemo(
-    () => ({ paths, select, targets, action }),
-    [paths, select, targets, action],
-  );
-  return (
-    <ChangeSelectionCtx.Provider value={context}>
-      <li className="list-none">
-        {selectedFiles.length > 1 ? (
-          <p role="status" className="px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
-            {t("{p0} selected entries", { p0: selectedFiles.length })}
-          </p>
-        ) : null}
-        <ul
-          ref={listRef}
-          style={virtualized ? { position: "relative", height: virtual.getTotalSize() } : undefined}
-          onFocusCapture={(event) => {
-            const path = (event.target as HTMLElement).closest<HTMLElement>("[data-git-file]")
-              ?.dataset.gitFile;
-            if (path) setFocusedPath(path);
-          }}
-          role="listbox"
-          aria-label={rest.kind === "staged" ? t("Staged Changes") : t("Changes")}
-          aria-multiselectable="true"
-          onKeyDown={(event) => {
-            const row = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-git-file]");
-            if (!row) return;
-            const visible = visiblePaths;
-            const mod = event.ctrlKey || event.metaKey;
-            if (mod && !event.altKey && event.key.toLowerCase() === "a") {
-              event.preventDefault();
-              event.stopPropagation();
-              setPaths(new Set(visible));
-              anchor.current ??= row.dataset.gitFile!;
-            } else if (mod && event.key === " ") {
-              event.preventDefault();
-              select(row.dataset.gitFile!, { ctrlKey: true });
-            } else if (
-              ["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) &&
-              !event.altKey
-            ) {
-              event.preventDefault();
-              event.stopPropagation();
-              const index = visible.indexOf(focusedPath ?? row.dataset.gitFile!);
-              const next =
-                event.key === "Home"
-                  ? visible[0]
-                  : event.key === "End"
-                    ? visible[visible.length - 1]
-                    : visible[
-                        Math.min(
-                          visible.length - 1,
-                          Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)),
-                        )
-                      ];
-              if (next) {
-                if (!mod || event.shiftKey) select(next, event);
-                focusPath(next);
-                if (!mod && !event.shiftKey) {
-                  const file = filesByPath.get(next);
-                  if (file && file.status !== "deleted") rest.onOpenFile(file.path, rest.kind);
-                }
-              }
-            } else if (event.key === "Escape") {
-              setPaths(new Set([row.dataset.gitFile!]));
-              anchor.current = row.dataset.gitFile!;
-            } else if (event.key === "Enter") {
-              event.preventDefault();
-              const file = filesByPath.get(row.dataset.gitFile!);
-              if (file)
-                for (const value of targets(file)) rest.onOpenFile(value.path, rest.kind, true);
-            }
-          }}
-        >
-          {content}
-        </ul>
-      </li>
-    </ChangeSelectionCtx.Provider>
-  );
-}
-
-function ChangeDirRow({
-  dir,
-  depth,
-  kind,
-  open,
-  onToggle,
-  style,
-  ...rest
-}: Omit<ChangeRowProps, "files" | "view"> & {
-  dir: ChangeDir;
-  depth: number;
-  open: boolean;
-  onToggle: (path: string) => void;
-  style?: CSSProperties;
-}) {
-  useLocale();
-  return (
-    <li style={style}>
-      <ActionHost
-        style={{ paddingLeft: 8 + depth * 12 }}
-        className="flex h-7 w-full items-center gap-1 pr-2 leading-none text-content"
-      >
-        <Button
-          size="sm"
-          variant="ghost"
-          motion="none"
-          type="button"
-          title={dir.path}
-          aria-expanded={open}
-          onClick={() => onToggle(dir.path)}
-          className="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-        >
-          <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
-            {open ? (
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
-            ) : (
-              <ChevronRight className="size-3.5" strokeWidth={1.75} />
-            )}
-          </span>
-          <FileTypeIcon name={dir.name} isDir isOpen={open} size={16} />
-          <MiddleTruncate mode="path" className="min-w-0 flex-1 text-ui-body font-medium">{dir.name}</MiddleTruncate>
-        </Button>
-        <div className="flex shrink-0 items-center">
-          <InlineAction
-            label={t(kind === "staged" ? "Unstage Changes in {p1}" : "Stage Changes in {p1}", {
-              p1: dir.path,
-            })}
-            disabled={rest.busy !== null}
-            onClick={() => rest.onFolderAction(dir.path, kind === "staged" ? "unstage" : "stage")}
-          >
-            {kind === "staged" ? (
-              <Minus className="size-3.5" strokeWidth={1.75} />
-            ) : (
-              <Plus className="size-3.5" strokeWidth={1.75} />
-            )}
-          </InlineAction>
-        </div>
-        <span
-          className={`grid w-3.5 shrink-0 place-items-center ${
-            dir.status ? statusColor(dir.status) : "text-[var(--ui-text-muted)]"
-          }`}
-          aria-hidden
-        >
-          <span className="size-1.5 rounded-full bg-current" />
-        </span>
-      </ActionHost>
-    </li>
-  );
-}
-
-function isActive(
-  file: GitChangedFile,
-  selected: string | undefined,
-  selectedKind: GitFileDiffKind | undefined,
-  kind: GitFileDiffKind,
-): boolean {
-  return selected === file.relative && (!selectedKind || selectedKind === kind);
-}
-
-/** Nests changed files under their directories, VS Code's tree view. */
-const changeCollator = collator();
-
-function buildChangeTree(files: GitChangedFile[]): ChangeDir {
-  const root: ChangeDir = {
-    name: "",
-    path: "",
-    dirs: [],
-    files: [],
-    status: null,
-  };
-  const directories = new Map<string, ChangeDir>();
-  for (const file of files) {
-    const segments = file.relative.split("/");
-    let node = root;
-    for (const segment of segments.slice(0, -1)) {
-      const path = node.path ? `${node.path}/${segment}` : segment;
-      let next = directories.get(path);
-      if (!next) {
-        next = { name: segment, path, dirs: [], files: [], status: null };
-        node.dirs.push(next);
-        directories.set(path, next);
-      }
-      node = next;
-    }
-    node.files.push(file);
-  }
-  sortChangeDir(root);
-  return root;
-}
-
-/** Sorts each level (folders first) and rolls descendant status upward. */
-function sortChangeDir(dir: ChangeDir): string | null {
-  dir.dirs.sort((a, b) => changeCollator.compare(a.name, b.name));
-  dir.files.sort((a, b) => changeCollator.compare(basename(a.relative), basename(b.relative)));
-  let status: string | null = null;
-  let mixed = false;
-  const merge = (next: string | null) => {
-    if (next === null) mixed = true;
-    else if (status === null) status = next;
-    else if (status !== next) mixed = true;
-  };
-  for (const child of dir.dirs) merge(sortChangeDir(child));
-  for (const file of dir.files) merge(file.status);
-  dir.status = mixed ? null : status;
-  return dir.status;
-}
-
-const ChangeRow = memo(function ChangeRow({
-  file,
-  collision = false,
-  active,
-  busy,
-  kind,
-  depth,
-  style,
-  position,
-  total,
-  onOpenFile,
-  onOpenInEditor,
-  onAction,
-}: {
-  file: GitChangedFile;
-  collision?: boolean;
-  onOpenInEditor?: (path: string, pin?: boolean) => void;
-  active: boolean;
-  busy: boolean;
-  kind: GitFileDiffKind;
-  /** Set in tree view: nesting level, and the folder path moves to the tree. */
-  depth?: number;
-  style?: CSSProperties;
-  position?: number;
-  total?: number;
-  onOpenFile: (path: string, kind: GitFileDiffKind, pin?: boolean) => void;
-  onAction: (file: GitChangedFile, action: "stage" | "unstage" | "discard") => void;
-}) {
-  useLocale();
-  const selection = useContext(ChangeSelectionCtx);
-  const selected = selection?.paths.size ? selection.paths.has(file.path) : active;
-  const perform = (action: "stage" | "unstage" | "discard") =>
-    selection ? selection.action(file, action) : onAction(file, action);
-  const name = basename(file.relative);
-  const tree = depth !== undefined;
-  const dir = tree ? "" : dirname(file.relative);
-  const canOpen = file.status !== "deleted";
-  const { menu, ...menuHandlers } = useChangedFileMenu({
-    languageDomain: "git",
-    path: file.path,
-    relative: file.relative,
-    deleted: !canOpen,
-    selection: () => {
-      const chosen = selection?.targets(file) ?? [file];
-      return chosen.map((value) => ({
-        path: value.path,
-        relative: value.relative,
-        deleted: value.status === "deleted",
-        onOpenChanges: () =>
-          chosen.length > 1 ? onOpenFile(value.path, kind, true) : onOpenFile(value.path, kind),
-        onOpenFile: onOpenInEditor ? () => onOpenInEditor(value.path, true) : undefined,
-      }));
-    },
-    onOpenChanges: () => onOpenFile(file.path, kind),
-    onOpenFile: onOpenInEditor ? () => onOpenInEditor(file.path, true) : undefined,
-    actions: [
-      {
-        id: "index",
-        label: kind === "staged" ? "Unstage Changes" : "Stage Changes",
-        disabled: busy,
-        run: () => perform(kind === "staged" ? "unstage" : "stage"),
-      },
-      ...(kind === "unstaged"
-        ? [
-            {
-              id: "discard",
-              get label() {
-                return t("Discard Changes");
-              },
-              danger: true,
-              disabled: busy,
-              run: () => perform("discard"),
-            },
-          ]
-        : []),
-    ],
-  });
-  return (
-    <li
-      style={style}
-      role="option"
-      aria-selected={selected}
-      aria-posinset={position}
-      aria-setsize={total}
-      onContextMenu={(event) => {
-        selection?.select(file.path, {}, true);
-        menuHandlers.onContextMenu(event);
-      }}
-      onKeyDown={(event) => {
-        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
-          selection?.select(file.path, {}, true);
-        menuHandlers.onKeyDown(event);
-      }}
-    >
-      <ActionHost
-        selected={selected}
-        style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
-        className={`flex h-7 w-full items-center gap-1 pr-2 leading-none ${
-          tree ? "" : "pl-2"
-        } text-content`}
-      >
-        <Button
-          size="sm"
-          variant="item"
-          motion="none"
-          type="button"
-          title={file.relative}
-          aria-label={file.relative}
-          data-git-file={file.path}
-          onClick={(event: ReactMouseEvent<HTMLButtonElement>) => {
-            event.currentTarget.focus({ preventScroll: true });
-            selection?.select(file.path, event);
-            if (event.ctrlKey || event.metaKey || event.shiftKey) return;
-            if (canOpen) onOpenFile(file.path, kind);
-          }}
-          onDoubleClick={(event) => {
-            if (canOpen && !event.ctrlKey && !event.metaKey && !event.shiftKey)
-              onOpenFile(file.path, kind, true);
-          }}
-          className="flex h-full min-w-0 flex-1 select-none items-center gap-1.5 text-left focus-visible:-outline-offset-1"
-        >
-          {tree ? <span className="size-4 shrink-0" /> : null}
-          <FileTypeIcon name={name} isDir={false} size={16} />
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span
-              className={`min-w-0 truncate ${collision && dir ? "max-w-[40%] shrink text-ui-caption text-(--ui-text-secondary)" : "max-w-full shrink text-ui-secondary font-medium"} ${
-                file.status === "deleted" ? "line-through" : ""
-              }`}
-            >
-              {name}
-            </span>
-            {dir ? (
-              <MiddleTruncate mode="path" className={`min-w-0 flex-1 text-ui-caption ${collision ? "font-medium text-content" : "text-(--ui-text-secondary)"}`}>
-                {dir}
-              </MiddleTruncate>
-            ) : null}
-          </span>
-        </Button>
-        {file.additions > 0 || file.deletions > 0 ? (
-          <span
-            className="hidden shrink-0 items-center gap-1 text-ui-micro font-medium tabular-nums @min-[22rem]/changes:flex"
-            title={t("{p0} lines added, {p1} lines removed", {
-              p0: file.additions,
-              p1: file.deletions,
-            })}
-          >
-            {file.additions > 0 ? <span className="text-diff-add-fg">+{file.additions}</span> : null}
-            {file.deletions > 0 ? <span className="text-diff-del-fg">-{file.deletions}</span> : null}
-          </span>
-        ) : null}
-        <span
-          title={statusLabel(file.status)}
-          className={`w-3.5 shrink-0 text-center font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
-        >
-          {statusLetter(file.status)}
-        </span>
-        {/* Fixed-width slot so the row never shifts. It reveals on hover and keyboard focus; discard also lives in the context menu and the section menu. */}
-        <div className="flex size-5 shrink-0 items-center justify-center">
-          {busy ? (
-            <WorkingIndicator label={t("Working")} />
-          ) : kind === "staged" ? (
-            <InlineAction
-              label={t("Unstage Changes")}
-              disabled={busy}
-              onClick={() => perform("unstage")}
-            >
-              <Minus className="icon-sm" strokeWidth={1.75} />
-            </InlineAction>
-          ) : (
-            <InlineAction label={t("Stage Changes")} disabled={busy} onClick={() => perform("stage")}>
-              <Plus className="icon-sm" strokeWidth={1.75} />
-            </InlineAction>
-          )}
-        </div>
-      </ActionHost>
-      {menu}
-    </li>
-  );
-});
 
 function IconAction({
   title,
@@ -2725,298 +2036,4 @@ function IconAction({
       {children}
     </Button>
   );
-}
-
-function statusLetter(status: string): string {
-  if (status === "untracked") return "U";
-  if (status === "added") return "A";
-  if (status === "deleted") return "D";
-  return "M";
-}
-
-function statusLabel(status: string): string {
-  if (status === "untracked") return t("Untracked");
-  if (status === "added") return t("Added");
-  if (status === "deleted") return t("Deleted");
-  return t("Modified");
-}
-
-// The marker carries the status; plain modifications stay neutral so the list is not an amber wall.
-function statusColor(status: string): string {
-  if (status === "untracked") return "text-info";
-  if (status === "added") return "text-diff-add-fg";
-  if (status === "deleted") return "text-diff-del-fg";
-  return "text-[var(--ui-text-secondary)]";
-}
-
-function useDiffIndex(
-  cwd: string,
-  enabled: boolean,
-  polling: boolean,
-  panel: RefObject<HTMLDivElement | null>,
-): {
-  index: GitDiffIndex | null;
-  reload: () => void;
-  showOptimistic: (next: GitDiffIndex) => void;
-  error: string | null;
-  loading: boolean;
-} {
-  // A remote project keeps its last good index when a load fails; the failure
-  // is shown by `ChangedFiles`.
-  const remote = isRemoteProjectPath(cwd);
-  const [index, setIndex] = useState<GitDiffIndex | null>(() => cachedIndex(cwd));
-  const [nonce, setNonce] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const handledRefresh = useRef({ cwd, nonce: 0 });
-  const failedRead = useRef<{ cwd: string; at: number } | null>(null);
-  const indexRef = useRef(index);
-  useLayoutEffect(() => {
-    indexRef.current = index;
-  }, [index]);
-  // An optimistic index is on screen and its git command may still be
-  // running: a poll that started earlier must not put the old rows back.
-  const holdRef = useRef(false);
-  // The caller of `reload` announces its change itself.
-  const announcedRef = useRef(false);
-  const reload = useCallback(() => {
-    holdRef.current = false;
-    announcedRef.current = true;
-    setNonce((value) => value + 1);
-  }, []);
-  const showOptimistic = useCallback(
-    (next: GitDiffIndex) => {
-      holdRef.current = true;
-      indexByCwd.set(cwd, next);
-      indexRef.current = next;
-      setIndex(next);
-    },
-    [cwd],
-  );
-
-  useEffect(() => {
-    if (!enabled || !cwd || cwd === "~") {
-      return;
-    }
-    const cached = cachedIndex(cwd);
-    if (cached && !sameIndex(indexRef.current, cached)) {
-      indexRef.current = cached;
-      setIndex(cached);
-    }
-    let cancelled = false;
-    let inFlight = false;
-    let pending = false;
-
-    const load = async (fresh = false, maxAgeMs = ACTIVE_PROJECT_REFRESH_MS) => {
-      if (inFlight) {
-        pending ||= fresh;
-        return;
-      }
-      if (document.hidden && !fresh) return;
-      if (
-        !fresh &&
-        failedRead.current?.cwd === cwd &&
-        Date.now() - failedRead.current.at < ACTIVE_PROJECT_REFRESH_MS
-      )
-        return;
-      inFlight = true;
-      setLoading(!indexRef.current);
-      try {
-        // Reopening may reuse a recent full index; explicit refresh and known
-        // changes always read beyond the shared cache.
-        const next = await fetchGitIndex(cwd, {
-          full: true,
-          since: fresh ? Date.now() : Date.now() - maxAgeMs + 1,
-        });
-        if (cancelled || holdRef.current) return;
-        failedRead.current = null;
-        setError(null);
-        if (remote) reportRemoteLoad(cwd, "changes");
-        const prev = indexRef.current;
-        const announced = announcedRef.current;
-        announcedRef.current = false;
-        applyProjectDiffStats(
-          cwd,
-          {
-            files: next.files.length + (next.conflicts?.length ?? 0),
-            additions: next.additions,
-            deletions: next.deletions,
-          },
-          peekFullGitIndex(cwd)?.at,
-        );
-        if (sameIndex(prev, next)) return;
-        indexByCwd.set(cwd, next);
-        indexRef.current = next;
-        setIndex(next);
-        if (prev) {
-          const paths = changedFilePaths(prev, next);
-          invalidateWatchedFiles(paths);
-          // Found by the poll (an agent, a terminal): tell the other git views,
-          // and spare the commit graph when only files moved.
-          if (!announced) {
-            // The shared index was just read, so keep it; only an index change
-            // can name the files whose contents moved.
-            const index = sameRefs(prev, next);
-            announceGitChange(cwd, index ? "index" : "refs", {
-              observed: true,
-              paths: index ? paths : undefined,
-            });
-          }
-        }
-      } catch (error) {
-        if (cancelled) return;
-        failedRead.current = { cwd, at: Date.now() };
-        if (remote) {
-          reportRemoteLoad(cwd, "changes", error);
-        } else {
-          setError(error instanceof Error ? error.message : String(error));
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-        inFlight = false;
-        if (pending && !cancelled) {
-          pending = false;
-          void load(true);
-        }
-      }
-    };
-
-    const explicitRefresh =
-      handledRefresh.current.cwd === cwd && handledRefresh.current.nonce !== nonce;
-    handledRefresh.current = { cwd, nonce };
-    void load(explicitRefresh, GIT_PANEL_ENTRY_FRESH_MS);
-    const onResume = () => {
-      if (polling && !document.hidden) void load();
-    };
-    const pane = panel.current;
-    const onPanelInteraction = () => {
-      // Keep pending optimistic changes until their mutation confirms the index.
-      if (document.hidden || holdRef.current || gitPanelRuntime(cwd).state.busy) return;
-      void load(false, GIT_PANEL_FOCUS_FRESH_MS);
-    };
-    const onPanelFocus = (event: FocusEvent) => {
-      // Moving between controls in this panel is not a new panel entry.
-      if (event.relatedTarget instanceof Node && pane?.contains(event.relatedTarget)) return;
-      onPanelInteraction();
-    };
-    pane?.addEventListener("focusin", onPanelFocus);
-    pane?.addEventListener("pointerdown", onPanelInteraction);
-    // Polling slows while a remote machine is unreachable.
-    const timer = window.setInterval(() => {
-      // Local polls wait for window focus; `focus` above refreshes on return.
-      if (remote ? remotePollDue(cwd) : document.hasFocus()) onResume();
-    }, GIT_POLL_MS);
-    window.addEventListener("focus", onResume);
-    document.addEventListener("visibilitychange", onResume);
-    const unsubGit = subscribeGitChanged(
-      () => {
-        if (!announcingObservedChange) {
-          // A mutation can finish in a panel that has already unmounted.
-          // Release this mounted panel's optimistic hold and refresh it too.
-          holdRef.current = false;
-          announcedRef.current = true;
-          if (polling && !document.hidden) void load(true);
-        }
-      },
-      { cwd },
-    );
-    return () => {
-      cancelled = true;
-      pane?.removeEventListener("focusin", onPanelFocus);
-      pane?.removeEventListener("pointerdown", onPanelInteraction);
-      window.clearInterval(timer);
-      window.removeEventListener("focus", onResume);
-      document.removeEventListener("visibilitychange", onResume);
-      unsubGit();
-    };
-  }, [cwd, enabled, nonce, remote, polling, panel]);
-
-  return { index, reload, showOptimistic, error, loading };
-}
-
-/** Whether HEAD, its branch and its upstream counts are unchanged. */
-function sameRefs(prev: GitDiffIndex, next: GitDiffIndex): boolean {
-  return (
-    prev.branch === next.branch &&
-    prev.head === next.head &&
-    prev.upstream === next.upstream &&
-    prev.ahead === next.ahead &&
-    prev.behind === next.behind &&
-    prev.aheadOfDefault === next.aheadOfDefault &&
-    prev.headPushed === next.headPushed &&
-    (prev.operation ?? null) === (next.operation ?? null)
-  );
-}
-
-function cachedIndex(cwd: string | undefined): GitDiffIndex | null {
-  if (!cwd || cwd === "~") return null;
-  return indexByCwd.get(cwd) ?? null;
-}
-
-function changedFilePaths(prev: GitDiffIndex, next: GitDiffIndex): string[] {
-  const paths: string[] = [];
-  const seen = new Set<string>();
-  const previous = new Map(prev.files.map((file) => [file.relative, file]));
-  const current = new Set(next.files.map((file) => file.relative));
-  for (const file of next.files) {
-    const before = previous.get(file.relative);
-    if (
-      !before ||
-      before.status !== file.status ||
-      before.additions !== file.additions ||
-      before.deletions !== file.deletions ||
-      before.staged !== file.staged ||
-      before.unstaged !== file.unstaged
-    ) {
-      paths.push(file.path);
-      seen.add(file.path);
-    }
-  }
-  for (const file of prev.files) {
-    if (!current.has(file.relative) && !seen.has(file.path)) {
-      paths.push(file.path);
-    }
-  }
-  // A file entering, leaving or changing kind has new contents on disk.
-  const before = new Map((prev.conflicts ?? []).map((file) => [file.relative, file]));
-  const after = new Map((next.conflicts ?? []).map((file) => [file.relative, file]));
-  for (const [relative, file] of after) {
-    if (before.get(relative)?.kind !== file.kind) paths.push(file.path);
-  }
-  for (const [relative, file] of before) if (!after.has(relative)) paths.push(file.path);
-  return paths;
-}
-
-function sameIndex(prev: GitDiffIndex | null, next: GitDiffIndex): boolean {
-  if (!prev) return false;
-  if (
-    prev.branch !== next.branch ||
-    prev.head !== next.head ||
-    prev.additions !== next.additions ||
-    prev.deletions !== next.deletions ||
-    prev.files.length !== next.files.length ||
-    prev.remote !== next.remote ||
-    prev.upstream !== next.upstream ||
-    prev.defaultBranch !== next.defaultBranch ||
-    prev.ahead !== next.ahead ||
-    prev.behind !== next.behind ||
-    prev.aheadOfDefault !== next.aheadOfDefault ||
-    prev.headPushed !== next.headPushed ||
-    (prev.operation ?? null) !== (next.operation ?? null) ||
-    !sameConflicts(prev.conflicts, next.conflicts)
-  ) {
-    return false;
-  }
-  return prev.files.every((file, i) => {
-    const other = next.files[i];
-    return (
-      other &&
-      file.relative === other.relative &&
-      file.status === other.status &&
-      file.additions === other.additions &&
-      file.deletions === other.deletions &&
-      file.staged === other.staged &&
-      file.unstaged === other.unstaged
-    );
-  });
 }

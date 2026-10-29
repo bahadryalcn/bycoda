@@ -18,9 +18,9 @@ vi.mock("@tauri-apps/api/app", () => ({
   getVersion: mocks.getVersion,
 }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({
-  ask: mocks.ask,
   message: mocks.message,
 }));
+vi.mock("../../shared/model/appConfirm", () => ({ confirmInApp: mocks.ask }));
 vi.mock("@tauri-apps/plugin-process", () => ({ relaunch: mocks.relaunch }));
 vi.mock("@tauri-apps/plugin-updater", () => ({ check: mocks.check }));
 vi.mock("../../features/settings/model/sounds", () => ({
@@ -169,6 +169,14 @@ describe("disabled updater", () => {
     await vi.waitFor(() => expect(mocks.downloadAndInstall).toHaveBeenCalledOnce());
     const third = updater.runUpdateFlow(true);
     expect(mocks.ask).toHaveBeenCalledOnce();
+    expect(mocks.ask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Update available",
+        confirmLabel: "Install now",
+        tone: "normal",
+        message: expect.stringContaining("0.1.23 is available (you have 0.1.22)."),
+      }),
+    );
     expect(mocks.check).toHaveBeenCalledOnce();
     installed();
     await Promise.all([first, second, third]);

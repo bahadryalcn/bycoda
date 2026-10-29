@@ -5,6 +5,30 @@ description: Shared UI redesign inventory for public bycoda controls, task-sized
 
 # Shared UI components and redesign
 
+## Optional observed text controls, 2026-10-29
+
+InlineEdit and TagInput retain their ordinary unregistered callback/ref/keyboard
+contracts. Their optional private Native input observer can close a real mounted
+control without forcing blur, normalization, save or IME completion. Exact original
+publication tokens are consumed once after the corresponding React layout; old
+async work cannot grant replacement controls or unrelated prop refreshes authority.
+
+Observed TagInput waits for both the actual callback Promise and its original view
+publication. Failure or retirement before publication conserves exact raw text and
+requested tags as plain data. The local16-record/1MiB conservative data charge
+refuses new callback effects when full, keeps typing/selection/copy available and
+does not evict/replay unknown originals. Callback success never reports Native save.
+Shared FieldMessage extraction by the concurrent React refactor is preserved.
+
+Final narrow author102/10, independent unchanged reproduction1/1 and control29/2
+passed; counts overlap. The40-case Notes fixture exercised ordinary unregistered
+shared controls and observed Notes inputs in both themes at1280/800. All40
+captures were source-bound; exact raw artifacts also passed a separate checked
+Native FULL library test. Evidence is under
+`temp/verification/2026-10-29-notes-input-closure/`. Concurrent VIS23 focus CSS
+is preserved as a read-only dependency. Installed/platform/release acceptance
+and complete input census remain separate.
+
 ## Purpose and keywords
 
 Give shared components their own design/acceptance contract, alongside screen
@@ -119,6 +143,7 @@ Uncommitted on main over 83053d6b8 (shared checkout); no commit/build/install.
   async pickers) stays with owning sessions.
 
 H1 night pass (2026-10-28, uncommitted over 4de508dea, NOT tested per owner rule):
+
 - Button reserves no empty icon slot for icon-less `loading` text actions.
 - `ActionHost` + `InlineAction` (Button `inset`) for row/tab/card actions: one host
   highlight, transparent compact action, reveal on hover/focus/selection/touch.
@@ -127,7 +152,7 @@ H1 night pass (2026-10-28, uncommitted over 4de508dea, NOT tested per owner rule
 - F3 contract: caller className sets placement only (`@layer components`).
 - UIF-06/07/08/16/19 and FloatingButtonGroup, ExpandingButtonGroup, ConfirmMorph,
   InlineEdit, MorphSelect passes.
-Handoff: temp/local/2026-10-28-h1-shared-controls/handoff.json (+ handoff-F1/F2.md).
+  Handoff: temp/local/2026-10-28-h1-shared-controls/handoff.json (+ handoff-F1/F2.md).
 
 ## Committed handoff references
 

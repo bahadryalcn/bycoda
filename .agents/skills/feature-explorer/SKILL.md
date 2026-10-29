@@ -5,6 +5,20 @@ description: Explorer file tree inventory for root/worktree identity, compact he
 
 # Explorer and file-tree management
 
+## VIS-019/020 inline name editor and header actions, 2026-10-30
+
+Create file, create folder and rename share one `NameRow` in `ui/FileTree.tsx`:
+the tree-row grid (depth indent, toggle slot, icon slot, compact field), a one-line
+caption naming the item and parent (the root keeps its display label), and the
+validation/rejection message attached to the same row. The header icons
+(`data-explorer-action` new-file/new-folder/collapse), the Explorer actions menu and
+every context menu go through `startCreate`/`runAction` in `useFileTreeOperations.ts`;
+header creation uses the selection contract (`createParentOf`), context menus pass
+their own target. Inline commits run under `commitInline` (one operation lock, header
+and menu disabled with a reason, no second submit). Menu builders and their tests:
+`ui/explorerMenuItems.ts`, `explorerMenuItems.test.ts`, `FileTree.create.test.ts`.
+Evidence: `temp/verification/vis-explorer/` (fixture, not installed app).
+
 ## Owned file-editor input admission, 2026-10-29
 
 The source511 continuation adds a physical-window gate to the known mounted

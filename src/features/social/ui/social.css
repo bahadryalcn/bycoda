@@ -649,3 +649,38 @@
 .social-view summary:active {
   color: var(--color-active);
 }
+/* Agent + model through the shared picker: a labelled field, no extra chrome. */
+.social-view fieldset.social-model-field {
+  display: grid;
+  gap: 4px;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.social-model-field > legend {
+  float: left;
+  inline-size: 100%;
+  padding: 0;
+  margin-block-end: 4px;
+}
+.social-model-field > legend + * {
+  clear: both;
+}
+/* Small add dialogs: one calm column, related short fields side by side. */
+.social-composer-body > .social-form {
+  display: grid;
+  gap: 0.875rem;
+}
+.social-composer-body > .social-form > :is(label, details, fieldset, p) {
+  margin-block: 0;
+}
+.social-form-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr));
+  gap: 0.875rem;
+  min-inline-size: 0;
+}
+.social-composer-body > .social-form > button[type="submit"] {
+  justify-self: start;
+}

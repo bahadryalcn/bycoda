@@ -77,26 +77,28 @@ const INBOX_PROVIDERS = [
 export function InboxPage() {
   useLocale();
   const revealed = useContext(RevealedSetting);
-  const [selection, setSelection] = useState(() => ({
-    active:
-      (INBOX_PROVIDERS.find((provider) => provider.id === revealed)?.id as string) ?? "github",
-    revealed,
-  }));
+  // Providers stay mounted once opened, so their drafts survive tab changes.
+  const [selection, setSelection] = useState(() => {
+    const initial =
+      (INBOX_PROVIDERS.find((provider) => provider.id === revealed)?.id as string) ?? "github";
+    return { active: initial, revealed, visited: new Set([initial]) };
+  });
   let active = selection.active;
+  let visited = selection.visited;
   // Resolve an external Settings search before its scroll/focus effect runs.
   // Manual tab changes remain independent until the search target changes.
   if (selection.revealed !== revealed) {
     active = INBOX_PROVIDERS.find((provider) => provider.id === revealed)?.id ?? active;
-    setSelection({ active, revealed });
+    visited = visited.has(active) ? visited : new Set([...visited, active]);
+    setSelection({ active, revealed, visited });
   }
-  const setActive = (next: string) => setSelection((current) => ({ ...current, active: next }));
+  const setActive = (next: string) =>
+    setSelection((current) => ({
+      ...current,
+      active: next,
+      visited: current.visited.has(next) ? current.visited : new Set([...current.visited, next]),
+    }));
   const tabsId = useId();
-  const [visited, setVisited] = useState(() => new Set([active]));
-  useEffect(
-    () =>
-      setVisited((previous) => (previous.has(active) ? previous : new Set([...previous, active]))),
-    [active],
-  );
   const tabs = useRef<HTMLDivElement>(null);
 
   return (

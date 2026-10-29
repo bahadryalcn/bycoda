@@ -18,36 +18,38 @@ export function TaskBudgetControls({
     );
   };
   return (
-    <details className="min-w-0 space-y-2 text-ui-caption">
-      <summary className="cursor-pointer">{t("Total run budget")}</summary>
-      <div className="grid min-w-0 gap-2 sm:grid-cols-3">
-        <NumberField
-          label={t("Agent minutes")}
-          min={0}
-          step={0.1}
-          value={budget?.maxAgentMinutes ?? ""}
-          onChange={(event) => update("maxAgentMinutes", event.target.value)}
-        />
-        <NumberField
-          label={t("Maximum agent runs")}
-          min={0}
-          step={1}
-          value={budget?.maxAttempts ?? ""}
-          onChange={(event) => update("maxAttempts", event.target.value)}
-        />
-        <NumberField
-          label={t("Reported token limit")}
-          min={0}
-          step={1}
-          value={budget?.maxTokens ?? ""}
-          onChange={(event) => update("maxTokens", event.target.value)}
-        />
+    <details className="task-form-section">
+      <summary>{t("Total run budget")}</summary>
+      <div className="task-form-section-body">
+        <div className="grid min-w-0 gap-2 sm:grid-cols-3">
+          <NumberField
+            label={t("Agent minutes")}
+            min={0}
+            step={0.1}
+            value={budget?.maxAgentMinutes ?? ""}
+            onChange={(event) => update("maxAgentMinutes", event.target.value)}
+          />
+          <NumberField
+            label={t("Maximum agent runs")}
+            min={0}
+            step={1}
+            value={budget?.maxAttempts ?? ""}
+            onChange={(event) => update("maxAttempts", event.target.value)}
+          />
+          <NumberField
+            label={t("Reported token limit")}
+            min={0}
+            step={1}
+            value={budget?.maxTokens ?? ""}
+            onChange={(event) => update("maxTokens", event.target.value)}
+          />
+        </div>
+        <p className="task-form-hint">
+          {t(
+            "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
+          )}
+        </p>
       </div>
-      <p className="text-ui-micro text-(--ui-text-secondary)">
-        {t(
-          "Includes planning, workers, reviewers and correction runs. Empty or zero means unlimited. Token limits depend on provider reporting.",
-        )}
-      </p>
     </details>
   );
 }

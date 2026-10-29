@@ -141,8 +141,8 @@
   outline: none;
 }
 .root:has(.control:focus-visible) .frame {
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
 }
 .root[data-invalid]:has(.control:focus-visible) .frame {
   outline-color: var(--ui-tone-danger-fg);

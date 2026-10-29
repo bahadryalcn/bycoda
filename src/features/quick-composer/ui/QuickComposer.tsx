@@ -16,7 +16,6 @@ import {
 } from "../model/quickWorkspace";
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,7 +25,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { prettyParent } from "../../../shared/lib/paths";
 import { ChevronDown, Search, Plus, X, ImagePlus, Maximize2 } from "../../../shared/ui/icons";
@@ -58,6 +56,9 @@ import { useQuickAttachments } from "./useQuickAttachments";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { QuickPermissionIcon, QuickPermissions } from "./QuickPermissions";
 import { QuickModelSelector } from "./QuickModelSelector";
+import { useQuickPromptBridge } from "./useQuickPromptBridge";
+import { useQuickNativeListeners } from "./useQuickNativeListeners";
+import { MODE_COMMANDS, useQuickPickers } from "./useQuickPickers";
 import { useQuickPickerMotion } from "./useQuickPickerMotion";
 import { OPERATOR_COMMAND } from "../../sessions/model/operatorCommand";
 import { ORCHESTRATOR_COMMAND } from "../../sessions/model/orchestratorCommand";
@@ -69,21 +70,10 @@ import {
   ModeCommandText,
 } from "../../sessions/ui/modeCommands";
 import {
-  rankSkills,
-  replaceSlashToken,
-  slashTokenAt,
-  type SlashToken,
-} from "../../skills/model/slashCommands";
-import {
-  applyQuickCatalog,
-  filterQuickProjects,
   initialQuickChoice,
   initialQuickProject,
   loadQuickProjects,
   quickLaunchRefusal,
-  QUICK_COMPOSER_CATALOG_EVENT,
-  QUICK_COMPOSER_CATALOG_REQUEST_EVENT,
-  QUICK_COMPOSER_SHOWN_EVENT,
   rememberQuickProject,
   resolveQuickModel,
   type QuickLaunch,
@@ -99,8 +89,6 @@ import {
 /** Tallest the prompt grows before it scrolls, in px. */
 const PROMPT_MAX_HEIGHT = 220;
 
-/** Commands the floating composer offers after a leading `/`. */
-const MODE_COMMANDS = [PLAN_COMMAND, OPERATOR_COMMAND, ORCHESTRATOR_COMMAND, DRAFT_COMMAND];
 const MODE_NAMES: ReadonlySet<string> = new Set(MODE_COMMANDS.map((command) => command.name));
 /** Sized for the 16px prompt, as the main composer's indent is for 14px. */
 const MODE_INDENT = "15px";
@@ -205,12 +193,6 @@ export function QuickComposer({
   // selected harness's default for a new session, so it tracks the limits a
   // workspace window reports after the panel opened.
   const leadingMode = leadingModeCommand(prompt, MODE_NAMES);
-  const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [picker, setPicker] = useState<
-    "project" | "model" | "permissions" | "attachments" | "commands" | null
-  >(null);
-  const [query, setQuery] = useState("");
-  const [highlight, setHighlight] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [uiBusy, setBusy] = useState(false);
   const busy = uiBusy || owner.launching;
@@ -227,57 +209,9 @@ export function QuickComposer({
   const plusRef = useRef<HTMLButtonElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
-  const queryRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
-  useLayoutEffect(() => {
-    const input = promptRef.current;
-    let composing = false;
-    let closed = false;
-    const originalReadOnly = input?.readOnly ?? false;
-    const detach = owner.mount({
-      readPrompt: () => input?.value ?? null,
-      composing: () => composing,
-      gate: (value) => {
-        closed = value;
-        if (input && !composing) input.readOnly = value || originalReadOnly;
-      },
-    });
-    const before = (event: Event) => {
-      if (!composing && !owner.canMutate()) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-      }
-    };
-    const changed = () => {
-      if (input) owner.externalPrompt(input.value);
-    };
-    const start = () => {
-      composing = true;
-    };
-    const end = () => {
-      composing = false;
-      changed();
-      owner.changed();
-      if (input) input.readOnly = closed || originalReadOnly;
-    };
-    input?.addEventListener("beforeinput", before, true);
-    input?.addEventListener("paste", before, true);
-    input?.addEventListener("drop", before, true);
-    input?.addEventListener("input", changed);
-    input?.addEventListener("compositionstart", start);
-    input?.addEventListener("compositionend", end);
-    return () => {
-      detach();
-      input?.removeEventListener("beforeinput", before, true);
-      input?.removeEventListener("paste", before, true);
-      input?.removeEventListener("drop", before, true);
-      input?.removeEventListener("input", changed);
-      input?.removeEventListener("compositionstart", start);
-      input?.removeEventListener("compositionend", end);
-      if (input) input.readOnly = originalReadOnly;
-    };
-  }, [owner]);
+  useQuickPromptBridge(owner, promptRef);
 
   /** Text goes at the caret when the prompt has focus, otherwise at the end. */
   function insertPromptText(insertion: string) {
@@ -308,60 +242,50 @@ export function QuickComposer({
     });
   }, []);
 
-  // Projects and defaults can change in the workspace between shows, so each
-  // show re-reads them. The draft survives a dismiss, like Spotlight's query.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen(QUICK_COMPOSER_SHOWN_EVENT, () => {
-      onShown();
-      if (!owner.canMutate()) return;
-      const nextProjects = loadQuickProjects();
-      const nextChoice = initialQuickChoice();
-      setProjects(nextProjects);
-      setProjectAppearance(loadQuickProjectAppearance());
-
-      setCwd((current) =>
-        current && nextProjects.includes(current) ? current : initialQuickProject(nextProjects),
-      );
-      setChoice(nextChoice);
-      setModelSettings({});
-      setPicker(null);
-      setSlash(null);
-      setError(null);
-      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, nextChoice.harness);
-      focusPrompt();
-    }).then((stop) => {
-      if (disposed) stop();
-      else unlisten = stop;
-    });
-    focusPrompt();
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, [focusPrompt, onShown, owner, setChoice, setCwd, setModelSettings]);
-
-  // Model lists come from the CLIs, which only workspace windows talk to.
-  useEffect(() => {
-    let disposed = false;
-    let unlisten: (() => void) | undefined;
-    void listen(QUICK_COMPOSER_CATALOG_EVENT, (event) => {
-      const available = applyQuickCatalog(event.payload);
-      if (available) setAvailableHarnesses(available);
-    }).then((stop) => {
-      if (disposed) {
-        stop();
-        return;
-      }
-      unlisten = stop;
-      void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, initialQuickChoice().harness);
-    });
-    return () => {
-      disposed = true;
-      unlisten?.();
-    };
-  }, []);
+  const {
+    picker,
+    query,
+    highlight,
+    queryRef,
+    projectOptions,
+    commandOptions,
+    optionCount,
+    setQuery,
+    setHighlight,
+    reset: resetPickers,
+    hide: hidePicker,
+    openPicker,
+    closePicker,
+    chooseAt,
+    syncPromptCommand,
+  } = useQuickPickers({
+    owner,
+    promptRef,
+    projects,
+    cwd,
+    busy,
+    gitOpen,
+    focusPrompt,
+    setPrompt,
+    setCwd,
+    setWorkspaceChoice,
+  });
+  const resetTransient = useCallback(() => {
+    resetPickers();
+    setError(null);
+  }, [resetPickers]);
+  useQuickNativeListeners({
+    owner,
+    onShown,
+    focusPrompt,
+    resetTransient,
+    setProjects,
+    setProjectAppearance,
+    setCwd,
+    setChoice,
+    setModelSettings,
+    setAvailableHarnesses,
+  });
 
   // Scroll only the list. scrollIntoView also scrolls the clipped card/root
   // while the native window is still catching up with the expanded content.
@@ -385,23 +309,15 @@ export function QuickComposer({
     field.style.height = `${Math.min(field.scrollHeight, PROMPT_MAX_HEIGHT)}px`;
   }, [prompt, leadingMode?.name]);
 
-  const onGitOpenChange = useCallback((open: boolean) => {
-    setGitOpen(open);
-    if (open) {
-      setPicker(null);
-      setSlash(null);
-    }
-  }, []);
+  const onGitOpenChange = useCallback(
+    (open: boolean) => {
+      setGitOpen(open);
+      if (open) resetPickers();
+    },
+    [resetPickers],
+  );
   useQuickPickerMotion(frameRef, pickerRef, picker);
 
-  const projectOptions = useMemo(
-    () => filterQuickProjects(projects, picker === "project" ? query : ""),
-    [picker, projects, query],
-  );
-  const commandOptions = useMemo(
-    () => rankSkills(MODE_COMMANDS, slash?.query ?? ""),
-    [slash?.query],
-  );
   const resolvedModel = resolveQuickModel(choice);
   const model = resolvedModel ?? {
     ...choice,
@@ -426,74 +342,6 @@ export function QuickComposer({
       ...(workspaceCreation.error ? { workspaceError: workspaceCreation.error } : {}),
     });
   });
-  const optionCount = picker === "commands" ? commandOptions.length : projectOptions.length;
-  const openPicker = (kind: "project" | "model" | "permissions" | "attachments") => {
-    if (!owner.canMutate()) return;
-    if (picker === kind) {
-      closePicker();
-      return;
-    }
-    setSlash(null);
-    setPicker(kind);
-    setQuery("");
-    setHighlight(Math.max(0, projects.indexOf(cwd ?? "")));
-    if (kind === "project")
-      requestAnimationFrame(() => queryRef.current?.focus({ preventScroll: true }));
-  };
-
-  const closePicker = () => {
-    setPicker(null);
-    setSlash(null);
-    setQuery("");
-    if (picker === "commands") promptRef.current?.focus({ preventScroll: true });
-    else focusPrompt();
-  };
-
-  const chooseAt = (index: number) => {
-    if (!owner.canMutate()) return;
-    if (picker === "commands") {
-      const command = commandOptions[index];
-      const field = promptRef.current;
-      if (!command || !slash || !field) return;
-      // The command stays in the prompt, where it renders with its icon.
-      const next = replaceSlashToken(field.value, slash, command.invocation);
-      let cursor = slash.start + command.invocation.length + 1;
-      if (next[cursor] === " ") cursor += 1;
-      field.value = next;
-      setPrompt(next);
-      setPicker(null);
-      setSlash(null);
-      requestAnimationFrame(() => {
-        field.focus({ preventScroll: true });
-        field.setSelectionRange(cursor, cursor);
-      });
-      return;
-    }
-    if (picker === "project") {
-      const path = projectOptions[index];
-      if (!path) return;
-      setCwd(path);
-      setWorkspaceChoice({ cwd: path });
-    }
-    closePicker();
-  };
-
-  const syncPromptCommand = (field: HTMLTextAreaElement) => {
-    const token =
-      field.selectionStart === field.selectionEnd
-        ? slashTokenAt(field.value, field.selectionStart)
-        : null;
-    // Operator activates only at the start of a prompt.
-    const leading = token && !field.value.slice(0, token.start).trim() ? token : null;
-    setSlash(leading);
-    if (leading && !busy && !gitOpen) {
-      setPicker("commands");
-      setHighlight(0);
-    } else {
-      setPicker((current) => (current === "commands" ? null : current));
-    }
-  };
-
   const removeAttachment = (id: string) => {
     if (!owner.canMutate()) return;
     setPrompt((current) =>
@@ -604,8 +452,7 @@ export function QuickComposer({
           const covered = !owner.composing && latestPrompt === delivered.rawPrompt;
           if (covered) setPrompt("");
           else owner.externalPrompt(latestPrompt);
-          setPicker(null);
-          setSlash(null);
+          resetPickers();
           if (covered) cleanup = attachments.clearAfterHandoff(delivered.request.attachments);
         });
         await cleanup;
@@ -858,7 +705,9 @@ export function QuickComposer({
                   p0: HARNESS_TITLE[model.harness],
                   p1: projectDisplayName(cwd),
                 })
-              : t("Open a project in {p0} first", { p0: PRODUCT_IDENTITY.displayName })
+              : t("Open a project in {p0} first", {
+                  p0: PRODUCT_IDENTITY.displayName,
+                })
           }
           disabled={!cwd}
           aria-label={t("Prompt")}
@@ -1007,7 +856,7 @@ export function QuickComposer({
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              setPicker(null);
+              hidePicker();
               void attachments.chooseFiles().then(focusPrompt);
             }}
             className="flex w-full items-center gap-2"
@@ -1022,7 +871,7 @@ export function QuickComposer({
             disabled={attachments.loading || !attachmentsSupported}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
-              setPicker(null);
+              hidePicker();
               void attachments.takeScreenshot().then(focusPrompt);
             }}
             className="flex w-full items-center gap-2"

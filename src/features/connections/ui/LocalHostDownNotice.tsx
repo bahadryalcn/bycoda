@@ -1,5 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Play, X } from "../../../shared/ui/icons";
@@ -51,13 +51,15 @@ export function useLocalHostDownNotice() {
   const [error, setError] = useState<string>();
   const [starting, setStarting] = useState(false);
 
-  // Show it again the next time the host stops.
-  useEffect(() => {
+  const [seenState, setSeenState] = useState(state);
+  // Show it again the next time the host stops (adjusted during render).
+  if (seenState !== state) {
+    setSeenState(state);
     if (state !== "stopped") {
       setHidden(false);
       setError(undefined);
     }
-  }, [state]);
+  }
 
   const start = async () => {
     if (starting) return;

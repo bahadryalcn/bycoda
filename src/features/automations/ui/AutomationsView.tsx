@@ -1,9 +1,22 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useHostAutomations } from "../hooks/useHostAutomations";
+import { useAutomationHistory } from "../hooks/useAutomationHistory";
+import { useAutomationActions } from "../hooks/useAutomationActions";
+import { useAutomationDraftStart } from "../hooks/useAutomationDraftStart";
+import { useAutomationFolderOptions } from "../hooks/useAutomationFolderOptions";
+import { automationKey } from "../model/automationKey";
+import {
+  TRIGGER_CATEGORIES,
+  TRIGGER_EVENTS,
+  findTriggerEvent,
+  triggerName,
+} from "../model/automationTriggerCatalog";
+import { TriggerMark, TriggerRow } from "./TriggerEditor";
+import { useProviderConnections } from "../../inbox/hooks/useProviderConnections";
 import "./automations.css";
 import { AutomationAssistant } from "./AutomationAssistant";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import { useQueryVisible } from "../../../shared/hooks/useQueryVisible";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { Switch } from "../../../shared/ui/Switch";
@@ -11,10 +24,10 @@ import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
-import { t, useLocale, getLocale } from "../../../shared/i18n";
+import { t, useLocale } from "../../../shared/i18n";
 import {
-  useCallback,
   useDeferredValue,
   useEffect,
   useId,
@@ -25,6 +38,7 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
 import { AccessPicker } from "../../sessions/ui/AccessPicker";
 import { Row } from "../../settings/ui/settingsControls";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
@@ -33,24 +47,25 @@ import {
   AlertCircle,
   CheckCircle,
   ChevronDown,
-  Clock,
+  ChevronRight,
   File,
   Gauge,
   GitPullRequest,
   Inbox,
   LoaderCircle,
   Lock,
+  Maximize2,
+  Minimize2,
   MoreHorizontal,
   Play,
   Plus,
   Search,
+  Sparkles,
   StickyNote,
   Terminal,
   Trash2,
-  X,
   Zap,
 } from "../../../shared/ui/icons";
-import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
 import { ModelControlPills, ModelPicker } from "../../sessions/ui/ModelPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
@@ -64,27 +79,16 @@ import { WindowControls } from "../../../app/shell/WindowControls";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
 import {
-  AUTOMATION_WEEKDAYS,
   applyTriggers,
   applyAutomationChange,
   automationScheduleLabel,
   automationTriggers,
   createAutomationTrigger,
-  createManualAutomationRun,
-  deleteAutomation,
   draftFromAutomation,
-  draftFromTemplate,
   formatAutomationRunAt,
   formatAutomationRunDuration,
-  gmtOffsetLabel,
-  listAutomationRuns,
   listAutomations,
-  newAutomationDraft,
-  nextAutomationRunAt,
-  nextRunPreview,
   peekAutomations,
-  saveAutomation,
-  setAutomationEnabled,
   subscribeAutomations,
   type Automation,
   type AutomationDraft,
@@ -99,32 +103,10 @@ import {
   type AutomationTemplateCategoryId,
   type AutomationTemplateIcon,
 } from "../model/automationTemplates";
-import {
-  backgroundMachineFor,
-  probeMachines,
-  deleteHostAutomation,
-  listHostAutomationRuns,
-  listHostAutomationResults,
-  runHostAutomationNow,
-  saveHostAutomation,
-  previewHostAutomation,
-  type HostSchedulePreview,
-} from "../model/hostAutomationClient";
-import { failedMachineNames } from "../model/machineResults";
+import { backgroundMachineFor } from "../model/hostAutomationClient";
 import type { RemoteMachine } from "../../connections/model/protocol";
-import { AZUREDEVOPS_CHANGE_EVENT, azureDevOpsConnected } from "../../inbox/model/azureDevOps";
-import { gitBranches } from "../../../platform/tauri/fs";
-import { formatRelativeTime, githubStatus } from "../../inbox/model/githubTasks";
-import { GITLAB_CHANGE_EVENT, gitlabConnected } from "../../inbox/model/gitlab";
-import { LINEAR_CHANGE_EVENT, linearConnected } from "../../inbox/model/linear";
-import { JIRA_CHANGE_EVENT, jiraConnected } from "../../inbox/model/jira";
-import {
-  defaultSessionChoice,
-  firstEnabledHarness,
-  modelsFor,
-  preferredModelId,
-  resolveModel,
-} from "../../sessions/model/models";
+import { formatRelativeTime } from "../../inbox/model/githubTasks";
+import { resolveModel } from "../../sessions/model/models";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { parseRemotePath } from "../../connections/model/remoteProjects";
@@ -132,8 +114,6 @@ import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
-import { loadSessionFolders, subscribeSessionFolders } from "../../sessions/model/sessionFolders";
-import { loadModelControls, subscribeModelControls } from "../../settings/model/settings";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import {
   loadTabGroupColors,
@@ -159,10 +139,6 @@ type Props = {
   /** Opens a session a machine's host ran for a background automation. */
   onOpenBackgroundSession: (target: BackgroundSessionTarget) => void | Promise<void>;
 };
-
-function automationKey(automation: Pick<Automation, "id" | "host">): string {
-  return JSON.stringify([automation.host?.machineId ?? null, automation.id]);
-}
 
 export function AutomationsView({
   besideRail = false,
@@ -241,25 +217,13 @@ function AutomationsContent({
   // Automations aimed at a project in a locked group are not listed.
   const lock = useLockSnapshot();
   // Automations that machines' hosts run on their own, this computer's included.
-  const [machines, setMachines] = useState<RemoteMachine[]>([]);
-  const [hostAutomations, setHostAutomations] = useState<Automation[]>([]);
-  // Machines that did not answer; their automations shown are last-known ones.
-  const [unreachableNames, setUnreachableNames] = useState<string[]>([]);
-  const hostAutomationsRef = useRef(hostAutomations);
-  const showHostAutomations = useCallback(
-    (next: Automation[]) => {
-      hostAutomationsRef.current = next;
-      setHostAutomations(next);
-      queryClient.setQueryData<{
-        machines: RemoteMachine[];
-        unreachable: string[];
-        automations: Automation[];
-      }>(["automations", "hosts"], (current) =>
-        current ? { ...current, automations: next } : current,
-      );
-    },
-    [queryClient],
-  );
+  const host = useHostAutomations(queryVisible);
+  const {
+    machines,
+    unreachable: unreachableNames,
+    automations: hostAutomations,
+    refresh: refreshHost,
+  } = host;
   const automations = useMemo(
     () =>
       [...storedAutomations, ...hostAutomations].filter(
@@ -267,15 +231,8 @@ function AutomationsContent({
       ),
     [hostAutomations, lock, storedAutomations],
   );
-  const [history, setHistory] = useState<{
-    id: string | null;
-    runs: AutomationRun[];
-    loading: boolean;
-    error: string | null;
-  }>({ id: null, runs: [], loading: false, error: null });
-  const [historyRevision, setHistoryRevision] = useState(0);
   const viewStateKey = `automations:${cwd ? projectKey(cwd) : "global"}`;
-  const [selectedId, setSelectedId] = useRetainedState<string | null>(
+  const [storedSelectedId, setSelectedId] = useRetainedState<string | null>(
     `${viewStateKey}:selected`,
     null,
   );
@@ -287,25 +244,14 @@ function AutomationsContent({
   const [assistantOpen, setAssistantOpen] = useState(false);
   const filterButton = useRef<HTMLButtonElement>(null);
   const deferredQuery = useDeferredValue(query);
-  const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useRetainedState<AutomationDraft | null>(`${viewStateKey}:draft`, null);
   const [pickerOpen, setPickerOpen] = useState(() => draft == null);
-  const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
-  const [running, setRunning] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const togglingRef = useRef(new Set<string>());
-  const [toggling, setToggling] = useState<Set<string>>(() => new Set());
   const logos = useTabGroupLogos();
   const [groupLabels] = useState(loadTabGroupLabels);
   const [groupMascots] = useState(loadTabGroupMascots);
   const [groupColors] = useState(loadTabGroupColors);
   const [groupCustomColors] = useState(loadTabGroupCustomColors);
 
-  useEffect(() => {
-    if (localQuery.error) setError(localQuery.error.message);
-    else if (localQuery.data) setError(null);
-  }, [localQuery.error, localQuery.data]);
   useEffect(
     () =>
       subscribeAutomations((change) => {
@@ -321,86 +267,22 @@ function AutomationsContent({
       }),
     [queryClient],
   );
-  const hostQuery = useQuery({
-    queryKey: ["automations", "hosts"],
-    queryFn: async () => {
-      const reach = await probeMachines();
-      const results = await listHostAutomationResults(reach.capable, reach.unreachableMachines);
-      return {
-        machines: reach.capable,
-        unreachable: failedMachineNames(results),
-        automations: results.flatMap((result) => result.data),
-      };
-    },
-    enabled: queryVisible,
-    staleTime: 30_000,
-    refetchInterval: 30_000,
-    retry: false,
-  });
-  const refreshHost = useCallback(async () => {
-    await hostQuery.refetch();
-  }, [hostQuery.refetch]);
-  useEffect(() => {
-    if (!hostQuery.data) return;
-    setMachines(hostQuery.data.machines);
-    setUnreachableNames(hostQuery.data.unreachable);
-    showHostAutomations(hostQuery.data.automations);
-  }, [hostQuery.data, showHostAutomations]);
-  useEffect(() => {
-    setSelectedId((current) => {
-      // A retained host selection must survive the local list arriving first.
-      if (
-        current &&
-        (localQuery.isPending ||
-          hostQuery.isPending ||
-          hostQuery.data?.automations !== hostAutomations)
-      )
-        return current;
-      return current && automations.some((entry) => automationKey(entry) === current)
-        ? current
-        : automations[0]
-          ? automationKey(automations[0])
-          : null;
-    });
-  }, [
-    automations,
-    hostAutomations,
-    hostQuery.data,
-    hostQuery.isPending,
-    localQuery.isPending,
-    setSelectedId,
-  ]);
-  const historyTarget = automations.find((entry) => automationKey(entry) === selectedId);
-  const historyKey = [
-    "automations",
-    "runs",
+  // The retained choice, normalized against the lists. While the local or host
+  // list is still arriving it stands, so a retained host selection survives.
+  const selectedId =
+    storedSelectedId &&
+    (localQuery.isPending ||
+      !host.loaded ||
+      automations.some((entry) => automationKey(entry) === storedSelectedId))
+      ? storedSelectedId
+      : automations[0]
+        ? automationKey(automations[0])
+        : null;
+  const history = useAutomationHistory({
     selectedId,
-    historyTarget?.host?.machineId ?? "local",
-  ] as const;
-  const historyQuery = useQuery({
-    queryKey: historyKey,
-    queryFn: () =>
-      historyTarget?.host
-        ? listHostAutomationRuns(historyTarget)
-        : listAutomationRuns(historyTarget!.id),
-    enabled: queryVisible && !!selectedId && !!historyTarget,
-    staleTime: 10_000,
-    retry: false,
+    target: automations.find((entry) => automationKey(entry) === selectedId),
+    enabled: queryVisible,
   });
-  const previousHistoryRevision = useRef(historyRevision);
-  useEffect(() => {
-    if (previousHistoryRevision.current === historyRevision) return;
-    previousHistoryRevision.current = historyRevision;
-    void queryClient.invalidateQueries({ queryKey: historyKey });
-  }, [historyRevision, selectedId, queryClient]);
-  useEffect(() => {
-    setHistory({
-      id: selectedId,
-      runs: historyQuery.data ?? [],
-      loading: !!historyTarget && historyQuery.isPending,
-      error: historyQuery.error?.message ?? null,
-    });
-  }, [selectedId, historyTarget, historyQuery.data, historyQuery.isPending, historyQuery.error]);
 
   const visible = useMemo(() => {
     const needle = deferredQuery.trim().toLocaleLowerCase();
@@ -426,422 +308,336 @@ function AutomationsContent({
   }, [automations, groupLabels, deferredQuery, statusFilter]);
   const selected = automations.find((entry) => automationKey(entry) === selectedId) ?? null;
 
-  const defaultDraftTarget = () => {
-    const project = cwd && looksLikeProject(cwd) ? cwd : (recents[0]?.path ?? "~");
-    const preferred = defaultSessionChoice(project);
-    const harness = firstEnabledHarness(project, selected?.harness ?? preferred.harness);
-    const model =
-      (selected?.harness === harness ? selected.model : undefined) ??
-      (preferred.harness === harness ? preferred.model : undefined) ??
-      modelsFor(harness)[0]?.id ??
-      preferredModelId(harness);
-    return { project, harness, model };
-  };
-
-  const beginCreate = () => {
-    if (savingRef.current) return;
-    setCompactListOpen(false);
-    setPickerOpen(true);
-    setDraft(null);
-  };
-
-  const beginBlank = () => {
-    if (savingRef.current) return;
-    const { project, harness, model } = defaultDraftTarget();
-    setPickerOpen(false);
-    setDraft(newAutomationDraft(project, harness, model));
-  };
-
-  const beginFromTemplate = (template: AutomationTemplate) => {
-    if (savingRef.current) return;
-    const { project, harness, model } = defaultDraftTarget();
-    setPickerOpen(false);
-    setDraft(
-      draftFromTemplate(project, harness, model, {
-        ...template,
-        name: t(template.name),
-        prompt: t(template.prompt),
-      }),
-    );
-  };
-
-  const onSave = async (event: FormEvent, nextDraft: AutomationDraft) => {
-    event.preventDefault();
-    if (savingRef.current) return;
-    savingRef.current = true;
-    setSaving(true);
-    try {
-      if (nextDraft.id && selected?.host && nextDraft.cwd !== selected.cwd) {
-        throw new Error("Create a new automation to use another project.");
-      }
-      const saved = nextDraft.runInBackground
-        ? await saveHostAutomation(machines, nextDraft)
-        : await saveAutomation(nextDraft);
-      if (saved.host)
-        showHostAutomations([
-          ...hostAutomationsRef.current.filter(
-            (entry) => automationKey(entry) !== automationKey(saved),
-          ),
-          saved,
-        ]);
-      setPickerOpen(false);
-      setDraft(null);
-      setSelectedId(automationKey(saved));
-      setError(null);
-      if (saved.host) await refreshHost();
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      savingRef.current = false;
-      setSaving(false);
-    }
-  };
-
-  const onRun = async (automation: Automation) => {
-    if (running) return;
-    setRunning(automationKey(automation));
-    try {
-      if (automation.host) {
-        await runHostAutomationNow(automation);
-        await refreshHost();
-        return;
-      }
-      const run = await createManualAutomationRun(automation.id);
-      await onLaunch(automation, run);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setRunning(null);
-    }
-  };
-
-  const onDelete = async (automation: Automation) => {
-    if (deleting || saving) return;
-    if (
-      running === automationKey(automation) ||
-      automation.lastRunStatus === "running" ||
-      (history.id === automationKey(automation) &&
-        history.runs.some((run) => run.status === "running"))
-    ) {
-      setError(t("Wait for the current run to finish before deleting this automation."));
-      return;
-    }
-    if (
-      !(await confirm({
-        title: t("Delete automation"),
-        message: t("Delete “{p0}” and its run history?", { p0: automation.name }),
-        confirmLabel: t("Delete"),
-      }))
-    )
-      return;
-    setDeleting(automationKey(automation));
-    try {
-      if (automation.host) {
-        await deleteHostAutomation(automation);
-        showHostAutomations(
-          hostAutomationsRef.current.filter(
-            (entry) => automationKey(entry) !== automationKey(automation),
-          ),
-        );
-      } else await deleteAutomation(automation.id);
-      setSelectedId(null);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      setDeleting(null);
-    }
-  };
-
-  const onToggle = async (automation: Automation, enabled: boolean) => {
-    const key = automationKey(automation);
-    if (savingRef.current || togglingRef.current.has(key)) return;
-    togglingRef.current.add(key);
-    setToggling(new Set(togglingRef.current));
-    try {
-      if (automation.host) {
-        await saveHostAutomation(machines, {
-          ...draftFromAutomation(automation),
-          enabled,
-        });
-        await refreshHost();
-        return;
-      }
-      await setAutomationEnabled(automation, enabled);
-    } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      togglingRef.current.delete(key);
-      setToggling(new Set(togglingRef.current));
-    }
-  };
+  const {
+    saving,
+    savingRef,
+    running,
+    deleting,
+    toggling,
+    actionError,
+    setActionError,
+    onSave,
+    onRun,
+    onDelete,
+    onToggle,
+  } = useAutomationActions({
+    machines,
+    confirmSaved: host.confirmSaved,
+    confirmDeleted: host.confirmDeleted,
+    refreshHost,
+    selected,
+    selectedId,
+    runs: history.runs,
+    errorStamp: localQuery.data,
+    confirm,
+    setPickerOpen,
+    setDraft,
+    setSelectedId,
+    onLaunch,
+  });
+  const { beginCreate, beginBlank, beginFromTemplate } = useAutomationDraftStart({
+    cwd,
+    recents,
+    selected,
+    savingRef,
+    setPickerOpen,
+    setCompactListOpen,
+    setDraft,
+  });
+  const error = actionError ?? localQuery.error?.message ?? null;
 
   const editorDraft = pickerOpen
     ? null
     : (draft ?? (selected ? draftFromAutomation(selected) : null));
   const listLock = useLockOverscroll<HTMLDivElement>();
 
+  const hasAutomations = automations.length > 0;
+  const showList = !focusMode && (loading || hasAutomations);
+  const filtered = !!query.trim() || statusFilter !== "all";
+  const showFilter = hasAutomations || loading;
+  const showAssistant = Boolean(onLaunchAssistant) && !pickerOpen;
+  const showCreate = !pickerOpen;
+  const showHeader = showFilter || showAssistant || showCreate;
+  const firstUse = !loading && !hasAutomations;
+
   return (
     <div
-      className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col sm:flex-row text-(--ui-tone-neutral-fg)"
+      className="automation-layout flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)"
       data-list-open={compactListOpen || undefined}
     >
       {confirmDialog}
-      <div className="automation-compact-navigation">
-        <Button
-          variant="ghost"
-          aria-pressed={compactListOpen}
-          onClick={() => {
-            setFocusMode(false);
-            setCompactListOpen((open) => !open);
-          }}
-        >
-          {t(compactListOpen ? "Back" : "Show automation list")}
-          {!compactListOpen ? ` · ${automations.length}` : null}
-        </Button>
-      </div>
-      <aside
-        hidden={focusMode}
-        className={
-          focusMode
-            ? "hidden"
-            : "flex w-full max-h-48 sm:max-h-none sm:w-[250px] shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
-        }
-      >
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
-          <Button
-            ref={filterButton}
-            type="button"
-            size="sm"
-            variant="ghost"
-            iconOnly
-            label={t("Filter automations")}
-            selected={!!query.trim() || statusFilter !== "all"}
-            aria-haspopup="dialog"
-            aria-expanded={filterOpen}
-            onClick={() => setFilterOpen((open) => !open)}
-          >
-            <Search className="icon-sm" strokeWidth={1.75} />
-          </Button>
-          {filterOpen ? (
-            <Popover
-              anchor={filterButton}
-              role="dialog"
-              aria-label={t("Filter automations")}
-              onDismiss={() => setFilterOpen(false)}
-              width={280}
-              className="space-y-2 p-3"
-            >
-              <TextField
-                label={t("Filter automations")}
-                type="search"
-                autoFocus
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                spellCheck={false}
-                autoComplete="off"
-              />
-              <SearchableSelect
-                label={t("Status")}
-                value={statusFilter}
-                searchable={false}
-                options={[
-                  { value: "all", label: t("All") },
-                  { value: "active", label: t("Active") },
-                  { value: "paused", label: t("Paused") },
-                  { value: "attention", label: t("Needs attention") },
-                ]}
-                onChange={setStatusFilter}
-              />
+      {assistantOpen && onLaunchAssistant ? (
+        <AutomationAssistant
+          cwd={cwd}
+          recents={recents}
+          stateKey={`${viewStateKey}:assistant`}
+          onClose={() => setAssistantOpen(false)}
+          onLaunch={onLaunchAssistant}
+        />
+      ) : null}
+      {showHeader ? (
+        <div className="automation-page-header flex shrink-0 items-center gap-2 px-3 py-2">
+          {showFilter ? (
+            <>
+              <div className="automation-compact-navigation">
+                <Button
+                  variant="ghost"
+                  aria-pressed={compactListOpen}
+                  onClick={() => {
+                    setFocusMode(false);
+                    setCompactListOpen((open) => !open);
+                  }}
+                >
+                  {t(compactListOpen ? "Back" : "Show automation list")}
+                  {!compactListOpen ? ` · ${automations.length}` : null}
+                </Button>
+              </div>
+              <span className="automation-count px-1 text-ui-caption text-(--ui-text-muted)">
+                {t("Automations")} · {automations.length}
+              </span>
               <Button
-                onClick={() => {
-                  setQuery("");
-                  setStatusFilter("all");
-                }}
-                disabled={!query && statusFilter === "all"}
+                ref={filterButton}
+                type="button"
+                size="sm"
+                variant="ghost"
+                iconOnly
+                label={t("Filter automations")}
+                selected={filtered}
+                aria-haspopup="dialog"
+                aria-expanded={filterOpen}
+                onClick={() => setFilterOpen((open) => !open)}
               >
-                {t("Reset")}
+                <Search className="icon-sm" strokeWidth={1.75} />
               </Button>
-            </Popover>
+              {filterOpen ? (
+                <Popover
+                  anchor={filterButton}
+                  role="dialog"
+                  aria-label={t("Filter automations")}
+                  onDismiss={() => setFilterOpen(false)}
+                  width={280}
+                  className="space-y-2 p-3"
+                >
+                  <TextField
+                    label={t("Filter automations")}
+                    type="search"
+                    autoFocus
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    spellCheck={false}
+                    autoComplete="off"
+                  />
+                  <SearchableSelect
+                    label={t("Status")}
+                    value={statusFilter}
+                    searchable={false}
+                    options={[
+                      { value: "all", label: t("All") },
+                      { value: "active", label: t("Active") },
+                      { value: "paused", label: t("Paused") },
+                      { value: "attention", label: t("Needs attention") },
+                    ]}
+                    onChange={setStatusFilter}
+                  />
+                  <Button
+                    onClick={() => {
+                      setQuery("");
+                      setStatusFilter("all");
+                    }}
+                    disabled={!query && statusFilter === "all"}
+                  >
+                    {t("Reset")}
+                  </Button>
+                </Popover>
+              ) : null}
+            </>
           ) : null}
           <span className="flex-1" />
-          <Button
-            type="button"
-            title={t("New automation")}
-            aria-label={t("New automation")}
-            onClick={beginCreate}
-            variant="ghost"
-            iconOnly
-            label={t("New automation")}
-            size="sm"
-          >
-            <Plus className="icon-sm" strokeWidth={1.75} />
-          </Button>
-        </div>
-        <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
-          {unreachableNames.length ? (
-            <Alert tone="warning" className="mb-1.5">
-              {unreachableNames.join(", ")}{" "}
-              {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
-              {t(" reachable right now, so its automations may be out of date.")}
-            </Alert>
-          ) : null}
-          {loading ? (
-            <div className="grid place-items-center py-12 text-(--ui-text-muted)">
-              <LoaderCircle className="icon-md animate-spin" />
-            </div>
-          ) : visible.length > 0 ? (
-            <ul className="space-y-0.5">
-              {visible.map((automation) => (
-                <li key={automationKey(automation)}>
-                  <AutomationCard
-                    automation={automation}
-                    pending={
-                      toggling.has(automationKey(automation)) ||
-                      deleting === automationKey(automation)
-                    }
-                    disabled={saving || running === automationKey(automation)}
-                    active={
-                      !pickerOpen &&
-                      automationKey(automation) === selectedId &&
-                      (!draft || draft.id === automation.id)
-                    }
-                    logos={logos}
-                    labels={groupLabels}
-                    mascots={groupMascots}
-                    colors={groupColors}
-                    customColors={groupCustomColors}
-                    onSelect={() => {
-                      if (savingRef.current) return;
-                      setPickerOpen(false);
-                      setDraft(null);
-                      setSelectedId(automationKey(automation));
-                      setCompactListOpen(false);
-                    }}
-                    onToggle={(enabled) => void onToggle(automation, enabled)}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <EmptyState
-              description={query.trim() ? t("No matching automations") : t("No automations yet")}
-            />
-          )}
-        </div>
-      </aside>
-
-      <main className="automation-workspace flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-          <span className="mr-auto text-ui-caption text-(--ui-text-muted)">
-            {t("Automations")} · {automations.length}
-          </span>
-          <Button variant="ghost" onClick={beginCreate}>
-            <Plus className="icon-sm" />
-            {t("New automation")}
-          </Button>
-          {onLaunchAssistant ? (
+          {hasAutomations ? (
             <Button
-              variant="secondary"
-              aria-expanded={assistantOpen}
-              onClick={() => setAssistantOpen(!assistantOpen)}
+              className="automation-focus-action"
+              type="button"
+              variant="ghost"
+              iconOnly
+              label={t(focusMode ? "Show automation list" : "Focus mode")}
+              aria-pressed={focusMode}
+              onClick={() => setFocusMode(!focusMode)}
             >
-              {t("AI assistant")}
+              {focusMode ? (
+                <Minimize2 className="icon-sm" strokeWidth={1.75} />
+              ) : (
+                <Maximize2 className="icon-sm" strokeWidth={1.75} />
+              )}
             </Button>
           ) : null}
-          <Button
-            className="automation-focus-action"
-            variant="ghost"
-            aria-pressed={focusMode}
-            onClick={() => setFocusMode(!focusMode)}
-          >
-            {t(focusMode ? "Show automation list" : "Focus mode")}
-          </Button>
+          {showAssistant ? (
+            <Button
+              variant="secondary"
+              aria-label={t("AI assistant")}
+              aria-haspopup="dialog"
+              startIcon={<Sparkles className="icon-sm" strokeWidth={1.75} />}
+              onClick={() => setAssistantOpen(true)}
+            >
+              <span className="automation-wide-only">{t("AI assistant")}</span>
+            </Button>
+          ) : null}
+          {showCreate ? (
+            <Button
+              variant="primary"
+              aria-label={t("New automation")}
+              startIcon={<Plus className="icon-sm" strokeWidth={1.75} />}
+              onClick={beginCreate}
+            >
+              <span className="automation-wide-only">{t("New automation")}</span>
+            </Button>
+          ) : null}
         </div>
-        {assistantOpen && onLaunchAssistant ? (
-          <div className="shrink-0 px-3 py-3">
-            <AutomationAssistant cwd={cwd} recents={recents} onLaunch={onLaunchAssistant} />
-          </div>
+      ) : null}
+      {unreachableNames.length ? (
+        <Alert tone="warning" className="mx-3 mb-2 shrink-0">
+          {unreachableNames.join(", ")} {unreachableNames.length === 1 ? t("isn’t") : t("aren’t")}
+          {t(" reachable right now, so its automations may be out of date.")}
+        </Alert>
+      ) : null}
+      <div className="automation-body flex min-h-0 min-w-0 flex-1">
+        {showList ? (
+          <aside className="automation-list flex shrink-0 flex-col">
+            <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
+              {loading ? (
+                <div className="grid place-items-center py-12 text-(--ui-text-muted)">
+                  <LoaderCircle className="icon-md animate-spin" />
+                </div>
+              ) : visible.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {visible.map((automation) => (
+                    <li key={automationKey(automation)}>
+                      <AutomationCard
+                        automation={automation}
+                        pending={
+                          toggling.has(automationKey(automation)) ||
+                          deleting === automationKey(automation)
+                        }
+                        disabled={saving || running === automationKey(automation)}
+                        active={
+                          !pickerOpen &&
+                          automationKey(automation) === selectedId &&
+                          (!draft || draft.id === automation.id)
+                        }
+                        logos={logos}
+                        labels={groupLabels}
+                        mascots={groupMascots}
+                        colors={groupColors}
+                        customColors={groupCustomColors}
+                        onSelect={() => {
+                          if (savingRef.current) return;
+                          setPickerOpen(false);
+                          setDraft(null);
+                          setSelectedId(automationKey(automation));
+                          setCompactListOpen(false);
+                        }}
+                        onToggle={(enabled) => void onToggle(automation, enabled)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState
+                  context="list"
+                  kind={filtered ? "filtered" : "empty"}
+                  description={filtered ? t("No matching automations") : t("No automations yet")}
+                />
+              )}
+            </div>
+          </aside>
         ) : null}
-        {error ? (
-          <Alert tone="danger" className="m-4 shrink-0">
-            {error}
-          </Alert>
-        ) : null}
-        {loading && !editorDraft ? (
-          <div className="grid min-h-0 flex-1 place-items-center text-(--ui-text-muted)">
-            <LoaderCircle className="icon-md animate-spin" />
-          </div>
-        ) : editorDraft ? (
-          <HostModelSource
-            local={!editorDraft.runInBackground}
-            machine={
-              selected?.host && editorDraft.id
-                ? machines.find((entry) => entry.id === selected.host!.machineId)
-                : backgroundMachineFor(machines, editorDraft.cwd)
-            }
-            cwd={editorDraft.cwd}
-            model={editorDraft.model}
-            values={editorDraft.modelSettings}
-          >
-            <AutomationEditor
-              key={editorDraft.id ? selectedId : "new"}
-              draft={editorDraft}
-              recents={recents}
-              runs={editorDraft.id && history.id === selectedId ? history.runs : []}
-              historyLoading={!!editorDraft.id && (history.id !== selectedId || history.loading)}
-              historyError={history.id === selectedId ? history.error : null}
-              onRefreshHistory={() => setHistoryRevision((value) => value + 1)}
-              saving={saving}
-              running={!!editorDraft.id && selectedId === running}
-              deleteDisabled={
-                saving ||
-                !!deleting ||
-                (!!editorDraft.id && selectedId === running) ||
-                selected?.lastRunStatus === "running" ||
-                (history.id === selectedId && history.runs.some((run) => run.status === "running"))
-              }
-              dirty={draft != null}
-              backgroundMachine={
+
+        <main className="automation-workspace flex min-h-0 min-w-0 flex-1 flex-col">
+          {error ? (
+            <Alert tone="danger" className="mx-3 mt-1 mb-2 shrink-0">
+              {error}
+            </Alert>
+          ) : null}
+          {loading && !editorDraft ? (
+            <div className="grid min-h-0 flex-1 place-items-center text-(--ui-text-muted)">
+              <LoaderCircle className="icon-md animate-spin" />
+            </div>
+          ) : editorDraft ? (
+            <HostModelSource
+              local={!editorDraft.runInBackground}
+              machine={
                 selected?.host && editorDraft.id
-                  ? selected.host.machineName
-                  : backgroundMachineName(machines, editorDraft.cwd)
+                  ? machines.find((entry) => entry.id === selected.host!.machineId)
+                  : backgroundMachineFor(machines, editorDraft.cwd)
               }
-              backgroundMachineId={
-                selected?.host && editorDraft.id
-                  ? selected.host.machineId
-                  : backgroundMachineFor(machines, editorDraft.cwd)?.id
-              }
-              onChange={(nextDraft) => {
-                if (!savingRef.current) setDraft(nextDraft);
-              }}
-              onClose={() => {
-                if (savingRef.current) return;
-                setDraft(null);
-                if (!editorDraft.id) setPickerOpen(true);
-              }}
-              onSubmit={(event) => onSave(event, editorDraft)}
-              onRun={selected && editorDraft.id ? () => void onRun(selected) : undefined}
-              onDelete={selected && editorDraft.id ? () => void onDelete(selected) : undefined}
-              onOpenSession={async (sessionId) => {
-                try {
-                  if (selected?.host && editorDraft.id)
-                    await onOpenBackgroundSession({
-                      machineId: selected.host.machineId,
-                      cwd: selected.cwd,
-                      projectId: selected.host.projectId,
-                      sessionId,
-                    });
-                  else await onOpenSession(sessionId);
-                } catch (reason: unknown) {
-                  setError(reason instanceof Error ? reason.message : String(reason));
+              cwd={editorDraft.cwd}
+              model={editorDraft.model}
+              values={editorDraft.modelSettings}
+            >
+              <AutomationEditor
+                key={editorDraft.id ? selectedId : "new"}
+                draft={editorDraft}
+                recents={recents}
+                runs={editorDraft.id ? history.runs : []}
+                historyLoading={!!editorDraft.id && history.loading}
+                historyError={history.error}
+                onRefreshHistory={history.refresh}
+                saving={saving}
+                running={!!editorDraft.id && selectedId === running}
+                deleteDisabled={
+                  saving ||
+                  !!deleting ||
+                  (!!editorDraft.id && selectedId === running) ||
+                  selected?.lastRunStatus === "running" ||
+                  history.runs.some((run) => run.status === "running")
                 }
-              }}
+                dirty={draft != null}
+                backgroundMachine={
+                  selected?.host && editorDraft.id
+                    ? selected.host.machineName
+                    : backgroundMachineName(machines, editorDraft.cwd)
+                }
+                backgroundMachineId={
+                  selected?.host && editorDraft.id
+                    ? selected.host.machineId
+                    : backgroundMachineFor(machines, editorDraft.cwd)?.id
+                }
+                onChange={(nextDraft) => {
+                  if (!savingRef.current) setDraft(nextDraft);
+                }}
+                onClose={() => {
+                  if (savingRef.current) return;
+                  setDraft(null);
+                  if (!editorDraft.id) setPickerOpen(true);
+                }}
+                onSubmit={(event) => onSave(event, editorDraft)}
+                onRun={selected && editorDraft.id ? () => void onRun(selected) : undefined}
+                onDelete={selected && editorDraft.id ? () => void onDelete(selected) : undefined}
+                onOpenSession={async (sessionId) => {
+                  try {
+                    if (selected?.host && editorDraft.id)
+                      await onOpenBackgroundSession({
+                        machineId: selected.host.machineId,
+                        cwd: selected.cwd,
+                        projectId: selected.host.projectId,
+                        sessionId,
+                      });
+                    else await onOpenSession(sessionId);
+                  } catch (reason: unknown) {
+                    setActionError(reason instanceof Error ? reason.message : String(reason));
+                  }
+                }}
+              />
+            </HostModelSource>
+          ) : (
+            <AutomationPicker
+              firstUse={firstUse}
+              onBlank={beginBlank}
+              onPick={beginFromTemplate}
+              onAssistant={onLaunchAssistant ? () => setAssistantOpen(true) : undefined}
             />
-          </HostModelSource>
-        ) : (
-          <AutomationPicker onBlank={beginBlank} onPick={beginFromTemplate} />
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }
@@ -892,7 +688,7 @@ function AutomationCard({
     : null;
   const model = resolveModel(automation.harness, automation.model);
   return (
-    <div className="group relative rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface)">
+    <div className="group relative" data-paused={automation.enabled ? undefined : ""}>
       <Button
         type="button"
         aria-current={active ? "true" : undefined}
@@ -918,11 +714,15 @@ function AutomationCard({
             {automation.name}
           </span>
           {automation.host?.needsInput ? (
-            <Badge tone="warning" className="shrink-0">
+            <Badge tone="warning" className="shrink-0 whitespace-nowrap">
               {t("Needs input")}
             </Badge>
           ) : automation.lastRunStatus === "failed" || automation.lastRunStatus === "running" ? (
             <RunStatusPill status={automation.lastRunStatus} />
+          ) : !automation.enabled ? (
+            <Badge tone="neutral" className="shrink-0 whitespace-nowrap">
+              {t("Paused")}
+            </Badge>
           ) : null}
         </span>
         <span className="mt-1 flex min-w-0 items-center gap-1.5 text-ui-micro text-(--ui-text-muted)">
@@ -971,12 +771,22 @@ function AutomationCard({
   );
 }
 
+const FIRST_TEMPLATES = 6;
+
+/**
+ * Three separate ways to begin: write it yourself, ask the assistant, or adapt an
+ * example. Each ends in an editable draft; nothing is saved or run from here.
+ */
 function AutomationPicker({
+  firstUse,
   onBlank,
   onPick,
+  onAssistant,
 }: {
+  firstUse: boolean;
   onBlank: () => void;
   onPick: (template: AutomationTemplate) => void;
+  onAssistant?: () => void;
 }) {
   useLocale();
   const [category, setCategory] = useState<AutomationTemplateCategoryId>("all");
@@ -988,108 +798,149 @@ function AutomationPicker({
       .toLocaleLowerCase()
       .includes(templateQuery.trim().toLocaleLowerCase()),
   );
+  const collapsible = !templateQuery.trim() && category === "all";
+  const shown =
+    collapsible && !allTemplates ? templates.slice(0, FIRST_TEMPLATES) : templates;
 
   return (
     <div ref={lockOverscroll} className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none">
-      <div className="automation-content">
-        <h1 className="text-ui-heading font-medium leading-tight text-(--ui-tone-neutral-fg)">
-          {t("New automation")}
-        </h1>
-        <p className="mt-1.5 text-ui-secondary text-(--ui-text-muted)">
-          {t("Pick an example or start from scratch.")}
-        </p>
-        <div className="mt-4 flex flex-wrap items-end gap-3">
-          <TextField
-            label={t("Search templates")}
-            hideLabel
-            placeholder={t("Search templates")}
-            value={templateQuery}
-            onChange={(event) => setTemplateQuery(event.target.value)}
-            fieldClassName="min-w-0 flex-1"
-          />
-          <SearchableSelect
-            label={t("Template category")}
-            value={category}
-            options={AUTOMATION_TEMPLATE_CATEGORIES.map((option) => ({
-              value: option.id,
-              label: t(option.label),
-            }))}
-            onChange={(value) => setCategory(value as AutomationTemplateCategoryId)}
-          />
-        </div>
-        {templates.length === 0 ? (
-          <p role="status" className="mt-4 text-ui-secondary text-(--ui-text-muted)">
-            {t("No matching options")}
+      <div className="automation-content automation-picker">
+        <header>
+          <h1 className="text-ui-heading font-medium leading-tight text-(--ui-tone-neutral-fg)">
+            {firstUse ? t("Create your first automation") : t("New automation")}
+          </h1>
+          <p className="mt-1.5 text-ui-secondary text-(--ui-text-muted)">
+            {t("Choose how to start. You can edit everything before saving.")}
           </p>
-        ) : null}
-        <div className="automation-gallery mt-4">
+        </header>
+        <div className="automation-start mt-5" role="group" aria-label={t("Start")}>
           <Button
             type="button"
             onClick={onBlank}
             variant="item"
             layout="stacked"
-            className="automation-template flex h-full min-w-0 flex-col"
+            className="automation-start-option"
           >
-            <div className="flex gap-3">
+            <span className="flex gap-3">
               <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
                 <Plus className="icon-md" strokeWidth={1.75} />
               </span>
               <span className="min-w-0">
-                <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+                <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
                   {t("Start from scratch")}
                 </span>
-                <span className="mt-1 line-clamp-3 text-ui-caption leading-snug text-(--ui-text-muted)">
+                <span className="mt-1 block text-ui-caption leading-snug text-(--ui-text-muted)">
                   {t("Write your own instructions and choose a trigger.")}
                 </span>
               </span>
-            </div>
+            </span>
           </Button>
-          {(allTemplates || templateQuery.trim() || category !== "all"
-            ? templates
-            : templates.slice(0, 4)
-          ).map((template) => {
-            const Icon = TEMPLATE_ICONS[template.icon];
-            return (
-              <Button
-                key={template.id}
-                type="button"
-                onClick={() => onPick(template)}
-                variant="item"
-                layout="stacked"
-                className="automation-template flex h-full min-w-0 flex-col"
-                title={t(template.description)}
-              >
-                <div className="flex gap-3">
-                  <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
-                    <Icon className="icon-md" strokeWidth={1.75} />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
-                      {t(template.name)}
-                    </span>
-                    <span className="mt-1 line-clamp-3 text-ui-caption leading-snug text-(--ui-text-muted)">
-                      {t(template.description)}
-                    </span>
-                  </span>
-                </div>
-                <span className="mt-auto flex min-w-0 items-center gap-1.5 pt-3 text-ui-micro text-(--ui-text-muted)">
-                  <TriggerMark kind={template.trigger.kind} className="icon-xs" />
-                  <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
+          {onAssistant ? (
+            <Button
+              type="button"
+              onClick={onAssistant}
+              variant="item"
+              layout="stacked"
+              aria-haspopup="dialog"
+              className="automation-start-option"
+            >
+              <span className="flex gap-3">
+                <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+                  <Sparkles className="icon-md" strokeWidth={1.75} />
                 </span>
-              </Button>
-            );
-          })}
+                <span className="min-w-0">
+                  <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+                    {t("AI assistant")}
+                  </span>
+                  <span className="mt-1 block text-ui-caption leading-snug text-(--ui-text-muted)">
+                    {t("Continue in a full AI session with automation tools and approval controls.")}
+                  </span>
+                </span>
+              </span>
+            </Button>
+          ) : null}
         </div>
-        {!templateQuery.trim() && category === "all" && templates.length > 4 ? (
-          <Button
-            className="mt-3"
-            variant="ghost"
-            aria-expanded={allTemplates}
-            onClick={() => setAllTemplates((value) => !value)}
-          >
-            {t(allTemplates ? "Show less" : "Show all")} · {templates.length}
-          </Button>
-        ) : null}
+        <section className="mt-7" aria-labelledby="automation-templates-title">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <h2
+              id="automation-templates-title"
+              className="me-auto text-ui-secondary font-medium text-(--ui-tone-neutral-fg)"
+            >
+              {t("Start from a template")}
+            </h2>
+            <TextField
+              label={t("Search templates")}
+              hideLabel
+              placeholder={t("Search templates")}
+              value={templateQuery}
+              onChange={(event) => setTemplateQuery(event.target.value)}
+              fieldClassName="automation-template-search"
+            />
+            <SearchableSelect
+              label={t("Template category")}
+              value={category}
+              options={AUTOMATION_TEMPLATE_CATEGORIES.map((option) => ({
+                value: option.id,
+                label: t(option.label),
+              }))}
+              onChange={(value) => setCategory(value as AutomationTemplateCategoryId)}
+            />
+          </div>
+          {templates.length === 0 ? (
+            <p role="status" className="mt-4 text-ui-secondary text-(--ui-text-muted)">
+              {t("No matching options")}
+            </p>
+          ) : null}
+          <div className="automation-gallery mt-3">
+            {shown.map((template) => {
+              const Icon = TEMPLATE_ICONS[template.icon];
+              return (
+                <Button
+                  key={template.id}
+                  type="button"
+                  onClick={() => onPick(template)}
+                  variant="item"
+                  layout="stacked"
+                  className="automation-template"
+                  title={t(template.description)}
+                >
+                  <span className="flex gap-3">
+                    <span className="grid size-7 shrink-0 place-items-center text-(--ui-text-muted)">
+                      <Icon className="icon-md" strokeWidth={1.75} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="line-clamp-2 text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
+                        {t(template.name)}
+                      </span>
+                      <span className="mt-1 line-clamp-2 text-ui-caption leading-snug text-(--ui-text-muted)">
+                        {t(template.description)}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      aria-hidden
+                      className="icon-sm mt-1 shrink-0 text-(--ui-text-muted)"
+                      strokeWidth={1.75}
+                    />
+                  </span>
+                  <span className="mt-auto flex min-w-0 items-center gap-1.5 ps-10 pt-2 text-ui-micro text-(--ui-text-muted)">
+                    <TriggerMark kind={template.trigger.kind} className="icon-xs shrink-0" />
+                    <span className="min-w-0 truncate">{t(template.triggerLabel)}</span>
+                  </span>
+                </Button>
+              );
+            })}
+          </div>
+          {collapsible && templates.length > FIRST_TEMPLATES ? (
+            <Button
+              className="mt-3"
+              variant="ghost"
+              aria-expanded={allTemplates}
+              onClick={() => setAllTemplates((value) => !value)}
+            >
+              {t(allTemplates ? "Show less" : "Show all")} · {templates.length}
+            </Button>
+          ) : null}
+        </section>
       </div>
     </div>
   );
@@ -1160,6 +1011,7 @@ function RunStatusPill({ status }: { status: AutomationRun["status"] }) {
   return (
     <Badge
       tone={runStatusTone(status)}
+      className="shrink-0 whitespace-nowrap"
       icon={status === "running" ? <LoaderCircle className="icon-xs animate-spin" /> : undefined}
     >
       {runStatusLabel(status)}
@@ -1265,104 +1117,27 @@ function AutomationEditor({
   onOpenSession: (sessionId: string) => void | Promise<void>;
 }) {
   useLocale();
+  const extrasBeside = useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
   const [tab, setTab] = useState<"settings" | "history">("settings");
   const settingsTabId = useId();
   const historyTabId = useId();
   const tabPanelId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
-  const [providerConnected, setProviderConnected] = useState({
-    github: false,
-    linear: false,
-    jira: false,
-    gitlab: false,
-    azuredevops: false,
-  });
-  const controlsBeside =
-    useSyncExternalStore(subscribeModelControls, loadModelControls) === "beside";
+  const { connections: providerConnected } = useProviderConnections();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
-  useEffect(() => {
-    let cancelled = false;
-    const load = () => {
-      void Promise.all([
-        githubStatus()
-          .then((status) => status.connected)
-          .catch(() => false),
-        linearConnected()
-          .then((status) => status.connected)
-          .catch(() => false),
-        jiraConnected()
-          .then((status) => status.connected)
-          .catch(() => false),
-        gitlabConnected()
-          .then((status) => status.connected)
-          .catch(() => false),
-        azureDevOpsConnected()
-          .then((status) => status.connected)
-          .catch(() => false),
-      ]).then(([github, linear, jira, gitlab, azuredevops]) => {
-        if (!cancelled) {
-          setProviderConnected({ github, linear, jira, gitlab, azuredevops });
-        }
-      });
-    };
-    load();
-    window.addEventListener(LINEAR_CHANGE_EVENT, load);
-    window.addEventListener(JIRA_CHANGE_EVENT, load);
-    window.addEventListener(GITLAB_CHANGE_EVENT, load);
-    window.addEventListener(AZUREDEVOPS_CHANGE_EVENT, load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(LINEAR_CHANGE_EVENT, load);
-      window.removeEventListener(JIRA_CHANGE_EVENT, load);
-      window.removeEventListener(GITLAB_CHANGE_EVENT, load);
-      window.removeEventListener(AZUREDEVOPS_CHANGE_EVENT, load);
-    };
-  }, []);
   const triggerReady = (kind: AutomationTriggerKind) => {
     if (kind === "time" || kind === "tasks" || kind === "social") return true;
-    return providerConnected[kind];
+    // Never-read status stays disabled; a rejected read keeps the last-known value
+    // instead of inferring revocation. Host validation still gates the trigger.
+    return providerConnected[kind] === true;
   };
   const valid =
     draft.name.trim().length > 0 &&
     draft.prompt.trim().length > 0 &&
     looksLikeProject(draft.cwd) &&
     draft.model.length > 0;
-  const [sessionFolders, setSessionFolders] = useState(() => loadSessionFolders(draft.cwd));
-  useEffect(() => {
-    setSessionFolders(loadSessionFolders(draft.cwd));
-    return subscribeSessionFolders(draft.cwd, () => {
-      setSessionFolders(loadSessionFolders(draft.cwd));
-    });
-  }, [draft.cwd]);
-  const folderOptions = useMemo(() => {
-    const options = [
-      {
-        value: "",
-        get label() {
-          return t("None");
-        },
-      },
-      ...sessionFolders.map((folder) => ({
-        value: folder.id,
-        label: folder.name,
-        keywords: folder.name,
-      })),
-    ];
-    if (
-      draft.sessionFolderId &&
-      !sessionFolders.some((folder) => folder.id === draft.sessionFolderId)
-    ) {
-      options.push({
-        value: draft.sessionFolderId,
-        get label() {
-          return t("Removed folder");
-        },
-        keywords: draft.sessionFolderId,
-      });
-    }
-    return options;
-  }, [getLocale(), draft.sessionFolderId, sessionFolders]);
+  const folderOptions = useAutomationFolderOptions(draft.cwd, draft.sessionFolderId);
   const update = <K extends keyof AutomationDraft>(key: K, value: AutomationDraft[K]) =>
     onChange({ ...draft, [key]: value });
   const setTriggers = (triggers: AutomationTrigger[]) => onChange(applyTriggers(draft, triggers));
@@ -1389,75 +1164,55 @@ function AutomationEditor({
   const historyAvailable = Boolean(draft.id);
   const showingHistory = historyAvailable && tab === "history";
 
+  const limitsSummary = [
+    `${t("Run time limit")}: ${optionLabel(RUN_TIME_LIMIT_OPTIONS, draft.maxRunMinutes)}`,
+    `${t("Runs per day")}: ${optionLabel(RUNS_PER_DAY_OPTIONS, draft.maxRunsPerDay)}`,
+  ].join(" · ");
+
   return (
     <form className="flex min-h-0 min-w-0 flex-1 flex-col" onSubmit={onSubmit} aria-busy={saving}>
-      <div className="relative w-full shrink-0 border-b border-(--ui-tone-neutral-border)">
-        <div className="flex w-full flex-col gap-2.5 px-3 sm:px-6 pt-4">
-          <header className="flex flex-col gap-2.5">
-            <div className="flex flex-wrap items-start gap-3">
-              <TextField
-                label={t("Automation name")}
-                hideLabel
-                autoFocus
-                aria-label={t("Automation name")}
-                value={draft.name}
-                disabled={saving}
-                onChange={(event) => update("name", event.target.value)}
-                placeholder={t("Untitled")}
-                fieldClassName="min-w-0 flex-[1_1_16rem]"
-              />
-              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                {!draft.id || dirty ? (
-                  <Button type="button" onClick={onClose} disabled={saving} variant="secondary">
-                    {draft.id ? t("Reset") : t("Cancel")}
-                  </Button>
-                ) : null}
-                {onRun ? (
-                  <Button
-                    type="button"
-                    onClick={onRun}
-                    loading={running}
-                    disabled={saving}
-                    startIcon={<Play className="icon-sm" />}
-                    variant="secondary"
-                  >
-                    {t("Run now")}
-                  </Button>
-                ) : null}
-                <Button
-                  type="submit"
-                  disabled={!valid || saving || (!!draft.id && !dirty)}
-                  variant="primary"
-                  loading={saving}
-                >
-                  {draft.id ? t("Save") : t("Create")}
+      <div className="automation-editor-header shrink-0 px-3 pt-2 sm:px-6">
+        <header className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-start gap-x-3 gap-y-2">
+            <TextField
+              label={t("Automation name")}
+              hideLabel
+              autoFocus
+              aria-label={t("Automation name")}
+              value={draft.name}
+              disabled={saving}
+              onChange={(event) => update("name", event.target.value)}
+              placeholder={t("Untitled")}
+              fieldClassName="min-w-0 flex-[1_1_16rem]"
+            />
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              {!draft.id || dirty ? (
+                <Button type="button" onClick={onClose} disabled={saving} variant="secondary">
+                  {draft.id ? t("Reset") : t("Cancel")}
                 </Button>
-              </div>
-            </div>
-            <div
-              inert={saving}
-              className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-muted)"
-            >
-              <ToggleSwitch
-                label={draft.enabled ? t("Pause automation") : t("Enable automation")}
-                on={draft.enabled}
-                onChange={(enabled) => update("enabled", enabled)}
-                compact
-              />
-              <span className="shrink-0">{draft.enabled ? t("Active") : t("Inactive")}</span>
-              <span aria-hidden className="h-3 ml-2 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
-              <SearchableProjectPicker
-                cwd={draft.cwd}
-                recents={recents}
-                disabled={!!draft.id && draft.runInBackground}
-                onSelectProject={(cwd) => {
-                  if (!draft.id || !draft.runInBackground)
-                    onChange({ ...draft, cwd, sessionFolderId: "" });
-                }}
-              />
+              ) : null}
+              {onRun ? (
+                <Button
+                  type="button"
+                  onClick={onRun}
+                  loading={running}
+                  disabled={saving}
+                  startIcon={<Play className="icon-sm" />}
+                  variant="secondary"
+                >
+                  {t("Run now")}
+                </Button>
+              ) : null}
+              <Button
+                type="submit"
+                disabled={!valid || saving || (!!draft.id && !dirty)}
+                variant="primary"
+                loading={saving}
+              >
+                {draft.id ? t("Save") : t("Create")}
+              </Button>
               {onDelete ? (
                 <>
-                  <span aria-hidden className="h-3 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
                   <Button
                     ref={menuButton}
                     type="button"
@@ -1465,6 +1220,7 @@ function AutomationEditor({
                     aria-label={t("Automation actions")}
                     aria-haspopup="menu"
                     aria-expanded={menuOpen}
+                    disabled={saving}
                     onClick={() => setMenuOpen((open) => !open)}
                     variant="ghost"
                     iconOnly
@@ -1499,32 +1255,55 @@ function AutomationEditor({
                 </>
               ) : null}
             </div>
-          </header>
-          {historyAvailable ? (
-            <div
-              role="tablist"
-              aria-label={t("Automation view")}
-              className="flex h-9 items-stretch gap-1"
-            >
-              <PageTab
-                id={settingsTabId}
-                controls={tabPanelId}
-                label={t("Settings")}
-                selected={!showingHistory}
-                onSelect={() => setTab("settings")}
+          </div>
+          <div
+            inert={saving}
+            className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1.5 text-ui-caption text-(--ui-text-muted)"
+          >
+            <span className="flex shrink-0 items-center gap-2">
+              <ToggleSwitch
+                label={draft.enabled ? t("Pause automation") : t("Enable automation")}
+                on={draft.enabled}
+                onChange={(enabled) => update("enabled", enabled)}
+                compact
               />
-              <PageTab
-                id={historyTabId}
-                controls={tabPanelId}
-                label={t("Run history")}
-                selected={showingHistory}
-                onSelect={() => setTab("history")}
-              />
-            </div>
-          ) : (
-            <div className="pb-5" />
-          )}
-        </div>
+              <span>{draft.enabled ? t("Active") : t("Inactive")}</span>
+            </span>
+            <SearchableProjectPicker
+              cwd={draft.cwd}
+              recents={recents}
+              disabled={!!draft.id && draft.runInBackground}
+              onSelectProject={(cwd) => {
+                if (!draft.id || !draft.runInBackground)
+                  onChange({ ...draft, cwd, sessionFolderId: "" });
+              }}
+            />
+          </div>
+        </header>
+        {historyAvailable ? (
+          <div
+            role="tablist"
+            aria-label={t("Automation view")}
+            className="mt-1 flex h-9 items-stretch gap-1"
+          >
+            <PageTab
+              id={settingsTabId}
+              controls={tabPanelId}
+              label={t("Settings")}
+              selected={!showingHistory}
+              onSelect={() => setTab("settings")}
+            />
+            <PageTab
+              id={historyTabId}
+              controls={tabPanelId}
+              label={t("Run history")}
+              selected={showingHistory}
+              onSelect={() => setTab("history")}
+            />
+          </div>
+        ) : (
+          <div className="pb-2" />
+        )}
       </div>
 
       <div
@@ -1535,15 +1314,20 @@ function AutomationEditor({
         aria-labelledby={
           historyAvailable ? (showingHistory ? historyTabId : settingsTabId) : undefined
         }
-        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
+        className="automation-scroll min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"
       >
         {!showingHistory ? (
           <div className="automation-content automation-editor-grid">
-            <section>
-              <SectionTitle>{t("Instructions")}</SectionTitle>
+            <section className="automation-prompt">
+              <div className="flex items-center gap-1">
+                <SectionTitle>{t("Instructions")}</SectionTitle>
+                <InfoPopover className="shrink-0">
+                  <p>{t("Skills, @file references, and built-in commands work here.")}</p>
+                </InfoPopover>
+              </div>
               <div
                 data-ui-focus-group=""
-                className="relative mt-3 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) has-focus:border-(--ui-tone-neutral-border)"
+                className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) has-focus:border-(--ui-tone-neutral-border)"
               >
                 <PromptField
                   value={draft.prompt}
@@ -1559,18 +1343,16 @@ function AutomationEditor({
                         model={draft.model}
                         values={draft.modelSettings}
                         project={draft.cwd}
-                        hideSettings={controlsBeside}
                         onChange={(harness, model) => onChange({ ...draft, harness, model })}
                         onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                       />
-                      {controlsBeside ? (
+                      {/* Chat settings "Extras summary: beside" also shows the active options here; the menu stays complete. */}
+                      {extrasBeside ? (
                         <ModelControlPills
                           harness={draft.harness}
                           model={draft.model}
                           values={draft.modelSettings}
-                          onSettingsChange={(modelSettings) =>
-                            update("modelSettings", modelSettings)
-                          }
+                          onSettingsChange={(modelSettings) => update("modelSettings", modelSettings)}
                         />
                       ) : null}
                       {draft.harness !== "fx" ? (
@@ -1583,25 +1365,22 @@ function AutomationEditor({
                   </div>
                 </div>
               </div>
-              <p className="mt-2 px-1 text-ui-micro text-(--ui-text-muted)">
-                {t("Skills, @file references, and built-in commands work here.")}
-              </p>
             </section>
 
-            <section>
-              <SectionTitle>{t("Triggers")}</SectionTitle>
-              {draft.triggers.some(
-                (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
-              ) ? (
-                <p className="mt-2 text-ui-caption text-(--ui-text-muted)">
-                  {t(
-                    "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
-                  )}
-                </p>
-              ) : null}
-              <div className="mt-3 rounded-md border border-(--ui-tone-neutral-border)">
+            <div className="automation-editor-side">
+              <section>
+                <SectionTitle>{t("Triggers")}</SectionTitle>
+                {draft.triggers.some(
+                  (trigger) => trigger.kind === "tasks" || trigger.kind === "social",
+                ) ? (
+                  <p className="mt-2 px-1 text-ui-caption text-(--ui-text-muted)">
+                    {t(
+                      "Task and social events run while this app is open. Connect the source machine; social accounts must be linked to this project.",
+                    )}
+                  </p>
+                ) : null}
                 {draft.triggers.length > 0 ? (
-                  <ul className="px-3 py-1.5">
+                  <ul className="mt-1 px-2">
                     {draft.triggers.map((trigger) => (
                       <li key={trigger.id}>
                         <TriggerRow
@@ -1618,161 +1397,162 @@ function AutomationEditor({
                     ))}
                   </ul>
                 ) : null}
-                {draft.triggers.length > 0 ? (
-                  <div className="border-t border-(--ui-tone-neutral-border)" />
-                ) : null}
-                <SearchableSelect
-                  label={t("Add Trigger")}
-                  value=""
-                  placeholder={t("Add Trigger")}
-                  options={triggerOptions}
-                  onChange={selectTrigger}
-                  disabled={draft.triggers.length >= 20}
-                  searchPlaceholder={t("Search triggers")}
-                />
-              </div>
-            </section>
+                <div className="mt-2">
+                  <SearchableSelect
+                    label={t("Add Trigger")}
+                    value=""
+                    placeholder={t("Add Trigger")}
+                    options={triggerOptions}
+                    onChange={selectTrigger}
+                    disabled={draft.triggers.length >= 20}
+                    searchPlaceholder={t("Search triggers")}
+                  />
+                </div>
+              </section>
 
-            <section>
-              <SectionTitle>{t("Session")}</SectionTitle>
-              <div className="mt-3 overflow-hidden rounded-md border border-(--ui-tone-neutral-border)">
-                <SettingsRow
-                  label={t("Runs")}
-                  hint={
-                    backgroundMachine
-                      ? "In the background keeps running with this app closed"
-                      : "Background runs need the project’s machine connected"
-                  }
-                >
-                  <SettingsSelect
+              <section>
+                <SectionTitle>{t("Session")}</SectionTitle>
+                <div className="mt-1">
+                  <SettingsRow
                     label={t("Runs")}
-                    value={draft.runInBackground ? "background" : "app"}
-                    disabled={draft.id != null || !backgroundMachine}
-                    options={[
-                      {
-                        value: "app",
-                        get label() {
-                          return t("While this app is open");
+                    hint={
+                      backgroundMachine
+                        ? "In the background keeps running with this app closed"
+                        : "Background runs need the project’s machine connected"
+                    }
+                  >
+                    <SettingsSelect
+                      label={t("Runs")}
+                      value={draft.runInBackground ? "background" : "app"}
+                      disabled={draft.id != null || !backgroundMachine}
+                      options={[
+                        {
+                          value: "app",
+                          get label() {
+                            return t("While this app is open");
+                          },
                         },
-                      },
-                      {
-                        value: "background",
-                        get label() {
-                          return t("In the background on {p0}", {
-                            p0: backgroundMachine ?? "its machine",
-                          });
+                        {
+                          value: "background",
+                          get label() {
+                            return t("In the background on {p0}", {
+                              p0: backgroundMachine ?? "its machine",
+                            });
+                          },
                         },
-                      },
-                    ]}
-                    onChange={(value) => update("runInBackground", value === "background")}
-                  />
-                </SettingsRow>
-                {draft.runInBackground ? null : (
-                  <>
-                    <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
-                      <SettingsSelect
-                        label={t("Working copy")}
-                        value={
-                          draft.workspaceMode === "existing"
-                            ? "current"
-                            : (draft.workspaceMode ?? "automatic")
-                        }
-                        options={WORKSPACE_OPTIONS}
-                        onChange={(value) =>
-                          onChange({
-                            ...draft,
-                            workspaceMode:
-                              value === "automatic" ? undefined : (value as "current" | "worktree"),
-                            worktreeCwd: "",
-                            reuseSession: value === "current" && draft.reuseSession,
-                          })
-                        }
-                      />
-                    </SettingsRow>
-                    <SettingsRow
-                      label={t("Conversation")}
-                      hint="New chat, or continue the last run"
-                    >
-                      <SettingsSelect
+                      ]}
+                      onChange={(value) => update("runInBackground", value === "background")}
+                    />
+                  </SettingsRow>
+                  {draft.runInBackground ? null : (
+                    <>
+                      <SettingsRow label={t("Working copy")} hint="This repo, or a fresh worktree">
+                        <SettingsSelect
+                          label={t("Working copy")}
+                          value={
+                            draft.workspaceMode === "existing"
+                              ? "current"
+                              : (draft.workspaceMode ?? "automatic")
+                          }
+                          options={WORKSPACE_OPTIONS}
+                          onChange={(value) =>
+                            onChange({
+                              ...draft,
+                              workspaceMode:
+                                value === "automatic"
+                                  ? undefined
+                                  : (value as "current" | "worktree"),
+                              worktreeCwd: "",
+                              reuseSession: value === "current" && draft.reuseSession,
+                            })
+                          }
+                        />
+                      </SettingsRow>
+                      <SettingsRow
                         label={t("Conversation")}
-                        value={draft.reuseSession ? "reuse" : "fresh"}
-                        disabled={draft.workspaceMode === "worktree"}
-                        options={CONVERSATION_OPTIONS}
-                        onChange={(value) => update("reuseSession", value === "reuse")}
-                      />
-                    </SettingsRow>
-                    <SettingsRow
-                      label={t("Session folder")}
-                      hint="Where runs appear in the sidebar"
-                    >
-                      <SearchableSelect
-                        variant="pill"
-                        searchable
-                        align="end"
+                        hint="New chat, or continue the last run"
+                      >
+                        <SettingsSelect
+                          label={t("Conversation")}
+                          value={draft.reuseSession ? "reuse" : "fresh"}
+                          disabled={draft.workspaceMode === "worktree"}
+                          options={CONVERSATION_OPTIONS}
+                          onChange={(value) => update("reuseSession", value === "reuse")}
+                        />
+                      </SettingsRow>
+                      <SettingsRow
                         label={t("Session folder")}
-                        value={draft.sessionFolderId}
-                        options={folderOptions}
-                        onChange={(value) => update("sessionFolderId", value)}
-                      />
-                    </SettingsRow>
-                  </>
-                )}
-              </div>
-            </section>
+                        hint="Where runs appear in the sidebar"
+                      >
+                        <SearchableSelect
+                          variant="pill"
+                          searchable
+                          align="end"
+                          label={t("Session folder")}
+                          value={draft.sessionFolderId}
+                          options={folderOptions}
+                          onChange={(value) => update("sessionFolderId", value)}
+                        />
+                      </SettingsRow>
+                    </>
+                  )}
+                </div>
+              </section>
 
-            <details className="group/advanced rounded-md border border-(--ui-tone-neutral-border)">
-              <summary className="flex min-h-14 cursor-default list-none items-center justify-between gap-3 px-4">
-                <span>
-                  <span className="block text-ui-secondary font-medium text-(--ui-tone-neutral-fg)">
-                    {t("Advanced")}
+              <details className="group/advanced">
+                <summary className="flex min-h-10 cursor-default list-none items-center justify-between gap-3 px-1">
+                  <span className="min-w-0">
+                    <span className="block text-ui-caption font-medium text-(--ui-text-muted)">
+                      {t("Advanced")}
+                    </span>
+                    <span className="mt-0.5 block truncate text-ui-micro text-(--ui-text-muted)">
+                      {limitsSummary}
+                    </span>
                   </span>
-                  <span className="mt-0.5 block text-ui-micro text-(--ui-text-muted)">
-                    {t("Catch-up window and run limits")}
-                  </span>
-                </span>
-                <ChevronDown className="icon-sm text-(--ui-text-muted) transition-transform group-open/advanced:rotate-180" />
-              </summary>
-              <div className="border-t border-(--ui-tone-neutral-border)">
-                <SettingsRow
-                  label={t("Missed-run grace")}
-                  hint={
-                    draft.runInBackground
-                      ? "Background runs catch up within 12 hours"
-                      : "Catch up if a scheduled run was missed"
-                  }
-                >
-                  <SettingsSelect
+                  <ChevronDown className="icon-sm shrink-0 text-(--ui-text-muted) transition-transform group-open/advanced:rotate-180" />
+                </summary>
+                <div className="mt-1">
+                  <SettingsRow
                     label={t("Missed-run grace")}
-                    value={String(draft.runInBackground ? 720 : draft.missedRunGraceMinutes)}
-                    disabled={draft.runInBackground}
-                    options={GRACE_OPTIONS}
-                    onChange={(value) => update("missedRunGraceMinutes", Number(value))}
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label={t("Run time limit")}
-                  hint="Stop a run that is still going after this long"
-                >
-                  <SettingsSelect
+                    hint={
+                      draft.runInBackground
+                        ? "Background runs catch up within 12 hours"
+                        : "Catch up if a scheduled run was missed"
+                    }
+                  >
+                    <SettingsSelect
+                      label={t("Missed-run grace")}
+                      value={String(draft.runInBackground ? 720 : draft.missedRunGraceMinutes)}
+                      disabled={draft.runInBackground}
+                      options={GRACE_OPTIONS}
+                      onChange={(value) => update("missedRunGraceMinutes", Number(value))}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
                     label={t("Run time limit")}
-                    value={String(draft.maxRunMinutes)}
-                    options={RUN_TIME_LIMIT_OPTIONS}
-                    onChange={(value) => update("maxRunMinutes", Number(value))}
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label={t("Runs per day")}
-                  hint="Skip scheduled and event runs past this many a day"
-                >
-                  <SettingsSelect
+                    hint="Stop a run that is still going after this long"
+                  >
+                    <SettingsSelect
+                      label={t("Run time limit")}
+                      value={String(draft.maxRunMinutes)}
+                      options={RUN_TIME_LIMIT_OPTIONS}
+                      onChange={(value) => update("maxRunMinutes", Number(value))}
+                    />
+                  </SettingsRow>
+                  <SettingsRow
                     label={t("Runs per day")}
-                    value={String(draft.maxRunsPerDay)}
-                    options={RUNS_PER_DAY_OPTIONS}
-                    onChange={(value) => update("maxRunsPerDay", Number(value))}
-                  />
-                </SettingsRow>
-              </div>
-            </details>
+                    hint="Skip scheduled and event runs past this many a day"
+                  >
+                    <SettingsSelect
+                      label={t("Runs per day")}
+                      value={String(draft.maxRunsPerDay)}
+                      options={RUNS_PER_DAY_OPTIONS}
+                      onChange={(value) => update("maxRunsPerDay", Number(value))}
+                    />
+                  </SettingsRow>
+                </div>
+              </details>
+            </div>
           </div>
         ) : (
           <section className="automation-content">
@@ -2099,262 +1879,8 @@ const TEMPLATE_ICONS: Record<AutomationTemplateIcon, typeof Search> = {
   note: StickyNote,
 };
 
-const TRIGGER_CATEGORIES: readonly {
-  value: AutomationTriggerKind;
-  label: string;
-}[] = [
-  {
-    value: "tasks",
-    get label() {
-      return t("Tasks");
-    },
-  },
-  {
-    value: "social",
-    get label() {
-      return t("Social Media");
-    },
-  },
-  {
-    value: "time",
-    get label() {
-      return t("Scheduled");
-    },
-  },
-  {
-    value: "github",
-    get label() {
-      return t("GitHub");
-    },
-  },
-  {
-    value: "linear",
-    get label() {
-      return t("Linear");
-    },
-  },
-  {
-    value: "jira",
-    get label() {
-      return t("Jira");
-    },
-  },
-  {
-    value: "gitlab",
-    get label() {
-      return t("GitLab");
-    },
-  },
-  {
-    value: "azuredevops",
-    get label() {
-      return t("Azure DevOps");
-    },
-  },
-];
-
-type TriggerEvent = {
-  value: string;
-  label: string;
-};
-
-export const TRIGGER_EVENTS: Record<AutomationTriggerKind, readonly TriggerEvent[]> = {
-  tasks: [
-    {
-      value: "task_created",
-      get label() {
-        return t("Task created");
-      },
-    },
-    {
-      value: "task_completed",
-      get label() {
-        return t("Task completed");
-      },
-    },
-    {
-      value: "task_blocked",
-      get label() {
-        return t("Task blocked");
-      },
-    },
-    {
-      value: "task_review",
-      get label() {
-        return t("Task ready for review");
-      },
-    },
-  ],
-  social: [
-    {
-      value: "message_received",
-      get label() {
-        return t("Message received");
-      },
-    },
-    {
-      value: "comment_received",
-      get label() {
-        return t("Comment received");
-      },
-    },
-  ],
-  time: [
-    {
-      value: "hourly",
-      get label() {
-        return t("Hourly");
-      },
-    },
-    {
-      value: "daily",
-      get label() {
-        return t("Daily");
-      },
-    },
-    {
-      value: "weekdays",
-      get label() {
-        return t("Weekdays");
-      },
-    },
-    {
-      value: "weekly",
-      get label() {
-        return t("Weekly");
-      },
-    },
-  ],
-  github: [
-    {
-      value: "draft_opened",
-      get label() {
-        return t("Draft opened");
-      },
-    },
-    {
-      value: "pull_request_opened",
-      get label() {
-        return t("Pull request opened");
-      },
-    },
-    {
-      value: "pull_request_ready_for_review",
-      get label() {
-        return t("Pull request ready for review");
-      },
-    },
-    {
-      value: "pull_request_reopened",
-      get label() {
-        return t("Pull request reopened");
-      },
-    },
-    {
-      value: "pull_request_merged",
-      get label() {
-        return t("Pull request merged");
-      },
-    },
-    {
-      value: "pull_request_closed",
-      get label() {
-        return t("Pull request closed");
-      },
-    },
-    {
-      value: "pull_request_labeled",
-      get label() {
-        return t("Pull request labeled");
-      },
-    },
-    {
-      value: "issue_opened",
-      get label() {
-        return t("Issue opened");
-      },
-    },
-    {
-      value: "issue_reopened",
-      get label() {
-        return t("Issue reopened");
-      },
-    },
-    {
-      value: "issue_closed",
-      get label() {
-        return t("Issue closed");
-      },
-    },
-    {
-      value: "issue_labeled",
-      get label() {
-        return t("Issue labeled");
-      },
-    },
-  ],
-  linear: [
-    {
-      value: "issue_created",
-      get label() {
-        return t("Issue created");
-      },
-    },
-  ],
-  jira: [
-    {
-      value: "issue_created",
-      get label() {
-        return t("Issue appeared");
-      },
-    },
-  ],
-  gitlab: [
-    {
-      value: "merge_request_opened",
-      get label() {
-        return t("Merge request opened");
-      },
-    },
-    {
-      value: "issue_opened",
-      get label() {
-        return t("Issue opened");
-      },
-    },
-  ],
-  azuredevops: [
-    {
-      value: "pull_request_appeared",
-      get label() {
-        return t("Pull request appeared");
-      },
-    },
-    {
-      value: "work_item_appeared",
-      get label() {
-        return t("Work item appeared");
-      },
-    },
-  ],
-};
-
-function TriggerMark({ kind, className }: { kind: AutomationTriggerKind; className?: string }) {
-  useLocale();
-  if (kind === "time") {
-    return <Clock className={className} strokeWidth={1.75} />;
-  }
-  if (kind === "tasks") return <CheckCircle className={className} strokeWidth={1.75} />;
-  if (kind === "social") return <Inbox className={className} strokeWidth={1.75} />;
-  return <InboxProviderMark provider={kind} className={className} />;
-}
-
-function triggerName(kind: AutomationTriggerKind): string {
-  return TRIGGER_CATEGORIES.find((option) => option.value === kind)?.label ?? kind;
-}
-
-function findTriggerEvent(kind: AutomationTriggerKind, value: string): TriggerEvent | undefined {
-  return TRIGGER_EVENTS[kind].find((event) => event.value === value);
+function optionLabel(options: readonly { value: string; label: string }[], value: number): string {
+  return options.find((option) => option.value === String(value))?.label ?? String(value);
 }
 
 function triggerLabel(automation: Automation): string {
@@ -2366,292 +1892,4 @@ function triggerLabel(automation: Automation): string {
       ? automationScheduleLabel(first)
       : (findTriggerEvent(first.kind, first.event)?.label ?? triggerName(first.kind));
   return triggers.length > 1 ? `${label} +${triggers.length - 1}` : label;
-}
-
-export function TriggerRow({
-  trigger,
-  cwd,
-  background = false,
-  machineId,
-  onChange,
-  onRemove,
-}: {
-  trigger: AutomationTrigger;
-  cwd: string;
-  background?: boolean;
-  machineId?: string;
-  onChange: (trigger: AutomationTrigger) => void;
-  onRemove: () => void;
-}) {
-  useLocale();
-  const [branches, setBranches] = useState<string[]>([]);
-  const projectPath = looksLikeProject(cwd) ? cwd : "";
-  const push = trigger.event === "push_to_branch";
-  useEffect(() => {
-    if (!projectPath || !push) {
-      setBranches([]);
-      return;
-    }
-    let cancelled = false;
-    void gitBranches(projectPath).then(
-      (info) => {
-        if (!cancelled) setBranches(info.branches.map((branch) => branch.name));
-      },
-      () => {
-        if (!cancelled) setBranches([]);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [projectPath, push]);
-  const branchOptions = branches.map((name) => ({ value: name, label: name }));
-  if (trigger.branch && !branchOptions.some((option) => option.value === trigger.branch)) {
-    branchOptions.unshift({ value: trigger.branch, label: trigger.branch });
-  }
-  const previewKey = `${machineId}:${trigger.scheduleKind}:${trigger.time}:${trigger.minute}:${trigger.dayOfWeek}`;
-  const [preview, setPreview] = useState<{ key: string; value: HostSchedulePreview } | null>(null);
-  useEffect(() => {
-    if (!background || !machineId || trigger.kind !== "time") return;
-    let cancelled = false;
-    void previewHostAutomation(machineId, trigger).then(
-      (value) => {
-        if (!cancelled) setPreview({ key: previewKey, value });
-      },
-      () => {
-        if (!cancelled) setPreview(null);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [background, machineId, previewKey, trigger.kind]);
-  const hostPreview = preview?.key === previewKey ? preview.value : undefined;
-  const nextAt =
-    trigger.kind === "time"
-      ? background
-        ? (hostPreview?.nextRunAt ?? 0)
-        : nextAutomationRunAt(trigger)
-      : 0;
-
-  return (
-    <ActionHost className="-mx-2 min-h-10 gap-2.5 px-2 py-1">
-      <TriggerMark kind={trigger.kind} className="icon-sm shrink-0 text-(--ui-text-muted)" />
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1 text-ui-secondary text-(--ui-tone-neutral-fg)">
-        {trigger.kind === "time" ? (
-          <TimeTriggerSentence
-            trigger={trigger}
-            nextAt={nextAt}
-            onChange={onChange}
-            executionTimeZone={background ? (hostPreview?.timeZone ?? null) : undefined}
-          />
-        ) : (
-          <EventTriggerSentence
-            trigger={trigger}
-            branchOptions={branchOptions}
-            projectChosen={Boolean(projectPath)}
-            onChange={onChange}
-          />
-        )}
-      </div>
-      <InlineAction label={t("Remove trigger")} onClick={onRemove}>
-        <X />
-      </InlineAction>
-    </ActionHost>
-  );
-}
-
-function TimeTriggerSentence({
-  trigger,
-  nextAt,
-  executionTimeZone,
-  onChange,
-}: {
-  trigger: AutomationTrigger;
-  nextAt: number;
-  executionTimeZone?: string | null;
-  onChange: (trigger: AutomationTrigger) => void;
-}) {
-  useLocale();
-  const dayOptions = AUTOMATION_WEEKDAYS.map((label, value) => ({
-    value: String(value),
-    label,
-  }));
-  const minuteOptions = [0, 15, 30, 45].map((value) => ({
-    value: String(value),
-    label: `:${String(value).padStart(2, "0")}`,
-  }));
-  const prefix =
-    trigger.scheduleKind === "hourly"
-      ? "Every hour at"
-      : trigger.scheduleKind === "daily"
-        ? "Every day at"
-        : trigger.scheduleKind === "weekdays"
-          ? "Every weekday at"
-          : "Every week on";
-  return (
-    <>
-      <span>{t(prefix)}</span>
-      {trigger.scheduleKind === "weekly" ? (
-        <>
-          <TriggerPill
-            label={t("Day")}
-            value={String(trigger.dayOfWeek)}
-            options={dayOptions}
-            onChange={(value) => onChange({ ...trigger, dayOfWeek: Number(value) })}
-          />
-          <span>{t("at")}</span>
-        </>
-      ) : null}
-      {trigger.scheduleKind === "hourly" ? (
-        <TriggerPill
-          label={t("Minute")}
-          value={String(trigger.minute)}
-          options={minuteOptions}
-          onChange={(value) => onChange({ ...trigger, minute: Number(value) })}
-        />
-      ) : (
-        <TriggerPill
-          label={t("Time")}
-          value={trigger.time}
-          options={timeOptions(trigger.time)}
-          onChange={(value) => onChange({ ...trigger, time: value })}
-        />
-      )}
-      <span className="text-(--ui-text-muted)">
-        {executionTimeZone === undefined
-          ? gmtOffsetLabel()
-          : (executionTimeZone ?? t("Execution host timezone unavailable"))}
-      </span>
-      <span className="ml-1 text-(--ui-text-muted)">
-        {executionTimeZone === undefined
-          ? nextRunPreview(nextAt)
-          : executionTimeZone && nextAt
-            ? `${t("Next run")} ${new Date(nextAt).toLocaleString(undefined, { timeZone: executionTimeZone, timeZoneName: "short" })}`
-            : t("Host schedule preview unavailable")}
-      </span>
-    </>
-  );
-}
-
-export function EventTriggerSentence({
-  trigger,
-  branchOptions,
-  projectChosen,
-  onChange,
-}: {
-  trigger: AutomationTrigger;
-  branchOptions: { value: string; label: string }[];
-  projectChosen: boolean;
-  onChange: (trigger: AutomationTrigger) => void;
-}) {
-  useLocale();
-  if (trigger.kind === "tasks" || trigger.kind === "social")
-    return <span>{findTriggerEvent(trigger.kind, trigger.event)?.label ?? trigger.event}</span>;
-  const stem =
-    trigger.event === "push_to_branch"
-      ? "Push"
-      : (findTriggerEvent(trigger.kind, trigger.event)?.label ?? trigger.event);
-  const push = trigger.event === "push_to_branch";
-  const labeled = trigger.event === "issue_labeled" || trigger.event === "pull_request_labeled";
-  return (
-    <>
-      {labeled ? (
-        <>
-          <span>{t("Label")}</span>
-          <TextField
-            label={t("Label")}
-            hideLabel
-            aria-label={t("Label")}
-            value={trigger.label ?? ""}
-            onChange={(event) => onChange({ ...trigger, label: event.target.value })}
-            placeholder={t("any label")}
-            spellCheck={false}
-            autoComplete="off"
-            fieldClassName="w-32"
-          />
-          <span>
-            {t("added to")} {trigger.event === "issue_labeled" ? t("issue") : t("pull request")}
-          </span>
-        </>
-      ) : (
-        <span>{stem}</span>
-      )}
-      {push ? (
-        <>
-          <span>{t("on")}</span>
-          <TriggerPill
-            label={t("Branch")}
-            value={trigger.branch}
-            options={branchOptions}
-            placeholder={t("Select a branch")}
-            disabled={!projectChosen}
-            emptyLabel={projectChosen ? "No branches found" : "Choose a project first"}
-            onChange={(value) => onChange({ ...trigger, branch: value })}
-          />
-        </>
-      ) : null}
-      <span>{t("by")}</span>
-      <TriggerPill
-        label={t("Actor")}
-        value={trigger.actor || "anyone"}
-        options={[
-          {
-            value: "anyone",
-            get label() {
-              return t("Anyone");
-            },
-          },
-        ]}
-        onChange={(value) => onChange({ ...trigger, actor: value })}
-      />
-    </>
-  );
-}
-
-function TriggerPill({
-  label,
-  value,
-  options,
-  onChange,
-  placeholder,
-  disabled,
-  emptyLabel,
-}: {
-  label: string;
-  value: string;
-  options: readonly { value: string; label: string; keywords?: string }[];
-  onChange: (value: string) => void;
-  placeholder?: string;
-  disabled?: boolean;
-  emptyLabel?: string;
-}) {
-  useLocale();
-  return (
-    <SearchableSelect
-      label={label}
-      value={value}
-      options={options}
-      onChange={onChange}
-      placeholder={placeholder}
-      disabled={disabled}
-      emptyLabel={emptyLabel}
-      variant="pill"
-      searchable={label === t("Branch") || options.length > 8}
-    />
-  );
-}
-
-function timeOptions(current: string) {
-  const options = Array.from({ length: 24 }, (_, hour) => {
-    const prefix = String(hour).padStart(2, "0");
-    return [
-      { value: `${prefix}:00`, label: `${prefix}:00` },
-      { value: `${prefix}:30`, label: `${prefix}:30` },
-    ];
-  }).flat();
-  if (current && !options.some((option) => option.value === current)) {
-    options.unshift({ value: current, label: current });
-  }
-  return options;
 }

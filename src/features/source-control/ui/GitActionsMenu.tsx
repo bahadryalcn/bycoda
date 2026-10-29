@@ -1,7 +1,6 @@
 import { errorText } from "../../../shared/lib/errors";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState, type RefObject } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import {
   Loader,
   MoreHorizontal,
@@ -61,7 +60,7 @@ import { GitPickDialog, type PickItem } from "./GitPickDialog";
 import { stashCommit } from "./GitStashSection";
 import { RefNameDialog } from "./RefNameDialog";
 import { gitPanelRuntime, setGitFeedback, withGitOperation, useGitPanelState } from "../model/gitPanelState";
-import { appName } from "../../../shared/lib/appName";
+import { confirmGitAction } from "../model/gitConfirmation";
 
 /** The `busy` key the menu's own actions hold while they run. */
 export const GIT_MENU_BUSY = "git-menu";
@@ -136,10 +135,6 @@ async function orElse<T>(work: () => Promise<T>, fallback: T): Promise<T> {
   } catch {
     return fallback;
   }
-}
-
-function confirm(text: string, okLabel: string): Promise<boolean> {
-  return ask(text, { title: appName(), kind: "warning", okLabel });
 }
 
 /** The header "…" button and the source-control menu it opens. */
@@ -339,10 +334,13 @@ export function GitActionsMenu({
   const undoLastCommit = async () => {
     if (
       index?.headPushed &&
-      !(await confirm(
-        "The last commit is already pushed. Undo it here anyway? Pushing the result later needs a force push from the terminal.",
-        "Undo Commit",
-      ))
+      !(await confirmGitAction({
+        title: t("Undo pushed commit?"),
+        message: t(
+          "The last commit is already pushed. Pushing the result later needs a force push from the terminal.",
+        ),
+        confirmLabel: t("Undo commit"),
+      }))
     ) {
       return;
     }
@@ -353,10 +351,11 @@ export function GitActionsMenu({
     if (!data.operation) return;
     const label = operationLabel(data.operation).toLowerCase();
     if (
-      !(await confirm(
-        `Abort the ${label}? Changes made while resolving it are discarded.`,
-        "Abort",
-      ))
+      !(await confirmGitAction({
+        title: t("Abort the {p0}?", { p0: label }),
+        message: t("Changes made while resolving it are discarded."),
+        confirmLabel: t("Abort {p0}", { p0: label }),
+      }))
     ) {
       return;
     }
@@ -563,10 +562,14 @@ export function GitActionsMenu({
             onPick: (name) => {
               setDialog(null);
               void (async () => {
-                const confirmed = await confirm(
-                  `Remove remote ${name}? Its remote-tracking branches are deleted from this repository. Nothing changes on the server.`,
-                  "Remove",
-                );
+                const confirmed = await confirmGitAction({
+                  title: t("Remove remote?"),
+                  message: t(
+                    "The remote “{p0}” and its remote-tracking branches are removed from this repository. Nothing changes on the server.",
+                    { p0: name },
+                  ),
+                  confirmLabel: t("Remove remote"),
+                });
                 if (confirmed) await run(() => gitRemoteRemove(cwd, name));
               })();
             },
@@ -605,19 +608,23 @@ export function GitActionsMenu({
           "Drop Stash",
           (entry) =>
             void (async () => {
-              const confirmed = await confirm(
-                `Drop "${entry.message}"? The stashed changes are lost.`,
-                "Drop",
-              );
+              const confirmed = await confirmGitAction({
+                title: t("Drop stash?"),
+                message: t("“{p0}” and the changes stashed in it are lost.", {
+                  p0: entry.message,
+                }),
+                confirmLabel: t("Drop stash"),
+              });
               if (confirmed) await run(() => gitStashAction(cwd, "drop", entry.index, entry.sha));
             })(),
         );
       case "stash-drop-all": {
         const count = data.stashCount;
-        const confirmed = await confirm(
-          `Drop all ${count} stash${count === 1 ? "" : "es"}? The stashed changes are lost.`,
-          "Drop All",
-        );
+        const confirmed = await confirmGitAction({
+          title: count === 1 ? t("Drop stash?") : t("Drop all {p0} stashes?", { p0: count }),
+          message: t("The stashed changes are lost."),
+          confirmLabel: count === 1 ? t("Drop stash") : t("Drop all stashes"),
+        });
         if (confirmed) await run(() => gitStashClear(cwd));
         return;
       }
@@ -663,10 +670,13 @@ export function GitActionsMenu({
             onPick: (name) => {
               setDialog(null);
               void (async () => {
-                const confirmed = await confirm(
-                  `Delete tag ${name}? A copy already pushed to a remote stays there.`,
-                  "Delete",
-                );
+                const confirmed = await confirmGitAction({
+                  title: t("Delete tag?"),
+                  message: t("The tag “{p0}” is deleted here. A copy already pushed to a remote stays there.", {
+                    p0: name,
+                  }),
+                  confirmLabel: t("Delete tag"),
+                });
                 if (confirmed) await run(() => gitDeleteTag(cwd, name));
               })();
             },

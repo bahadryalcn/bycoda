@@ -4,6 +4,8 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { MOD } from "../../../platform/tauri/platform";
 import { saveKeybindingOverride } from "../../settings/model/settings";
+import type { Block } from "../model/session";
+import { requestTranscriptJump } from "../model/transcriptJump";
 import { TranscriptFind } from "./TranscriptFind";
 
 it("keeps one keyboard binding across streamed renders and reads the latest navigation callback", async () => {
@@ -99,3 +101,40 @@ it.each([false, true])(
     }
   },
 );
+
+it("adopts a cross-session jump in one pass: query, open find and the matching block", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("requestAnimationFrame", () => 1);
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const blocks: Block[] = [
+    { id: "a1", role: "assistant", text: "needle one" },
+    { id: "a2", role: "assistant", text: "needle two" },
+    { id: "a3", role: "assistant", text: "needle three" },
+  ];
+  const onNavigate = vi.fn(() => true);
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TranscriptFind, {
+          blocks,
+          visible: true,
+          focused: true,
+          sessionId: "jump-session",
+          onNavigate,
+        }),
+      ),
+    );
+    expect(container.querySelector('[role="search"]')).toBeNull();
+    await act(async () => requestTranscriptJump("jump-session", "a2", "needle"));
+    expect(container.querySelector('[role="search"]')).not.toBeNull();
+    expect(container.querySelector<HTMLInputElement>("input")!.value).toBe("needle");
+    expect(container.querySelector('[aria-live="polite"]')!.textContent).toBe("2 of 3");
+  } finally {
+    await act(async () => root.unmount());
+    container.remove();
+    vi.unstubAllGlobals();
+  }
+});

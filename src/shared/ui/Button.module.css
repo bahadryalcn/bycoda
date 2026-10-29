@@ -351,6 +351,14 @@
   background: var(--accent-subtle);
   color: var(--foreground);
 }
+/* The neutral selected fill is only a step above hover, so a toggle carries a second cue: a quiet hairline.
+   Rows, items and tabs keep the fill alone. */
+.control[data-button-selected][data-button-tone="neutral"]:is(
+    [data-button-hierarchy="ghost"],
+    [data-button-hierarchy="secondary"]
+  ) {
+  border-color: var(--ui-pane-border);
+}
 .control[data-button-selected]:not([data-button-tone="neutral"]) {
   background: var(--button-subtle);
   color: var(--button-fg);

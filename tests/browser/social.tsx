@@ -1411,11 +1411,48 @@ Object.assign(window, {
                   x: { formats: ["text", "image"], requiresReview: false, allowsRepeat: false },
                 },
               };
+            // Fixture only: deterministic stand-in for the Host text agent behind programs.suggest.
+            if (params.action === "programs.suggest") {
+              const base = structuredClone(input.config as SocialProgram);
+              return {
+                config: {
+                  ...base,
+                  name: base.name.length > 40 ? "Weekly product announcements" : base.name,
+                  brief: {
+                    ...base.brief,
+                    topic: base.brief.topic || "Product announcement",
+                    description: `${base.brief.description} (fixture suggestion: three short posts, one clear call to action)`,
+                  },
+                  schedule: {
+                    ...base.schedule,
+                    mode: "times",
+                    times: ["09:00", "18:00"],
+                    days: [1, 2, 3, 4, 5],
+                  },
+                  totalPosts: 7,
+                },
+                questions: ["Which launch date should the posts mention?"],
+                requiresOwnerActivation: true,
+              };
+            }
+            // Fixture only: deterministic stand-in for the Host reply suggestion. It stores nothing.
+            if (params.action === "replies.suggest") {
+              const ids = (input.factIds as string[]) ?? [];
+              const facts = snapshot.profiles.flatMap((profile) => profile.facts);
+              return {
+                text: `Fixture reply: ${facts.filter((fact) => ids.includes(fact.id)).map((fact) => fact.text).join(" ")}`,
+                factIds: ids,
+                agent: { provider: "codex", model: "fixture-model" },
+              };
+            }
             if (params.action === "programs.configure") {
+              const existing = input.id ? programRecords.find((p) => p.id === input.id) : undefined;
+              if (existing && Number(input.expectedRevision) !== existing.revision)
+                throw new Error("Campaign was changed by another session.");
               const program = {
                 ...(input.config as SocialProgram),
-                id: "fixture-program",
-                revision: 1,
+                id: existing?.id ?? "fixture-program",
+                revision: (existing?.revision ?? 0) + 1,
                 enabled: false,
                 createdAt: 1,
                 updatedAt: 1,
@@ -1426,7 +1463,8 @@ Object.assign(window, {
                 dailyGenerationCount: 0,
                 nextSequence: 0,
               };
-              programRecords.push(program);
+              if (existing) programRecords.splice(programRecords.indexOf(existing), 1, program);
+              else programRecords.push(program);
               return structuredClone(program);
             }
             if (params.action === "programs.status")
@@ -1461,7 +1499,12 @@ Object.assign(window, {
             });
             return row;
           }
-          if (params.action === "policy.get") return { effective: snapshot.policies?.global ?? {} };
+          if (params.action === "policy.get")
+            return {
+              effective: programFixture
+                ? { agent: { provider: "codex", model: "fixture-model" } }
+                : (snapshot.policies?.global ?? {}),
+            };
           const input = params.input ?? {};
           if (telegramChannelFixture && params.action === "campaigns.schedule") {
             const campaign = snapshot.campaigns.find((c) => c.id === input.id);

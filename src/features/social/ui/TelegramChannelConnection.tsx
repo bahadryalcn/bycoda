@@ -4,7 +4,22 @@ import { TextField } from "../../../shared/ui/TextField";
 import { t, useLocale } from "../../../shared/i18n";
 import type { SocialAccount, SocialTelegramChannelReview } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
+import { socialQueryScope } from "../model/socialQuery";
 import { SocialBusyContext } from "./socialContext";
+
+/**
+ * Channel text, review and errors belong to one host, bot and connection state.
+ * Callers mount the component with this key so a changed identity starts blank.
+ */
+export const telegramConnectionKey = (client: SocialClient, account: SocialAccount) =>
+  [
+    ...socialQueryScope(client),
+    account.id,
+    account.executorId,
+    account.platformId,
+    account.connected,
+    account.telegramBotId,
+  ].join(":");
 
 export function TelegramChannelConnection({
   account,
@@ -25,19 +40,13 @@ export function TelegramChannelConnection({
   const [error, setError] = useState("");
   const occupied = useRef(false);
   const generation = useRef(0);
-  useEffect(() => {
-    generation.current++;
-    setReview(undefined);
-    setTarget(account.connected ? account.platformId : "");
-    setError("");
-  }, [
-    account.id,
-    account.executorId,
-    account.platformId,
-    account.connected,
-    account.telegramBotId,
-    client,
-  ]);
+  // An unmounted (re-keyed) instance must never publish a late inspection result.
+  useEffect(
+    () => () => {
+      generation.current++;
+    },
+    [],
+  );
   useEffect(() => {
     if (!review) return;
     const timer = setTimeout(

@@ -1,46 +1,16 @@
-import { terminalOutputBuffer } from "../model/outputBuffer";
-import { terminalInput } from "../model/terminalInput";
-import { resolveTerminalCanvas, terminalRenderingPolicy } from "../model/terminalRenderingPolicy";
 import type { ISearchOptions } from "@xterm/addon-search";
-import { themePalette } from "../../../shared/theme/palette";
-import {
-  APPEARANCE_PREFERENCES_EVENT,
-  loadAppearancePreferences,
-} from "../../settings/model/appearancePreferences";
-import { Terminal, type IDisposable } from "@xterm/xterm";
+import { loadAppearancePreferences } from "../../settings/model/appearancePreferences";
+import { Terminal } from "@xterm/xterm";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import {
-  getPtyStatus,
-  killPty,
-  resizePty,
-  readyPtyBridge,
-  setPtyVisible,
-  spawnPty,
-  subscribePty,
-  writePty,
-} from "../../../platform/tauri/pty";
-import { isOscColorQuery, oscColorReply } from "../model/terminalChrome";
+import { getPtyStatus } from "../../../platform/tauri/pty";
 import { shouldPollTerminalMeta } from "../model/terminalMetaPolling";
-import {
-  isMacTerminalClearShortcut,
-  isTerminalTextEdit,
-  macTerminalShortcutData,
-  terminalToolShortcut,
-} from "../model/terminalKeys";
+import { isTerminalTextEdit, terminalToolShortcut } from "../model/terminalKeys";
 import { defaultTerminalTitle, parseOsc7Cwd, type TerminalMetaPatch } from "../model/terminalTab";
-import { isLightScheme, SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
-import {
-  applyTerminalChrome,
-  fitTerminal,
-  resetGridStretch,
-  type TerminalFitMode,
-} from "../model/terminalLayout";
+import { isLightScheme } from "../../settings/model/appearance";
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { loadTerminalProfile } from "../model/terminalProfiles";
 import "@xterm/xterm/css/xterm.css";
-import { takeTerminalCommand } from "../model/terminalLaunchCommand";
 import { activateTerminalLink } from "../model/terminalLinks";
 import { TerminalSelectionMenu } from "./TerminalSelectionMenu";
 import { TerminalTools, type TerminalTool } from "./TerminalTools";
@@ -50,6 +20,22 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { t } from "../../../shared/i18n";
+import { bindTerminalDomInput } from "../runtime/terminalDomInput";
+import { createTerminalFitting } from "../runtime/terminalFitting";
+import {
+  createTerminalPtyRuntime,
+  terminalPtyLaunch,
+  type TerminalPtyRuntime,
+} from "../runtime/terminalPtyRuntime";
+import {
+  createTerminalTheme,
+  monoFont,
+  registerTerminalOscColorReplies,
+  terminalColors,
+} from "../runtime/terminalTheme";
+import { createTerminalTypography } from "../runtime/terminalTypography";
+import { createTerminalVisibility } from "../runtime/terminalVisibility";
+import { createTerminalWebgl } from "../runtime/terminalWebgl";
 
 const ServerSnippets = lazy(() =>
   import("../../connections/ui/ServerSnippets").then((module) => ({
@@ -92,164 +78,6 @@ type Props = {
   onReconnect?: () => Promise<void>;
   onMetaChange?: (patch: TerminalMetaPatch) => void;
 };
-
-function cssColor(expr: string, fallback: string, scope?: HTMLElement): string {
-  const probe = document.createElement("span");
-  probe.style.color = expr;
-  (scope ?? document.body).appendChild(probe);
-  const color = getComputedStyle(probe).color;
-  probe.remove();
-  if (!color) return fallback;
-  // xterm's parser and OSC replies need sRGB channels, including for modern
-  // theme colors such as color-mix() and oklch().
-  if (/^(?:color|oklch|oklab|lab|lch)\(/.test(color)) {
-    const context = document.createElement("canvas").getContext("2d");
-    if (!context) return fallback;
-    context.fillStyle = color;
-    context.fillRect(0, 0, 1, 1);
-    const [r, g, b, a] = context.getImageData(0, 0, 1, 1).data;
-    return `rgba(${r}, ${g}, ${b}, ${a / 255})`;
-  }
-  return color;
-}
-
-function cssHexColor(expr: string, fallback: string, scope?: HTMLElement): string {
-  const color = cssColor(expr, fallback, scope);
-  if (/^#[\da-f]{6}$/i.test(color)) return color;
-  const channels = color
-    .match(/[\d.]+/g)
-    ?.slice(0, 3)
-    .map(Number);
-  if (!channels || channels.length < 3 || channels.some(Number.isNaN)) {
-    return fallback;
-  }
-  return `#${channels
-    .map((channel) =>
-      Math.round(Math.min(255, Math.max(0, channel)))
-        .toString(16)
-        .padStart(2, "0"),
-    )
-    .join("")}`;
-}
-
-const ANSI_DARK = {
-  black: themePalette.hex1d2428,
-  red: themePalette.dangerDark,
-  green: themePalette.successDark,
-  yellow: themePalette.warningDark,
-  blue: themePalette.infoDark,
-  magenta: themePalette.featureDark,
-  cyan: themePalette.hex22d3ee,
-  white: themePalette.hexe8eef2,
-  brightBlack: themePalette.hex64748b,
-  brightRed: themePalette.hexfca5a5,
-  brightGreen: themePalette.hex86efac,
-  brightYellow: themePalette.hexfde68a,
-  brightBlue: themePalette.search,
-  brightMagenta: themePalette.hexd8b4fe,
-  brightCyan: themePalette.hex67e8f9,
-  brightWhite: themePalette.hexf8fafc,
-};
-
-// One-Light-family palette tuned for a near-white canvas.
-const ANSI_LIGHT = {
-  black: themePalette.hex383a42,
-  red: themePalette.hexe45649,
-  green: themePalette.hex50a14f,
-  yellow: themePalette.hexc18401,
-  blue: themePalette.hex4078f2,
-  magenta: themePalette.hexa626a4,
-  cyan: themePalette.hex0184bc,
-  white: themePalette.hexfafafa,
-  brightBlack: themePalette.hex7c8591,
-  brightRed: themePalette.hexdf6b60,
-  brightGreen: themePalette.hex68b567,
-  brightYellow: themePalette.hexd19a2f,
-  brightBlue: themePalette.hex5c89f5,
-  brightMagenta: themePalette.hexb54bb3,
-  brightCyan: themePalette.hex1f9cc9,
-  brightWhite: themePalette.solidInk,
-};
-
-function terminalColors(light: boolean, scope: HTMLElement) {
-  const fallbackCanvas = cssColor(
-    "var(--terminal-canvas, var(--ui-surface))",
-    light ? themePalette.hexfafafa : themePalette.hex171717,
-    scope,
-  );
-  const policy = terminalRenderingPolicy({
-    canvas: resolveTerminalCanvas(scope, (color) => cssColor(color, "", scope)),
-    fallbackCanvas,
-    foreground: cssColor(
-      "var(--terminal-text, var(--color-content))",
-      light ? themePalette.hex2e2e2e : themePalette.hexe8eef2,
-      scope,
-    ),
-    cursor: cssColor(
-      "var(--ui-focus-ring-color)",
-      light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
-      scope,
-    ),
-    selectionBackground: cssColor(
-      "var(--ui-text-selection-background)",
-      themePalette.accent,
-      scope,
-    ),
-    selectionForeground: cssColor("var(--ui-text-selection-foreground)", themePalette.scrim, scope),
-  });
-  const { minimumContrastRatio, canvasResolved, ...theme } = policy;
-  return {
-    minimumContrastRatio,
-    canvasResolved,
-    theme: { ...theme, ...(light ? ANSI_LIGHT : ANSI_DARK) },
-    searchDecorations: {
-      matchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
-      activeMatchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
-      matchOverviewRuler: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
-      activeMatchColorOverviewRuler: cssHexColor(
-        "var(--ui-focus-ring-color)",
-        themePalette.accent,
-        scope,
-      ),
-    } satisfies ISearchOptions["decorations"],
-  };
-}
-
-function monoFont(): string {
-  const font = loadAppearancePreferences().terminalFont.trim();
-  if (font) return `${JSON.stringify(font)}, monospace`;
-  const fromCss = getComputedStyle(document.documentElement).getPropertyValue("--font-mono").trim();
-  return fromCss || "ui-monospace, SFMono-Regular, Menlo, Monaco, monospace";
-}
-
-/**
- * Teardown still in flight per PTY id. A view that mounts with an id another
- * view (or a StrictMode replay of itself) is still stopping must wait, or the
- * late kill lands on the replacement shell and drops its data handler.
- */
-const stoppingPtys = new Map<string, Promise<void>>();
-
-function oscColors(scope: HTMLElement) {
-  const light = isLightScheme();
-  const { theme } = terminalColors(light, scope);
-  return {
-    fg: cssHexColor(
-      theme.foreground,
-      light ? themePalette.hex2e2e2e : themePalette.hexebebeb,
-      scope,
-    ),
-    bg: cssHexColor(
-      theme.cursorAccent,
-      light ? themePalette.hexf7f7f7 : themePalette.hex171717,
-      scope,
-    ),
-    cursor: cssHexColor(
-      theme.cursor,
-      light ? themePalette.hex4078f2 : themePalette.hex4da3f5,
-      scope,
-    ),
-  };
-}
 
 // Set once the backend says it cannot name a foreground process (Windows), so
 // no terminal asks again.
@@ -366,7 +194,7 @@ export function TerminalView({
   const [reconnecting, setReconnecting] = useState(false);
   const reconnectPending = useRef(false);
   const resumeInputRef = useRef<() => void>(() => {});
-  const spawned = useRef(false);
+  const ptyRuntimeRef = useRef<TerminalPtyRuntime | null>(null);
   const applySizeRef = useRef<() => void>(() => {});
   const onMetaChangeRef = useRef(onMetaChange);
   onMetaChangeRef.current = onMetaChange;
@@ -379,7 +207,7 @@ export function TerminalView({
     const host = hostRef.current;
     if (!outer || !host) return;
 
-    let preferences = loadAppearancePreferences();
+    const preferences = loadAppearancePreferences();
     const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)");
     const colors = terminalColors(isLightScheme(), outer);
     outer.dataset.terminalCanvas = colors.canvasResolved ? "resolved" : "unresolved-backdrop";
@@ -417,233 +245,81 @@ export function TerminalView({
     setInputError(null);
     setExitCode(undefined);
     setTool(null);
-    let closed = false;
 
-    const onCopy = (event: ClipboardEvent) => {
-      const text = term.getSelection();
-      if (!text) return;
-      event.clipboardData?.setData("text/plain", text);
-      event.preventDefault();
-    };
-    const onPaste = (event: ClipboardEvent) => {
-      const text = event.clipboardData?.getData("text/plain");
-      if (!text) return;
-      event.preventDefault();
-      term.paste(text);
-    };
-    // A WebGL context is only held while the terminal is on screen; browsers
-    // cap live contexts, and a context loss falls back to the DOM renderer.
-    let webgl: IDisposable | null = null;
-    let webglLoading = false;
-    const dropWebgl = () => {
-      webgl?.dispose();
-      webgl = null;
-    };
-    const loadWebgl = async () => {
-      if (webgl || webglLoading || closed) return;
-      webglLoading = true;
-      try {
-        const { WebglAddon } = await import("@xterm/addon-webgl");
-        if (closed || !visible || document.hidden) return;
-        const addon = new WebglAddon();
-        addon.onContextLoss(() => {
-          if (webgl === addon) webgl = null;
-          addon.dispose();
-        });
-        term.loadAddon(addon);
-        webgl = addon;
-        // A new renderer has no previous frame, even when the grid size is unchanged.
-        term.refresh(0, term.rows - 1);
-      } catch {
-        webgl = null;
-      } finally {
-        webglLoading = false;
-      }
-    };
-    const output = terminalOutputBuffer(
-      (data, consumed) => term.write(data, consumed),
-      undefined,
-      true,
-    );
-    let visible = typeof IntersectionObserver === "undefined";
-    // The native side holds a hidden terminal's output instead of streaming it.
-    let reportedVisible: boolean | undefined;
-    const reportPtyVisibility = () => {
-      if (closed || !spawned.current) return;
-      const next = visible && !document.hidden;
-      if (next === reportedVisible) return;
-      reportedVisible = next;
-      void setPtyVisible(id, next).catch(() => {
-        if (reportedVisible === next) reportedVisible = undefined;
-      });
-    };
+    // Created last (it needs the fitting and WebGL adapters), read lazily by them.
+    let visibility: ReturnType<typeof createTerminalVisibility> | undefined;
+    const canRender = () => visibility?.canRender() ?? false;
 
-    host.addEventListener("copy", onCopy);
-    host.addEventListener("paste", onPaste);
-
-    term.attachCustomKeyEventHandler((event) => {
-      const shortcutData = IS_MAC ? macTerminalShortcutData(event) : null;
-      if (shortcutData) {
-        if (event.type === "keydown") {
-          event.preventDefault();
-          event.stopPropagation();
-          term.input(shortcutData);
+    // The single owner of this view's PTY: start, output/input flow and retirement.
+    const pty = createTerminalPtyRuntime({
+      id,
+      privateTerminal,
+      launch: terminalPtyLaunch({
+        keyGenerationPath,
+        sshConnectionId,
+        sshEndpoint,
+        shellIntegration,
+        agentForwardingReviewId,
+        expectedConfigurationDigest,
+        httpProxyTicketId,
+        cwd,
+        profile: () => profileRef.current,
+      }),
+      dimensions: () => ({ cols: term.cols, rows: term.rows }),
+      writeOutput: (data, consumed) => term.write(data, consumed),
+      isVisible: canRender,
+      canStart: canStartRef,
+      authorizeStart: authorizeStartRef,
+      lifecycle: (state) => lifecycleRef.current?.(state),
+      onExit: (code) => {
+        ++editRevisionRef.current;
+        remoteShellRef.current.suspendAutomatic();
+        setTool(null);
+        setShellReady(false);
+        setExitCode(code ?? null);
+        term.options.disableStdin = true;
+        runningProcessRef.current = null;
+        if (!privateTerminal) {
+          onMetaChangeRef.current?.({
+            title: defaultTerminalTitle(cwdRef.current),
+            foreground: null,
+          });
         }
-        return false;
-      }
-      if (IS_MAC && isMacTerminalClearShortcut(event)) {
-        if (event.isComposing) return false;
-        if (event.type === "keydown") {
-          event.preventDefault();
-          term.clear();
-        }
-        return false;
-      }
-
-      const mod = event.metaKey || event.ctrlKey;
-      if (!mod || event.altKey) return true;
-      const key = event.key.toLowerCase();
-      if (key === "c") {
-        if (term.hasSelection()) return false;
-        if (event.metaKey && !event.ctrlKey) return false;
-        return true;
-      }
-      if (key === "v") return false;
-      return true;
-    });
-
-    let unsubscribe = () => {};
-    let didStart = false;
-    let exited = false;
-    const start = async () => {
-      if (closed) return;
-      unsubscribe = subscribePty(
-        id,
-        (data, consumed) => {
-          if (closed) {
-            consumed?.();
-            return;
-          }
-          output.append(data, consumed);
-        },
-        (code) => {
-          if (closed) return;
-          exited = true;
-          spawned.current = false;
-          ++editRevisionRef.current;
-          remoteShellRef.current.suspendAutomatic();
-          setTool(null);
-          input.dispose();
-          setShellReady(false);
-          setExitCode(code ?? null);
-          lifecycleRef.current?.("exited");
-          term.options.disableStdin = true;
-          runningProcessRef.current = null;
-          if (!privateTerminal) {
-            onMetaChangeRef.current?.({
-              title: defaultTerminalTitle(cwdRef.current),
-              foreground: null,
-            });
-          }
-          const status = code == null ? "" : ` (${code})`;
-          output.append(`
-[process exited${status}]\r\n`);
-        },
-        true,
-      );
-      await readyPtyBridge();
-      if (closed) return;
-      if (canStartRef.current && !canStartRef.current())
-        throw new Error("Reviewed terminal source changed or became private");
-      if (authorizeStartRef.current && !(await authorizeStartRef.current()))
-        throw new Error("Reviewed terminal authority expired or was revoked");
-      if (closed || (canStartRef.current && !canStartRef.current()))
-        throw new Error("Reviewed terminal source changed or became private");
-      didStart = true;
-      if (keyGenerationPath)
-        return invoke("ssh_key_generate", {
-          id,
-          path: keyGenerationPath,
-          cols: term.cols,
-          rows: term.rows,
-        });
-      if (sshConnectionId) {
-        return invoke<void>("ssh_terminal_spawn", {
-          id,
-          connectionId: sshConnectionId,
-          cols: term.cols,
-          rows: term.rows,
-          ...(shellIntegration ? { shellIntegration } : {}),
-          ...(agentForwardingReviewId ? { agentForwardingReviewId } : {}),
-          ...(expectedConfigurationDigest ? { expectedConfigurationDigest } : {}),
-          ...(httpProxyTicketId ? { httpProxyTicketId } : {}),
-        });
-      }
-      if (sshEndpoint)
-        return invoke<void>("ssh_terminal_quick_spawn", {
-          id,
-          endpoint: sshEndpoint,
-          cols: term.cols,
-          rows: term.rows,
-          ...(shellIntegration ? { shellIntegration } : {}),
-          ...(agentForwardingReviewId ? { agentForwardingReviewId } : {}),
-          ...(httpProxyTicketId ? { httpProxyTicketId } : {}),
-        });
-      return spawnPty(id, cwd, term.cols, term.rows, profileRef.current ?? loadTerminalProfile());
-    };
-
-    const starting = (stoppingPtys.get(id) ?? Promise.resolve())
-      .then(start)
-      .then(() => {
-        if (!closed && !exited) {
-          spawned.current = true;
-          reportPtyVisibility();
-          setShellReady(true);
-          const command = privateTerminal ? undefined : takeTerminalCommand(id);
-          if (command) return writePty(id, `${command}\r`);
-        }
-      })
-      .catch((error) => {
-        lifecycleRef.current?.("failed");
-        spawned.current = false;
-        if (!closed) {
-          const message = error instanceof Error ? error.message : String(error);
-          exited = true;
-          term.options.disableStdin = true;
-          remoteShellRef.current.suspendAutomatic();
-          setShellReady(false);
-          setExitCode(null);
-          setInputError(message);
-          term.writeln(`\x1b[31m${message}\x1b[0m`);
-        }
-        throw error;
-      });
-    void starting.catch(() => undefined);
-    void starting.then(
-      () => {
-        if (!closed && !exited) lifecycleRef.current?.("opened-on-computer");
       },
-      () => {},
-    );
-
-    const input = terminalInput(
-      async (data) => {
-        await starting;
-        if (closed || exited) throw new Error("Terminal is disconnected.");
-        await writePty(id, data);
+      onSpawned: () => setShellReady(true),
+      onStartFailed: (message) => {
+        term.options.disableStdin = true;
+        remoteShellRef.current.suspendAutomatic();
+        setShellReady(false);
+        setExitCode(null);
+        setInputError(message);
+        term.writeln(`\x1b[31m${message}\x1b[0m`);
       },
-      (error) => {
-        if (closed) return;
+      onInputFailure: (message) => {
         term.options.disableStdin = true;
         remoteShellRef.current.suspendAutomatic();
         setTool(null);
-        const message = error instanceof Error ? error.message : String(error);
         setInputError(message);
       },
-    );
+    });
+    ptyRuntimeRef.current = pty;
+    pty.start();
+
+    const domInput = bindTerminalDomInput({
+      term,
+      host,
+      onCompositionStart: () => {
+        ++editRevisionRef.current;
+        composingRef.current = true;
+        remoteShellRef.current.suspendAutomatic();
+      },
+      onCompositionEnd: () => {
+        composingRef.current = false;
+      },
+    });
+
     resumeInputRef.current = () => {
-      if (closed || exited) return;
-      input.resume();
+      if (!pty.resumeInput()) return;
       term.options.disableStdin = false;
       setInputError(null);
       term.focus();
@@ -661,13 +337,12 @@ export function TerminalView({
         invalidateRemoteShell(textEdit);
         setTool((current) => (current === "remote" ? null : current));
       }
-      void input.enqueue(data).then((written) => {
+      void pty.enqueueInput(data).then((written) => {
         if (!written) return;
         if (
           integrated &&
           textEdit &&
-          !closed &&
-          !exited &&
+          pty.live &&
           revision === editRevisionRef.current &&
           activeRef.current &&
           onScreenRef.current &&
@@ -678,24 +353,7 @@ export function TerminalView({
           remoteShellRef.current.notifyInput();
       });
     });
-    const onCompositionStart = () => {
-      ++editRevisionRef.current;
-      composingRef.current = true;
-      remoteShellRef.current.suspendAutomatic();
-    };
-    const onCompositionEnd = () => {
-      composingRef.current = false;
-    };
-    host.addEventListener("compositionstart", onCompositionStart);
-    host.addEventListener("compositionend", onCompositionEnd);
 
-    const replyOsc = (code: 10 | 11 | 12, hex: string) => {
-      const reply = oscColorReply(code, hex);
-      if (reply) {
-        void input.enqueue(reply);
-      }
-      return true;
-    };
     // xterm already decodes the stream, so cwd reports come from its parser
     // (split sequences included) instead of a second per-chunk decode here.
     // Replayed output for a not-yet-mounted terminal flows through term.write too.
@@ -703,256 +361,87 @@ export function TerminalView({
       if (privateTerminal) return false;
       const cwd = parseOsc7Cwd(data);
       const onMeta = onMetaChangeRef.current;
-      if (cwd && onMeta && !closed) {
+      if (cwd && onMeta && !pty.detached) {
         const patch: TerminalMetaPatch = { cwd };
         if (!runningProcessRef.current) patch.title = defaultTerminalTitle(cwd);
         onMeta(patch);
       }
       return false;
     });
-    const oscFg = term.parser.registerOscHandler(10, (data) =>
-      isOscColorQuery(data) ? replyOsc(10, oscColors(outer).fg) : false,
-    );
-    const oscBg = term.parser.registerOscHandler(11, (data) =>
-      isOscColorQuery(data) ? replyOsc(11, oscColors(outer).bg) : false,
-    );
-    const oscCursor = term.parser.registerOscHandler(12, (data) =>
-      isOscColorQuery(data) ? replyOsc(12, oscColors(outer).cursor) : false,
-    );
-
-    // Root class/style mutations (drag, resize, sliders) arrive in bursts and
-    // mostly leave the palette alone: probe once per frame, assign only a change
-    // (it repaints and rebuilds the WebGL atlas), and defer hidden terminals.
-    let appliedTheme = "";
-    let themeStale = false;
-    let themeFrame = 0;
-    const applyTheme = () => {
-      themeStale = false;
-      const next = terminalColors(isLightScheme(), outer);
-      const key = JSON.stringify(next);
-      if (key === appliedTheme) return;
-      appliedTheme = key;
-      term.options.minimumContrastRatio = next.minimumContrastRatio;
-      term.options.theme = next.theme;
-      outer.dataset.terminalCanvas = next.canvasResolved ? "resolved" : "unresolved-backdrop";
-      setSearchDecorations(next.searchDecorations);
-    };
-    const onSchemeChange = () => {
-      if (!visible || document.hidden) {
-        themeStale = true;
-        return;
-      }
-      if (themeFrame) return;
-      themeFrame = requestAnimationFrame(() => {
-        themeFrame = 0;
-        if (!closed) applyTheme();
-      });
-    };
-    window.addEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
-    const themeObserver = new MutationObserver(onSchemeChange);
-    for (let node: HTMLElement | null = outer; node; node = node.parentElement) {
-      themeObserver.observe(node, {
-        attributes: true,
-        attributeFilter: ["class", "style"],
-      });
-    }
-    const onTypographyChange = () => {
-      const next = loadAppearancePreferences();
-      if (next.terminalSize !== preferences.terminalSize) zoomSizeRef.current = null;
-      preferences = next;
-      term.options.fontFamily = monoFont();
-      term.options.fontSize =
-        zoomSizeRef.current ?? typographyRef.current.fontSize ?? next.terminalSize;
-      term.options.fontWeight = next.terminalWeight;
-      term.options.lineHeight = typographyRef.current.lineHeight ?? next.terminalLineHeight;
-      setDisplayFontSize(term.options.fontSize!);
-      setSavedFontSize(next.terminalSize);
-      applySizeRef.current();
-    };
-    window.addEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
-
-    // Capture before xterm and the webview can scroll a TUI or zoom the whole app.
-    const onZoomWheel = (event: WheelEvent) => {
-      if (!event.ctrlKey || event.deltaY === 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const size = Math.max(8, Math.min(40, term.options.fontSize! + (event.deltaY < 0 ? 1 : -1)));
-      if (size === term.options.fontSize) return;
-      zoomSizeRef.current = size;
-      term.options.fontSize = size;
-      setDisplayFontSize(size);
-      fontSizeCallback.current?.(size);
-      applySizeRef.current();
-    };
-    resetFontSizeRef.current = () => {
-      const size = loadAppearancePreferences().terminalSize;
-      zoomSizeRef.current = null;
-      term.options.fontSize = size;
-      setDisplayFontSize(size);
-      fontSizeCallback.current?.(size);
-      applySizeRef.current();
-    };
-    host.addEventListener("wheel", onZoomWheel, {
-      capture: true,
-      passive: false,
+    const oscColorReplies = registerTerminalOscColorReplies(term, outer, (reply) => {
+      void pty.enqueueInput(reply);
     });
 
-    term.attachCustomWheelEventHandler(() => {
-      if (term.element?.classList.contains("enable-mouse-events")) return true;
-      return term.buffer.active.type !== "alternate";
+    const theme = createTerminalTheme({
+      term,
+      outer,
+      canRender,
+      onSearchDecorations: setSearchDecorations,
     });
+    const typography = createTerminalTypography({
+      term,
+      host,
+      initialPreferences: preferences,
+      typography: typographyRef,
+      zoomSize: zoomSizeRef,
+      onFontSizeChange: fontSizeCallback,
+      onDisplayFontSize: setDisplayFontSize,
+      onSavedFontSize: setSavedFontSize,
+      applySize: () => applySizeRef.current(),
+    });
+    resetFontSizeRef.current = typography.resetFontSize;
 
-    let lastCols = 0;
-    let lastRows = 0;
-    let raf = 0;
-    let tuiMode = false;
-
-    const fitMode = (): TerminalFitMode =>
-      term.buffer.active.type === "alternate" ? "tui" : "shell";
-
-    const syncAltScreenMode = () => {
-      const next = fitMode() === "tui";
-      if (next === tuiMode) return;
-      tuiMode = next;
-      if (next) {
+    const fitting = createTerminalFitting({
+      term,
+      outer,
+      host,
+      lineHeight: typography.lineHeight,
+      resize: (cols, rows) => pty.resize(cols, rows),
+      isSpawned: () => pty.spawned,
+      onEnterAlternateScreen: () => {
         ++editRevisionRef.current;
         remoteShellRef.current.suspendAutomatic();
-      }
-      applyTerminalChrome(term, outer, next);
-      if (!next)
-        resetGridStretch(term, typographyRef.current.lineHeight ?? preferences.terminalLineHeight);
-      lastCols = 0;
-      lastRows = 0;
-      schedule();
-    };
-
-    const applySize = () => {
-      if (closed) return;
-      const next = fitTerminal(
-        term,
-        host,
-        fitMode(),
-        typographyRef.current.lineHeight ?? preferences.terminalLineHeight,
-      );
-      if (!next) return;
-      const { cols, rows } = next;
-      if (cols === lastCols && rows === lastRows) return;
-      lastCols = cols;
-      lastRows = rows;
-      void starting
-        .then(() => (closed ? undefined : resizePty(id, cols, rows)))
-        .catch(() => {
-          lastCols = 0;
-          lastRows = 0;
-        });
-    };
-
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
-        applySize();
-      });
-    };
-
-    applySizeRef.current = applySize;
-    let visibilityRevision = 0;
-    const syncOutputVisibility = () => {
-      const revision = ++visibilityRevision;
-      if (!visible || document.hidden) {
-        output.setVisible(false);
-        reportPtyVisibility();
-        dropWebgl();
-        return;
-      }
-      // Fit before replay: hidden output must not wrap at the previous panel size.
-      // ResizeObserver and IntersectionObserver delivery order is not guaranteed.
-      applySize();
-      output.setVisible(true);
-      reportPtyVisibility();
-      if (themeStale) applyTheme();
-      // xterm parses writes asynchronously. Redraw only after the queued output,
-      // including alternate-screen switches, has reached its buffer.
-      term.write("", () => {
-        if (closed || revision !== visibilityRevision || !visible || document.hidden) return;
-        applySize();
-        term.refresh(0, term.rows - 1);
-        void loadWebgl();
-      });
-    };
-    syncOutputVisibility();
-    document.addEventListener("visibilitychange", syncOutputVisibility);
-    const visibility =
-      typeof IntersectionObserver === "undefined"
-        ? null
-        : new IntersectionObserver((entries) => {
-            visible = entries[entries.length - 1]?.isIntersecting ?? false;
-            setOnScreen(visible);
-            syncOutputVisibility();
-          });
-    visibility?.observe(host);
-    const renderSub = term.onRender(() => {
-      if (!spawned.current) applySize();
+      },
     });
-    const bufferSub = term.buffer.onBufferChange(syncAltScreenMode);
-    syncAltScreenMode();
-    const frame = requestAnimationFrame(applySize);
-    const observer = new ResizeObserver(schedule);
-    observer.observe(host);
+    applySizeRef.current = fitting.applySize;
+
+    const webgl = createTerminalWebgl(term, canRender);
+    visibility = createTerminalVisibility({
+      term,
+      host,
+      applySize: fitting.applySize,
+      setOutputVisible: pty.setOutputVisible,
+      reportPtyVisibility: pty.reportVisibility,
+      applyThemeIfStale: theme.applyIfStale,
+      loadWebgl: webgl.load,
+      dropWebgl: webgl.drop,
+      onScreen: setOnScreen,
+    });
+    visibility.start();
+    fitting.attach();
 
     return () => {
-      closed = true;
-      input.dispose();
+      // View-driven work stops first; the process is untouched until retire().
+      pty.detach();
       remoteShellRef.current.suspendAutomatic();
-      cancelAnimationFrame(frame);
-      if (raf) cancelAnimationFrame(raf);
-      observer.disconnect();
-      visibility?.disconnect();
-      document.removeEventListener("visibilitychange", syncOutputVisibility);
-      output.dispose();
-      dropWebgl();
-      outer.classList.remove("bycoda-terminal--alt-screen");
+      fitting.dispose();
+      visibility?.dispose();
+      webgl.dispose();
       applySizeRef.current = () => {};
-      host.removeEventListener("copy", onCopy);
-      host.removeEventListener("paste", onPaste);
-      host.removeEventListener("compositionstart", onCompositionStart);
-      host.removeEventListener("compositionend", onCompositionEnd);
-      window.removeEventListener(SCHEME_CHANGE_EVENT, onSchemeChange);
-      themeObserver.disconnect();
+      domInput.dispose();
+      theme.dispose();
       reducedMotion?.removeEventListener("change", onMotionChange);
       resetFontSizeRef.current = () => {};
-      if (themeFrame) cancelAnimationFrame(themeFrame);
-      window.removeEventListener(APPEARANCE_PREFERENCES_EVENT, onTypographyChange);
-      host.removeEventListener("wheel", onZoomWheel, true);
+      typography.dispose();
       dataSub.dispose();
       oscCwd.dispose();
-      oscFg.dispose();
-      oscBg.dispose();
-      oscCursor.dispose();
-      renderSub.dispose();
-      bufferSub.dispose();
-      const stopping = starting
-        .catch(() => undefined)
-        .then(() => {
-          unsubscribe();
-          return didStart ? killPty(id) : undefined;
-        })
-        .then(
-          () => {
-            lifecycleRef.current?.("closed");
-          },
-          (error) => {
-            lifecycleRef.current?.("failed");
-            throw error;
-          },
-        )
-        .finally(() => {
-          if (stoppingPtys.get(id) === stopping) stoppingPtys.delete(id);
-        });
-      stoppingPtys.set(id, stopping);
+      oscColorReplies.dispose();
+      // Render resources are released. This is the only decision to end the
+      // PTY: it waits for a pending start, then kills what this runtime spawned.
+      void pty.retire();
       term.dispose();
       termRef.current = null;
-      spawned.current = false;
+      ptyRuntimeRef.current = null;
     };
   }, [
     id,
@@ -990,7 +479,7 @@ export function TerminalView({
     let unchanged = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
-      if (!spawned.current) return;
+      if (!ptyRuntimeRef.current?.spawned) return;
       // Process lookup can fall back to `ps`; an off-screen terminal or a
       // window in the background has no title anyone is reading.
       if (
@@ -1006,7 +495,7 @@ export function TerminalView({
       inFlight = true;
       void getPtyStatus(id)
         .then(({ foreground, supported }) => {
-          if (disposed || !spawned.current) return;
+          if (disposed || !ptyRuntimeRef.current?.spawned) return;
           if (supported === false) {
             metaSupported = false;
             clearTimeout(timer);
@@ -1094,7 +583,7 @@ export function TerminalView({
         event.stopPropagation();
         if (
           next === "command" &&
-          (!spawned.current || termRef.current?.buffer.active.type === "alternate")
+          (!ptyRuntimeRef.current?.spawned || termRef.current?.buffer.active.type === "alternate")
         )
           return;
         if (next === "command" && integrated) {

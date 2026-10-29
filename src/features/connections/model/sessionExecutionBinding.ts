@@ -87,13 +87,20 @@ export function saveHostSessionBinding(shell: Session, binding: HostSessionBindi
   return next;
 }
 
-export function acknowledgeHostSessionBinding(
+/**
+ * The binding a Host receipt or snapshot acknowledges. Pure validation with no
+ * storage write: it throws when the owner changed, the Host returned another
+ * session, or its authority generation moved backwards. Callers that also
+ * project a display session from the receipt persist the result once through
+ * `saveHostSessionBinding`, so a rejected owner leaves storage untouched.
+ */
+export function acknowledgedHostSessionBinding(
   shell: Session,
   sessionId: string,
   authorityGeneration: number | undefined,
-): void {
+): HostSessionBinding | undefined {
   const binding = hostSessionBinding(shell);
-  if (!binding) return;
+  if (!binding) return undefined;
   const expected = shell.hostBinding;
   if (
     expected &&
@@ -111,11 +118,16 @@ export function acknowledgeHostSessionBinding(
       (authorityGeneration === undefined || authorityGeneration < binding.authorityGeneration))
   )
     throw new Error("The Host returned a different session owner.");
-  saveHostSessionBinding(shell, {
-    ...binding,
-    created: true,
-    authorityGeneration: authorityGeneration ?? null,
-  });
+  return { ...binding, created: true, authorityGeneration: authorityGeneration ?? null };
+}
+
+export function acknowledgeHostSessionBinding(
+  shell: Session,
+  sessionId: string,
+  authorityGeneration: number | undefined,
+): void {
+  const binding = acknowledgedHostSessionBinding(shell, sessionId, authorityGeneration);
+  if (binding) saveHostSessionBinding(shell, binding);
 }
 
 export function restoreHostSessionShell(shellId: string): Session | undefined {

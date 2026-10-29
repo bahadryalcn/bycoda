@@ -1,6 +1,6 @@
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useContext, useRef, useState, type ReactNode } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -23,9 +23,7 @@ export function SocialFilters({
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const active = useContext(SocialPanelActiveContext);
-  useEffect(() => {
-    if (!active) setOpen(false);
-  }, [active]);
+  if (!active && open) setOpen(false);
   return (
     <>
       <FilterTrigger

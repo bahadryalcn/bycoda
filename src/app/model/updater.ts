@@ -1,7 +1,8 @@
 import { t } from "../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
+import { confirmInApp } from "../../shared/model/appConfirm";
 import { getIdentifier, getVersion } from "@tauri-apps/api/app";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { message } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updater";
 import { announceUpdateAvailable } from "../../features/settings/model/sounds";
@@ -17,6 +18,9 @@ export type UpdaterSnapshot = {
   progress?: number;
   error?: string;
 };
+
+/** Longest slice of release notes shown in the confirmation; the rest is in What’s New. */
+const MAX_NOTES = 1200;
 
 let pendingUpdate: Update | null = null;
 let updateFlow: Promise<UpdaterSnapshot> | null = null;
@@ -117,21 +121,18 @@ async function runUpdateFlowOnce(
     if (!manual) return available;
 
     const notes = update.body?.trim();
-    const detail = notes ? `\n\n${notes}` : "";
-    const yes = await ask(
-      t("{p0} {p1} is available (you have {p2}).{p3}\n\nInstall now?", {
-        p0: PRODUCT_IDENTITY.displayName,
-        p1: update.version,
-        p2: currentVersion,
-        p3: detail,
-      }),
-      {
-        get title() {
-          return t("Update available");
-        },
-        kind: "info",
-      },
-    );
+    const detail = notes ? `\n\n${notes.length > MAX_NOTES ? `${notes.slice(0, MAX_NOTES - 1)}…` : notes}` : "";
+    const yes = await confirmInApp({
+      title: t("Update available"),
+      message:
+        t("{p0} {p1} is available (you have {p2}).", {
+          p0: PRODUCT_IDENTITY.displayName,
+          p1: update.version,
+          p2: currentVersion,
+        }) + detail,
+      confirmLabel: t("Install now"),
+      tone: "normal",
+    });
     if (!yes) return available;
 
     return installPendingUpdate(onProgress);

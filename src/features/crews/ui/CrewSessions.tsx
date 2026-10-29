@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
+import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { ChevronRight, Pencil, Play, Plus } from "../../../shared/ui/icons";
@@ -22,6 +23,11 @@ const StartCrewDialog = lazySurface(async () => ({
   default: (await import("./CrewDialogs")).StartCrewDialog,
 }));
 type CrewState = ReturnType<typeof useProjectCrews>;
+
+/** Where a saved crew can be used; the same wording as the editor. */
+function crewScopeLabel(crew: { projectId?: string }) {
+  return crew.projectId ? t("This project") : t("All projects on this host");
+}
 type OpenSession = (target: BackgroundSessionTarget) => void | Promise<void>;
 
 export function CrewSidebar({
@@ -77,10 +83,7 @@ export function CrewSessions({
   if (!data && !state.error) return null;
   if (data && !data.runs.length && !data.definitions.length) return null;
   return (
-    <section
-      aria-label={t("Crew work")}
-      className="px-2 py-2"
-    >
+    <section aria-label={t("Crew work")} className="px-2 py-2">
       <div className="flex min-h-7 items-center gap-1 px-1">
         <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
           {t("Crew work")}
@@ -253,9 +256,13 @@ export function CrewManagementDialog({
         onClose={() => setPage("work")}
       />
     );
+  const crewScope = crew && savedCrew ? crewScopeLabel(crew) : undefined;
+  // Without any work the empty state owns the one start action; with work the header does.
+  const noWork = all.length === 0;
   return (
     <Modal
       title={crew?.name ?? t("Crews")}
+      context={crewScope}
       size="lg"
       onClose={() => {
         if (!pending) onClose();
@@ -288,17 +295,16 @@ export function CrewManagementDialog({
           ) : null}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             {crew && savedCrew ? (
-              <span className="me-auto flex min-w-0 flex-col text-ui-caption">
-                <span className="text-(--ui-text-muted)">{t("Saved team for future work")}</span>
-                <span className="text-(--ui-text-secondary)">
-                  {t("{p0} members", { p0: crew.agents.length })}
-                </span>
+              <span className="me-auto min-w-0 text-ui-caption text-(--ui-text-secondary)">
+                {t("{p0} members", { p0: crew.agents.length })}
+                {" · "}
+                {t("Saved team for future work")}
               </span>
             ) : (
               <span className="me-auto" />
             )}
             <Button
-              variant={savedCrew ? "ghost" : "primary"}
+              variant={savedCrew ? (noWork ? "secondary" : "ghost") : "primary"}
               disabled={!data || pending}
               startIcon={savedCrew ? <Pencil className="icon-sm" /> : <Plus className="icon-sm" />}
               tooltip={
@@ -313,9 +319,9 @@ export function CrewManagementDialog({
             >
               {savedCrew ? t("Edit crew") : t("New crew")}
             </Button>
-            {savedCrew ? (
+            {savedCrew && !noWork ? (
               <Button
-                variant={selected ? "secondary" : "primary"}
+                variant="primary"
                 disabled={!crew || pending}
                 startIcon={<Play className="icon-sm" />}
                 onClick={() => setPage("start")}
@@ -339,8 +345,58 @@ export function CrewManagementDialog({
               {t("Retry")}
             </Button>
           </div>
+        ) : noWork ? (
+          <div className="px-4 pb-4">
+            {data.catalogError || state.error ? (
+              <div className="pb-3">
+                <Alert
+                  tone="warning"
+                  action={
+                    <Button variant="ghost" onClick={() => void state.refetch()}>
+                      {t("Retry")}
+                    </Button>
+                  }
+                >
+                  {data.catalogError ?? state.error?.message}
+                </Alert>
+              </div>
+            ) : null}
+            {error ? (
+              <div className="pb-3">
+                <Alert tone="danger">{error}</Alert>
+              </div>
+            ) : null}
+            <EmptyState
+              context="panel"
+              kind="empty"
+              title={t("No crew work yet")}
+              description={
+                savedCrew
+                  ? t(
+                      "Start work to give this crew a delivery. Its progress and decisions appear here.",
+                    )
+                  : crew
+                    ? t("This crew has no work history.")
+                    : t("Create a crew, then start work with it.")
+              }
+              action={
+                savedCrew ? (
+                  <Button
+                    variant="primary"
+                    disabled={!crew || pending}
+                    startIcon={<Play className="icon-sm" />}
+                    onClick={() => setPage("start")}
+                  >
+                    {t("Start work")}
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
         ) : (
-          <div className="grid min-w-0 @min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]">
+          <div
+            className={`grid min-w-0 ${selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
+          >
             <CrewWorkList
               view={selectedView}
               ongoingCount={all.filter((run) => run.status !== "finished").length}
@@ -361,78 +417,70 @@ export function CrewManagementDialog({
                 setError("");
               }}
             />
-            <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-64">
-              {data.catalogError ? (
-                <Alert
-                  tone="warning"
-                  action={
-                    <Button variant="ghost" onClick={() => void state.refetch()}>
-                      {t("Retry")}
-                    </Button>
-                  }
-                >
-                  {data.catalogError}
-                </Alert>
-              ) : null}
-              {state.error ? (
-                <Alert
-                  tone="warning"
-                  action={
-                    <Button variant="ghost" onClick={() => void state.refetch()}>
-                      {t("Retry")}
-                    </Button>
-                  }
-                >
-                  {state.error.message}
-                </Alert>
-              ) : null}
-              {selected ? (
-                <CrewWorkDetail
-                  key={selected.id}
-                  run={selected}
-                  savedCrew={savedCrew ? crew : undefined}
-                  catalog={data.catalog}
-                  pending={pending}
-                  pendingAction={pendingAction}
-                  error={error}
-                  canOpen={!!onOpen}
-                  onOpen={open}
-                  canDelete={!!data.runDeleteSupported}
-                  onPause={() =>
-                    void act(`pause:${selected.id}`, () =>
-                      state.call(selected.status === "paused" ? "crews.resume" : "crews.pause", {
-                        runId: selected.id,
-                      }),
-                    )
-                  }
-                  onStop={() =>
-                    void act(`stop:${selected.id}`, () =>
-                      state.call("crews.stop", { runId: selected.id }),
-                    )
-                  }
-                  onDelete={() =>
-                    void act(`delete:${selected.id}`, () =>
-                      state.call("crews.deleteRun", {
-                        runId: selected.id,
-                        expectedUpdatedAt: selected.updatedAt,
-                      }),
-                    )
-                  }
-                />
-              ) : (
-                <div className="flex min-h-40 flex-col items-start justify-center gap-3">
-                  {error ? <Alert tone="danger">{error}</Alert> : null}
-                  <p className="text-ui-body text-(--ui-text-secondary)">
-                    {view === "ongoing" ? t("No ongoing crew work.") : t("No finished crew work.")}
-                  </p>
-                  {savedCrew ? (
-                    <Button variant="secondary" onClick={() => setPage("start")}>
-                      {t("Start work")}
-                    </Button>
-                  ) : null}
-                </div>
-              )}
-            </div>
+            {selected || data.catalogError || state.error || error ? (
+              <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-64">
+                {data.catalogError ? (
+                  <Alert
+                    tone="warning"
+                    action={
+                      <Button variant="ghost" onClick={() => void state.refetch()}>
+                        {t("Retry")}
+                      </Button>
+                    }
+                  >
+                    {data.catalogError}
+                  </Alert>
+                ) : null}
+                {state.error ? (
+                  <Alert
+                    tone="warning"
+                    action={
+                      <Button variant="ghost" onClick={() => void state.refetch()}>
+                        {t("Retry")}
+                      </Button>
+                    }
+                  >
+                    {state.error.message}
+                  </Alert>
+                ) : null}
+                {selected ? (
+                  <CrewWorkDetail
+                    key={selected.id}
+                    run={selected}
+                    savedCrew={savedCrew ? crew : undefined}
+                    catalog={data.catalog}
+                    pending={pending}
+                    pendingAction={pendingAction}
+                    error={error}
+                    canOpen={!!onOpen}
+                    onOpen={open}
+                    canDelete={!!data.runDeleteSupported}
+                    onPause={() =>
+                      void act(`pause:${selected.id}`, () =>
+                        state.call(selected.status === "paused" ? "crews.resume" : "crews.pause", {
+                          runId: selected.id,
+                        }),
+                      )
+                    }
+                    onStop={() =>
+                      void act(`stop:${selected.id}`, () =>
+                        state.call("crews.stop", { runId: selected.id }),
+                      )
+                    }
+                    onDelete={() =>
+                      void act(`delete:${selected.id}`, () =>
+                        state.call("crews.deleteRun", {
+                          runId: selected.id,
+                          expectedUpdatedAt: selected.updatedAt,
+                        }),
+                      )
+                    }
+                  />
+                ) : error ? (
+                  <Alert tone="danger">{error}</Alert>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         )}
       </div>

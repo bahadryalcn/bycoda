@@ -47,6 +47,7 @@ const methods = new Set([
   "desktopList",
   "desktopStampRows",
   "desktopMetadata",
+  "desktopLocalSessionReference",
   "desktopSnapshot",
 ]);
 parentPort.on("message", ({ id, method, args, paths: nextPaths, checkAuthorization: check }) => {
@@ -111,6 +112,7 @@ parentPort.on("message", ({ id, method, args, paths: nextPaths, checkAuthorizati
           if (typeof id !== "string") throw new Error("Invalid desktop session ID.");
           if (method === "desktopStampRows") value = desktop.readStampRows(id);
           else if (method === "desktopMetadata") value = desktop.readMetadataRecord(id, true);
+          else if (method === "desktopLocalSessionReference") value = desktop.readLocalSessionReference(id);
           else {
             const projectId = args[1],
               expectedProjectCwd = args[3];

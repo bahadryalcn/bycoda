@@ -25,7 +25,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -65,6 +64,18 @@ import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
+import { tabStripOverflow, useTabStripScroll } from "./useTabStripScroll";
+import {
+  buildTitleTabContextMenuItems,
+  titleTabCanMoveToNewWindow,
+  titleTabClosable,
+  titleTabContextCloseIdSets,
+  titleTabContextCloseIds,
+  type TitleTabContextAction,
+} from "./titleTabContextMenu";
+
+export { tabStripOverflow, titleTabCanMoveToNewWindow, titleTabClosable, titleTabContextCloseIds };
+export type { TitleTabContextAction };
 import {
   paneDropFromPoint,
   setExternalPaneDrop,
@@ -232,50 +243,6 @@ export function tabCopy(tab: Tab): {
   if (tab.dirty) tooltipParts.push("Unsaved changes");
 
   return { headline, meta, tooltip: tooltipParts.join(" · ") };
-}
-
-/** Which tab-strip edges still have overflow to scroll toward. */
-export function tabStripOverflow(
-  scrollLeft: number,
-  clientWidth: number,
-  scrollWidth: number,
-): { left: boolean; right: boolean } {
-  const maxScroll = scrollWidth - clientWidth;
-  if (maxScroll <= 1) return { left: false, right: false };
-  return {
-    left: scrollLeft > 1,
-    right: scrollLeft < maxScroll - 1,
-  };
-}
-
-export function titleTabClosable(tab: Tab, tabCount: number): boolean {
-  return tabCount > 1 || !tab.blank;
-}
-
-/** Busy tabs stay: their stream is handled by this window's listeners, and a
- * shell cannot change windows. */
-/** Busy tabs may move too: the move is queued until their response finishes. */
-export function titleTabCanMoveToNewWindow(tab: Tab): boolean {
-  return !tab.hasTerminal && !tab.terminal && !tab.movingWindow;
-}
-
-export type TitleTabContextAction = "others" | "right" | "left";
-
-/** Tab ids affected by a context-menu action relative to its clicked tab. */
-export function titleTabContextCloseIds(
-  tabs: readonly Tab[],
-  targetId: string,
-  action: TitleTabContextAction,
-): string[] {
-  const targetIndex = tabs.findIndex((tab) => tab.id === targetId);
-  if (targetIndex < 0) return [];
-  if (action === "left") {
-    return tabs.slice(0, targetIndex).map((tab) => tab.id);
-  }
-  if (action === "right") {
-    return tabs.slice(targetIndex + 1).map((tab) => tab.id);
-  }
-  return tabs.filter((tab) => tab.id !== targetId).map((tab) => tab.id);
 }
 
 function TabHarnesses({
@@ -989,52 +956,18 @@ function TitleBarComponent({
     },
     [lockOverscroll],
   );
-  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
   const [tabMenu, setTabMenu] = useState<{
     tabId: string;
     x: number;
     y: number;
   } | null>(null);
-  const syncTabOverflow = useCallback(() => {
-    const el = tabStripRef.current;
-    const next = el
-      ? tabStripOverflow(el.scrollLeft, el.clientWidth, el.scrollWidth)
-      : { left: false, right: false };
-    setTabOverflow((prev) => (prev.left === next.left && prev.right === next.right ? prev : next));
-  }, []);
-  const scrollTabsBy = useCallback((direction: -1 | 1) => {
-    const el = tabStripRef.current;
-    if (!el) return;
-    const amount = Math.max(el.clientWidth * 0.6, 112);
-    el.scrollBy({ left: direction * amount, behavior: "smooth" });
-  }, []);
-  const activeTabRef = useRef<HTMLDivElement | null>(null);
+  const { tabOverflow, scrollTabsBy, activeTabRef } = useTabStripScroll({
+    tabStripRef,
+    activeId,
+    tabs,
+    dragging: Boolean(sortable.draggingId),
+  });
   const canDrag = tabs.length > 1 || Boolean(onMoveToNewWindow);
-
-  useEffect(() => {
-    if (sortable.draggingId) return;
-    activeTabRef.current?.scrollIntoView({
-      inline: "nearest",
-      block: "nearest",
-    });
-  }, [activeId, sortable.draggingId]);
-
-  useLayoutEffect(() => {
-    const el = tabStripRef.current;
-    if (!el) return;
-    syncTabOverflow();
-    el.addEventListener("scroll", syncTabOverflow, { passive: true });
-    const ro = new ResizeObserver(syncTabOverflow);
-    ro.observe(el);
-    return () => {
-      el.removeEventListener("scroll", syncTabOverflow);
-      ro.disconnect();
-    };
-  }, [syncTabOverflow]);
-
-  useLayoutEffect(() => {
-    syncTabOverflow();
-  }, [activeId, syncTabOverflow, tabs]);
 
   const activeTab = useMemo(() => tabs.find((t) => t.id === activeId), [activeId, tabs]);
   // The product name differs between the official, fork and dev builds.
@@ -1074,147 +1007,21 @@ function TitleBarComponent({
   }, [systemTitle]);
 
   const contextTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
-  const contextCloseIds = contextTab
-    ? {
-        others: titleTabContextCloseIds(tabs, contextTab.id, "others"),
-        right: titleTabContextCloseIds(tabs, contextTab.id, "right"),
-        left: titleTabContextCloseIds(tabs, contextTab.id, "left"),
-      }
-    : null;
+  const contextCloseIds = contextTab ? titleTabContextCloseIdSets(tabs, contextTab.id) : null;
   const contextMenuItems: ExplorerMenuItem[] = contextTab
-    ? [
-        ...(contextTab.previewSessionId || contextTab.previewFileId
-          ? [
-              {
-                kind: "item" as const,
-                id: "keep-open",
-                label: t("Keep open"),
-              },
-            ]
-          : []),
-        ...(detached && onReturnTabToMain
-          ? [
-              {
-                kind: "item" as const,
-                id: "return-main",
-                label: t("Return to main window"),
-                disabled: contextTab.hasTerminal || contextTab.dirty || contextTab.movingWindow,
-              },
-            ]
-          : []),
-        {
-          kind: "item",
-          id: "close",
-          get label() {
-            return t("Close Tab");
-          },
-          shortcut: closeShortcut ?? undefined,
-          disabled: !titleTabClosable(contextTab, tabs.length),
-        },
-        ...(onMoveToNewWindow
-          ? [
-              contextTab.pendingWindowMove
-                ? {
-                    kind: "item" as const,
-                    id: "cancel-new-window",
-                    get label() {
-                      return t("Cancel Move to New Window");
-                    },
-                    get description() {
-                      return t("Waiting for the running response to finish");
-                    },
-                  }
-                : {
-                    kind: "item" as const,
-                    id: "new-window",
-                    get label() {
-                      return t("Move to New Window");
-                    },
-                    disabled: !titleTabCanMoveToNewWindow(contextTab),
-                    description: contextTab.movingWindow
-                      ? "Opening new window…"
-                      : contextTab.hasTerminal || contextTab.terminal
-                        ? "Terminals cannot move between windows"
-                        : contextTab.busyHarnesses.length > 0
-                          ? "Moves once the running response finishes"
-                          : undefined,
-                  },
-            ]
-          : []),
-        { kind: "sep" },
-        {
-          kind: "item",
-          id: "others",
-          get label() {
-            return t("Close Other Tabs");
-          },
-          disabled: contextCloseIds?.others.length === 0,
-        },
-        {
-          kind: "item",
-          id: "right",
-          get label() {
-            return t("Close Tabs to the Right");
-          },
-          disabled: contextCloseIds?.right.length === 0,
-        },
-        {
-          kind: "item",
-          id: "left",
-          get label() {
-            return t("Close Tabs to the Left");
-          },
-          disabled: contextCloseIds?.left.length === 0,
-        },
-        ...(onCloseIdleTabs
-          ? [
-              {
-                kind: "item" as const,
-                id: "close-idle",
-                get label() {
-                  return t("Close Idle Tabs");
-                },
-                disabled: !idleTabCount,
-              },
-            ]
-          : []),
-        ...(contextTab.sessionCount > 0 && (onArchiveTab || onDeleteTab)
-          ? [
-              { kind: "sep" as const },
-              ...(onArchiveTab
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "archive",
-                      get label() {
-                        return t("Archive");
-                      },
-                      description:
-                        contextTab.sessionCount > 1
-                          ? `All ${contextTab.sessionCount} conversations in this tab`
-                          : undefined,
-                    },
-                  ]
-                : []),
-              ...(onDeleteTab
-                ? [
-                    {
-                      kind: "item" as const,
-                      id: "delete",
-                      get label() {
-                        return t("Delete");
-                      },
-                      description:
-                        contextTab.sessionCount > 1
-                          ? `Permanently delete all ${contextTab.sessionCount} conversations in this tab`
-                          : undefined,
-                      danger: true,
-                    },
-                  ]
-                : []),
-            ]
-          : []),
-      ]
+    ? buildTitleTabContextMenuItems({
+        contextTab,
+        tabs,
+        t,
+        detached,
+        closeShortcut,
+        idleTabCount,
+        hasReturnTabToMain: Boolean(onReturnTabToMain),
+        hasMoveToNewWindow: Boolean(onMoveToNewWindow),
+        hasCloseIdleTabs: Boolean(onCloseIdleTabs),
+        hasArchiveTab: Boolean(onArchiveTab),
+        hasDeleteTab: Boolean(onDeleteTab),
+      })
     : [];
 
   const onPickTabMenu = (id: string) => {

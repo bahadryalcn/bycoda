@@ -38,15 +38,18 @@ function moduleEdges(source) {
       ts.isCallExpression(node) &&
       (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
         (ts.isIdentifier(node.expression) && node.expression.text === "require"))
-    )
+    ) {
       add(node, node.arguments[0]);
+      edges.at(-1).loadingKind =
+        node.expression.kind === ts.SyntaxKind.ImportKeyword ? "import" : "require";
+    }
     if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node))
       edges.push({ specifier: "<JSX>", line: 1 });
     ts.forEachChild(node, visit);
   }
   visit(source);
   for (const reference of source.typeReferenceDirectives)
-    edges.push({ specifier: reference.fileName, line: 1 });
+    edges.push({ specifier: reference.fileName, line: 1, typeReference: true });
   for (const reference of source.libReferenceDirectives)
     if (!/^es\d+(?:\.[a-z0-9.]+)?$/i.test(reference.fileName))
       edges.push({ specifier: `typescript-lib:${reference.fileName}`, line: 1 });
@@ -120,6 +123,14 @@ export function checkPackageBoundaries(root = rootDirectory) {
     return result;
   };
   const visited = new Set();
+  const isNativeLoader = (owner, file) => {
+    const loader = owner.manifest.bycoda?.nativeLoader;
+    if (typeof loader !== "string") return false;
+    const target = path.resolve(owner.directory, loader);
+    return (
+      fs.existsSync(target) && inside(target, owner.directory) && fs.realpathSync(target) === file
+    );
+  };
   function visit(file, owner, chain) {
     if (visited.has(file)) return;
     visited.add(file);
@@ -139,11 +150,14 @@ export function checkPackageBoundaries(root = rootDirectory) {
       report(file, 1, ts.flattenDiagnosticMessageText(error.messageText, " "), chain);
     for (const edge of moduleEdges(source)) {
       const specifier = edge.specifier;
+      const nativeNode =
+        owner.manifest.bycoda?.layer === "native" && owner.manifest.bycoda?.runtime === "node";
       if (specifier === undefined) {
+        if (nativeNode && edge.loadingKind === "require" && isNativeLoader(owner, file)) continue;
         report(
           file,
           edge.line,
-          "Computed module loading cannot establish a portable boundary",
+          "Computed module loading needs a concrete package boundary or declared native artifact loader",
           chain,
         );
         continue;
@@ -174,6 +188,22 @@ export function checkPackageBoundaries(root = rootDirectory) {
           else visit(target, owner, [...chain, name]);
         }
       } else {
+        if (
+          nativeNode &&
+          (builtins.has(specifier.replace(/^node:/, "")) ||
+            (edge.typeReference && specifier === "node"))
+        ) {
+          // Factory aliases can conceal later CJS edges. Keep module loading
+          // in the one declared artifact loader.
+          if (specifier.replace(/^node:/, "") === "module" && !isNativeLoader(owner, file))
+            report(
+              file,
+              edge.line,
+              "Node module loading helpers belong to the declared native loader",
+              chain,
+            );
+          continue;
+        }
         const dependency = [...byName.values()].find(
           (item) =>
             specifier === item.manifest.name || specifier.startsWith(`${item.manifest.name}/`),
@@ -182,13 +212,18 @@ export function checkPackageBoundaries(root = rootDirectory) {
           specifier.startsWith("node:") ||
           builtins.has(specifier) ||
           !dependency ||
-          dependency.manifest.bycoda?.layer !== "portable" ||
+          (dependency.manifest.bycoda?.layer !== "portable" &&
+            !(
+              nativeNode &&
+              dependency.manifest.bycoda?.layer === "native" &&
+              dependency.manifest.bycoda?.runtime === "node"
+            )) ||
           !owner.manifest.dependencies?.[dependency.manifest.name]
         ) {
           report(
             file,
             edge.line,
-            `Portable package cannot import platform/UI/undeclared dependency: ${specifier}`,
+            `${nativeNode ? "Native Node" : "Portable"} package cannot import platform/UI/undeclared dependency: ${specifier}`,
             chain,
           );
           continue;
@@ -219,7 +254,53 @@ export function checkPackageBoundaries(root = rootDirectory) {
       }
       continue;
     }
-    if (owner.manifest.bycoda?.layer !== "portable") {
+    const native = owner.manifest.bycoda?.layer === "native";
+    if (native) {
+      const runtime = owner.manifest.bycoda?.runtime;
+      const declared = owner.manifest.bycoda?.cargo;
+      const cargo = path.join(owner.directory, "Cargo.toml");
+      if (
+        !["rust", "node"].includes(runtime) ||
+        declared !== "./Cargo.toml" ||
+        !fs.existsSync(cargo) ||
+        !fs.statSync(cargo).isFile() ||
+        !inside(fs.realpathSync(cargo), owner.directory)
+      ) {
+        report(
+          owner.file,
+          1,
+          "Native package needs a concrete local Cargo manifest and explicit rust/node runtime",
+        );
+        continue;
+      }
+      // Cargo enforces the Rust dependency graph; this check owns JS public edges.
+      checked.add(slash(path.relative(root, cargo)));
+      if (runtime === "rust") {
+        if (owner.manifest.exports || owner.manifest.bycoda?.nativeLoader !== undefined)
+          report(owner.file, 1, "Rust-only packages cannot declare JavaScript exports");
+        continue;
+      }
+      const loader = owner.manifest.bycoda?.nativeLoader;
+      if (loader !== undefined) {
+        const file = typeof loader === "string" ? path.resolve(owner.directory, loader) : null;
+        if (
+          typeof loader !== "string" ||
+          !loader.startsWith("./") ||
+          loader.includes("*") ||
+          !inside(file, owner.directory) ||
+          !fs.existsSync(file) ||
+          !fs.statSync(file).isFile() ||
+          !inside(fs.realpathSync(file), owner.directory)
+        ) {
+          report(
+            owner.file,
+            1,
+            "Native artifact loader must be a concrete file within its package",
+          );
+          continue;
+        }
+      }
+    } else if (owner.manifest.bycoda?.layer !== "portable") {
       report(owner.file, 1, "Package must declare its enforced layer");
       continue;
     }

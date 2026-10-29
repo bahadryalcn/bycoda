@@ -320,6 +320,27 @@ export function taskTimeLabel(
 }
 
 const lastBoardTasks: LastGoodLists<BoardTask> = new Map();
+
+/** Keeps a machine's last-known tasks in step with mutations its host
+ * acknowledged, so a later failed read cannot show the earlier board again. */
+export function rememberBoardTasks(saved: readonly BoardTask[], removed?: BoardTask): void {
+  for (const machineId of new Set(saved.map((task) => task.machineId))) {
+    const known = lastBoardTasks.get(machineId);
+    if (!known) continue;
+    const mine = saved.filter((task) => task.machineId === machineId);
+    lastBoardTasks.set(machineId, [
+      ...known.filter((entry) => !mine.some((task) => task.id === entry.id)),
+      ...mine,
+    ]);
+  }
+  if (!removed) return;
+  const known = lastBoardTasks.get(removed.machineId);
+  if (known)
+    lastBoardTasks.set(
+      removed.machineId,
+      known.filter((entry) => entry.id !== removed.id || entry.projectId !== removed.projectId),
+    );
+}
 const pendingBoardTaskReads = new Map<string, Promise<BoardTask[]>>();
 const taskReadRevisions = new Map<string, number>();
 const watchedTasks = new Map<

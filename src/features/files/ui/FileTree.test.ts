@@ -36,6 +36,7 @@ const { iconRender, directories, failures, pendingReads, clipboardFiles, copied,
   }));
 
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: vi.fn(async (command: string, args: Record<string, string>) => {
     if (command === "list_dir") {
       const failure = failures.get(args.path);

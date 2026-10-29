@@ -41,15 +41,15 @@
     box-shadow var(--duration-fast) var(--ease-standard);
 }
 @media (hover: hover) and (pointer: fine) {
+  /* Hover answers with the frame only: the field fill stays the same at rest, hover, press and open. */
   .trigger:hover:not([data-disabled]) {
     border-color: var(--ui-field-border-hover);
-    background: var(--surface-muted);
   }
 }
+/* Pressing or opening keeps the field fill: only the frame answers, so the control never changes colour. */
 .trigger:active:not([data-disabled]),
 .trigger[data-state="open"] {
   border-color: var(--ui-field-border-hover);
-  background: var(--surface-muted);
 }
 .trigger:focus-visible {
   border-color: var(--ui-field-border-focus);
@@ -64,8 +64,8 @@
    outline on the same role, danger when invalid. Disabled dims through its semantic pair, never opacity twice. */
 .trigger:global(.bycoda-arc.bycoda-arc-select):focus-visible {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
 }
 .trigger:global(.bycoda-arc-select)[aria-invalid="true"],
 .trigger:global(.bycoda-arc-select)[aria-invalid="true"]:hover:not([data-disabled]) {

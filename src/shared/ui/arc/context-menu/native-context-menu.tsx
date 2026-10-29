@@ -110,6 +110,13 @@ export function NativeContextMenu({
   const searchRef = useRef<HTMLInputElement>(null);
   const submenuItem = submenu ? items[submenu.index] : undefined;
   const submenuSearch = submenuItem?.kind === "item" ? submenuItem.submenuSearch : undefined;
+  // The submenu query belongs to the submenu (and search field) it was typed in; adjusted during render.
+  const submenuQueryKey = `${submenu?.index ?? ""}:${submenuSearch?.placeholder ?? ""}`;
+  const [queryOwner, setQueryOwner] = useState(submenuQueryKey);
+  if (queryOwner !== submenuQueryKey) {
+    setQueryOwner(submenuQueryKey);
+    setSubmenuQuery("");
+  }
   const submenuItems =
     submenuItem?.kind === "item"
       ? submenuItem.submenu?.filter(
@@ -124,7 +131,6 @@ export function NativeContextMenu({
   const submenuHasIcons = !!submenuItems?.some((item) => item.kind === "item" && item.icon != null);
 
   useEffect(() => {
-    setSubmenuQuery("");
     if (submenuSearch) searchRef.current?.focus();
   }, [submenu?.index, submenuSearch?.placeholder]);
 

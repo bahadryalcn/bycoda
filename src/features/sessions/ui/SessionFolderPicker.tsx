@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { type SessionFolderTarget, type SessionFolder } from "../model/sessionFolders";
 import { Folder, Plus, X } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 
 type Props = {
   folders: SessionFolder[];
@@ -17,7 +18,6 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const name = query.trim();
   const matching = useMemo(() => {
     const needle = name.toLocaleLowerCase();
@@ -35,11 +35,9 @@ export function SessionFolderPicker({ folders, onPick, onDismiss }: Props) {
     ...(name && !exact ? ([{ kind: "new", name }] satisfies SessionFolderTarget[]) : []),
   ];
 
+  const [active, setActive] = useKeyedActiveIndex(query, rows.length, 0);
+
   useEffect(() => inputRef.current?.focus(), []);
-  useEffect(() => setActive(0), [query]);
-  useEffect(() => {
-    setActive((index) => (rows.length === 0 ? 0 : Math.min(index, rows.length - 1)));
-  }, [rows.length]);
 
   const pick = (target: SessionFolderTarget | undefined) => {
     if (target) onPick(target);

@@ -197,3 +197,64 @@ it("toggles ordinary groups from their name, header space and arrow", async () =
   );
   expect(loadProjectGroups()[0].collapsed).toBe(true);
 });
+
+const liveAgent = {
+  id: "live-1",
+  cwd: "G:/wallet/api",
+  title: "Refactor wallet",
+  harness: "codex" as const,
+  activity: "Working",
+  startedAt: 1_000,
+  needsApproval: false,
+  done: false,
+};
+
+it("lets the layout owner leave the live-agent summary out of the project navigator", async () => {
+  const props = {
+    presentation: "navigator" as const,
+    cwd: "G:/wallet/api",
+    recents: ["G:/wallet/api", "G:/wallet/mobile"].map((path) => ({ path, openedAt: 1 })),
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+    liveAgents: [liveAgent],
+    activeSessionId: "other",
+  };
+  await act(async () => root.render(createElement(ProjectRail, props)));
+  expect(host.querySelector("[data-live-agents-preview]")).not.toBeNull();
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, showLiveAgents: false })),
+  );
+  expect(host.querySelector("[data-live-agents-preview]")).toBeNull();
+  expect(host.querySelector('[data-live-agent-card="live-1"]')).toBeNull();
+});
+
+it("narrows the listed projects by name or group without touching the saved list", async () => {
+  const paths = ["G:/wallet/api", "G:/wallet/mobile", "G:/other/web"];
+  const props = {
+    presentation: "navigator" as const,
+    cwd: "G:/wallet/api",
+    recents: paths.map((path) => ({ path, openedAt: 1 })),
+    onSelectProject: select,
+    onOpenProject: vi.fn(),
+  };
+  const listed = () =>
+    [...host.querySelectorAll("[data-project-path]")].map((row) =>
+      row.getAttribute("data-project-path"),
+    );
+  await act(async () => root.render(createElement(ProjectRail, props)));
+  expect(listed()).toEqual(expect.arrayContaining(paths));
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "web" })),
+  );
+  expect(listed()).toEqual(["G:/other/web"]);
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "wallet" })),
+  );
+  expect(listed()).toEqual(expect.arrayContaining(["G:/wallet/api", "G:/wallet/mobile"]));
+  expect(listed()).not.toContain("G:/other/web");
+  await act(async () =>
+    root.render(createElement(ProjectRail, { ...props, projectFilter: "zzz" })),
+  );
+  expect(listed()).toEqual([]);
+  expect(host.textContent).toContain("No projects found");
+});

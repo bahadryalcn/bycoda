@@ -485,9 +485,12 @@ export function ShortcutRecorder({
   const [nudge, setNudge] = useState<string | null>(null);
   const [settled, setSettled] = useState(0);
   const [announcement, setAnnouncement] = useState("");
-  useEffect(() => {
+  // The owner ending a recording clears the stale announcement (adjusted during render).
+  const [seenRecording, setSeenRecording] = useState(externalRecording);
+  if (seenRecording !== externalRecording) {
+    setSeenRecording(externalRecording);
     if (externalRecording === false) setAnnouncement("");
-  }, [externalRecording]);
+  }
   const buttonRef = useRef<HTMLButtonElement>(null);
   /* The message slot animates to the measured height of its content, so a swap to a message that wraps grows instead of snapping. */
   const [messageHeight, setMessageHeight] = useState<number | null>(null);

@@ -1,7 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -34,25 +35,37 @@ import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
 import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
 
+/** The stored lists can change in another window; a focused window re-reads them too. */
+function subscribeWindowStorage(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  window.addEventListener("focus", onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener("focus", onChange);
+  };
+}
+
+function subscribeArchivedProjectsRead(onChange: () => void) {
+  const unsubscribe = subscribeArchivedProjects(onChange);
+  const stopWindow = subscribeWindowStorage(onChange);
+  return () => {
+    unsubscribe();
+    stopWindow();
+  };
+}
+
 /** Archived projects plus whether the stored list could be read at all. */
 export function useArchivedProjectsRead(): {
   items: ArchivedProject[];
   unavailable: boolean;
   retry: () => void;
 } {
-  const [read, setRead] = useState(readArchivedProjects);
+  const [read, setRead] = useStoredPreferenceState(
+    readArchivedProjects,
+    subscribeArchivedProjectsRead,
+  );
   const lock = useLockSnapshot();
-  const retry = useCallback(() => setRead(readArchivedProjects()), []);
-  useEffect(() => {
-    const unsubscribe = subscribeArchivedProjects(retry);
-    window.addEventListener("storage", retry);
-    window.addEventListener("focus", retry);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("storage", retry);
-      window.removeEventListener("focus", retry);
-    };
-  }, [retry]);
+  const retry = useCallback(() => setRead(readArchivedProjects()), [setRead]);
   // An archived project can still sit in a locked group.
   const items = useMemo(
     () => read.items.filter((item) => !isProjectLockedIn(lock, item.path)),
@@ -90,7 +103,10 @@ export function ArchivePage({
   onDeleteProject?: (path: string) => void | Promise<void>;
 }) {
   useLocale();
-  const [filters, setFilters] = useState(loadSessionSidebarFilters);
+  const [filters, setFilters] = useStoredPreferenceState(
+    loadSessionSidebarFilters,
+    subscribeWindowStorage,
+  );
   const [deleting, setDeleting] = useState<ArchivedProject | null>(null);
   const [projectQuery, setProjectQuery] = useState("");
   const [sessionQuery, setSessionQuery] = useState("");
@@ -105,20 +121,10 @@ export function ArchivePage({
   } = useArchivedProjectsRead();
   const availableProjects = useRef(archivedProjects);
   availableProjects.current = archivedProjects;
-  useEffect(() => {
-    if (deleting && !archivedProjects.some((project) => project.path === deleting.path)) {
-      setDeleting(null);
-    }
-  }, [archivedProjects, deleting]);
-  useEffect(() => {
-    const refresh = () => setFilters(loadSessionSidebarFilters());
-    window.addEventListener("storage", refresh);
-    window.addEventListener("focus", refresh);
-    return () => {
-      window.removeEventListener("storage", refresh);
-      window.removeEventListener("focus", refresh);
-    };
-  }, []);
+  // A project that left the archive closes its pending delete confirmation.
+  if (deleting && !archivedProjects.some((project) => project.path === deleting.path)) {
+    setDeleting(null);
+  }
   const archived = useMemo(
     () => sessions.filter((session) => session.archived).sort((a, b) => b.updatedAt - a.updatedAt),
     [sessions],

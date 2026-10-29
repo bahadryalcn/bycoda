@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Restartable short feedback with ownership of its timer and unmount lifecycle. */
+/**
+ * Restartable short feedback with ownership of its timer and unmount lifecycle. It only times a
+ * synchronous flag; an async copy (pending lock, operation identity, error) uses `useCopyFeedback`.
+ */
 export function useTransientFlag(durationMs: number) {
   const [flag, setFlag] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

@@ -312,3 +312,86 @@ it("keeps the dock focused on terminals without duplicate footer navigation", as
     vi.unstubAllGlobals();
   }
 });
+
+it("reorders terminals without dragging: Alt+Arrow and the Move up / Move down menu", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const root = createRoot(host);
+  const onReorderTerminals = vi.fn();
+  const onSelectTerminal = vi.fn();
+  const dock = {
+    projectPath: "/project",
+    side: "bottom",
+    size: 220,
+    open: true,
+    pane: {
+      id: "pane",
+      activeFileId: "one",
+      files: ["one", "two", "three"].map((id, index) => ({
+        id,
+        path: `Terminal ${index + 1}`,
+        cwd: "/project",
+        terminal: true,
+      })),
+    },
+  } as Dock;
+  try {
+    await act(async () => {
+      root.render(
+        createElement(ProjectTerminalDock, {
+          dock,
+          focused: false,
+          onFocus: vi.fn(),
+          onHide: vi.fn(),
+          onSideChange: vi.fn(),
+          onSizePaint: vi.fn(),
+          onSizeCommit: vi.fn(),
+          onAddTerminal: vi.fn(),
+          onSelectTerminal,
+          onCloseTerminal: vi.fn(),
+          onCloseOtherTerminals: vi.fn(),
+          onReorderTerminals,
+        }),
+      );
+    });
+    const tabs = host.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    // The tab is a button now driven by the shared pointer engine, not native HTML drag.
+    expect(tabs[0].hasAttribute("draggable")).toBe(false);
+    const alt = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      altKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    await act(async () => {
+      tabs[0].dispatchEvent(alt);
+    });
+    expect(alt.defaultPrevented).toBe(true);
+    expect(onReorderTerminals).toHaveBeenLastCalledWith(["two", "one", "three"], "one");
+    expect(onSelectTerminal).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-drag-announcer]")?.textContent).toBe(
+      "Moved Terminal 1 to position 2 of 3",
+    );
+
+    await act(async () => {
+      tabs[2].dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 4, clientY: 4 }),
+      );
+    });
+    const labels = Array.from(host.querySelectorAll('[role="menu"] button')).map(
+      (button) => button.textContent,
+    );
+    expect(labels).toEqual(expect.arrayContaining(["Move up", "Move down"]));
+    await act(async () => {
+      Array.from(host.querySelectorAll<HTMLButtonElement>('[role="menu"] button'))
+        .find((button) => button.textContent === "Move up")
+        ?.click();
+    });
+    expect(onReorderTerminals).toHaveBeenLastCalledWith(["one", "three", "two"], "three");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});

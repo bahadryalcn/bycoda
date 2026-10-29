@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
+import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import {
   githubPrDiff,
   GITHUB_WORK_ITEM_FRESH_MS,
@@ -45,6 +47,100 @@ import {
   type AzureDevOpsWorkItemThread,
 } from "../model/azureDevOps";
 
+type ThreadData =
+  | GithubWorkItemThread
+  | LinearIssueThread
+  | JiraIssueThread
+  | GitlabWorkItemThread
+  | AzureDevOpsWorkItemThread;
+
+type DetailReaders = {
+  peekDetails: () => GithubWorkItemDetails | null;
+  fetchDetails: (maxAgeMs: number | undefined) => Promise<GithubWorkItemDetails>;
+  peekThread: () => ThreadData | null;
+  /** Null when this item kind has no discussion thread to read. */
+  fetchThread: ((maxAgeMs: number | undefined) => Promise<ThreadData>) | null;
+};
+
+/** Provider dispatch for the work item reads; one entry per provider/kind. */
+function detailReaders(item: InboxItem): DetailReaders {
+  const { repo, number, projectPath } = item;
+  switch (item.provider) {
+    case "linear": {
+      const id = item.id ?? "";
+      return {
+        peekDetails: () => peekLinearIssueDetails(id),
+        fetchDetails: () =>
+          id ? linearIssueDetails(id) : Promise.reject(new Error("Missing Linear issue")),
+        peekThread: () => peekLinearIssueThread(id),
+        fetchThread: () => linearIssueThread(id),
+      };
+    }
+    case "jira": {
+      const key = item.identifier ?? "";
+      return {
+        peekDetails: () => peekJiraIssueDetails(key),
+        fetchDetails: () =>
+          key ? jiraIssueDetails(key) : Promise.reject(new Error("Missing Jira issue")),
+        peekThread: () => peekJiraIssueThread(key),
+        fetchThread: () => jiraIssueThread(key),
+      };
+    }
+    case "gitlab":
+      if (item.kind === "issue" || item.kind === "pr") {
+        const kind = item.kind;
+        return {
+          peekDetails: () => peekGitlabWorkItemDetails(repo, kind, number),
+          fetchDetails: () => gitlabWorkItemDetails(repo, kind, number),
+          peekThread: () => peekGitlabWorkItemThread(repo, kind, number),
+          fetchThread: () => gitlabWorkItemThread(repo, kind, number),
+        };
+      }
+      break;
+    case "azuredevops":
+      if (item.kind === "issue" || item.kind === "pr") {
+        const kind = item.kind;
+        return {
+          peekDetails: () => peekAzureDevOpsWorkItemDetails(repo, kind, number),
+          fetchDetails: () => azureDevOpsWorkItemDetails(repo, kind, number),
+          peekThread: () => peekAzureDevOpsWorkItemThread(repo, kind, number),
+          fetchThread: () => azureDevOpsWorkItemThread(repo, kind, number),
+        };
+      }
+      break;
+    case "github":
+      if (item.kind === "issue" || item.kind === "pr") {
+        const kind = item.kind;
+        return {
+          peekDetails: () => peekGithubWorkItemDetails(repo, kind, number, projectPath),
+          fetchDetails: (maxAgeMs) =>
+            githubWorkItemDetails(projectPath, repo, kind, number, { maxAgeMs }),
+          peekThread: () => peekGithubWorkItemThread(repo, kind, number, projectPath),
+          fetchThread: (maxAgeMs) =>
+            githubWorkItemThread(projectPath, repo, kind, number, { maxAgeMs }),
+        };
+      }
+      break;
+  }
+  return {
+    peekDetails: () => null,
+    fetchDetails: () => Promise.reject(new Error("Unknown inbox item")),
+    peekThread: () => null,
+    fetchThread: null,
+  };
+}
+
+const errorMessage = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
+
+/**
+ * Every read is a query keyed by the item identity, its list revision and the
+ * reuse window, so a newer revision or another item starts a fresh read and an
+ * older in-flight answer lands in a query nobody observes. The model's peek
+ * cache seeds each query, which keeps a cached answer on screen (not loading)
+ * while it revalidates; a failed revalidation reports its error next to that
+ * answer. Queries are dropped when unobserved so a reopened panel re-seeds from
+ * the freshest peek.
+ */
 export function useInboxDetailData(
   item: InboxItem,
   revision: number,
@@ -52,6 +148,7 @@ export function useInboxDetailData(
   fullFile: boolean,
   panel = false,
 ) {
+  const queryClient = useQueryClient();
   const initialUpdatedAt = useRef(item.updatedAt);
   // A newer list revision invalidates the panel's initially reusable detail cache.
   const maxAgeMs =
@@ -71,339 +168,78 @@ export function useInboxDetailData(
   const gitlabKind = gitlab && (item.kind === "issue" || item.kind === "pr") ? item.kind : null;
   const azureDevOpsKind =
     azuredevops && (item.kind === "issue" || item.kind === "pr") ? item.kind : null;
-  const cached = linear
-    ? peekLinearIssueDetails(item.id ?? "")
-    : jira
-      ? peekJiraIssueDetails(jiraKey)
-      : gitlabKind
-        ? peekGitlabWorkItemDetails(item.repo, gitlabKind, item.number)
-        : azureDevOpsKind
-          ? peekAzureDevOpsWorkItemDetails(item.repo, azureDevOpsKind, item.number)
-          : githubKind
-            ? peekGithubWorkItemDetails(item.repo, githubKind, item.number, item.projectPath)
-            : null;
-  const cachedDiff = isPr
-    ? gitlab
-      ? peekGitlabMrDiff(item.repo, item.number)
-      : azuredevops
-        ? peekAzureDevOpsMrDiff(item.repo, item.number)
-        : peekGithubPrDiff(item.repo, item.number, false, item.projectPath)
-    : null;
-  const cachedThread = linear
-    ? peekLinearIssueThread(item.id ?? "")
-    : jira
-      ? peekJiraIssueThread(jiraKey)
-      : gitlabKind
-        ? peekGitlabWorkItemThread(item.repo, gitlabKind, item.number)
-        : azureDevOpsKind
-          ? peekAzureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number)
-          : githubKind
-            ? peekGithubWorkItemThread(item.repo, githubKind, item.number, item.projectPath)
-            : null;
-  const [details, setDetails] = useState<GithubWorkItemDetails | null>(cached);
-  const [loading, setLoading] = useState(cached == null);
-  const [error, setError] = useState<string | null>(null);
-  const [prDiff, setPrDiff] = useState<GithubPrDiff | null>(cachedDiff);
-  const [diffLoading, setDiffLoading] = useState(isPr && cachedDiff == null);
-  const [diffError, setDiffError] = useState<string | null>(null);
-  const [thread, setThread] = useState<
-    | GithubWorkItemThread
-    | LinearIssueThread
-    | JiraIssueThread
-    | GitlabWorkItemThread
-    | AzureDevOpsWorkItemThread
-    | null
-  >(cachedThread);
-  const [threadLoading, setThreadLoading] = useState(cachedThread == null);
-  const [threadError, setThreadError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const cachedDetails = linear
-      ? peekLinearIssueDetails(item.id ?? "")
-      : jira
-        ? peekJiraIssueDetails(jiraKey)
-        : gitlabKind
-          ? peekGitlabWorkItemDetails(item.repo, gitlabKind, item.number)
-          : azureDevOpsKind
-            ? peekAzureDevOpsWorkItemDetails(item.repo, azureDevOpsKind, item.number)
-            : githubKind
-              ? peekGithubWorkItemDetails(item.repo, githubKind, item.number, item.projectPath)
-              : null;
-    if (cachedDetails) {
-      setDetails(cachedDetails);
-      setLoading(false);
-      setError(null);
-    } else {
-      setLoading(true);
-      setError(null);
-      setDetails(null);
-    }
-    const pending = linear
-      ? item.id
-        ? linearIssueDetails(item.id)
-        : Promise.reject(new Error("Missing Linear issue"))
-      : jira
-        ? jiraKey
-          ? jiraIssueDetails(jiraKey)
-          : Promise.reject(new Error("Missing Jira issue"))
-        : gitlabKind
-          ? gitlabWorkItemDetails(item.repo, gitlabKind, item.number)
-          : azureDevOpsKind
-            ? azureDevOpsWorkItemDetails(item.repo, azureDevOpsKind, item.number)
-            : githubKind
-              ? githubWorkItemDetails(item.projectPath, item.repo, githubKind, item.number, {
-                  maxAgeMs,
-                })
-              : Promise.reject(new Error("Unknown inbox item"));
-    void pending
-      .then((next) => {
-        if (cancelled) return;
-        setDetails(next);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    azureDevOpsKind,
-    githubKind,
-    gitlabKind,
-    item.id,
+  const readers = detailReaders(item);
+  const identity = [
+    item.provider,
+    item.kind,
+    item.repo,
     item.number,
     item.projectPath,
-    item.repo,
+    item.id ?? "",
+    item.identifier ?? "",
     item.updatedAt,
-    jira,
-    jiraKey,
-    linear,
     revision,
-    maxAgeMs,
-  ]);
+    maxAgeMs ?? null,
+  ] as const;
+  const common = {
+    staleTime: 0,
+    gcTime: 0,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  } as const;
 
-  useEffect(() => {
-    let cancelled = false;
-    if (linear) {
-      const id = item.id ?? "";
-      const cachedThread = peekLinearIssueThread(id);
-      if (cachedThread) {
-        setThread(cachedThread);
-        setThreadLoading(false);
-        setThreadError(null);
-      } else {
-        setThreadLoading(true);
-        setThreadError(null);
-        setThread(null);
-      }
-      void linearIssueThread(id)
-        .then((next) => {
-          if (cancelled) return;
-          setThread(next);
-          setThreadError(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setThreadError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (!cancelled) setThreadLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (jira) {
-      const cachedThread = peekJiraIssueThread(jiraKey);
-      if (cachedThread) {
-        setThread(cachedThread);
-        setThreadLoading(false);
-        setThreadError(null);
-      } else {
-        setThreadLoading(true);
-        setThreadError(null);
-        setThread(null);
-      }
-      void jiraIssueThread(jiraKey)
-        .then((next) => {
-          if (cancelled) return;
-          setThread(next);
-          setThreadError(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setThreadError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (!cancelled) setThreadLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (gitlabKind) {
-      const cachedThread = peekGitlabWorkItemThread(item.repo, gitlabKind, item.number);
-      if (cachedThread) {
-        setThread(cachedThread);
-        setThreadLoading(false);
-        setThreadError(null);
-      } else {
-        setThreadLoading(true);
-        setThreadError(null);
-        setThread(null);
-      }
-      void gitlabWorkItemThread(item.repo, gitlabKind, item.number)
-        .then((next) => {
-          if (cancelled) return;
-          setThread(next);
-          setThreadError(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setThreadError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (!cancelled) setThreadLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (azureDevOpsKind) {
-      const cachedThread = peekAzureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number);
-      if (cachedThread) {
-        setThread(cachedThread);
-        setThreadLoading(false);
-        setThreadError(null);
-      } else {
-        setThreadLoading(true);
-        setThreadError(null);
-        setThread(null);
-      }
-      void azureDevOpsWorkItemThread(item.repo, azureDevOpsKind, item.number)
-        .then((next) => {
-          if (cancelled) return;
-          setThread(next);
-          setThreadError(null);
-        })
-        .catch((err: unknown) => {
-          if (cancelled) return;
-          setThreadError(err instanceof Error ? err.message : String(err));
-        })
-        .finally(() => {
-          if (!cancelled) setThreadLoading(false);
-        });
-      return () => {
-        cancelled = true;
-      };
-    }
-    if (!githubKind) return;
-    const cachedThread = peekGithubWorkItemThread(
+  const detailsQuery = useQuery<GithubWorkItemDetails>({
+    ...common,
+    queryKey: ["inbox", "detail", "details", ...identity],
+    queryFn: () => readers.fetchDetails(maxAgeMs),
+    initialData: () => readers.peekDetails() ?? undefined,
+  });
+  const threadKey = ["inbox", "detail", "thread", ...identity] as const;
+  const threadQuery = useQuery<ThreadData>({
+    ...common,
+    queryKey: threadKey,
+    queryFn: () => readers.fetchThread!(maxAgeMs),
+    initialData: () => readers.peekThread() ?? undefined,
+    enabled: readers.fetchThread != null,
+  });
+  const diffQuery = useQuery<GithubPrDiff>({
+    ...common,
+    queryKey: [
+      "inbox",
+      "detail",
+      "diff",
+      item.provider,
       item.repo,
-      githubKind,
       item.number,
       item.projectPath,
-    );
-    if (cachedThread) {
-      setThread(cachedThread);
-      setThreadLoading(false);
-      setThreadError(null);
-    } else {
-      setThreadLoading(true);
-      setThreadError(null);
-      setThread(null);
-    }
-    void githubWorkItemThread(item.projectPath, item.repo, githubKind, item.number, { maxAgeMs })
-      .then((next) => {
-        if (cancelled) return;
-        setThread(next);
-        setThreadError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setThreadError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setThreadLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    azureDevOpsKind,
-    githubKind,
-    gitlabKind,
-    item.id,
-    item.number,
-    item.projectPath,
-    item.repo,
-    item.updatedAt,
-    jira,
-    jiraKey,
-    linear,
-    revision,
-    maxAgeMs,
-  ]);
+      fullFile,
+      item.updatedAt,
+      revision,
+      maxAgeMs ?? null,
+    ],
+    queryFn: () =>
+      gitlab
+        ? gitlabMrDiff(item.repo, item.number)
+        : azuredevops
+          ? azureDevOpsMrDiff(item.repo, item.number)
+          : githubPrDiff(item.projectPath, item.repo, item.number, {
+              fullContext: fullFile,
+              maxAgeMs,
+            }),
+    initialData: () =>
+      (gitlab
+        ? peekGitlabMrDiff(item.repo, item.number)
+        : azuredevops
+          ? peekAzureDevOpsMrDiff(item.repo, item.number)
+          : peekGithubPrDiff(item.repo, item.number, fullFile, item.projectPath)) ?? undefined,
+    enabled: isPr && diffWanted,
+  });
 
-  useEffect(() => {
-    if (!isPr || !diffWanted) return;
-    let cancelled = false;
-    const cachedDiff = gitlab
-      ? peekGitlabMrDiff(item.repo, item.number)
-      : azuredevops
-        ? peekAzureDevOpsMrDiff(item.repo, item.number)
-        : peekGithubPrDiff(item.repo, item.number, fullFile, item.projectPath);
-    if (cachedDiff) {
-      setPrDiff(cachedDiff);
-      setDiffLoading(false);
-      setDiffError(null);
-    } else {
-      setDiffLoading(true);
-      setDiffError(null);
-      setPrDiff(null);
-    }
-    const pending = gitlab
-      ? gitlabMrDiff(item.repo, item.number)
-      : azuredevops
-        ? azureDevOpsMrDiff(item.repo, item.number)
-        : githubPrDiff(item.projectPath, item.repo, item.number, {
-            fullContext: fullFile,
-            maxAgeMs,
-          });
-    void pending
-      .then((next) => {
-        if (cancelled) return;
-        setPrDiff(next);
-        setDiffError(null);
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setDiffError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setDiffLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    azuredevops,
-    fullFile,
-    gitlab,
-    isPr,
-    item.number,
-    item.projectPath,
-    item.repo,
-    item.updatedAt,
-    revision,
-    maxAgeMs,
-    diffWanted,
-  ]);
+  /** Replaces the shown thread, for example with a freshly forced read after posting. */
+  const setThread = useStableCallback((next: ThreadData) => {
+    queryClient.setQueryData(threadKey, next);
+  });
 
   return {
     linear,
@@ -416,15 +252,15 @@ export function useInboxDetailData(
     githubKind,
     gitlabKind,
     azureDevOpsKind,
-    details,
-    loading,
-    error,
-    prDiff,
-    diffLoading,
-    diffError,
-    thread,
+    details: detailsQuery.data ?? null,
+    loading: detailsQuery.isPending,
+    error: detailsQuery.error ? errorMessage(detailsQuery.error) : null,
+    prDiff: isPr ? (diffQuery.data ?? null) : null,
+    diffLoading: isPr && diffQuery.isPending,
+    diffError: isPr && diffQuery.error ? errorMessage(diffQuery.error) : null,
+    thread: threadQuery.data ?? null,
     setThread,
-    threadLoading,
-    threadError,
+    threadLoading: threadQuery.isPending,
+    threadError: threadQuery.error ? errorMessage(threadQuery.error) : null,
   };
 }

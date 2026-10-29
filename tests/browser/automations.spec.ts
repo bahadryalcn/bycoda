@@ -192,6 +192,12 @@ test("automation gallery, event picker, focus mode and scoped AI", async ({ page
       ),
     )
     .toBe("C:/fixture/project");
+  // The assistant is an on-demand dialog: it closes after launching and keeps the open draft.
+  await expect(page.getByRole("dialog", { name: "AI assistant", exact: true })).toBeHidden();
+  await expect(page.getByRole("textbox", { name: "Automation name", exact: true })).toHaveValue(
+    "Triage incoming messages",
+  );
+  await page.getByRole("button", { name: "AI assistant", exact: true }).click();
   await page.getByRole("radio", { name: "General", exact: true }).click();
   await page
     .getByRole("textbox", { name: "AI assistant", exact: true })

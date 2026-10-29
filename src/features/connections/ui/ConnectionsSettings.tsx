@@ -15,6 +15,9 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { PasswordField } from "../../../shared/ui/PasswordField";
+import { SshSetupPromptForm } from "./SshSetupPromptForm";
+import { useConnectionRequestInbox } from "./useConnectionRequestInbox";
+import { useSshSetupJob } from "./useSshSetupJob";
 import { RemoteOutboxNotice } from "./RemoteOutboxNotice";
 import { LocalHostUpdateNotice } from "./LocalHostUpdateNotice";
 import { PhoneConnectionPanel } from "./PhoneConnectionPanel";
@@ -29,10 +32,6 @@ import {
   refreshRemoteMachines,
   remoteRequest,
   reportRemoteMachineStatus,
-  subscribeEditRequests,
-  subscribeReconnectRequests,
-  takeEditRequest,
-  takeReconnectRequest,
   updateMachine,
   useRemoteMachines,
 } from "../model/connections";
@@ -43,7 +42,6 @@ import {
   parseMachineDraft,
 } from "../model/machineEdit";
 import { isLocalSyncMachine } from "../model/localSync";
-import { subscribeMachineAddRequests, takeMachineAddRequest } from "../model/machineAdd";
 import { syncNow } from "../../sync/model/syncClient";
 import { describeSyncStatus } from "../../sync/model/syncStatusText";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
@@ -53,12 +51,7 @@ import {
   subscribeChanges,
 } from "../model/remoteHealth";
 import { connectionIndicator } from "../model/remoteConnection";
-import {
-  REMOTE_PROVIDERS,
-  type HostDescriptor,
-  type RemoteMachine,
-  type SshSetup,
-} from "../model/protocol";
+import { REMOTE_PROVIDERS, type HostDescriptor, type RemoteMachine } from "../model/protocol";
 
 /** What this page's own check learned about a machine. */
 type MachineProbe = "connected" | "provider" | "update" | "offline";
@@ -163,15 +156,11 @@ export function ConnectionsSettings() {
   const [port, setPort] = useState("");
   const [remotePort, setRemotePort] = useState("");
   const [alternate, setAlternate] = useState("");
-  const [jobId, setJobId] = useState<string>();
   const [connectionName, setConnectionName] = useState("");
-  const [job, setJob] = useState<SshSetup>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [retryMachine, setRetryMachine] = useState<RemoteMachine>();
   const [notice, setNotice] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [answering, setAnswering] = useState(false);
   const [status, setStatus] = useState<Record<string, MachineProbe>>({});
   const [needsUpdate, setNeedsUpdate] = useState<Record<string, boolean>>({});
   const [updatingMachine, setUpdatingMachine] = useState<string>();
@@ -181,99 +170,56 @@ export function ConnectionsSettings() {
   const [rowMenu, setRowMenu] = useState<{ machine: RemoteMachine; anchor: HTMLElement }>();
   const [url, setUrl] = useState("http://127.0.0.1:3776");
   const [token, setToken] = useState("");
-  const alive = useRef(true);
-  const currentJob = useRef<string | undefined>(undefined);
   const submitting = useRef(false);
   // The running connection follows an edit, so its outcome is worded for one.
   const afterEdit = useRef(false);
-  const progress = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      if (currentJob.current)
-        void invoke("remote_ssh_cancel", { jobId: currentJob.current }).catch(() => {});
-    };
-  }, []);
-  useEffect(() => {
-    if (!jobId) return;
-    let disposed = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      try {
-        const next = await invoke<SshSetup>("remote_ssh_poll", { jobId });
-        if (disposed) return;
-        setJob(next);
-        if (next.done) {
-          currentJob.current = undefined;
-          submitting.current = false;
-          setBusy(false);
-          setJobId(undefined);
-          setAnswer("");
-          if (next.error)
-            setError(
-              afterEdit.current
-                ? `${next.error}
+  const { jobId, job, alive, progress, attach, clearSnapshot, cancel, respond } = useSshSetupJob({
+    onDone: (next) => {
+      submitting.current = false;
+      setBusy(false);
+      if (next.error)
+        setError(
+          afterEdit.current
+            ? `${next.error}
 
 ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
-                : next.error,
-            );
-          else if (next.machine) {
-            setAdding(false);
-            setEditing(undefined);
-            setTarget("");
-            setName("");
-            setPort("");
-            setAlternate("");
-            setNotice(
-              afterEdit.current
-                ? t("{p0} is connected through its new address.", { p0: next.machine.name })
-                : updatingMachine
-                  ? t("{p0} was updated and reconnected.", { p0: next.machine.name })
-                  : t(
-                      "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
-                      { p0: next.machine.name },
-                    ),
-            );
-            setUpdatingMachine(undefined);
-            setStatus((current) => ({
-              ...current,
-              [next.machine!.id]: "connected",
-            }));
-            refreshRemoteMachines();
-            // Views that were waiting on this machine reload now.
-            notifyRemoteRecovered(next.machine.environmentId);
-          }
-          afterEdit.current = false;
-          return;
-        }
-      } catch (reason) {
-        if (disposed) return;
-        setError(String(reason));
-        void invoke("remote_ssh_cancel", { jobId }).catch(() => {});
-        currentJob.current = undefined;
-        submitting.current = false;
-        setBusy(false);
-        setJobId(undefined);
-        return;
+            : next.error,
+        );
+      else if (next.machine) {
+        setAdding(false);
+        setEditing(undefined);
+        setTarget("");
+        setName("");
+        setPort("");
+        setAlternate("");
+        setNotice(
+          afterEdit.current
+            ? t("{p0} is connected through its new address.", { p0: next.machine.name })
+            : updatingMachine
+              ? t("{p0} was updated and reconnected.", { p0: next.machine.name })
+              : t(
+                  "{p0} is connected. To work on it, click + next to Projects in the project rail and choose Open folder on a machine.",
+                  { p0: next.machine.name },
+                ),
+        );
+        setUpdatingMachine(undefined);
+        setStatus((current) => ({
+          ...current,
+          [next.machine!.id]: "connected",
+        }));
+        refreshRemoteMachines();
+        // Views that were waiting on this machine reload now.
+        notifyRemoteRecovered(next.machine.environmentId);
       }
-      timer = setTimeout(() => void poll(), 350);
-    };
-    void poll();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  }, [jobId, updatingMachine]);
-  useEffect(() => {
-    setAnswer("");
-    setAnswering(false);
-    if (job?.prompt)
-      progress.current?.scrollIntoView?.({
-        block: "nearest",
-        behavior: "smooth",
-      });
-  }, [job?.prompt?.id]);
+      afterEdit.current = false;
+    },
+    onFailed: (reason) => {
+      setError(String(reason));
+      submitting.current = false;
+      setBusy(false);
+    },
+    onError: setError,
+  });
   useEffect(() => {
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
@@ -338,7 +284,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     setBusy(true);
     setError("");
     setNotice("");
-    setJob(undefined);
+    clearSnapshot();
     setConnectionName(machine?.name ?? (name.trim() || target.trim()));
     setRemoving(undefined);
     if (machine) {
@@ -360,11 +306,10 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
             alternate: parsed?.ok ? parsed.value.alternate : null,
           });
       if (!alive.current) {
-        await invoke("remote_ssh_cancel", { jobId: id });
+        await cancel(id);
         return;
       }
-      currentJob.current = id;
-      setJobId(id);
+      attach(id);
     } catch (reason) {
       submitting.current = false;
       afterEdit.current = false;
@@ -387,7 +332,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     setError("");
     setNotice("");
     setRemoving(undefined);
-    setJob(undefined);
+    clearSnapshot();
   };
   const closeForm = () => {
     setAdding(false);
@@ -402,20 +347,11 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
     closeForm();
     setView("machines");
     setAdding(true);
-    setJob(undefined);
+    clearSnapshot();
     setError("");
     setNotice("");
     setRemoving(undefined);
   };
-  useEffect(() => {
-    const start = () => {
-      if (!busy && takeMachineAddRequest()) startAdd();
-    };
-    start();
-    return subscribeMachineAddRequests(start);
-    // `startAdd` only resets the existing editor's state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy]);
   // Saving is the user's own action, so it connects even when automatic
   // reconnecting is off. The connection runs as a setup job, the same one
   // Reconnect uses, which is where a new host key or password is answered.
@@ -438,45 +374,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
       setError(String(reason));
     }
   };
-  // A view that cannot reach a machine asks for its address to be edited here.
-  useEffect(() => {
-    const start = () => {
-      const machine = takeEditRequest(machines);
-      if (machine?.ssh) startEdit(machine);
-    };
-    start();
-    return subscribeEditRequests(start);
-    // `startEdit` only sets state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machines]);
-  // A view that cannot reach a machine asks for it to be reconnected here, where
-  // the SSH prompts are answered.
-  useEffect(() => {
-    const start = () => {
-      const machine = takeReconnectRequest(machines);
-      if (machine?.ssh) void begin(machine);
-    };
-    start();
-    return subscribeReconnectRequests(start);
-    // `begin` only reads refs and state setters.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machines]);
-  const respond = async (value: string) => {
-    if (!jobId || !job?.prompt || answering) return;
-    setAnswering(true);
-    setError("");
-    try {
-      await invoke("remote_ssh_answer", {
-        jobId,
-        promptId: job.prompt.id,
-        answer: value,
-      });
-      setAnswer("");
-    } catch (reason) {
-      setError(String(reason));
-      setAnswering(false);
-    }
-  };
+  useConnectionRequestInbox({
+    machines,
+    busy,
+    onAdd: startAdd,
+    onEdit: startEdit,
+    onReconnect: (machine) => void begin(machine),
+  });
   const remove = async (machine: RemoteMachine, revoke: boolean) => {
     setError("");
     setNotice("");
@@ -798,54 +702,13 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
               {job?.message ?? t("Starting connection…")}
             </div>
             {job?.prompt && (
-              <form
-                className="flex flex-col gap-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void respond(job.prompt!.confirm ? "yes" : answer);
-                }}
-              >
-                <p className="whitespace-pre-wrap break-words text-ui-caption leading-relaxed text-content">
-                  {job.prompt.message}
-                </p>
-                {!job.prompt.confirm && (
-                  <PasswordField
-                    key={job.prompt.id}
-                    autoFocus
-                    label={t("SSH password or passphrase")}
-                    hideLabel
-                    aria-label={t("SSH password or passphrase")}
-                    autoComplete="off"
-                    disabled={answering}
-                    value={answer}
-                    onChange={(event) => setAnswer(event.target.value)}
-                  />
-                )}
-                <div className="flex gap-2">
-                  <Button disabled={answering} variant="primary" type="submit">
-                    {job.prompt.confirm ? t("Trust host and continue") : t("Continue")}
-                  </Button>
-                  {job.prompt.confirm && (
-                    <Button
-                      type="button"
-                      disabled={answering}
-                      onClick={() => void respond("no")}
-                      variant="secondary"
-                    >
-                      {t("Reject")}
-                    </Button>
-                  )}
-                </div>
-              </form>
+              <SshSetupPromptForm key={job.prompt.id} prompt={job.prompt} onRespond={respond} />
             )}
             <Button
               type="button"
               className="self-start"
               onClick={() => {
-                if (jobId)
-                  void invoke("remote_ssh_cancel", { jobId }).catch((reason) =>
-                    setError(String(reason)),
-                  );
+                if (jobId) void cancel(jobId).catch((reason) => setError(String(reason)));
               }}
               variant="ghost"
             >

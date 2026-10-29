@@ -6,7 +6,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { flushSync } from "react-dom";
-import { setGrabbing, suppressTextSelection } from "../lib/drag";
+import { t } from "../i18n/technical";
+import { announceDrag, setGrabbing, suppressTextSelection } from "../lib/drag";
 import { reorderMotion } from "../lib/motion";
 import { moveItem } from "../lib/reorder";
 
@@ -21,6 +22,42 @@ export type ReorderExternalDrop<T extends string> = {
 /** Allow WebKit's queued button-less moves to precede their pointerup. */
 const LOST_POINTERUP_GRACE = 150;
 
+/** What a screen reader says for an item: its accessible name, else its visible text. */
+function itemLabel(node: HTMLElement | undefined) {
+  const text = (node?.getAttribute("aria-label") ?? node?.textContent ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 60 ? `${text.slice(0, 59)}…` : text || t("Item");
+}
+
+function describePosition(label: string, index: number, count: number, message: string) {
+  return t(message, { p0: label, p1: index + 1, p2: count });
+}
+
+/**
+ * Moving a focused item reorders the DOM, which drops focus. Give it back once the new order has
+ * been committed, but only when focus was inside the item that moved.
+ */
+function restoreFocusAfterMove(item: HTMLElement | undefined) {
+  const focused = document.activeElement;
+  if (!(focused instanceof HTMLElement) || !item?.contains(focused)) return;
+  window.requestAnimationFrame(() => {
+    if (focused.isConnected && document.activeElement !== focused) focused.focus();
+  });
+}
+
+/** Alt + the axis arrows move the focused item one place; this is the non-drag way to reorder. */
+function keyboardMoveDelta(
+  event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">,
+  axis: "x" | "y",
+): -1 | 1 | 0 {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return 0;
+  const rtl = axis === "x" && document.documentElement.dir === "rtl";
+  const backward = axis === "x" ? (rtl ? "ArrowRight" : "ArrowLeft") : "ArrowUp";
+  const forward = axis === "x" ? (rtl ? "ArrowLeft" : "ArrowRight") : "ArrowDown";
+  return event.key === backward ? -1 : event.key === forward ? 1 : 0;
+}
+
 /**
  * Direct manipulation for a row or column of equal-sized items.
  *
@@ -33,14 +70,23 @@ export function useAnimatedReorder<T extends string>(
   onReorder: (ids: T[], movedId: T) => void,
   axis: "x" | "y" = "x",
   externalDrop?: ReorderExternalDrop<T>,
-  { foldOnDrag = false, onEnd }: { foldOnDrag?: boolean; onEnd?: () => void } = {},
+  {
+    foldOnDrag = false,
+    onEnd,
+    label,
+  }: {
+    foldOnDrag?: boolean;
+    onEnd?: () => void;
+    /** Spoken name of an item; defaults to its aria-label or text. */
+    label?: (id: T) => string;
+  } = {},
 ) {
   const nodes = useRef(new Map<T, HTMLElement>());
   const [draggingId, setDraggingId] = useState<T | null>(null);
-  const latest = useRef({ ids, onReorder, externalDrop, onEnd });
+  const latest = useRef({ ids, onReorder, externalDrop, onEnd, label });
   useLayoutEffect(() => {
-    latest.current = { ids, onReorder, externalDrop, onEnd };
-  }, [ids, onReorder, externalDrop, onEnd]);
+    latest.current = { ids, onReorder, externalDrop, onEnd, label };
+  }, [ids, onReorder, externalDrop, onEnd, label]);
   const cleanup = useRef<(() => void) | null>(null);
   const finishSettling = useRef<(() => void) | null>(null);
   const suppressClickUntil = useRef(0);
@@ -52,6 +98,55 @@ export function useAnimatedReorder<T extends string>(
     if (node) nodes.current.set(id, node);
     else nodes.current.delete(id);
   }, []);
+
+  const spokenName = useCallback(
+    (id: T) => latest.current.label?.(id) || itemLabel(nodes.current.get(id)),
+    [],
+  );
+
+  /** The keyboard and menu path: move one item by `delta` places with the same announcements. */
+  const moveBy = useCallback(
+    (id: T, delta: -1 | 1) => {
+      // A pointer drag owns the list until it settles.
+      if (cleanup.current) return false;
+      const items = latest.current.ids;
+      const from = items.indexOf(id);
+      const to = from + delta;
+      if (from < 0) return false;
+      const name = spokenName(id);
+      if (to < 0 || to >= items.length) {
+        announceDrag(
+          describePosition(name, from, items.length, "{p0} stays at position {p1} of {p2}"),
+        );
+        return false;
+      }
+      restoreFocusAfterMove(nodes.current.get(id));
+      latest.current.onReorder(moveItem(items, from, to), id);
+      announceDrag(describePosition(name, to, items.length, "Moved {p0} to position {p1} of {p2}"));
+      return true;
+    },
+    [spokenName],
+  );
+
+  /** Wire to the item's `onKeyDown`; returns true when the key was a move and has been handled. */
+  const onItemKeyDown = useCallback(
+    (
+      id: T,
+      event: Pick<
+        KeyboardEvent,
+        "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "defaultPrevented"
+      > & { isComposing?: boolean; preventDefault(): void; stopPropagation(): void },
+    ) => {
+      if (event.defaultPrevented || event.isComposing) return false;
+      const delta = keyboardMoveDelta(event, axis);
+      if (!delta) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      moveBy(id, delta);
+      return true;
+    },
+    [axis, moveBy],
+  );
 
   const onItemPointerDown = useCallback(
     (id: T, event: ReactPointerEvent) => {
@@ -183,6 +278,9 @@ export function useAnimatedReorder<T extends string>(
         if (next !== destination) {
           destination = next;
           preview(next);
+          announceDrag(
+            describePosition(spokenName(id), next, items.length, "{p0}, position {p1} of {p2}"),
+          );
         }
       }
 
@@ -230,6 +328,14 @@ export function useAnimatedReorder<T extends string>(
           }
           handle.style.transition = "none";
           handle.dataset.dragging = "true";
+          announceDrag(
+            describePosition(
+              spokenName(id),
+              from,
+              items.length,
+              "Picked up {p0}, position {p1} of {p2}. Escape cancels.",
+            ),
+          );
         }
         overExternalTarget = latest.current.externalDrop?.onMove(id, ev) ?? false;
         if (overExternalTarget) {
@@ -256,7 +362,17 @@ export function useAnimatedReorder<T extends string>(
         }
         settling = true;
         window.cancelAnimationFrame(frame);
-        if (!commit) endExternalDrop();
+        if (!commit) {
+          endExternalDrop();
+          announceDrag(
+            describePosition(
+              spokenName(id),
+              from,
+              items.length,
+              "Move cancelled. {p0} stays at position {p1} of {p2}.",
+            ),
+          );
+        }
         if (commit) paint(false);
         handle.dataset.settling = "true";
         releasePointer();
@@ -266,11 +382,23 @@ export function useAnimatedReorder<T extends string>(
         handle.style.transition = transition;
         handle.style.transform = transform(rects[to].start - rects[from].start);
         const finish = () => {
+          if (commit && to !== from) restoreFocusAfterMove(handle);
           // Clear the preview and commit the order before the next browser paint.
           flushSync(() => {
             reset();
             if (commit && to !== from) latest.current.onReorder(moveItem(items, from, to), id);
           });
+          if (commit)
+            announceDrag(
+              describePosition(
+                spokenName(id),
+                to,
+                items.length,
+                to === from
+                  ? "{p0} stays at position {p1} of {p2}"
+                  : "Moved {p0} to position {p1} of {p2}",
+              ),
+            );
         };
         finishSettling.current = finish;
         if (duration === 0) finish();
@@ -309,9 +437,9 @@ export function useAnimatedReorder<T extends string>(
       window.addEventListener("scroll", onScroll, true);
       return true;
     },
-    [axis, foldOnDrag],
+    [axis, foldOnDrag, spokenName],
   );
 
   const consumeClick = useCallback(() => performance.now() < suppressClickUntil.current, []);
-  return { draggingId, setItemRef, onItemPointerDown, consumeClick };
+  return { draggingId, setItemRef, onItemPointerDown, onItemKeyDown, moveBy, consumeClick };
 }

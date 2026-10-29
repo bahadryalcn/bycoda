@@ -8,6 +8,7 @@ import { Sidebar } from "./Sidebar";
 import { loadSessionFolders } from "../../features/sessions/model/sessionFolders";
 import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
 import { copyText } from "../../platform/tauri/clipboard";
+import { registerAppConfirmHost, type AppConfirmRequest } from "../../shared/model/appConfirm";
 import {
   DEFAULT_SESSION_LIST_DISPLAY,
   saveSessionListDisplay,
@@ -73,6 +74,13 @@ function renameInput(): HTMLInputElement {
 
 function projectSearchInput(): HTMLInputElement | null {
   return document.querySelector('input[placeholder="Search projects..."]');
+}
+
+async function openProjectsFlyout() {
+  const projects = container.querySelector<HTMLButtonElement>(
+    'button[aria-label="Projects and groups"]',
+  )!;
+  await act(async () => projects.click());
 }
 
 async function openProjectPicker() {
@@ -723,6 +731,32 @@ describe("sidebar session bulk actions", () => {
     expect(confirm).toHaveBeenCalledWith("Delete 2 conversations? This can’t be undone.");
     expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
     expect(selectedIds()).toEqual(["session-2", "session-3"]);
+  });
+
+  it("asks once in the shared dialog with the count, the skipped running session and a danger action", async () => {
+    const request = vi.fn(async (_: AppConfirmRequest) => false);
+    const unregister = registerAppConfirmHost(request);
+    try {
+      props.onDeleteSession = vi.fn();
+      props.onDeleteSessionNow = vi.fn(async () => true);
+      act(() => render());
+      clickCard("session-1", { ctrlKey: true });
+      clickCard("session-3", { shiftKey: true });
+      await act(async () => barButton("Delete selected").click());
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.calls[0]![0]).toMatchObject({
+        title: "Delete 2 conversations?",
+        confirmLabel: "Delete 2 conversations",
+        tone: "danger",
+      });
+      expect(request.mock.calls[0]![0].message).toContain("permanently deleted");
+      expect(request.mock.calls[0]![0].message).toContain("1 running conversation will be skipped.");
+      // Declining deletes nothing and keeps the selection.
+      expect(props.onDeleteSessionNow).not.toHaveBeenCalled();
+      expect(selectedIds()).toEqual(["session-1", "session-2", "session-3"]);
+    } finally {
+      unregister();
+    }
   });
 });
 
@@ -1767,7 +1801,9 @@ describe("collapsed rail Inbox actions", () => {
     const inbox = container.querySelector<HTMLButtonElement>(
       'button[aria-label="Inbox, new items"]',
     )!;
-    expect(inbox.textContent).toContain("Inbox");
+    // The collapsed rail is icon-only: the name is the accessible name and tooltip.
+    expect(inbox.textContent).toBe("");
+    expect(inbox.title.startsWith("Inbox, new items")).toBe(true);
     expect(inbox.querySelector("span.bg-accent")).not.toBeNull();
     expect(document.querySelector("[data-compact-tools-flyout]")).toBeNull();
   });
@@ -1862,10 +1898,13 @@ describe("collapsed rail Inbox actions", () => {
       tools.querySelector<HTMLButtonElement>('button[aria-label="Social Media"]')?.textContent,
     ).toContain("Social Media");
     pressKey(document.body, "Escape");
-    await openProjectPicker();
+    // The Projects flyout searches its own list; it never opens a second project picker.
+    await openProjectsFlyout();
     expect(projectSearchInput()).not.toBeNull();
-    expect(document.querySelectorAll('button[aria-label^="Switch project"]')).toHaveLength(1);
-    pressKey(document.body, "Escape");
+    expect(document.querySelectorAll('button[aria-label^="Switch project"]')).toHaveLength(0);
+    expect(
+      rail.querySelector<HTMLElement>('button[aria-label="Projects and groups"]')!.textContent,
+    ).toBe("");
     pressKey(document.body, "Escape");
     act(() =>
       rail.querySelector<HTMLButtonElement>('button[aria-label="Expand projects"]')!.click(),
@@ -1955,12 +1994,44 @@ describe("collapsed rail Inbox actions", () => {
     expect(drawer()).toBeNull();
   });
 
-  it.each([
-    ["compact rail", true],
-    ["sidebar header", false],
-  ])("deletes a project from the %s picker while the rail is hidden", async (_, compact) => {
+  it("deletes a project from the compact Projects list while the rail is hidden", async () => {
     props.projectRailOpen = false;
-    props.compactProjectRail = compact;
+    props.compactProjectRail = true;
+    props.recents = [{ path: "/workspace/other", openedAt: 1 }];
+    props.onSelectProject = vi.fn();
+    props.onOpenProject = vi.fn();
+    props.onRemoveProject = vi.fn();
+    await act(async () => render());
+
+    await openProjectsFlyout();
+    const row = document.querySelector<HTMLElement>(
+      '[data-project-navigation-flyout] [data-project-path="/workspace/other"] button',
+    )!;
+    await act(async () => {
+      row.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    const remove = Array.from(
+      document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.startsWith("Delete"))!;
+    await act(async () => {
+      remove.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      remove.click();
+    });
+    const dialog = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]')).find(
+      (node) => node.textContent?.includes("Delete other"),
+    )!;
+    const confirm = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find(
+      (button) => button.textContent === "Delete",
+    )!;
+    await act(async () => confirm.click());
+    expect(props.onRemoveProject).toHaveBeenCalledWith("/workspace/other", {
+      purgeData: true,
+    });
+  });
+
+  it("deletes a project from the sidebar header picker while the rail is hidden", async () => {
+    props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -1997,6 +2068,7 @@ describe("collapsed rail Inbox actions", () => {
 
   it("opens the active picker project's menu from the keyboard", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -2021,6 +2093,7 @@ describe("collapsed rail Inbox actions", () => {
 
   it("opens a Tab-focused picker row's menu rather than the highlighted one", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();
@@ -2046,6 +2119,7 @@ describe("collapsed rail Inbox actions", () => {
 
   it("shows a rename from the picker menu in the open picker", async () => {
     props.projectRailOpen = false;
+    props.compactProjectRail = false;
     props.recents = [{ path: "/workspace/other", openedAt: 1 }];
     props.onSelectProject = vi.fn();
     props.onOpenProject = vi.fn();

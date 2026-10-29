@@ -20,6 +20,7 @@ import {
   type SlashToken,
 } from "../model/skills";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { SkillPicker } from "./SkillPicker";
 import { Popover } from "../../../shared/ui/Popover";
 import { useComposerSkills } from "../../sessions/ui/useComposerSkills";
@@ -50,7 +51,6 @@ export function SkillPromptField({
   const slashAnchorRef = useRef<HTMLSpanElement>(null);
   const slashRef = useRef<SlashToken | null>(null);
   const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [active, setActive] = useState(0);
   slashRef.current = slash;
 
   const skillCatalog = useComposerSkills({
@@ -70,15 +70,10 @@ export function SkillPromptField({
   );
   const skillNames = useMemo(() => new Set(skills.map((skill) => skill.invocation)), [skills]);
 
-  useEffect(() => {
-    setActive(0);
-  }, [cwd, harness, slash?.query]);
-
-  useEffect(() => {
-    setActive((index) =>
-      rankedSkills.length === 0 ? 0 : Math.min(index, rankedSkills.length - 1),
-    );
-  }, [rankedSkills.length]);
+  const [active, setActive] = useKeyedActiveIndex(
+    `${harness}\u0000${cwd}\u0000${slash?.query ?? ""}`,
+    rankedSkills.length,
+  );
 
   useLayoutEffect(() => {
     if (fieldRef.current) {

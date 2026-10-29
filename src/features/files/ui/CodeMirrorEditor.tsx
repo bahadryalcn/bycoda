@@ -163,9 +163,12 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     props.captureObserver?.changed();
     if (merge && props.initialDraft === undefined) props.captureObserver?.attach(null);
   }, [merge, props.initialDraft, props.captureObserver]);
-  useEffect(() => {
-    if (hasConflictMarkers(props.value)) setMerge(true);
-  }, [props.value]);
+  // Conflict markers arriving in a new value switch to merge mode (latched once on).
+  const [seenValue, setSeenValue] = useState(props.value);
+  if (seenValue !== props.value) {
+    setSeenValue(props.value);
+    if (!merge && hasConflictMarkers(props.value)) setMerge(true);
+  }
   return merge && props.initialDraft === undefined ? (
     <MergeConflictEditor
       path={props.path}
@@ -300,11 +303,15 @@ function StandardCodeMirrorEditor({
     hasConflictMarkers(value) ? conflictSourcesFromMarkers(value) : null,
   );
   const conflictLayoutActive = conflictSources !== null;
-  useEffect(() => {
-    if (!conflictInline && hasConflictMarkers(value)) setConflictInline(true);
-    if (!conflictSources && hasConflictMarkers(value))
-      setConflictSources(conflictSourcesFromMarkers(value));
-  }, [conflictInline, conflictSources, value]);
+  // Both latch on when a new value brings conflict markers; they never turn back off.
+  const [seenConflictValue, setSeenConflictValue] = useState(value);
+  if (seenConflictValue !== value) {
+    setSeenConflictValue(value);
+    if (hasConflictMarkers(value)) {
+      if (!conflictInline) setConflictInline(true);
+      if (!conflictSources) setConflictSources(conflictSourcesFromMarkers(value));
+    }
+  }
   // Without a "before" there is nothing to put on the left.
   const splitDiff = showDiff && diffLayout === "split" && gitOriginal !== null && !conflictInline;
   const [conflictCount, setConflictCount] = useState(0);
@@ -666,7 +673,9 @@ function StandardCodeMirrorEditor({
         }
         if (!update.docChanged) return;
         captureObserverRef.current?.changed();
-        setConflictCount(conflictBlocks(update.state).length);
+        const blockCount = conflictBlocks(update.state).length;
+        setConflictCount(blockCount);
+        if (blockCount > 0) setHadConflicts(true);
         onEditRef.current?.();
         onDocChangeRef.current?.(update.state.doc.toString());
         if (update.transactions.some((tr) => tr.annotation(diskReload))) {
@@ -773,7 +782,9 @@ function StandardCodeMirrorEditor({
         };
       },
     });
-    setConflictCount(conflictBlocks(view.state).length);
+    const initialBlockCount = conflictBlocks(view.state).length;
+    setConflictCount(initialBlockCount);
+    if (initialBlockCount > 0) setHadConflicts(true);
     if (blameOnRef.current) scheduleBlame();
     lockOverscroll(scrollerRef.current as HTMLDivElement);
     if (carry) {
@@ -888,10 +899,6 @@ function StandardCodeMirrorEditor({
     if (blameOnRef.current) scheduleBlameRef.current?.();
   }, [shown]);
 
-  useEffect(() => {
-    if (conflictCount > 0) setHadConflicts(true);
-  }, [conflictCount]);
-
   // The file stays unmerged in git until it is staged, whatever the buffer says.
   useEffect(() => {
     if (conflictCount > 0 || !hadConflicts || !gitRelative) {
@@ -919,8 +926,15 @@ function StandardCodeMirrorEditor({
     };
   }, [conflictCount, cwd, gitRelative, hadConflicts, shown]);
 
-  const [fileNote, setFileNote] = useState<string | null>(null);
-  useEffect(() => setFileNote(null), [path]);
+  // The note belongs to the file it was raised for, so another file shows none.
+  const [fileNoteState, setFileNoteState] = useState<{ path: string; message: string } | null>(
+    null,
+  );
+  const fileNote = fileNoteState?.path === path ? fileNoteState.message : null;
+  const setFileNote = useCallback(
+    (message: string | null) => setFileNoteState(message === null ? null : { path, message }),
+    [path],
+  );
 
   // The next file git still lists as unmerged, wrapping around.
   const openNextConflictedFile = useCallback(async () => {
@@ -936,7 +950,7 @@ function StandardCodeMirrorEditor({
     } catch (error: unknown) {
       setFileNote(error instanceof Error ? error.message : String(error));
     }
-  }, [cwd, gitRelative, onOpenFile]);
+  }, [cwd, gitRelative, onOpenFile, setFileNote]);
 
   const markResolved = useCallback(async () => {
     if (!gitRelative) return;
@@ -1086,9 +1100,8 @@ function StandardCodeMirrorEditor({
     view.focus();
   }, [active, path, showDiff]);
 
-  useEffect(() => {
-    if (!active) setSelectionTarget(null);
-  }, [active]);
+  // The selection menu never outlives the editor being active.
+  if (!active && selectionTarget !== null) setSelectionTarget(null);
 
   return (
     <>

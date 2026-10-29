@@ -67,6 +67,7 @@ import {
 } from "../../features/projects/model/recents";
 import type { ProjectReturnMemory } from "../../features/projects/model/projectReturn";
 import { appName } from "../../shared/lib/appName";
+import { confirmInApp } from "../../shared/model/appConfirm";
 import { readToolWindow } from "./toolWindows";
 import { setSessions } from "../../features/sessions/model/sessionsStore";
 
@@ -731,12 +732,11 @@ export async function closeCurrentWindow(): Promise<void> {
 
 export async function confirmReload(hasUnsavedFiles: boolean): Promise<boolean> {
   if (!hasUnsavedFiles) return true;
-  return ask(t("Reload {p0} and discard unsaved changes?", { p0: PRODUCT_IDENTITY.displayName }), {
-    title: appName(),
-    kind: "warning",
-    get okLabel() {
-      return t("Reload");
-    },
+  return confirmInApp({
+    title: t("Reload {p0}?", { p0: PRODUCT_IDENTITY.displayName }),
+    message: t("Unsaved changes in open files will be discarded."),
+    confirmLabel: t("Reload"),
+    tone: "danger",
   });
 }
 
@@ -857,16 +857,13 @@ async function confirmAndCloseWindow(
   quitDialogOpen = true;
   try {
     if (hasInFlightSessions(sessions)) {
-      const ok = await ask(
-        t("Close this window and stop its running chats? Other windows will stay open."),
-        {
-          title: appName(),
-          kind: "warning",
-          get okLabel() {
-            return t("Close window");
-          },
-        },
-      );
+      const ok = await confirmInApp({
+        title: t("Close window and stop running chats?"),
+        message: t("Running chats in this window stop. Other windows stay open."),
+        confirmLabel: t("Close window"),
+        tone: "danger",
+        reveal: true,
+      });
       if (!ok) return;
     }
     quitting = true;

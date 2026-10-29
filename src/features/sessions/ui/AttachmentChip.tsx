@@ -9,7 +9,7 @@ import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import { BrowserAnnotationDetails } from "../../host-tools/BrowserAnnotationDetails";
 import { useAttachmentPreview } from "./useAttachmentPreview";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   AttachmentFilePreview,
   canOpenFileAttachment,
@@ -37,9 +37,6 @@ export function AttachmentChip({
   const t = useT();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
-  useEffect(() => {
-    if (!fileOpen) setOpenedFile(null);
-  }, [fileOpen]);
   const canOpenFile = canOpenFileAttachment(attachment);
   const {
     src: preview,

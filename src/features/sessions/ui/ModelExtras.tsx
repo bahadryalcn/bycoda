@@ -3,7 +3,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Button } from "../../../shared/ui/Button";
 
 import { NativeSelect } from "../../../shared/ui/Select";
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { ChevronDown, CircleHelp, SlidersHorizontal } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
@@ -14,14 +14,18 @@ import {
   subscribeModels,
 } from "../model/models";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
-import { pickerSettings } from "../model/modelPickerData";
+import {
+  groupSettings,
+  pickerSettings,
+  SETTING_GROUP_TITLE,
+  settingLabel,
+  type SettingGroupId,
+} from "../model/modelPickerData";
 import type { ModelSetting } from "../model/models";
 import type { HarnessId } from "../model/session";
 import { HARNESS_TITLE } from "../model/session";
 import { useModelSource } from "./modelSource";
 
-const DELEGATION = new Set(["advisor", "subagentModel", "subagentPolicy"]);
-const COMPACTION = new Set(["autoCompact", "autoCompactWindow"]);
 /** Rows indented under the setting they depend on. */
 const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
 
@@ -44,17 +48,12 @@ function useModelExtras(harness: HarnessId, model: string, values: Record<string
       : id === "autoCompactWindow" && effective.autoCompact === "off";
   const active = settings.filter((s) => effective[s.id] !== s.value && !isInactive(s.id));
   const changed = active.length;
-  const delegated = settings.filter((s) => DELEGATION.has(s.id));
-  const compaction = settings.filter((s) => COMPACTION.has(s.id));
-  const own = settings.filter((s) => !DELEGATION.has(s.id) && !COMPACTION.has(s.id));
-  const groups: Array<{ title?: string; settings: ModelSetting[] }> =
-    own.length < settings.length
-      ? [
-          { title: "Model", settings: own },
-          { title: "Context", settings: compaction },
-          { title: "Advisor and subagents", settings: delegated },
-        ].filter((group) => group.settings.length > 0)
-      : [{ settings }];
+  // Same groups and order as the picker menu: model options, then Context, then delegation.
+  const grouped = groupSettings(settings);
+  const groups: Array<{ id: SettingGroupId; title?: string; settings: ModelSetting[] }> =
+    grouped.length > 1 || (grouped[0] && grouped[0].id !== "model")
+      ? grouped.map((group) => ({ ...group, title: SETTING_GROUP_TITLE[group.id] }))
+      : [{ id: "model", settings }];
   return { current, settings, effective, isInactive, active, changed, groups };
 }
 
@@ -96,7 +95,7 @@ export function ModelExtrasPanel({
     const modified = value !== setting.value && !inactive;
     const descriptionId = `${id}-${setting.id}-help`;
     const showHelp = explained === setting.id;
-    const label = t(setting.label);
+    const label = t(settingLabel(setting));
     const update = (next: string) => {
       if (!disabled) onSettingsChange({ ...effective, [setting.id]: next });
     };
@@ -208,7 +207,7 @@ export function ModelExtrasPanel({
       </div>
       <div className="space-y-3 px-3 pt-2 pb-3">
         {groups.map((group) => (
-          <section key={group.title ?? "all"}>
+          <section key={group.id}>
             {group.title && (
               <h3 className="mb-1 text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
                 {t(group.title)}
@@ -253,11 +252,16 @@ export function ModelExtras({
 }) {
   const t = useT();
   const { settings, effective, active, changed } = useModelExtras(harness, model, values);
-  const [open, setOpen] = useState(false);
+  // The popover belongs to the model and enabled state it was opened for.
+  const ownerKey = `${harness}\u0000${model}\u0000${disabled}`;
+  const [openFor, setOpenFor] = useState<string | null>(null);
+  const open = openFor === ownerKey;
+  const setOpen = (next: boolean | ((current: boolean) => boolean)) =>
+    setOpenFor((previous) => {
+      const was = previous === ownerKey;
+      return (typeof next === "function" ? next(was) : next) ? ownerKey : null;
+    });
   const anchor = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    setOpen(false);
-  }, [harness, model, disabled]);
   if (!settings.length) return null;
   const dismiss = () => {
     setOpen(false);

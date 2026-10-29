@@ -28,4 +28,16 @@ describe("image gestures", () => {
     await act(async () => root.unmount());
     const late = wheel(true); viewport.dispatchEvent(late); expect(late.defaultPrevented).toBe(false); container.remove();
   });
+  it("returns to fit when the source changes without an effect-driven reset", async () => {
+    const container = document.createElement("div"); document.body.append(container); const root = createRoot(container);
+    function Probe({ source }: { source: string }) { const ref = useRef<HTMLDivElement>(null); const zoom = useImageZoom(ref, source);
+      return createElement("div", { ref, tabIndex: 0, "data-scale": zoom.value.scale, onClick: () => zoom.zoom(2) }); }
+    await act(async () => root.render(createElement(Probe, { source: "one" })));
+    const viewport = container.firstElementChild as HTMLElement;
+    vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 400, height: 300 } as DOMRect);
+    await act(async () => viewport.click()); expect(viewport.dataset.scale).toBe("2");
+    await act(async () => root.render(createElement(Probe, { source: "one" }))); expect(viewport.dataset.scale).toBe("2");
+    await act(async () => root.render(createElement(Probe, { source: "two" }))); expect(viewport.dataset.scale).toBe("1");
+    await act(async () => root.unmount()); container.remove();
+  });
 });

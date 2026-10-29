@@ -184,16 +184,13 @@ export function CrewMemberPicker({
                 </Button>
               </div>
             ) : (
-              <ul
-                aria-label={t("Member library")}
-                className="flex flex-col gap-px"
-              >
+              <ul aria-label={t("Member library")} className="flex flex-col gap-px">
                 {matches.map((agent) => {
                   const checked = selected.includes(agent.id);
                   return (
                     <li key={agent.id}>
                       <label
-                        className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-(--radius-control) px-3 py-2 hover:bg-(--ui-surface-hover) ${checked ? "bg-(--ui-surface-selected)" : ""}`}
+                        className={`grid min-w-0 cursor-pointer grid-cols-[auto_minmax(0,1fr)_minmax(0,auto)] items-center gap-3 rounded-(--radius-control) px-3 py-2 hover:bg-(--ui-surface-hover) ${checked ? "bg-(--ui-surface-selected)" : ""}`}
                       >
                         <Checkbox
                           checked={checked}
@@ -206,7 +203,7 @@ export function CrewMemberPicker({
                           <CrewMemberMeta agent={agent} catalog={data.catalog} shortScope />
                         </span>
                         {agent.groups?.length ? (
-                          <span className="flex max-w-[40%] flex-wrap justify-end gap-1">
+                          <span className="flex max-w-48 flex-wrap justify-end gap-1">
                             {agent.groups.slice(0, 3).map((name) => (
                               <Badge key={name} size="sm">
                                 {name}

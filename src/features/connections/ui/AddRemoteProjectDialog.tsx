@@ -15,6 +15,8 @@ import { RemoteDataStatus } from "./RemoteDataStatus";
 import { subscribeRemoteRecovered } from "../model/remoteHealth";
 import { connectionOutcome } from "../model/remoteConnection";
 
+type RemoteProjectMachine = ReturnType<typeof remoteProjectMachines>[number];
+
 /** Adds a project whose folder is on a connected machine. Sessions in it run
  * on that machine; the project otherwise behaves like any other in the rail. */
 export function AddRemoteProjectDialog({
@@ -36,6 +38,58 @@ export function AddRemoteProjectDialog({
   const machines = remoteProjectMachines(allMachines);
   const [machineId, setMachineId] = useState<string>();
   const machine = machines.find((entry) => entry.id === machineId) ?? machines[0];
+  return (
+    <Modal
+      title={t("Open folder on a machine")}
+      description={
+        t(
+          "Sessions in this project run on that machine, using its checkout and its Codex or Claude Code sign-in. They keep running when you close ",
+        ) +
+        PRODUCT_IDENTITY.displayName +
+        t(" here.")
+      }
+      size="md"
+      onClose={onCancel}
+    >
+      {/* Keyed by machine: browse state belongs to one machine and starts fresh for the next. */}
+      <AddRemoteProjectForm
+        key={machine?.id ?? ""}
+        machines={machines}
+        machine={machine}
+        loaded={loaded}
+        machinesLoading={machinesLoading}
+        machinesError={machinesError}
+        refreshMachines={refreshMachines}
+        onSelectMachine={setMachineId}
+        onCancel={onCancel}
+        onOpen={onOpen}
+      />
+    </Modal>
+  );
+}
+
+function AddRemoteProjectForm({
+  machines,
+  machine,
+  loaded,
+  machinesLoading,
+  machinesError,
+  refreshMachines,
+  onSelectMachine,
+  onCancel,
+  onOpen,
+}: {
+  machines: RemoteProjectMachine[];
+  machine: RemoteProjectMachine | undefined;
+  loaded: boolean;
+  machinesLoading: boolean;
+  machinesError: string | undefined;
+  refreshMachines: () => void;
+  onSelectMachine: (id: string) => void;
+  onCancel: () => void;
+  onOpen: (key: string) => void;
+}) {
+  useLocale();
   const [path, setPath] = useState("");
   const [directory, setDirectory] = useState<HostDirectory>();
   const [loading, setLoading] = useState(false);
@@ -102,12 +156,6 @@ export function AddRemoteProjectDialog({
   };
 
   useEffect(() => {
-    setDirectory(undefined);
-    requestVersion.current++;
-    setNewName(null);
-    setCreating(false);
-    setPath("");
-    setVerifiedAt(undefined);
     if (machine) void browse();
   }, [machine?.id]);
 
@@ -202,265 +250,252 @@ export function AddRemoteProjectDialog({
   };
 
   return (
-    <Modal
-      title={t("Open folder on a machine")}
-      description={
-        t(
-          "Sessions in this project run on that machine, using its checkout and its Codex or Claude Code sign-in. They keep running when you close ",
-        ) +
-        PRODUCT_IDENTITY.displayName +
-        t(" here.")
-      }
-      size="md"
-      onClose={cancel}
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (newName !== null) void createFolder();
+        else void open();
+      }}
+      className="flex flex-col gap-3 p-4"
     >
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (newName !== null) void createFolder();
-          else void open();
-        }}
-        className="flex flex-col gap-3 p-4"
-      >
-        {machinesLoading || machinesError ? (
-          <RemoteDataStatus
-            label={t("machines")}
-            state={{
-              phase: machinesLoading ? (machines.length ? "refreshing" : "loading") : "error",
-              error: machinesError,
-            }}
-            onRefresh={refreshMachines}
-          />
-        ) : null}
-        {!loaded || (machinesError && !machine) ? null : !machine ? (
-          <>
-            <p className="text-ui-caption leading-snug text-(--ui-text-muted)">
-              {t(
-                "No machines are connected yet. Add one in Settings, then open a folder on it here.",
-              )}
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" onClick={cancel} variant="ghost">
-                {t("Cancel")}
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  cancel();
-                  window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
-                }}
-                variant="primary"
-              >
-                {t("Add a machine")}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <>
-            {machines.length > 1 ? (
-              <SearchableSelect
-                label={t("Machine")}
-                value={machine.id}
-                options={machines.map((entry) => ({
-                  value: entry.id,
-                  label: entry.name,
-                  keywords: entry.ssh?.target ?? entry.endpoint,
-                }))}
-                disabled={creating || opening}
-                onChange={(id) => {
-                  if (!mutation.current) setMachineId(id);
-                }}
-                searchable={false}
-              />
-            ) : (
-              <p className="text-ui-caption text-(--ui-text-muted)">
-                {t("On ")}
-                <span className="text-content">{machine.name}</span>
-              </p>
+      {machinesLoading || machinesError ? (
+        <RemoteDataStatus
+          label={t("machines")}
+          state={{
+            phase: machinesLoading ? (machines.length ? "refreshing" : "loading") : "error",
+            error: machinesError,
+          }}
+          onRefresh={refreshMachines}
+        />
+      ) : null}
+      {!loaded || (machinesError && !machine) ? null : !machine ? (
+        <>
+          <p className="text-ui-caption leading-snug text-(--ui-text-muted)">
+            {t(
+              "No machines are connected yet. Add one in Settings, then open a folder on it here.",
             )}
-            <TextField
-              aria-label={t("Folder path on the machine")}
-
-              placeholder="/home/me/code/my-app"
-              value={path}
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="off"
-              autoComplete="off"
-              disabled={creating || opening}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void browse(path.trim());
-                }
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button type="button" onClick={cancel} variant="ghost">
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => {
+                cancel();
+                window.dispatchEvent(new Event(OPEN_CONNECTIONS_EVENT));
               }}
-              onChange={(event) => setPath(event.target.value)}
-              label=""
-              hideLabel
-              fieldClassName="min-w-0 flex-1"
-            />
-            <nav
-              aria-label={t("Locations")}
-              className="flex flex-wrap items-center gap-1 border-b border-stroke pb-2"
+              variant="primary"
             >
+              {t("Add a machine")}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <>
+          {machines.length > 1 ? (
+            <SearchableSelect
+              label={t("Machine")}
+              value={machine.id}
+              options={machines.map((entry) => ({
+                value: entry.id,
+                label: entry.name,
+                keywords: entry.ssh?.target ?? entry.endpoint,
+              }))}
+              disabled={creating || opening}
+              onChange={(id) => {
+                if (!mutation.current) onSelectMachine(id);
+              }}
+              searchable={false}
+            />
+          ) : (
+            <p className="text-ui-caption text-(--ui-text-muted)">
+              {t("On ")}
+              <span className="text-content">{machine.name}</span>
+            </p>
+          )}
+          <TextField
+            aria-label={t("Folder path on the machine")}
+
+            placeholder="/home/me/code/my-app"
+            value={path}
+            spellCheck={false}
+            autoCorrect="off"
+            autoCapitalize="off"
+            autoComplete="off"
+            disabled={creating || opening}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void browse(path.trim());
+              }
+            }}
+            onChange={(event) => setPath(event.target.value)}
+            label=""
+            hideLabel
+            fieldClassName="min-w-0 flex-1"
+          />
+          <nav
+            aria-label={t("Locations")}
+            className="flex flex-wrap items-center gap-1 border-b border-stroke pb-2"
+          >
+            <Button
+              type="button"
+              aria-label={t("Parent folder")}
+              disabled={!directory?.parent || loading || creating || opening}
+              onClick={() => void browse(directory?.parent ?? undefined)}
+              variant="secondary"
+              iconOnly
+              label={t("Parent folder")}
+            >
+              <ArrowUp className="icon-md" />
+            </Button>
+            <Button
+              type="button"
+              disabled={loading || creating || opening}
+              onClick={() => void browse(directory?.home)}
+              variant="secondary"
+            >
+              {t("Home folder")}
+            </Button>
+            {directory?.roots?.map((root) => (
               <Button
-                type="button"
-                aria-label={t("Parent folder")}
-                disabled={!directory?.parent || loading || creating || opening}
-                onClick={() => void browse(directory?.parent ?? undefined)}
-                variant="secondary"
-                iconOnly
-                label={t("Parent folder")}
-              >
-                <ArrowUp className="icon-md" />
-              </Button>
-              <Button
+                key={root.path}
                 type="button"
                 disabled={loading || creating || opening}
-                onClick={() => void browse(directory?.home)}
+                onClick={() => void browse(root.path)}
                 variant="secondary"
               >
-                {t("Home folder")}
+                {root.name}
               </Button>
-              {directory?.roots?.map((root) => (
-                <Button
-                  key={root.path}
-                  type="button"
-                  disabled={loading || creating || opening}
-                  onClick={() => void browse(root.path)}
-                  variant="secondary"
-                >
-                  {root.name}
-                </Button>
-              ))}
+            ))}
+            <Button
+              type="button"
+              disabled={!directory || loading || creating || opening || !!browseError}
+              onClick={() => setNewName("")}
+              variant="secondary"
+            >
+              <FolderPlus className="icon-md" />
+              {t("New folder")}
+            </Button>
+          </nav>
+          {newName !== null ? (
+            <div className="flex items-center gap-2">
+              <TextField
+                autoFocus
+                aria-label={t("New folder name")}
+                value={newName}
+                disabled={creating}
+                onChange={(event) => setNewName(event.target.value)}
+                label=""
+                hideLabel
+                fieldClassName="min-w-0 flex-1"
+              />
               <Button
                 type="button"
-                disabled={!directory || loading || creating || opening || !!browseError}
-                onClick={() => setNewName("")}
+                loading={creating}
+                disabled={!newName.trim()}
+                onClick={() => void createFolder()}
                 variant="secondary"
               >
-                <FolderPlus className="icon-md" />
-                {t("New folder")}
-              </Button>
-            </nav>
-            {newName !== null ? (
-              <div className="flex items-center gap-2">
-                <TextField
-                  autoFocus
-                  aria-label={t("New folder name")}
-                  value={newName}
-                  disabled={creating}
-                  onChange={(event) => setNewName(event.target.value)}
-                  label=""
-                  hideLabel
-                  fieldClassName="min-w-0 flex-1"
-                />
-                <Button
-                  type="button"
-                  loading={creating}
-                  disabled={!newName.trim()}
-                  onClick={() => void createFolder()}
-                  variant="secondary"
-                >
-                  {t("Create")}
-                </Button>
-                <Button
-                  type="button"
-                  disabled={creating}
-                  onClick={() => setNewName(null)}
-                  variant="secondary"
-                >
-                  {t("Cancel")}
-                </Button>
-              </div>
-            ) : null}
-            <RemoteDataStatus
-              label={t("folders")}
-              state={{
-                phase: loading
-                  ? directory
-                    ? "refreshing"
-                    : "loading"
-                  : browseError
-                    ? "error"
-                    : directory
-                      ? directory.entries.length
-                        ? "ready"
-                        : "empty"
-                      : "loading",
-                error: browseError,
-                updatedAt: verifiedAt,
-              }}
-              onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
-              disabled={opening || creating}
-            />
-            {directory && (loading || browseError) ? (
-              <p className="text-ui-caption text-(--ui-text-muted)">
-                {t("Showing last loaded folder: ")}
-                {directory.path}
-              </p>
-            ) : null}
-            <div
-              aria-label={t("Folders")}
-              className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain rounded-md border border-stroke"
-            >
-              <div className="p-1">
-                {directory?.parent ? (
-                  <FolderRow
-                    name=".."
-                    disabled={creating || opening || loading}
-                    onOpen={() => void browse(directory.parent!)}
-                  />
-                ) : null}
-                {directory?.entries.map((entry) => (
-                  <FolderRow
-                    key={entry.path}
-                    name={entry.name}
-                    disabled={creating || opening || loading}
-                    onOpen={() => void browse(entry.path)}
-                  />
-                ))}
-                {directory && !directory.entries.length ? (
-                  <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
-                    {t("No subfolders")}
-                  </p>
-                ) : null}
-                {!directory && loading ? (
-                  <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
-                    {t("Loading folders…")}
-                  </p>
-                ) : null}
-              </div>
-            </div>
-            {error ? (
-              <Alert role="alert" tone="danger">
-                {error}
-              </Alert>
-            ) : null}
-            <div className="flex justify-end gap-2">
-              <Button type="button" onClick={cancel} variant="ghost">
-                {t("Cancel")}
+                {t("Create")}
               </Button>
               <Button
-                type="submit"
-                loading={opening}
-                disabled={
-                  creating ||
-                  newName !== null ||
-                  loading ||
-                  !!browseError ||
-                  !!machinesError ||
-                  !path.trim()
-                }
-                variant="primary"
+                type="button"
+                disabled={creating}
+                onClick={() => setNewName(null)}
+                variant="secondary"
               >
-                {opening ? t("Opening…") : t("Open")}
+                {t("Cancel")}
               </Button>
             </div>
-          </>
-        )}
-      </form>
-    </Modal>
+          ) : null}
+          <RemoteDataStatus
+            label={t("folders")}
+            state={{
+              phase: loading
+                ? directory
+                  ? "refreshing"
+                  : "loading"
+                : browseError
+                  ? "error"
+                  : directory
+                    ? directory.entries.length
+                      ? "ready"
+                      : "empty"
+                    : "loading",
+              error: browseError,
+              updatedAt: verifiedAt,
+            }}
+            onRefresh={() => void browse(browseError ? requestedPath.current : directory?.path)}
+            disabled={opening || creating}
+          />
+          {directory && (loading || browseError) ? (
+            <p className="text-ui-caption text-(--ui-text-muted)">
+              {t("Showing last loaded folder: ")}
+              {directory.path}
+            </p>
+          ) : null}
+          <div
+            aria-label={t("Folders")}
+            className="h-[min(340px,45vh)] min-h-24 overflow-y-auto overscroll-contain rounded-md border border-stroke"
+          >
+            <div className="p-1">
+              {directory?.parent ? (
+                <FolderRow
+                  name=".."
+                  disabled={creating || opening || loading}
+                  onOpen={() => void browse(directory.parent!)}
+                />
+              ) : null}
+              {directory?.entries.map((entry) => (
+                <FolderRow
+                  key={entry.path}
+                  name={entry.name}
+                  disabled={creating || opening || loading}
+                  onOpen={() => void browse(entry.path)}
+                />
+              ))}
+              {directory && !directory.entries.length ? (
+                <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
+                  {t("No subfolders")}
+                </p>
+              ) : null}
+              {!directory && loading ? (
+                <p className="px-2 py-1.5 text-ui-caption text-(--ui-text-muted)">
+                  {t("Loading folders…")}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {error ? (
+            <Alert role="alert" tone="danger">
+              {error}
+            </Alert>
+          ) : null}
+          <div className="flex justify-end gap-2">
+            <Button type="button" onClick={cancel} variant="ghost">
+              {t("Cancel")}
+            </Button>
+            <Button
+              type="submit"
+              loading={opening}
+              disabled={
+                creating ||
+                newName !== null ||
+                loading ||
+                !!browseError ||
+                !!machinesError ||
+                !path.trim()
+              }
+              variant="primary"
+            >
+              {opening ? t("Opening…") : t("Open")}
+            </Button>
+          </div>
+        </>
+      )}
+    </form>
   );
 }
 

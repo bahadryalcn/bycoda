@@ -14,6 +14,7 @@ import {
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import { isBlankWorkspaceTab } from "../helpers/tabHelpers";
 
 export interface ClearTabSessionDeps {
@@ -139,9 +140,11 @@ export function useClearTabSession(deps: ClearTabSessionDeps): {
         finishClear();
         return;
       }
-      void confirmDiscardUnsaved("Close this conversation with unsaved files?").then(
-        (ok) => ok && finishClear(),
-      );
+      void confirmDiscardUnsaved({
+        title: t("Close conversation with unsaved files?"),
+        confirmLabel: t("Discard and close"),
+        files: unsaved,
+      }).then((ok) => ok && finishClear());
     },
     [tabs, persistSession, refreshHistory, sidebarCwd],
   );

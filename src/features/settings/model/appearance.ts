@@ -1,7 +1,17 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { themePalette } from "../../../shared/theme/palette";
 import { clamp } from "../../../shared/lib/numbers";
-import { initAppearancePreferences } from "./appearancePreferences";
+import {
+  APPEARANCE_PREFERENCES_EVENT,
+  initAppearancePreferences,
+  loadAppearancePreferences,
+} from "./appearancePreferences";
+import {
+  deriveAccentRoles,
+  isAccentReadability,
+  type AccentCanvas,
+  type AccentReadability,
+} from "./accentContrast";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { hslToRgb, isHexColor, type Rgb } from "../../../shared/lib/colorUtils";
 import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
@@ -272,15 +282,6 @@ export function migrateWorkbenchPalette() {
   }
 }
 
-function accentForeground(color: string): (typeof themePalette)["scrim" | "solidInk"] {
-  const channels = [1, 3, 5].map((offset) => {
-    const value = Number.parseInt(color.slice(offset, offset + 2), 16) / 255;
-    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
-  });
-  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
-  return luminance > 0.179 ? themePalette.scrim : themePalette.solidInk;
-}
-
 export function loadAccentColor(): string | null {
   migrateWorkbenchPalette();
   try {
@@ -301,16 +302,69 @@ export function saveAccentColor(value: string | null) {
   );
 }
 
+/** The level the accent roles are derived for: the live document value, else the saved one. */
+function currentAccentReadability(): AccentReadability {
+  const live = document.documentElement.dataset.accentReadability;
+  return isAccentReadability(live) ? live : loadAppearancePreferences().accentReadability;
+}
+
+const ACCENT_PROPERTIES = [
+  "--user-accent-color",
+  "--user-accent-solid",
+  "--user-accent-solid-hover",
+  "--user-accent-solid-pressed",
+  "--user-accent-foreground",
+  "--user-accent-selection-dark",
+  "--user-accent-selection-light",
+] as const;
+
+function hex(rgb: Rgb) {
+  return `#${[rgb.r, rgb.g, rgb.b]
+    .map((channel) => Math.round(channel).toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+/** Tint values applied to the document (live previews included); unset until first applied. */
+const appliedTint: { hue?: number; saturation?: number; darkLightness?: number } = {};
+
+/** The page canvas of both schemes, from the applied tint (mirrors the CSS theme formulas). */
+function themeCanvases(): AccentCanvas {
+  const hue = appliedTint.hue ?? loadThemeHue();
+  const saturation = appliedTint.saturation ?? loadThemeSaturation();
+  return {
+    dark: hex(hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness())),
+    light: hex(hslToRgb(hue, saturation * 0.2, 98.6)),
+  };
+}
+
+/** Re-derives the accent roles when only their inputs (tint, canvas) changed. */
+function refreshAccentRoles() {
+  const saved = document.documentElement.style.getPropertyValue("--user-accent-color");
+  if (saved) applyAccentColor(saved);
+}
+
+/**
+ * Publishes the accent roles. `--user-accent-color` stays the saved colour and
+ * `--user-accent-solid` equals it; the ink, hover/pressed steps and the two
+ * selection fills are derived for the active readability level against the real
+ * theme canvas (see accentContrast.ts) and only ever rendered.
+ */
 export function applyAccentColor(value: string | null) {
   const next = normalizeAccentColor(value);
-  document.documentElement.classList.toggle("has-user-accent", next != null);
+  const root = document.documentElement;
+  root.classList.toggle("has-user-accent", next != null);
   if (next == null) {
-    document.documentElement.style.removeProperty("--user-accent-color");
-    document.documentElement.style.removeProperty("--user-accent-foreground");
+    for (const property of ACCENT_PROPERTIES) root.style.removeProperty(property);
     return next;
   }
-  document.documentElement.style.setProperty("--user-accent-color", next);
-  document.documentElement.style.setProperty("--user-accent-foreground", accentForeground(next));
+  const roles = deriveAccentRoles(next, currentAccentReadability(), themeCanvases());
+  root.style.setProperty("--user-accent-color", next);
+  root.style.setProperty("--user-accent-solid", roles.solid.background);
+  root.style.setProperty("--user-accent-solid-hover", roles.solid.hover);
+  root.style.setProperty("--user-accent-solid-pressed", roles.solid.pressed);
+  root.style.setProperty("--user-accent-foreground", roles.solid.foreground);
+  root.style.setProperty("--user-accent-selection-dark", roles.selection.dark.background);
+  root.style.setProperty("--user-accent-selection-light", roles.selection.light.background);
   return next;
 }
 
@@ -367,6 +421,8 @@ export function saveThemeDarkLightness(value: number) {
 export function applyThemeDarkLightness(value: number) {
   const next = Math.round(clamp(value, THEME_DARK_LIGHTNESS_MIN, THEME_DARK_LIGHTNESS_MAX));
   document.documentElement.style.setProperty("--theme-dark-lightness", `${next}%`);
+  appliedTint.darkLightness = next;
+  refreshAccentRoles();
   return next;
 }
 
@@ -375,6 +431,9 @@ export function applyThemeTint(hue: number, saturation: number) {
   const nextSaturation = Math.round(clamp(saturation, THEME_SATURATION_MIN, THEME_SATURATION_MAX));
   document.documentElement.style.setProperty("--theme-hue", String(nextHue));
   document.documentElement.style.setProperty("--theme-saturation", `${nextSaturation}%`);
+  appliedTint.hue = nextHue;
+  appliedTint.saturation = nextSaturation;
+  refreshAccentRoles();
   return { hue: nextHue, saturation: nextSaturation };
 }
 
@@ -477,6 +536,10 @@ export function initAppearance() {
   if (!themeStorageWatching) {
     themeStorageWatching = true;
     subscribeThemeStorage(applyStoredAppearance);
+    // The readability level is part of the appearance record; this also fires for sibling windows.
+    window.addEventListener(APPEARANCE_PREFERENCES_EVENT, () =>
+      applyAccentColor(loadAccentColor()),
+    );
   }
   initUiScale();
 }

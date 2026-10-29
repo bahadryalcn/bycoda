@@ -1,14 +1,14 @@
 import { errorText } from "../../../shared/lib/errors";
 import { gitPanelRuntime, setGitFeedback } from "../model/gitPanelState";
 import { useCallback } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
 import {
   gitResolveConflict,
   gitStageFile,
   readTextFile,
   writeTextFile,
 } from "../../../platform/tauri/fs";
-import { appName } from "../../../shared/lib/appName";
+import { t } from "../../../shared/i18n/git";
+import { confirmGitAction } from "../model/gitConfirmation";
 import { hasConflictMarkers, resolveConflictMarkers } from "../model/conflictMarkers";
 import { conflictHasFile, type ConflictChoice, type ConflictRow } from "../model/conflictSection";
 
@@ -77,10 +77,15 @@ export function useConflictActions({ cwd, busy, setBusy, onMutated }: Options) {
           // A binary or unreadable file cannot hold markers we could warn about.
           const text = await readTextFile(row.path).catch(() => "");
           if (hasConflictMarkers(text)) {
-            const confirmed = await ask(
-              `${row.relative} still contains conflict markers. Mark it as resolved anyway?`,
-              { title: appName(), kind: "warning", okLabel: "Mark Resolved" },
-            );
+            const confirmed = await confirmGitAction({
+              title: t("Mark as resolved?"),
+              message: t(
+                "“{p0}” still contains conflict markers. Marking it resolved stages it as it is.",
+                { p0: row.relative },
+              ),
+              confirmLabel: t("Mark resolved"),
+              tone: "normal",
+            });
             if (!confirmed) return false;
           }
         }
@@ -93,17 +98,21 @@ export function useConflictActions({ cwd, busy, setBusy, onMutated }: Options) {
   const acceptAll = useCallback(
     async (rows: readonly ConflictRow[], side: "ours" | "theirs") => {
       if (busy || rows.length === 0) return;
-      const which = side === "ours" ? "current" : "incoming";
-      const confirmed = await ask(
-        `Accept all ${which} changes in ${rows.length} conflicted file${rows.length === 1 ? "" : "s"}? ` +
-          `Each file is replaced by the ${which} branch's version, and a file that branch deleted is deleted. ` +
-          "Edits you made to these files are discarded.",
-        {
-          title: appName(),
-          kind: "warning",
-          okLabel: `Accept All ${side === "ours" ? "Current" : "Incoming"}`,
-        },
-      );
+      const count = rows.length;
+      const ours = side === "ours";
+      const effect =
+        count === 1
+          ? ours
+            ? t("1 conflicted file will take the current branch’s version.")
+            : t("1 conflicted file will take the incoming branch’s version.")
+          : ours
+            ? t("{p0} conflicted files will take the current branch’s version.", { p0: count })
+            : t("{p0} conflicted files will take the incoming branch’s version.", { p0: count });
+      const confirmed = await confirmGitAction({
+        title: ours ? t("Accept all current changes?") : t("Accept all incoming changes?"),
+        message: `${effect} ${t("A file that branch deleted is deleted, and your edits to these files are discarded.")}`,
+        confirmLabel: ours ? t("Accept all current") : t("Accept all incoming"),
+      });
       if (!confirmed) return;
       await run(
         "conflicts",

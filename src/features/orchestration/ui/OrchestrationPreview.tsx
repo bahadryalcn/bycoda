@@ -21,6 +21,7 @@ import type { OrchestrationChoice, ProposedTask } from "../model/orchestrationPl
 import { orchestrator } from "../model/orchestration";
 import { resizeComposer } from "../../sessions/model/composerResize";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import {
   findModel,
   mergeModelSettings,
@@ -55,7 +56,6 @@ function AssignmentModel({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
-  const [effortActive, setEffortActive] = useState(0);
   const [inEffort, setInEffort] = useState(false);
   const [effortKeyboard, setEffortKeyboard] = useState(false);
   const pickerId = useId();
@@ -86,6 +86,13 @@ function AssignmentModel({
       ? (task.modelSettings?.[effort.id] ?? effort.value)
       : effort.value
     : undefined;
+  // The highlighted effort starts on the current value and restarts whenever the
+  // previewed model or its current effort changes; arrow keys and hover override it.
+  const [effortActive, setEffortActive] = useKeyedActiveIndex(
+    `${activeChoice?.harness ?? ""}\u0000${activeChoice?.model ?? ""}\u0000${selectedEffortValue ?? ""}`,
+    effort?.options.length ?? 0,
+    Math.max(0, effort?.options.findIndex((option) => option.value === selectedEffortValue) ?? 0),
+  );
   const selectedModel = selected ? findModel(selected.model) : undefined;
   const selectedEffortLabel =
     selectedModel && selectedModel.harness === selected?.harness
@@ -114,14 +121,6 @@ function AssignmentModel({
   useEffect(() => {
     activeRow?.scrollIntoView({ block: "nearest" });
   }, [activeRow]);
-  useEffect(() => {
-    if (!effort) {
-      setEffortActive(0);
-      return;
-    }
-    const index = effort.options.findIndex((option) => option.value === selectedEffortValue);
-    setEffortActive(index >= 0 ? index : 0);
-  }, [effort, selectedEffortValue]);
   const pick = (choice: OrchestrationChoice, modelSettings: Record<string, string>) => {
     onChange(choice, modelSettings);
     setOpen(false);

@@ -38,6 +38,7 @@ export function SidebarWorktreeSwitcher({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  const [reportedSwitchError, setReportedSwitchError] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   const [creationError, setCreationError] = useState<string>();
   const creatingRef = useRef(false);
@@ -150,9 +151,12 @@ export function SidebarWorktreeSwitcher({
       onSelect?.(undefined);
   }, [cwd, data, focus, onSelect, pending, switchError]);
 
-  useEffect(() => {
+  // A newly reported switch error opens the picker so it is seen; closing it
+  // afterwards stays possible while the same error is still shown.
+  if (reportedSwitchError !== switchError) {
+    setReportedSwitchError(switchError);
     if (switchError) setOpen(true);
-  }, [switchError]);
+  }
 
   const focused = focus && worktrees.find((tree) => pathKey(tree.path) === pathKey(focus.path));
   const title = focus ? (focused?.branch ?? focus.branch ?? "Detached worktree") : "Workspace";

@@ -11,6 +11,7 @@ import {
   useState,
   type CSSProperties,
   type FormEvent,
+  type RefObject,
 } from "react";
 import {
   clampUsedPercent,
@@ -79,21 +80,7 @@ type UsageWindowEntry = {
 
 type ResetActionState = "idle" | "confirming" | "using" | CodexRateLimitResetOutcome | "error";
 
-export function UsageProviderChip({
-  limits,
-  now,
-  project,
-  accounts = [],
-  accountId,
-  onSelectAccount,
-  onSelectUsageAccount,
-  onAddAccount,
-  onManageAccounts,
-  onConsumeReset,
-  onReconnect,
-  presentation,
-  usageOnly = false,
-}: {
+type UsageProviderChipProps = {
   limits: ProviderRateLimits;
   usageOnly?: boolean;
   now: number;
@@ -107,123 +94,28 @@ export function UsageProviderChip({
   onManageAccounts?: () => void;
   onConsumeReset?: (creditId?: string) => Promise<CodexRateLimitResetOutcome>;
   onReconnect?: () => Promise<void>;
-}) {
+};
+
+export function UsageProviderChip(props: UsageProviderChipProps) {
+  const { limits, now, accounts = [], accountId, presentation } = props;
   const t = useT();
   const showRemaining = useShowRemainingUsage();
   const trigger = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   // Browsing usage never changes the account pinned to a conversation.
   const [usageAccountId, setUsageAccountId] = useState<string | null>(null);
-  const usageAccount =
-    usageOnly && !onSelectUsageAccount
-      ? accounts.find((account) => account.id === usageAccountId)
-      : undefined;
-  const detailAccountId = usageAccount?.id ?? accountId;
-  const viewingOtherAccount = detailAccountId !== accountId;
-  const cachedDetails = useCachedRateLimits(limits.provider, detailAccountId);
-  const detailLimits = viewingOtherAccount ? cachedDetails : limits;
-  const detailWindows = usageWindows(detailLimits);
-  const detailLoading =
-    detailLimits.status === "idle" ||
-    (detailLimits.status === "fetching" && detailWindows.length === 0);
-  const canBrowseUsage = usageOnly && accounts.length > 1;
-
-  useEffect(() => {
-    if (open && usageOnly && viewingOtherAccount) {
-      void loadRateLimits(limits.provider, detailAccountId);
-    }
-  }, [open, usageOnly, viewingOtherAccount, limits.provider, detailAccountId]);
-  const [accountView, setAccountView] = useState<"usage" | "accounts" | "add">("usage");
-  const [resetAction, setResetAction] = useState<ResetActionState>("idle");
-  const [activeResetKey, setActiveResetKey] = useState<string | null>(null);
-  const [resetError, setResetError] = useState<string | null>(null);
-  const [reconnectState, setReconnectState] = useState<ProviderSignInState>("idle");
-  const [reconnectError, setReconnectError] = useState<string | null>(null);
   const loading =
     limits.status === "idle" ||
     (limits.status === "fetching" && !limits.session && !limits.weekly && !limits.monthly);
   const disconnected = limits.status === "unavailable";
   const windows = usageWindows(limits);
-  const loginView = Boolean(
-    onReconnect &&
-    !viewingOtherAccount &&
-    detailWindows.length === 0 &&
-    (needsProviderLogin(detailLimits) || reconnectState !== "idle"),
-  );
   const tooltip = windows
     .map((entry) => rateLimitWindowTooltip(entry.window, now, showRemaining))
     .join(" · ");
   const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
   const iconHarness = presentation?.harness ?? limits.provider;
   const activeAccount = accounts.find((account) => account.id === accountId);
-  const canManageAccounts = !usageOnly && Boolean(onSelectAccount && onAddAccount);
-  const activeAccountLabel = activeAccount?.label ?? "Removed account";
-  const identities = useProviderAccountIdentities(
-    accounts,
-    `${open}:${limits.updatedAt}:${reconnectState}`,
-  );
-  const activeIdentity = activeAccount ? identities[identityKey(activeAccount)] : null;
-  const accountProvider = supportsProviderAccounts(limits.provider) ? limits.provider : undefined;
-  const otherAccounts = accounts.filter((account) => account.id !== accountId);
-  const accountUsage = useProviderAccountUsage(accounts.map((account) => account.id).join("|"), {
-    provider: accountProvider,
-    enabled: !usageOnly && open && Boolean(accountProvider) && otherAccounts.length > 0,
-  });
-  // The footer's own snapshot is fresher for the active account.
-  const usageFor = (account: ProviderAccount) =>
-    account.id === accountId ? limits : accountUsage.usage[accountUsageKey(account)];
-  const activeStatus = accountStatus(limits, now);
-  const suggestion =
-    activeStatus.tone === "exhausted" || activeStatus.tone === "low"
-      ? bestAlternativeAccount(otherAccounts, usageFor, now)
-      : null;
-  const mascotProject = project ? projectName(project) : providerLabel;
-  const appearanceKey = project ? projectKey(project) : mascotProject;
-  const mascotName = resolveTabGroupMascot(appearanceKey, loadTabGroupMascots());
-  const mascotColor = resolveTabGroupColor(
-    appearanceKey,
-    loadTabGroupColors(),
-    loadTabGroupCustomColors(),
-    mascotProject,
-  );
-
-  useEffect(() => {
-    if (open) return;
-    setResetAction("idle");
-    setActiveResetKey(null);
-    setResetError(null);
-    setReconnectState("idle");
-    setReconnectError(null);
-    setAccountView("usage");
-  }, [open]);
-
   const dismiss = useDismissPopover(setOpen, trigger);
-
-  const useReset = async (credit: RateLimitResetCredit | undefined, rowKey: string) => {
-    if (!onConsumeReset || viewingOtherAccount) return;
-    setActiveResetKey(rowKey);
-    setResetAction("using");
-    setResetError(null);
-    try {
-      setResetAction(await onConsumeReset(credit?.id));
-    } catch (error) {
-      setResetError(error instanceof Error ? error.message : "Could not use this reset");
-      setResetAction("error");
-    }
-  };
-
-  const reconnect = async () => {
-    if (!onReconnect) return;
-    setReconnectState("running");
-    setReconnectError(null);
-    try {
-      await onReconnect();
-      setReconnectState("complete");
-    } catch (error) {
-      setReconnectError(error instanceof Error ? error.message : "Could not complete sign-in");
-      setReconnectState("error");
-    }
-  };
 
   return (
     <>
@@ -275,208 +167,342 @@ export function UsageProviderChip({
         )}
       </Button>
       {open ? (
-        <Popover
-          anchor={trigger}
-          side="top"
-          align="start"
-          gap={7}
-          width={accountView === "accounts" ? 340 : 300}
-          maxHeight={460}
-          autoFocus
-          onDismiss={dismiss}
-          role="dialog"
-          aria-label={t("{p0} usage details", { p0: providerLabel })}
-          tabIndex={-1}
-          className={`overflow-y-auto text-content ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
-        >
-          {canBrowseUsage ? (
-            <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
-              {accounts.map((account) => (
-                <Button
-                  key={account.id}
-                  variant="tab"
-                  aria-pressed={account.id === detailAccountId}
-                  title={account.label}
-                  className="min-w-0 max-w-full gap-1.5"
-                  onClick={() => {
-                    setResetAction("idle");
-                    setActiveResetKey(null);
-                    setResetError(null);
-                    setReconnectState("idle");
-                    setReconnectError(null);
-                    if (onSelectUsageAccount) onSelectUsageAccount(account.id);
-                    else setUsageAccountId(account.id);
-                  }}
-                  disabled={resetAction === "using" || reconnectState === "running"}
-                >
-                  <AccountColorDot account={account} className="size-1.5" />
-                  <span className="min-w-0 truncate">{account.label}</span>
-                </Button>
-              ))}
-            </div>
-          ) : null}
-          {accountView === "accounts" ? (
-            <ProviderAccountPicker
-              providerLabel={providerLabel}
-              accounts={accounts}
-              identities={identities}
-              accountId={accountId ?? ""}
-              usageFor={usageFor}
-              now={now}
-              onBack={() => setAccountView("usage")}
-              onAdd={() => setAccountView("add")}
-              onManage={
-                onManageAccounts
-                  ? () => {
-                      setOpen(false);
-                      onManageAccounts();
-                    }
-                  : undefined
-              }
-              onSelect={(nextAccountId) => {
-                onSelectAccount?.(nextAccountId);
-                setOpen(false);
-              }}
-            />
-          ) : accountView === "add" ? (
-            <AddProviderAccount
-              providerLabel={providerLabel}
-              onBack={() => setAccountView("accounts")}
-              onAdd={onAddAccount}
-              onComplete={() => setOpen(false)}
-            />
-          ) : loginView ? (
-            <>
-              {canManageAccounts ? (
-                <AccountSwitchRow
-                  account={activeAccount}
-                  accountLabel={activeAccountLabel}
-                  onClick={() => setAccountView("accounts")}
-                />
-              ) : null}
-              <ProviderSignInPanel
-                harness={limits.provider}
-                state={reconnectState}
-                error={reconnectError}
-                onSignIn={() => void reconnect()}
-              />
-            </>
-          ) : (
-            <>
-              <div className="flex items-start gap-2.5 px-1 pb-2.5 pt-0.5">
-                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
-                  <HarnessIcon harness={iconHarness} className="size-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <h2 className="text-[13px] font-medium leading-4">
-                    {providerLabel}
-                    {t(" usage")}
-                  </h2>
-                  <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
-                    {updatedLabel(detailLimits, now)}
-                  </p>
-                  {presentation?.sourceLabel ? (
-                    <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
-                      {presentation.sourceLabel}
-                    </p>
-                  ) : null}
-                  {canManageAccounts ? (
-                    <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                      {/* Keep account switching separate from email revelation. */}
-                      <Button
-                        variant="ghost"
-                        motion="none"
-                        type="button"
-                        className="pointer-events-auto absolute inset-0"
-                        aria-label={t("Switch {p0} account", { p0: providerLabel })}
-                        onClick={() => setAccountView("accounts")}
-                      />
-                      {activeAccount ? (
-                        <AccountColorDot account={activeAccount} className="size-1.5" />
-                      ) : null}
-                      <span className="max-w-[60%] shrink-0 truncate">{activeAccountLabel}</span>
-                      <ProviderAccountSubtitle
-                        key={activeAccount && identityKey(activeAccount)}
-                        identity={activeIdentity}
-                        className="text-(--ui-text-secondary)"
-                      />
-                      <ChevronRight className="size-2.5 shrink-0" strokeWidth={1.75} aria-hidden />
-                    </div>
-                  ) : null}
-                </div>
-                {detailLimits.status === "fetching" ? (
-                  <span className="mt-0.5 inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
-                    <RefreshCw
-                      className="size-2.5 motion-safe:animate-spin"
-                      strokeWidth={1.75}
-                      aria-hidden
-                    />
-                    {t("Updating")}
-                  </span>
-                ) : null}
-              </div>
-
-              {detailLimits.status === "error" && detailWindows.length > 0 ? (
-                <p className="mb-2 rounded-lg bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning">
-                  {t("Couldn’t refresh. Showing the last available snapshot.")}
-                </p>
-              ) : null}
-
-              {detailWindows.length > 0 ? (
-                <div className="flex flex-col gap-1.5">
-                  {detailWindows.map((entry) => (
-                    <UsageWindowCard
-                      key={entry.key}
-                      kind={entry.key}
-                      window={entry.window}
-                      now={now}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyUsageState limits={detailLimits} loading={detailLoading} />
-              )}
-
-              {!usageOnly && suggestion && onSelectAccount ? (
-                <SwitchSuggestion
-                  account={suggestion}
-                  limits={usageFor(suggestion)}
-                  exhausted={activeStatus.tone === "exhausted"}
-                  now={now}
-                  onSwitch={() => {
-                    onSelectAccount(suggestion.id);
-                    setOpen(false);
-                  }}
-                />
-              ) : null}
-
-              {limits.provider === "codex" ? (
-                <BankedResets
-                  limits={detailLimits}
-                  now={now}
-                  action={viewingOtherAccount ? "idle" : resetAction}
-                  activeResetKey={viewingOtherAccount ? null : activeResetKey}
-                  error={viewingOtherAccount ? null : resetError}
-                  mascotProject={mascotProject}
-                  mascotName={mascotName}
-                  mascotColor={mascotColor}
-                  onConfirm={(creditId) => {
-                    setActiveResetKey(creditId);
-                    setResetAction("confirming");
-                  }}
-                  onCancel={() => {
-                    setActiveResetKey(null);
-                    setResetAction("idle");
-                  }}
-                  onUse={useReset}
-                  canUse={!viewingOtherAccount && Boolean(onConsumeReset)}
-                />
-              ) : null}
-            </>
-          )}
-        </Popover>
+        <UsageProviderDetails
+          {...props}
+          trigger={trigger}
+          dismiss={dismiss}
+          close={() => setOpen(false)}
+          usageAccountId={usageAccountId}
+          setUsageAccountId={setUsageAccountId}
+        />
       ) : null}
     </>
+  );
+}
+
+/**
+ * Popover body, mounted only while the chip is open so its view, reset and
+ * sign-in state starts fresh on every open without a reset effect.
+ */
+function UsageProviderDetails({
+  limits,
+  now,
+  project,
+  accounts = [],
+  accountId,
+  onSelectAccount,
+  onSelectUsageAccount,
+  onAddAccount,
+  onManageAccounts,
+  onConsumeReset,
+  onReconnect,
+  presentation,
+  usageOnly = false,
+  trigger,
+  dismiss,
+  close,
+  usageAccountId,
+  setUsageAccountId,
+}: UsageProviderChipProps & {
+  trigger: RefObject<HTMLButtonElement | null>;
+  dismiss: (reason: string) => void;
+  close: () => void;
+  usageAccountId: string | null;
+  setUsageAccountId: (accountId: string | null) => void;
+}) {
+  const t = useT();
+  const usageAccount =
+    usageOnly && !onSelectUsageAccount
+      ? accounts.find((account) => account.id === usageAccountId)
+      : undefined;
+  const detailAccountId = usageAccount?.id ?? accountId;
+  const viewingOtherAccount = detailAccountId !== accountId;
+  const cachedDetails = useCachedRateLimits(limits.provider, detailAccountId);
+  const detailLimits = viewingOtherAccount ? cachedDetails : limits;
+  const detailWindows = usageWindows(detailLimits);
+  const detailLoading =
+    detailLimits.status === "idle" ||
+    (detailLimits.status === "fetching" && detailWindows.length === 0);
+  const canBrowseUsage = usageOnly && accounts.length > 1;
+
+  useEffect(() => {
+    if (usageOnly && viewingOtherAccount) {
+      void loadRateLimits(limits.provider, detailAccountId);
+    }
+  }, [usageOnly, viewingOtherAccount, limits.provider, detailAccountId]);
+  const [accountView, setAccountView] = useState<"usage" | "accounts" | "add">("usage");
+  const [resetAction, setResetAction] = useState<ResetActionState>("idle");
+  const [activeResetKey, setActiveResetKey] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [reconnectState, setReconnectState] = useState<ProviderSignInState>("idle");
+  const [reconnectError, setReconnectError] = useState<string | null>(null);
+  const loginView = Boolean(
+    onReconnect &&
+    !viewingOtherAccount &&
+    detailWindows.length === 0 &&
+    (needsProviderLogin(detailLimits) || reconnectState !== "idle"),
+  );
+  const providerLabel = presentation?.label ?? HARNESS_TITLE[limits.provider];
+  const iconHarness = presentation?.harness ?? limits.provider;
+  const activeAccount = accounts.find((account) => account.id === accountId);
+  const canManageAccounts = !usageOnly && Boolean(onSelectAccount && onAddAccount);
+  const activeAccountLabel = activeAccount?.label ?? "Removed account";
+  const identities = useProviderAccountIdentities(
+    accounts,
+    `${limits.updatedAt}:${reconnectState}`,
+  );
+  const activeIdentity = activeAccount ? identities[identityKey(activeAccount)] : null;
+  const accountProvider = supportsProviderAccounts(limits.provider) ? limits.provider : undefined;
+  const otherAccounts = accounts.filter((account) => account.id !== accountId);
+  const accountUsage = useProviderAccountUsage(accounts.map((account) => account.id).join("|"), {
+    provider: accountProvider,
+    enabled: !usageOnly && Boolean(accountProvider) && otherAccounts.length > 0,
+  });
+  // The footer's own snapshot is fresher for the active account.
+  const usageFor = (account: ProviderAccount) =>
+    account.id === accountId ? limits : accountUsage.usage[accountUsageKey(account)];
+  const activeStatus = accountStatus(limits, now);
+  const suggestion =
+    activeStatus.tone === "exhausted" || activeStatus.tone === "low"
+      ? bestAlternativeAccount(otherAccounts, usageFor, now)
+      : null;
+  const mascotProject = project ? projectName(project) : providerLabel;
+  const appearanceKey = project ? projectKey(project) : mascotProject;
+  const mascotName = resolveTabGroupMascot(appearanceKey, loadTabGroupMascots());
+  const mascotColor = resolveTabGroupColor(
+    appearanceKey,
+    loadTabGroupColors(),
+    loadTabGroupCustomColors(),
+    mascotProject,
+  );
+
+  const useReset = async (credit: RateLimitResetCredit | undefined, rowKey: string) => {
+    if (!onConsumeReset || viewingOtherAccount) return;
+    setActiveResetKey(rowKey);
+    setResetAction("using");
+    setResetError(null);
+    try {
+      setResetAction(await onConsumeReset(credit?.id));
+    } catch (error) {
+      setResetError(error instanceof Error ? error.message : "Could not use this reset");
+      setResetAction("error");
+    }
+  };
+
+  const reconnect = async () => {
+    if (!onReconnect) return;
+    setReconnectState("running");
+    setReconnectError(null);
+    try {
+      await onReconnect();
+      setReconnectState("complete");
+    } catch (error) {
+      setReconnectError(error instanceof Error ? error.message : "Could not complete sign-in");
+      setReconnectState("error");
+    }
+  };
+
+  return (
+    <Popover
+      anchor={trigger}
+      side="top"
+      align="start"
+      gap={7}
+      width={accountView === "accounts" ? 340 : 300}
+      maxHeight={460}
+      autoFocus
+      onDismiss={dismiss}
+      role="dialog"
+      aria-label={t("{p0} usage details", { p0: providerLabel })}
+      tabIndex={-1}
+      className={`overflow-y-auto text-content ${accountView === "usage" && loginView && !canBrowseUsage ? "" : "p-2.5"}`}
+    >
+      {canBrowseUsage ? (
+        <div role="group" aria-label={t("Accounts")} className="mbe-2 flex flex-wrap gap-1">
+          {accounts.map((account) => (
+            <Button
+              key={account.id}
+              variant="tab"
+              aria-pressed={account.id === detailAccountId}
+              title={account.label}
+              className="min-w-0 max-w-full gap-1.5"
+              onClick={() => {
+                setResetAction("idle");
+                setActiveResetKey(null);
+                setResetError(null);
+                setReconnectState("idle");
+                setReconnectError(null);
+                if (onSelectUsageAccount) onSelectUsageAccount(account.id);
+                else setUsageAccountId(account.id);
+              }}
+              disabled={resetAction === "using" || reconnectState === "running"}
+            >
+              <AccountColorDot account={account} className="size-1.5" />
+              <span className="min-w-0 truncate">{account.label}</span>
+            </Button>
+          ))}
+        </div>
+      ) : null}
+      {accountView === "accounts" ? (
+        <ProviderAccountPicker
+          providerLabel={providerLabel}
+          accounts={accounts}
+          identities={identities}
+          accountId={accountId ?? ""}
+          usageFor={usageFor}
+          now={now}
+          onBack={() => setAccountView("usage")}
+          onAdd={() => setAccountView("add")}
+          onManage={
+            onManageAccounts
+              ? () => {
+                  close();
+                  onManageAccounts();
+                }
+              : undefined
+          }
+          onSelect={(nextAccountId) => {
+            onSelectAccount?.(nextAccountId);
+            close();
+          }}
+        />
+      ) : accountView === "add" ? (
+        <AddProviderAccount
+          providerLabel={providerLabel}
+          onBack={() => setAccountView("accounts")}
+          onAdd={onAddAccount}
+          onComplete={() => close()}
+        />
+      ) : loginView ? (
+        <>
+          {canManageAccounts ? (
+            <AccountSwitchRow
+              account={activeAccount}
+              accountLabel={activeAccountLabel}
+              onClick={() => setAccountView("accounts")}
+            />
+          ) : null}
+          <ProviderSignInPanel
+            harness={limits.provider}
+            state={reconnectState}
+            error={reconnectError}
+            onSignIn={() => void reconnect()}
+          />
+        </>
+      ) : (
+        <>
+          <div className="flex items-start gap-2.5 px-1 pb-2.5 pt-0.5">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-(--ui-surface-muted) ring-1 ring-inset ring-(--color-stroke)">
+              <HarnessIcon harness={iconHarness} className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[13px] font-medium leading-4">
+                {providerLabel}
+                {t(" usage")}
+              </h2>
+              <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+                {updatedLabel(detailLimits, now)}
+              </p>
+              {presentation?.sourceLabel ? (
+                <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
+                  {presentation.sourceLabel}
+                </p>
+              ) : null}
+              {canManageAccounts ? (
+                <div className="pointer-events-none relative mt-1 -ml-1 inline-flex max-w-full items-center gap-1 rounded px-1 py-0.5 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                  {/* Keep account switching separate from email revelation. */}
+                  <Button
+                    variant="ghost"
+                    motion="none"
+                    type="button"
+                    className="pointer-events-auto absolute inset-0"
+                    aria-label={t("Switch {p0} account", { p0: providerLabel })}
+                    onClick={() => setAccountView("accounts")}
+                  />
+                  {activeAccount ? (
+                    <AccountColorDot account={activeAccount} className="size-1.5" />
+                  ) : null}
+                  <span className="max-w-[60%] shrink-0 truncate">{activeAccountLabel}</span>
+                  <ProviderAccountSubtitle
+                    key={activeAccount && identityKey(activeAccount)}
+                    identity={activeIdentity}
+                    className="text-(--ui-text-secondary)"
+                  />
+                  <ChevronRight className="size-2.5 shrink-0" strokeWidth={1.75} aria-hidden />
+                </div>
+              ) : null}
+            </div>
+            {detailLimits.status === "fetching" ? (
+              <span className="mt-0.5 inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)">
+                <RefreshCw
+                  className="size-2.5 motion-safe:animate-spin"
+                  strokeWidth={1.75}
+                  aria-hidden
+                />
+                {t("Updating")}
+              </span>
+            ) : null}
+          </div>
+
+          {detailLimits.status === "error" && detailWindows.length > 0 ? (
+            <p className="mb-2 rounded-lg bg-(--ui-tone-warning-subtle) px-2.5 py-2 text-[length:var(--ui-font-caption)] leading-4 text-warning dark:text-warning">
+              {t("Couldn’t refresh. Showing the last available snapshot.")}
+            </p>
+          ) : null}
+
+          {detailWindows.length > 0 ? (
+            <div className="flex flex-col gap-1.5">
+              {detailWindows.map((entry) => (
+                <UsageWindowCard
+                  key={entry.key}
+                  kind={entry.key}
+                  window={entry.window}
+                  now={now}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyUsageState limits={detailLimits} loading={detailLoading} />
+          )}
+
+          {!usageOnly && suggestion && onSelectAccount ? (
+            <SwitchSuggestion
+              account={suggestion}
+              limits={usageFor(suggestion)}
+              exhausted={activeStatus.tone === "exhausted"}
+              now={now}
+              onSwitch={() => {
+                onSelectAccount(suggestion.id);
+                close();
+              }}
+            />
+          ) : null}
+
+          {limits.provider === "codex" ? (
+            <BankedResets
+              limits={detailLimits}
+              now={now}
+              action={viewingOtherAccount ? "idle" : resetAction}
+              activeResetKey={viewingOtherAccount ? null : activeResetKey}
+              error={viewingOtherAccount ? null : resetError}
+              mascotProject={mascotProject}
+              mascotName={mascotName}
+              mascotColor={mascotColor}
+              onConfirm={(creditId) => {
+                setActiveResetKey(creditId);
+                setResetAction("confirming");
+              }}
+              onCancel={() => {
+                setActiveResetKey(null);
+                setResetAction("idle");
+              }}
+              onUse={useReset}
+              canUse={!viewingOtherAccount && Boolean(onConsumeReset)}
+            />
+          ) : null}
+        </>
+      )}
+    </Popover>
   );
 }
 
@@ -901,29 +927,44 @@ function BankedResets({
     ...detailedCredits,
     ...Array.from({ length: unlistedCount }, () => null),
   ];
+  // Provider titles only stay when they tell different kinds of reset apart.
+  const showTitles = new Set(rows.map((credit) => credit?.title?.trim() ?? "")).size > 1;
+  const refreshing = limits.status === "fetching";
   return (
     <section className="mbs-2.5 border-t border-(--color-stroke) pbs-2.5">
       <div className="flex items-center justify-between gap-3 px-1 py-1">
-        <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <h3 className="text-[11px] font-medium">{t("Banked resets")}</h3>
-            <span className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[length:var(--ui-font-caption)] font-medium tabular-nums text-(--ui-text-secondary)">
-              {count}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <h3 className="text-[11px] font-medium">{t("Banked resets")}</h3>
+          <span
+            className="rounded-full bg-(--ui-surface-muted) px-1.5 py-px text-[length:var(--ui-font-caption)] font-medium tabular-nums text-(--ui-text-secondary)"
+            title={t("{p0} available", { p0: count })}
+            aria-label={t("{p0} available", { p0: count })}
+          >
+            {count}
+          </span>
+          {refreshing ? (
+            <span
+              className="inline-flex items-center gap-1 text-[length:var(--ui-font-caption)] text-(--ui-text-secondary)"
+              role="status"
+            >
+              <RefreshCw
+                className="size-3 motion-safe:animate-spin"
+                strokeWidth={1.75}
+                aria-hidden
+              />
+              {t("Checking…")}
             </span>
-          </div>
-          <p className="mbs-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
-            {count} {count === 1 ? t("reset") : t("resets")}
-            {t(" available")}
-          </p>
+          ) : null}
         </div>
         <BankedResetMascot project={mascotProject} name={mascotName} color={mascotColor} />
       </div>
 
       <div
-        className="mt-2 max-h-56 overflow-y-auto overscroll-contain"
+        className="mt-1 max-h-56 overflow-y-auto overscroll-contain"
+        role="list"
         aria-label={t("Available banked resets")}
       >
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col divide-y divide-stroke">
           {rows.map((credit, index) => {
             const rowKey = credit?.id ?? `unlisted-${index}`;
             const selected = activeResetKey === rowKey;
@@ -931,7 +972,7 @@ function BankedResets({
               <BankedResetRow
                 key={rowKey}
                 credit={credit}
-                index={index}
+                showTitle={showTitles}
                 now={now}
                 action={selected ? action : "idle"}
                 error={selected ? error : null}
@@ -974,7 +1015,7 @@ function BankedResetMascot({
 }
 function BankedResetRow({
   credit,
-  index,
+  showTitle,
   now,
   action,
   error,
@@ -985,7 +1026,7 @@ function BankedResetRow({
   onUse,
 }: {
   credit: RateLimitResetCredit | null;
-  index: number;
+  showTitle: boolean;
   now: number;
   action: ResetActionState;
   error: string | null;
@@ -996,17 +1037,16 @@ function BankedResetRow({
   onUse: () => void;
 }) {
   const t = useT();
+  const outcome = isResetOutcome(action) || action === "error";
+  const retryable = action === "error";
   return (
-    <article className="rounded-lg border border-(--color-stroke) bg-(--ui-surface) px-2.5 py-2">
-      <h4 className="text-[length:var(--ui-font-caption)] font-medium leading-4 text-(--ui-text-secondary)">
-        {credit?.title ?? t("Banked reset {p0}", { p0: index + 1 })}
-      </h4>
-      {credit?.description ? (
-        <p className="mt-0.5 text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
-          {credit.description}
-        </p>
+    <article role="listitem" className="px-1 py-1.5">
+      {showTitle && credit?.title ? (
+        <h4 className="text-[length:var(--ui-font-caption)] font-medium leading-4 text-(--ui-text-secondary)">
+          {credit.title}
+        </h4>
       ) : null}
-      <div className="mt-1.5 flex min-h-6 items-center justify-between gap-2">
+      <div className="flex min-h-6 items-center justify-between gap-2">
         <p
           className="min-w-0 truncate text-[length:var(--ui-font-caption)] tabular-nums text-(--ui-text-secondary)"
           title={
@@ -1018,7 +1058,7 @@ function BankedResetRow({
           {credit?.expiresAt == null
             ? t("Expiry not provided")
             : credit.expiresAt <= now
-              ? t("Expires now")
+              ? t("Expired")
               : t("Expires in {p0}", { p0: formatResetDuration(credit.expiresAt - now) })}
         </p>
         {action === "using" ? (
@@ -1026,16 +1066,7 @@ function BankedResetRow({
             <RefreshCw className="size-3 motion-safe:animate-spin" strokeWidth={1.75} aria-hidden />
             {t("Applying…")}
           </span>
-        ) : isResetOutcome(action) || action === "error" ? (
-          <span
-            className={`shrink-0 text-[length:var(--ui-font-caption)] ${
-              action === "reset" ? "text-success dark:text-success" : "text-(--ui-text-secondary)"
-            }`}
-            role="status"
-          >
-            {action === "error" ? error : resetOutcomeLabel(action)}
-          </span>
-        ) : canUse && action !== "confirming" ? (
+        ) : canUse && action !== "confirming" && (!outcome || retryable) ? (
           <Button
             variant="ghost"
             motion="none"
@@ -1044,12 +1075,22 @@ function BankedResetRow({
             disabled={disabled}
             onClick={onConfirm}
           >
-            {t("Use reset")}
+            {retryable ? t("Try again") : t("Use reset")}
           </Button>
         ) : null}
       </div>
+      {outcome ? (
+        <p
+          className={`mt-0.5 break-words text-[length:var(--ui-font-caption)] leading-4 ${
+            action === "reset" ? "text-success" : "text-(--ui-text-secondary)"
+          }`}
+          role="status"
+        >
+          {action === "error" ? error : resetOutcomeLabel(action)}
+        </p>
+      ) : null}
       {action === "confirming" ? (
-        <div className="mt-2 flex items-center justify-between gap-2 border-t border-(--color-stroke) pt-2">
+        <div className="mt-1.5 flex items-center justify-between gap-2">
           <p className="text-[length:var(--ui-font-caption)] leading-4 text-(--ui-text-secondary)">
             {t("Spend this reset now?")}
           </p>

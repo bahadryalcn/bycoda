@@ -204,17 +204,24 @@ html.appearance-word-wrap .agent-markdown [data-streamdown="code-block-body"] co
   /* Bring extreme custom accents towards readable ink for focus and tinted states.
      Solid actions retain the exact saved accent/foreground pair. */
   --ui-interaction-accent: var(--user-accent-color, var(--color-accent));
-  --ui-interaction-ink: color-mix(in srgb, var(--ui-interaction-accent) 35%, var(--color-content));
+  --ui-accent-ink-strength: 35%;
+  --ui-interaction-ink: color-mix(
+    in srgb,
+    var(--ui-interaction-accent) var(--ui-accent-ink-strength),
+    var(--color-content)
+  );
   --ui-tone-accent-fg: var(--ui-interaction-ink);
-  --ui-tone-accent-solid: var(--user-accent-color, var(--color-accent));
+  /* Solid role: the rendered fill and its ink are derived together from the saved accent
+     (appearance.ts / accentContrast.ts) so the pair always reaches the chosen contrast. */
+  --ui-tone-accent-solid: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   --ui-tone-accent-on-solid: var(--user-accent-foreground, var(--palette-scrim));
   --ui-tone-accent-subtle: color-mix(in srgb, var(--ui-tone-accent-fg) 9%, var(--ui-surface));
   --ui-tone-accent-border: color-mix(in srgb, var(--ui-tone-accent-fg) 60%, var(--color-stroke));
   --ui-tone-accent-hover: color-mix(in srgb, var(--ui-tone-accent-fg) 14%, var(--ui-surface));
   --ui-tone-accent-pressed: color-mix(in srgb, var(--ui-tone-accent-fg) 20%, var(--ui-surface));
-  /* Keep the runtime contrast pair exact, even near the black/white crossover. */
-  --ui-tone-accent-solid-hover: var(--ui-tone-accent-solid);
-  --ui-tone-accent-solid-pressed: var(--ui-tone-accent-solid);
+  /* Hover and pressed step away from the ink (appearance.ts), so contrast only rises. */
+  --ui-tone-accent-solid-hover: var(--user-accent-solid-hover, var(--ui-tone-accent-solid));
+  --ui-tone-accent-solid-pressed: var(--user-accent-solid-pressed, var(--ui-tone-accent-solid));
   --ui-tone-accent-disabled-fg: var(--ui-control-disabled-fg);
   --ui-tone-accent-disabled-surface: var(--ui-control-disabled-surface);
   --ui-tone-accent-disabled-border: var(--ui-control-disabled-border);
@@ -396,15 +403,15 @@ html.theme-light {
   /* Hover stays a transient step below selection so the two never read alike. */
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 13%, var(--color-background-base));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 17%, var(--color-background-base));
-  --ui-surface-selected: color-mix(
-    in oklab,
-    var(--ui-interaction-ink) 24%,
-    var(--ui-surface-panel)
-  );
+  --ui-surface-selected: color-mix(in oklab, var(--color-content) 15%, var(--ui-surface-panel));
   --ui-border-accent: var(--ui-interaction-ink);
   /* One writing surface owner: identical at rest and while typing. */
-  --ui-composer-surface: var(--ui-surface-raised);
-  --ui-composer-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface-raised));
+  /* The writing box is the reading surface one tier above the chat canvas, not the popup step:
+     distinct from the canvas (and from a background image behind it) without a hard jump.
+     Popups, menus and modals keep --ui-surface-raised. */
+  --ui-chat-canvas: color-mix(in oklab, var(--color-content) 3%, var(--color-background-base));
+  --ui-composer-surface: var(--ui-surface);
+  --ui-composer-border: color-mix(in oklab, var(--color-content) 14%, var(--ui-composer-surface));
   --ui-composer-shadow: none;
   /* Large editable regions and boxed setting groups are identified by surface
      and caret; their edge is quieter than a 3:1 small-field border. */
@@ -435,9 +442,15 @@ html.theme-light {
   --ui-control-border: color-mix(in oklab, var(--color-content) 44%, var(--ui-surface-muted));
   /* Ordinary ranges use the exact contrast pair on an opaque fill, including
      content with its own inverse background. Overlay editors keep a tint. */
+  /* Before the derived pair is published the plain accent is paired with dark ink. */
   --ui-text-selection-background: var(--ui-interaction-accent);
-  --ui-text-selection-foreground: var(--user-accent-foreground, var(--palette-scrim));
-  --ui-overlay-selection-background: color-mix(in srgb, var(--ui-interaction-ink) 32%, transparent);
+  --ui-text-selection-foreground: var(--palette-scrim);
+  --ui-overlay-selection-strength: 32%;
+  --ui-overlay-selection-background: color-mix(
+    in srgb,
+    var(--ui-interaction-ink) var(--ui-overlay-selection-strength),
+    transparent
+  );
   --ui-primary-hover: color-mix(in oklab, var(--color-content) 85%, var(--color-background-base));
   --ui-primary-pressed: color-mix(in oklab, var(--color-content) 75%, var(--color-background-base));
   --ui-control-thumb: var(--color-on-solid);
@@ -457,7 +470,11 @@ html.theme-light {
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
   --ui-field-border-hover: color-mix(in oklab, var(--color-content) 60%, var(--ui-surface-muted));
-  --ui-field-border-focus: var(--ui-focus-ring-color);
+  /* One measured focus tone for every field frame: the user's tint at near-content strength,
+     never the accent, so focus is clear (about 10:1 on the field) without recolouring the control.
+     The 2px frame sits inside the field edge (offset = -width): no layout shift, nothing clipped. */
+  --ui-field-border-focus: color-mix(in oklab, var(--color-content) 88%, var(--ui-surface-muted));
+  --ui-field-focus-width: 2px;
   --motion-reorder-duration: 160ms;
   --motion-tab-close-duration: 200ms;
   --motion-feedback-duration: 120ms;
@@ -575,15 +592,14 @@ html.theme-light {
   --ui-surface-muted: var(--color-background-base);
   --ui-surface-hover: color-mix(in oklab, var(--color-content) 5%, var(--ui-surface));
   --ui-surface-pressed: color-mix(in oklab, var(--color-content) 9%, var(--ui-surface));
-  /* Calm selected fill: a neutral step firmer than hover with a hint of accent. */
-  --ui-surface-selected: color-mix(
-    in oklab,
-    var(--ui-interaction-ink) 7%,
-    color-mix(in oklab, var(--color-content) 7%, var(--ui-surface))
-  );
+  /* Calm selected fill: a neutral step firmer than hover. Hue comes only from the
+     user's tint, never from the accent, so selection reads the same for every accent. */
+  --ui-surface-selected: color-mix(in oklab, var(--color-content) 11%, var(--ui-surface));
+
   --ui-pane-border: color-mix(in oklab, var(--color-content) 9%, var(--color-background-base));
   --ui-control-border: color-mix(in oklab, var(--color-content) 52%, var(--ui-surface-muted));
   --ui-editor-border: color-mix(in oklab, var(--color-content) 12%, var(--ui-surface));
+  --ui-chat-canvas: var(--color-background-base);
   --ui-composer-surface: var(--palette-solidInk);
   --ui-composer-border: color-mix(in oklab, var(--color-content) 13%, var(--palette-solidInk));
   --ui-composer-shadow: 0 1px 2px color-mix(in oklab, var(--color-content) 5%, transparent);
@@ -605,7 +621,33 @@ html.theme-light {
    retain their own glyph handling and PDF keeps its more specific rule. */
 ::selection {
   color: var(--ui-text-selection-foreground);
+  /* Syntax, link and gradient-clipped text paint through the fill colour as well. */
+  -webkit-text-fill-color: var(--ui-text-selection-foreground);
+  text-decoration-color: var(--ui-text-selection-foreground);
   background: var(--ui-text-selection-background);
+}
+
+/* Once the accent roles are published, the fill and ink are a measured pair per scheme. */
+html.has-user-accent {
+  --ui-text-selection-background: var(--user-accent-selection-dark, var(--ui-interaction-accent));
+  --ui-text-selection-foreground: var(--palette-solidInk);
+}
+
+html.has-user-accent.theme-light {
+  --ui-text-selection-background: var(--user-accent-selection-light, var(--ui-interaction-accent));
+  --ui-text-selection-foreground: var(--palette-scrim);
+}
+
+@media (forced-colors: active) {
+  ::selection {
+    -webkit-text-fill-color: HighlightText;
+  }
+}
+
+/* Stronger accent readability: more ink in accent text, lighter overlay tint behind glyphs. */
+html[data-accent-readability="strong"] {
+  --ui-accent-ink-strength: 20%;
+  --ui-overlay-selection-strength: 24%;
 }
 
 /* CodeMirror owns its selection fill; retain readable ink for that fill. */
@@ -842,6 +884,16 @@ html.has-native-glass:not(.theme-light) .sidebar-glass {
   .body-glass {
     transition: none;
   }
+}
+
+/* The calm canvas sits under the artwork layer, so images and scenes still cover it.
+   Native glass keeps the window translucent: the main pane's glass owns that fill. */
+.chat-pane-background {
+  background-color: var(--ui-chat-canvas);
+}
+
+html.has-native-glass:not(.theme-light) .chat-pane-background {
+  background-color: transparent;
 }
 
 .chat-pane-background::before {
@@ -1084,7 +1136,11 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   mask-image: var(--tab-label-mask);
 }
 
-/* Fade a stationary layer, leaving the scroll surface unmasked. */
+/* Fade a stationary layer, leaving the scroll surface unmasked. The session list sits on the
+   navigation panel ground, so it fades into that role rather than the lighter reading surface. */
+.sidebar-session-scroll {
+  --scroll-fade-surface: var(--ui-surface-panel);
+}
 .sidebar-session-scroll::after {
   content: "";
   display: block;
@@ -1154,8 +1210,9 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
   background: var(--ui-transcript-surface);
 }
 
+/* Neutral reading surface: the accent never paints message bodies. */
 html.has-user-accent .user-message-bubble {
-  background: color-mix(in oklab, var(--ui-surface) 94%, var(--user-accent-color));
+  background: var(--ui-surface);
   border-color: var(--color-stroke);
 }
 
@@ -2024,12 +2081,13 @@ html.theme-light .primary-action:disabled {
 }
 
 html.has-user-accent .primary-action:not(:disabled) {
-  background: var(--user-accent-color);
-  color: var(--user-accent-foreground);
+  background: var(--ui-tone-accent-solid);
+  color: var(--ui-tone-accent-on-solid);
 }
 
+/* The ink was chosen for this exact fill; hover keeps it. */
 html.has-user-accent .primary-action:not(:disabled):hover {
-  background: color-mix(in srgb, var(--user-accent-color) 88%, var(--color-content));
+  background: var(--ui-tone-accent-solid-hover);
 }
 
 html.has-user-accent .primary-action:disabled {
@@ -2057,9 +2115,10 @@ html.has-user-accent .primary-action:disabled {
   -webkit-text-fill-color: var(--color-content);
 }
 
+/* Placeholder is the shared muted text role (about 6:1 on the composer), not a 40% alpha of the ink. */
 .composer-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 40%, transparent);
-  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 40%, transparent);
+  color: var(--ui-text-muted);
+  -webkit-text-fill-color: var(--ui-text-muted);
 }
 
 .markdown-source-heading {
@@ -2079,8 +2138,8 @@ html.has-user-accent .primary-action:disabled {
 }
 
 .markdown-source-field::placeholder {
-  color: color-mix(in srgb, var(--color-content) 35%, transparent);
-  -webkit-text-fill-color: color-mix(in srgb, var(--color-content) 35%, transparent);
+  color: var(--ui-text-muted);
+  -webkit-text-fill-color: var(--ui-text-muted);
 }
 
 .composer-toolbar::-webkit-scrollbar,
@@ -2124,23 +2183,135 @@ html.is-grabbing {
   --interaction-cursor: var(--workspace-drag-cursor, grabbing);
 }
 
+/* Drop-target roles. One vocabulary for every surface that moves, reorders, groups or splits:
+   a row, a tab, a pane edge and the cursor badge all draw from these, so "between", "into",
+   "group" and "split" read differently before the pointer is released. They are resolved on the
+   element that carries them, so a scoped accent or theme still applies. Set the mark through
+   setDropIndicator() in shared/lib/drag.ts. Nothing here animates, so reduced motion needs no
+   override. */
+:root,
+[data-drop-indicator],
+.pointer-drop-hint {
+  --ui-drop-line: var(--ui-interaction-ink);
+  --ui-drop-line-size: 2px;
+  --ui-drop-frame: var(--ui-interaction-ink);
+  --ui-drop-wash: color-mix(in oklab, var(--ui-interaction-ink) 14%, transparent);
+  --ui-drop-blocked: var(--ui-tone-neutral-border);
+}
+
+/* Positioned only when nothing else positions the element (zero specificity). */
+:where([data-drop-indicator]) {
+  position: relative;
+}
+
+[data-drop-indicator]::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* Between two items: an insertion line on the edge the item would land against. */
+[data-drop-indicator="before"]::after,
+[data-drop-indicator="after"]::after {
+  inset-inline: 0;
+  block-size: var(--ui-drop-line-size);
+  border-radius: var(--ui-drop-line-size);
+  background: var(--ui-drop-line);
+}
+[data-drop-indicator="before"]::after {
+  inset-block-start: 0;
+}
+[data-drop-indicator="after"]::after {
+  inset-block-end: 0;
+}
+[data-drop-indicator="before"][data-drop-axis="x"]::after,
+[data-drop-indicator="after"][data-drop-axis="x"]::after {
+  inset-block: 0;
+  inset-inline: auto;
+  block-size: auto;
+  inline-size: var(--ui-drop-line-size);
+}
+[data-drop-indicator="before"][data-drop-axis="x"]::after {
+  inset-inline-start: 0;
+}
+[data-drop-indicator="after"][data-drop-axis="x"]::after {
+  inset-inline-end: 0;
+}
+
+/* Into the item (a folder, a pane): solid frame and a wash. */
+[data-drop-indicator="inside"]::after {
+  inset: 0;
+  background: var(--ui-drop-wash);
+  box-shadow: inset 0 0 0 var(--ui-drop-line-size) var(--ui-drop-frame);
+}
+
+/* A new group is formed (dwell finished): dashed frame, so it differs from a plain move inside. */
+[data-drop-indicator="group"]::after {
+  inset: 0;
+  background: var(--ui-drop-wash);
+  border: var(--ui-drop-line-size) dashed var(--ui-drop-frame);
+}
+
+/* Dropping on an edge splits the target: the half that the new pane would take is washed. */
+[data-drop-indicator^="split-"]::after {
+  background: var(--ui-drop-wash);
+  border: 0 solid var(--ui-drop-frame);
+  border-radius: 0;
+}
+[data-drop-indicator="split-start"]::after {
+  inset: 0 50% 0 0;
+  border-inline-end-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-end"]::after {
+  inset: 0 0 0 50%;
+  border-inline-start-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-top"]::after {
+  inset: 0 0 50% 0;
+  border-block-end-width: var(--ui-drop-line-size);
+}
+[data-drop-indicator="split-bottom"]::after {
+  inset: 50% 0 0 0;
+  border-block-start-width: var(--ui-drop-line-size);
+}
+
+/* Refused target: neutral dashed frame, no wash and no accent. */
+[data-drop-indicator="blocked"]::after {
+  inset: 0;
+  border: var(--ui-drop-line-size) dashed var(--ui-drop-blocked);
+}
+
+/* The one cursor badge: what is moving and what releasing does. Targets never repeat it. */
 .pointer-drop-hint {
   position: fixed;
   z-index: 2147483647;
   pointer-events: none;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  max-inline-size: min(320px, calc(100vw - 16px));
   padding: 6px 10px;
-  border: 1px solid var(--color-accent);
-  border-radius: 6px;
-  background: var(--color-background-base);
-  color: var(--color-content, var(--palette-hexfff));
-  box-shadow: 0 3px 12px var(--palette-hex0005);
-  font-size: 12px;
+  border: 1px solid var(--ui-drop-frame);
+  border-radius: 0.5rem;
+  background: var(--ui-surface-raised);
+  color: var(--color-content);
+  box-shadow: var(--ui-elevation-floating);
+  font-size: var(--ui-font-caption, 12px);
   white-space: nowrap;
 }
 
+.pointer-drop-hint-subject {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+
 .pointer-drop-hint[data-action="blocked"] {
-  border-color: var(--color-stroke, var(--palette-hex666));
-  opacity: 0.85;
+  border-color: var(--ui-drop-blocked);
+  color: var(--ui-text-secondary);
 }
 
 .material-icon svg {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode, RefObject } from "react";
 import { flushSync } from "react-dom";
 import {
@@ -319,7 +319,12 @@ export function ExpandingSearch({
   const width = useMotionValue(FALLBACK_SIZE);
   /** True while the last highlight move came from the keyboard, so only keyboard moves scroll the list. */
   const keyboard = useRef(false);
-  useEffect(() => setActive(0), [query, externalResults]);
+  // New query text or a new result set starts again at the first row (adjusted during render).
+  const [resetBasis, setResetBasis] = useState({ query, externalResults });
+  if (resetBasis.query !== query || resetBasis.externalResults !== externalResults) {
+    setResetBasis({ query, externalResults });
+    setActive(0);
+  }
 
   // The corner radius follows the width: a circle while collapsed, the control radius once open. It rides the same spring, so the two never drift apart.
   const syncShape = useCallback((value: number) => {

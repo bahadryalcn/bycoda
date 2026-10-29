@@ -12,6 +12,9 @@ use crate::native_provider_output::{
 };
 use crate::native_window_lifecycle as windows;
 
+#[path = "native_projection_join_tests/raw_v3_interop.rs"]
+mod raw_v3_interop;
+
 struct Fixture {
     store: Arc<SessionStore>,
     barrier: window_barrier::WindowBarrier,

@@ -27,6 +27,7 @@ import { pathKey } from "../../../shared/lib/paths";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage, sessionConversationTurn } from "./sessionConversation";
+import { localSessionLinkFields, type LocalSessionLocator } from "../../sessions/model/localSessionReference";
 
 export type AppSessionListing = {
   id: string;
@@ -46,6 +47,8 @@ export type AgentAppHost = {
   start(launch: QuickLaunch, id: string, placement?: AppSessionPlacement): Promise<void>;
   sessions(cwd: string): Promise<AppSessionListing[]>;
   session(id: string): Promise<Session | null>;
+  /** Return only an identity proven against its persisted owner. */
+  sessionReference?(id: string): Promise<LocalSessionLocator | null>;
   send(id: string, prompt: string, requestId: string): Promise<{ alreadySubmitted: boolean }>;
   draft(
     id: string,
@@ -280,19 +283,36 @@ export async function handleAgentApp(
           })),
         })),
       };
-    case "sessions.list":
+    case "sessions.list": {
+      const sessions = await host.sessions(requireProject(source));
       return {
         cwd: requireProject(source),
-        sessions: await host.sessions(source.cwd),
+        sessions: await Promise.all(
+          sessions.map(async (session) => {
+            const locator = await host.sessionReference?.(session.id);
+            return {
+              ...session,
+              ...(locator
+                ? localSessionLinkFields(locator, session.title)
+                : {}),
+            };
+          }),
+        ),
       };
+    }
     case "sessions.read": {
       const id = requiredString(input.sessionId, "sessionId", 256);
       const target = await projectSession(source, id, host);
-      return sessionConversationPage(target, {
-        before: optionalString(input.before, "before", 256),
-        limit: input.limit as number | undefined,
-        maxChars: input.maxChars as number | undefined,
-      });
+      const locator = await host.sessionReference?.(target.id);
+      return sessionConversationPage(
+        target,
+        {
+          before: optionalString(input.before, "before", 256),
+          limit: input.limit as number | undefined,
+          maxChars: input.maxChars as number | undefined,
+        },
+        locator ?? undefined,
+      );
     }
     case "sessions.send": {
       const id = requiredString(input.sessionId, "sessionId", 256);

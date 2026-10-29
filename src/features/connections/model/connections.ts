@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { RemoteDataState } from "./remoteDataState";
 import {
   applySessionSync,
@@ -1078,24 +1078,23 @@ function watchMachineStatus(machineId: string): () => void {
 
 /** Whether a machine is reachable; undefined until the first check returns. */
 export function useRemoteMachineOnline(machineId?: string): boolean | undefined {
-  const [online, setOnline] = useState(() =>
-    machineId ? machineOnline.get(machineId) : undefined,
+  const subscribe = useCallback(
+    (notify: () => void) => {
+      if (!machineId) return () => undefined;
+      window.addEventListener(STATUS, notify);
+      const unwatch = watchMachineStatus(machineId);
+      return () => {
+        window.removeEventListener(STATUS, notify);
+        unwatch();
+      };
+    },
+    [machineId],
   );
-  useEffect(() => {
-    if (!machineId) {
-      setOnline(undefined);
-      return;
-    }
-    const update = () => setOnline(machineOnline.get(machineId));
-    update();
-    window.addEventListener(STATUS, update);
-    const unwatch = watchMachineStatus(machineId);
-    return () => {
-      window.removeEventListener(STATUS, update);
-      unwatch();
-    };
-  }, [machineId]);
-  return online;
+  const getSnapshot = useCallback(
+    () => (machineId ? machineOnline.get(machineId) : undefined),
+    [machineId],
+  );
+  return useSyncExternalStore(subscribe, getSnapshot, () => undefined);
 }
 
 const historyKey = (project: string) => `bycoda.remote-history.v2:${project}`;

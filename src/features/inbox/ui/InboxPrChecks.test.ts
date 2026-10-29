@@ -3,7 +3,8 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InboxPrChecks, PrChecksTab } from "./InboxPrChecks";
-import { InboxDetail, LinkedWorkItemPanel } from "./InboxView";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { InboxDetail as RawInboxDetail, LinkedWorkItemPanel as RawLinkedWorkItemPanel } from "./InboxView";
 import type { GithubPrChecksView } from "../hooks/useGithubPrChecks";
 import type {
   GithubCheckDetails,
@@ -26,6 +27,9 @@ vi.mock("@tauri-apps/api/window", () => ({
     setTitle: async () => {},
   }),
 }));
+
+const InboxDetail = withQueryClient(RawInboxDetail);
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 function view(overrides: Partial<GithubPrChecksView> = {}): GithubPrChecksView {
   return {

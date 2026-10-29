@@ -17,6 +17,7 @@ import {
 import { displayPath } from "../../../shared/lib/paths";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { useImageZoom } from "../../../shared/hooks/useImageZoom";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 
 type Props = { path: string; cwd: string };
 
@@ -141,12 +142,13 @@ function ImageView({
   useLocale();
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [copied, setCopied] = useState(false);
-  const [copyPending, setCopyPending] = useState(false);
-  const [copyError, setCopyError] = useState<string>();
-  const copying = useRef(false);
-  const copyGeneration = useRef(0);
-  const copiedTimer = useRef<number | null>(null);
+  // A different file abandons any copy in flight and its shown outcome.
+  const {
+    copy: runCopy,
+    copied,
+    pending: copyPending,
+    error: copyError,
+  } = useCopyFeedback({ resetKeys: [path], successMs: 1500 });
   const scrollRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -156,40 +158,15 @@ function ImageView({
 
   useEffect(
     () => () => {
-      copyGeneration.current += 1;
-      if (copiedTimer.current != null) window.clearTimeout(copiedTimer.current);
       clearTimeout(clickTimer.current);
     },
     [],
   );
 
   const copyOriginal = useCallback(() => {
-    if (copying.current) return;
-    copying.current = true;
-    const generation = copyGeneration.current;
     setMenu(null);
-    setCopied(false);
-    setCopyPending(true);
-    setCopyError(undefined);
-    void copyFileToClipboard(path).then(
-      () => {
-        if (generation !== copyGeneration.current) return;
-        copying.current = false;
-        setCopyPending(false);
-        setCopied(true);
-        if (copiedTimer.current != null) {
-          window.clearTimeout(copiedTimer.current);
-        }
-        copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
-      },
-      (error: unknown) => {
-        if (generation !== copyGeneration.current) return;
-        copying.current = false;
-        setCopyPending(false);
-        setCopyError(error instanceof Error ? error.message : String(error));
-      },
-    );
-  }, [path]);
+    runCopy(() => copyFileToClipboard(path));
+  }, [path, runCopy]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

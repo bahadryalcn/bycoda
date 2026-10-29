@@ -10,23 +10,24 @@ import {
 export function BufferRecoveryReports(props: LegacyBufferRecoverySectionProps) {
   const t = useT();
   const [source, setSource] = useState("desktop");
+  // The source lives in the report toolbar so the three recovery kinds share one layout.
+  const sourceControl = (
+    <SegmentedControl
+      label={t("Report source")}
+      value={source}
+      onValueChange={setSource}
+      options={[
+        { value: "desktop", label: t("This computer") },
+        { value: "host", label: t("Host reports") },
+      ]}
+    />
+  );
   return (
     <div className="flex min-h-0 flex-col">
-      <div className="shrink-0 px-3 pt-3">
-        <SegmentedControl
-          label={t("Report source")}
-          value={source}
-          onValueChange={setSource}
-          options={[
-            { value: "desktop", label: t("This computer") },
-            { value: "host", label: t("Host reports") },
-          ]}
-        />
-      </div>
       {source === "host" ? (
-        <HostBufferRecoverySection {...props} />
+        <HostBufferRecoverySection {...props} sourceControl={sourceControl} />
       ) : (
-        <LegacyBufferRecoverySection {...props} />
+        <LegacyBufferRecoverySection {...props} sourceControl={sourceControl} />
       )}
     </div>
   );

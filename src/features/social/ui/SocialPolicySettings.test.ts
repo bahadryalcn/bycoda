@@ -6,6 +6,42 @@ import type { SocialPolicies } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { SocialPolicySettings } from "./SocialPolicySettings";
 
+// The shared picker owns the menu; these tests cover how its choices map to the policy draft.
+vi.mock("../../sessions/ui/ModelPicker", async () => {
+  const { createElement: h } = await import("react");
+  return {
+    ModelPicker: (props: {
+      harness: string;
+      model: string;
+      allowedHarnesses?: readonly string[];
+      inheritChoice?: { label: string; selected: boolean; onSelect: () => void };
+      onChange: (harness: string, model: string) => void;
+    }) =>
+      h(
+        "div",
+        { "data-model-picker": "" },
+        h(
+          "select",
+          {
+            "aria-label": "agent",
+            value: props.inheritChoice?.selected ? "" : props.harness,
+            onChange: (event: { target: { value: string } }) =>
+              event.target.value
+                ? props.onChange(event.target.value, "")
+                : props.inheritChoice?.onSelect(),
+          },
+          h("option", { value: "" }, props.inheritChoice?.label),
+          (props.allowedHarnesses ?? []).map((id) => h("option", { key: id, value: id }, id)),
+        ),
+        h("input", {
+          "aria-label": "model",
+          value: props.model,
+          onChange: (event: { target: { value: string } }) =>
+            props.onChange(props.harness, event.target.value),
+        }),
+      ),
+  };
+});
 let container: HTMLDivElement, root: Root;
 const request = vi.fn();
 const policies: SocialPolicies = {
@@ -53,6 +89,9 @@ function select(label: string) {
     .find((item) => item.textContent?.startsWith(label))!
     .querySelector("select")!;
 }
+function agent() {
+  return container.querySelector<HTMLSelectElement>('select[aria-label="agent"]')!;
+}
 async function change(element: HTMLSelectElement, value: string) {
   await act(async () => {
     element.value = value;
@@ -75,7 +114,7 @@ async function input(field: string, value: string) {
 }
 it("retains an unset agent when the owner saves an unrelated limit", async () => {
   await mount();
-  expect(select("AI agent").value).toBe("");
+  expect(agent().value).toBe("");
   expect(request).not.toHaveBeenCalled();
   const input = container.querySelector<HTMLInputElement>('[name="maxMessageCharacters"]')!;
   input.value = "250";
@@ -90,7 +129,7 @@ it("retains an unset agent when the owner saves an unrelated limit", async () =>
 it("saves only platform overrides, retains global policy and shows inherited effective fields", async () => {
   await mount(policies);
   await change(select("Settings scope"), "youtube");
-  expect(select("AI agent").value).toBe("");
+  expect(agent().value).toBe("");
   expect(container.textContent).toContain("Antigravity · owner-model");
   expect(container.textContent).toContain("Saved limit: 300 · shared setting");
   container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value = "80";
@@ -114,15 +153,8 @@ it("clearing a platform override inherits global instead of persisting zero or c
 it("a platform agent and explicit model override global without altering global settings", async () => {
   await mount(policies);
   await change(select("Settings scope"), "x");
-  await change(select("AI agent"), "codex");
-  const input = container.querySelector<HTMLInputElement>(
-    "#" +
-      CSS.escape(
-        Array.from(container.querySelectorAll("label")).find((item) =>
-          item.textContent?.startsWith("AI model"),
-        )!.htmlFor,
-      ),
-  )!;
+  await change(agent(), "codex");
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="model"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
       input,

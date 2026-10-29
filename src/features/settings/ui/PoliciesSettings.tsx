@@ -11,7 +11,8 @@ import "./policies.css";
 export function PoliciesSettings() {
   const locale = useLocale();
   const [languageOverride, setLanguageOverride] = useState<string | null>(null);
-  const [contactError, setContactError] = useState(false);
+  // The mail failure belongs to the document and language it was raised for.
+  const [contactErrorContext, setContactErrorContext] = useState<string | null>(null);
   const revealed = useContext(RevealedSetting);
   const [selection, setSelection] = useState(() => ({
     policy: POLICIES.find((policy) => policy.id === revealed) ?? POLICIES[0],
@@ -33,10 +34,10 @@ export function PoliciesSettings() {
   currentContext.current = context;
   const reader = useRef<HTMLElement>(null);
   const mailAttempt = useRef(0);
+  const contactError = contactErrorContext === context;
   const headings = [...body.matchAll(/^##\s+(.+)$/gm)].map((match) => match[1]);
   useEffect(() => {
     mailAttempt.current += 1;
-    setContactError(false);
     return () => { mailAttempt.current += 1; };
   }, [context]);
 
@@ -52,9 +53,9 @@ export function PoliciesSettings() {
         event.stopPropagation();
         const origin = currentContext.current;
         const attempt = ++mailAttempt.current;
-        setContactError(false);
+        setContactErrorContext(null);
         void openUrl("mailto:info@bahadrhllyalcn.com").catch(() => {
-          if (origin === currentContext.current && attempt === mailAttempt.current) setContactError(true);
+          if (origin === currentContext.current && attempt === mailAttempt.current) setContactErrorContext(origin);
         });
       }}
     >
@@ -107,7 +108,7 @@ export function PoliciesSettings() {
                 document.getElementById(settingDomId(POLICIES[next].id))?.focus();
               }}
               onClick={() => {
-                setContactError(false);
+                setContactErrorContext(null);
                 setActivePolicy(policy);
               }}
             >

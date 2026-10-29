@@ -23,6 +23,7 @@ export function MemberModelPicker({
       values={value?.modelSettings ?? {}}
       project={cwd}
       allowedHarnesses={REMOTE_PROVIDERS}
+      presentation="field"
       onChange={(harness, model) => {
         if (!isRemoteProvider(harness)) return;
         const id = `${harness}/${model}`;

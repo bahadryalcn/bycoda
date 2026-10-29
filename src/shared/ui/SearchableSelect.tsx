@@ -322,6 +322,11 @@ function SearchableSelectMenu({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [menuWidth, setMenuWidth] = useState<number>();
+  // A disabled picker cannot stay open: close during render so re-enabling does not reopen it.
+  if (disabled && (open || query)) {
+    setOpen(false);
+    setQuery("");
+  }
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   useImperativeHandle(triggerProps?.ref, () => trigger.current!, []);
@@ -409,12 +414,6 @@ function SearchableSelectMenu({
     }
   }, [activeIndex, open]);
 
-  useEffect(() => {
-    if (!disabled) return;
-    setOpen(false);
-    setQuery("");
-  }, [disabled]);
-
   const pick = (next: string) => {
     if (disabled || optionLookup.get(next)?.disabled) return;
     onPick(next);
@@ -423,7 +422,9 @@ function SearchableSelectMenu({
 
   // Rows are memoised, so they call the latest pick through a stable handler.
   const latestPick = useRef(pick);
-  latestPick.current = pick;
+  useLayoutEffect(() => {
+    latestPick.current = pick;
+  });
   const pickLatest = useCallback((next: string) => latestPick.current(next), []);
 
   /** Next choosable row from `from`; wraps only with loopNavigation, otherwise stays at the end. */

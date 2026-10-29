@@ -418,7 +418,9 @@ export function useProjectMenu({
     | { kind: "set"; groupId: string; lockNow: boolean }
     | null
   >(null);
-  const [menuError, setMenuError] = useState<string | null>(null);
+  const [menuErrorState, setMenuErrorState] = useState<{ path?: string; message: string } | null>(
+    null,
+  );
   const [localHostCreating, setLocalHostCreating] = useState(false);
   const localHostCreationPending = useRef(false);
   const [externalEditors, setExternalEditors] = useState<ExternalEditor[] | null>(null);
@@ -440,9 +442,12 @@ export function useProjectMenu({
     ? notificationMuteStatus(notificationPreferences[readyNotificationProject.id])
     : null;
 
-  useEffect(() => {
-    setMenuError(null);
-  }, [menuPath]);
+  // An error belongs to the menu it was raised for. Cleared while rendering when
+  // the menu changes or closes, so it never carries over to another project.
+  if (menuErrorState && menuErrorState.path !== menuPath) setMenuErrorState(null);
+  const menuError = menuErrorState ? menuErrorState.message : null;
+  const setMenuError = (message: string | null) =>
+    setMenuErrorState(message === null ? null : { path: menuPath, message });
 
   useEffect(() => {
     let active = true;

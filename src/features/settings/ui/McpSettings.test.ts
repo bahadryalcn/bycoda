@@ -19,6 +19,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: (...args: unknown[]) => ask(...args),
 }));
+vi.mock("../../../shared/model/appConfirm", () => ({
+  confirmInApp: (...args: unknown[]) => ask(...args),
+}));
 
 let container: HTMLDivElement;
 let root: Root;
@@ -125,6 +128,13 @@ it("keeps MCP progress on the exact action and server even when providers share 
     remove,
   ]);
   expect(ask).toHaveBeenCalledTimes(1);
+  expect(ask).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: "Remove MCP server?",
+      confirmLabel: "Remove server",
+      tone: "danger",
+    }),
+  );
   await act(async () => finishConfirm(false));
   expect(remove.getAttribute("aria-busy")).not.toBe("true");
   expect(invoke.mock.calls.some(([command]) => command === "claude_mcp_remove")).toBe(false);

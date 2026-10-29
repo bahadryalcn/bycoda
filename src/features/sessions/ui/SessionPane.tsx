@@ -4,6 +4,7 @@ import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, Loader, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
 import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
   memo,
   useCallback,
@@ -21,7 +22,6 @@ import { createPortal } from "react-dom";
 import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
 import {
-  retainParentInput,
   useParentInputClosure,
   canMutateParentInputs,
   mutateParentInput,
@@ -93,7 +93,10 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
 import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
-import { EditFromHereDialog, type EditFromHereMode } from "./EditFromHereDialog";
+import { EditFromHereDialog } from "./EditFromHereDialog";
+import { useEditingLastTurn } from "./useEditingLastTurn";
+import { useMessageRewind } from "./useMessageRewind";
+import { useQuoteRequests } from "./useQuoteRequests";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
@@ -106,12 +109,6 @@ import {
 import { EmptySession } from "./EmptySession";
 import { CrewBackdrop } from "./CrewBackdrop";
 import { useComposerDockMotion } from "./useComposerDockMotion";
-import {
-  acknowledgeQuoteRequest,
-  ADD_TO_CHAT_EVENT,
-  type AddToChatRequest,
-  type QuoteRequest,
-} from "../model/quoteDraft";
 import { createNote, noteTitle } from "../../notes";
 import {
   getNotesPanelOpen,
@@ -126,15 +123,7 @@ import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
 import { userPromptHistory } from "../model/composerHistory";
 import { lastTurnRecall, lastUserTurnBlock } from "../model/editLastTurn";
-import { isOperatorUserTurn, operatorUserPrompt } from "../model/operatorCommand";
 import { canRewindConversation } from "../model/conversationRewind";
-import {
-  planSessionFilesRevert,
-  revertSessionFiles,
-  type SessionFilesRevertPlan,
-  type SessionFilesRevertResult,
-} from "../model/editFromHere";
-import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   loadProjectChatBackgroundSettings,
   projectChatBackgroundImageRevision,
@@ -681,112 +670,52 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const transcriptScope = useRef<HTMLDivElement>(null);
   const [transcriptScroller, setTranscriptScroller] = useState<HTMLDivElement | null>(null);
   const focusPane = useCallback(() => onFocus(session.id), [onFocus, session.id]);
-  const quoteRequestId = useRef(0);
-  const quoteAdmissions = useRef(new Map<number, ParentAdmission>());
-  const pendingPlanAdmission = useRef<{ admission: ParentAdmission; started: boolean } | null>(
-    null,
-  );
-  useLayoutEffect(() => {
-    const quotes = quoteAdmissions.current;
-    return () => {
-      for (const admitted of quotes.values()) admitted.finish();
-      quotes.clear();
-      const pending = pendingPlanAdmission.current;
-      if (pending && !pending.started) pending.admission.finish();
-    };
-  }, []);
+  const { quoteRequest, addSelectionToChat, acknowledgeQuote, snapshot: quoteSnapshot } =
+    useQuoteRequests(rootParentRef, addToChatTarget);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
-  const [editingLastTurn, setEditingLastTurn] = useState(false);
-  const [pendingRewind, setPendingRewind] = useState<{
-    sessionId: string;
-    block: Block;
-    action: "edit" | "return";
-    recall: LastTurnRecall;
-    source: Session;
-    authorityGeneration?: number;
-    planAdmission: ParentAdmission;
-  } | null>(null);
-  const [rewindingMessage, setRewindingMessage] = useState(false);
-  const [rewindError, setRewindError] = useState<string | null>(null);
-  const [filePlan, setFilePlan] = useState<SessionFilesRevertPlan | null>(null);
-  const [filePlanLoading, setFilePlanLoading] = useState(false);
-  const [rewindMode, setRewindMode] = useState<EditFromHereMode | null>(null);
-  const [fileRevertNotice, setFileRevertNotice] = useState<SessionFilesRevertResult | null>(null);
-  const fileRevertResult = useRef<SessionFilesRevertResult | null>(null);
-  const rewindInFlight = useRef(false);
-  const [rewindDraftSignal, setRewindDraftSignal] = useState<{
-    sessionId: string;
-    id: string;
-    value: LastTurnRecall;
-  } | null>(null);
-  useEffect(() => {
-    setEditingLastTurn(false);
-  }, [session.id, editLastTurnSupported]);
-  useEffect(() => {
-    setPendingRewind(null);
-    setRewindError(null);
-    setRewindDraftSignal(null);
-    setFileRevertNotice(null);
-    fileRevertResult.current = null;
-  }, [session.id]);
-  useEffect(() => {
-    if (!pendingRewind) return;
-    const admitted = pendingRewind.planAdmission;
-    if (admitted.settled) return;
-    if (pendingPlanAdmission.current?.admission === admitted)
-      pendingPlanAdmission.current.started = true;
-    let current = true;
-    const preparation = retainParentInput({
-      kind: "session-parent",
-      sessionId: pendingRewind.sessionId,
-      snapshot: () => ({
-        source: "rewind-file-plan-preparation",
-        blockId: pendingRewind.block.id,
-        action: pendingRewind.action,
-        recall: pendingRewind.recall,
-        authorityGeneration: pendingRewind.authorityGeneration,
-      }),
-    });
-    setFilePlan(null);
-    setFilePlanLoading(true);
-    void admitted.run(() =>
-      planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id, {
-        authorityGeneration: pendingRewind.authorityGeneration,
-      })
-        .then((plan) => {
-          if (current && activeSessionIdRef.current === pendingRewind.sessionId) setFilePlan(plan);
-        })
-        .catch((error: unknown) => {
-          if (!current) return;
-          const reason =
-            error instanceof Error ? error.message : t("Session file history is unavailable.");
-          setFilePlan({ files: [], unavailable: reason });
-          setRewindError(reason);
-        })
-        .finally(() => {
-          preparation.release();
-          if (current) setFilePlanLoading(false);
-        }),
-    );
-    return () => {
-      current = false;
-    };
-  }, [pendingRewind]);
+  // One owner for "the earlier turn is being edited"; the Composer receives it.
+  const [editingLastTurn, setEditingLastTurn] = useEditingLastTurn(
+    session.id,
+    editLastTurnSupported,
+  );
+  const {
+    pendingRewind,
+    rewindingMessage,
+    rewindError,
+    filePlan,
+    filePlanLoading,
+    rewindMode,
+    fileRevertNotice,
+    rewindDraftSignal,
+    requestMessageRewind,
+    rewindLastTurnToDraft,
+    confirmMessageRewind,
+    cancelRewind,
+    acknowledgeDraftSignal,
+    snapshot: rewindSnapshot,
+  } = useMessageRewind({
+    session,
+    managed,
+    sendBlockedReason,
+    lastUserMessage,
+    onRewindMessage,
+    rootParentRef,
+    activeSessionIdRef,
+    currentSessionRef,
+  });
   const modelWelcomeSequence = useRef(0);
   const decorativeMotionEnabled = useDecorativeMotionEnabled();
   const [modelWelcome, setModelWelcome] = useState<{
     run: number;
   } | null>(null);
   const dismissModelWelcome = useCallback(() => setModelWelcome(null), []);
-  useEffect(() => {
-    if (!visible || !decorativeMotionEnabled) setModelWelcome(null);
-  }, [visible, decorativeMotionEnabled]);
+  // A hidden pane, or one without decorative motion, shows no welcome.
+  if (modelWelcome && (!visible || !decorativeMotionEnabled)) setModelWelcome(null);
   // Restore a saved run for this lead; its agents render on the sidebar card.
   useEffect(() => {
     if (!remote && !session.inboxAsk && !session.worktreeRemoved)
       void orchestrator.hydrate(session.id).catch(console.error);
   }, [remote, session.id, session.inboxAsk, session.worktreeRemoved]);
-  const [quoteRequest, setQuoteRequest] = useState<QuoteRequest>();
   const btw = useBtwConversation({
     parentSessionId: session.id,
     available:
@@ -868,6 +797,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => peekTranscriptJump(session.id),
     () => null,
   );
+  useCitedTurnHistory({ visible, jump: jumpRequest, blocks: stableBlocks,
+    hasMore: remoteHistoryHasMore, loading: remoteHistoryLoading,
+    error: remoteHistoryError, load: onLoadRemoteHistory });
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
@@ -876,34 +808,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, navigatorReady, jumpRequest, navigateBlock, session.id]);
-  const addSelectionToChat = useCallback((text: string, mode?: QuoteRequest["mode"]) => {
-    const admitted = rootParentRef.current?.admit();
-    if (!admitted) return;
-    for (const previous of quoteAdmissions.current.values()) previous.finish();
-    quoteAdmissions.current.clear();
-    quoteRequestId.current += 1;
-    quoteAdmissions.current.set(quoteRequestId.current, admitted);
-    setQuoteRequest({ id: quoteRequestId.current, text, mode });
-  }, []);
-  const acknowledgeQuote = useCallback((handledId: number) => {
-    const admitted = quoteAdmissions.current.get(handledId);
-    try {
-      if (admitted)
-        admitted.apply(() =>
-          setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId)),
-        );
-      else {
-        rootParentRef.current?.();
-        setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
-      }
-    } catch {
-      /* A replaced owner keeps the original input; never touch its new view. */
-    } finally {
-      admitted?.finish();
-      quoteAdmissions.current.delete(handledId);
-    }
-  }, []);
+  }, [visible, navigatorReady, jumpRequest, navigateBlock, session.id, stableBlocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const notesPanelOpen = useSyncExternalStore(subscribeNotesPanel, getNotesPanelOpen, () => false);
   // One panel, docked beside the focused pane, so a split never shows two.
@@ -941,16 +846,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
     [session.cwd, session.id],
   );
 
-  useEffect(() => {
-    if (!addToChatTarget) return;
-    const onAdd = (event: Event) => {
-      const detail = (event as CustomEvent<AddToChatRequest>).detail;
-      if (!detail?.text) return;
-      addSelectionToChat(detail.text, detail.mode);
-    };
-    window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
-    return () => window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
-  }, [addSelectionToChat, addToChatTarget]);
   const workCwd = sessionWorkCwd(session);
   const showDeckProjectPicker = isEmpty && !looksLikeProject(session.cwd);
   const dockComposer =
@@ -969,27 +864,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
       pendingQuestion: session.pendingQuestion,
       submittedQuestions: session.submittedQuestions,
       questionDraftScope,
-      quoteRequest,
-      quoteRequestId: quoteRequestId.current,
-      rewindDraftSignal,
-      pendingRewind: pendingRewind
-        ? {
-            sessionId: pendingRewind.sessionId,
-            blockId: pendingRewind.block.id,
-            action: pendingRewind.action,
-            recall: pendingRewind.recall,
-            authorityGeneration: pendingRewind.authorityGeneration,
-          }
-        : null,
+      ...quoteSnapshot(),
       editingLastTurn,
-      rewindingMessage,
-      rewindInFlight: rewindInFlight.current,
-      rewindError,
-      rewindMode,
-      filePlan,
-      filePlanLoading,
-      fileRevertNotice,
-      fileRevertResult: fileRevertResult.current,
+      ...rewindSnapshot(),
       harness: session.harness,
       model: session.model,
       modelSettings: session.modelSettings,
@@ -1124,152 +1001,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
       onSelectProviderAccount?.(session.id, provider, accountId),
   );
   const composerPromptHistory = useStableCallback(() => userPromptHistory(session));
-  const composerRecallMessageApplied = useCallback((id: string) => {
-    setRewindDraftSignal((current) => (current?.id === id ? null : current));
-  }, []);
-  const requestMessageRewind = useCallback(
-    (block: Block, action: "edit" | "return", recall?: LastTurnRecall) => {
-      if (!canRewindConversation(session, block.id)) return;
-      const admitted = rootParentRef.current?.admit();
-      if (!admitted) return;
-      const previous = pendingPlanAdmission.current;
-      if (previous && !previous.started) previous.admission.finish();
-      pendingPlanAdmission.current = { admission: admitted, started: false };
-      setRewindError(null);
-      fileRevertResult.current = null;
-      setFilePlan(null);
-      setFilePlanLoading(true);
-      setPendingRewind({
-        sessionId: session.id,
-        source: session,
-        authorityGeneration: session.adoptedAuthorityGeneration,
-        planAdmission: admitted,
-        block,
-        action,
-        recall: recall ?? {
-          text: isOperatorUserTurn(block) ? `/operator ${operatorUserPrompt(block)}` : block.text,
-          attachments: block.attachments ?? [],
-        },
-      });
-    },
-    [session],
-  );
-  const rewindLastTurnToDraft = useCallback(
-    (recall: LastTurnRecall) => {
-      if (lastUserMessage) requestMessageRewind(lastUserMessage, "edit", recall);
-    },
-    [lastUserMessage, requestMessageRewind],
-  );
-  const confirmMessageRewind = useCallback(
-    async (mode: EditFromHereMode) => {
-      if (!pendingRewind || rewindInFlight.current || !onRewindMessage) return;
-      const requestedSessionId = pendingRewind.sessionId;
-      if (requestedSessionId !== session.id) return;
-      if (
-        !canRewindConversation(session, pendingRewind.block.id) ||
-        session.blocks !== pendingRewind.source.blocks ||
-        session.adoptedAuthorityGeneration !== pendingRewind.authorityGeneration ||
-        managed ||
-        session.inboxAsk ||
-        session.worktreeRemoved ||
-        sendBlockedReason
-      ) {
-        setRewindError(t("This conversation can no longer be rewound."));
-        return;
-      }
-      if (mode === "files" && (filePlanLoading || !filePlan || filePlan.unavailable)) return;
-      const admitted = parentChanged.admit();
-      if (!admitted) return;
-      return admitted.run(async () => {
-        rewindInFlight.current = true;
-        parentChanged();
-        setRewindingMessage(true);
-        setRewindMode(mode);
-        setRewindError(null);
-        const preparation = retainParentInput({
-          kind: "session-parent",
-          sessionId: requestedSessionId,
-          snapshot: () => ({
-            source: "rewind-preparation",
-            blockId: pendingRewind.block.id,
-            action: pendingRewind.action,
-            recall: pendingRewind.recall,
-            authorityGeneration: pendingRewind.authorityGeneration,
-            mode,
-            filePlan,
-          }),
-        });
-        try {
-          if (mode === "files" && !fileRevertResult.current) {
-            const result = await revertSessionFiles(
-              pendingRewind.source,
-              pendingRewind.block.id,
-              filePlan?.planToken,
-              filePlan ?? undefined,
-            );
-            if (activeSessionIdRef.current !== requestedSessionId) return;
-            fileRevertResult.current = result;
-            setFileRevertNotice(result);
-          }
-          if (
-            currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
-            currentSessionRef.current.adoptedAuthorityGeneration !==
-              pendingRewind.authorityGeneration ||
-            !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
-          ) {
-            throw new Error(t("This conversation can no longer be rewound."));
-          }
-          const accepted = await admitted.apply(() =>
-            onRewindMessage(requestedSessionId, pendingRewind.block.id),
-          );
-          if (activeSessionIdRef.current !== requestedSessionId) return;
-          if (!accepted) {
-            setRewindError(
-              t(
-                fileRevertResult.current
-                  ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
-                  : "The conversation could not be rewound. Try again.",
-              ),
-            );
-            return;
-          }
-          setRewindDraftSignal({
-            sessionId: requestedSessionId,
-            id: crypto.randomUUID(),
-            value: pendingRewind.recall,
-          });
-          setPendingRewind(null);
-        } catch (error: unknown) {
-          if (activeSessionIdRef.current !== requestedSessionId) return;
-          setRewindError(
-            fileRevertResult.current
-              ? t(
-                  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
-                )
-              : error instanceof Error
-                ? error.message
-                : t("The conversation could not be rewound. Try again."),
-          );
-        } finally {
-          preparation.release();
-          rewindInFlight.current = false;
-          parentChanged();
-          setRewindingMessage(false);
-          setRewindMode(null);
-        }
-      });
-    },
-    [
-      filePlan,
-      filePlanLoading,
-      managed,
-      onRewindMessage,
-      pendingRewind,
-      parentChanged,
-      sendBlockedReason,
-      session,
-    ],
-  );
   const stopDockAgent = useStableCallback((agent: DockAgent) =>
     agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
   );
@@ -1565,7 +1296,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
           ? { id: rewindDraftSignal.id, value: rewindDraftSignal.value }
           : undefined
       }
-      onRecalledMessageApplied={composerRecallMessageApplied}
+      onRecalledMessageApplied={acknowledgeDraftSignal}
+      editingLastTurn={editingLastTurn}
       onEditingLastTurnChange={setEditingLastTurn}
     >
       {composerChildren}
@@ -2029,7 +1761,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           error={rewindError}
           onCancel={() => {
             parentChanged();
-            if (!rewindInFlight.current) setPendingRewind(null);
+            cancelRewind();
           }}
           onConfirm={(mode) => void confirmMessageRewind(mode)}
         />

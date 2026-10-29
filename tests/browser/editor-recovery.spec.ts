@@ -40,7 +40,7 @@ function snapshot(page: Page) {
 const recoveredEditor = (page: Page) => page.locator('[data-workspace="recovered"] .cm-content');
 async function openHostReports(page: Page) {
   await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
-  await page.getByRole("radio", { name: "Earlier file reports", exact: true }).click();
+  await page.getByRole("tab", { name: /^Earlier file reports/ }).click();
   await page.getByRole("radio", { name: "Host reports", exact: true }).click();
   expect((await snapshot(page)).hostCalls).toEqual([]);
   await page.getByRole("button", { name: "Check reports", exact: true }).click();
@@ -235,7 +235,7 @@ async function openCopy(page: Page) {
 async function openEarlierReports(page: Page) {
   await page.getByRole("button", { name: /^Recovered work(?: \(\d+\))?$/ }).click();
   await expect(page.getByRole("dialog", { name: "Recovered work", exact: true })).toBeVisible();
-  await page.getByRole("radio", { name: "Earlier file reports", exact: true }).click();
+  await page.getByRole("tab", { name: /^Earlier file reports/ }).click();
   expect((await snapshot(page)).legacyCalls).toEqual([]);
   await page.getByRole("button", { name: "Check reports", exact: true }).click();
   await expect(page.getByRole("list", { name: "Earlier file reports", exact: true })).toContainText(
@@ -270,7 +270,7 @@ test("file-only recovery persists a separate permanent tab, preserves an existin
   await page.keyboard.insertText("Existing unsaved view\n");
   await expect(existing).toContainText("Existing unsaved view");
   await openCatalog(page);
-  await expect(page.getByRole("radio", { name: /File drafts/ })).toBeChecked();
+  await expect(page.getByRole("tab", { name: /File drafts/ })).toHaveAttribute("aria-selected", "true");
   await openCopy(page);
   const state = await snapshot(page);
   expect(state.tabs).toHaveLength(2);

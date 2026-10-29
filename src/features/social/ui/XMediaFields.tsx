@@ -56,11 +56,19 @@ export function XMediaFields({
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number>();
   const [error, setError] = useState("");
-  const [preview, setPreview] = useState<{
+  const [storedPreview, setPreview] = useState<{
     url: string;
     kind: "image" | "video";
     uploadId: string;
+    client: SocialClient;
   }>();
+  // A preview belongs to the client that uploaded it and to a value that still holds it.
+  const preview =
+    storedPreview &&
+    storedPreview.client === client &&
+    value.some((item) => item.uploadId === storedPreview.uploadId)
+      ? storedPreview
+      : undefined;
   const mounted = useRef(true);
   const uploading = useRef(false);
   const callbacks = useRef({
@@ -87,16 +95,10 @@ export function XMediaFields({
   }, []);
   useEffect(
     () => () => {
-      if (preview) URL.revokeObjectURL(preview.url);
+      if (storedPreview) URL.revokeObjectURL(storedPreview.url);
     },
-    [preview],
+    [storedPreview],
   );
-  useEffect(() => {
-    setPreview(undefined);
-  }, [client]);
-  useEffect(() => {
-    if (preview && !value.some((item) => item.uploadId === preview.uploadId)) setPreview(undefined);
-  }, [preview, value]);
   return (
     <fieldset>
       <legend>{label ?? t("X attachments")}</legend>
@@ -203,6 +205,7 @@ export function XMediaFields({
                   url: URL.createObjectURL(files[0]),
                   kind: next[0].kind,
                   uploadId: next[0].uploadId!,
+                  client,
                 });
               }
             } catch {

@@ -3,7 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   keepSessionChanges,
   sessionCheckpointStatus,
@@ -52,7 +52,12 @@ function SessionReviewContent({
   const request = useRef(0);
   const actingRef = useRef(false);
   const filesRef = useRef(files);
-  filesRef.current = files;
+  useLayoutEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+  // A running turn owns the workspace: drop the previous result, and a short list cannot stay expanded.
+  if (busy && files.length > 0) setFiles([]);
+  if (expanded && files.length <= 3) setExpanded(false);
 
   const load = useCallback(() => {
     if (actingRef.current) return;
@@ -130,14 +135,6 @@ function SessionReviewContent({
       window.clearTimeout(timer);
     };
   }, [recording, enabled, busy, load]);
-
-  useEffect(() => {
-    if (files.length <= 3) setExpanded(false);
-  }, [files.length]);
-
-  useEffect(() => {
-    if (busy) setFiles([]);
-  }, [busy]);
 
   // The card represents the result of a turn. Keep it out of the live turn,
   // then refresh and reveal it once the turn has settled.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { projectLogoSrc } from "../../projects/model/projectLogos";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -35,9 +35,13 @@ export function QuickProjectIcon({
   const seed = projectName(projectPath);
   const logoPath = resolveTabGroupLogo(key, appearance.logos);
   const src = projectLogoSrc(logoPath);
-  const [failed, setFailed] = useState(false);
-  // Reopening reloads appearance and retries a logo that may have been replaced.
-  useEffect(() => setFailed(false), [src, appearance]);
+  // A failure is remembered against the src and appearance it happened for, so
+  // reopening (which reloads appearance) retries a logo that may have been replaced.
+  const [failure, setFailure] = useState<{
+    src: string | null;
+    appearance: typeof appearance;
+  } | null>(null);
+  const failed = failure?.src === src && failure.appearance === appearance;
 
   if (src && !failed)
     return (
@@ -45,7 +49,7 @@ export function QuickProjectIcon({
         src={src}
         alt=""
         className={`rounded-sm object-cover ${className ?? ""}`}
-        onError={() => setFailed(true)}
+        onError={() => setFailure({ src, appearance })}
       />
     );
   return (

@@ -69,15 +69,29 @@ export function useOrchestratorBinding({
   onStop,
   flushHarnessEvents,
 }: OrchestratorBindingDeps): void {
-  useEffect(() => {
-    setSessions((prev) => attachOrchestrationWorkers(prev, orchestrationRuns));
-  }, [orchestrationRuns]);
+  // `orchestrationLeadId` is read straight from the shared sessions store by
+  // many consumers (sidebar, history, tray, inbox, approvals), so the projection
+  // stays a store write instead of a per-consumer selector. Both writes below
+  // are idempotent: the pure helpers return their input when nothing changes,
+  // and they are skipped outright when no run has any worker task.
+  const hasWorkerTasks = orchestrationRuns.some((run) => run.tasks.length > 0);
+  // Tab consolidation depends only on which worker sessions belong to which
+  // lead, not on run status churn, so key it on that link set.
+  const workerLinkKey = orchestrationRuns
+    .flatMap((run) => run.tasks.map((task) => `${run.leadId}>${task.sessionId}`))
+    .join("|");
 
   useEffect(() => {
+    if (!hasWorkerTasks) return;
+    setSessions((prev) => attachOrchestrationWorkers(prev, orchestrationRuns));
+  }, [orchestrationRuns, hasWorkerTasks]);
+
+  useEffect(() => {
+    if (!workerLinkKey) return;
     const next = consolidateOrchestrationTabs(tabs, activeTabId, orchestrationRuns);
     if (next.tabs !== tabs) setTabs(next.tabs);
     if (next.activeTabId !== activeTabId) setActiveTabId(next.activeTabId);
-  }, [tabs, activeTabId, orchestrationRuns]);
+  }, [tabs, activeTabId, workerLinkKey]);
   useLayoutEffect(() => {
     orchestrator.bind({
       session: (id) => sessionsRef.current.find((session) => session.id === id),

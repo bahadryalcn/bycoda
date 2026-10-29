@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { TelegramChannelConnection } from "./TelegramChannelConnection";
+import { TelegramChannelConnection, telegramConnectionKey } from "./TelegramChannelConnection";
 import type { SocialAccount, SocialTelegramChannelReview } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 
@@ -48,7 +48,12 @@ afterEach(async () => {
 const render = async (selected = account) =>
   act(async () =>
     root.render(
-      createElement(TelegramChannelConnection, { account: selected, client, onRefresh: refresh }),
+      createElement(TelegramChannelConnection, {
+        key: telegramConnectionKey(client, selected),
+        account: selected,
+        client,
+        onRefresh: refresh,
+      }),
     ),
   );
 const button = (name: string) =>

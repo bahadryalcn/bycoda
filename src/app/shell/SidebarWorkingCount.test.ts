@@ -322,15 +322,17 @@ it("shows the same turn clock in Working and Sessions, then removes it when work
       },
     ];
     await render();
+    // The live summary prints the turn time on the title line; the session card keeps it beside
+    // the working mark. Both read the same shared clock.
     const rail = () =>
-      container.querySelector('[data-live-agent-card="timed"] [data-session-working-status]');
+      container.querySelector('[data-live-agent-card="timed"] [data-live-agent-elapsed]');
     const card = () =>
       container.querySelector('[data-session-card="timed"] [data-session-working-status]');
-    expect(rail()?.textContent).toContain("3m 10s");
-    expect(card()?.textContent).toBe(rail()?.textContent);
+    expect(rail()?.textContent).toBe("3m 10s");
+    expect(card()?.textContent).toContain(rail()?.textContent);
     act(() => vi.advanceTimersByTime(1000));
+    expect(rail()?.textContent).toBe("3m 11s");
     expect(card()?.textContent).toContain("3m 11s");
-    expect(card()?.textContent).toBe(rail()?.textContent);
     props.busySessionIds = new Set();
     props.liveAgents = [];
     await render();

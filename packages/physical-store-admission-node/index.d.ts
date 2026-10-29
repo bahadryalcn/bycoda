@@ -1,0 +1,45 @@
+declare const writerBrand: unique symbol;
+declare const closingBrand: unique symbol;
+declare const closedBrand: unique symbol;
+export interface WriterHandle {
+  readonly [writerBrand]: true;
+}
+export interface ClosingHandle {
+  readonly [closingBrand]: true;
+}
+export interface ClosedHandle {
+  readonly [closedBrand]: true;
+}
+/** OS-derived file metadata only. Never SQLite attestation or permission. */
+export interface FileIdentityData {
+  nativeFormat: string;
+  links: bigint;
+}
+export interface ReservationStatistics {
+  processActive: number;
+  ownerActive: number;
+  maxProcess: number;
+  maxOwner: number;
+}
+export interface BoundStore {
+  identity(): FileIdentityData;
+  tryWriter(): WriterHandle | null;
+  tryBeginClose(): ClosingHandle | null;
+  /** Busy returns null. Every error retains the SAME original Closing handle. */
+  tryUpgrade(closing: ClosingHandle): ClosedHandle | null;
+  /** Private adapter must call only after actual terminal/EXIT, never public timeout/GC. */
+  releaseWriter(writer: WriterHandle): void;
+  releaseClosing(closing: ClosingHandle): void;
+  releaseClosed(closed: ClosedHandle): void;
+}
+export interface PhysicalRegistry {
+  bindFile(existingPath: string): BoundStore;
+  statistics(): ReservationStatistics;
+}
+export interface PhysicalStoreAdmission {
+  mechanicalAbiVersion(): 1;
+  openRegistry(protectedRoot: string): PhysicalRegistry;
+}
+export function loadPhysicalStoreAdmission(
+  explicitAbsoluteNodeArtifact: string,
+): PhysicalStoreAdmission;

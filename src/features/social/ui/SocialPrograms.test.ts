@@ -104,7 +104,7 @@ describe("Social campaign program UI", () => {
     expect(request).toHaveBeenCalledWith("programs.list", {});
     const content = host.textContent!;
     for (const label of [
-      "Text provider",
+      "Text agent and model",
       "Image provider",
       "Specific times",
       "Intervals",
@@ -396,7 +396,7 @@ it("shares unchanged polling data without rendering and refreshes after hidden t
   expect(request).toHaveBeenCalledTimes(reads + 1);
 });
 
-it("associates adapter fields with visible labels and retains free-entry model and timezone values", async () => {
+it("associates adapter fields with visible labels and retains the free-entry timezone value", async () => {
   const { host } = await render();
   const field = (text: string) => {
     const label = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
@@ -409,25 +409,9 @@ it("associates adapter fields with visible labels and retains free-entry model a
     return control;
   };
   expect(host.querySelector("label label")).toBeNull();
-  const provider = field("Text provider");
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(
-      provider,
-      "codex",
-    );
-    provider.dispatchEvent(new Event("change", { bubbles: true }));
-  });
-  const model = field("Text model") as HTMLInputElement;
-  expect(model.disabled).toBe(false);
-  expect(document.getElementById(model.getAttribute("list")!)?.tagName).toBe("DATALIST");
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      model,
-      "owner/private-model-v9",
-    );
-    model.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  expect(model.value).toBe("owner/private-model-v9");
+  // The agent and model come from the shared picker, not a provider select or free-text field.
+  expect(host.querySelector('[data-model-picker-presentation="field"]')).toBeTruthy();
+  expect(host.querySelector('select[name="textProvider"], datalist[id$="-models"]')).toBeNull();
   const timezone = field("Time zone") as HTMLInputElement;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -437,4 +421,32 @@ it("associates adapter fields with visible labels and retains free-entry model a
     timezone.dispatchEvent(new Event("input", { bubbles: true }));
   });
   expect(timezone.value).toBe("America/New_York");
+});
+
+it("shows the first listed program without an explicit selection and keeps review confirmation per revision", async () => {
+  const program = {
+    ...defaultProgram(),
+    id: "first",
+    name: "First program",
+    revision: 1,
+    enabled: false,
+    createdAt: 1,
+    updatedAt: 1,
+    executorId: "test",
+    generationCount: 0,
+    imageGenerationCount: 0,
+    generationDay: "",
+    dailyGenerationCount: 0,
+    nextSequence: 0,
+  };
+  const { host } = await render(true, true, undefined, false, { program, occurrences: [] });
+  await vi.waitFor(() => expect(host.querySelector(".social-program-detail h3")?.textContent).toBe("First program"));
+  const activate = () =>
+    Array.from(host.querySelectorAll<HTMLButtonElement>("button")).find(
+      (b) => b.textContent === "Activate reviewed campaign",
+    )!;
+  expect(activate().disabled).toBe(true);
+  const confirm = host.querySelector<HTMLInputElement>(".social-program-confirm input")!;
+  await act(async () => confirm.click());
+  expect(activate().disabled).toBe(false);
 });

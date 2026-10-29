@@ -1,3 +1,110 @@
+/* One live sample of the current appearance. Only theme roles: nothing here invents a color, so it
+   follows palette, accent, mode and contrast. The window is inert; it is a picture, not a control. */
+.appearance-preview {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-inline-size: 0;
+  max-inline-size: 28rem;
+}
+.appearance-preview-title {
+  font-size: var(--ui-font-secondary);
+  font-weight: 600;
+  color: var(--color-content);
+}
+.appearance-preview-window {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  min-block-size: 11.5rem;
+  overflow: hidden;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
+  color: var(--color-content);
+  font-size: var(--ui-font-caption);
+  pointer-events: none;
+  user-select: none;
+}
+.appearance-preview-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 6px;
+  color: var(--ui-text-secondary);
+}
+.appearance-preview-rail > span {
+  padding: 4px 8px;
+  border-radius: var(--ui-control-radius);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.appearance-preview-rail > span[data-selected] {
+  background: var(--ui-surface-selected);
+  color: var(--color-content);
+}
+.appearance-preview-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-inline-size: 0;
+  margin: 6px 6px 6px 0;
+  padding: 12px;
+  border-radius: var(--ui-control-radius);
+  background: var(--color-background-base);
+}
+.appearance-preview-bubble {
+  align-self: flex-end;
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  color: var(--color-content);
+}
+.appearance-preview-text {
+  margin: 0;
+  line-height: 1.5;
+  color: var(--color-content);
+}
+.appearance-preview-text mark {
+  padding-inline: 2px;
+  border-radius: 2px;
+  background: var(--ui-text-selection-background);
+  color: var(--ui-text-selection-foreground);
+}
+.appearance-preview-link {
+  color: var(--link-color);
+}
+.appearance-preview-lines {
+  display: grid;
+  gap: 6px;
+}
+.appearance-preview-lines > i {
+  block-size: 6px;
+  border-radius: 3px;
+  background: var(--ui-surface-selected);
+}
+.appearance-preview-lines > i:last-child {
+  inline-size: 60%;
+}
+.appearance-preview-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-block-start: auto;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--ui-composer-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-composer-surface);
+}
+.appearance-preview-placeholder {
+  flex: 1;
+  block-size: 6px;
+  max-inline-size: 5rem;
+  border-radius: 3px;
+  background: var(--ui-surface-selected);
+}
+
 /* Samples that show the effect of a typography choice. Controls themselves live in the shared frame. */
 .appearance-type-sample {
   display: flex;
@@ -27,7 +134,6 @@
   max-inline-size: 100%;
   overflow: auto;
   padding: 12px 16px;
-  border: 1px solid var(--ui-editor-border);
   border-radius: var(--ui-radius-card);
   color: var(--color-content);
   background: var(--ui-surface);

@@ -20,7 +20,12 @@ type Props = {
  * `useOverlay` (one overlay stack); the viewer owns only zoom, the compare state and the
  * load-failure recovery. View, compare and failed are mutually exclusive stage states.
  */
-export function ImageLightbox({ src, alt, onClose }: Props) {
+export function ImageLightbox(props: Props) {
+  // A different image starts clean (load failure, retry attempt, comparison): remount keyed by `src`.
+  return <ImageLightboxContent key={props.src} {...props} />;
+}
+
+function ImageLightboxContent({ src, alt, onClose }: Props) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -34,14 +39,6 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
   const viewing = !failed && !comparison;
   const imageZoom = useImageZoom(viewportRef, src, viewing);
   const zoomed = Math.abs(imageZoom.value.scale - 1) > 0.005;
-  useEffect(() => {
-    setFailed(false);
-    setAttempt(0);
-  }, [src]);
-  useEffect(() => {
-    setComparison(null);
-    setCompareError(false);
-  }, [src]);
   // The viewport that held focus unmounts on failure; hand focus to the recovery action.
   useEffect(() => {
     if (failed) retryRef.current?.focus();

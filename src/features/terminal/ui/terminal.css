@@ -99,6 +99,12 @@
   display: flex;
   align-items: center;
 }
+/* The row being dragged lifts above its neighbours; the gap it leaves is the placeholder. */
+.terminal-list-row:is([data-dragging], [data-settling]) {
+  background: var(--ui-surface-raised);
+  box-shadow: var(--ui-elevation-floating);
+  cursor: grabbing;
+}
 .terminal-list-item {
   display: flex;
   align-items: center;

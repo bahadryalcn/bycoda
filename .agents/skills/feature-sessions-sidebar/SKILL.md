@@ -246,3 +246,13 @@ project history/read state and open/unarchive/delete distinctions. False result
 cannot mean Deleted. Pending/dedupe/drafts/dirty/stop/provider-release/cleanup/
 owner/privacy gates remain.93 related tests pass; no new source/record mutation
 or changed product/native/installed/mobile acceptance delivered.
+
+## VIS 2026-10-29: live band and drop hint
+
+Delivered in source (uncommitted; unit and fixture evidence only):
+
+- Needs attention / Working is one live band built from `summarizeLiveAgents` (`LiveAgentsPreview.tsx`); the Projects flyout no longer repeats it (`showLiveAgents` rule in `ProjectRail.tsx`).
+- Session folder, Pinned and Reminders groups and the bulk-action strip sit on the panel ground (no `--ui-surface-raised` fill); selected rows use `--ui-surface-selected`. Folders with a user colour keep it.
+- The single drop hint is owned by `drag.ts`; the sidebar no longer draws a second one.
+- Remote bulk or single delete goes through `confirmSessionDelete({ count, title })`, the shared in-app confirm; `SidebarRename.test.ts` covers the request and that declining deletes nothing.
+- `drag.ts` drop-hint ownership and `showLiveAgents` behaviour are recorded from sub-agent reports; the integration pass verified the unit tests only.

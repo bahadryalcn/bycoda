@@ -6,6 +6,19 @@
   },
   "suites": [
     {
+      "id": "session-references",
+      "config": "tests/browser/playwright.session-references.config.ts",
+      "files": ["session-references.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.session-references.config.ts",
+        "mode": "dev",
+        "path": "/tests/browser/session-references.html"
+      },
+      "projects": [
+        { "name": "chromium", "browser": "chromium", "files": ["session-references.spec.ts"] }
+      ]
+    },
+    {
       "id": "compact-navigation",
       "config": "tests/browser/compact-navigation.playwright.config.ts",
       "files": ["compact-navigation.spec.ts", "shell-count-badges.spec.ts"],
@@ -1182,6 +1195,23 @@
       ],
       "variantOf": "transcript",
       "reason": "Existing conflict-only grep against the merge-editor fixture; full Git workspace behavior belongs to transcript."
+    },
+    {
+      "id": "field-message",
+      "config": "tests/browser/playwright.field-message.config.ts",
+      "files": ["field-message.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.field-message.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/field-message.html"
+      },
+      "projects": [
+        {
+          "name": "chromium",
+          "browser": "chromium",
+          "files": ["field-message.spec.ts"]
+        }
+      ]
     }
   ],
   "legacySelections": [

@@ -123,14 +123,27 @@ function ConversationHostTools({
     tab === "devices" || tab === "browser" || tab === "logs" || tab === "resources";
   const conversationKey = JSON.stringify([cwd, sessionId]);
   const [targetValue, setTargetValue] = useState(initialMachine ?? "project");
-  useEffect(() => {
-    if (!viewRequest) return;
+  // The parent keeps the last view it was told about, so tell it after user choices
+  // (here) and after a view request or the first render (effect below).
+  const selectTab = (next: Tab) => {
+    setTab(next);
+    onViewChange?.({ tab: next, machine: targetValue });
+  };
+  const selectTarget = (next: string) => {
+    setTargetValue(next);
+    onViewChange?.({ tab, machine: next });
+  };
+  const [appliedRequest, setAppliedRequest] = useState<string>();
+  if (viewRequest && viewRequest.id !== appliedRequest) {
+    setAppliedRequest(viewRequest.id);
     if (viewRequest.tab !== undefined) setTab(onlyTab ?? viewRequest.tab);
     if (viewRequest.machine !== undefined) setTargetValue(viewRequest.machine);
-  }, [viewRequest, onlyTab]);
+  }
   useEffect(() => {
     onViewChange?.({ tab, machine: targetValue });
-  }, [tab, targetValue, onViewChange]);
+    // Reports the starting view and each applied request; user choices report themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appliedRequest]);
   const tools = {
     cwd,
     sessionId,
@@ -243,7 +256,7 @@ function ConversationHostTools({
                           : null;
                 if (next === null) return;
                 event.preventDefault();
-                setTab(toolOrder[next]);
+                selectTab(toolOrder[next]);
                 event.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
               }}
             >
@@ -263,7 +276,7 @@ function ConversationHostTools({
                     tooltip={t(toolLabels[id])}
                     tabIndex={selected ? 0 : -1}
                     className="host-tools-nav-tab"
-                    onClick={() => setTab(id)}
+                    onClick={() => selectTab(id)}
                   >
                     <Icon className="icon-sm" aria-hidden />
                     <span className="host-tools-nav-label">{t(toolLabels[id])}</span>
@@ -305,7 +318,7 @@ function ConversationHostTools({
                   width={240}
                   onClose={() => setToolMenuOpen(false)}
                   onPick={(id) => {
-                    setTab(id as Tab);
+                    selectTab(id as Tab);
                     setToolMenuOpen(false);
                   }}
                   items={toolOrder.map((id) => {
@@ -335,7 +348,7 @@ function ConversationHostTools({
                       variant="row"
                       triggerProps={{ title: `${hostLabel}\n${title}\n${cwd}` }}
                       value={targetValue}
-                      onChange={setTargetValue}
+                      onChange={selectTarget}
                       searchable={machines.length > 5}
                       options={[
                         { value: "project", label: ownerLabel, description: t("Project host") },

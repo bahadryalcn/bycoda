@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invalidateGitIndex, resetGitIndexStore } from "../model/gitIndexStore";
 
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn(async () => {}) }));
+vi.mock("../../../shared/model/appConfirm", async () => {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return {
+    confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+      ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+  };
+});
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(async () => true),
   message: vi.fn(async () => {}),

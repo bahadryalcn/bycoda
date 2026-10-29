@@ -9,6 +9,7 @@ export function HostBufferRecoverySection({
   canInspect,
   getPrivacySnapshot,
   onShowCopies,
+  sourceControl,
 }: LegacyBufferRecoverySectionProps) {
   const t = useT();
   const recovery = useHostBufferRecovery({ enabled: true, canInspect, getPrivacySnapshot });
@@ -32,6 +33,7 @@ export function HostBufferRecoverySection({
         recovery={recovery}
         reportKey={hostBufferReportKey}
         onShowCopies={onShowCopies}
+        sourceControl={sourceControl}
       />
     </>
   );

@@ -1,0 +1,225 @@
+import { Checkbox } from "../../../shared/ui/Checkbox";
+import { Button } from "../../../shared/ui/Button";
+import { Select } from "../../../shared/ui/Select";
+import { t, useLocale } from "../../../shared/i18n";
+import {
+  invalidateMachineSnapshot,
+  machineProjects,
+} from "../../automations/model/machineSnapshot";
+import { useEffect, useState } from "react";
+import { LoaderCircle } from "../../../shared/ui/icons";
+import { backgroundMachineFor, hostProjectCwd } from "../../automations/model/hostAutomationClient";
+import { isLocalSyncMachine } from "../../connections/model/localSync";
+import type { RemoteMachine } from "../../connections/model/protocol";
+import type { RecentProject } from "../../projects/model/recents";
+
+// The same choices as an automation's run time limit.
+export const RUN_TIME_LIMIT_OPTIONS = [
+  {
+    value: "0",
+    get label() {
+      return t("No limit");
+    },
+  },
+  {
+    value: "15",
+    get label() {
+      return t("15 minutes");
+    },
+  },
+  {
+    value: "30",
+    get label() {
+      return t("30 minutes");
+    },
+  },
+  {
+    value: "60",
+    get label() {
+      return t("1 hour");
+    },
+  },
+  {
+    value: "120",
+    get label() {
+      return t("2 hours");
+    },
+  },
+  {
+    value: "240",
+    get label() {
+      return t("4 hours");
+    },
+  },
+  {
+    value: "480",
+    get label() {
+      return t("8 hours");
+    },
+  },
+] as const;
+
+/** The machine that would run a task for the project at `cwd`, if connected. */
+export function machineName(
+  machines: readonly RemoteMachine[],
+  cwd: string,
+  machineId?: string,
+): string | undefined {
+  const machine = backgroundMachineFor(machines, cwd);
+  if (!machine || (machineId && machine.id !== machineId)) return undefined;
+  return isLocalSyncMachine(machine) ? t("this computer") : machine.name;
+}
+
+/** Project discovery belongs to the selected host. Late responses cannot replace
+ * the new host's choices, and errors have a local retry action. */
+export function useTaskMachineProjects(target: RemoteMachine | undefined, enabled = true) {
+  const [projects, setProjects] = useState<RecentProject[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    setProjects([]);
+    setError(null);
+    setLoading(Boolean(target && enabled));
+    if (!target || !enabled) return;
+    void machineProjects(target)
+      .then(
+        (entries) => {
+          if (!cancelled)
+            setProjects(
+              entries.map((project) => ({
+                path: hostProjectCwd(target, project),
+                openedAt: 0,
+              })),
+            );
+        },
+        (reason) => {
+          if (!cancelled) setError(String(reason));
+        },
+      )
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    target?.id,
+    target?.endpoint,
+    target?.environmentId,
+    target?.localHost,
+    target?.name,
+    enabled,
+    revision,
+  ]);
+  const retry = () => {
+    if (target) invalidateMachineSnapshot(target.id);
+    setRevision((current) => current + 1);
+  };
+  return { projects, error, loading, retry };
+}
+
+export function ProjectDiscoveryStatus({
+  state,
+}: {
+  state: ReturnType<typeof useTaskMachineProjects>;
+}) {
+  return state.error ? (
+    <span
+      role="alert"
+      className="inline-flex min-w-0 flex-wrap items-center gap-2 text-(--ui-tone-warning-fg)"
+    >
+      <span>{state.error}</span>
+      <Button variant="secondary" type="button" onClick={state.retry}>
+        {t("Retry")}
+      </Button>
+    </span>
+  ) : state.loading ? (
+    <span role="status" className="inline-flex items-center gap-1.5">
+      <LoaderCircle className="icon-xs animate-spin" />
+      {t("Loading projects…")}
+    </span>
+  ) : null;
+}
+
+export function ContinueUntilDoneField({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-start gap-2 text-ui-secondary">
+      <Checkbox checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      <span className="min-w-0">
+        <span className="block">{t("Continue until complete")}</span>
+        <span className="block text-ui-micro text-(--ui-text-secondary)">
+          {t("Keeps correcting while progress is made; asks for input when needed.")}
+        </span>
+      </span>
+    </label>
+  );
+}
+
+/** The option to merge a task's branch once every check passes. */
+export function TaskExecutionMode({
+  isolate,
+  disabled,
+  onChange,
+}: {
+  isolate?: boolean;
+  disabled?: boolean;
+  onChange: (isolate: boolean | undefined) => void;
+}) {
+  return (
+    <fieldset disabled={disabled} className="min-w-0">
+      <legend className="task-form-label">{t("Execution mode")}</legend>
+      <Select
+        disabled={disabled}
+        label={t("Execution mode")}
+        value={isolate === undefined ? "automatic" : isolate ? "isolated" : "shared"}
+        options={[
+          { value: "automatic", label: t("Automatic") },
+          { value: "shared", label: t("Shared checkout") },
+          { value: "isolated", label: t("Separate worktree") },
+        ]}
+        onValueChange={(value) =>
+          onChange(value === "automatic" ? undefined : value === "isolated")
+        }
+      />
+    </fieldset>
+  );
+}
+
+export function AutoMergeField({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  useLocale();
+  return (
+    <label
+      className={`flex items-start gap-2 text-ui-secondary ${disabled || !checked ? "text-(--ui-text-disabled)" : "cursor-pointer"}`}
+    >
+      <Checkbox
+        checked={checked}
+        disabled={disabled || !checked}
+        onChange={(event) => {
+          if (!event.target.checked) onChange(false);
+        }}
+      />
+      <span className="min-w-0">
+        <span className="block">{t("Merge automatically")}</span>
+        <span className="block text-ui-micro text-(--ui-text-secondary)">
+          {t("Automatic merge is suspended. Review changes to renew approval.")}
+        </span>
+      </span>
+    </label>
+  );
+}

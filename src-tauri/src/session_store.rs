@@ -12,11 +12,13 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub(crate) mod authority;
 pub(crate) mod cohort;
 mod content_search;
+mod delete_with_images;
 pub(crate) mod incremental;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]
 mod native_projection_join_tests;
 pub(crate) mod native_raw_capture;
+pub(crate) mod references;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
 pub(crate) mod row_identity;
@@ -77,6 +79,7 @@ impl SessionStore {
             Connection::open(&path).map_err(|e| e.to_string())?,
             admission.registration.clone(),
         );
+        conn.verify_connection(&conn)?;
         admission.verify()?;
         // Registration freezes exclude new opens, not writes by a registered
         // live actor. The connection now owns its kernel lease independently.
@@ -99,6 +102,7 @@ impl SessionStore {
             let reader =
                 Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                     .map_err(|e| e.to_string())?;
+            conn.verify_connection(&reader)?;
             reader
                 .execute_batch("PRAGMA query_only = ON; PRAGMA busy_timeout = 5000;")
                 .map_err(|e| e.to_string())?;
@@ -979,32 +983,18 @@ pub fn session_delete(
     app: AppHandle,
     store: State<'_, SessionStore>,
     session_id: String,
-    mut image_paths: Vec<String>,
+    image_paths: Vec<String>,
 ) -> Result<(), String> {
     // Also cleans shared generated-image files. Keep the entire operation in
     // the shared lane rather than acquiring another barrier under the SQL lock.
-    crate::native_window_lifecycle::persistence_write(&window, || {
-        validate_id(&session_id, "session")?;
-        let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        let persisted_paths = get_session(&conn, &session_id)
-            .ok()
-            .flatten()
-            .map(|record| generated_image_paths(&record.blocks))
-            .unwrap_or_default();
-        image_paths.extend(persisted_paths);
-        delete_session(&conn, &session_id).map_err(|e| e.to_string())?;
-        if !image_paths.is_empty() {
-            if let Err(error) =
-                cleanup_unreferenced_generated_images(&conn, &image_paths, |paths| {
-                    crate::fs::delete_generated_images_sync(&app, paths)
-                })
-            {
-                eprintln!("Generated image cleanup will need a retry: {error}");
-            }
+    crate::native_window_lifecycle::persistence_write_observed(&window, || {
+        let result = delete_with_images::run(&store, &session_id, image_paths, |paths| {
+            crate::fs::delete_generated_images_sync(&app, paths)
+        });
+        if result.0.is_ok() {
+            let _ = app.emit(crate::reminders::CHANGED, ());
         }
-        drop(conn);
-        let _ = app.emit(crate::reminders::CHANGED, ());
-        Ok(())
+        result
     })
 }
 

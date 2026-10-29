@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
-import { formatNumber, t, useT } from "../i18n";
+import { useLocale, useT } from "../i18n";
 import { Button } from "./Button";
 import styles from "./FailureState.module.css";
 
@@ -20,7 +20,7 @@ export function FailureState({
   error,
   onRetry,
   retrying = false,
-  retryLabel = t("Try again"),
+  retryLabel,
   secondaryAction,
   fullScreen = false,
 }: {
@@ -35,7 +35,10 @@ export function FailureState({
   secondaryAction?: ReactNode;
   fullScreen?: boolean;
 }) {
+  // Subscribed locale reads keep this component compilable; module t()/formatNumber are not reactive.
   const t = useT();
+  const locale = useLocale();
+  const formatCount = (value: number) => new Intl.NumberFormat(locale).format(value);
   const detailsId = useId();
   const titleId = useId();
   const [details, setDetails] = useState(false);
@@ -122,7 +125,7 @@ export function FailureState({
             loading={retryBusy || undefined}
             onClick={() => void retry()}
           >
-            {retryLabel}
+            {retryLabel ?? t("Try again")}
           </Button>
           {secondaryAction}
           <Button
@@ -143,8 +146,8 @@ export function FailureState({
             {truncated && !showAll ? (
               <p className={styles.meta} data-preview-note="">
                 {t("Showing the first {p0} of {p1} characters. Copy details includes all of it.", {
-                  p0: formatNumber(FAILURE_PREVIEW_CHARS),
-                  p1: formatNumber(full.length),
+                  p0: formatCount(FAILURE_PREVIEW_CHARS),
+                  p1: formatCount(full.length),
                 })}
               </p>
             ) : null}

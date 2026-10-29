@@ -65,7 +65,11 @@ import {
   socialCharacterCount,
   socialLimit,
 } from "../src/features/social/model/socialPolicy";
-import { socialGenerationPrompt, type SocialTextGenerator } from "./social-generation";
+import {
+  socialGenerationPrompt,
+  socialReplySuggestionPrompt,
+  type SocialTextGenerator,
+} from "./social-generation";
 import {
   inPublishingWindow,
   nextPublishingRun,
@@ -1425,6 +1429,9 @@ export class SocialService {
         await this.put("contact", contact.id, contact);
         return thread;
       }
+      case "replies.suggest":
+        // Owner-only and read-only: stores nothing and cannot send. The answer is editor text.
+        return await this.suggestReply(p, input);
       case "replies.draft":
       case "messages.draft":
       case "comments.draft":
@@ -2998,6 +3005,75 @@ export class SocialService {
       draft.text,
     );
     return await this.put("draft", draft.id, draft);
+  }
+  /** One AI reply suggestion for the owner's editor; nothing is saved, approved or sent. */
+  private async suggestReply(
+    p: SocialPrincipal,
+    input: Record<string, unknown>,
+  ): Promise<{ text: string; factIds: string[]; agent: NonNullable<SocialPolicy["agent"]> }> {
+    this.owner(p);
+    exact(input, ["threadId", "factIds"]);
+    const thread = await this.thread(p, str(input.threadId, "thread"));
+    const account = await this.access(p, thread.accountId, "draft");
+    if (account.platform === "linkedin")
+      throw new Error(
+        "LinkedIn third-party API content cannot be passed to AI reply-generation tools.",
+      );
+    if (thread.replyAllowed === false)
+      throw new Error("The platform does not allow sending replies to this conversation.");
+    if (!thread.projectId)
+      throw new Error("Choose the conversation's project before asking for a reply suggestion.");
+    const factIds = array(input.factIds ?? [], "verified facts");
+    if (!factIds.length || factIds.length > 20)
+      throw new Error("Choose 1–20 verified facts for the reply.");
+    const facts = await this.facts([thread.projectId], factIds);
+    const incoming = thread.events.filter((event) => event.direction === "inbound").at(-1);
+    if (!incoming?.text.trim()) throw new Error("This conversation has no incoming message.");
+    const policy = await this.policy(account);
+    if (!policy.agent || !this.generateText)
+      throw new Error("Choose an available text agent in the Social settings first.");
+    const kind = thread.kind === "message" ? "message" : "comment";
+    const prompt = socialReplySuggestionPrompt({
+      policy,
+      kind,
+      brandVoice:
+        (await this.list<SocialProjectProfile>("profile")).find(
+          (profile) => profile.projectId === thread.projectId,
+        )?.brandVoice ?? "",
+      facts,
+      incoming: incoming.text.slice(0, 4000),
+    });
+    let output: string;
+    try {
+      output = await this.generateText(policy.agent, prompt, AbortSignal.timeout(90000));
+    } catch {
+      // Provider exceptions may contain credentials or private runtime details.
+      throw new Error(
+        "AI generation failed or stopped. Check the selected agent/model on this host; no fallback provider was used.",
+      );
+    }
+    let response: unknown;
+    try {
+      response = typeof output === "string" && output.length <= 30000 ? JSON.parse(output) : undefined;
+    } catch {
+      response = undefined;
+    }
+    const answer = response as Record<string, unknown> | undefined;
+    if (
+      !answer ||
+      Array.isArray(answer) ||
+      typeof answer !== "object" ||
+      Object.keys(answer).some((key) => !["text", "review"].includes(key)) ||
+      answer.review ||
+      typeof answer.text !== "string" ||
+      !answer.text.trim()
+    )
+      throw new Error(
+        "AI could not answer from the selected verified facts. Write the reply yourself or choose other facts.",
+      );
+    const text = str(answer.text, "AI reply text");
+    await this.assertLength(account, kind, text);
+    return { text, factIds: facts.map((fact) => fact.id), agent: policy.agent };
   }
   private async updateDraft(
     p: SocialPrincipal,

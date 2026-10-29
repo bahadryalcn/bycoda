@@ -299,7 +299,8 @@ function PaneTreeComponent({
   const treeRef = useRef<HTMLDivElement>(null);
   const layoutRef = useRef(layout);
   layoutRef.current = layout;
-  const [draft, setDraft] = useState<LayoutNode | null>(null);
+  // A sash preview belongs to the layout it was made from; a new layout drops it.
+  const [draft, setDraft] = useState<{ base: LayoutNode; node: LayoutNode } | null>(null);
   const [paneDrag, setPaneDragState] = useState<PaneDrag | null>(null);
   const setPaneDrag = useCallback((next: PaneDrag | null) => {
     setPaneDragState((current) => (samePaneDrop(current, next) ? current : next));
@@ -325,10 +326,6 @@ function PaneTreeComponent({
     if (!visible) cancelPaneDrag.current?.();
   }, [visible]);
 
-  useEffect(() => {
-    setDraft(null);
-  }, [layout]);
-
   // A sash drag re-renders this tree every frame. `SessionPane` compares props
   // shallowly, so handing it a fresh drag handler each frame would re-render
   // the whole session subtree (transcript, composer, picker) per frame.
@@ -341,7 +338,7 @@ function PaneTreeComponent({
     return handler;
   };
 
-  const tree = draft ?? layout;
+  const tree = draft && draft.base === layout ? draft.node : layout;
   const leaves = layoutLeaves(tree);
   const maximumId = maximizedPaneId === undefined ? localMaximizedId : maximizedPaneId;
   const maximum = leaves.find(
@@ -351,15 +348,13 @@ function PaneTreeComponent({
     if (onToggleMaximizePane) onToggleMaximizePane(paneId);
     else setLocalMaximizedId(maximum ? null : paneId);
   };
-  useEffect(() => {
-    if (
-      localMaximizedId &&
-      !layoutLeaves(layout).some(
-        (pane) => pane.id === localMaximizedId || pane.tabIds?.includes(localMaximizedId),
-      )
-    )
-      setLocalMaximizedId(null);
-  }, [layout, localMaximizedId]);
+  // A local maximum whose pane left the layout is forgotten. Previews only
+  // change split ratios, so the previewed tree has the same leaves.
+  if (
+    localMaximizedId &&
+    !leaves.some((pane) => pane.id === localMaximizedId || pane.tabIds?.includes(localMaximizedId))
+  )
+    setLocalMaximizedId(null);
   // Keep inactive group members mounted: editors retain unsaved buffers and
   // sessions retain their composer and streaming subscriptions.
   const renderLeaves = leaves.flatMap((pane) =>
@@ -869,7 +864,10 @@ function PaneTreeComponent({
           sash={sash}
           containerRef={treeRef}
           onPreview={(ratio) =>
-            setDraft(setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio))
+            setDraft({
+              base: layoutRef.current,
+              node: setSplitRatio(layoutRef.current, sash.splitId, sash.index, ratio),
+            })
           }
           onCommit={(ratio) => {
             setDraft(null);

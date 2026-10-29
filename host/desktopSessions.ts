@@ -12,6 +12,7 @@ import type { Block, Session } from "../src/features/sessions/model/session";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
 import { parseHead } from "../src/features/sync/model/conversationHead";
+import { buildLocalSessionLink, type LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
 
 // Must match the desktop app's Tauri identifiers and its session database
 // (src-tauri/tauri*.conf.json, src-tauri/src/session_store.rs).
@@ -766,6 +767,69 @@ export class DesktopSessions {
 
   async projectCwdAsync(id: string): Promise<string | undefined> {
     return (await this.metadataAsync(id))?.cwd;
+  }
+
+  /** Worker-only identity lookup. Reads existing origin identity; never initializes it. */
+  readLocalSessionReference(id: string): LocalSessionLocator | undefined {
+    let selected:
+      { createdAt: number; locator?: LocalSessionLocator } | undefined;
+    for (const path of this.paths()) {
+      const found = this.query(
+        path,
+        (db) => {
+          const row = db
+            .prepare("SELECT created_at FROM sessions WHERE id=?")
+            .get(id);
+          if (!row) return undefined;
+          const hasIdentity = !!db
+            .prepare(
+              "SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_authority_identity'",
+            )
+            .get();
+          const origin = hasIdentity
+            ? db
+                .prepare(
+                  "SELECT source_store_id,source_profile_id FROM native_authority_identity WHERE id=1",
+                )
+                .get()
+            : undefined;
+          let locator: LocalSessionLocator | undefined;
+          if (
+            typeof origin?.source_store_id === "string" &&
+            typeof origin.source_profile_id === "string"
+          ) {
+            locator = {
+              kind: "native",
+              sourceStoreId: origin.source_store_id,
+              sourceProfileId: origin.source_profile_id,
+              sessionId: id,
+            };
+            buildLocalSessionLink(locator);
+          }
+          return { createdAt: Number(row.created_at), locator };
+        },
+        true,
+      );
+      if (
+        found &&
+        (!selected || ownsBefore(found.createdAt, selected.createdAt))
+      )
+        selected = found;
+    }
+    return selected?.locator;
+  }
+
+  async localSessionReferenceAsync(
+    id: string,
+  ): Promise<LocalSessionLocator | undefined> {
+    const generation = this.metadataGeneration;
+    this.metadataReader ??= new AsyncHostNotes(this.paths);
+    const result = await this.metadataReader.desktopLocalSessionReference(
+      id,
+      this.platform,
+    );
+    this.assertReadGeneration(generation);
+    return result;
   }
 
   /** Queue access checks must not materialize a potentially large transcript. */

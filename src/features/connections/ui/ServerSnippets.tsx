@@ -14,19 +14,26 @@ import {
   type SshSnippet,
 } from "../model/sshSnippets";
 
-/** Explicit, target-bound command insertion. Nothing runs when mounted/restored. */
-export function ServerSnippets({
-  serverId,
-  serverName,
-  onInsert,
-  embedded = false,
-}: {
+type ServerSnippetsProps = {
   serverId: string;
   serverName?: string;
   /** Supply only when a verified remote prompt/echo capability permits insertion. */
   onInsert?: (text: string) => Promise<void>;
   embedded?: boolean;
-}) {
+};
+
+/** Explicit, target-bound command insertion. Nothing runs when mounted/restored.
+ * The form is keyed by server so draft state never leaks across targets. */
+export function ServerSnippets(props: ServerSnippetsProps) {
+  return <ServerSnippetsForm key={props.serverId} {...props} />;
+}
+
+function ServerSnippetsForm({
+  serverId,
+  serverName,
+  onInsert,
+  embedded = false,
+}: ServerSnippetsProps) {
   const [snippets, setSnippets] = useState<SshSnippet[]>([]);
   const [selected, setSelected] = useState<SshSnippet>();
   const [name, setName] = useState("");
@@ -41,11 +48,6 @@ export function ServerSnippets({
       .includes(search.trim().toLocaleLowerCase()),
   );
   useEffect(() => {
-    setSelected(undefined);
-    setName("");
-    setCommand("");
-    setNotice("");
-    setError("");
     const load = () => {
       try {
         setSnippets(loadSshSnippets(serverId));

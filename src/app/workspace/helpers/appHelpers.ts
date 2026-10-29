@@ -1,10 +1,11 @@
 import { type RateLimitProvider } from "../../../features/providers/model/rateLimits";
 import { worktreeFocus } from "../../../features/source-control/model/worktreeFocus";
 import { t } from "../../../shared/i18n";
-import { appName } from "../../../shared/lib/appName";
+import { confirmInApp } from "../../../shared/model/appConfirm";
+import { basename } from "../../../platform/tauri/fs";
 import { type ToolId } from "../../model/toolWindows";
 import { routeWindowDestination } from "../../model/windowNavigation";
-import { ask, message } from "@tauri-apps/plugin-dialog";
+import { message } from "@tauri-apps/plugin-dialog";
 
 export function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   if (a.size !== b.size) return false;
@@ -14,9 +15,35 @@ export function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
   return true;
 }
 
-/** Native sheet. `window.confirm` is swallowed when a macOS menu accelerator fires. */
-export function confirmDiscardUnsaved(message: string): Promise<boolean> {
-  return ask(message, { title: appName(), kind: "warning" });
+export type DiscardUnsavedRequest = {
+  /** The decision, e.g. "Close tab with unsaved files?". */
+  title: string;
+  /** The real action, e.g. "Discard and close". */
+  confirmLabel: string;
+  /** Files whose unsaved edits would be lost; names the target, or the count for several. */
+  files?: readonly { path: string }[];
+};
+
+/** What is lost when the owner confirms: one named file, a count, or the open files in general. */
+export function discardUnsavedMessage(files: DiscardUnsavedRequest["files"]): string {
+  if (!files?.length) return t("Unsaved changes in the open files will be lost.");
+  if (files.length === 1) {
+    return t("Unsaved changes in “{p0}” will be lost.", { p0: basename(files[0].path) });
+  }
+  return t("Unsaved changes in {p0} files will be lost.", { p0: files.length });
+}
+
+/**
+ * The one confirmation for closing work that has unsaved files. Resolves true only when the owner
+ * discards the edits; Cancel, Escape and closing keep everything open.
+ */
+export function confirmDiscardUnsaved(request: DiscardUnsavedRequest): Promise<boolean> {
+  return confirmInApp({
+    title: request.title,
+    message: discardUnsavedMessage(request.files),
+    confirmLabel: request.confirmLabel,
+    tone: "danger",
+  });
 }
 
 /** The worktree a project's workspace currently shows. */

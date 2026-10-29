@@ -7,7 +7,6 @@ import { Modal } from "../../../shared/ui/Modal";
 import { t, useLocale } from "../../../shared/i18n/git";
 import type { WorktreeManagementRequest } from "../../../features/source-control/model/worktreeManagement";
 import { SettingsView } from "../surfaces/lazySurfaces";
-import { settingsSectionPresentation } from "../../../features/settings/model/settings";
 import "./WorkspaceSettingsSurface.css";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
@@ -18,8 +17,8 @@ type QuickDeleteProps = ComponentProps<typeof QuickDeleteWorktreeDialog>;
 
 /**
  * `page` replaces the workspace area with Settings (the owner of that area hides the workspace).
- * `dialog` shows Settings in the shared Modal over the visible work context: short preferences in a
- * bounded shell, collections and list/detail pages wider, with an optional maximize/restore.
+ * `dialog` shows Settings in the shared Modal over the visible work context at one fixed size for
+ * every page (never resized by page or content), with an optional maximize/restore.
  */
 export type SettingsPresentationMode = "page" | "dialog";
 
@@ -174,9 +173,7 @@ function WorkspaceSettingsSurfaceComponent({
         >
           <div
             className="bycoda-settings-dialog-body"
-            data-settings-dialog-mode={
-              maximized ? "maximized" : settingsSectionPresentation(settingsSection)
-            }
+            data-settings-dialog-mode={maximized ? "maximized" : "standard"}
           >
             {/* Loading and failure stay inside the dialog; the window chrome is not repeated. */}
             <RecoveryBoundary onBack={onCloseSettings}>

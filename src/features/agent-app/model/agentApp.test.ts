@@ -6,6 +6,7 @@ import { loadSessionFolders, saveSessionFolders } from "../../sessions/model/ses
 import type { Note } from "../../notes";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { handleAgentApp, notePreview, type AgentAppHost } from "./agentApp";
+import { parseLocalSessionLink } from "../../sessions/model/localSessionReference";
 
 vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "codex",
@@ -104,6 +105,53 @@ function fixture() {
 }
 
 describe("agent app commands", () => {
+  it("adds only owner-proven local references to desktop session reads", async () => {
+    const { source, host } = fixture();
+    const locator = {
+      kind: "native" as const,
+      sourceStoreId: "store",
+      sourceProfileId: "profile",
+      sessionId: "other",
+    };
+    host.sessionReference = vi.fn(async () => locator);
+    const listed = (await handleAgentApp(
+      source,
+      "list",
+      "sessions.list",
+      {},
+      host,
+    )) as any;
+    expect(parseLocalSessionLink(listed.sessions[0].link)?.locator).toEqual(
+      locator,
+    );
+    const read = (await handleAgentApp(
+      source,
+      "read",
+      "sessions.read",
+      { sessionId: "other" },
+      host,
+    )) as any;
+    expect(parseLocalSessionLink(read.link)?.locator).toEqual(locator);
+    host.sessionReference = vi.fn(async () => null);
+    const unproven = (await handleAgentApp(
+      source,
+      "list-again",
+      "sessions.list",
+      {},
+      host,
+    )) as any;
+    expect(unproven.sessions[0]).not.toHaveProperty("link");
+    await expect(
+      handleAgentApp(
+        source,
+        "foreign",
+        "sessions.read",
+        { sessionId: "foreign" },
+        host,
+      ),
+    ).rejects.toThrow("not found in this project");
+    expect(host.sessionReference).toHaveBeenCalledTimes(1);
+  });
   it("keeps deeply nested sessions addressable and request correlations stable", async () => {
     const { source, host } = fixture();
     const sessions = new Map<string, typeof source>();

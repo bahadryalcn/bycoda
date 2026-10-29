@@ -72,11 +72,14 @@
 }
 .social-policy-panel {
   padding: 1.5rem;
-  border: 1px solid var(--color-stroke);
   border-radius: var(--radius-control);
+  background: var(--ui-surface-panel);
 }
 .social-view .social-policy-scope {
-  max-inline-size: 24rem;
+  display: grid;
+  gap: 0.375rem;
+  max-inline-size: 18rem;
+  margin-block: 0.5rem;
 }
 .social-policy-effective {
   display: flex;

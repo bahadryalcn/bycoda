@@ -219,3 +219,38 @@ and account-format metadata, not text-model health; UI says health is checked at
 generation. No unsupported readiness is claimed. Full 36-ID ledger, source
 fingerprints, checks and next actions:
 `temp/local/2026-10-28-social-impl/handoff.json`.
+
+## VIS-007 daily-work and AI-assistant pass, 2026-10-30
+
+Source: owner request in the 2026-10-29 UI refinement run (TODO `VIS-007`). Uncommitted
+shared-checkout work; fixture evidence only (`temp/verification/vis-social/`), no live
+provider/platform/account contact, no build or install.
+
+- Landing: **Today** is the default destination (`SocialToday.tsx`, `useSocialToday.ts`,
+  `model/socialAttention.ts`). Rows come only from section reads made for the view
+  (`client.sectionSnapshot`, separate from the workspace cursor) and `programs.list`; a
+  loading/failed read is named, never an all-clear. Account connection, platform
+  authorization, pause and project access stay separate rows.
+- Context: one header location for computer and project filter; a single connected
+  computer is plain text, not a selector.
+- AI assistant (`SocialAssistant.tsx`, `model/socialAssistant.ts`): reuses Host
+  `programs.suggest` (stores nothing) and `programs.configure` (always saved paused, one
+  idempotency request id per proposal, revision-bound for edits). Context is the selected
+  computer/project/accounts with draft access, the saved brand voice and verified facts the
+  owner keeps enabled, and the effective text agent from `policy.get`. Review shows what will
+  be created or the changed fields, warns when review steps or facts were reduced, allows
+  editing name/topic/description or discarding, and the accepted record opens in the existing
+  campaign screen. Progress/stop-waiting/error/retry are local; activation, sending,
+  credentials and approvals are untouched. No Host endpoint exists for AI-drafted plans,
+  reply rules, reply suggestions, bulk edits or product-fact drafting, so those are not
+  offered.
+- Product knowledge (`ProductKnowledge.tsx`): summary row on the content screen; profile,
+  brand voice and verified facts managed in their own dialog with drafts kept while closed;
+  project intents open it in context.
+- Contacts import: JSON only. Rows are mapped to the fields the Host reads, validated and
+  previewed; invalid rows are skipped by the owner's choice before the atomic Host import;
+  consent/eligibility never come from a file (`model/socialContactImport.ts`).
+- Account disconnect uses the shared `ConfirmDialog`; the Host keeps the account entry,
+  grants and history, removes the saved sign-in and pauses the account.
+- Inbox shows one auto-refresh control; campaign post results lead only when something was
+  dispatched or needs recovery.

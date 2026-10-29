@@ -35,6 +35,7 @@ import {
 import { appName } from "../../../shared/lib/appName";
 import { pathKey } from "../../../shared/lib/paths";
 import { confirmDiscardUnsaved } from "../helpers/appHelpers";
+import { t } from "../../../shared/i18n";
 import { filesInWorkspaceTabs } from "../helpers/tabHelpers";
 import type { useSessionLoading } from "./useSessionLoading";
 import type { useTabActivation } from "../tabs/useTabActivation";
@@ -325,14 +326,20 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
           },
           confirm: async (closedTabs, removalMode) => {
             const files = filesInWorkspaceTabs(closedTabs);
-            const unsaved = files.some(
+            const unsaved = files.filter(
               (file) => isFilesystemTab(file) && dirtyFilesRef.current.has(file.id),
             );
             if (
-              unsaved &&
-              !(await confirmDiscardUnsaved(
-                `${removalMode === "archive" ? "Archive" : "Delete"} this conversation with unsaved files?`,
-              ))
+              unsaved.length > 0 &&
+              !(await confirmDiscardUnsaved({
+                title:
+                  removalMode === "archive"
+                    ? t("Archive conversation with unsaved files?")
+                    : t("Delete conversation with unsaved files?"),
+                confirmLabel:
+                  removalMode === "archive" ? t("Discard and archive") : t("Discard and delete"),
+                files: unsaved,
+              }))
             )
               return false;
             const terminals = files.filter((file) => file.terminal);
@@ -413,16 +420,20 @@ export function useHistorySessionDelete(deps: HistorySessionDeleteDeps) {
     async (sessionIds: readonly string[]) => {
       if (sessionIds.length === 0) return;
       if (
-        !(await confirmSessionDelete(
-          `Delete ${sessionIds.length} selected conversations? This can’t be undone.`,
-        ))
+        !(await confirmSessionDelete({
+          count: sessionIds.length,
+          title:
+            sessionIds.length === 1
+              ? history.find((entry) => entry.id === sessionIds[0])?.title
+              : undefined,
+        }))
       )
         return;
       for (const sessionId of sessionIds) {
         if (!(await onRemoveHistorySession(sessionId, "delete", true))) break;
       }
     },
-    [onRemoveHistorySession],
+    [history, onRemoveHistorySession],
   );
 
   const onDeleteHistorySessionNow = useCallback(

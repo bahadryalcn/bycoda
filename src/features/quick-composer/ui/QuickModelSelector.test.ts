@@ -120,7 +120,7 @@ it("shows saved favorites across provider tabs", () => {
 });
 
 it("toggles fast mode from the lightning button", () => {
-  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast mode"]')!;
+  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
   expect(fast.getAttribute("aria-pressed")).toBe("false");
   act(() => fast.click());
   expect(onSettingsChange).toHaveBeenCalledWith({
@@ -143,7 +143,7 @@ it("resets reasoning and fast mode to saved user defaults", () => {
       }),
     ),
   );
-  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast mode"]')!;
+  const fast = container.querySelector<HTMLButtonElement>('[aria-label="Fast"]')!;
   expect(fast.getAttribute("aria-pressed")).toBe("true");
   expect(fast.querySelector("svg")?.getAttribute("fill")).toBe("currentColor");
   act(() =>

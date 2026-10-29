@@ -21,9 +21,25 @@ import {
   type ModelPickerTab,
 } from "../../sessions/model/models";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../../sessions/model/session";
+import {
+  isProviderHidden,
+  projectProvidersRevision,
+  subscribeProjectProviders,
+} from "../../sessions/model/projectProviders";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import {
+  modelKeyIndex,
+  modelRowKey,
+  resolveActiveModelKey,
+  stepActiveModelKey,
+} from "../../sessions/model/modelListReconcile";
 import { filterQuickModels, QUICK_COMPOSER_CATALOG_REQUEST_EVENT } from "../model/quickComposer";
 import { quickSessionModelSettings } from "../model/quickSessionDefaults";
+import {
+  fastSetting,
+  fastToggleValues,
+  settingLabel,
+} from "../../sessions/model/modelPickerData";
 
 type Props = {
   cwd?: string;
@@ -46,21 +62,28 @@ export function QuickModelSelector({
   onClose,
 }: Props) {
   useLocale();
-  const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot);
+  useSyncExternalStore(subscribeModels, getModelSnapshot);
   useSyncExternalStore(subscribePickerVisibility, getPickerVisibilitySnapshot);
+  useSyncExternalStore(subscribeProjectProviders, projectProvidersRevision, projectProvidersRevision);
   const [tab, setTab] = useState<ModelPickerTab>(model.harness);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
+  // The keyboard row is owned by provider/model identity. `scope` ties it to the
+  // tab and query it was chosen in, so changing either (a user reset) drops it,
+  // while catalog or favorites refreshes keep it.
+  const [activeChoice, setActiveChoice] = useState<{ key: string; scope: string } | null>(null);
   const [favorites, setFavorites] = useState(loadFavoriteModels);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
-  const providers = HARNESSES.filter((id) =>
-    showProviderInModelPicker(
-      id,
-      availableHarnesses?.includes(id) ?? false,
-      availableHarnesses != null,
-    ),
+  // Providers the project hides stay out of the browser, as in the shared picker.
+  const providers = HARNESSES.filter(
+    (id) =>
+      !isProviderHidden(cwd, id) &&
+      showProviderInModelPicker(
+        id,
+        availableHarnesses?.includes(id) ?? false,
+        availableHarnesses != null,
+      ),
   );
   const tabs: ModelPickerTab[] = ["favorites", ...providers];
   const visibleTab = tabs.includes(tab) ? tab : "favorites";
@@ -74,6 +97,17 @@ export function QuickModelSelector({
           )
       : modelsFor(visibleTab);
   const models = filterQuickModels(pool, query);
+  const enabled = (item: AgentModel) => availableHarnesses?.includes(item.harness) ?? false;
+  const activeScope = `${visibleTab}\u0000${query}`;
+  const activeKey = resolveActiveModelKey({
+    models,
+    activeKey: activeChoice?.scope === activeScope ? activeChoice.key : null,
+    selected: model,
+    isEligible: enabled,
+  });
+  const active = modelKeyIndex(models, activeKey);
+  const setActive = (item: AgentModel) =>
+    setActiveChoice({ key: modelRowKey(item), scope: activeScope });
   const effort =
     modelEffortSetting(model) ??
     model.settings?.find(
@@ -86,20 +120,11 @@ export function QuickModelSelector({
     0,
     effort?.options.findIndex((option) => option.value === valueFor(effort.id, effort.value)) ?? 0,
   );
-  const fast = model.settings?.find(
-    (setting) =>
-      setting.id === "fast" ||
-      setting.id === "serviceTier" ||
-      /^fast( mode)?$/i.test(setting.label),
-  );
-  const fastOn = fast?.options.find(
-    (option) => /^(true|fast|priority)$/i.test(option.value) || /^(on|fast)$/i.test(option.label),
-  )?.value;
-  const fastOff = fast?.options.find(
-    (option) =>
-      /^(false|default|standard|normal)$/i.test(option.value) ||
-      /^(off|standard|normal)$/i.test(option.label),
-  )?.value;
+  // Same Fast detection and on/off pair as the shared picker menu.
+  const fast = fastSetting(model);
+  const fastValues = fastToggleValues(fast);
+  const fastOn = fastValues?.on;
+  const fastOff = fastValues?.off;
   const canToggleFast = fast != null && fastOn != null && fastOff != null;
   const fastEnabled = canToggleFast && valueFor(fast.id, fast.value) === fastOn;
   const resetSettings = () => {
@@ -110,7 +135,6 @@ export function QuickModelSelector({
       ...(canToggleFast ? { [fast.id]: defaults[fast.id] } : {}),
     });
   };
-  const enabled = (item: AgentModel) => availableHarnesses?.includes(item.harness) ?? false;
 
   useEffect(() => {
     searchRef.current?.focus({ preventScroll: true });
@@ -120,11 +144,6 @@ export function QuickModelSelector({
   }, [visibleTab]);
 
   useLayoutEffect(() => {
-    const selected = models.findIndex((item) => item.id === model.id);
-    setActive(selected >= 0 ? selected : 0);
-  }, [visibleTab, query, catalogVersion, model.id, favorites]);
-
-  useLayoutEffect(() => {
     const list = listRef.current;
     const row = list?.querySelector<HTMLElement>(`[data-index="${active}"]`);
     if (!list || !row) return;
@@ -132,12 +151,12 @@ export function QuickModelSelector({
     const rect = row.getBoundingClientRect();
     if (rect.top < bounds.top) list.scrollTop += rect.top - bounds.top;
     else if (rect.bottom > bounds.bottom) list.scrollTop += rect.bottom - bounds.bottom;
-  }, [active, visibleTab, query, catalogVersion, favorites]);
+  }, [active, activeKey, visibleTab, query]);
 
   const selectTab = (next: ModelPickerTab) => {
     setTab(next);
     setQuery("");
-    setActive(0);
+    setActiveChoice(null);
   };
   const pick = (item: AgentModel) => {
     if (enabled(item)) onChange(item);
@@ -207,14 +226,14 @@ export function QuickModelSelector({
               value={query}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setActive(0);
+                setActiveChoice(null);
               }}
               role="combobox"
               aria-label={t("Search models")}
               aria-controls={listId}
               aria-expanded="true"
               aria-autocomplete="list"
-              aria-activedescendant={models[active] ? `${listId}-${active}` : undefined}
+              aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
               placeholder={t("Search models…")}
               autoComplete="off"
               spellCheck={false}
@@ -229,12 +248,13 @@ export function QuickModelSelector({
                 if (event.nativeEvent.isComposing) return;
                 if (event.key === "ArrowDown" || event.key === "ArrowUp") {
                   event.preventDefault();
-                  if (models.length)
-                    setActive(
-                      (index) =>
-                        (index + (event.key === "ArrowDown" ? 1 : -1) + models.length) %
-                        models.length,
-                    );
+                  const key = stepActiveModelKey({
+                    models,
+                    activeKey,
+                    delta: event.key === "ArrowDown" ? 1 : -1,
+                    isEligible: enabled,
+                  });
+                  if (key) setActiveChoice({ key, scope: activeScope });
                 } else if (event.key === "Enter") {
                   event.preventDefault();
                   const selected = models[active];
@@ -256,7 +276,9 @@ export function QuickModelSelector({
                   key={`${item.harness}:${item.id}`}
                   data-index={index}
                   className="flex items-center"
-                  onMouseEnter={() => setActive(index)}
+                  onMouseEnter={() => {
+                    if (enabled(item)) setActive(item);
+                  }}
                 >
                   <Button
                     fullWidth
@@ -335,27 +357,13 @@ export function QuickModelSelector({
           </div>
           {effort && effort.options.length > 0 ? (
             <div className="shrink-0 border-t border-stroke px-4 pb-3 pt-2">
-              <div className="mb-1 grid grid-cols-[28px_1fr_28px] items-center">
-                {canToggleFast ? (
-                  <Button
-                    iconOnly
-                    label={t("Fast mode")}
-                    variant="ghost"
-                    motion="none"
-                    type="button"
-                    aria-label={t("Fast mode")}
-                    aria-pressed={fastEnabled}
-                    title={fastEnabled ? t("Turn off fast mode") : t("Turn on fast mode")}
-                    onClick={() => changeSetting(fast.id, fastEnabled ? fastOff : fastOn)}
-                    className={`grid place-items-center `}
-                  >
-                    <Zap className="size-4" fill={fastEnabled ? "currentColor" : "none"} />
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                <span className="text-center text-ui-secondary font-medium text-accent">
-                  {effort.options[effortIndex]?.label}
+              {/* Same names and order as the shared picker menu: Reasoning, then Fast. */}
+              <div className="mb-1 flex min-h-7 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-ui-secondary">
+                  {t(settingLabel(effort))}
+                </span>
+                <span className="shrink-0 text-ui-secondary font-medium text-accent">
+                  {t(effort.options[effortIndex]?.label ?? "")}
                 </span>
                 <Button
                   iconOnly
@@ -366,22 +374,45 @@ export function QuickModelSelector({
                   aria-label={t("Reset to saved defaults")}
                   title={t("Reset to saved defaults")}
                   onClick={resetSettings}
-                  className="grid place-items-center"
+                  className="grid shrink-0 place-items-center"
                 >
                   <RotateCcw className="size-4" />
                 </Button>
               </div>
               <Slider
                 hideLabel
-                label={effort.label}
+                label={t(settingLabel(effort))}
                 value={effortIndex}
                 min={0}
                 max={effort.options.length - 1}
                 step={1}
                 marks={effort.options.map((_, index) => index)}
-                format={(index) => effort.options[index]?.label ?? ""}
+                format={(index) => t(effort.options[index]?.label ?? "")}
                 onValueChange={(index) => changeSetting(effort.id, effort.options[index].value)}
               />
+              {canToggleFast ? (
+                <Button
+                  fullWidth
+                  variant="ghost"
+                  motion="none"
+                  type="button"
+                  aria-label={t("Fast")}
+                  aria-pressed={fastEnabled}
+                  title={fastEnabled ? t("Turn off fast mode") : t("Turn on fast mode")}
+                  onClick={() => changeSetting(fast.id, fastEnabled ? fastOff : fastOn)}
+                  className="mt-1 flex items-center gap-2 text-left"
+                >
+                  <Zap className="size-4 shrink-0" fill={fastEnabled ? "currentColor" : "none"} />
+                  <span className="min-w-0 flex-1 truncate text-ui-secondary">{t("Fast")}</span>
+                  <span
+                    className={`shrink-0 text-ui-secondary ${
+                      fastEnabled ? "font-medium text-accent" : "text-(--ui-text-secondary)"
+                    }`}
+                  >
+                    {fastEnabled ? t("On") : t("Off")}
+                  </span>
+                </Button>
+              ) : null}
             </div>
           ) : null}
         </div>

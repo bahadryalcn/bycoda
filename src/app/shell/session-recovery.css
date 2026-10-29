@@ -2,17 +2,68 @@
   display: flex;
   overflow-y: auto;
 }
-.session-recovery {
+.session-recovery,
+.recovery-pane {
   inline-size: 100%;
   max-block-size: min(640px, calc(100dvh - 110px));
 }
-.session-recovery > :not(.recovery-list) {
+/* One recovery layout for conversations, file drafts and earlier reports: the toolbar, the
+   counts and the footer keep their place; only the list scrolls. */
+.recovery-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-block-size: 0;
+  padding: 0.75rem;
+}
+.recovery-pane > :not(.recovery-body, .recovery-list) {
   flex-shrink: 0;
+}
+.recovery-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem 0;
+  flex-shrink: 0;
+}
+.recovery-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.recovery-toolbar-search {
+  flex: 1 1 10rem;
+  min-inline-size: 0;
+}
+.recovery-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 0.75rem;
+  row-gap: 0.125rem;
+}
+.recovery-body {
+  flex: 0 1 auto;
+  min-block-size: min(9.5rem, 30dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.recovery-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-block-start: 0.5rem;
 }
 .recovery-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 0.5rem;
+}
+.recovery-actions-end {
+  margin-inline-start: auto;
 }
 
 .recovery-list {

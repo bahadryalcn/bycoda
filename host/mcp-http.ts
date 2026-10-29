@@ -30,6 +30,7 @@ import type { SocialService } from "./social";
 import type { RuntimeLogsService } from "./runtime-logs";
 import type { ConversationWorkspaceTools } from "./conversation-workspace-tools";
 import type { Session } from "../src/features/sessions/model/session";
+import { localSessionLinkFields, type LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
 
 type Options = {
   store: HostStore;
@@ -40,6 +41,7 @@ type Options = {
   refreshLogSources: () => void;
   conversationWorkspace: ConversationWorkspaceTools;
   projectSessions: (id: string) => Promise<{ list: HostSessionSummary[] }>;
+  sessionReference: (id: string) => Promise<LocalSessionLocator | undefined>;
 };
 const VERSIONS = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
 const MAX_BYTES = 1024 * 1024;
@@ -544,20 +546,44 @@ export class McpHttp {
           projectId: project.id,
           tools: externalMcpCatalog("conversation", grant),
         };
-      if (action === "sessions.list")
-        return { cwd: project.cwd, sessions: (await o.projectSessions(project.id)).list };
+      if (action === "sessions.list") {
+        const sessions = (await o.projectSessions(project.id)).list;
+        const result = {
+          cwd: project.cwd,
+          sessions: await Promise.all(
+            sessions.map(async (session) => {
+              const locator = await o.sessionReference(session.id);
+              return {
+                ...session,
+                ...(locator
+                  ? localSessionLinkFields(locator, session.title)
+                  : {}),
+              };
+            }),
+          ),
+        };
+        if (!(await authorized()))
+          throw new Error("External credential revoked.");
+        return result;
+      }
       if (action === "sessions.read") {
         // Use the shared host/desktop catalog to prove project membership before reading.
         const sessions = (await o.projectSessions(project.id)).list;
         if (!sessions.some((session) => session.id === input.sessionId))
           throw new Error("Conversation is not in this project.");
-        const snapshot = await o.social.sessionIdentity(String(input.sessionId));
+        const snapshot = await o.social.sessionIdentity(
+          String(input.sessionId),
+        );
         if (snapshot.projectId !== project.id)
           throw new Error("Conversation is not in this project.");
-        return sessionConversationPage(
+        const result = sessionConversationPage(
           { ...snapshot.session, busy: snapshot.status === "running" },
           input,
+          await o.sessionReference(snapshot.session.id),
         );
+        if (!(await authorized()))
+          throw new Error("External credential revoked.");
+        return result;
       }
       if (/^(notes|automations|inbox)\./.test(action)) {
         // Automation defaults and native approval routing belong to an actual session.

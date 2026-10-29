@@ -37,6 +37,7 @@ vi.mock("../../connections/model/connections", () => ({
 vi.mock("../model/socialClient", () => ({
   socialClient: (id: string) => ({
     snapshot: () => mocks.snapshot(id),
+    sectionSnapshot: async () => ({ cursor: "", unchanged: false, snapshot: empty() }),
     workspaceSnapshot: (input: unknown, fresh?: boolean) =>
       mocks.workspaceSnapshot(id, input, fresh),
     request: mocks.request,
@@ -144,6 +145,8 @@ async function mount() {
       ),
     );
   });
+  // The workspace opens on Today; these tests exercise the Accounts destination.
+  await click("Accounts");
 }
 /** True when a retained workspace panel hides the node; ignores the Composer's parked (closed) form stash. */
 function panelHidden(node: Element) {

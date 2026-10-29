@@ -14,14 +14,23 @@ import { socialRows } from "../model/socialWorkspace";
 import type { SocialThread } from "../model/social";
 import { HistoryPageControls, useSocialHistoryPage } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
-import { Inbox as InboxIcon, RefreshCw } from "../../../shared/ui/icons";
+import { Inbox as InboxIcon, RefreshCw, Sparkles } from "../../../shared/ui/icons";
+import { SocialReplySuggestion } from "./SocialReplySuggestion";
 import { DraftList } from "./SocialDrafts";
 import { JobList } from "./SocialManagement";
 import { SocialBulkComposer } from "./SocialBulkComposer";
 import { threadTarget } from "./socialBulk";
 import { Composer, Empty, Notice, StatusBadge, names, time, type Props } from "./socialShared";
 
-export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props) {
+export function Inbox({
+  client,
+  snapshot,
+  projects,
+  run,
+  onFilterChange,
+  onOpenContent,
+  onOpenSettings,
+}: Props) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -47,6 +56,8 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
   >([]);
   const [syncing, setSyncing] = useState(false);
   const [pollingPending, setPollingPending] = useState(false);
+  const [suggesting, setSuggesting] = useState("");
+  const [replyOpen, setReplyOpen] = useState(0);
   const summary = snapshot.threads.find((item) => item.id === selected);
   const detail = useSocialHistoryPage<SocialThread>(
     client,
@@ -128,32 +139,45 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
         data-empty={!snapshot.threads.length}
       >
         <section className="social-collection-list">
-          <h2>
-            {t("Inbox")} <small>{threads.length}</small>
-          </h2>
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 pb-2 text-ui-caption">
-            <StatusBadge status={snapshot.pollingEnabled ? "active" : "paused"} label={snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")} />
-            <Button variant="ghost" loading={pollingPending} disabled={socialLocked || pollingPending || !snapshot.hostOnline}
+          <div className="social-list-heading">
+            <h2>
+              {t("Inbox")} <small>{threads.length}</small>
+            </h2>
+            <Button variant="ghost" size="sm" loading={pollingPending} disabled={socialLocked || pollingPending || !snapshot.hostOnline}
+              aria-pressed={!!snapshot.pollingEnabled}
+              aria-label={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
+              title={snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
               onClick={() => void pendingUi.run("inbox.toggle-refresh", async () => {
                 setPollingPending(true);
                 try { await run(() => client.request("inbox.polling", { enabled: !snapshot.pollingEnabled }), snapshot.pollingEnabled ? t("Inbox auto-refresh turned off.") : t("Auto-refresh turned on for permitted accounts.")); }
                 finally { setPollingPending(false); }
               })}>
-              {snapshot.pollingEnabled ? t("Turn off auto-refresh") : t("Turn on auto-refresh")}
+              <span className="social-status-dot" data-online={!!snapshot.pollingEnabled} aria-hidden="true" />
+              {snapshot.pollingEnabled ? t("Auto-refresh on") : t("Auto-refresh off")}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              iconOnly
+              label={syncing ? t("Refreshing…") : t("Refresh conversations")}
+              loading={pendingUi.is("inbox.refresh")}
+              disabled={socialLocked || !snapshot.hostOnline || !syncAccounts.length || syncing}
+              onClick={() => void pendingUi.run("inbox.refresh", () => synchronize())}
+            >
+              <RefreshCw aria-hidden="true" />
             </Button>
           </div>
           <div className="social-list-tools">
-            <label>
-              {t("Find a conversation")}
-              <SearchInput
-                disabled={socialLocked}
-                appearance="field"
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={t("Contact or message")}
-              />
-            </label>
+            <SearchInput
+              className="social-list-search"
+              aria-label={t("Find a conversation")}
+              disabled={socialLocked}
+              appearance="field"
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={t("Contact or message")}
+            />
             <SocialFilters
               activeCount={Number(!!accountFilter) + Number(!!kindFilter)}
               onReset={() => {
@@ -203,17 +227,6 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
               }}
             >
               {selecting ? t("Finish selecting") : t("Select")}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              iconOnly
-              label={syncing ? t("Refreshing…") : t("Refresh conversations")}
-              loading={pendingUi.is("inbox.refresh")}
-              disabled={socialLocked || !snapshot.hostOnline || !syncAccounts.length || syncing}
-              onClick={() => void pendingUi.run("inbox.refresh", () => synchronize())}
-            >
-              <RefreshCw aria-hidden="true" />
             </Button>
           </div>
           {unsupportedAccounts.length ? (
@@ -377,30 +390,61 @@ export function Inbox({ client, snapshot, projects, run, onFilterChange }: Props
           {thread ? (
             <>
               <div className="social-detail-header">
-                <h2>{contacts.get(thread.contactId)?.name ?? t("Conversation")}</h2>
-                <Composer title={t("Prepare reply")}>
-                  <SocialBulkComposer
-                    key={thread.id}
-                    client={client}
-                    snapshot={snapshot}
-                    projects={projects}
-                    run={run}
-                    targets={[threadTarget(thread)]}
-                    replyOnly
-                    content={answers[thread.id] ?? { text: "", factIds: [] }}
-                    onContentChange={(content) =>
-                      setAnswers((current) => ({ ...current, [thread.id]: content }))
-                    }
-                  />
-                </Composer>
+                <div>
+                  <h2>{contacts.get(thread.contactId)?.name ?? t("Conversation")}</h2>
+                  <p className="social-muted">
+                    {account ? `${account.name} · ${names[account.platform]} · ` : ""}
+                    {thread.kind === "message" ? t("Direct message") : t("Comment")}
+                    {account?.connection !== "browser" && thread.replyUntil
+                      ? ` · ${t("Reply deadline {p0}", { p0: time(thread.replyUntil) })}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="social-detail-actions">
+                  <Button
+                    variant="secondary"
+                    type="button"
+                    aria-expanded={suggesting === thread.id}
+                    disabled={socialLocked || suggesting === thread.id}
+                    onClick={() => setSuggesting(thread.id)}
+                    startIcon={<Sparkles aria-hidden="true" />}
+                  >
+                    {t("Suggest a reply")}
+                  </Button>
+                  <Composer title={t("Prepare reply")} openRequest={replyOpen}>
+                    <SocialBulkComposer
+                      key={thread.id}
+                      client={client}
+                      snapshot={snapshot}
+                      projects={projects}
+                      run={run}
+                      targets={[threadTarget(thread)]}
+                      replyOnly
+                      content={answers[thread.id] ?? { text: "", factIds: [] }}
+                      onContentChange={(content) =>
+                        setAnswers((current) => ({ ...current, [thread.id]: content }))
+                      }
+                    />
+                  </Composer>
+                </div>
               </div>
-              <p className="social-muted">
-                {account ? `${account.name} · ${names[account.platform]} · ` : ""}
-                {thread.kind === "message" ? t("Direct message") : t("Comment")}
-                {account?.connection !== "browser" && thread.replyUntil
-                  ? ` · ${t("Reply deadline {p0}", { p0: time(thread.replyUntil) })}`
-                  : ""}
-              </p>
+              {suggesting === thread.id ? (
+              <SocialReplySuggestion
+                key={thread.id}
+                client={client}
+                thread={thread}
+                profile={snapshot.profiles.find((profile) => profile.projectId === thread.projectId)}
+                hostOnline={snapshot.hostOnline}
+                replacesDraft={!!answers[thread.id]?.text.trim()}
+                onClose={() => setSuggesting("")}
+                onOpenSettings={onOpenSettings}
+                onOpenContent={onOpenContent}
+                onSuggestion={(suggestion) => {
+                  setAnswers((current) => ({ ...current, [thread.id]: suggestion }));
+                  setReplyOpen((count) => count + 1);
+                }}
+              />
+              ) : null}
               {thread.reviewReason ? (
                 <Notice kind="warning" title={t("Check the project match")}>
                   {thread.reviewReason}

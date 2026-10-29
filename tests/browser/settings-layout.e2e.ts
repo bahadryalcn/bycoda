@@ -31,8 +31,8 @@ for (const [theme, width] of [
       );
       const form = page.locator(`[data-settings-section="${section}"]`);
       await expect(form).toBeVisible();
-      // The redesign replaced "fill the panel" with a readable bounded column: the form fills the
-      // panel until it reaches its column cap (52rem, or 64rem for collection pages), then centres.
+      // Every page shares one bounded column: the form fills the panel until it reaches the single
+      // column cap (80rem; 96rem only when the dialog is maximized), then centres.
       const dimensions = await form.evaluate((node) => {
         const bounds = node.getBoundingClientRect();
         const parent = node.parentElement!.getBoundingClientRect();
@@ -46,14 +46,9 @@ for (const [theme, width] of [
           trailing: parent.right - bounds.right,
         };
       });
-      // Page presentation sets the track: preferences (including Inbox and Archive) 52rem,
-      // collections 64rem, list/detail libraries 80rem.
-      const expectedCap = ["worktrees"].includes(section)
-        ? 80
-        : ["providers", "mcp", "connections", "keybindings", "limits"].includes(section)
-          ? 64
-          : 52;
-      expect(dimensions.cap, section).toBe(expectedCap * 16);
+      // No page keeps its own track any more: preferences, collections and list/detail libraries
+      // all measure the same 80rem column.
+      expect(dimensions.cap, section).toBe(80 * 16);
       expect(dimensions.width, section).toBeGreaterThan(
         Math.min(dimensions.parent, dimensions.cap) * 0.95,
       );

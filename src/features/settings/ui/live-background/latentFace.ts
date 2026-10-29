@@ -1,108 +1,92 @@
 import type { LiveBackgroundPalette, LiveBackgroundScene } from "./types";
 
-/** Code characters, not a brightness ramp: tone comes from alpha, so the figure never reads
- * as ASCII art. */
-const GLYPHS = "01{}[]()<>=+-*/;:._$#&|!?%~^0123456789abcdefnrstuxyz";
-/** Glyph cell in em units. */
-const CELL_WIDTH = 0.62;
-const CELL_HEIGHT = 1.2;
-const MIN_FONT = 8;
-/** Scale units: soft edge, rim light and the reach of loose sparks outside the outline. */
-const EDGE = 0.05;
-const RIM = 0.06;
-const SPARK_REACH = 0.22;
-const MAX_ALPHA = 1;
+/** Code glyphs in three weights. Lit surfaces use the dense digits, shadows thin punctuation, so
+ * light reads through glyph density as well as alpha. Heavy marks (#, @, &, %) read as blots at
+ * these sizes and are left out. */
+const GLYPHS = ".:;-,'" + "+=<>/()[]{}*~" + "0123456789abcdef";
+/** [start, length] of each glyph pool: faint, medium, dense, and any code glyph. */
+const POOLS: readonly (readonly [number, number])[] = [
+  [0, 6],
+  [6, 13],
+  [19, 16],
+  [6, 29],
+];
+const DENSE = 2;
+const CODE = 3;
+/** Glyph cells in em units. Rain grids leave air between columns, so they read as falling
+ * streams rather than lines of text; contour grids pack tighter to trace a clean edge. */
+const RAIN_CELL = [0.82, 1.12] as const;
+const CONTOUR_CELL = [0.62, 1.2] as const;
+const MIN_FONT = 6;
 /** Alpha is quantized so each pass changes canvas state a bounded number of times. */
 const ALPHA_LEVELS = 24;
 const MIN_LEVEL = 1;
 /** Extra stream travel while new text arrives, in rows per second of eased energy. */
 const ENERGY_RUSH = 9;
-/** Facial lines are hints, not a portrait: thin, single-cell strokes in code glyphs. */
-const FEATURE_ALPHA = 0.9;
-/** Line half-width and the darker hollow kept around each line, in cells. */
-const LINE_WIDTH = 0.7;
-const LINE_HOLLOW = 1.8;
-/** Mouth center, half-width and opening in scale units. */
-const MOUTH_Y = -0.05;
-const MOUTH_HALF_WIDTH = 0.13;
-const MOUTH_OPEN = 0.1;
 const SYLLABLES_PER_SECOND = 3.4;
+/** A stream's leading glyph: it is drawn in the accent color. */
+const HEAD_GLOW = 0.9;
+/** Font tiers, back to front: far rain, the figure's own grid, near rain. */
+const TIERS = 3;
+const FAR = 0;
+const FIGURE = 1;
+const NEAR = 2;
+/** Draw groups: every tier in the content color, then in the accent color. */
+const GROUPS = TIERS * 2;
+
 /** Head ellipse shared by the outline and the relief: center and radii in scale units. */
 const HEAD_Y = -0.42;
 const HEAD_RX = 0.42;
 const HEAD_RY = 0.54;
-/** Key light from the upper left, slightly in front, as on a lit sculpture. */
-const LIGHT = (() => {
-  const [x, y, z] = [-0.35, -0.45, 0.82];
-  const length = Math.hypot(x, y, z);
-  return [x / length, y / length, z / length] as const;
-})();
-
-/** How strongly raised forms catch light and cavities swallow it. */
-const RIDGE_GAIN = 9;
-const CAVITY_GAIN = 4;
 /** The jaw narrows gently below the cheekbones; a strong taper reads as an alien chin. */
 const JAW_TAPER = 0.16;
 /** Superellipse exponents: a fuller cranium above, a rounded-square jaw below. */
 const CRANIUM_ROUNDNESS = 2.3;
 const JAW_ROUNDNESS = 2.15;
 
-/** `lines`: a featureless mass with thin eye, nose and lip strokes. `relief`: a dark figure
- * standing in front of falling code. It blocks the code behind it, and only the ridges of
- * its face and its outline catch the light. */
-type FigureStyle = "lines" | "relief";
-type StyleConfig = {
-  /** Cells in the figure's bounding box. Glyphs grow on large panes instead of multiplying. */
-  maxCells: number;
-  /** Pane height per scale unit: the relief frames the face closer. */
-  headShare: number;
-  bodyAlpha: number;
-  streamAlpha: number;
+const normalize = (x: number, y: number, z: number) => {
+  const length = Math.hypot(x, y, z);
+  return [x / length, y / length, z / length] as const;
 };
-const STYLES: Record<FigureStyle, StyleConfig> = {
-  lines: { maxCells: 6000, headShare: 2.2, bodyAlpha: 0.12, streamAlpha: 0.88 },
-  relief: { maxCells: 4400, headShare: 1.55, bodyAlpha: 0.85, streamAlpha: 0.15 },
-};
+/** Key light from the upper left and in front, as on a lit sculpture. */
+const LIGHT = normalize(-0.5, -0.55, 0.68);
+/** Half vector between the key light and the viewer, for small specular glints. */
+const HALF = normalize(LIGHT[0], LIGHT[1], LIGHT[2] + 1);
+/** Backlight direction in the picture plane: the rim catches it on the upper right. */
+const RIM_LIGHT = normalize(0.7, -0.72, 0);
 
-/** Relief: the code field behind the figure. Its faint body keeps the backlight readable
- * between streams; the streams carry most of the light. */
-const FIELD_BODY = 0.26;
-const FIELD_STREAM = 0.74;
-const FIELD_MIN_ALPHA = 0.07;
-/** Relief: the figure uses a finer grid than the field, so thin lids and lips survive. */
-const FINE_SHARE = 0.55;
-const MIN_FINE_FONT = 6;
-/** Fine cells darker than this in both jaw poses are never drawn and are not kept. */
-const FINE_MIN_TONE = 0.03;
-/** Draw groups: field or outline cells and fine figure cells, each in body and glow passes. */
-const GROUPS = 4;
+/** Latent face: depth of the sculpted face and the rounded bevel of neck and shoulders. */
+const FACE_DEPTH = 0.34;
+const BEVEL = 0.2;
 
 type Column = { speed: number; offset: number; trail: number; period: number };
-type Point = readonly [number, number];
 
-/** Closed-eye lines and the nose, in scale units. Only outlines: nothing is filled. */
-const FEATURE_LINES: readonly (readonly Point[])[] = [
-  [
-    [-0.27, -0.44],
-    [-0.17, -0.475],
-    [-0.07, -0.445],
-  ],
-  [
-    [0.07, -0.445],
-    [0.17, -0.475],
-    [0.27, -0.44],
-  ],
-  [
-    [0, -0.4],
-    [0.012, -0.28],
-    [0.035, -0.2],
-  ],
-  [
-    [-0.045, -0.19],
-    [0, -0.172],
-    [0.048, -0.19],
-  ],
-];
+/** `luminous`: the figure itself is lit code, condensing out of faint rain.
+ * `eclipse`: a dark figure standing in front of layered, backlit code rain. */
+type FigureStyle = "luminous" | "eclipse";
+type StyleConfig = {
+  /** Pane height per scale unit: the eclipse frames the figure closer. */
+  headShare: number;
+  /** Glyph size per tier as a share of the scale, and the cell budget each grid may use. */
+  fontShare: readonly [number, number, number];
+  maxCells: readonly [number, number, number];
+  /** Cell shape of the figure's own grid. */
+  figureCell: readonly [number, number];
+};
+const STYLES: Record<FigureStyle, StyleConfig> = {
+  luminous: {
+    headShare: 1.78,
+    fontShare: [0.019, 0.02, 0],
+    maxCells: [9000, 9000, 0],
+    figureCell: RAIN_CELL,
+  },
+  eclipse: {
+    headShare: 1.86,
+    fontShare: [0.021, 0.0135, 0.036],
+    maxCells: [9000, 16000, 3000],
+    figureCell: CONTOUR_CELL,
+  },
+};
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 const smoothstep = (from: number, to: number, value: number) => {
@@ -121,7 +105,7 @@ function hash(a: number, b: number, c = 0): number {
 /** Brightness of a falling stream's trail at `row`, 1 at the head and fading upward. */
 function trailAt(head: number, row: number, trail: number): number {
   const behind = head - row;
-  return behind >= 0 && behind < trail ? (1 - behind / trail) ** 1.3 : 0;
+  return behind >= 0 && behind < trail ? (1 - behind / trail) ** 1.6 : 0;
 }
 
 function smoothMin(a: number, b: number, k: number): number {
@@ -139,27 +123,6 @@ function box(x: number, y: number, cx: number, cy: number, hx: number, hy: numbe
   return Math.hypot(Math.max(dx, 0), Math.max(dy, 0)) + Math.min(Math.max(dx, dy), 0);
 }
 
-/** Distance from a point to a polyline. Callers pass coordinates in cell units, so a line is
- * the same number of glyphs wide whether it runs across or down the grid. */
-function distanceToLine(x: number, y: number, line: readonly Point[]): number {
-  let distance = Number.POSITIVE_INFINITY;
-  for (let i = 1; i < line.length; i++) {
-    const [ax, ay] = line[i - 1]!;
-    const [bx, by] = line[i]!;
-    const dx = bx - ax;
-    const dy = by - ay;
-    const length = dx * dx + dy * dy;
-    const t = length === 0 ? 0 : clamp01(((x - ax) * dx + (y - ay) * dy) / length);
-    distance = Math.min(distance, Math.hypot(x - ax - t * dx, y - ay - t * dy));
-  }
-  return distance;
-}
-
-/** 1 on a line, 0 beyond its width. */
-const lineStrength = (distance: number) => clamp01(1 - distance / LINE_WIDTH);
-/** Body dimming beside a line, so a stroke reads against the code around it. */
-const hollowAt = (distance: number) => 0.15 + 0.85 * smoothstep(LINE_WIDTH, LINE_HOLLOW, distance);
-
 /** Deterministic speech rhythm: syllables of varying size with occasional pauses, closed
  * once the reply ends. */
 export function mouthOpening(time: number, presence: number, energy = 0): number {
@@ -172,8 +135,6 @@ export function mouthOpening(time: number, presence: number, energy = 0): number
   return presence * (0.45 + 0.55 * size) * (0.8 + 0.2 * energy) * phase ** 0.7;
 }
 
-/** Signed distance (negative inside) of the head and shoulders, in scale units. Facial
- * features are drawn separately over this mass. */
 /** Head-local position with the jaw taper applied, so the outline and relief agree. */
 function headLocal(x: number, y: number): readonly [number, number] {
   const v = (y - HEAD_Y) / HEAD_RY;
@@ -186,9 +147,10 @@ function headDistance(x: number, y: number): number {
   return ((Math.abs(u) ** n + Math.abs(v) ** n) ** (1 / n) - 1) * Math.min(HEAD_RX, HEAD_RY);
 }
 
-/** Human proportions keep the figure from reading as an alien: ears at eye-to-nose height,
- * a neck about half the head's width, and trapezius slopes into shoulders three heads wide. */
-export function silhouetteDistance(x: number, y: number): number {
+/** Signed distance (negative inside) of the head and shoulders, in scale units. Human
+ * proportions keep the figure from reading as an alien: ears at eye-to-nose height, a neck
+ * about half the head's width, and trapezius slopes into shoulders three heads wide. */
+function silhouetteDistance(x: number, y: number): number {
   const head = headDistance(x, y);
   const ears = ellipse(Math.abs(x), y, HEAD_RX + 0.005, HEAD_Y + 0.04, 0.055, 0.12);
   const neck = box(x, y, 0, 0.24, 0.2, 0.2);
@@ -202,66 +164,115 @@ function bump(u: number, v: number, cu: number, cv: number, su: number, sv: numb
 }
 
 /** Facial relief in head-local units (u across, v down, both -1..1) with the jaw dropped by
- * `jaw` (0 closed, 1 open). Returns raised forms and cavities separately: cavities also
+ * `jaw` (0 closed, 1 open). Raised forms and cavities are returned separately: cavities also
  * darken through occlusion. A generic sculpted face, not any particular person. */
-function faceRelief(u: number, v: number, jaw: number): { raised: number; cavity: number } {
+let reliefRaised = 0;
+let reliefCavity = 0;
+function faceRelief(u: number, v: number, jaw: number) {
   // Smooth absolute value: a hard |u| would crease the relief down the middle.
   const au = Math.sqrt(u * u + 0.004);
   const drop = jaw * 0.09;
   // Below the mouth, features follow the jaw down.
   const lv = v > 0.64 ? v - drop : v;
-  const raised =
+  reliefRaised =
     0.12 * bump(au, v, 0.37, -0.2, 0.3, 0.07) + // brow ridge
-    // A thin lid line under each brow puts the eyes where a viewer expects them.
     0.26 * bump(au, v, 0.35, -0.03, 0.11, 0.03) + // closed eyelids
     0.14 * bump(u, v, 0, 0.12, 0.07, 0.23) + // nose bridge
     0.16 * bump(u, v, 0, 0.33, 0.11, 0.08) + // nose tip
     0.07 * bump(au, v, 0.13, 0.37, 0.07, 0.05) + // nostril wings
-    // Long, low cheekbone planes: round blobs here would read as glowing eyes.
     0.045 * bump(au, v, 0.56, 0.24, 0.2, 0.08) + // cheekbones
     0.13 * bump(u, v, 0, 0.59, 0.19, 0.05) + // upper lip
     0.15 * bump(u, lv, 0, 0.73, 0.16, 0.06) + // lower lip
     0.1 * bump(u, lv, 0, 0.92, 0.18, 0.1); // chin
-  const cavity =
+  reliefCavity =
     0.16 * bump(au, v, 0.36, -0.06, 0.15, 0.08) + // eye sockets
     0.08 * bump(au, v, 0.08, 0.43, 0.04, 0.03) + // nostrils
     0.08 * bump(au, v, 0.5, 0.56, 0.15, 0.15) + // cheek hollows
     0.1 * bump(u, v, 0, 0.66 + drop * 0.5, 0.2, 0.025) + // lip line
     0.45 * jaw * bump(u, v, 0, 0.665 + drop * 0.5, 0.13, 0.02 + jaw * 0.05) + // open mouth
     0.05 * bump(u, lv, 0, 0.82, 0.16, 0.04); // under the lower lip
-  return { raised, cavity };
 }
 
 function faceHeight(u: number, v: number, jaw: number): number {
   const base = Math.sqrt(Math.max(0.0001, 1 - u * u - v * v));
-  const { raised, cavity } = faceRelief(u, v, jaw);
-  return base + raised - cavity;
+  faceRelief(u, v, jaw);
+  return base + reliefRaised - reliefCavity;
 }
 
+/** Height of the sculpted bust in scale units: a rounded bevel for neck and shoulders, the
+ * modelled face on the head. Zero outside the outline. */
+function bustHeight(x: number, y: number, jaw: number): number {
+  const distance = silhouetteDistance(x, y);
+  if (distance >= 0) return 0;
+  const t = clamp01(-distance / BEVEL);
+  const body = BEVEL * Math.sqrt(1 - (1 - t) * (1 - t));
+  const onHead = smoothstep(0.02, -0.08, headDistance(x, y));
+  if (onHead === 0) return body;
+  const [u, v] = headLocal(x, y);
+  const face = faceHeight(u, v, jaw) * FACE_DEPTH;
+  return body + (Math.max(body, face) - body) * onHead;
+}
+
+/** Shading of the luminous bust, written to the scratch values below to avoid allocation. */
+let shadeDiffuse = 0;
+let shadeRim = 0;
+let shadeGlint = 0;
+function shadeBust(x: number, y: number, jaw: number) {
+  const step = 0.007;
+  const dx = (bustHeight(x + step, y, jaw) - bustHeight(x - step, y, jaw)) / (2 * step);
+  const dy = (bustHeight(x, y + step, jaw) - bustHeight(x, y - step, jaw)) / (2 * step);
+  const [nx, ny, nz] = normalize(-dx, -dy, 1);
+  shadeDiffuse = Math.max(0, nx * LIGHT[0] + ny * LIGHT[1] + nz * LIGHT[2]);
+  // Grazing surfaces facing the backlight catch a thin rim.
+  shadeRim = (1 - nz) ** 2 * Math.max(0, nx * RIM_LIGHT[0] + ny * RIM_LIGHT[1]);
+  shadeGlint = Math.max(0, nx * HALF[0] + ny * HALF[1] + nz * HALF[2]) ** 28;
+}
+
+/** Tone of the last shaded point: key light, backlit rim and glints, 0..1. */
+const litTone = () => clamp01(0.12 + 0.7 * shadeDiffuse ** 1.6 + 0.9 * shadeRim + 0.4 * shadeGlint);
+
 /** Light caught by the face of a dark figure, 0..1. Only raised forms that turn toward the
- * light glint: brow, nose, cheekbones, lips and chin. The dome of the head, the sockets and
- * the far side stay dark, so the face reads without becoming a lit mask. */
-export function faceGlint(x: number, y: number, jaw: number): number {
+ * light glint: brow, nose, cheekbones, lips and chin. */
+function faceGlint(x: number, y: number, jaw: number): number {
   const [u, v] = headLocal(x, y);
   const step = 0.012;
-  // Height is in head-radius units; convert slopes to scale units so the light is isotropic.
   const dx = (faceHeight(u + step, v, jaw) - faceHeight(u - step, v, jaw)) / (2 * step);
   const dy =
     ((faceHeight(u, v + step, jaw) - faceHeight(u, v - step, jaw)) / (2 * step)) *
     (HEAD_RX / HEAD_RY);
   const length = Math.hypot(dx, dy, 1);
   const lambert = Math.max(0, (-dx * LIGHT[0] - dy * LIGHT[1] + LIGHT[2]) / length);
-  const { raised, cavity } = faceRelief(u, v, jaw);
-  const ridge = clamp01(raised * RIDGE_GAIN - cavity * CAVITY_GAIN);
-  // A steep curve: broad, softly lit planes stay dark and only true glints remain.
+  faceRelief(u, v, jaw);
+  const ridge = clamp01(reliefRaised * 9 - reliefCavity * 4);
   return clamp01(ridge * lambert ** 2) ** 1.5;
 }
 
+/** Outward direction of the silhouette at a point, for rim lighting. */
+function outlineUp(x: number, y: number): number {
+  const step = 0.004;
+  const dx = silhouetteDistance(x + step, y) - silhouetteDistance(x - step, y);
+  const dy = silhouetteDistance(x, y + step) - silhouetteDistance(x, y - step);
+  const length = Math.hypot(dx, dy) || 1;
+  // 1 where the outline faces up and toward the backlight, 0 where it faces down.
+  return clamp01(0.5 - (0.5 * (dy * 0.85 - dx * 0.35)) / length);
+}
+
+type Grid = {
+  tier: number;
+  font: number;
+  stepX: number;
+  stepY: number;
+  left: number;
+  top: number;
+  cols: number;
+  rows: number;
+  firstColumn: number;
+};
+
 /**
- * A figure made of falling code. Nothing is drawn at rest: while the AI replies, glyphs
- * kindle inside a head-and-shoulders outline, streams fall through it and loose sparks crackle
- * at its edge; the mouth moves with the reply. When it ends the figure scatters back into the
- * plain background.
+ * A figure made of falling code. Nothing is drawn at rest: while the AI replies the figure
+ * kindles from the head outward, streams fall through or behind it and the mouth moves with the
+ * reply. When it ends the figure fades back into the plain background.
  */
 function createCodeFigureScene(
   palette: LiveBackgroundPalette,
@@ -270,34 +281,26 @@ function createCodeFigureScene(
   const config = STYLES[style];
   let width = 0;
   let height = 0;
-  let fontSize = MIN_FONT;
+  const fonts = [MIN_FONT, MIN_FONT, MIN_FONT];
+  const fontStrings = ["", "", ""];
   let columns: Column[] = [];
   // Flat per-cell arrays: the frame loop allocates nothing.
   let cellX = new Float32Array(0);
   let cellY = new Float32Array(0);
   let cellCol = new Uint16Array(0);
   let cellRow = new Uint16Array(0);
-  let cellMask = new Float32Array(0);
-  let cellTone = new Float32Array(0);
+  let cellTier = new Uint8Array(0);
+  /** Static glow with the jaw closed and fully open, and how much passing streams add. */
+  let cellBody = new Float32Array(0);
+  let cellBodyOpen = new Float32Array(0);
+  let cellGain = new Float32Array(0);
+  /** Body brighter than this is a highlight and burns in the accent color. */
+  let cellSpark = new Float32Array(0);
+  let cellPool = new Uint8Array(0);
   let cellReveal = new Float32Array(0);
   let cellGlow = new Float32Array(0);
+  let cellAccent = new Uint8Array(0);
   let cellAlpha = new Float32Array(0);
-  /** Lines: static eye/nose stroke strength and the hollow around it. */
-  let cellLine = new Float32Array(0);
-  let cellHollow = new Float32Array(0);
-  /** Relief: tone with the jaw fully open; `cellTone` holds the closed pose. */
-  let cellToneOpen = new Float32Array(0);
-  /** Relief: 1 for cells on the figure, 0 for the code field behind it. */
-  let cellInside = new Uint8Array(0);
-  /** Relief: 1 for cells on the figure's fine grid. */
-  let cellFine = new Uint8Array(0);
-  let fineFont = MIN_FINE_FONT;
-  /** Lines: cells near the mouth, with their position in scale units for the moving lips. */
-  let mouthCells = new Uint32Array(0);
-  let mouthX = new Float32Array(0);
-  let mouthY = new Float32Array(0);
-  let mouthCount = 0;
-  let cellsPerUnitY = 1;
   /** Draw order bucketed by pass and alpha level, rebuilt each frame without allocation. */
   let order = new Uint32Array(0);
   const bucketStart = new Uint32Array(GROUPS * (ALPHA_LEVELS + 1) + 1);
@@ -307,12 +310,36 @@ function createCodeFigureScene(
   /** Stream travel added by reply energy, so speed changes never make the streams jump. */
   let rush = 0;
 
+  const push = (
+    grid: Grid,
+    col: number,
+    row: number,
+    body: number,
+    bodyOpen: number,
+    gain: number,
+    spark: number,
+    reveal: number,
+    pool: number,
+  ) => {
+    cellX[count] = grid.left + (col + 0.5) * grid.stepX;
+    cellY[count] = grid.top + (row + 0.5) * grid.stepY;
+    cellCol[count] = grid.firstColumn + col;
+    cellRow[count] = row;
+    cellTier[count] = grid.tier;
+    cellBody[count] = body;
+    cellBodyOpen[count] = bodyOpen;
+    cellGain[count] = gain;
+    cellSpark[count] = spark;
+    cellReveal[count] = reveal;
+    cellPool[count] = pool;
+    count++;
+  };
+
   return {
     resize(nextWidth, nextHeight) {
       width = Math.max(0, nextWidth);
       height = Math.max(0, nextHeight);
       count = 0;
-      mouthCount = 0;
       columns = [];
       rush = 0;
       if (width < 2 || height < 2) return;
@@ -321,181 +348,199 @@ function createCodeFigureScene(
       const scale = Math.min(height / config.headShare, width / 1.6);
       const centerX = width / 2;
       const centerY = height * 0.08 + 0.96 * scale;
-      const relief = style === "relief";
-      // The relief's code field fills the pane; the outline style needs only the figure.
-      const left = relief ? 0 : Math.max(0, centerX - 1.42 * scale);
-      const right = relief ? width : Math.min(width, centerX + 1.42 * scale);
-      const top = relief ? 0 : Math.max(0, centerY - 1.04 * scale);
-      const boxWidth = right - left;
-      const boxHeight = height - top;
-      fontSize = Math.max(
-        MIN_FONT,
-        scale * (relief ? 0.018 : 0.03),
-        Math.sqrt((boxWidth * boxHeight) / (config.maxCells * CELL_WIDTH * CELL_HEIGHT)),
-      );
-      const stepX = fontSize * CELL_WIDTH;
-      const stepY = fontSize * CELL_HEIGHT;
-      const cols = Math.max(1, Math.floor(boxWidth / stepX));
-      const rows = Math.max(1, Math.floor(boxHeight / stepY));
-      const originX = left + (boxWidth - cols * stepX) / 2;
       const bottom = (height - centerY) / scale;
-      const cellsPerUnitX = scale / stepX;
-      cellsPerUnitY = scale / stepY;
-      const lines = FEATURE_LINES.map((line) =>
-        line.map(([x, y]) => [x * cellsPerUnitX, y * cellsPerUnitY] as const),
-      );
+      const eclipse = style === "eclipse";
+      const toX = (px: number) => (px - centerX) / scale;
+      const toY = (py: number) => (py - centerY) / scale;
 
-      for (let col = 0; col < cols; col++) {
-        const trail = 8 + Math.floor(hash(col, 11) * 16);
-        const period = rows + trail + Math.floor(hash(col, 13) * rows * 0.8);
-        columns.push({
-          speed: 5 + hash(col, 17) * 9,
-          offset: hash(col, 19) * period,
-          trail,
-          period,
-        });
+      // Grid geometry first, so every per-cell array is allocated once.
+      const grids: Grid[] = [];
+      const addGrid = (
+        tier: number,
+        left: number,
+        top: number,
+        right: number,
+        speed: number,
+        trail: number,
+      ) => {
+        left = Math.max(0, left);
+        right = Math.min(width, right);
+        top = Math.max(0, top);
+        const area = (right - left) * (height - top);
+        if (area <= 0) return;
+        const [cellWidth, cellHeight] = tier === FIGURE ? config.figureCell : RAIN_CELL;
+        const font = Math.max(
+          MIN_FONT,
+          scale * config.fontShare[tier]!,
+          Math.sqrt(area / (config.maxCells[tier]! * cellWidth * cellHeight)),
+        );
+        const stepX = font * cellWidth;
+        const stepY = font * cellHeight;
+        const cols = Math.max(1, Math.floor((right - left) / stepX));
+        const rows = Math.max(1, Math.floor((height - top) / stepY));
+        const grid: Grid = {
+          tier,
+          font,
+          stepX,
+          stepY,
+          left: left + (right - left - cols * stepX) / 2,
+          top,
+          cols,
+          rows,
+          firstColumn: columns.length,
+        };
+        for (let col = 0; col < cols; col++) {
+          const id = columns.length;
+          const length = trail * (0.6 + hash(id, 11) * 0.9);
+          const period = rows + length + Math.floor(hash(id, 13) * rows * 0.9);
+          columns.push({
+            speed: speed * (0.65 + hash(id, 17) * 0.7),
+            offset: hash(id, 19) * period,
+            trail: length,
+            period,
+          });
+        }
+        fonts[tier] = font;
+        fontStrings[tier] =
+          `${tier === FIGURE && eclipse ? "500 " : ""}${font}px ${palette.monoFont}`;
+        grids.push(grid);
+      };
+
+      const figureLeft = centerX - 1.42 * scale;
+      const figureRight = centerX + 1.42 * scale;
+      const figureTop = centerY - 1.04 * scale;
+      if (eclipse) {
+        addGrid(FAR, 0, 0, width, 7, 22);
+        addGrid(FIGURE, figureLeft, figureTop, figureRight, 0, 1);
+        addGrid(NEAR, 0, 0, width, 13, 14);
+      } else {
+        addGrid(FAR, centerX - 1.7 * scale, centerY - 1.4 * scale, centerX + 1.7 * scale, 6, 16);
+        addGrid(FIGURE, figureLeft, figureTop, figureRight, 9, 18);
       }
 
-      // Relief: the figure's own fine grid over its bounding box, with its own streams.
-      fineFont = Math.max(MIN_FINE_FONT, fontSize * FINE_SHARE);
-      const fineStepX = fineFont * CELL_WIDTH;
-      const fineStepY = fineFont * CELL_HEIGHT;
-      const fineLeft = Math.max(0, centerX - 1.42 * scale);
-      const fineTop = Math.max(0, centerY - 1.04 * scale);
-      const fineCols = relief
-        ? Math.max(1, Math.floor((Math.min(width, centerX + 1.42 * scale) - fineLeft) / fineStepX))
-        : 0;
-      const fineRows = relief ? Math.max(1, Math.floor((height - fineTop) / fineStepY)) : 0;
-      for (let col = 0; col < fineCols; col++) {
-        const trail = 12 + Math.floor(hash(col, 31) * 24);
-        const period = fineRows + trail + Math.floor(hash(col, 37) * fineRows * 0.8);
-        columns.push({
-          speed: 8 + hash(col, 41) * 14,
-          offset: hash(col, 43) * period,
-          trail,
-          period,
-        });
-      }
-
-      const capacity = cols * rows + fineCols * fineRows;
+      const capacity = grids.reduce((sum, grid) => sum + grid.cols * grid.rows, 0);
       cellX = new Float32Array(capacity);
       cellY = new Float32Array(capacity);
       cellCol = new Uint16Array(capacity);
       cellRow = new Uint16Array(capacity);
-      cellMask = new Float32Array(capacity);
-      cellTone = new Float32Array(capacity);
-      cellToneOpen = new Float32Array(capacity);
-      cellInside = new Uint8Array(capacity);
-      cellFine = new Uint8Array(capacity);
+      cellTier = new Uint8Array(capacity);
+      cellBody = new Float32Array(capacity);
+      cellBodyOpen = new Float32Array(capacity);
+      cellGain = new Float32Array(capacity);
+      cellSpark = new Float32Array(capacity);
+      cellPool = new Uint8Array(capacity);
       cellReveal = new Float32Array(capacity);
       cellGlow = new Float32Array(capacity);
+      cellAccent = new Uint8Array(capacity);
       cellAlpha = new Float32Array(capacity);
-      cellLine = new Float32Array(capacity);
-      cellHollow = new Float32Array(capacity);
       cellBucket = new Uint16Array(capacity);
       order = new Uint32Array(capacity);
-      mouthCells = new Uint32Array(capacity);
-      mouthX = new Float32Array(capacity);
-      mouthY = new Float32Array(capacity);
-      for (let row = 0; row < rows; row++) {
-        const py = top + (row + 0.5) * stepY;
-        const y = (py - centerY) / scale;
-        for (let col = 0; col < cols; col++) {
-          const px = originX + (col + 0.5) * stepX;
-          const x = (px - centerX) / scale;
-          const distance = silhouetteDistance(x, y);
-          if (relief) {
-            // The figure itself is drawn on the fine grid below.
-            if (distance < 0) continue;
-            cellX[count] = px;
-            cellY[count] = py;
-            cellCol[count] = col;
-            cellRow[count] = row;
-            cellMask[count] = 1;
-            // Backlight: the code is brightest just behind the head and thins toward the
-            // pane edges, so the figure reads as a dark shape against it.
-            const halo = Math.exp(-Math.hypot(x, (y - HEAD_Y) * 0.8) / 0.9);
-            const edge = Math.exp(-distance / 0.035);
-            cellTone[count] = clamp01(halo + 0.5 * edge);
-            cellToneOpen[count] = cellTone[count]!;
-            // The field kindles from behind the head outward.
-            cellReveal[count] =
-              hash(col, row, 7) * 0.65 + clamp01(Math.hypot(x, y + 0.3) / 1.6) * 0.35;
-            count++;
-            continue;
-          }
-          if (distance > SPARK_REACH) continue;
-          const inside = smoothstep(EDGE, -EDGE, distance);
-          // Outside the edge only sparse sparks remain, thinning with distance.
-          const spark =
-            distance > 0 ? Math.exp(-distance / 0.06) * (hash(col, row, 5) > 0.55 ? 0.6 : 0) : 0;
-          const mask = Math.max(inside, spark);
-          if (mask < 0.02) continue;
-          // Mass: a backlit rim, a soft key light from the left and a fade where the
-          // shoulders leave the pane.
-          const rim = Math.exp(-Math.abs(distance) / RIM);
-          const light = 0.82 - 0.22 * Math.max(-1, Math.min(1, x));
-          const fade = smoothstep(bottom, bottom - 0.4, y);
-          const mass = (0.55 + 0.45 * rim) * light * fade;
-          cellX[count] = px;
-          cellY[count] = py;
-          cellCol[count] = col;
-          cellRow[count] = row;
-          cellMask[count] = mask;
-          cellTone[count] = mass;
-          // Glyphs kindle from the head outward, scattered like embers catching.
-          const radial = clamp01(Math.hypot(x, y + 0.3) / 1.4);
-          cellReveal[count] = hash(col, row, 7) * 0.65 + radial * 0.35;
-          {
-            let line = Number.POSITIVE_INFINITY;
-            for (const feature of lines) {
-              line = Math.min(line, distanceToLine(x * cellsPerUnitX, y * cellsPerUnitY, feature));
-            }
-            cellLine[count] = lineStrength(line);
-            cellHollow[count] = hollowAt(line);
-            if (
-              Math.abs(x) < MOUTH_HALF_WIDTH * 1.3 &&
-              y > MOUTH_Y - MOUTH_OPEN &&
-              y < MOUTH_Y + MOUTH_OPEN * 1.6
-            ) {
-              mouthCells[mouthCount] = count;
-              mouthX[mouthCount] = x;
-              mouthY[mouthCount] = y;
-              mouthCount++;
-            }
-          }
-          count++;
-        }
-      }
 
-      for (let row = 0; row < fineRows; row++) {
-        const py = fineTop + (row + 0.5) * fineStepY;
-        const y = (py - centerY) / scale;
-        const fade = smoothstep(bottom, bottom - 0.3, y);
-        for (let col = 0; col < fineCols; col++) {
-          const px = fineLeft + (col + 0.5) * fineStepX;
-          const x = (px - centerX) / scale;
-          const distance = silhouetteDistance(x, y);
-          if (distance >= 0) continue;
-          // On the figure only light-facing ridges and a thin rim of backlight show.
-          const face = smoothstep(0.02, -0.04, headDistance(x, y));
-          const side = 0.55 + 0.45 * clamp01(0.5 - x);
-          const rim = Math.exp(distance / 0.018) * side * 0.75 * fade;
-          const closed = clamp01((face > 0 ? face * faceGlint(x, y, 0) : 0) + rim);
-          const open = clamp01((face > 0 ? face * faceGlint(x, y, 1) : 0) + rim);
-          if (Math.max(closed, open) < FINE_MIN_TONE) continue;
-          cellX[count] = px;
-          cellY[count] = py;
-          cellCol[count] = cols + col;
-          cellRow[count] = row;
-          cellMask[count] = 1;
-          cellInside[count] = 1;
-          cellFine[count] = 1;
-          cellTone[count] = closed;
-          cellToneOpen[count] = open;
-          cellReveal[count] =
-            hash(cols + col, row, 7) * 0.65 + clamp01(Math.hypot(x, y + 0.3) / 1.6) * 0.35;
-          count++;
+      // Pane vignette for the eclipse field: light gathers behind the figure and falls off
+      // toward the corners.
+      const vignette = (px: number, py: number) =>
+        smoothstep(
+          1.08,
+          0.3,
+          Math.hypot((px - centerX) / (width * 0.62), (py - height * 0.42) / (height * 0.78)),
+        );
+
+      for (const grid of grids) {
+        const { stepX, stepY } = grid;
+        // Half a cell in scale units: glyphs closer than this to the outline would cross it.
+        const halfCell = (0.5 * Math.hypot(stepX, stepY)) / scale;
+        for (let row = 0; row < grid.rows; row++) {
+          const py = grid.top + (row + 0.5) * stepY;
+          const y = toY(py);
+          const fade = smoothstep(bottom + 0.02, bottom - 0.42, y);
+          for (let col = 0; col < grid.cols; col++) {
+            const px = grid.left + (col + 0.5) * stepX;
+            const x = toX(px);
+            const distance = silhouetteDistance(x, y);
+            const columnId = grid.firstColumn + col;
+            // Kindling spreads from behind the head outward, scattered like embers catching.
+            const radial = clamp01(Math.hypot(x, (y - HEAD_Y) * 0.9) / 1.5);
+            const reveal = hash(columnId, row, 7) * 0.55 + radial * 0.45;
+
+            if (eclipse) {
+              if (grid.tier === FIGURE) {
+                if (distance >= 0) continue;
+                // A thin rim of backlight traces the outline; the face shows only glints.
+                const rim =
+                  Math.exp(distance / 0.013) * (0.3 + 0.7 * outlineUp(x, y)) * (0.35 + 0.65 * fade);
+                const onFace = smoothstep(0.02, -0.04, headDistance(x, y));
+                const closed = onFace > 0 ? onFace * faceGlint(x, y, 0) : 0;
+                const open = onFace > 0 ? onFace * faceGlint(x, y, 1) : 0;
+                const rimAlpha = Math.min(1, rim * 1.2);
+                const body = Math.max(rimAlpha, closed * 0.85);
+                const bodyOpen = Math.max(rimAlpha, open * 0.85);
+                if (Math.max(body, bodyOpen) < 0.05) continue;
+                // Fine dots and ticks: a contour of light, not a line of text.
+                push(grid, col, row, body, bodyOpen, 0, 0.42, reveal, 0);
+                continue;
+              }
+              // The field never crosses the figure: it is blocked, not dimmed.
+              if (distance < halfCell) continue;
+              const light = vignette(px, py);
+              // Backlight: a broad halo around the head plus a tight band hugging the outline.
+              const halo =
+                0.55 * Math.exp(-Math.hypot(x, (y - HEAD_Y) * 0.85) / 0.85) +
+                0.45 * Math.exp(-distance / 0.3);
+              const band = Math.exp(-(distance - halfCell) / 0.045);
+              if (grid.tier === NEAR) {
+                // Only a few near streams, large and bright, give the field depth.
+                if (hash(columnId, 29) > 0.3) continue;
+                const gain = (0.35 + 0.55 * halo) * light;
+                if (gain < 0.06) continue;
+                push(grid, col, row, 0, 0, gain, 2, reveal, CODE);
+                continue;
+              }
+              const gain = (0.22 + 0.78 * halo) * light;
+              // The corona: static glyphs hugging the outline, so the edge reads between streams.
+              const corona = hash(columnId, row, 53) < band ? 1 : 0.4;
+              const body = 0.8 * band * (0.45 + 0.55 * light) * corona;
+              if (gain < 0.05 && body < 0.04) continue;
+              push(grid, col, row, body, body, gain, 2, reveal, body > 0.25 ? DENSE : CODE);
+              continue;
+            }
+
+            if (grid.tier === FAR) {
+              // Faint rain gathers around the figure and thins with distance from it.
+              if (distance < halfCell || distance > 0.6) continue;
+              const gain = 0.4 * Math.exp(-distance / 0.2) * fade;
+              if (gain < 0.045) continue;
+              push(grid, col, row, 0, 0, gain, 2, reveal, CODE);
+              continue;
+            }
+
+            // The luminous figure: a lit sculpture whose surface is code.
+            if (distance > halfCell * 0.35) continue;
+            const coverage = smoothstep(halfCell * 0.35, -halfCell * 0.6, distance);
+            // The bust dissolves into its own falling streams toward the bottom and the sides.
+            const solid = fade * smoothstep(1.2, 0.72, Math.abs(x));
+            // Under the chin the neck falls into shadow, so the jaw line reads.
+            const outsideHead = headDistance(x, y);
+            const chin =
+              outsideHead > 0 && y > HEAD_Y + 0.3
+                ? 0.25 + 0.75 * smoothstep(0, 0.18, outsideHead)
+                : 1;
+            shadeBust(x, y, 0);
+            const closed = chin * litTone();
+            let open = closed;
+            if (outsideHead < 0.02) {
+              shadeBust(x, y, 1);
+              open = chin * litTone();
+            }
+            // Ordered dither: shadows thin out instead of filling with dim glyphs.
+            const lit = Math.max(closed, open) > hash(columnId, row, 41) * 0.22;
+            // A settled glow carries the form; the streams falling through it carry the light.
+            const body = lit ? coverage * solid * closed * 0.75 : 0;
+            const bodyOpen = lit ? coverage * solid * open * 0.75 : 0;
+            const gain = (0.4 + 0.6 * closed) * coverage * Math.max(0.3, fade);
+            if (Math.max(body, bodyOpen) + gain < 0.04) continue;
+            const pool = closed > 0.55 ? DENSE : closed > 0.22 ? 1 : 0;
+            push(grid, col, row, body, bodyOpen, gain, 0.58, reveal, pool);
+          }
         }
       }
     },
@@ -506,72 +551,36 @@ function createCodeFigureScene(
       if (count === 0 || presence === 0) return;
       const energy = clamp01(signal.energy ?? 0);
       rush += Math.max(0, Math.min(delta, 0.1)) * energy * ENERGY_RUSH;
-      const level = (0.4 + 0.6 * presence) * (0.85 + 0.15 * energy);
-      const kindle = presence * 1.2;
-      const flicker = Math.floor(time * 4);
+      const level = (0.35 + 0.65 * presence) * (0.9 + 0.1 * energy);
+      const kindle = presence * 1.25;
       const mouth = mouthOpening(time, presence, energy);
-      const relief = style === "relief";
 
       for (let i = 0; i < count; i++) {
         cellAlpha[i] = 0;
         cellGlow[i] = 0;
+        cellAccent[i] = 0;
         const reveal = smoothstep(cellReveal[i]!, cellReveal[i]! + 0.2, kindle);
         if (reveal === 0) continue;
-        const col = cellCol[i]!;
-        const row = cellRow[i]!;
-        const mask = cellMask[i]!;
-        // The edge crackles: partially covered cells come and go like embers.
-        if (mask < 1 && mask < hash(col, row, flicker) * 0.9) continue;
-        const column = columns[col]!;
-        const head = (column.offset + time * column.speed + rush) % column.period;
-        const stream = trailAt(head, row, column.trail);
-        if (relief) {
-          const tone = cellTone[i]! + (cellToneOpen[i]! - cellTone[i]!) * mouth;
-          // Behind the figure the streams carry the light; on it, they only brighten glints.
-          const field = !cellInside[i];
-          // Glints on the dark face burn in the accent color, like embers in charcoal.
-          cellGlow[i] = field ? stream : tone > 0.45 ? 0.6 : stream * tone;
-          cellAlpha[i] =
-            reveal *
-            tone *
-            (field
-              ? FIELD_BODY + FIELD_STREAM * stream
-              : config.bodyAlpha + config.streamAlpha * stream) *
-            level;
-          // The faintest field glyphs add cost without adding backlight.
-          if (field && cellAlpha[i]! < FIELD_MIN_ALPHA) cellAlpha[i] = 0;
-          continue;
+        const gain = cellGain[i]!;
+        let stream = 0;
+        if (gain > 0) {
+          const column = columns[cellCol[i]!]!;
+          const head = (column.offset + time * column.speed + rush) % column.period;
+          stream = trailAt(head, cellRow[i]!, column.trail);
         }
-        const tone = cellTone[i]! * cellHollow[i]!;
+        const body = cellBody[i]! + (cellBodyOpen[i]! - cellBody[i]!) * mouth;
+        cellAlpha[i] = reveal * level * Math.min(1, body + gain * stream);
+        // Stream heads and the brightest highlights burn in the accent color.
         cellGlow[i] = stream;
-        const body = mask * tone * (config.bodyAlpha + config.streamAlpha * stream);
-        cellAlpha[i] = reveal * Math.max(body, cellLine[i]! * FEATURE_ALPHA) * level;
-      }
-
-      // The lips are two arcs that part with each syllable. The opening between them stays
-      // empty, so the mouth is a hollow outline rather than a filled shape.
-      for (let m = 0; m < mouthCount; m++) {
-        const i = mouthCells[m]!;
-        const across = mouthX[m]! / MOUTH_HALF_WIDTH;
-        const y = mouthY[m]!;
-        const arc = Math.sqrt(Math.max(0, 1 - across * across));
-        const upper = MOUTH_Y - mouth * MOUTH_OPEN * 0.3 * arc;
-        const lower = MOUTH_Y + mouth * MOUTH_OPEN * arc;
-        const toLip = Math.min(Math.abs(y - upper), Math.abs(y - lower)) * cellsPerUnitY;
-        const reach = smoothstep(1.15, 0.9, Math.abs(across));
-        const lip = lineStrength(toLip) * reach;
-        const parted = y > upper && y < lower && toLip > LINE_WIDTH;
-        const hollow = parted ? 0 : reach > 0 ? hollowAt(toLip) : 1;
-        const reveal = smoothstep(cellReveal[i]!, cellReveal[i]! + 0.2, kindle);
-        cellAlpha[i] = Math.max(cellAlpha[i]! * hollow, reveal * lip * FEATURE_ALPHA * level);
+        cellAccent[i] = stream > HEAD_GLOW || body > cellSpark[i]! ? 1 : 0;
       }
 
       // Counting sort by pass and alpha level: one fill style and alpha change per bucket.
       const levels = ALPHA_LEVELS + 1;
       bucketFill.fill(0);
       for (let i = 0; i < count; i++) {
-        const quantized = Math.round(Math.min(MAX_ALPHA, cellAlpha[i]!) * ALPHA_LEVELS);
-        const group = (cellFine[i] ? 2 : 0) + (cellGlow[i]! > 0.55 ? 1 : 0);
+        const quantized = Math.round(cellAlpha[i]! * ALPHA_LEVELS);
+        const group = cellTier[i]! * 2 + cellAccent[i]!;
         const bucket = quantized < MIN_LEVEL ? 0xffff : group * levels + quantized;
         cellBucket[i] = bucket;
         if (bucket !== 0xffff) bucketFill[bucket]!++;
@@ -589,16 +598,13 @@ function createCodeFigureScene(
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      // Per grid: body in the content color, then bright stream heads and highlights in the
-      // accent color with a glow.
+      // Back to front: far rain, the figure, near rain; each in the content color, then its
+      // heads and highlights in the accent color.
       for (let group = 0; group < GROUPS; group++) {
         if (bucketStart[group * levels] === bucketStart[(group + 1) * levels]) continue;
-        const heads = group % 2 === 1;
-        const size = group >= 2 ? fineFont : fontSize;
-        ctx.font = `${relief ? "600 " : ""}${size}px ${palette.monoFont}`;
-        ctx.fillStyle = heads ? palette.accent : palette.content;
-        ctx.shadowColor = palette.accent;
-        ctx.shadowBlur = heads ? size * 0.7 : 0;
+        const tier = group >> 1;
+        ctx.font = fontStrings[tier]!;
+        ctx.fillStyle = group % 2 === 1 ? palette.accent : palette.content;
         for (let quantized = MIN_LEVEL; quantized < levels; quantized++) {
           const bucket = group * levels + quantized;
           const from = bucketStart[bucket]!;
@@ -610,8 +616,10 @@ function createCodeFigureScene(
             const col = cellCol[i]!;
             const row = cellRow[i]!;
             // Heads mutate fast, the settled body slowly, like code being rewritten.
-            const rate = 0.6 + hash(col, row, 3) * 1.6 + cellGlow[i]! * 10;
-            const index = Math.floor(hash(col, row, Math.floor(time * rate)) * GLYPHS.length);
+            const glow = cellGlow[i]!;
+            const rate = 0.25 + hash(col, row, 3) * 0.8 + glow * 9;
+            const [start, length] = POOLS[glow > HEAD_GLOW ? DENSE : cellPool[i]!]!;
+            const index = start + Math.floor(hash(col, row, Math.floor(time * rate)) * length);
             ctx.fillText(GLYPHS[index]!, cellX[i]!, cellY[i]!);
           }
         }
@@ -621,13 +629,14 @@ function createCodeFigureScene(
   };
 }
 
-/** A featureless silhouette of falling code with thin eye, nose and lip lines. */
+/** A luminous figure of code: a lit sculpture whose surface is falling code, condensing out of
+ * faint rain while the AI replies. */
 export function createLatentFaceScene(palette: LiveBackgroundPalette): LiveBackgroundScene {
-  return createCodeFigureScene(palette, "lines");
+  return createCodeFigureScene(palette, "luminous");
 }
 
-/** A dark, lifelike figure in front of falling code: it blocks the code behind it and only
- * the ridges of its face catch the light. */
+/** A dark figure in front of layered, backlit code rain: it blocks the code behind it and only
+ * its rim and the ridges of its face catch the light. */
 export function createCodeVisageScene(palette: LiveBackgroundPalette): LiveBackgroundScene {
-  return createCodeFigureScene(palette, "relief");
+  return createCodeFigureScene(palette, "eclipse");
 }

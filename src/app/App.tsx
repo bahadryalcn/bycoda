@@ -1,6 +1,7 @@
 import { useSidebarActions } from "./workspace/layout/useSidebarActions";
+import { useLocalSessionReferences } from "./workspace/sessions/useLocalSessionReferences";
+import { LocalSessionReferenceProvider } from "../features/sessions/ui/LocalSessionReferenceContext";
 import { VoiceCompanionGate } from "../features/voice/ui/VoiceCompanionGate";
-import { SOCIAL_PANEL_EVENT } from "../features/social/ui/SocialShortcut";
 import { useAppUiControl } from "./workspace/control/useAppUiControl";
 import {
   createConversationTerminalControl,
@@ -118,7 +119,6 @@ import { useWindowDragPreview } from "./model/useWindowDragPreview";
 import { DetachedWorkingBar } from "./shell/DetachedWorkingBar";
 import { WindowControlsVisible } from "./shell/WindowControls";
 import {
-  startTransition,
   Suspense,
   useCallback,
   useMemo,
@@ -214,9 +214,6 @@ import { useAttentionNotifications } from "../features/notifications/hooks/useAt
 import { useQuickComposerLaunches } from "../features/quick-composer/hooks/useQuickComposerLaunches";
 
 import {
-  OPEN_REMOTE_PROJECT_EVENT,
-  REMOTE_HISTORY_UPDATED,
-  REMOTE_TAB_BINDING_CHANGE,
   rememberRemotePendingWorktree,
   rememberRemoteSession,
   remoteSessionFor,
@@ -237,6 +234,8 @@ import {
   useOpenLinkedWorkItem,
   useRevealLinkedSessionUpdate,
 } from "./workspace/bridges/useLinkedWorkItemPanels";
+import { useAppWindowEvents } from "./workspace/lifecycle/useAppWindowEvents";
+import { usePruneLinkedWorkItemPanels } from "./workspace/bridges/usePruneLinkedWorkItemPanels";
 import {
   useInboxAskOpen,
   useInboxAskPortal,
@@ -275,6 +274,7 @@ import {
   WorkspacePickerDialogs,
 } from "./workspace/layout/WorkspaceDialogs";
 import { WorkspaceNotices } from "./workspace/layout/WorkspaceNotices";
+import { AppConfirmHost } from "./shell/AppConfirmHost";
 import { WorkspaceToolPanels } from "./workspace/layout/WorkspaceToolPanels";
 import { WorkspaceSettingsSurface } from "./workspace/layout/WorkspaceSettingsSurface";
 import { WorkspaceFooter } from "./workspace/layout/WorkspaceFooter";
@@ -424,11 +424,16 @@ function Workspace({
     setPullRequestsOnly,
   } = useSurfaceViewFlags({ toolWindow });
   const {
-    linkedWorkItemPanels,
+    linkedWorkItemPanels: storedLinkedWorkItemPanels,
     setLinkedWorkItemPanels,
     linkedWorkItemPanelRequest,
     closeLinkedWorkItemPanel,
   } = useLinkedWorkItemPanelState();
+  const linkedWorkItemPanels = usePruneLinkedWorkItemPanels(
+    tabs,
+    storedLinkedWorkItemPanels,
+    setLinkedWorkItemPanels,
+  );
   const { inboxAskPortal, setInboxAskPortal, openingInboxSessions } = useInboxAskPortal();
   const {
     serversViewOpen,
@@ -446,25 +451,6 @@ function Workspace({
     socialPanelCwd,
     setSocialPanelCwd,
   } = useSurfaceBoardFlags({ toolWindow });
-  useEffect(() => {
-    const open = async (event: Event) => {
-      const detail = (event as CustomEvent<{ cwd: string; local?: boolean }>).detail;
-      startTransition(() => {
-        setFilePickerOpen(false);
-        setSettingsOpen(false);
-        setSearchViewOpen(false);
-        setInboxViewOpen(false);
-        setServersViewOpen(false);
-        setNotesViewOpen(false);
-        setSocialPanelCwd(detail.cwd);
-        setSocialBoardShown(true);
-        setTaskBoardShown(false);
-        setAutomationsViewOpen(true);
-      });
-    };
-    window.addEventListener(SOCIAL_PANEL_EVENT, open);
-    return () => window.removeEventListener(SOCIAL_PANEL_EVENT, open);
-  }, []);
   const {
     inspectedWorkerId,
     setInspectedWorkerId,
@@ -520,12 +506,6 @@ function Workspace({
     [...filesInWorkspaceTabs(tabs), ...projectTerminals.flatMap((dock) => dock.pane.files)],
     dirtyFiles,
   );
-  const [, refreshRemoteTabTitles] = useState(0);
-  useEffect(() => {
-    const updated = () => refreshRemoteTabTitles((value) => value + 1);
-    window.addEventListener(REMOTE_HISTORY_UPDATED, updated);
-    return () => window.removeEventListener(REMOTE_HISTORY_UPDATED, updated);
-  }, []);
   const {
     storedLinkedSessions,
     setStoredLinkedSessions,
@@ -635,7 +615,13 @@ function Workspace({
     inboxSessionId: inboxViewOpen ? inboxAskPortal?.sessionId : undefined,
   };
   const sessionNavigationIdsRef = useRef<readonly string[]>([]);
-  useSessionHousekeeping({ sessions, btwRequestsRef, notesEnabled, setNotesViewOpen });
+  useSessionHousekeeping({
+    sessions,
+    btwRequestsRef,
+    notesEnabled,
+    notesViewOpen,
+    setNotesViewOpen,
+  });
 
   const { projectReturnRef, readProjectReturnMemory } = useProjectReturnMemory({
     resumed,
@@ -668,12 +654,19 @@ function Workspace({
     openingSessionIds,
     activeSessionPrefetch,
   } = useSessionBookkeepingRefs();
-  const [remoteBindingRevision, setRemoteBindingRevision] = useState(0);
-  useEffect(() => {
-    const changed = () => setRemoteBindingRevision((revision) => revision + 1);
-    window.addEventListener(REMOTE_TAB_BINDING_CHANGE, changed);
-    return () => window.removeEventListener(REMOTE_TAB_BINDING_CHANGE, changed);
-  }, []);
+  const { remoteBindingRevision, remoteProjectDialogOpen, setRemoteProjectDialogOpen } =
+    useAppWindowEvents({
+      setFilePickerOpen,
+      setSettingsOpen,
+      setSearchViewOpen,
+      setInboxViewOpen,
+      setServersViewOpen,
+      setNotesViewOpen,
+      setSocialPanelCwd,
+      setSocialBoardShown,
+      setTaskBoardShown,
+      setAutomationsViewOpen,
+    });
   // Harness token queue and transcript pool (see useHarnessEventQueue).
   const { transcriptPool, harnessQueue, flushHarnessEvents, enqueueHarnessEvent } =
     useHarnessEventQueue({ tabsRef, activeTabIdRef, foregroundSurfaceRef });
@@ -746,19 +739,6 @@ function Workspace({
     projectCwd,
     linkedWorkItemPanels,
   });
-
-  // Panels are tab-local UI. Keep mounted panels alive while their tab is in
-  // the workspace so switching away preserves the fetched issue and its UI
-  // state, then discard them when their session leaves every open tab.
-  useEffect(() => {
-    const openSessionIds = new Set(tabs.flatMap((tab) => leafIds(tab.layout)));
-    setLinkedWorkItemPanels((current) => {
-      if ([...current.keys()].every((id) => openSessionIds.has(id))) {
-        return current;
-      }
-      return new Map([...current].filter(([id]) => openSessionIds.has(id)));
-    });
-  }, [tabs]);
 
   const sessionDefaults = active ?? sessions[0];
 
@@ -2197,6 +2177,8 @@ function Workspace({
     onReload,
     onFindInProject,
   } = useWindowChromeActions({
+    projectRailOpen,
+    sessionSidebarOpen,
     setServersViewOpen,
     setProjectRailOpen,
     setSessionSidebarOpen,
@@ -2407,12 +2389,6 @@ function Workspace({
   );
 
   useWorktreeManagementListener({ setWorktreeManagementRequest, setWorktreeManagementRevision });
-  const [remoteProjectDialogOpen, setRemoteProjectDialogOpen] = useState(false);
-  useEffect(() => {
-    const open = () => setRemoteProjectDialogOpen(true);
-    window.addEventListener(OPEN_REMOTE_PROJECT_EVENT, open);
-    return () => window.removeEventListener(OPEN_REMOTE_PROJECT_EVENT, open);
-  }, []);
 
   const { onOpenArchivedSession } = useOpenArchivedSession({
     setSettingsOpen,
@@ -2518,7 +2494,7 @@ function Workspace({
 
   useMouseNavigation(onRailBack, onRailForward);
 
-  useFocusResets({ sidebarTab, setSidebarTab, dockVisible, setProjectTerminalFocused });
+  useFocusResets({ dockVisible, projectTerminalFocused, setProjectTerminalFocused });
 
   const { openFilePaths, onSessionNavigationOrder, onNavigateSessionList, onNavigateProjectList } =
     useListNavigation({
@@ -2917,6 +2893,20 @@ function Workspace({
   const onboardingSessions = bootHistory.length;
   const onboardingRestored = !!resumed;
   const onboardingTransferred = !!windowTransfer || !!toolWindow;
+  const localSessionReferences = useLocalSessionReferences({
+    ensureOpenSession, onSelectHistorySession, onOpenSessionsSideBySide,
+    activeSessionId: () => activeSessionIdRef.current,
+    workspaceNavigation,
+    showSessions: () => {
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen(false);
+      setSettingsOpen(false);
+      setFilePickerOpen(false);
+    },
+  });
   const onboardingContext = useMemo(
     () => ({
       projects: onboardingProjects,
@@ -2927,6 +2917,7 @@ function Workspace({
     [onboardingProjects, onboardingSessions, onboardingRestored, onboardingTransferred],
   );
   return (
+    <LocalSessionReferenceProvider value={localSessionReferences}>
     <OrchestrationActions.Provider value={orchestrationActions}>
       <OrchestrationWorkers.Provider value={orchestrationWorkers}>
         <div
@@ -3366,6 +3357,7 @@ function Workspace({
               sessionReminders={sessionReminders}
               openSettings={openSettings}
             />
+            <AppConfirmHost />
             <WorkspacePickerDialogs
               resumePickerFor={resumePickerFor}
               setResumePickerFor={setResumePickerFor}
@@ -3393,5 +3385,6 @@ function Workspace({
         <TranscriptPoolOutlet pool={transcriptPool} />
       </OrchestrationWorkers.Provider>
     </OrchestrationActions.Provider>
+    </LocalSessionReferenceProvider>
   );
 }

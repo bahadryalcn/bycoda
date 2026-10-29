@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { SearchInput, SearchInputGroup } from "../../../shared/ui/SearchInput";
+import { EmptyState } from "../../../shared/ui/EmptyState";
+import { RefreshCw, Search } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
 import { formatRelative } from "../../../features/sessions/model/recentSessions";
 import { basename } from "../../../platform/tauri/fs";
@@ -41,26 +43,14 @@ export function EditorDraftRecoverySection({
   const unsaved = candidates.filter(
     (row) => row.state === "retained" && row.serializedTextDigest !== row.baselineDigest,
   );
-  const rows = (mode === "all" ? candidates : unsaved)
-    .filter((row) =>
-      `${row.path} ${row.windowLabel}`
-        .toLocaleLowerCase()
-        .includes(query.trim().toLocaleLowerCase()),
-    )
+  const scoped = mode === "all" ? candidates : unsaved;
+  const needle = query.trim().toLocaleLowerCase();
+  const rows = scoped
+    .filter((row) => `${row.path} ${row.windowLabel}`.toLocaleLowerCase().includes(needle))
     .sort((a, b) => b.updatedAt - a.updatedAt || a.path.localeCompare(b.path));
   return (
-    <section className="flex min-h-0 flex-col gap-2 p-3" aria-label={t("File recovery copies")}>
-      <p className="text-ui-caption text-(--ui-text-secondary)">
-        {t(
-          "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",
-        )}
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        {reported ? (
-          <Button size="sm" variant="ghost" onClick={onClearReportPaths}>
-            {t("Show all file copies")}
-          </Button>
-        ) : null}
+    <section className="recovery-pane" aria-label={t("File recovery copies")}>
+      <div className="recovery-toolbar">
         <SegmentedControl
           label={t("File recovery filters")}
           value={mode}
@@ -70,86 +60,165 @@ export function EditorDraftRecoverySection({
             { value: "all", label: t("All copies"), accessory: candidates.length },
           ]}
         />
+        <SearchInputGroup appearance="field" className="recovery-toolbar-search">
+          <Search className="size-3.5 shrink-0" aria-hidden="true" />
+          <SearchInput
+            focusOwner="group"
+            aria-label={t("Search file recovery copies")}
+            placeholder={t("Search file recovery copies")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </SearchInputGroup>
         <Button
-          size="sm"
           variant="ghost"
+          iconOnly
+          label={t("Refresh copies")}
+          tooltip={t("Refresh copies")}
           loading={recovery.loading}
           onClick={() => void recovery.refresh()}
         >
-          {t("Refresh copies")}
+          <RefreshCw className="icon-sm" strokeWidth={1.75} />
         </Button>
       </div>
-      {reported ? (
-        <p className="text-ui-caption text-(--ui-text-secondary)">
-          {t(
-            "These copies match reported file names. Check their content; the earlier report remains protected.",
-          )}
-        </p>
-      ) : null}
-      <SearchInput
-        aria-label={t("Search file recovery copies")}
-        placeholder={t("Search file recovery copies")}
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-      />
+      <div role="status" className="recovery-status text-ui-caption text-(--ui-text-secondary)">
+        <span>
+          {t("{p0} unsaved drafts · {p1} copies", { p0: unsaved.length, p1: candidates.length })}
+        </span>
+        {rows.length !== scoped.length ? (
+          <span>{t("Showing {p0} of {p1}", { p0: rows.length, p1: scoped.length })}</span>
+        ) : null}
+        {reported ? (
+          <>
+            <span>
+              {t(
+                "These copies match reported file names. Check their content; the earlier report remains protected.",
+              )}
+            </span>
+            <Button size="sm" variant="ghost" onClick={onClearReportPaths}>
+              {t("Show all file copies")}
+            </Button>
+          </>
+        ) : null}
+      </div>
       {recovery.error ? (
         <Alert tone="danger" role="alert">
-          {t("File recovery copies could not be refreshed. The previous list is kept; try again.")}
+          <span>
+            {t(
+              "File recovery copies could not be refreshed. The previous list is kept; try again.",
+            )}
+          </span>{" "}
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={recovery.loading}
+            onClick={() => void recovery.refresh()}
+          >
+            {t("Retry")}
+          </Button>
         </Alert>
       ) : null}
-      <ul
-        className="min-h-0 overflow-y-auto overscroll-contain divide-y divide-stroke"
-        aria-label={t("File recovery copies")}
-      >
-        {rows.map((row) => {
-          const key = editorDraftRecoveryKey(row);
-          const pending = recovery.pendingKeys.has(key);
-          return (
-            <li key={key} className="flex flex-wrap items-start gap-2 py-2">
-              <div className="min-w-0 basis-48 flex-1">
-                <p className="break-words text-ui-secondary font-medium">{basename(row.path)}</p>
-                <p className="select-text text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
-                  {row.path}
-                </p>
-                <p className="text-ui-caption text-(--ui-text-secondary)">
-                  {row.state === "save-reported"
-                    ? t("Save reported")
-                    : row.serializedTextDigest === row.baselineDigest
-                      ? t("Matches captured disk baseline")
-                      : t("Unsaved draft")}{" "}
-                  · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
-                </p>
-                {recovery.errors.has(key) ? (
-                  <p role="alert" className="text-ui-caption text-danger">
-                    {t(
-                      "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
-                    )}
-                  </p>
+      <div className="recovery-body">
+        {rows.length ? (
+          <ul className="divide-y divide-stroke" aria-label={t("File recovery copies")}>
+            {rows.map((row) => {
+              const key = editorDraftRecoveryKey(row);
+              const pending = recovery.pendingKeys.has(key);
+              const failed = recovery.errors.has(key);
+              const isUnsaved =
+                row.state !== "save-reported" && row.serializedTextDigest !== row.baselineDigest;
+              return (
+                <li key={key} className="flex flex-wrap items-start gap-2 py-2">
+                  <div className="min-w-0 basis-48 flex-1">
+                    <p className="break-words text-ui-secondary font-medium">
+                      {basename(row.path)}
+                    </p>
+                    <p className="select-text text-ui-caption text-(--ui-text-secondary) [overflow-wrap:anywhere]">
+                      {row.path}
+                    </p>
+                    <p className="text-ui-caption text-(--ui-text-secondary)">
+                      <span className={isUnsaved ? "font-medium text-warning" : ""}>
+                        {row.state === "save-reported"
+                          ? t("Save reported")
+                          : row.serializedTextDigest === row.baselineDigest
+                            ? t("Matches captured disk baseline")
+                            : t("Unsaved draft")}
+                      </span>{" "}
+                      · {row.windowLabel} · {formatRelative(row.updatedAt, now)}
+                    </p>
+                    {failed ? (
+                      <p role="alert" className="text-ui-caption text-danger">
+                        {t(
+                          "The copy could not be opened. Retry uses the same prepared copy; refresh if the source changed.",
+                        )}
+                      </p>
+                    ) : null}
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={pending}
+                    onClick={() => void recovery.restore(row).catch(() => {})}
+                  >
+                    {failed ? t("Retry opening copy") : t("Open copy in new tab")}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        ) : recovery.loading ? (
+          <p role="status" className="py-3 text-ui-secondary text-(--ui-text-secondary)">
+            {t("Checking file recovery copies…")}
+          </p>
+        ) : query ? (
+          <EmptyState
+            context="panel"
+            kind="filtered"
+            title={t("No matching file copies")}
+            description={t("No file recovery copy matches “{p0}”.", { p0: query.trim() })}
+            action={
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setQuery("")}>
+                  {t("Clear search")}
+                </Button>
+                {mode === "unsaved" && candidates.length > unsaved.length ? (
+                  <Button variant="ghost" size="sm" onClick={() => setMode("all")}>
+                    {t("Search all copies")}
+                  </Button>
                 ) : null}
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                loading={pending}
-                onClick={() => void recovery.restore(row).catch(() => {})}
-              >
-                {recovery.errors.has(key) ? t("Retry opening copy") : t("Open copy in new tab")}
+              </>
+            }
+          />
+        ) : mode === "unsaved" && candidates.length > 0 ? (
+          <EmptyState
+            context="panel"
+            kind="filtered"
+            title={t("No unsaved file drafts.")}
+            description={t("{p0} other recovery copies are available.", {
+              p0: candidates.length,
+            })}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => setMode("all")}>
+                {t("Show all copies")}
               </Button>
-            </li>
-          );
-        })}
-      </ul>
-      {!rows.length ? (
-        <p role="status" className="text-ui-secondary text-(--ui-text-secondary)">
-          {recovery.loading
-            ? t("Checking file recovery copies…")
-            : query
-              ? t("No matching file copies")
-              : mode === "unsaved"
-                ? t("No unsaved file drafts.")
-                : t("No file recovery copies.")}
+            }
+          />
+        ) : (
+          <EmptyState
+            context="panel"
+            kind="empty"
+            title={t("No file recovery copies.")}
+            description={t("Recovery copies of unsaved editor text appear here.")}
+          />
+        )}
+      </div>
+      <div className="recovery-footer border-t border-stroke">
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {t(
+            "Open a separate unsaved file tab. The original recovery copy stays available; files are not written until you save.",
+          )}
         </p>
-      ) : null}
+      </div>
     </section>
   );
 }

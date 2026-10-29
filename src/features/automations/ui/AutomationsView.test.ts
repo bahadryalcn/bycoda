@@ -12,11 +12,9 @@ import {
 } from "../model/automations";
 import { SUPPORTED_INBOX_TRIGGER_EVENTS } from "../model/automationEvents";
 import * as hostAutomationClient from "../model/hostAutomationClient";
-import {
-  AutomationsView as RawAutomationsView,
-  EventTriggerSentence,
-  TRIGGER_EVENTS,
-} from "./AutomationsView";
+import { AutomationsView as RawAutomationsView } from "./AutomationsView";
+import { EventTriggerSentence } from "./TriggerEditor";
+import { TRIGGER_EVENTS } from "../model/automationTriggerCatalog";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import { resetRetainedState } from "../../../shared/hooks/useRetainedState";
 const AutomationsView = withQueryClient(RawAutomationsView);
@@ -600,7 +598,7 @@ it("locks new automation creation until its submitted snapshot finishes saving",
       (node) => node.textContent?.trim() === text,
     )!;
   await act(async () => findButton("New automation").click());
-  const template = container.querySelectorAll<HTMLButtonElement>(".automation-template")[1];
+  const template = container.querySelectorAll<HTMLButtonElement>(".automation-template")[0];
   await act(async () => template.click());
   const name = container.querySelector<HTMLInputElement>('[aria-label="Automation name"]')!;
   await changeInput(name, "Created review");

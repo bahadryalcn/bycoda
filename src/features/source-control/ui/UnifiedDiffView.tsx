@@ -21,7 +21,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
@@ -31,13 +30,8 @@ import { formatInteger } from "../../../shared/lib/numbers";
 import type { ColorScheme } from "../../settings/model/appearance";
 import { basename } from "../../../platform/tauri/fs";
 import { highlightDiffFile, type SyntaxToken } from "../../files/editor/syntaxTokens";
-import {
-  codeZoomOffset,
-  codeZoomScale,
-  subscribeCodeZoom,
-  zoomCodeByWheel,
-} from "../../files/editor/editorZoom";
-import { anchoredScroll } from "../../files/ui/documentZoom";
+import { useDiffZoom } from "../hooks/useDiffZoom";
+import { useFocusFollow } from "../hooks/useFocusFollow";
 import { DiffCommentComposer } from "./DiffCommentComposer";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 import {
@@ -57,7 +51,6 @@ import {
   type UnifiedLine,
 } from "../model/unifiedDiff";
 import {
-  diffRowMetrics,
   flattenVisibleRows,
   layoutRows,
   UNIFIED_OVERSCAN_PX,
@@ -142,132 +135,44 @@ export function UnifiedDiffView({
     () => focusId ?? files.find((file) => file.path === focusPath || file.id === focusPath)?.id,
     [fileKey, files, focusId, focusPath],
   );
-  const previousFileSet = useRef({ ids: new Set(files.map((file) => file.id)), initialExpansion });
-
-  // Ctrl+wheel shares the file editors' code size, so both zoom together.
-  const zoom = codeZoomScale(useSyncExternalStore(subscribeCodeZoom, codeZoomOffset));
-  const rowMetrics = useMemo(() => diffRowMetrics(zoom), [zoom]);
-  const zoomStyle = useMemo(
-    () =>
-      ({
-        "--diff-zoom": zoom,
-        "--diff-line-h": `${rowMetrics.line}px`,
-        "--diff-fold-h": `${rowMetrics.fold}px`,
-        "--diff-hunk-h": `${rowMetrics.hunk}px`,
-        "--diff-code-font": `${12 * zoom}px`,
-        "--diff-meta-font": `${11 * zoom}px`,
-        "--diff-gutter-w": `${Math.round(48 * zoom)}px`,
-      }) as CSSProperties,
-    [rowMetrics, zoom],
-  );
-  const rootRef = useRef<HTMLDivElement | null>(null);
-  const diffLayout = useResponsiveDiffLayout(rootRef, files.length > 0);
-  const zoomAnchor = useRef<{ y: number; zoom: number } | null>(null);
-  const hasFiles = files.length > 0;
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const onWheel = (event: WheelEvent) => {
-      const from = codeZoomScale();
-      if (!zoomCodeByWheel(event)) return;
-      event.preventDefault();
-      const scroller = scrollerRef.current;
-      if (scroller && !zoomAnchor.current) {
-        zoomAnchor.current = {
-          y: event.clientY - scroller.getBoundingClientRect().top,
-          zoom: from,
-        };
-      }
-    };
-    root.addEventListener("wheel", onWheel, { passive: false });
-    return () => root.removeEventListener("wheel", onWheel);
-  }, [hasFiles]);
-  // Keep the line under the pointer in place while the rows grow or shrink.
-  useLayoutEffect(() => {
-    const anchor = zoomAnchor.current;
-    zoomAnchor.current = null;
-    const scroller = scrollerRef.current;
-    if (!anchor || !scroller || anchor.zoom === zoom) return;
-    const top = anchoredScroll(scroller.scrollTop, anchor.y, zoom / anchor.zoom);
-    if (Number.isFinite(top)) scroller.scrollTop = Math.max(0, top);
-  }, [zoom]);
-
-  useEffect(() => {
-    const previous = previousFileSet.current;
+  // Expansion and fold reveals belong to the current file set. When it changes, rebuild
+  // them during render instead of in an effect so no frame shows stale state.
+  const [synced, setSynced] = useState(() => ({
+    fileKey,
+    ids: new Set(files.map((file) => file.id)),
+    initialExpansion,
+  }));
+  if (synced.fileKey !== fileKey || synced.initialExpansion !== initialExpansion) {
     const ids = new Set(files.map((file) => file.id));
     const defaults = initiallyOpenFiles(files, initialExpansion);
-    previousFileSet.current = { ids, initialExpansion };
-    setOpen((current) => {
-      if (previous.initialExpansion !== initialExpansion) return defaults;
+    setSynced({ fileKey, ids, initialExpansion });
+    if (synced.initialExpansion !== initialExpansion) {
+      setOpen(defaults);
+    } else {
       // Keep the reader's choices for surviving files; only new files use defaults.
       const next = new Set(
-        [...ids].filter((id) => (previous.ids.has(id) ? current.has(id) : defaults.has(id))),
+        [...ids].filter((id) => (synced.ids.has(id) ? open.has(id) : defaults.has(id))),
       );
-      return next.size === current.size && [...next].every((id) => current.has(id))
-        ? current
-        : next;
-    });
-    setReveals({});
-  }, [fileKey, initialExpansion]);
-
-  // The focused file stays pinned to the top while diffs above it load and
-  // grow, until the reader scrolls or clicks in the view themselves.
-  const followFocusRef = useRef<string | null>(null);
-  const scrollToFocus = useCallback(() => {
-    const id = followFocusRef.current;
-    const node = id ? fileRefs.current.get(id) : undefined;
-    const scroller = scrollerRef.current;
-    if (!node) return;
-    if (!scroller) {
-      node.scrollIntoView({ block: "start" });
-      return;
+      if (next.size !== open.size || ![...next].every((id) => open.has(id))) setOpen(next);
     }
-    // Measure against the scroller itself: it isn't the section's offsetParent,
-    // so offsetTop would also count the toolbar above it.
-    const offset =
-      node.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
-    const top = Math.max(0, offset - (fileLayout === "cards" ? 8 : 0));
-    if (Math.abs(scroller.scrollTop - top) > 1) scroller.scrollTo({ top });
-  }, [fileLayout]);
-  const releaseFocus = useCallback(() => {
-    followFocusRef.current = null;
-  }, []);
-  const openFocusedFile = useCallback(() => {
-    const id = followFocusRef.current;
-    if (!id || !fileRefs.current.has(id)) return;
-    setOpen((current) => (current.has(id) ? current : new Set(current).add(id)));
-    scrollToFocus();
-  }, [scrollToFocus]);
+    setReveals({});
+  }
 
-  // Only a new selection starts following.
-  useEffect(() => {
-    followFocusRef.current = resolvedFocusId ?? null;
-    openFocusedFile();
-  }, [resolvedFocusId, focusRequest, openFocusedFile]);
-
-  // A refreshed file list re-anchors a file still being followed, but never
-  // resumes one the reader already scrolled away from.
-  useEffect(() => {
-    openFocusedFile();
-  }, [fileKey, initialExpansion, openFocusedFile]);
-
-  // Expansion can change the scroll limit. Re-anchor after it reaches the DOM.
-  useLayoutEffect(() => {
-    scrollToFocus();
-  }, [open, scrollToFocus]);
-
-  const contentObserverRef = useRef<ResizeObserver | null>(null);
-  const bindContent = useCallback(
-    (el: HTMLDivElement | null) => {
-      contentObserverRef.current?.disconnect();
-      contentObserverRef.current = null;
-      if (!el || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(scrollToFocus);
-      observer.observe(el);
-      contentObserverRef.current = observer;
-    },
-    [scrollToFocus],
-  );
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const diffLayout = useResponsiveDiffLayout(rootRef, files.length > 0);
+  const hasFiles = files.length > 0;
+  const { rowMetrics, zoomStyle } = useDiffZoom(rootRef, scrollerRef, hasFiles);
+  const { releaseFocus, bindContent } = useFocusFollow({
+    fileRefs,
+    scrollerRef,
+    fileLayout,
+    resolvedFocusId,
+    focusRequest,
+    fileKey,
+    initialExpansion,
+    open,
+    setOpen,
+  });
 
   const bindScroller = useCallback(
     (el: HTMLDivElement | null) => {
@@ -469,10 +374,9 @@ const FileSection = memo(function FileSection({
   const name = basename(file.path);
   const sectionRef = useRef<HTMLElement | null>(null);
   const [near, setNear] = useState(false);
+  // Latched: once the section has been expanded near the viewport it keeps highlighting.
   const [highlightReady, setHighlightReady] = useState(false);
-  useEffect(() => {
-    if (expanded && near) setHighlightReady(true);
-  }, [expanded, near]);
+  if (!highlightReady && expanded && near) setHighlightReady(true);
   const [tokens, setTokens] = useState<Map<UnifiedLine, SyntaxToken[]> | null>(null);
 
   useEffect(() => {

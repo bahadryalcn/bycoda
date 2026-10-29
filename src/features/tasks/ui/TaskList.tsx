@@ -1,4 +1,5 @@
 import { useT } from "../../../shared/i18n";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { bulkTaskKey } from "../model/taskBulkActions";
@@ -7,10 +8,30 @@ import { useId, useState } from "react";
 
 const TASK_PAGE_SIZE = 50;
 
+const STATUS_LABEL: Record<BoardTask["status"], string> = {
+  todo: "To do",
+  queued: "Queued",
+  running: "Running",
+  verifying: "Verifying",
+  review: "Review",
+  done: "Done",
+  blocked: "Blocked",
+};
+const STATUS_TONE: Record<BoardTask["status"], BadgeTone> = {
+  todo: "neutral",
+  queued: "neutral",
+  running: "info",
+  verifying: "info",
+  review: "warning",
+  done: "success",
+  blocked: "danger",
+};
+
 export function TaskList({
   tasks,
   selection,
   selected,
+  activeKey,
   onToggle,
   onOpen,
   disabled,
@@ -19,6 +40,8 @@ export function TaskList({
   tasks: readonly BoardTask[];
   selection: boolean;
   selected: ReadonlySet<string>;
+  /** The task whose detail panel is open. */
+  activeKey?: string | null;
   onToggle: (task: BoardTask, checked: boolean) => void;
   onOpen: (task: BoardTask) => void;
   disabled?: boolean;
@@ -41,6 +64,7 @@ export function TaskList({
             aria-posinset={start + index + 1}
             className="task-management-row"
             data-selected={selected.has(bulkTaskKey(task)) || undefined}
+            data-active={activeKey === `${task.machineId}:${task.id}` || undefined}
           >
             {selection ? (
               <label className="task-row-select">
@@ -71,19 +95,9 @@ export function TaskList({
               ) : null}
               {task.error ? <p className="task-list-error">{task.error}</p> : null}
             </div>
-            <span className="task-list-status">
-              {t(
-                {
-                  todo: "To do",
-                  queued: "Queued",
-                  running: "Running",
-                  verifying: "Verifying",
-                  review: "Review",
-                  done: "Done",
-                  blocked: "Blocked",
-                }[task.status],
-              )}
-            </span>
+            <Badge tone={STATUS_TONE[task.status]} className="task-list-status">
+              {t(STATUS_LABEL[task.status])}
+            </Badge>
           </li>
         ))}
       </ul>

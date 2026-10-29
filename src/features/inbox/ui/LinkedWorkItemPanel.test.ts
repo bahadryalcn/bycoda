@@ -5,13 +5,16 @@ import { invoke } from "@tauri-apps/api/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearInboxCache, type GithubWorkItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
-import { LinkedWorkItemPanel } from "./InboxView";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { LinkedWorkItemPanel as RawLinkedWorkItemPanel } from "./InboxView";
 
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke: vi.fn(),
 }));
 vi.mock("@tauri-apps/plugin-opener", () => ({ openUrl: vi.fn() }));
+
+const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
 
 const target: LinkedWorkItem = {
   kind: "issue",

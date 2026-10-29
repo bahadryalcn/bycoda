@@ -109,6 +109,12 @@ export function socialClient(machineId: string) {
         { action: "workspace.snapshot", input },
         fresh,
       ),
+    /** Independent section read (Today). It never carries or moves the workspace cursor. */
+    sectionSnapshot: (input: SocialWorkspaceQuery) =>
+      remoteRequest<SocialWorkspaceResponse>(machineId, "social.request", {
+        action: "workspace.snapshot",
+        input,
+      }),
     oauthAvailability: () =>
       remoteRequest<Record<string, { configured: boolean; reason: string }>>(
         machineId,

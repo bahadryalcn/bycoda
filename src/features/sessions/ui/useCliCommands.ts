@@ -16,6 +16,7 @@ import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 const DISK_TTL_MS = 30_000;
 const disk = new Map<string, { at: number; commands: DiskCommand[] }>();
+const NO_DISK_COMMANDS: DiskCommand[] = [];
 const pendingDisk = new Map<string, Promise<ClaudeCommandEntry[]>>();
 
 function discoverCommands(cwd: string): Promise<ClaudeCommandEntry[]> {
@@ -54,25 +55,23 @@ export function useCliCommands(input: {
     (listener) => subscribeReportedCommands(sessionId, listener),
     () => getReportedCommands(sessionId),
   );
-  const [found, setFound] = useState<{ cwd: string; commands: DiskCommand[] }>(() => ({
-    cwd: localCwd,
-    commands: disk.get(localCwd)?.commands ?? [],
-  }));
+  // The module cache is the source of truth; a finished load only asks this hook to re-read it.
+  const [, setLoadedRevision] = useState(0);
+  const diskCommands =
+    harness === "claude" && localCwd
+      ? (disk.get(localCwd)?.commands ?? NO_DISK_COMMANDS)
+      : NO_DISK_COMMANDS;
 
   useEffect(() => {
-    if (harness !== "claude" || !localCwd) {
-      setFound({ cwd: localCwd, commands: [] });
-      return;
-    }
+    if (harness !== "claude" || !localCwd) return;
     const cached = disk.get(localCwd);
-    setFound({ cwd: localCwd, commands: cached?.commands ?? [] });
     if (cached && Date.now() - cached.at < DISK_TTL_MS) return;
     // Opening the composer loads once; opening the menu refreshes a stale list.
     if (!menuOpen && cached) return;
     let live = true;
     discoverCommands(localCwd)
-      .then((entries: ClaudeCommandEntry[]) => {
-        if (live) setFound({ cwd: localCwd, commands: entries });
+      .then(() => {
+        if (live) setLoadedRevision((revision) => revision + 1);
       })
       .catch((error) => {
         console.warn("useCliCommands operation failed", error);
@@ -87,10 +86,10 @@ export function useCliCommands(input: {
       mergeCliCommands({
         harness,
         reported,
-        disk: found.cwd === localCwd ? found.commands : [],
+        disk: diskCommands,
         taken,
       }),
-    [harness, reported, found, taken, localCwd],
+    [harness, reported, diskCommands, taken],
   );
   useEffect(
     () =>

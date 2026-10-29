@@ -1,5 +1,6 @@
 import type { Block, Session } from "../../sessions/model/session";
 import { operatorUserPrompt } from "../../sessions/model/operatorCommand";
+import { localSessionLinkFields, type LocalSessionLocator } from "../../sessions/model/localSessionReference";
 
 type Exchange = { user: Block; assistants: Block[] };
 
@@ -51,7 +52,7 @@ function conversationTurn({ user, assistants }: Exchange, maxChars: number) {
 }
 
 /** Show conversation prose only, with a stable cursor for older exchanges. */
-export function sessionConversationPage(session: Session, options: SessionReadOptions = {}) {
+export function sessionConversationPage(session: Session, options: SessionReadOptions = {}, locator?: LocalSessionLocator) {
   const limit = options.limit ?? 3;
   if (!Number.isInteger(limit) || limit < 1 || limit > 3)
     throw new Error("limit must be an integer from 1 to 3");
@@ -67,9 +68,15 @@ export function sessionConversationPage(session: Session, options: SessionReadOp
   return {
     sessionId: session.id,
     title: session.title,
+    ...(locator ? localSessionLinkFields(locator, session.title) : {}),
     busy: !!session.busy,
     hasDraft: session.blocks.some((block) => block.role === "user" && block.draft),
-    turns: selected.map((exchange) => conversationTurn(exchange, maxChars)),
+    turns: selected.map((exchange) => ({
+      ...conversationTurn(exchange, maxChars),
+      ...(locator
+        ? localSessionLinkFields(locator, session.title, exchange.user.id)
+        : {}),
+    })),
     nextBefore: start > 0 ? selected[0]?.user.id : null,
   };
 }

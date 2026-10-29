@@ -278,12 +278,27 @@ export function getModelSnapshot(): number {
 export function setHarnessModels(harness: HarnessId, models: AgentModel[]) {
   if (models.length === 0 && harness !== "acp") return;
   models = models.map((model) => withClaudeAdvisor(model, models));
+  const defaultId = pickDefaultId(harness, models);
+  // Workspace windows re-broadcast unchanged catalogs on every request. An
+  // identical live catalog is a no-op, so open pickers keep their keyboard row
+  // and subscribers do not re-render for nothing.
+  const current = overlays[harness];
+  if (current && overlayDefaults[harness] === defaultId && sameModelCatalog(current, models)) {
+    return;
+  }
   overlays = { ...overlays, [harness]: models };
-  overlayDefaults = {
-    ...overlayDefaults,
-    [harness]: pickDefaultId(harness, models),
-  };
+  overlayDefaults = { ...overlayDefaults, [harness]: defaultId };
   emit();
+}
+
+function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  try {
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
 }
 
 /** True after a live CLI catalog has replaced the built-in fallback list. */

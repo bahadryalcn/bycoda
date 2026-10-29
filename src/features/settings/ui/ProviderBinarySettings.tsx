@@ -61,7 +61,7 @@ export function ProviderBinaryControl({
   provider: ConfigurableBinaryProvider;
   showLabel?: boolean;
   onPathSaved?: () => void;
-  /** Embed the existing validated path form in an add-provider dialog. */
+  /** Embed the existing validated path form in an add-provider dialog. Fixed for the mounted control. */
   inline?: boolean;
   onCancel?: () => void;
 }) {
@@ -81,22 +81,14 @@ export function ProviderBinaryControl({
   const request = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [revealError, setRevealError] = useState<string | null>(null);
+  // Callers key this control by provider, so every provider starts from fresh state.
   useEffect(() => {
     mounted.current = true;
-    setOpen(false);
-    setEditing(inline);
-    setDraft(loadProviderBinaryPath(provider) ?? "");
-    setOverridden(Boolean(loadProviderBinaryPath(provider)));
-    setInspection(undefined);
-    setError(null);
-    setRevealError(null);
-    setOperation(null);
-    inspectionBusy.current = false;
     return () => {
       mounted.current = false;
       request.current += 1;
     };
-  }, [provider, inline]);
+  }, []);
 
   const inspect = useCallback(
     async (binaryPath?: string | null, action: "inspect" | "save" | "auto" = "inspect") => {

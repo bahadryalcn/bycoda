@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { handleAgentApp, type AppSessionListing } from "../../../features/agent-app/model/agentApp";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
+import { localReferenceForSession } from "../../../features/sessions/model/localSessionNavigation";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import { NOTES_CHANGED_EVENT, upsertNote } from "../../../features/notes";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
@@ -200,6 +201,11 @@ export function useAppControlRequests({
             if (existing && sessionDraftBlock(existing))
               throw new Error("Session ID already has a different draft");
             await launchQuickSessionRef.current(launch, id, placement);
+          },
+          sessionReference: async (id) => {
+            const target = sessionsRef.current.find((session) => session.id === id) ?? { id };
+            // Unsaved tabs and unavailable owner routes stay listed without an invented link.
+            return localReferenceForSession(target).catch(() => null);
           },
           sessions: async (cwd): Promise<AppSessionListing[]> => {
             const stored = await listSessionsByProject(cwd);

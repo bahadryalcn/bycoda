@@ -36,7 +36,12 @@ None recorded. Agent design suggestions belong here, separately from dated owner
 - `src/features/tasks/ui/TaskSessionSheet.tsx`
 - `src/features/tasks/ui/TaskWorkflowControls.tsx`
 - `src/features/tasks/ui/TaskWorkspacePicker.tsx`
-- `src/features/tasks/ui/TasksView.tsx`
+- `src/features/tasks/ui/TasksView.tsx` (composition only since 2026-10-29, UIC-16)
+- `src/features/tasks/ui/TaskBoardColumns.tsx`, `TaskBoardCard.tsx`, `TaskDetail.tsx`, `TaskForm.tsx`, `TaskFormFields.tsx`
+- `src/features/tasks/ui/TaskGoals.tsx` (`useTaskGoals`, goal dialogs/list), `TaskStewards.tsx` (`useTaskStewards`), `TaskSummaryPanel.tsx`, `TaskLimits.tsx` (limits panel; `CustomDailyLimit` keeps a dirty hours draft against the refreshed machine value, UIC-05)
+- `src/features/tasks/ui/useTaskBoardOperations.ts` (shared pending/saving/error/refresh and board data state)
+
+Confirmed board collections are owned by the `useTaskBoardQueries` cache. Mutations use its `putTask(s)`, `removeTask`, `putGoal`, `removeGoal`, `putSteward`, `removeSteward` and `putLimits` writers, which cancel in-flight machine reads before patching; TasksView keeps no local mirror of tasks/goals/stewards/limits. Drafts and selection stay local.
 
 All models, clients and colocated tests live in `src/features/tasks/model/`, including hostTasks, hostGoals, hostSprints, hostStewards, hostSettings; taskClient, goalClient, sprintClient, stewardClient, settingsClient, dailySummaryClient; taskAcceptance, taskBoardScope, taskBudget, taskBulkActions, taskChannel, taskInstructions, taskMetrics, taskPreflight, taskReviewNotes, taskRules, taskTransitions, taskWorkflows, taskWorkspace and useTaskBoardQueries.
 
@@ -131,7 +136,7 @@ The tasks and sprints configs share the tasks fixture/server. Orchestration has 
 ## Checks and visual acceptance
 
 - Refresh inventories with `rg --files src/features/tasks host tests/browser` and search task/goal/sprint/steward names across app wiring, transport and i18n.
-- Run focused behavior tests with `pnpm vitest run src/features/tasks/model/taskClient.test.ts src/features/tasks/model/taskTransitions.test.ts src/features/tasks/model/taskWorkspace.test.ts src/features/tasks/model/goalClient.test.ts src/features/tasks/ui/TasksView.test.ts`; run changed Host suites via `pnpm test:host -- host/tasks.test.ts host/goals.test.ts` with fake repositories and temp data, plus relevant task-delivery/sprint/steward suites.
+- Run focused behavior tests with `pnpm vitest run src/features/tasks/model/taskClient.test.ts src/features/tasks/model/taskTransitions.test.ts src/features/tasks/model/taskWorkspace.test.ts src/features/tasks/model/goalClient.test.ts src/features/tasks/ui/TasksView.test.ts src/features/tasks/ui/TaskLimits.test.ts`; run changed Host suites via `pnpm test:host -- host/tasks.test.ts host/goals.test.ts` with fake repositories and temp data, plus relevant task-delivery/sprint/steward suites.
 - Exercise creation, board/list, details/session sheet, goal approval/replan, acceptance/review and delivery controls at 1280 and 800 widths in light/dark; save/open screenshots under `temp/verification/<id>/`. Cover long titles, empty/filter states, disconnected Hosts, queued dependencies, blocked preflight, budget limits, pending/cancel/error/retry, retained drafts and keyboard navigation.
 - Use isolated native/dev Host runs for orchestration and delivery; fixture screenshots cannot prove a scheduler, actual merge or physical-device behavior. Compare build identity before diagnosing screenshots.
 
@@ -195,3 +200,11 @@ implementation record, not a live feature claim or transport availability stamp.
 
 Observed HEAD `43a5a8ea3`; this follow-up remains uncommitted and is excluded from
 that commit. Existing staged/dirty work was preserved.
+
+## VIS-006 visual refinement (2026-10-29)
+
+Uncommitted UI-only pass in `src/features/tasks/ui/`; no Host, RPC, lifecycle, budget or limit semantics changed.
+- One header (`header.task-board-toolbar`): section switch, project/sprint scope, search, view switch, filters popover, select, More, refresh/status, New task. The separate section band and repeated scope text are gone.
+- New task, edit task, new goal and goal settings share `.task-form`, `.task-form-body` (the single scroll region, `Modal scroll="none"`), `.task-form-options`/`.task-form-section` and `.task-form-footer` from `tasks.css`. "Working branch and worktree" is one disclosure heading (`TaskWorkspacePicker headingHidden`); the machine task limit is a separate `.task-form-limit` block that says it saves immediately.
+- Board drop cues are theme-token only (`data-drop-active`, `data-drop-before`, `data-dragging`), cleared on drop, dragend and leave; list rows mark the open task and show status as a badge; empty Reports offers choose-sprint / Go to Sprints / Open backlog.
+- Fixture evidence: `temp/verification/vis-tasks/`. Source/fixture checks only; no installed-app acceptance.

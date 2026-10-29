@@ -502,6 +502,18 @@ function ConnectedCrewEditor({
               : ""))
     : "";
 
+  // Which level is open, so an existing crew is never titled like a new one.
+  const editLevel = [
+    isNew ? t("New crew") : t("Edit crew"),
+    page.kind === "settings"
+      ? t("Working settings")
+      : page.kind === "member"
+        ? t("Edit member")
+        : page.kind === "add"
+          ? t("Add members")
+          : scopeLabel,
+  ].join(" · ");
+
   const header = (
     <div className="grid min-w-0 items-end gap-3 @min-[36rem]/crew-editor:grid-cols-[minmax(0,1fr)_auto]">
       <TextField
@@ -530,9 +542,7 @@ function ConnectedCrewEditor({
             }
           />
         </div>
-      ) : (
-        <span className="pb-2 text-ui-caption text-(--ui-text-secondary)">{scopeLabel}</span>
-      )}
+      ) : null}
     </div>
   );
 
@@ -663,6 +673,11 @@ function ConnectedCrewEditor({
                                   {[summary, groups].filter(Boolean).join(" · ")}
                                 </span>
                               </span>
+                              {instruction ? (
+                                <span className="block truncate text-ui-caption text-(--ui-text-muted)">
+                                  {instruction}
+                                </span>
+                              ) : null}
                             </span>
                             <span className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
                               {t("Edit")}
@@ -727,6 +742,7 @@ function ConnectedCrewEditor({
       cwd={cwd}
       data={data}
       crewSaved={!!draft.updatedAt}
+      policy={draft.policy}
       agent={selectedMember}
       groupNames={groupNames}
       scope={memberScope}
@@ -923,7 +939,8 @@ function ConnectedCrewEditor({
 
   return (
     <Modal
-      title={isNew ? t("New crew") : latest?.name || draft.name || t("Crew")}
+      title={isNew ? draft.name.trim() || t("New crew") : latest?.name || draft.name || t("Crew")}
+      context={editLevel}
       size="lg"
       onClose={() => {
         if (!pending) onClose();
@@ -989,11 +1006,10 @@ function ConnectedCrewEditor({
             <div className="flex items-center gap-2">
               <Button
                 variant="ghost"
-                iconOnly
-                label={t("Back to team")}
+                startIcon={<ChevronLeft />}
                 onClick={() => setPage({ kind: "team" })}
               >
-                <ChevronLeft />
+                {t("Back to team")}
               </Button>
               <h3
                 tabIndex={-1}
@@ -1028,14 +1044,13 @@ function ConnectedCrewEditor({
           </>
         ) : page.kind === "member" && memberPage ? (
           <>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
               <Button
                 variant="ghost"
-                iconOnly
-                label={t("Back to team")}
+                startIcon={<ChevronLeft />}
                 onClick={() => setPage({ kind: "team", focus: page.id })}
               >
-                <ChevronLeft />
+                {t("Back to team")}
               </Button>
               <h3
                 tabIndex={-1}
@@ -1057,7 +1072,7 @@ function ConnectedCrewEditor({
           </>
         ) : (
           <>
-            {header}
+            {page.kind === "team" ? header : null}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <SegmentedControl
                 label={t("Crew view")}
@@ -1135,6 +1150,7 @@ function MemberPage({
   cwd,
   data,
   crewSaved,
+  policy,
   agent,
   groupNames,
   scope,
@@ -1151,6 +1167,7 @@ function MemberPage({
   cwd: string;
   data: ProjectCrews;
   crewSaved: boolean;
+  policy: CrewPolicy;
   agent: CrewAgent;
   groupNames: string[];
   scope: "project" | "global";
@@ -1196,6 +1213,7 @@ function MemberPage({
         cwd={cwd}
         catalog={data.catalog}
         agent={agent}
+        policy={policy}
         onChange={onChange}
         groups={data.groupsSupported}
         groupSuggestions={groupNames}
@@ -1236,7 +1254,7 @@ function MemberPage({
       />
       <section
         aria-label={t("Member library")}
-        className="flex min-w-0 flex-wrap items-center gap-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-3"
+        className="flex min-w-0 flex-wrap items-center gap-2 rounded-(--ui-radius-card) bg-(--ui-surface-panel) p-3"
       >
         <span className="min-w-0 flex-1 text-ui-body">
           <span className="block font-medium">{t("Member library")}</span>
@@ -1264,15 +1282,14 @@ function MemberPage({
           {updatesProfile ? t("Update library profile") : t("Save to library")}
         </Button>
       </section>
-      <Button
-        variant="ghost"
-        tone="danger"
-        className="self-start"
-        startIcon={<Trash2 />}
-        onClick={onRemove}
-      >
-        {t("Remove from crew")}
-      </Button>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <Button variant="ghost" tone="danger" startIcon={<Trash2 />} onClick={onRemove}>
+          {t("Remove from crew")}
+        </Button>
+        <span className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
+          {t("Only changes this crew. The library keeps its profile.")}
+        </span>
+      </div>
     </div>
   );
 }

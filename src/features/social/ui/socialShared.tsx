@@ -276,7 +276,23 @@ export function Composer({
 }) {
   const socialLocked = useSocialContext(SocialLockContext);
   const [open, setOpen] = useState(false);
-  const handledOpenRequest = useRef(0);
+  // Parent-driven opens are adjusted while rendering from their tokens; only the external
+  // onOpen notification runs after commit.
+  const [seenEditing, setSeenEditing] = useState<boolean | number>(false);
+  const [handledOpenRequest, setHandledOpenRequest] = useState(0);
+  const [tokenOpens, setTokenOpens] = useState(0);
+  if (editing !== seenEditing) {
+    setSeenEditing(editing);
+    if (editing) {
+      setOpen(true);
+      if (!open) setTokenOpens(tokenOpens + 1);
+    }
+  }
+  if (openRequest > 0 && openRequest !== handledOpenRequest && !socialLocked) {
+    setHandledOpenRequest(openRequest);
+    setOpen(true);
+    if (!open) setTokenOpens(tokenOpens + 1);
+  }
   const [slot, setSlot] = useState<ComposerSlot>({ element: null, parent: null, layer: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
   const stash = useRef<HTMLDivElement>(null);
@@ -295,26 +311,28 @@ export function Composer({
     host?.setAttribute("aria-label", title);
   }, [host, title]);
   useEffect(() => {
-    if (editing) setOpen(true);
-  }, [editing]);
-  useEffect(() => {
-    if (openRequest > 0 && openRequest !== handledOpenRequest.current && !socialLocked) {
-      handledOpenRequest.current = openRequest;
-      setOpen(true);
-    }
-  }, [openRequest, socialLocked]);
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    if (open && !wasOpen.current) opened.current?.();
-    if (!open && wasOpen.current) trigger.current?.focus();
-    wasOpen.current = open;
+    if (tokenOpens > 0) opened.current?.();
+  }, [tokenOpens]);
+  const openComposer = () => {
+    if (open) return;
+    setOpen(true);
+    onOpen?.();
+  };
+  // Focus returns after the Modal has unmounted and released its own focus handling.
+  const [focusTrigger, setFocusTrigger] = useState(0);
+  const closeComposerDialog = useCallback(() => {
+    if (!open) return;
+    setOpen(false);
+    setFocusTrigger((value) => value + 1);
   }, [open]);
   useEffect(() => {
+    if (focusTrigger > 0) trigger.current?.focus();
+  }, [focusTrigger]);
+  useEffect(() => {
     if (!host) return;
-    const close = () => setOpen(false);
-    host.addEventListener("social-composer-close", close);
-    return () => host.removeEventListener("social-composer-close", close);
-  }, [host]);
+    host.addEventListener("social-composer-close", closeComposerDialog);
+    return () => host.removeEventListener("social-composer-close", closeComposerDialog);
+  }, [host, closeComposerDialog]);
   useLayoutEffect(() => {
     const target = open ? slot.element : stash.current;
     if (host && target && host.parentElement !== target) target.appendChild(host);
@@ -329,14 +347,14 @@ export function Composer({
         variant="secondary"
         aria-haspopup="dialog"
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        onClick={openComposer}
       >
         <Plus aria-hidden="true" />
         <span>{title}</span>
       </Button>
       <div ref={stash} hidden />
       {open ? (
-        <Modal title={title} description={description} size="lg" onClose={() => setOpen(false)}>
+        <Modal title={title} description={description} size="lg" onClose={closeComposerDialog}>
           <ComposerModalSlot onSlot={setSlot} />
         </Modal>
       ) : null}
@@ -390,4 +408,5 @@ export type Props = {
   run: Run;
   onFilterChange?: (collection: SocialCollection, filter: SocialCollectionFilter) => void;
   onOpenContent?: (projectId?: string) => void;
+  onOpenSettings?: () => void;
 };

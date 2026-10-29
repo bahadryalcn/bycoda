@@ -1,4 +1,5 @@
-import { confirm } from "@tauri-apps/plugin-dialog";
+import { t } from "../../../shared/i18n/git";
+import { confirmInApp } from "../../../shared/model/appConfirm";
 import { isEqualOrInside, pathKey } from "../../../shared/lib/paths";
 import { reviewWorktreeRemoval, type WorktreeRemovalReview } from "./worktrees";
 
@@ -39,10 +40,22 @@ type Deps = {
 const defaults: Deps = {
   owner: () => owner, native: reviewWorktreeRemoval, now: Date.now,
   id: () => crypto.randomUUID(),
-  confirm: (review) => confirm(
-    `A paired mobile device requests removal of this worktree:\n${review.path}\nBranch: ${review.branch}\nHEAD: ${review.head}\n${review.sessionIds.length} linked conversations will be detached and retained. The branch is retained.\nExternal Git or filesystem changes cannot be locked by this review.`,
-    { title: "Review mobile worktree removal", kind: "warning", okLabel: "Remove worktree", cancelLabel: "Cancel" },
-  ),
+  confirm: (review) => confirmInApp({
+    title: t("Remove worktree?"),
+    message: [
+      t("A paired mobile device requests removal of this worktree:"),
+      review.path,
+      t("Branch: {p0}", { p0: review.branch ?? "" }),
+      `HEAD: ${review.head}`,
+      review.sessionIds.length === 1
+        ? t("1 linked conversation will be detached and retained. The branch is retained.")
+        : t("{p0} linked conversations will be detached and retained. The branch is retained.", { p0: review.sessionIds.length }),
+      t("External Git or filesystem changes cannot be locked by this review."),
+    ].join("\n"),
+    confirmLabel: t("Remove worktree"),
+    tone: "danger",
+    reveal: true,
+  }),
 };
 const exact = (input: Record<string, unknown>, keys: string[]) => {
   if (Object.keys(input).some((key) => !keys.includes(key))) throw new Error("Unsupported removal field");

@@ -1,5 +1,8 @@
 # Workbench navigation
 
+Saved local conversations support [session links and Markdown references](local-session-references.md),
+including compact details and opening a cited conversation beside the current one.
+
 Use the project rail to choose a project or workspace, the sessions list to
 choose a conversation, and the top tabs to switch open work. These keep their
 existing saved widths, layout and density settings. Detailed session rows show

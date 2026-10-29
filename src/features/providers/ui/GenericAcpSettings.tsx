@@ -149,14 +149,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
   useEffect(() => {
     let cancelled = false;
     activeRef.current = true;
-    setLoading(true);
-    setConfigs([]);
-    setRegistry([]);
-    setRegistryOpen(false);
-    setRegistryState("idle");
-    setError("");
-    setStatus("");
-    resetForm();
+    // The machine wrapper is keyed by cwd, so every field starts from its initial value.
     void request<GenericAcpSummary[]>("generic_acp_list")
       .then((result) => {
         if (cancelled) return;

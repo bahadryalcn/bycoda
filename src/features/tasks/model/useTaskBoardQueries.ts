@@ -17,12 +17,13 @@ import {
 import {
   listBoardTaskResults,
   missingMachinesNotice,
+  rememberBoardTasks,
   subscribeBoardTaskChanges,
   type BoardTask,
 } from "./taskClient";
-import { listBoardGoalResults } from "./goalClient";
-import { listBoardStewardResults } from "./stewardClient";
-import { listMachineLimits } from "./settingsClient";
+import { listBoardGoalResults, rememberBoardGoal, type BoardGoal } from "./goalClient";
+import { listBoardStewardResults, rememberBoardSteward, type BoardSteward } from "./stewardClient";
+import { listMachineLimits, type MachineLimits } from "./settingsClient";
 import { HOST_TASKS, HOST_TASKS_TODO } from "./hostTasks";
 import { HOST_GOALS } from "./hostGoals";
 import { HOST_STEWARDS } from "./hostStewards";
@@ -180,9 +181,20 @@ export function useTaskBoardQueries() {
     [stewardResults],
   );
   const limitData = useMemo(() => limits.flatMap((result) => result.data ?? []), [limits]);
-  const board = useMemo(() => {
+  // Capable machine lists change only with the inventory or capabilities, so a
+  // confirmed mutation patching one collection does not re-key machine consumers.
+  const capableMachines = useMemo(() => {
     const capable = (capability: string) =>
       machines.filter((_, index) => descriptions[index]?.data?.capabilities.includes(capability));
+    return {
+      machines: capable(HOST_TASKS),
+      todoCapable: capable(HOST_TASKS_TODO),
+      goalCapable: capable(HOST_GOALS),
+      stewardCapable: capable(HOST_STEWARDS),
+      limitCapable: capable(HOST_SETTINGS),
+    };
+  }, [machines, descriptions]);
+  const board = useMemo(() => {
     const results: MachineResult<unknown>[] = [...taskResults, ...goalResults, ...stewardResults];
     const pending =
       inventory.isPending ||
@@ -224,11 +236,7 @@ export function useTaskBoardQueries() {
         ? `Some machine data could not be refreshed: ${[...new Set(problems)].join("; ")}`
         : undefined);
     return {
-      machines: capable(HOST_TASKS),
-      todoCapable: capable(HOST_TASKS_TODO),
-      goalCapable: capable(HOST_GOALS),
-      stewardCapable: capable(HOST_STEWARDS),
-      limitCapable: capable(HOST_SETTINGS),
+      ...capableMachines,
       tasks: taskData,
       goals: goalData,
       stewards: stewardData,
@@ -244,6 +252,7 @@ export function useTaskBoardQueries() {
   }, [
     machines,
     descriptions,
+    capableMachines,
     tasks,
     goals,
     stewards,
@@ -269,36 +278,122 @@ export function useTaskBoardQueries() {
     );
     return () => releases.forEach((release) => release());
   }, [client, subscriptionKey, board.pending]);
-  const putTask = useCallback(
-    (saved: BoardTask) => {
-      const machine = machines.find((machine) => machine.id === saved.machineId);
+  /** Patches one machine's cached list. Reads that started before the
+   * confirmed mutation are cancelled first, so an older host answer cannot put
+   * the previous state back; the query cache stays the only collection owner. */
+  const patchMachine = useCallback(
+    <T,>(machineId: string, kind: string, patch: (current: T) => T) => {
+      const machine = machines.find((entry) => entry.id === machineId);
       if (!machine) return;
-      const scope = ["task-board", ...identity(machine), "tasks"];
-      client.setQueriesData<MachineResult<BoardTask>[]>(
-        {
-          predicate: (query) => scope.every((part, index) => query.queryKey[index] === part),
-        },
-        (results) =>
-          results?.map((result) => ({
-            ...result,
-            data: [...result.data.filter((task) => task.id !== saved.id), saved],
-          })),
+      const scope = ["task-board", ...identity(machine), kind];
+      const filter = {
+        predicate: (query: { queryKey: readonly unknown[] }) =>
+          scope.every((part, index) => query.queryKey[index] === part),
+      };
+      void client.cancelQueries(filter);
+      client.setQueriesData<T>(filter, (current) =>
+        current === undefined ? current : patch(current),
       );
     },
     [client, machines],
   );
-  const removeTask = useCallback((removed: BoardTask) => {
-    const machine = machines.find((machine) => machine.id === removed.machineId);
-    if (!machine) return;
-    const scope = ["task-board", ...identity(machine), "tasks"];
-    const filter = { predicate: (query: { queryKey: readonly unknown[] }) => scope.every((part, index) => query.queryKey[index] === part) };
-    // Cancel older reads before updating the cache, so a pre-delete answer cannot
-    // put an acknowledged deletion back into the board.
-    void client.cancelQueries(filter);
-    client.setQueriesData<MachineResult<BoardTask>[]>(filter, (results) => results?.map((result) => ({
-      ...result,
-      data: result.data.filter((task) => task.id !== removed.id || task.projectId !== removed.projectId),
-    })));
-  }, [client, machines]);
-  return { board, refresh, putTask, removeTask };
+  const putItems = useCallback(
+    <T extends { id: string }>(machineId: string, kind: string, saved: readonly T[]) =>
+      patchMachine<MachineResult<T>[]>(machineId, kind, (results) =>
+        results.map((result) => ({
+          ...result,
+          data: [
+            ...result.data.filter((item) => !saved.some((entry) => entry.id === item.id)),
+            ...saved,
+          ],
+        })),
+      ),
+    [patchMachine],
+  );
+  const putTasks = useCallback(
+    (saved: readonly BoardTask[]) => {
+      rememberBoardTasks(saved);
+      const machineIds = new Set(saved.map((task) => task.machineId));
+      for (const machineId of machineIds)
+        putItems(
+          machineId,
+          "tasks",
+          saved.filter((task) => task.machineId === machineId),
+        );
+    },
+    [putItems],
+  );
+  const putTask = useCallback((saved: BoardTask) => putTasks([saved]), [putTasks]);
+  const removeTask = useCallback(
+    (removed: BoardTask) => {
+      rememberBoardTasks([], removed);
+      patchMachine<MachineResult<BoardTask>[]>(removed.machineId, "tasks", (results) =>
+        results.map((result) => ({
+          ...result,
+          data: result.data.filter(
+            (task) => task.id !== removed.id || task.projectId !== removed.projectId,
+          ),
+        })),
+      );
+    },
+    [patchMachine],
+  );
+  const putGoal = useCallback(
+    (saved: BoardGoal) => {
+      rememberBoardGoal(saved);
+      putItems(saved.machineId, "goals", [saved]);
+    },
+    [putItems],
+  );
+  const removeGoal = useCallback(
+    (removed: BoardGoal) => {
+      rememberBoardGoal(removed, true);
+      patchMachine<MachineResult<BoardGoal>[]>(removed.machineId, "goals", (results) =>
+        results.map((result) => ({
+          ...result,
+          data: result.data.filter((goal) => goal.id !== removed.id),
+        })),
+      );
+    },
+    [patchMachine],
+  );
+  const putSteward = useCallback(
+    (saved: BoardSteward) => {
+      rememberBoardSteward(saved);
+      putItems(saved.machineId, "stewards", [saved]);
+    },
+    [putItems],
+  );
+  const removeSteward = useCallback(
+    (removed: BoardSteward) => {
+      rememberBoardSteward(removed, true);
+      patchMachine<MachineResult<BoardSteward>[]>(removed.machineId, "stewards", (results) =>
+        results.map((result) => ({
+          ...result,
+          data: result.data.filter((steward) => steward.id !== removed.id),
+        })),
+      );
+    },
+    [patchMachine],
+  );
+  /** Replaces a machine's limits with the state its host just acknowledged. */
+  const putLimits = useCallback(
+    (saved: MachineLimits) =>
+      patchMachine<MachineLimits[]>(saved.machineId, "limits", (entries) =>
+        entries.map((entry) => (entry.machineId === saved.machineId ? saved : entry)),
+      ),
+    [patchMachine],
+  );
+  return {
+    board,
+    refresh,
+    putTask,
+    putTasks,
+    removeTask,
+    putGoal,
+    removeGoal,
+    putSteward,
+    removeSteward,
+    putLimits,
+  };
 }

@@ -1,11 +1,28 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useGithubPrChecks, type GithubPrChecksView } from "./useGithubPrChecks";
 import type { GithubPrChecks } from "../model/githubPrChecks";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
 const { fetchPrChecks } = vi.hoisted(() => ({ fetchPrChecks: vi.fn() }));
 vi.mock("../model/prChecks", () => ({ fetchPrChecks }));
+let view!: GithubPrChecksView;
+function Consumer() {
+  const current = useGithubPrChecks({
+    provider: "gitlab",
+    cwd: "",
+    repo: "g/r",
+    number: 1,
+    enabled: true,
+    open: false,
+  });
+  useLayoutEffect(() => {
+    view = current;
+  });
+  return null;
+}
+const Wrapped = withQueryClient(Consumer);
 it("Hesap değişince eski instance yanıtını bırakır ve kapalı MR checksini yeniden yükler", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let resolveOld!: (value: GithubPrChecks) => void;
@@ -21,22 +38,10 @@ it("Hesap değişince eski instance yanıtını bırakır ve kapalı MR checksin
       provider: "gitlab",
       instance: "https://new.example",
     });
-  let view!: GithubPrChecksView;
-  function Consumer() {
-    view = useGithubPrChecks({
-      provider: "gitlab",
-      cwd: "",
-      repo: "g/r",
-      number: 1,
-      enabled: true,
-      open: false,
-    });
-    return null;
-  }
   const host = document.createElement("div");
   const root = createRoot(host);
   try {
-    await act(async () => root.render(createElement(Consumer)));
+    await act(async () => root.render(createElement(Wrapped)));
     await act(async () => {
       window.dispatchEvent(new Event("bycoda:gitlab-change"));
     });

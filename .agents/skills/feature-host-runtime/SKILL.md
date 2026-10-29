@@ -5,6 +5,89 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Host Notes physical foundations, 2026-10-30
+
+`host/host-notes-async.ts` separates the public result from actual queued SQL
+completion. An observed worker error or uncertain delivery keeps the original
+worker/job and serial turn until its real terminal close reply or actual EXIT;
+later work and close cannot infer idle from a rejected public Promise. Existing
+post-lock authorization, CAS, session locators and exact effect results remain.
+
+`packages/physical-store-admission/` owns shared File-derived OS identity and
+nonblocking kernel writer/closing/closed reservations. Identity strings retain
+Native compatibility; sidecars use a separate physical namespace. It is a
+mechanical participating-writer protocol under a common protected registry,
+not SQL permission, actor discovery or complete coverage.
+
+Native Windows checks now compare the actual SQLite main HANDLE before startup
+PRAGMAs, for both read-only connections, and before/after initialization waits.
+Unix retains its cooperative path check and is not described as direct SQLite
+handle attestation. The Native hardlink refusal policy is preserved.
+
+`packages/physical-store-admission-node/` provides a private Node-API port.
+Opaque native handles and a bounded strong registry preserve reservations across
+GC and worker-environment cleanup. Unknown/lost handles stay held; explicit
+terminal release or process death is separate. The loader requires a resolved
+native artifact. This port is not yet wired to Host Notes or WindowBarrier, and
+the SQLite extension remains an isolated Windows prototype.
+
+Evidence: `temp/verification/2026-10-30-host-notes-writer/` plus the linked
+Host-job/core review packets. Windows checks passed: 13 core tests, 408 Native
+SessionStore tests and 11 Node port tests on each of Node 24.21/24.22, plus
+workspace Clippy and independent reviews.
+The one canonical-path Node case controls the resolver boundary; actual file
+symlink creation was unavailable with EPERM. No Linux/macOS runtime, six-target
+package, installed GUI or complete writer-closure acceptance is claimed.
+`host-notes-writer-closure`, `notes-input-coverage`, both full Native lanes and
+all qualification/default/history promotion gates remain open/disabled.
+
+## Notes renderer admission and raw v3, 2026-10-29
+
+This source continuation supersedes the Notes renderer omissions in earlier
+checkpoint entries below. Known Notes library, session dock, retained drafts,
+Source/Preview, title/tag controls, recovery, save, image and service-only work
+now use their own input family. Parent, file-editor and Notes admission closes
+before Composer/drain; actual accepted work and explicitly proven result/view
+publications retain the original owner through completion. New work, unrelated
+refreshes, identical-byte ABA and stale/replacement controls cannot borrow it.
+
+The shared closure engine retains the existing file facade/global/error contract;
+Notes has a distinct facade. Optional InlineEdit/TagInput observation uses private
+ports and exact React publication tokens. TagInput also waits for its real callback
+Promise and conserves bounded original raw/requested-tag data on unknown outcomes.
+No callback replay, forced blur/save/IME commit or ambient permission across await
+is introduced. Service-only Notes requests retain exact original arguments before
+Native effects; rejection and post-success application failure remain unresolved.
+
+Production raw v3 combines three independent registry epochs and reversible
+three-family producer IDs. Explicit legacy v2 and retained v1 remain readable.
+The same immutable FULL store keeps original scope, bytes, quotas and undefined
+paths. Notes candidates never satisfy a file-row ACK or complete the editor roster.
+Private retired input is retained by its original control generation, including
+whitespace, pending work and IME. A conservative64-record/64MiB budget refuses
+new effects before admission when full; it never evicts or replays unknown input.
+HMR preserves original records and holds capture when the implementation changes.
+The neutral recovery notice offers exact Copy and Open without automatic apply.
+Original image work includes per-file conversion and saved-asset grant lookup;
+a later failure preserves earlier successful assets and original request identity.
+
+Isolated actual-component acceptance passed40/40 cases in light/dark at1280/800,
+with40 captures and all source guards matching. All40 exact browser raw artifacts
+also passed checked Native FULL and retained/new-Store read with original outer
+session and nested identities. Normal desktop/Host/mobile types and Native Clippy
+passed. Independent Notes/service/shared reviews closed reproduced gaps;
+concurrent Notes menu edits were preserved after a scoped preservation review.
+Evidence: `temp/verification/2026-10-29-notes-input-closure/`.
+This is fixture and library-test proof, not installed GUI, process-exit or
+power-loss acceptance. The module/window image-path cache does not prove hot
+profile switching.
+
+The same-physical-database Host Notes Node writer remains outside Native admission.
+Complete aliases/actors/providers, Notes-row and image durability, both Native lanes,
+restore and installed/platform acceptance remain open. `notes-input-coverage` and
+`host-notes-writer-closure` remain explicit missing coverage. Qualification, default,
+historical migration and application-through promotion remain disabled.
+
 ## Owned input admission, 2026-10-29
 
 The continuation after source511 closes known Parent callbacks and the mounted
@@ -954,3 +1037,31 @@ identity and full26 gates are in
 `temp/verification/2026-10-28-legacy-recovery-ui/ROOT-CONTINUATION-README.md`.
 These source/SQL/component fixtures do not establish installed GUI, macOS,
 physical device, real provider or operational migration/default acceptance.
+
+### Native file and Notes actor admission, 2026-10-29
+
+Seventeen file/attachment/generated-image/path commands now admit the actual
+injected Window before worker scheduling and retain admission through permission
+checks and the original work. The shared detached worker lives in
+`src-tauri/src/native_window_lifecycle/admitted_work.rs`; the existing text-file
+adapter delegates to it. Dropping an IPC waiter never retires a running worker.
+Six Notes mutation/grant commands use the same physical-window boundary. SQL
+guards release before completion; Notes/session deletion preserves authoritative
+SQL success while failed best-effort asset cleanup withholds idle proof.
+Session deletion's connected SQL/reference-cleanup helper is separated into
+`src-tauri/src/session_store/delete_with_images.rs`.
+
+Root evidence: initial wider Rust1163 passed/0 failed/30 ignored; final scoped
+Rust973 passed/0 failed/30 ignored, including22 new regressions. These runs
+overlap and are not additive. Normal desktop/Host tsc-rs and lib/bins/tests
+Clippy with warnings denied passed. Independent final ten-file source review
+has no concrete findings. Exact identities and limits:
+`temp/verification/2026-10-29-buffer-actors-root/ROOT-REPORT.md`.
+
+This does not close the complete Native Buffers lane. Notes' actual UI/private
+drafts, retained save queues, provider/decision actors and other writers remain
+open. In particular the authorized Host Notes Node worker can open the same
+physical Native SQLite file without joining Native window admission; cohort
+registration or a SQL write lock alone does not fence that writer. Keep coverage
+unknown, qualification false and applicationThrough null. No migration/default/
+history promotion, Native GUI acceptance, install or release is claimed.

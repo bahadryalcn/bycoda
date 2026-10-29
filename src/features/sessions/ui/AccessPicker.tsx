@@ -2,8 +2,8 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { Check, ChevronDown, Lock, Pencil, Shield, Sparkles } from "../../../shared/ui/icons";
 import {
-  useEffect,
   useId,
+  useLayoutEffect,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -15,6 +15,8 @@ import {
   type RuntimeMode,
 } from "../model/session";
 import { Popover } from "../../../shared/ui/Popover";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
+import { useOpenSessionKey } from "./useOpenSessionKey";
 
 type Props = {
   value: RuntimeMode;
@@ -38,21 +40,23 @@ export function AccessPicker({ value, onChange, onClose, busy = false, unavailab
   const t = useT();
   const [open, setOpen] = useState(false);
   const id = useId();
-  const [active, setActive] = useState(() => Math.max(0, RUNTIME_MODES.indexOf(value)));
+  const openKey = useOpenSessionKey(open);
+  const [active, setActive] = useKeyedActiveIndex(
+    `${openKey}:${value}`,
+    RUNTIME_MODES.length,
+    () => Math.max(0, RUNTIME_MODES.indexOf(value)),
+  );
   const root = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useLayoutEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
   const Icon = ICONS[value];
 
   const dismiss = (restore: boolean) => {
     setOpen(false);
     if (restore) onCloseRef.current?.();
   };
-
-  useEffect(() => {
-    if (!open) return;
-    setActive(Math.max(0, RUNTIME_MODES.indexOf(value)));
-  }, [open, value]);
 
   const pick = (mode: RuntimeMode) => {
     if (unavailable?.[mode]) return;

@@ -5,6 +5,30 @@ description: Platform foundation, repository/package boundaries, CI sharding, in
 
 # Platform foundation
 
+## Shared Rust and Node native package boundaries, 2026-10-30
+
+The Cargo workspace now contains the desktop, the private physical-file
+reservation core, and its Node-API port. Both packages have explicit private
+workspace metadata: `bycoda.layer: native`, local `cargo`, and `runtime: rust`
+or `node`. Rust-only packages declare no JavaScript exports. Native Node exports
+retain package confinement and declared dependency checks; portable packages
+cannot acquire Node dependencies through a native package.
+
+Computed CommonJS artifact loading belongs only to a validated `nativeLoader`
+file. Module-loader factories are confined there, including aliased and namespace
+imports; computed ESM imports remain rejected. This is static dependency checking,
+not a JavaScript sandbox or an application permission grant. CI explicitly routes
+both physical packages and every observed Rust embed to their actual dependents.
+
+Windows tests built the Node-API port with Cargo, copied immutable test artifacts,
+and ran the real kernel/GC/worker tests using current Node 24.22 and the cached
+Host-pinned Node 24.21 runtime after checking the repository's pinned checksum.
+No pnpm installation, application installation or publication was performed.
+The Host build/package integration and other target artifacts remain separate
+implementation work; ordinary Host development commands were not made release
+gates. See `temp/verification/2026-10-30-host-notes-writer/` and
+`packages/physical-store-admission-node/README.md`.
+
 ## UI redesign native remainder, 2026-10-29
 
 T2 continuation limited to UI-39/UI-40 and IR-01/IR-02; the canonical register

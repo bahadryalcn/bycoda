@@ -11,7 +11,7 @@
   --border: var(--color-stroke);
   --border-subtle: color-mix(in oklch, var(--color-content) 5%, transparent);
   --border-strong: color-mix(in oklch, var(--color-content) 16%, transparent);
-  --accent: var(--user-accent-color, var(--color-accent));
+  --accent: var(--user-accent-solid, var(--user-accent-color, var(--color-accent)));
   --accent-strong: var(--accent);
   --accent-subtle: var(--ui-surface-selected);
   --accent-foreground: var(--user-accent-foreground, var(--ui-text-on-active));
@@ -201,11 +201,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   cursor: not-allowed;
 }
 
-.bycoda-arc.bycoda-arc-select:active:not(:disabled),
-.bycoda-arc.bycoda-arc-select[data-state="open"] {
-  background: var(--ui-surface-pressed);
-}
-
+/* The trigger is a field: hover, press and open answer with the frame only (select.module.css);
+   its fill keeps the neutral field tone. Options below keep their own row states. */
 .bycoda-arc-select-chevron {
   color: var(--ui-text-secondary);
 }
@@ -248,7 +245,6 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .bycoda-arc.bycoda-arc-select:hover:not(:disabled),
   .bycoda-arc .bycoda-arc-select-option:hover:not([data-highlighted], [aria-selected="true"]) {
     background: var(--ui-surface-hover);
   }
@@ -272,8 +268,8 @@ html[data-control-density="touch"] .bycoda-arc-switch {
 [data-ui-focus="input"]:focus-visible,
 .bycoda-arc [data-ui-focus="input"]:focus-visible,
 [data-ui-focus-group]:has([data-ui-focus="group"]:focus-visible) {
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
   box-shadow: none;
 }
 

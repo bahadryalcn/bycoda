@@ -177,6 +177,15 @@ export function isStewardProposal(task: Pick<BoardTask, "source" | "status">): b
 
 const lastBoardStewards: LastGoodLists<BoardSteward> = new Map();
 
+/** Keeps a machine's last-known stewards in step with a mutation its host
+ * acknowledged, so a later failed read cannot show the earlier state again. */
+export function rememberBoardSteward(steward: BoardSteward, removed = false): void {
+  const known = lastBoardStewards.get(steward.machineId);
+  if (!known) return;
+  const others = known.filter((entry) => entry.id !== steward.id);
+  lastBoardStewards.set(steward.machineId, removed ? others : [...others, steward]);
+}
+
 /** Each machine's stewards. A machine that does not answer keeps its last
  * successful list, flagged stale; `down` machines are not asked. */
 export function listBoardStewardResults(

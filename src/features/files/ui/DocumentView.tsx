@@ -52,13 +52,19 @@ export function DocumentView({ path, cwd, readBytes, externalPath = path, fitCon
   const kind = documentKind(path);
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [reloadKey, setReloadKey] = useState(0);
-  const [actionError, setActionError] = useState<string | null>(null);
+  // The error belongs to the file it came from; a different file shows none.
+  const actionKey = JSON.stringify([path, externalPath ?? ""]);
+  const [actionFailure, setActionFailure] = useState<{ key: string; message: string } | null>(
+    null,
+  );
+  const actionError = actionFailure && actionFailure.key === actionKey ? actionFailure.message : null;
+  const setActionError = (message: string | null) =>
+    setActionFailure(message === null ? null : { key: actionKey, message });
   const actionRequest = useRef(0);
   const reload = useCallback(() => setReloadKey((value) => value + 1), []);
   const name = basename(path);
 
   useEffect(() => {
-    setActionError(null);
     return () => {
       actionRequest.current += 1;
     };

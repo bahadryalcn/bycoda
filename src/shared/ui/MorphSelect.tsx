@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentPropsWithRef, type RefObject } from "react";
+import { useRef, useState, type ComponentPropsWithRef, type RefObject } from "react";
 import {
   MorphSelect as ArcMorphSelect,
   type MorphSelectItem,
@@ -69,22 +69,14 @@ export function MorphSelect({
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [align, setAlign] = useState<"start" | "end">("end");
-  const restore = useRef(false);
-  useEffect(() => {
-    if (!open && restore.current) {
-      restore.current = false;
-      onClose?.();
-    }
-  }, [open, onClose]);
-  useEffect(() => {
-    if (disabled || readOnly) setOpen(false);
-  }, [disabled, readOnly]);
+  // A disabled or read-only select cannot stay open: close during render so a later enable does not reopen it.
+  if ((disabled || readOnly) && open) setOpen(false);
   const close = () => {
-    restore.current = true;
     setOpen(false);
     root.current
       ?.querySelector<HTMLButtonElement>('button[role="combobox"]')
       ?.focus({ preventScroll: true });
+    onClose?.();
   };
   return (
     // `ms-auto` packs the control at the end of a flex row; a row may override it to keep the control at
@@ -106,7 +98,7 @@ export function MorphSelect({
         searchable={searchable}
         triggerProps={triggerProps}
         onClose={(restoreFocus) => {
-          restore.current = restoreFocus;
+          if (restoreFocus) onClose?.();
         }}
         align={align}
         panelWidth={PANEL_WIDTH}

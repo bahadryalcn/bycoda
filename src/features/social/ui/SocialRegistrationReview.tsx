@@ -8,7 +8,18 @@ import type {
   SocialRegistrationReview as Review,
 } from "../model/socialBrowser";
 import type { SocialClient } from "../model/socialClient";
+import { socialQueryScope } from "../model/socialQuery";
 import { SocialBusyContext } from "./socialContext";
+
+/**
+ * Review, consent and typed values belong to one host, account and workflow revision.
+ * Callers mount the component with this key so a changed identity starts from a blank review.
+ */
+export const registrationReviewKey = (
+  client: SocialClient,
+  accountId: string,
+  workflow: Pick<SocialBrowserWorkflow, "id" | "updatedAt">,
+) => `${socialQueryScope(client).join(":")}:${accountId}:${workflow.id}:${workflow.updatedAt}`;
 
 /** The owner reviews the observed final form; ordinary continuation remains nonbinding. */
 export function SocialRegistrationReview({
@@ -35,12 +46,6 @@ export function SocialRegistrationReview({
   const scope = `${accountId}:${workflow.id}:${workflow.updatedAt}`;
   const currentScope = useRef(scope);
   currentScope.current = scope;
-  useEffect(() => {
-    setReview(undefined);
-    setAccepted(false);
-    setError("");
-    setResourceId("");
-  }, [accountId, workflow.id, workflow.updatedAt, client]);
   const submission = workflow.registrationSubmission;
   useEffect(() => {
     if (!review) return;

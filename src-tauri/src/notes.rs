@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use crate::fs::expand_home;
+use crate::native_window_lifecycle::{
+    admit_window_buffers, run_admitted_blocking, NativeWriteAdmission,
+};
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 const TITLE_MAX: usize = 200;
@@ -195,7 +198,11 @@ pub fn notes_get(store: State<'_, SessionStore>, id: String) -> Result<Option<No
 }
 
 #[tauri::command(async)]
-pub fn notes_upsert(store: State<'_, SessionStore>, note: NoteUpsert) -> Result<Note, String> {
+pub fn notes_upsert(
+    window: tauri::Window,
+    store: State<'_, SessionStore>,
+    note: NoteUpsert,
+) -> Result<Note, String> {
     validate_id(&note.id, "note")?;
     if let Some(session_id) = note.source_session_id.as_deref() {
         if !session_id.is_empty() {
@@ -205,20 +212,23 @@ pub fn notes_upsert(store: State<'_, SessionStore>, note: NoteUpsert) -> Result<
     if note.body.len() > BODY_MAX {
         return Err("Note is too large".into());
     }
-    let conn = store.lock_conn()?;
-    checked_upsert_note(&conn, &note)
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| checked_upsert_note(conn, &note))
 }
 
 #[tauri::command(async)]
 pub fn notes_link_session(
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
     session_id: String,
 ) -> Result<Note, String> {
     validate_id(&id, "note")?;
     validate_id(&session_id, "session")?;
-    let conn = store.lock_conn()?;
-    link_note_session(&conn, &id, &session_id).map_err(|e| e.to_string())
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| {
+        link_note_session(conn, &id, &session_id).map_err(|error| error.to_string())
+    })
 }
 
 fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite::Result<Note> {
@@ -231,49 +241,60 @@ fn link_note_session(conn: &Connection, id: &str, session_id: &str) -> rusqlite:
 
 #[tauri::command(async)]
 pub fn notes_delete(
+    window: tauri::Window,
     app: AppHandle,
     store: State<'_, SessionStore>,
     id: String,
     expected_updated_at: i64,
 ) -> Result<(), String> {
     validate_id(&id, "note")?;
-    let conn = store.lock_conn()?;
-    checked_delete_note(&conn, &id, expected_updated_at)?;
-    drop(conn);
-    // The note deletion is authoritative. A cleanup failure should not leave a
-    // successfully deleted note visible in the UI.
-    let _ = remove_note_assets(&app, &id);
-    Ok(())
+    let admission = admit_window_buffers(&window)?;
+    delete_admitted_note(admission, &store, &id, expected_updated_at, || {
+        remove_note_assets(&app, &id)
+    })
 }
 
 /// Roll back only an abandoned recovery attempt, never a persisted note's assets.
 #[tauri::command(async)]
 pub fn notes_discard_recovery_assets(
+    window: tauri::Window,
     app: AppHandle,
     store: State<'_, SessionStore>,
     id: String,
 ) -> Result<bool, String> {
-    let conn = store.lock_conn()?;
-    checked_discard_recovery_assets(&conn, &id, || remove_note_assets(&app, &id))
+    let admission = admit_window_buffers(&window)?;
+    with_admitted_note_connection(admission, &store, |conn| {
+        checked_discard_recovery_assets(conn, &id, || remove_note_assets(&app, &id))
+    })
 }
 
 #[tauri::command]
 pub async fn notes_save_image(
+    window: tauri::Window,
     app: AppHandle,
     note_id: String,
     source_path: String,
 ) -> Result<NoteImageAsset, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = admit_window_buffers(&window)?;
+    run_admitted_blocking(admission, move || {
         crate::file_access::require(&app, &expand_home(&source_path), false)?;
         save_note_image_sync(&app, &note_id, &source_path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command(async)]
-pub fn notes_image_path(app: AppHandle, asset: String) -> Result<String, String> {
-    let relative = validate_note_asset_path(&asset)?;
+pub fn notes_image_path(
+    window: tauri::Window,
+    app: AppHandle,
+    asset: String,
+) -> Result<String, String> {
+    let admission = admit_window_buffers(&window)?;
+    admission.finish(resolve_note_image_path(&app, &asset))
+}
+
+fn resolve_note_image_path(app: &AppHandle, asset: &str) -> Result<String, String> {
+    let relative = validate_note_asset_path(asset)?;
     let path = app
         .path()
         .app_data_dir()
@@ -283,12 +304,46 @@ pub fn notes_image_path(app: AppHandle, asset: String) -> Result<String, String>
         return Err("Note image was not found".into());
     }
     crate::file_access::grant_produced_file(
-        &app,
+        app,
         &path,
         &app.path().app_data_dir().map_err(|e| e.to_string())?,
         NOTE_ASSET_DIR,
     )?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Admission precedes the SQL lock. The work owns its guard only inside this
+/// scope, so completion cannot advertise idle while the connection is locked.
+fn with_admitted_note_connection<T>(
+    admission: NativeWriteAdmission,
+    store: &SessionStore,
+    work: impl FnOnce(&Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    let result = (|| {
+        let conn = store.lock_conn()?;
+        work(&conn)
+    })();
+    admission.finish(result)
+}
+
+fn delete_admitted_note(
+    admission: NativeWriteAdmission,
+    store: &SessionStore,
+    id: &str,
+    expected_updated_at: i64,
+    remove_assets: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let deleted = (|| {
+        let conn = store.lock_conn()?;
+        checked_delete_note(&conn, id, expected_updated_at)
+    })();
+    if deleted.is_err() {
+        return admission.finish(deleted);
+    }
+    // SQL deletion remains authoritative for the UI. Failed best-effort asset
+    // cleanup still makes the native observation unavailable for an idle proof.
+    let observation = remove_assets().map_err(|_| ());
+    admission.finish_observed(Ok(()), observation)
 }
 
 fn note_assets_dir(app: &AppHandle, note_id: &str) -> Result<PathBuf, String> {
@@ -318,38 +373,56 @@ fn save_note_image_sync(
         ));
     }
 
-    let (display_name, safe_name) = note_image_names(&source)?;
+    let names = note_image_names(&source)?;
     let dir = note_assets_dir(app, note_id)?;
-    crate::file_access::produced_target(
+    let allowed_root = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    copy_note_image(
+        &source,
         &dir,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        &allowed_root,
+        note_id,
+        names,
+        |destination| {
+            crate::file_access::grant_produced_file(
+                app,
+                destination,
+                &app.path().app_data_dir().map_err(|e| e.to_string())?,
+                NOTE_ASSET_DIR,
+            )
+        },
+    )
+}
+
+/// Only the native AppHandle path resolver supplies the production roots and
+/// grant callback. This private boundary keeps copy and grant in one real job.
+fn copy_note_image(
+    source: &Path,
+    dir: &Path,
+    allowed_root: &Path,
+    note_id: &str,
+    (display_name, safe_name): (String, String),
+    grant: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<NoteImageAsset, String> {
+    crate::file_access::produced_target(dir, allowed_root, NOTE_ASSET_DIR)?;
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_nanos();
     let stored_name = format!("{stamp}-{safe_name}");
     let destination = dir.join(&stored_name);
-    crate::file_access::produced_target(
-        &destination,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
-    std::fs::copy(&source, &destination).map_err(|e| format!("{}: {e}", destination.display()))?;
-
-    crate::file_access::grant_produced_file(
-        app,
-        &destination,
-        &app.path().app_data_dir().map_err(|e| e.to_string())?,
-        NOTE_ASSET_DIR,
-    )?;
+    crate::file_access::produced_target(&destination, allowed_root, NOTE_ASSET_DIR)?;
+    std::fs::copy(source, &destination).map_err(|e| format!("{}: {e}", destination.display()))?;
+    grant(&destination)?;
     Ok(NoteImageAsset {
         name: display_name,
         markdown_path: format!("/{NOTE_ASSET_DIR}/{note_id}/{stored_name}"),
     })
 }
+
+#[cfg(test)]
+#[path = "notes/admission_tests.rs"]
+mod admission_tests;
 
 fn note_image_names(source: &Path) -> Result<(String, String), String> {
     let extension = source

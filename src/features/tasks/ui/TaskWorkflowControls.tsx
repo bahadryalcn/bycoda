@@ -100,11 +100,9 @@ function ScopedTaskWorkflowControls({
       ),
     });
   return (
-    <details className="min-w-0 space-y-2 border-t border-(--ui-tone-neutral-border) pt-2">
-      <summary className="cursor-pointer text-ui-caption font-medium">
-        {t("Workflow and preparation")}
-      </summary>
-      <div className="min-w-0 space-y-3">
+    <details className="task-form-section">
+      <summary>{t("Workflow and preparation")}</summary>
+      <div className="task-form-section-body">
         <div className="flex min-w-0 flex-wrap items-end gap-2">
           <div className="min-w-0 flex-1">
             <SearchableSelect

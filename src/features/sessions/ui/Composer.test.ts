@@ -2188,7 +2188,11 @@ describe("Composer question focus", () => {
         }),
       ),
     );
-    expect(onWorktreeBaseChange).toHaveBeenLastCalledWith("mc/greeting");
+    // "HEAD" is resolved to the checked-out branch when read; nothing is written back.
+    expect(onWorktreeBaseChange).not.toHaveBeenCalled();
+    expect(
+      document.querySelector('[aria-label="Create worktree from mc/greeting"]'),
+    ).not.toBeNull();
   });
 
   it("holds new remote sends until the creator explicitly supports managed ownership", async () => {

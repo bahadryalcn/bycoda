@@ -25,9 +25,9 @@ for (const [theme, width] of [
       "true",
     );
     await expect(prompt).toHaveValue("A retained native composer draft");
-    await page.getByRole("slider", { name: "Effort", exact: true }).focus();
+    await page.getByRole("slider", { name: "Reasoning", exact: true }).focus();
     await page.keyboard.press("End");
-    await expect(page.getByRole("slider", { name: "Effort", exact: true })).toHaveAttribute(
+    await expect(page.getByRole("slider", { name: "Reasoning", exact: true })).toHaveAttribute(
       "aria-valuetext",
       "High",
     );

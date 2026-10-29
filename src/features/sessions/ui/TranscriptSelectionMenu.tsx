@@ -1,6 +1,6 @@
 import { useT } from "../../../shared/i18n";
 import { FilePlusCorner, MessageSquarePlus, Sparkles } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 import { Popover } from "../../../shared/ui/Popover";
 import {
   FloatingButtonGroup,
@@ -21,6 +21,14 @@ type Props = {
   onTranslate?: (target: TextActionTarget) => void;
 };
 
+type Operations = {
+  text: string | null;
+  /** Bumped whenever the selected text changes; an operation only settles into its own epoch. */
+  epoch: number;
+  pending: Record<string, boolean>;
+  errors: Record<string, string>;
+};
+
 export function TranscriptSelectionMenu({
   selection,
   onAddToChat,
@@ -29,8 +37,7 @@ export function TranscriptSelectionMenu({
   onTranslate,
 }: Props) {
   const t = useT();
-  const onDismissRef = useRef(onDismiss);
-  onDismissRef.current = onDismiss;
+  const dismissSelection = useEffectEvent(() => onDismiss());
 
   const [targets, setTargets] = useState<{ text: string; values: TranslationTarget[] } | null>(
     null,
@@ -55,7 +62,7 @@ export function TranscriptSelectionMenu({
   // selection it acts on is gone; drop it rather than chase the range.
   useEffect(() => {
     if (!selection) return;
-    const dismiss = () => onDismissRef.current();
+    const dismiss = () => dismissSelection();
     window.addEventListener("scroll", dismiss, true);
     window.addEventListener("resize", dismiss);
     return () => {
@@ -64,45 +71,54 @@ export function TranscriptSelectionMenu({
     };
   }, [selection]);
 
-  const [pending, setPending] = useState<Record<string, boolean>>({});
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const running = useRef(new Set<string>());
-  const generation = useRef(0);
   // Operation state belongs to the text it was started for: a selection that
   // goes away or is replaced directly by another drops pending/error state, and
   // a late result of the old one is ignored. An already started save continues.
   const selectionText = selection?.text ?? null;
-  useEffect(() => {
-    generation.current += 1;
+  const [operations, setOperations] = useState<Operations>(() => ({
+    text: selectionText,
+    epoch: 0,
+    pending: {},
+    errors: {},
+  }));
+  if (operations.text !== selectionText) {
+    setOperations({ text: selectionText, epoch: operations.epoch + 1, pending: {}, errors: {} });
+  }
+  const { pending, errors } = operations;
+  const running = useRef(new Set<string>());
+  const epoch = useRef(operations.epoch);
+  useLayoutEffect(() => {
+    epoch.current = operations.epoch;
     running.current.clear();
-    setPending({});
-    setErrors({});
-  }, [selectionText]);
+  }, [operations.epoch]);
 
   if (!selection) return null;
 
   const run = async (id: string, onSelect: () => void | Promise<void>) => {
     if (running.current.has(id)) return;
     running.current.add(id);
-    const requestGeneration = generation.current;
-    setPending((current) => ({ ...current, [id]: true }));
-    setErrors((current) => ({ ...current, [id]: "" }));
+    const owner = epoch.current;
+    const update = (patch: (current: Operations) => Operations) =>
+      setOperations((current) => (current.epoch === owner ? patch(current) : current));
+    update((current) => ({
+      ...current,
+      pending: { ...current.pending, [id]: true },
+      errors: { ...current.errors, [id]: "" },
+    }));
     try {
       const result = onSelect();
       if (result) await result;
-      if (requestGeneration !== generation.current) return;
+      if (owner !== epoch.current) return;
       window.getSelection()?.removeAllRanges();
       onDismiss();
     } catch (error) {
-      if (requestGeneration !== generation.current) return;
-      setErrors((current) => ({
-        ...current,
-        [id]: error instanceof Error ? error.message : String(error),
-      }));
+      if (owner !== epoch.current) return;
+      const message = error instanceof Error ? error.message : String(error);
+      update((current) => ({ ...current, errors: { ...current.errors, [id]: message } }));
     } finally {
-      if (requestGeneration === generation.current) {
+      if (owner === epoch.current) {
         running.current.delete(id);
-        setPending((current) => ({ ...current, [id]: false }));
+        update((current) => ({ ...current, pending: { ...current.pending, [id]: false } }));
       }
     }
   };

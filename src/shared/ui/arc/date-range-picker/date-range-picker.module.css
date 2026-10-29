@@ -75,8 +75,8 @@
 /* Keyboard focus matches the text fields and Select: the border and a contained outline on the same role. */
 .root:not([data-open]):has(> .trigger:focus-visible) .surface::after {
   border-color: var(--ui-field-border-focus);
-  outline: var(--ui-focus-width) solid var(--ui-field-border-focus);
-  outline-offset: -1px;
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
 }
 .root[data-invalid]:not([data-open]) .surface::after {
   border-color: var(--danger);

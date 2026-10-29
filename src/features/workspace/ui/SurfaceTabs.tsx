@@ -96,7 +96,30 @@ export function surfaceTabMenuItems(
   canCloseOthers = true,
   newWindow?: { dirty: boolean },
   sides: { left: boolean; right: boolean } = { left: false, right: false },
+  /** Offer Move Left / Move Right, the menu alternative to dragging a tab. */
+  movable = false,
 ): ExplorerMenuItem[] {
+  const moveActions: ExplorerMenuItem[] = movable
+    ? [
+        {
+          kind: "item",
+          id: "move-left",
+          get label() {
+            return t("Move Left");
+          },
+          disabled: !sides.left,
+        },
+        {
+          kind: "item",
+          id: "move-right",
+          get label() {
+            return t("Move Right");
+          },
+          disabled: !sides.right,
+        },
+        { kind: "sep" },
+      ]
+    : [];
   const close: ExplorerMenuItem = {
     kind: "item",
     id: "close",
@@ -133,7 +156,7 @@ export function surfaceTabMenuItems(
     },
   ];
   if (!isFilesystemTab(file) || isChangesTab(file)) {
-    return closeActions;
+    return [...moveActions, ...closeActions];
   }
 
   return [
@@ -189,6 +212,7 @@ export function surfaceTabMenuItems(
       },
     },
     { kind: "sep" },
+    ...moveActions,
     ...closeActions,
   ];
 }
@@ -453,6 +477,12 @@ export function SurfaceTabs({
       onCloseOtherFiles(menuFile.id);
       return;
     }
+    if (id === "move-left" || id === "move-right") {
+      sortable.moveBy(menuFile.id, id === "move-left" ? -1 : 1);
+      // The menu held focus; hand it back to the tab that moved.
+      requestAnimationFrame(() => focusFileTab(menuFile.id));
+      return;
+    }
     if (id === "close-left" || id === "close-right") {
       onCloseOtherFiles(menuFile.id, id === "close-left" ? "left" : "right");
       return;
@@ -594,7 +624,7 @@ export function SurfaceTabs({
               externalDrop.tabPosition ? (
                 <span
                   data-file-tab-drop={externalDrop.tabPosition}
-                  className={`pointer-events-none absolute inset-y-0 z-20 w-0.5 ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-danger" : "bg-accent"}`}
+                  className={`pointer-events-none absolute inset-y-0 z-20 w-(--ui-drop-line-size) rounded-full ${externalDrop.tabPosition === "before" ? "start-0" : "end-0"} ${externalDrop.invalid ? "bg-(--ui-drop-blocked)" : "bg-(--ui-drop-line)"}`}
                 />
               ) : null}
               <Button
@@ -608,14 +638,10 @@ export function SurfaceTabs({
                 tabIndex={!closing && file.id === entryFileId ? 0 : -1}
                 aria-keyshortcuts="Delete Shift+F10 F2"
                 onKeyDown={(event) => {
-                  if (
-                    closing ||
-                    event.nativeEvent.isComposing ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.altKey
-                  )
-                    return;
+                  if (closing || event.nativeEvent.isComposing) return;
+                  // Alt + Left/Right moves the tab: the keyboard way to reorder.
+                  if (sortable.onItemKeyDown(file.id, event)) return;
+                  if (event.ctrlKey || event.metaKey || event.altKey) return;
                   if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
                     event.preventDefault();
                     event.stopPropagation();
@@ -747,6 +773,7 @@ export function SurfaceTabs({
             files.length > 1,
             onOpenInNewWindow ? { dirty: dirtyFileIds.has(menuFile.id) } : undefined,
             { left: menuFileIndex > 0, right: menuFileIndex < files.length - 1 },
+            files.length > 1,
           )}
           ariaLabel="File tab actions"
           onPick={onMenuPick}

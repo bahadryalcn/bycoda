@@ -26,7 +26,6 @@ import {
   settingsSectionsByGroup,
   settingsSectionDescription,
   settingsSectionLabel,
-  settingsSectionPresentation,
   type CollapsedProjectRailMode,
   type SettingsSectionId,
 } from "../model/settings";
@@ -163,10 +162,41 @@ export function SettingsView({
   const categories = categoryGroups.flatMap((group) => group.sections);
   const [horizontalNavigation, setHorizontalNavigation] = useState(false);
   const navigationRef = useRef<HTMLElement>(null);
-  const [revealed, setRevealed] = useState<string | null>(anchor);
+  // A reveal belongs to the section it targets; it is dropped when another section opens.
+  const [reveal, setReveal] = useState<{ id: string | null; section: SettingsSectionId }>({
+    id: anchor,
+    section,
+  });
   const [revealRequest, setRevealRequest] = useState(0);
-  const [notificationHighlight, setNotificationHighlight] = useState(false);
-  const revealSection = useRef(section);
+  const [revealInputs, setRevealInputs] = useState({
+    anchor,
+    request: notificationSettingsRequest,
+    section,
+  });
+  let currentReveal = reveal;
+  // Section changes alone must not reapply an old external anchor.
+  if (revealInputs.anchor !== anchor || revealInputs.request !== notificationSettingsRequest) {
+    currentReveal = { id: anchor, section };
+  }
+  if (revealInputs.section !== section && currentReveal.section !== section) {
+    currentReveal = { id: null, section };
+  }
+  if (
+    revealInputs.anchor !== anchor ||
+    revealInputs.request !== notificationSettingsRequest ||
+    revealInputs.section !== section
+  ) {
+    setRevealInputs({ anchor, request: notificationSettingsRequest, section });
+  }
+  if (currentReveal !== reveal) setReveal(currentReveal);
+  const revealed = currentReveal.id;
+  const notificationHighlightActive =
+    section === "notifications" && revealed === "project-notifications";
+  const notificationHighlightKey = `${section}|${revealed}|${revealRequest}|${notificationSettingsRequest}`;
+  const [expiredHighlightKey, setExpiredHighlightKey] = useState<string | null>(null);
+  if (!notificationHighlightActive && expiredHighlightKey !== null) setExpiredHighlightKey(null);
+  const notificationHighlight =
+    notificationHighlightActive && expiredHighlightKey !== notificationHighlightKey;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const appearance = useAppearanceSettings(
@@ -175,23 +205,10 @@ export function SettingsView({
   );
 
   useEffect(() => {
-    revealSection.current = section;
-    setRevealed(anchor);
-    // Section changes alone must not reapply an old external anchor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchor, notificationSettingsRequest]);
-
-  useEffect(() => {
-    if (revealSection.current !== section) setRevealed(null);
-  }, [section]);
-
-  useEffect(() => {
-    const active = section === "notifications" && revealed === "project-notifications";
-    setNotificationHighlight(active);
-    if (!active) return;
-    const timer = setTimeout(() => setNotificationHighlight(false), 1800);
+    if (!notificationHighlightActive) return;
+    const timer = setTimeout(() => setExpiredHighlightKey(notificationHighlightKey), 1800);
     return () => clearTimeout(timer);
-  }, [section, revealed, revealRequest, notificationSettingsRequest]);
+  }, [notificationHighlightActive, notificationHighlightKey]);
 
   useEffect(() => {
     categoryRefs.current.get(section)?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
@@ -257,9 +274,8 @@ export function SettingsView({
 
   const onReveal = useCallback(
     (next: SettingsSectionId, settingId: string | null) => {
-      revealSection.current = next;
       if (next !== section) onSelectSection?.(next);
-      setRevealed(settingId);
+      setReveal({ id: settingId, section: next });
       setRevealRequest((request) => request + 1);
       // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
       if (!settingId)
@@ -271,7 +287,7 @@ export function SettingsView({
   );
 
   const selectCategory = (next: SettingsSectionId) => {
-    setRevealed(null);
+    setReveal({ id: null, section });
     onSelectSection?.(next);
   };
 
@@ -349,14 +365,11 @@ export function SettingsView({
     </header>
   );
 
-  const presentation = settingsSectionPresentation(section);
-
   return (
     <div
       role="region"
       aria-label={t("Settings")}
       data-app-settings
-      data-settings-presentation={presentation}
       data-settings-embedded={embedded || undefined}
       data-settings-maximized={maximized || undefined}
       className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
@@ -485,7 +498,6 @@ export function SettingsView({
                 <div
                   key={section}
                   data-settings-scroller
-                  data-settings-width={presentation === "bounded" ? undefined : presentation}
                   ref={lockOverscroll}
                   className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
                 >

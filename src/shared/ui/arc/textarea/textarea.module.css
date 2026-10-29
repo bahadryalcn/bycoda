@@ -14,8 +14,8 @@
 /* Same frame as Input: border-only focus owned by the field owner, and the box never changes size. */
 .control { min-height: 110px; resize: vertical; border: 1px solid var(--border-strong); border-radius: var(--radius-control); padding: var(--space-3); background: var(--surface); color: var(--foreground); font: inherit; font-size: var(--text-sm); line-height: var(--leading-body); outline: none; transition: border-color var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard); }
 .control::placeholder { color: var(--text-muted); }
-@media (hover: hover) and (pointer: fine) { .control:hover:not(:disabled, [aria-invalid="true"]) { border-color: var(--foreground); } }
-.control:focus-visible { border-color: var(--foreground); }
+@media (hover: hover) and (pointer: fine) { .control:hover:not(:disabled, :focus-visible, [aria-invalid="true"]) { border-color: var(--ui-field-border-hover, var(--foreground)); } }
+.control:focus-visible { border-color: var(--ui-field-border-focus, var(--foreground)); }
 .control[aria-invalid="true"] { border-color: var(--danger); }
 .control:disabled { cursor: not-allowed; background: var(--surface-muted); opacity: var(--ui-disabled-opacity, 0.5); }
 /* Read-only: normal ink on a quiet frame without hover cue (see Input). */

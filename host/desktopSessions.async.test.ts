@@ -225,3 +225,30 @@ it("coalesces raw stamp reads and rejects completions from a closed generation",
     read.mockRestore();
   }
 });
+
+it("reads stable native locators in the worker without initializing identity or changing rows", async () => {
+  const { db, desktop } = fixture();
+  expect(await desktop.localSessionReferenceAsync("visible")).toBeUndefined();
+  expect(
+    db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE name='native_authority_identity'",
+      )
+      .get(),
+  ).toBeUndefined();
+  db.exec(
+    "CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY, source_store_id TEXT, source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'store-one','profile-one')",
+  );
+  const expected = {
+    kind: "native",
+    sourceStoreId: "store-one",
+    sourceProfileId: "profile-one",
+    sessionId: "visible",
+  };
+  expect(await desktop.localSessionReferenceAsync("visible")).toEqual(expected);
+  db.prepare("UPDATE sessions SET title='renamed' WHERE id='visible'").run();
+  await desktop.closeAsync();
+  expect(await desktop.localSessionReferenceAsync("visible")).toEqual(expected);
+  expect(await desktop.localSessionReferenceAsync("missing")).toBeUndefined();
+  expect(desktop.opened).toBe(0);
+});

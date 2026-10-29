@@ -70,6 +70,19 @@ export function ProjectNotificationSettings({
   const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<"all" | "muted" | "customized">("all");
+  // A new notification request starts from an unfiltered list.
+  const [seenRequest, setSeenRequest] = useState({
+    path: notificationProjectPath,
+    request: notificationSettingsRequest,
+  });
+  if (
+    seenRequest.path !== notificationProjectPath ||
+    seenRequest.request !== notificationSettingsRequest
+  ) {
+    setSeenRequest({ path: notificationProjectPath, request: notificationSettingsRequest });
+    setQuery("");
+    setScope("all");
+  }
   const search = query.trim().toLocaleLowerCase();
   const visibleProjects = projects.filter(
     (project) =>
@@ -90,10 +103,6 @@ export function ProjectNotificationSettings({
         project.paths.some((path) => pathKey(path) === pathKey(notificationProjectPath)),
       )?.id
     : undefined;
-  useEffect(() => {
-    setQuery("");
-    setScope("all");
-  }, [notificationProjectPath, notificationSettingsRequest]);
   useEffect(() => {
     if (!notificationProjectPath) {
       focusedRequest.current = null;

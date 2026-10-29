@@ -1,8 +1,10 @@
 import { Button } from "../../../shared/ui/Button";
 import { useTransientFlag } from "../../../shared/hooks/useTransientFlag";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { useLocale, useT } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { resolveNoteImagePath } from "../../notes/notes";
 import { openWorkspaceUrl } from "../../connections/model/workspaceUrls";
 import {
   createContext,
@@ -37,13 +39,8 @@ import {
   type BlockProps,
   type Components,
 } from "streamdown";
-import type { Pluggable, PluggableList } from "unified";
-import { PerformanceTraceContext } from "./performanceTraceContext";
-import {
-  createPerformanceTraceId,
-  isPerformanceTracingEnabled,
-  recordPerformanceEvent,
-} from "../../../shared/lib/performanceTrace";
+import type { Pluggable, PluggableList, Plugin } from "unified";
+import { useRenderTrace } from "./useRenderTrace";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
 import { FileActionError } from "../../files/ui/FileActionError";
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
@@ -93,6 +90,13 @@ import { usePresentationVisible } from "./presentationVisibility";
 import { usePrefersReducedMotion } from "../../settings/model/decorativeMotion";
 import { HighlightedCodeBlock } from "./HighlightedCodeBlock";
 import { useParsedMarkdown } from "./useParsedMarkdown";
+import { parseLocalSessionLink } from "../model/localSessionReference";
+import { LocalSessionReferenceLink } from "./LocalSessionReferenceLink";
+import { remarkLocalSessionLinks } from "./remarkLocalSessionLinks";
+import {
+  rehypeHoldLocalSessionLinks,
+  rehypeRestoreLocalSessionLinks,
+} from "./localSessionLinkSources";
 
 const MERMAID_BASE_CONFIG = {
   startOnLoad: false,
@@ -107,25 +111,47 @@ const mermaid = createLazyMermaidPlugin({
   },
 });
 
+// Extend only href protocols. Every bycoda target is validated before hardening
+// and again at dispatch; images and all other sanitizer rules stay unchanged.
+const [sanitizeMarkdown, markdownSchema] = defaultRehypePlugins.sanitize as [
+  Plugin,
+  { protocols?: Record<string, string[]>; [key: string]: unknown },
+];
+const LOCAL_SESSION_SANITIZE: Pluggable = [
+  sanitizeMarkdown,
+  {
+    ...markdownSchema,
+    protocols: {
+      ...markdownSchema.protocols,
+      href: [...(markdownSchema.protocols?.href ?? []), "bycoda"],
+    },
+  },
+];
+
+const MARKDOWN_HARDEN: Pluggable = [
+  harden,
+  {
+    // MarkdownImage remains the final allowlist. The wildcard lets app-owned
+    // relative note URLs reach that component without changing link parsing.
+    allowedImagePrefixes: ["*"],
+    allowedLinkPrefixes: ["*"],
+    allowDataImages: true,
+    imageBlockPolicy: "remove" as const,
+  },
+];
+
 const MARKDOWN_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
-  [
-    harden,
-    {
-      // MarkdownImage remains the final allowlist. The wildcard lets app-owned
-      // relative note URLs reach that component without changing link parsing.
-      allowedImagePrefixes: ["*"],
-      allowedLinkPrefixes: ["*"],
-      allowDataImages: true,
-      imageBlockPolicy: "remove" as const,
-    },
-  ],
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
+  MARKDOWN_HARDEN,
+  rehypeRestoreLocalSessionLinks,
 ];
 
 const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
   [
     harden,
     {
@@ -136,13 +162,16 @@ const INBOX_MEDIA_REHYPE_PLUGINS: PluggableList = [
       imageBlockPolicy: "remove" as const,
     },
   ],
+  rehypeRestoreLocalSessionLinks,
 ];
 
 const DOCUMENT_REHYPE_PLUGINS: PluggableList = [
   defaultRehypePlugins.raw,
-  defaultRehypePlugins.sanitize,
+  LOCAL_SESSION_SANITIZE,
+  rehypeHoldLocalSessionLinks,
   rehypeHoldImageSources,
-  MARKDOWN_REHYPE_PLUGINS[2],
+  MARKDOWN_HARDEN,
+  rehypeRestoreLocalSessionLinks,
   rehypeRestoreImageSources,
 ];
 
@@ -314,6 +343,19 @@ function MarkdownLink({
   const [linkError, setLinkError] = useState<string>();
   const file = href ? resolveFile(href, cwd) : undefined;
   const label = textContent(children);
+  const sessionReference = href ? parseLocalSessionLink(href) : null;
+  if (href && sessionReference) {
+    return (
+      <LocalSessionReferenceLink
+        key={href}
+        href={href}
+        reference={sessionReference}
+        className={className}
+      >
+        {children}
+      </LocalSessionReferenceLink>
+    );
+  }
   if (allowRemoteMedia && href && isInboxMediaUrl(href)) {
     return <InboxMedia src={href} alt={label} />;
   }
@@ -685,13 +727,7 @@ function CodeCopyButton({
   const t = useT();
   const label = labelProp ?? t("Copy code");
   const copiedMessage = copiedMessageProp ?? t("Code copied.");
-  const [copied, setCopied] = useTransientFlag(1500);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    setCopied(false);
-    setFailed(false);
-  }, [code]);
+  const { copied, failed, copy } = useCopyFeedback({ resetKeys: [code], successMs: 1500 });
 
   return (
     <Button
@@ -705,14 +741,7 @@ function CodeCopyButton({
       aria-label={failed ? t("Copy failed — try again") : copied ? t("Copied") : label}
 
       onClick={() => {
-        setFailed(false);
-        const text = getText ? getText() : code.replace(/\r?\n$/, "");
-        void copyText(text).then(
-          () => {
-            setCopied(true);
-          },
-          () => setFailed(true),
-        );
+        copy(() => copyText(getText ? getText() : code.replace(/\r?\n$/, "")));
       }}
     >
       <span className="sr-only" role="status" aria-live="polite">
@@ -744,7 +773,7 @@ function NoteAssetImage({
   useEffect(() => {
     if (src) return;
     let cancelled = false;
-    void invoke<string>("notes_image_path", { asset })
+    void resolveNoteImagePath(asset)
       .then((path) => {
         const next = convertFileSrc(path);
         noteImageSrcCache.delete(asset);
@@ -1040,7 +1069,11 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     [cwd, documentPath, onOpenFile, openFile, onFileContextMenu, onRevealFile],
   );
   const remarkPlugins = useMemo<PluggableList>(
-    () => [...Object.values(defaultRemarkPlugins), [remarkWorkspaceFileLinks, { cwd }]],
+    () => [
+      ...Object.values(defaultRemarkPlugins),
+      remarkLocalSessionLinks,
+      [remarkWorkspaceFileLinks, { cwd }],
+    ],
     [cwd],
   );
   const remoteMedia = !!allowRemoteMedia;
@@ -1073,50 +1106,7 @@ export const AgentMarkdown = memo(function AgentMarkdown({
     }
     previousPresentation.current = { visible, textMode, reducedMotion };
   }, [visible, textMode, reducedMotion]);
-  const submissionTraceId = useContext(PerformanceTraceContext);
-  const paintTrace = useRef<string | null>(null);
-  const firstPaintRecorded = useRef(false);
-  const receivedText = useRef(text);
-  useEffect(() => {
-    if (!isPerformanceTracingEnabled()) return;
-    if (
-      firstPaintRecorded.current &&
-      receivedText.current === text &&
-      paintTrace.current !== submissionTraceId
-    )
-      return;
-    receivedText.current = text;
-    if (submissionTraceId && paintTrace.current !== submissionTraceId)
-      firstPaintRecorded.current = false;
-    paintTrace.current = submissionTraceId ?? paintTrace.current ?? createPerformanceTraceId();
-    recordPerformanceEvent("renderer-receive", { items: text.length }, paintTrace.current);
-  }, [text, submissionTraceId]);
-  useEffect(() => {
-    if (!isPerformanceTracingEnabled()) return;
-    let second = 0;
-    const first = requestAnimationFrame(() => {
-      second = requestAnimationFrame(() => {
-        if (!firstPaintRecorded.current) {
-          firstPaintRecorded.current = true;
-          recordPerformanceEvent(
-            "first-paint",
-            { items: paced.text.length },
-            paintTrace.current ?? undefined,
-          );
-        }
-        if (!streaming && !paced.revealing)
-          recordPerformanceEvent(
-            "last-paint",
-            { items: paced.text.length },
-            paintTrace.current ?? undefined,
-          );
-      });
-    });
-    return () => {
-      cancelAnimationFrame(first);
-      cancelAnimationFrame(second);
-    };
-  }, [paced.text, paced.revealing, streaming, submissionTraceId]);
+  useRenderTrace(text, paced.text, paced.revealing, streaming);
   const fading = useWordFading(
     !!streaming || paced.revealing || (adaptive && mountEntrance),
     adaptive ? ADAPTIVE_FADE_MAX_MS : undefined,
@@ -1349,19 +1339,23 @@ export function MarkdownSourceHighlight({ text }: { text: string }) {
 
 function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean }) {
   useLocale();
-  const [svg, setSvg] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  // A render result belongs to the code and scheme it was made for: anything
+  // else reads as loading, so no effect has to clear it.
+  const [rendered, setRendered] = useState<{
+    code: string;
+    colorScheme: string;
+    svg?: string;
+    failed?: boolean;
+  } | null>(null);
   const colorScheme = useColorScheme();
+  const current =
+    rendered && rendered.code === code && rendered.colorScheme === colorScheme ? rendered : null;
+  const svg = current?.svg ?? null;
+  const failed = current?.failed ?? false;
 
   useEffect(() => {
-    if (incomplete) {
-      setSvg(null);
-      setFailed(false);
-      return;
-    }
+    if (incomplete) return;
     let cancelled = false;
-    setSvg(null);
-    setFailed(false);
     const id = `mermaid-${Math.abs(hashCode(code)).toString(36)}-${Date.now().toString(36)}`;
     void mermaid
       .getMermaid({
@@ -1371,10 +1365,10 @@ function MermaidBlock({ code, incomplete }: { code: string; incomplete: boolean 
       .render(id, code)
       .then((result) => {
         if (cancelled) return;
-        setSvg(result.svg);
+        setRendered({ code, colorScheme, svg: result.svg });
       })
       .catch(() => {
-        if (!cancelled) setFailed(true);
+        if (!cancelled) setRendered({ code, colorScheme, failed: true });
       });
     return () => {
       cancelled = true;

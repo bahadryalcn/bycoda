@@ -30,6 +30,8 @@ import {
 import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
+import { isImeComposition } from "../../../shared/lib/keyboard";
+import { hasActiveOverlay } from "../../../shared/ui/overlay";
 
 type Props = {
   cwd: string;
@@ -113,7 +115,15 @@ function ProjectSearchContent({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // Child popups (filters, field menus) and IME composition own Escape first;
+      // Project Search closes only when nothing else claims the key.
+      if (
+        event.key !== "Escape" ||
+        isImeComposition(event) ||
+        event.defaultPrevented ||
+        hasActiveOverlay()
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
       onCloseRef.current();
@@ -173,12 +183,8 @@ function ProjectSearchContent({
   };
 
   const onQueryKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      onClose();
-      return;
-    }
-    if (event.key === "Enter" && matches[0]) {
+    // Escape is owned by the window listener above, which yields to IME and overlays.
+    if (event.key === "Enter" && !isImeComposition(event.nativeEvent) && matches[0]) {
       event.preventDefault();
       openMatch(matches[0]);
     }

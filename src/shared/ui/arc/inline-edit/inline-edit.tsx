@@ -2,6 +2,16 @@
 
 import { useT } from "../../../i18n";
 import { isImeComposition } from "../../../lib/keyboard";
+import {
+  createNativeInputControlPort,
+  nativeInputControlKey,
+  consumeNativeInputPublication,
+  issueNativeInputPublication,
+  type NativeInputObserver,
+  type NativeInputPublication,
+  type NativeInputRead,
+  type NativeInputWork,
+} from "../../../lib/native-input-observer";
 
 import {
   useEffect,
@@ -50,6 +60,9 @@ export interface InlineEditProps {
   /** The element that holds the text, so a title can stay a heading. */
   as?: "span" | "p" | "h1" | "h2" | "h3";
   className?: string;
+  /** Private raw-input observation; ordinary persistence and callback args stay unchanged. */
+  inputObserver?: NativeInputObserver;
+  inputPublication?: NativeInputPublication;
 }
 
 type Phase = "idle" | "saving" | "saved" | "failed";
@@ -205,7 +218,11 @@ type CaretDocument = Document & {
   caretRangeFromPoint?: (x: number, y: number) => Range | null;
 };
 
-export function InlineEdit({
+export function InlineEdit(props: InlineEditProps) {
+  return <InlineEditControl key={nativeInputControlKey(props.inputObserver)} {...props} />;
+}
+
+function InlineEditControl({
   value,
   onSave,
   label,
@@ -215,6 +232,8 @@ export function InlineEdit({
   variant = "title",
   as: Tag = "span",
   className,
+  inputObserver,
+  inputPublication,
 }: InlineEditProps) {
   const t = useT();
   const reduced = useReduced();
@@ -233,6 +252,7 @@ export function InlineEdit({
   const [failed, setFailed] = useState<string | null>(null);
   const [flash, setFlash] = useState<"on" | "off" | null>(null);
   const [announcement, setAnnouncement] = useState("");
+  const [admissionError, setAdmissionError] = useState<string | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const display = useRef<HTMLButtonElement>(null);
   const control = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
@@ -253,6 +273,115 @@ export function InlineEdit({
   const boxHeight = useMotionValue<number | string>("auto");
   const size = useRef(0);
   const wasEditing = useRef(false);
+  const inputPort = useRef<ReturnType<typeof createNativeInputControlPort> | null>(null);
+  const composing = useRef(false);
+  const requestedClosed = useRef(false);
+  const rawDraft = useRef(value);
+  const pendingInput = useRef<{
+    raw: string;
+    next: string;
+    run: number;
+    disposition: string;
+  } | null>(null);
+  const [inputReadOnly, setInputReadOnly] = useState(false);
+  const readInput = useRef<() => NativeInputRead>(() => ({ snapshot: {} }));
+  const lastExternalValue = useRef(value);
+  const lastPublication = useRef(inputPublication);
+  const [outcomeView, setOutcomeView] = useState<{
+    token: object;
+    proof: NativeInputPublication;
+  }>();
+  const awaitingOutcome = useRef<{
+    port: ReturnType<typeof createNativeInputControlPort>;
+    view: { token: object; proof: NativeInputPublication };
+    retire(): void;
+  } | null>(null);
+  useLayoutEffect(() => {
+    readInput.current = () => ({
+      snapshot: {
+        source: "inline-edit",
+        value,
+        committed,
+        shown,
+        draft: control.current?.value ?? rawDraft.current,
+        stateDraft: draft,
+        editing,
+        phase,
+        error,
+        failed,
+        pendingInput: pendingInput.current,
+        composing: composing.current,
+      },
+      ...(composing.current ? { busy: "inline-edit-composition" } : {}),
+    });
+    const changedValue = lastExternalValue.current !== value;
+    const changedPublication = lastPublication.current !== inputPublication;
+    lastPublication.current = inputPublication;
+    if (changedValue || changedPublication) {
+      lastExternalValue.current = value;
+      const committed =
+        inputObserver &&
+        consumeNativeInputPublication(inputPublication, inputObserver, value, () =>
+          inputPort.current?.changed(),
+        );
+      if (!committed) inputPort.current?.external(() => {});
+    }
+    inputPort.current?.refresh();
+    const pending = awaitingOutcome.current;
+    if (pending && outcomeView === pending.view)
+      consumeNativeInputPublication(outcomeView.proof, pending.port, outcomeView.token, () =>
+        pending.port.changed(),
+      );
+  });
+  useLayoutEffect(() => {
+    if (!inputObserver) {
+      requestedClosed.current = false;
+      setInputReadOnly(false);
+      return;
+    }
+    const port = createNativeInputControlPort(inputObserver, () => readInput.current(), {
+      canClose: () => !composing.current,
+      close: (closed) => {
+        requestedClosed.current = closed;
+        if (composing.current) return;
+        if (control.current) control.current.readOnly = closed;
+        setInputReadOnly(closed);
+      },
+    });
+    inputPort.current = port;
+    requestedClosed.current = port.closed();
+    if (!composing.current) setInputReadOnly(port.closed());
+    return () => {
+      // Keep a no-DOM reader attached while an original deferred save is owned.
+      port.retire();
+      if (awaitingOutcome.current?.port === port) awaitingOutcome.current.retire();
+      if (inputPort.current === port) inputPort.current = null;
+    };
+  }, [inputObserver]);
+  useLayoutEffect(() => {
+    const node = control.current;
+    if (!inputObserver || !node) return;
+    const guard = (event: Event) => {
+      if (inputPort.current && !inputPort.current.allowed() && !composing.current)
+        event.preventDefault();
+    };
+    for (const type of ["beforeinput", "paste", "drop"]) node.addEventListener(type, guard, true);
+    return () => {
+      for (const type of ["beforeinput", "paste", "drop"])
+        node.removeEventListener(type, guard, true);
+    };
+  });
+
+  function mutateInput(_kind: string, apply: () => void) {
+    const port = inputPort.current;
+    if (!port) {
+      apply();
+      return;
+    }
+    if (!port.allowed()) return;
+    apply();
+    port.changed();
+  }
 
   // A new value from outside replaces the text, unless the person is typing or a save is still in flight.
   if (value !== seen) {
@@ -352,13 +481,17 @@ export function InlineEdit({
 
   function startEdit(at: number | "all", text = shown) {
     if (editing || saving) return;
-    setDraft(text);
-    setEditing(true);
-    setError(null);
-    setFailed(null);
-    setFlash(null);
-    if (phase !== "idle") setPhase("idle");
-    selection.current = at;
+    mutateInput("inline-edit-start", () => {
+      setAdmissionError(null);
+      rawDraft.current = text;
+      setDraft(text);
+      setEditing(true);
+      setError(null);
+      setFailed(null);
+      setFlash(null);
+      if (phase !== "idle") setPhase("idle");
+      selection.current = at;
+    });
   }
 
   /** The caret lands on the character that was clicked, the way it would in a text field. */
@@ -383,12 +516,109 @@ export function InlineEdit({
 
   const clean = (text: string) => (multiline ? text.trim() : text.replace(/\s+/g, " ").trim());
 
+  function publishInputOutcome(
+    port: ReturnType<typeof createNativeInputControlPort>,
+    work: NativeInputWork,
+    run: number,
+    update: () => void,
+    retired: () => Record<string, unknown>,
+  ) {
+    const original = <T,>(callback: () => T): T => work.apply(callback);
+    const currentOwner = () => port.live && inputPort.current === port;
+    if (!currentOwner()) return original(() => port.retiredOutcome(retired()));
+    let resolve!: () => void;
+    const ack = new Promise<void>((done) => {
+      resolve = done;
+    });
+    const token = {};
+    const done = () => {
+      if (awaitingOutcome.current === record) awaitingOutcome.current = null;
+      resolve();
+    };
+    const view: { token: object; proof: NativeInputPublication } = {
+      token,
+      proof: issueNativeInputPublication({
+        target: port,
+        value: token,
+        current: (): boolean =>
+          awaitingOutcome.current === record && currentOwner() && saveRun.current === run,
+        apply: original,
+        committed: done,
+      }),
+    };
+    const record: NonNullable<typeof awaitingOutcome.current> = {
+      port,
+      view,
+      retire: () => {
+        try {
+          original(() => port.retiredOutcome(retired()));
+        } finally {
+          done();
+        }
+      },
+    };
+    awaitingOutcome.current = record;
+    try {
+      original(() => {
+        update();
+        setOutcomeView(view);
+        port.changed();
+      });
+    } catch (error) {
+      done();
+      throw error;
+    }
+    return ack;
+  }
+
   function submit(source: "key" | "button" | "blur") {
+    const port = inputPort.current;
+    if (port && (pendingInput.current || awaitingOutcome.current || composing.current)) return;
+    const work = port?.operation("inline-edit-save");
+    if (port && !work) {
+      if (!port.closed())
+        setAdmissionError(
+          t(
+            "The input limit is busy. Your draft is kept; try again after another operation finishes.",
+          ),
+        );
+      return;
+    }
+    setAdmissionError(null);
+    const finish = () => {
+      if (port && work) port.finish(work);
+    };
+    const finishState = (update: () => void, retired: () => Record<string, unknown>) => {
+      if (!port || !work) {
+        update();
+        finish();
+        return;
+      }
+      try {
+        void Promise.resolve(publishInputOutcome(port, work, saveRun.current, update, retired))
+          .finally(finish)
+          .catch(() => port.external(() => {}));
+      } catch (error) {
+        finish();
+        throw error;
+      }
+    };
     const next = clean(draft);
-    const problem = validate?.(next) || null;
+    let problem: string | null;
+    try {
+      problem = validate?.(next) || null;
+    } catch (error) {
+      finish();
+      throw error;
+    }
     if (problem) {
-      setError(problem);
-      if (source !== "blur") control.current?.focus();
+      finishState(
+        () => {
+          setError(problem);
+          if (source !== "blur") control.current?.focus();
+        },
+        () => ({ error: problem }),
+      );
       return;
     }
     setEditing(false);
@@ -397,47 +627,127 @@ export function InlineEdit({
     // Trimmed spaces would shift the text in one frame, so a cleaned value arrives with the text motion instead.
     if (next !== draft) setLayer((current) => ({ key: current.key + 1, direction: 1 }));
     if (next === committed) {
-      setShown(committed);
+      finishState(
+        () => setShown(committed),
+        () => ({ shown: committed, editing: false, error: null }),
+      );
       return;
     }
     const previous = committed;
     const sourceValue = value;
     const run = ++saveRun.current;
+    pendingInput.current = { raw: rawDraft.current, next, run, disposition: "accepted" };
     setShown(next);
     setPhase("saving");
     setAnnouncement(t("Saving {p0}", { p0: label }));
+    port?.changed();
+    const original = <T,>(callback: () => T): T => (work ? work.apply(callback) : callback());
+    const currentOwner = () => !port || (port.live && inputPort.current === port);
+    const publishOutcome = (update: () => void, retired: () => Record<string, unknown>) =>
+      port && work ? publishInputOutcome(port, work, run, update, retired) : original(update);
     Promise.resolve()
-      .then(() => onSave(next))
+      .then(() => original(() => onSave(next)))
       .then(
         () => {
+          if (!currentOwner()) {
+            const external = port?.retiredRead()?.snapshot.value;
+            const resolved =
+              typeof external === "string" && external !== sourceValue ? external : next;
+            original(() =>
+              port?.retiredOutcome({
+                phase: "saved",
+                pendingInput: null,
+                committed: resolved,
+                shown: resolved,
+              }),
+            );
+            return;
+          }
           if (run !== saveRun.current) return;
-          const resolved = externalValue.current === sourceValue ? next : externalValue.current;
-          setCommitted(resolved);
-          setShown(resolved);
-          setPhase("saved");
-          setAnnouncement(t("Saved {p0}", { p0: label }));
-          later(() => setPhase((current) => (current === "saved" ? "idle" : current)), 1800);
+          return publishOutcome(
+            () => {
+              const resolved = externalValue.current === sourceValue ? next : externalValue.current;
+              setCommitted(resolved);
+              setShown(resolved);
+              setPhase("saved");
+              setAnnouncement(t("Saved {p0}", { p0: label }));
+              later(() => setPhase((current) => (current === "saved" ? "idle" : current)), 1800);
+              port?.changed();
+            },
+            () => {
+              const external = port?.retiredRead()?.snapshot.value;
+              const resolved =
+                typeof external === "string" && external !== sourceValue ? external : next;
+              return { phase: "saved", pendingInput: null, committed: resolved, shown: resolved };
+            },
+          );
         },
         () => {
+          if (!currentOwner()) {
+            const external = port?.retiredRead()?.snapshot.value;
+            original(() =>
+              port?.retiredOutcome({
+                phase: "failed",
+                pendingInput: null,
+                failed: next,
+                shown:
+                  typeof external === "string" && external !== sourceValue ? external : previous,
+              }),
+            );
+            return;
+          }
           if (run !== saveRun.current) return;
-          setShown(externalValue.current === sourceValue ? previous : externalValue.current);
-          setLayer((current) => ({ key: current.key + 1, direction: -1 }));
-          setPhase("failed");
-          setFailed(next);
-          setFlash("on");
-          setAnnouncement("");
-          later(() => setFlash((current) => (current === "on" ? "off" : current)), 1400);
-          later(() => setFlash((current) => (current === "off" ? null : current)), 2000);
+          return publishOutcome(
+            () => {
+              setShown(externalValue.current === sourceValue ? previous : externalValue.current);
+              setLayer((current) => ({ key: current.key + 1, direction: -1 }));
+              setPhase("failed");
+              setFailed(next);
+              setFlash("on");
+              setAnnouncement("");
+              later(() => setFlash((current) => (current === "on" ? "off" : current)), 1400);
+              later(() => setFlash((current) => (current === "off" ? null : current)), 2000);
+              port?.changed();
+            },
+            () => {
+              const external = port?.retiredRead()?.snapshot.value;
+              return {
+                phase: "failed",
+                pendingInput: null,
+                failed: next,
+                shown:
+                  typeof external === "string" && external !== sourceValue ? external : previous,
+              };
+            },
+          );
         },
-      );
+      )
+      .catch(() => {
+        if (currentOwner()) {
+          const reflect = () => {
+            setPhase("failed");
+            setFailed(next);
+            setShown(previous);
+          };
+          if (port) port.external(reflect);
+          else reflect();
+        } else port?.retiredOutcome({ disposition: "result-application-held" });
+      })
+      .finally(() => {
+        if (currentOwner() && pendingInput.current?.run === run) pendingInput.current = null;
+        port?.changed();
+        finish();
+      });
   }
 
   function cancel() {
-    setEditing(false);
-    setShown(committed);
-    setError(null);
-    focusDisplay.current = true;
-    if (draft !== shown) setLayer((current) => ({ key: current.key + 1, direction: -1 }));
+    mutateInput("inline-edit-cancel", () => {
+      setEditing(false);
+      setShown(committed);
+      setError(null);
+      focusDisplay.current = true;
+      if (draft !== shown) setLayer((current) => ({ key: current.key + 1, direction: -1 }));
+    });
   }
 
   function retry() {
@@ -447,8 +757,19 @@ export function InlineEdit({
 
   function onChange(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) {
     const next = event.target.value;
-    setDraft(next);
-    if (error) setError(validate?.(clean(next)) || null);
+    const port = inputPort.current;
+    if (port && !port.allowed()) {
+      port.external(() => {
+        rawDraft.current = next;
+        setDraft(next);
+      });
+      return;
+    }
+    mutateInput("inline-edit-change", () => {
+      rawDraft.current = next;
+      setDraft(next);
+      if (error) setError(validate?.(clean(next)) || null);
+    });
   }
 
   function onKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
@@ -474,34 +795,41 @@ export function InlineEdit({
     submit("blur");
   }
 
-  const message = error
-    ? {
-        key: `error:${error}`,
-        tone: "error" as const,
-        node: (
-          <>
-            <CircleAlert className={styles.messageIcon} aria-hidden="true" />
-            <span>{error}</span>
-          </>
-        ),
-      }
-    : failed !== null && !editing
+  const message = admissionError
+    ? { key: "input-limit", tone: "error" as const, node: admissionError }
+    : error
       ? {
-          key: `failed:${failed}`,
-          tone: "failed" as const,
+          key: `error:${error}`,
+          tone: "error" as const,
           node: (
             <>
               <CircleAlert className={styles.messageIcon} aria-hidden="true" />
-              <span>
-                {t("Could not save {p0}. The previous value was restored.", { p0: failed })}{" "}
-                <button type="button" className={styles.retry} onClick={retry}>
-                  {t("Try again")}
-                </button>
-              </span>
+              <span>{error}</span>
             </>
           ),
         }
-      : null;
+      : failed !== null && !editing
+        ? {
+            key: `failed:${failed}`,
+            tone: "failed" as const,
+            node: (
+              <>
+                <CircleAlert className={styles.messageIcon} aria-hidden="true" />
+                <span>
+                  {t("Could not save {p0}. The previous value was restored.", { p0: failed })}{" "}
+                  <button
+                    type="button"
+                    className={styles.retry}
+                    onClick={retry}
+                    aria-disabled={inputReadOnly || undefined}
+                  >
+                    {t("Try again")}
+                  </button>
+                </span>
+              </>
+            ),
+          }
+        : null;
   const slot = editing ? "edit" : phase;
   const describedBy = (hint: string) =>
     [hint, message ? messageId : null].filter(Boolean).join(" ");
@@ -510,6 +838,19 @@ export function InlineEdit({
     value: draft,
     onChange,
     onKeyDown,
+    readOnly: inputReadOnly,
+    onBeforeInput: (event: { preventDefault(): void }) => {
+      if (inputPort.current && !inputPort.current.allowed()) event.preventDefault();
+    },
+    onCompositionStart: () => {
+      composing.current = true;
+      inputPort.current?.external(() => {});
+    },
+    onCompositionEnd: () => {
+      composing.current = false;
+      setInputReadOnly(requestedClosed.current);
+      inputPort.current?.changed();
+    },
     placeholder,
     "aria-label": label,
     "aria-invalid": error ? true : undefined,
@@ -545,7 +886,7 @@ export function InlineEdit({
             tabIndex={editing ? -1 : undefined}
             aria-label={`${label}: ${shown || placeholder}`}
             aria-describedby={describedBy(displayHintId)}
-            aria-disabled={saving || undefined}
+            aria-disabled={saving || inputReadOnly || undefined}
           >
             <span className={styles.layer} data-empty={layerText ? undefined : ""}>
               <AnimatePresence mode="popLayout" initial={false} custom={layer.direction}>
@@ -611,6 +952,7 @@ export function InlineEdit({
                         iconOnly
                         motion="none"
                         label={t("Save {p0}", { p0: label })}
+                        aria-disabled={inputReadOnly || undefined}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={() => submit("button")}
                       >
@@ -623,6 +965,7 @@ export function InlineEdit({
                         iconOnly
                         motion="none"
                         label={t("Cancel editing")}
+                        aria-disabled={inputReadOnly || undefined}
                         onPointerDown={(event) => event.preventDefault()}
                         onClick={cancel}
                       >

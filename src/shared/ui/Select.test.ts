@@ -186,3 +186,38 @@ it("marks a trigger invalid through native aria and keeps disabled out of the ta
   expect(trigger().getAttribute("aria-invalid")).toBe("true");
   expect(trigger().getAttribute("aria-describedby")).toBe("choice-error");
 });
+
+it("keeps the keyboard cursor when a parent re-renders an open select with a new options array", async () => {
+  const make = () => [
+    { value: "a", label: "Alpha" },
+    { value: "b", label: "Beta" },
+    { value: "c", label: "Gamma" },
+  ];
+  const draw = () =>
+    act(async () =>
+      root.render(
+        createElement(Select, { label: "Choice", value: "a", options: make(), onValueChange: change }),
+      ),
+    );
+  await draw();
+  await act(async () => {
+    trigger().focus();
+    key(trigger(), "ArrowDown");
+  });
+  const activeLabel = () =>
+    menu()!.querySelector('[role="option"][data-highlighted]')?.textContent?.trim();
+  await act(async () => key(menu()!, "ArrowDown"));
+  expect(activeLabel()).toBe("Beta");
+  await draw();
+  expect(activeLabel()).toBe("Beta");
+});
+
+it("closes during a disabled render and does not reopen when enabled again", async () => {
+  await render();
+  await act(async () => trigger().click());
+  expect(menu()).not.toBeNull();
+  await render(true);
+  expect(menu()).toBeNull();
+  await render(false);
+  expect(menu()).toBeNull();
+});

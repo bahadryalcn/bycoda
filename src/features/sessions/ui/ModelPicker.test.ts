@@ -676,18 +676,18 @@ describe("model picker", () => {
     await act(async () => modelTrigger.click());
     expect(
       [...container.querySelectorAll<HTMLButtonElement>("button")].some((button) =>
-        button.textContent?.startsWith("Effort"),
+        button.textContent?.startsWith("Reasoning"),
       ),
     ).toBe(false);
 
     const effortTrigger = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Effort: High"]',
+      'button[aria-label="Reasoning: High"]',
     )!;
     expect(effortTrigger.textContent).toBe("High");
     expect(effortTrigger.querySelector("svg")).not.toBeNull();
     await act(async () => effortTrigger.click());
     const effortMenu = container.querySelector<HTMLElement>(
-      'button[role="combobox"][aria-label="Effort: High"]',
+      'button[role="combobox"][aria-label="Reasoning: High"]',
     )!;
     expect(effortMenu).not.toBeNull();
     await keyDown(effortMenu, "ArrowUp");
@@ -1406,4 +1406,191 @@ it("does not refresh or erase model search when a host source object is republis
   expect(
     container.querySelector<HTMLInputElement>('input[aria-label="Search models"]')!.value,
   ).toBe("Opus");
+});
+
+describe("model picker menu order", () => {
+  const sel = (id: string, label: string, value: string, options: string[]) => ({
+    id,
+    label,
+    kind: "select" as const,
+    value,
+    options: options.map((option) => ({ value: option, label: option })),
+  });
+
+  async function openMenu(values: Record<string, string>, onSettingsChange = vi.fn()) {
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:ordered",
+        harness: "cursor",
+        name: "Ordered",
+        nativeId: "ordered",
+        // Catalog order is deliberately scrambled: the menu must not follow it.
+        settings: [
+          sel("subagentModel", "Subagent model", "default", ["default", "other"]),
+          sel("autoCompactWindow", "Auto-compact window", "200k", ["200k", "400k"]),
+          {
+            id: "fast",
+            label: "Fast",
+            kind: "toggle",
+            value: "false",
+            options: [
+              { value: "true", label: "On" },
+              { value: "false", label: "Off" },
+            ],
+          },
+          sel("advisor", "Advisor", "off", ["off", "on"]),
+          sel("effort", "Reasoning", "low", ["low", "high"]),
+          sel("autoCompact", "Auto-compact", "on", ["on", "off"]),
+        ],
+      },
+    ]);
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "cursor",
+          model: "cursor:ordered",
+          values,
+          showEffortSummary: true,
+          onChange: vi.fn(),
+          onSettingsChange,
+        }),
+      ),
+    );
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click(),
+    );
+    return container.querySelector<HTMLElement>('[role="menu"][aria-label="Model and settings"]')!;
+  }
+
+  it("leads with Model, Reasoning and Fast, then Context, then Advisor and subagents", async () => {
+    const menu = await openMenu({});
+    const rows = [...menu.children].map((child) =>
+      child.getAttribute("data-model-group")
+        ? `# ${child.textContent}`
+        : (child.querySelector("span")?.textContent ?? ""),
+    );
+    expect(rows).toEqual([
+      "Model",
+      "Reasoning",
+      "Fast",
+      "# Context",
+      "Auto-compact",
+      "Auto-compact window",
+      "# Advisor and subagents",
+      "Advisor",
+      "Subagent model",
+    ]);
+  });
+
+  it("toggles Fast directly and shows it in the trigger", async () => {
+    const onSettingsChange = vi.fn();
+    const menu = await openMenu({}, onSettingsChange);
+    const fast = menu.querySelector<HTMLButtonElement>('[role="menuitemcheckbox"]')!;
+    expect(fast.getAttribute("aria-checked")).toBe("false");
+    await act(async () => fast.click());
+    expect(onSettingsChange).toHaveBeenCalledWith({ fast: "true" });
+    expect(container.querySelector("[data-model-fast]")).toBeNull();
+
+    await act(async () =>
+      root.render(
+        createElement(ModelPicker, {
+          harness: "cursor",
+          model: "cursor:ordered",
+          values: { fast: "true" },
+          showEffortSummary: true,
+          onChange: vi.fn(),
+          onSettingsChange,
+        }),
+      ),
+    );
+    expect(container.querySelector("[data-model-fast]")).not.toBeNull();
+    expect(
+      container.querySelector("button[aria-haspopup='menu']")!.getAttribute("aria-label"),
+    ).toContain("Fast");
+  });
+
+  it("marks the selected reasoning level with a check", async () => {
+    const menu = await openMenu({ effort: "high" });
+    const reasoning = [...menu.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      button.textContent?.startsWith("Reasoning"),
+    )!;
+    expect(reasoning.textContent).toContain("High".toLowerCase());
+    await hover(reasoning);
+    const checked = container.querySelector('[role="menuitemradio"][aria-checked="true"]')!;
+    expect(checked.textContent).toBe("high");
+    expect(checked.querySelector("svg")).not.toBeNull();
+  });
+
+  it("renders the field presentation as a full-width trigger and keeps inline as the default", async () => {
+    const render = (presentation?: "field") =>
+      act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "cursor",
+            model: "cursor:ordered",
+            values: {},
+            presentation,
+            onChange: vi.fn(),
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+    await render();
+    const inline = container.querySelector("button[aria-haspopup='menu']")!;
+    expect(inline.getAttribute("data-model-picker-presentation")).toBe("inline");
+    expect(inline.classList.contains("model-picker-field-trigger")).toBe(false);
+    await render("field");
+    const field = container.querySelector("button[aria-haspopup='menu']")!;
+    expect(field.getAttribute("data-model-picker-presentation")).toBe("field");
+    expect(field.classList.contains("model-picker-field-trigger")).toBe(true);
+  });
+
+  it("offers a labelled inherit choice that maps to the owner's empty value", async () => {
+    setHarnessModels("cursor", [
+      {
+        id: "cursor:ordered",
+        harness: "cursor",
+        name: "Ordered",
+        nativeId: "ordered",
+        settings: [sel("effort", "Reasoning", "low", ["low", "high"])],
+      },
+    ]);
+    const onSelect = vi.fn();
+    const onChange = vi.fn();
+    const render = (selected: boolean) =>
+      act(async () =>
+        root.render(
+          createElement(ModelPicker, {
+            harness: "cursor",
+            model: "cursor:ordered",
+            values: {},
+            inheritChoice: { label: "Use the global agent", selected, onSelect },
+            onChange,
+            onSettingsChange: vi.fn(),
+          }),
+        ),
+      );
+    await render(true);
+    const trigger = container.querySelector<HTMLButtonElement>("button[aria-haspopup='menu']")!;
+    expect(trigger.textContent).toContain("Use the global agent");
+    expect(trigger.getAttribute("aria-label")).toBe("Use the global agent");
+    await act(async () => trigger.click());
+    const menu = container.querySelector('[role="menu"]')!;
+    const rows = [...menu.querySelectorAll<HTMLButtonElement>("button")];
+    expect(rows[0]!.textContent).toBe("Use the global agent");
+    expect(rows[0]!.getAttribute("aria-checked")).toBe("true");
+    // Inherited: no model options to edit, only the choice and the Model row.
+    expect(rows.map((row) => row.textContent)).not.toContain("Reasoning");
+    await act(async () => rows[0]!.click());
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+
+    await render(false);
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[aria-haspopup='menu']")!.click(),
+    );
+    const explicit = [...container.querySelectorAll<HTMLButtonElement>('[role="menu"] button')];
+    expect(explicit[0]!.getAttribute("aria-checked")).toBe("false");
+    expect(explicit.some((row) => row.textContent?.startsWith("Reasoning"))).toBe(true);
+  });
 });

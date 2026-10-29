@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import type { GitHistoryCommit } from "../../../platform/tauri/fs";
 import { Check, Copy } from "../../../shared/ui/icons";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
@@ -8,6 +8,7 @@ import { formatAbsoluteTime, formatRelativeTime, orderGraphRefs } from "../model
 import type { HistoryItemViewModel } from "../model/gitGraph";
 import { GraphAvatar, RefPill } from "./GitGraphParts";
 import { copyText } from "../../../platform/tauri/clipboard";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 
 const CARD_WIDTH = 320;
 
@@ -28,28 +29,15 @@ export function GitGraphHoverCard({
   onLeave: () => void;
 }) {
   useLocale();
-  const [copied, setCopied] = useState(false);
-  const [copyError, setCopyError] = useState<string | null>(null);
-  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (copiedTimer.current != null) clearTimeout(copiedTimer.current);
-    },
-    [],
-  );
+  // The card can be reused for another commit; its outcome and any copy in flight belong to one SHA.
+  const { copy: runCopy, copied, error: copyError } = useCopyFeedback({
+    resetKeys: [commit.sha],
+    successMs: 1200,
+  });
   const refs = useMemo(() => orderGraphRefs(row.refs, commit.head), [row.refs, commit.head]);
 
   const copy = () => {
-    setCopyError(null);
-    void copyText(commit.sha)
-      .then(() => {
-        setCopied(true);
-        if (copiedTimer.current != null) clearTimeout(copiedTimer.current);
-        copiedTimer.current = setTimeout(() => setCopied(false), 1200);
-      })
-      .catch((error: unknown) =>
-        setCopyError(error instanceof Error ? error.message : String(error)),
-      );
+    runCopy(() => copyText(commit.sha));
   };
 
   return (

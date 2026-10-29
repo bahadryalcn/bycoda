@@ -34,6 +34,7 @@ import {
 import { GitPickerTrigger } from "../../source-control/ui/GitPickerTrigger";
 import { Popover } from "../../../shared/ui/Popover";
 import { LAYER } from "../../../shared/lib/layers";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { keybindingPressed, keybindingShortcutTokens } from "../../settings/model/settings";
 import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
 
@@ -197,13 +198,13 @@ function WorkspaceModePicker({
   );
   const worktrees = data?.worktrees.filter((tree) => !tree.isMain && !tree.missing) ?? [];
 
-  useEffect(() => {
-    if (enabled) return;
+  // A disabled picker closes and forgets its transient menu state.
+  if (!enabled && (open || worktreeMenu || busyPath !== undefined || pickError !== undefined)) {
     setOpen(false);
     setWorktreeMenu(false);
     setBusyPath(undefined);
     setPickError(undefined);
-  }, [enabled]);
+  }
   useEffect(
     () => () => {
       if (closeWorktreeTimer.current != null) {
@@ -504,7 +505,6 @@ export function WorktreeBasePicker({
   }, [open, onOpenChange]);
   useEffect(() => () => onOpenChange?.(false), [onOpenChange]);
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const anchor = useRef<HTMLDivElement>(null);
   const search = useRef<HTMLInputElement>(null);
   const rows = useMemo(() => {
@@ -515,18 +515,15 @@ export function WorktreeBasePicker({
       branchRef(branch).toLowerCase().includes(needle),
     );
   }, [branches, query]);
+  const [active, setActive] = useKeyedActiveIndex(`${open}:${query}`, rows.length);
 
   useEffect(() => {
     if (!open) return;
     const frame = requestAnimationFrame(() => search.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [open]);
-  useEffect(() => {
-    setActive((index) => Math.max(0, Math.min(index, rows.length - 1)));
-  }, [rows.length]);
-  useEffect(() => {
-    if (!enabled) setOpen(false);
-  }, [enabled]);
+  // A disabled picker closes.
+  if (!enabled && open) setOpen(false);
 
   const dismiss = () => {
     setOpen(false);
@@ -569,7 +566,6 @@ export function WorktreeBasePicker({
               spellCheck={false}
               onChange={(event) => {
                 setQuery(event.target.value);
-                setActive(0);
               }}
               onKeyDown={(event) => {
                 if (isImeComposition(event.nativeEvent)) return;

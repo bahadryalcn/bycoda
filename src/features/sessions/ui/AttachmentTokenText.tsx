@@ -1,6 +1,6 @@
 import { Button } from "../../../shared/ui/Button";
 import { useLocale, useT } from "../../../shared/i18n";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useState } from "react";
 import { splitAttachmentTokens } from "../model/attachmentTokens";
 import type { Attachment } from "../model/session";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
@@ -26,9 +26,6 @@ function TokenPill({ token, label, attachment }: PillProps) {
   const t = useT();
   const [openedFile, setOpenedFile] = useState<Attachment | null>(null);
   const fileOpen = sameFilePreviewSource(openedFile, attachment);
-  useEffect(() => {
-    if (!fileOpen) setOpenedFile(null);
-  }, [fileOpen]);
   const canOpenFile = canOpenFileAttachment(attachment);
   const {
     src: preview,

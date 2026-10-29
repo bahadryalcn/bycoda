@@ -61,14 +61,7 @@ const emptyAction = (): ProjectAction => ({
   command: "",
   url: "",
 });
-export function ProjectQuickActions({
-  cwd,
-  actionsCwd = cwd,
-  onRun,
-  shortcutsEnabled = true,
-  additionalItems = [],
-  trailing,
-}: {
+type ProjectQuickActionsProps = {
   cwd: string;
   actionsCwd?: string;
   onRun?: (action: ProjectAction) => void;
@@ -76,7 +69,22 @@ export function ProjectQuickActions({
   additionalItems?: readonly ExpandingButtonGroupItem[];
   /** Structural control kept outside the action group, after a gap. */
   trailing?: ReactNode;
-}) {
+};
+
+export function ProjectQuickActions(props: ProjectQuickActionsProps) {
+  const { cwd, actionsCwd = cwd } = props;
+  // Another project starts with closed menus, no draft or error, and no launch.
+  return <ProjectQuickActionsFor key={JSON.stringify([cwd, actionsCwd])} {...props} />;
+}
+
+function ProjectQuickActionsFor({
+  cwd,
+  actionsCwd = cwd,
+  onRun,
+  shortcutsEnabled = true,
+  additionalItems = [],
+  trailing,
+}: ProjectQuickActionsProps) {
   useLocale();
   const [menu, setMenu] = useState<{
     kind: "open" | "actions";
@@ -102,12 +110,6 @@ export function ProjectQuickActions({
   useEffect(() => {
     const reload = () => setActions(loadProjectActions(actionsCwd));
     reload();
-    setMenu(null);
-    setDraft(null);
-    setError("");
-    setLaunch(undefined);
-    pendingLaunch.current = false;
-    launchGeneration.current++;
     window.addEventListener(PROJECT_ACTIONS_CHANGED, reload);
     window.addEventListener("storage", reload);
     return () => {

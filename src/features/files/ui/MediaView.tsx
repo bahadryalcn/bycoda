@@ -48,12 +48,18 @@ export function MediaView({
   const paneVisible = useContext(MediaVisibilityContext);
   const [state, setState] = useState<State>({ status: "loading" });
   const [retry, setRetry] = useState(0);
-  const [actionError, setActionError] = useState<string>();
-  const [opening, setOpening] = useState(false);
   const openingRef = useRef(false);
   const openGeneration = useRef(0);
   // Do not display the previous file's metadata during the render before effect cleanup.
   const source = useMemo(() => ({}), [path, readBytes, mimeType, retry, active]);
+  // Open-in-app state belongs to the file/source it started for; a new owner starts clean.
+  const actionOwner = useMemo(() => ({}), [externalPath, source]);
+  const [openingOwner, setOpeningOwner] = useState<object | null>(null);
+  const [actionFailure, setActionFailure] = useState<{ owner: object; message: string } | null>(
+    null,
+  );
+  const opening = openingOwner === actionOwner;
+  const actionError = actionFailure?.owner === actionOwner ? actionFailure.message : undefined;
   const isVideo = mediaKind(path) === "video";
   const player = useRef<HTMLMediaElement | null>(null);
   const generation = useRef(0);
@@ -61,8 +67,6 @@ export function MediaView({
   useEffect(() => {
     openGeneration.current += 1;
     openingRef.current = false;
-    setOpening(false);
-    setActionError(undefined);
     return () => {
       openGeneration.current += 1;
     };
@@ -77,7 +81,6 @@ export function MediaView({
     let ownedUrl: string | undefined;
     let size: number | undefined;
     setState({ status: "loading" });
-    setActionError(undefined);
     void (async () => {
       try {
         let url: string;
@@ -236,17 +239,17 @@ export function MediaView({
               if (openingRef.current) return;
               openingRef.current = true;
               const request = openGeneration.current;
-              setOpening(true);
-              setActionError(undefined);
+              setOpeningOwner(actionOwner);
+              setActionFailure(null);
               void (async () => {
                 try {
                   await openPathWithDefaultApp(externalPath);
                 } catch (reason) {
-                  if (request === openGeneration.current) setActionError(String(reason));
+                  if (request === openGeneration.current) setActionFailure({ owner: actionOwner, message: String(reason) });
                 } finally {
                   if (request === openGeneration.current) {
                     openingRef.current = false;
-                    setOpening(false);
+                    setOpeningOwner(null);
                   }
                 }
               })();

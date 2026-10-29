@@ -184,7 +184,7 @@ pub(crate) fn validate_capture_at(
     if envelope.version == 1 {
         return Ok(None);
     }
-    if envelope.version != 2 {
+    if !matches!(envelope.version, 2 | 3) {
         return Err(invalid());
     }
     let actual_owner = owner.buffer_owner();

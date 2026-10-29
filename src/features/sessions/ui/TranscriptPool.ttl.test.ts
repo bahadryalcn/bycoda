@@ -3,7 +3,7 @@ import { act, createElement, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Block } from "../model/session";
-import { ActivityThinkingRow } from "./AgentTranscript";
+import { ActivityThinkingRow } from "./AgentTranscriptActivity";
 import { PooledTranscript, TranscriptPool, TranscriptPoolOutlet } from "./TranscriptPool";
 
 let root: ReturnType<typeof createRoot>;

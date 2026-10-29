@@ -118,6 +118,38 @@ describe("surfaceTabMenuItems", () => {
     }
   });
 
+  it("offers Move Left / Move Right as the menu alternative to dragging, disabled at the ends", () => {
+    const moves = (sides: { left: boolean; right: boolean }) =>
+      surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo"), true, undefined, sides, true)
+        .filter((item) => item.kind === "item" && item.id.startsWith("move-"))
+        .map((item) => (item.kind === "item" ? [item.id, item.label, item.disabled] : []));
+    expect(moves({ left: false, right: true })).toEqual([
+      ["move-left", "Move Left", true],
+      ["move-right", "Move Right", false],
+    ]);
+    expect(moves({ left: true, right: false })).toEqual([
+      ["move-left", "Move Left", false],
+      ["move-right", "Move Right", true],
+    ]);
+    // Tabs without a real file get the same pair; a lone tab is offered none.
+    expect(
+      surfaceTabMenuItems(
+        newChangesTab("/repo"),
+        true,
+        undefined,
+        { left: true, right: true },
+        true,
+      )
+        .filter((item) => item.kind === "item")
+        .map((item) => (item.kind === "item" ? item.id : "")),
+    ).toEqual(["move-left", "move-right", "close", "close-others", "close-right", "close-left"]);
+    expect(
+      surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo")).some(
+        (item) => item.kind === "item" && item.id.startsWith("move-"),
+      ),
+    ).toBe(false);
+  });
+
   it("disables Close Others when there are no sibling tabs", () => {
     const items = surfaceTabMenuItems(newFileTab("/repo/src/app.ts", "/repo"), false);
     expect(items.find((item) => item.kind === "item" && item.id === "close-others")).toEqual({

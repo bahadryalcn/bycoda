@@ -582,6 +582,12 @@ export function loadSessionFolders(cwd: string): SessionFolder[] {
   return folders ? structuredClone(folders) : [];
 }
 
+/**
+ * Persists a project's folders and announces the change synchronously to
+ * `subscribeSessionFolders` listeners, which set React state. Call it from an
+ * event handler or effect with an already computed list, never from inside a
+ * state updater: updaters must stay pure and may be repeated or discarded.
+ */
 export function saveSessionFolders(cwd: string, folders: SessionFolder[]): void {
   const key = storageKey(cwd);
   if (!key) return;

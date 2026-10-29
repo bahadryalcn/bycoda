@@ -1,42 +1,42 @@
 import { useLocale, useT } from "../../../shared/i18n";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useSyncExternalStore, type ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 
 export type MarkdownViewMode = "preview" | "source";
 
 const remembered = new Map<string, MarkdownViewMode>();
-const listeners = new Map<string, Set<(mode: MarkdownViewMode) => void>>();
+const listeners = new Map<string, Set<() => void>>();
 
 /** Select a view before opening a file, or update an already mounted viewer. */
 export function setMarkdownViewMode(key: string, mode: MarkdownViewMode) {
   remembered.set(key, mode);
-  listeners.get(key)?.forEach((listener) => listener(mode));
+  listeners.get(key)?.forEach((listener) => listener());
 }
 
 export function useMarkdownMode(
   key: string,
   fallback: MarkdownViewMode = "preview",
 ): [MarkdownViewMode, (mode: MarkdownViewMode) => void] {
-  const [mode, setMode] = useState<MarkdownViewMode>(() => remembered.get(key) ?? fallback);
-
-  useEffect(() => {
-    setMode(remembered.get(key) ?? fallback);
-    const subscribers = listeners.get(key) ?? new Set();
-    subscribers.add(setMode);
-    listeners.set(key, subscribers);
-    return () => {
-      subscribers.delete(setMode);
-      if (subscribers.size === 0) listeners.delete(key);
-    };
-  }, [key, fallback]);
-
-  return [
-    mode,
-    (next) => {
-      setMarkdownViewMode(key, next);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const subscribers = listeners.get(key) ?? new Set();
+      subscribers.add(listener);
+      listeners.set(key, subscribers);
+      return () => {
+        subscribers.delete(listener);
+        if (subscribers.size === 0) listeners.delete(key);
+      };
     },
-  ];
+    [key],
+  );
+  const mode = useSyncExternalStore(
+    subscribe,
+    () => remembered.get(key) ?? fallback,
+    () => fallback,
+  );
+  const setMode = useCallback((next: MarkdownViewMode) => setMarkdownViewMode(key, next), [key]);
+  return [mode, setMode];
 }
 
 type ToggleProps = {

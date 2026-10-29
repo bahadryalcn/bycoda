@@ -10,6 +10,7 @@ export const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 const nativeEmbeddedInputs = new Set([
   "src/shared/model/host-contracts/generated/manifest.json",
   "src/features/social/model/socialClient.ts",
+  "src/integrations/harness/core/nativeOutputDelivery.fixture.json",
   "host/windows-acl.ps1",
 ]);
 
@@ -67,7 +68,11 @@ export function classifyChanges(paths, { full = false, reason } = {}) {
         select("native", "rpm");
       continue;
     }
-    if (/^(src-tauri\/|Cargo\.(toml|lock)$|rust-toolchain|\.?(rustfmt|clippy)\.toml$)/.test(file)) {
+    if (
+      /^(src-tauri\/|packages\/physical-store-admission(?:-node)?\/|Cargo\.(toml|lock)$|rust-toolchain|\.?(rustfmt|clippy)\.toml$)/.test(
+        file,
+      )
+    ) {
       select("web", "host", "native", "rpm", "scripts");
       continue;
     }

@@ -3,6 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { ChevronDown, Search, Settings } from "../../../shared/ui/icons";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { HarnessIcon } from "./HarnessIcon";
@@ -31,7 +32,6 @@ export function McpServerPicker({
 }) {
   const t = useT();
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const listboxId = `mcp-server-picker-${useId()}`;
   const search = useRef<HTMLInputElement>(null);
   const picker = useRef<HTMLDivElement>(null);
@@ -44,13 +44,18 @@ export function McpServerPicker({
   const selectable = servers.flatMap((server, index) =>
     server.availability === "available" ? [index] : [],
   );
+  // Navigation restarts on a new query or harness; a refreshed list that no longer has the
+  // chosen row available falls back to the first selectable row.
+  const [chosen, setActive] = useKeyedActiveIndex(
+    `${harness}\u0000${query}`,
+    servers.length,
+    selectable[0] ?? 0,
+  );
+  const active = selectable.includes(chosen) ? chosen : (selectable[0] ?? 0);
 
   useEffect(() => {
     search.current?.focus();
   }, []);
-  useEffect(() => {
-    setActive(selectable[0] ?? 0);
-  }, [query, connections, harness, claudeStatus]);
   useEffect(() => {
     activeOption.current?.scrollIntoView?.({ block: "nearest" });
   }, [active]);

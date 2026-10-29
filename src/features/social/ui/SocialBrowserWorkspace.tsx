@@ -1,7 +1,7 @@
 import { useSocialPending } from "./useSocialPending";
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -24,7 +24,7 @@ import {
 } from "../model/socialBrowser";
 import { SocialPanelActiveContext } from "./socialContext";
 import { XProfileManager } from "./XProfileManager";
-import { SocialRegistrationReview } from "./SocialRegistrationReview";
+import { SocialRegistrationReview, registrationReviewKey } from "./SocialRegistrationReview";
 
 const statuses: Record<SocialBrowserWorkflow["status"], string> = {
   get queued() {
@@ -50,6 +50,13 @@ const statuses: Record<SocialBrowserWorkflow["status"], string> = {
   },
 };
 
+/**
+ * Typed details, acknowledgements and errors belong to one host and account.
+ * Callers mount the workspace with this key so a changed identity starts clean.
+ */
+export const socialBrowserWorkspaceKey = (client: SocialClient, account: Pick<SocialAccount, "id">) =>
+  `${socialQueryScope(client).join(":")}:${account.id}`;
+
 /** Owner-assisted work is shown separately from verified send and inbox adapters. */
 export function SocialBrowserWorkspace({
   account,
@@ -64,22 +71,16 @@ export function SocialBrowserWorkspace({
   const active = useContext(SocialPanelActiveContext);
   const visible = useQueryVisible();
   const [open, setOpen] = useState(false);
-  const [intent, setIntent] = useState<SocialBrowserIntent>("login");
+  const [chosenIntent, setIntent] = useState<SocialBrowserIntent>("login");
   const [target, setTarget] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
-  const [automateRegistration, setAutomateRegistration] = useState(true);
+  const [chosenAutomation, setAutomateRegistration] = useState(true);
   const [registration, setRegistration] = useState<SocialRegistrationProfile>({
     accountKind: "brand",
   });
-  useEffect(() => {
-    setRegistration({ accountKind: "brand" });
-    setAcknowledged(false);
-    setError("");
-    setStatusError("");
-  }, [account.id, client]);
   const registrationInput = (): SocialRegistrationProfile =>
     Object.fromEntries(
       Object.entries(registration).filter(([, value]) => typeof value === "string" && value.trim()),
@@ -104,10 +105,9 @@ export function SocialBrowserWorkspace({
     query.data?.workflows.find((item) => item.registrationSubmission) ??
     current ??
     query.data?.workflows[0];
-  useEffect(() => {
-    if (current) setIntent(current.intent);
-    if (current?.registration) setAutomateRegistration(true);
-  }, [current?.id, current?.intent, !!current?.registration]);
+  // An active host workflow owns the visible choice; otherwise the owner's selection applies.
+  const intent = current?.intent ?? chosenIntent;
+  const automateRegistration = current?.registration ? true : chosenAutomation;
   const monitor = useQuery({
     queryKey: [...socialQueryScope(client), "monitoring", account.id],
     queryFn: () => client.monitoringStatus(account.id),
@@ -468,7 +468,7 @@ export function SocialBrowserWorkspace({
       </div>
       {registrationWorkflow ? (
         <SocialRegistrationReview
-          key={`${account.id}:${registrationWorkflow.id}`}
+          key={registrationReviewKey(client, account.id, registrationWorkflow)}
           accountId={account.id}
           workflow={registrationWorkflow}
           client={client}

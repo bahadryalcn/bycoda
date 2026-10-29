@@ -18,6 +18,7 @@ import {
 } from "../../../shared/ui/icons";
 import { memo, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useStableHandlers } from "../../../shared/hooks/useStableHandlers";
+import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
 import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
 import "./terminal.css";
 import { IconButton } from "../../../app/shell/TitleBar";
@@ -142,7 +143,20 @@ function ProjectTerminalDockComponent({
     y: number;
     id: string;
   } | null>(null);
-  const draggedTerminal = useRef<string | null>(null);
+  // One reorder engine for every tab-like list: pointer drag, Alt+Up/Down, Escape/cancel cleanup
+  // and screen-reader announcements. The context menu offers Move Up / Move Down.
+  const sortable = useAnimatedReorder(
+    dock.pane.files.map((file) => file.id),
+    onReorderTerminals,
+    "y",
+    undefined,
+    {
+      label: (id) => {
+        const file = dock.pane.files.find((entry) => entry.id === id);
+        return file ? terminalTabLabel(file) : "";
+      },
+    },
+  );
   const sideButton = useRef<HTMLDivElement>(null);
   const profileButton = useRef<HTMLDivElement>(null);
   const profiles = useTerminalProfiles();
@@ -329,7 +343,18 @@ function ProjectTerminalDockComponent({
             aria-orientation="vertical"
           >
             {dock.pane.files.map((file, index) => (
-              <ActionHost key={file.id} selected={file.id === dock.pane.activeFileId} className="terminal-list-row" role="presentation">
+              <ActionHost
+                key={file.id}
+                ref={(el) => sortable.setItemRef(file.id, el)}
+                selected={file.id === dock.pane.activeFileId}
+                className="terminal-list-row reorder-item"
+                role="presentation"
+                onPointerDown={(event) => {
+                  if (event.button !== 0 || (event.target as HTMLElement).closest("[data-no-drag]"))
+                    return;
+                  sortable.onItemPointerDown(file.id, event);
+                }}
+              >
                 <Button
                   variant="tab"
                   fullWidth
@@ -342,8 +367,8 @@ function ProjectTerminalDockComponent({
                   tabIndex={file.id === dock.pane.activeFileId ? 0 : -1}
                   className="terminal-list-item"
                   title={`${terminalTabLabel(file)} — ${file.cwd}`}
-                  draggable
                   onClick={() => {
+                    if (sortable.consumeClick()) return;
                     onSelectTerminal(file.id);
                   }}
                   onAuxClick={(event) => {
@@ -358,6 +383,7 @@ function ProjectTerminalDockComponent({
                     });
                   }}
                   onKeyDown={(event) => {
+                    if (sortable.onItemKeyDown(file.id, event)) return;
                     const files = dock.pane.files;
                     const next =
                       event.key === "ArrowDown"
@@ -374,29 +400,6 @@ function ProjectTerminalDockComponent({
                       onSelectTerminal(files[next].id);
                       document.getElementById(`terminal-tab-${files[next].id}`)?.focus();
                     }
-                  }}
-                  onDragStart={(event) => {
-                    draggedTerminal.current = file.id;
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", file.id);
-                  }}
-                  onDragEnd={() => {
-                    draggedTerminal.current = null;
-                  }}
-                  onDragOver={(event) => {
-                    if (draggedTerminal.current) event.preventDefault();
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const dragged = draggedTerminal.current;
-                    draggedTerminal.current = null;
-                    if (!dragged || dragged === file.id) return;
-                    const ids = dock.pane.files.map((item) => item.id);
-                    const source = ids.indexOf(dragged);
-                    if (source < 0) return;
-                    ids.splice(source, 1);
-                    ids.splice(index, 0, dragged);
-                    onReorderTerminals(ids);
                   }}
                 >
                   <Terminal className="icon-sm shrink-0" strokeWidth={1.5} />
@@ -480,6 +483,25 @@ function ProjectTerminalDockComponent({
             ...(onSplitTerminal ? [{ kind: "item" as const, id: "split", label: t("Split") }] : []),
             {
               kind: "item",
+              id: "move-up",
+              get label() {
+                return t("Move up");
+              },
+              disabled: dock.pane.files.findIndex((file) => file.id === terminalMenu.id) < 1,
+            },
+            {
+              kind: "item",
+              id: "move-down",
+              get label() {
+                return t("Move down");
+              },
+              disabled:
+                dock.pane.files.findIndex((file) => file.id === terminalMenu.id) >=
+                dock.pane.files.length - 1,
+            },
+            { kind: "sep" },
+            {
+              kind: "item",
               id: "close",
               get label() {
                 return t("Close");
@@ -496,6 +518,14 @@ function ProjectTerminalDockComponent({
           ]}
           onPick={(id) => {
             if (id === "split") splitTerminal(terminalMenu.id);
+            if (id === "move-up" || id === "move-down") {
+              const moved = terminalMenu.id;
+              sortable.moveBy(moved, id === "move-up" ? -1 : 1);
+              // The menu held focus; hand it back to the tab that moved.
+              requestAnimationFrame(() =>
+                document.getElementById(`terminal-tab-${moved}`)?.focus(),
+              );
+            }
             if (id === "close") onCloseTerminal(terminalMenu.id);
             if (id === "close-others") onCloseOtherTerminals(terminalMenu.id);
             setTerminalMenu(null);

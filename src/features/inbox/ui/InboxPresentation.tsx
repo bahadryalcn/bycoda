@@ -13,7 +13,7 @@ import {
   GitPullRequestDraft,
   type IconComponent,
 } from "../../../shared/ui/icons";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
@@ -147,14 +147,10 @@ export function InboxAvatar({
   size?: number;
 }) {
   useLocale();
-  const [failed, setFailed] = useState(!avatarUrl);
+  const [failedUrl, setFailedUrl] = useState<string | undefined>();
   const initial = name.trim().charAt(0).toUpperCase() || "?";
 
-  useEffect(() => {
-    setFailed(!avatarUrl);
-  }, [avatarUrl]);
-
-  return avatarUrl && !failed ? (
+  return avatarUrl && failedUrl !== avatarUrl ? (
     <img
       src={avatarUrl}
       alt=""
@@ -162,7 +158,7 @@ export function InboxAvatar({
       height={size}
       referrerPolicy="no-referrer"
       draggable={false}
-      onError={() => setFailed(true)}
+      onError={() => setFailedUrl(avatarUrl)}
       className="shrink-0 rounded-full bg-(--ui-surface-raised) object-cover"
       style={{ width: size, height: size }}
     />

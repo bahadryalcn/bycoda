@@ -7,7 +7,8 @@ import type { LiveBackgroundPalette, LiveSignal } from "./types";
  * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/SoftAurora
  * https://github.com/DavidHDev/react-bits/tree/main/src/content/Backgrounds/FloatingLines
  * License: vendor/react-bits/LICENSE.md. Integrated product artwork only.
- * Upstream geometry, fold equations, CPPN and noise functions are retained; React,
+ * The Threads Perlin field and the trained DarkVeil CPPN are retained verbatim; the silk
+ * folds, aurora curtains and floating ribbons are re-drawn for a calm ambient pane. React,
  * interaction listeners, framebuffer passes and bloom are intentionally absent. */
 
 export type ReactBitsSurfaceKind =
@@ -25,8 +26,29 @@ export type ReactBitsSurface = {
 const MAX_WIDTH = 1920;
 const MAX_HEIGHT = 1200;
 const MAX_DPR = 1.25;
-const THREAD_COUNT = 72;
+const THREAD_COUNT = 64;
 const THREAD_SEGMENTS = 192;
+
+/** Shared palette, theme and reading-column helpers; expects uContent/uAccent declared.
+ * Only the two theme tokens are used: the shaders vary luminance, alpha and their mix. */
+const SCENE_COMMON = `
+float sceneDark() {
+  return smoothstep(0.25, 0.6, dot(uContent, vec3(0.2126, 0.7152, 0.0722)));
+}
+// Flat-topped falloff over the reading column; weight leans to the edges and lower area.
+float readingCalm(vec2 uv) {
+  float center = exp(-pow(abs(uv.x - 0.5) / 0.34, 3.0));
+  return (1.0 - center * 0.76) * (0.84 + 0.16 * (1.0 - uv.y));
+}
+// 0 = accent body, 1 = highlight toward content (light glow in dark, ink in light).
+vec3 sceneTone(float k) {
+  return mix(uAccent, mix(uAccent, uContent, 0.82), clamp(k, 0.0, 1.0));
+}
+// Sub-LSB ordered noise keeps wide soft gradients free of banding.
+float sceneDither() {
+  return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+}
+`;
 
 const THREAD_VERTEX = `#version 300 es
 precision highp float;
@@ -36,8 +58,11 @@ uniform float uTime;
 uniform float uPresence;
 uniform float uEnergy;
 out float vEdge;
-out float vBand;
-out float vIndex;
+out float vCore;
+out float vHalo;
+out float vDepth;
+out float vAlong;
+out float vSpread;
 float Perlin2D(vec2 P) {
   vec2 Pi = floor(P);
   vec4 Pf_Pfmin1 = P.xyxy - vec4(Pi, Pi + 1.0);
@@ -58,10 +83,11 @@ float Perlin2D(vec2 P) {
   vec4 blend2 = vec4(blend, vec2(1.0 - blend));
   return dot(results, blend2.zxzx * blend2.wwyy);
 }
-void main() {
-  float perc = float(gl_InstanceID) / ${THREAD_COUNT.toFixed(1)};
-  float x = aPoint.x;
-  float t = uTime / 10.0;
+float threadHash(float n) {
+  return fract(sin(n * 91.3458) * 47453.5453);
+}
+// Upstream Threads displacement; the bundle leaves the lower left tightly and fans out.
+vec2 threadPoint(float x, float perc, float depth, float t) {
   float split = 0.03 + perc * 0.42;
   float amplitude = smoothstep(split, max(0.7, split + 0.2), x);
   float n = mix(
@@ -69,39 +95,77 @@ void main() {
     Perlin2D(vec2(t * 3.5, (x * 1.05 + t) * 3.5)) / 1.5,
     x * 0.3
   );
-  float y = 0.5 + (perc - 0.5) * 0.92 +
-    n * amplitude * (0.36 + 0.16 * uPresence + 0.1 * uEnergy);
-  vec2 local = vec2((x - 0.5) * uResolution.x * 1.5,
-                    (y - 0.5) * uResolution.y * 1.8);
-  float thickness = (0.85 + 0.35 * uPresence + 0.15 * uEnergy) * (1.0 - perc * 0.45);
-  float drawWidth = max(thickness, 1.0);
-  local.y += aPoint.y * drawWidth;
-  float angle = 0.26;
-  vec2 turned = vec2(local.x * cos(angle) - local.y * sin(angle),
-                     local.x * sin(angle) + local.y * cos(angle));
-  gl_Position = vec4(turned / (uResolution * 0.5), 0.0, 1.0);
-  vEdge = aPoint.y * drawWidth;
-  vBand = drawWidth;
-  vIndex = perc;
+  float spread = (perc - 0.5) * (0.12 + 0.62 * smoothstep(0.0, 0.9, x));
+  float y = 0.36 + spread +
+    n * amplitude * (0.26 + 0.08 * depth + 0.1 * uPresence + 0.06 * uEnergy);
+  vec2 local = vec2((x - 0.5) * uResolution.x * 1.35,
+                    (y - 0.5) * uResolution.y * 1.6);
+  float angle = 0.2;
+  return vec2(local.x * cos(angle) - local.y * sin(angle),
+              local.x * sin(angle) + local.y * cos(angle));
+}
+void main() {
+  float id = float(gl_InstanceID);
+  float perc = id / ${THREAD_COUNT.toFixed(1)};
+  // Each thread keeps a stable depth: near threads are brighter, crisper and wider.
+  float depth = pow(threadHash(id + 3.0), 1.4);
+  float x = aPoint.x;
+  float t = uTime / 10.0;
+  vec2 p0 = threadPoint(x, perc, depth, t);
+  vec2 p1 = threadPoint(x + 0.002, perc, depth, t);
+  vec2 tangent = normalize(p1 - p0 + vec2(1e-4, 0.0));
+  vec2 normal = vec2(-tangent.y, tangent.x);
+  float core = mix(0.35, 0.95, depth) * (1.0 + 0.25 * uPresence + 0.15 * uEnergy);
+  float halo = mix(2.5, 7.0, depth);
+  float extent = core + halo;
+  vec2 position = p0 + normal * aPoint.y * extent;
+  gl_Position = vec4(position / (uResolution * 0.5), 0.0, 1.0);
+  vEdge = aPoint.y * extent;
+  vCore = core;
+  vHalo = halo;
+  vDepth = depth;
+  vAlong = x;
+  vSpread = smoothstep(0.0, 0.75, x);
 }`;
 
 const THREAD_FRAGMENT = `#version 300 es
 precision highp float;
 in float vEdge;
-in float vBand;
-in float vIndex;
+in float vCore;
+in float vHalo;
+in float vDepth;
+in float vAlong;
+in float vSpread;
 uniform vec2 uResolution;
 uniform vec3 uContent;
 uniform vec3 uAccent;
+uniform float uTime;
 uniform float uPresence;
+uniform float uEnergy;
 out vec4 outColor;
+${SCENE_COMMON}
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
-  float center = exp(-pow((uv.x - 0.5) / 0.3, 2.0));
-  float coverage = 1.0 - smoothstep(0.0, vBand, abs(vEdge));
-  float taper = 1.0 - 0.55 * pow(vIndex, 0.6);
-  float alpha = coverage * taper * (0.58 + 0.18 * uPresence) * (1.0 - center * 0.7);
-  vec3 color = mix(uContent, uAccent, 0.15 + 0.5 * vIndex);
+  float d = abs(vEdge);
+  // An analytic one-pixel edge keeps the hairline crisp without MSAA.
+  float core = 1.0 - smoothstep(vCore - 0.55, vCore + 0.65, d);
+  float halo = exp(-d * d / (vHalo * vHalo * 0.3));
+  float ends = smoothstep(0.0, 0.16, vAlong) * (1.0 - smoothstep(0.82, 1.0, vAlong));
+  // A slow glint drifts along the threads and quickens while a reply streams.
+  float glint = 0.5 + 0.5 * sin(vAlong * 7.0 - uTime * (0.55 + 0.6 * uPresence) + vDepth * 11.0);
+  glint = pow(glint, 3.0) * (0.25 + 0.35 * uPresence + 0.2 * uEnergy);
+  float near = mix(0.32, 1.0, vDepth);
+  float body = core * (0.85 + glint) + halo * (0.18 + 0.2 * vDepth + 0.08 * uPresence);
+  // The tight origin would otherwise saturate where every thread overlaps.
+  float density = mix(0.32, 1.0, vSpread);
+  // Hairlines are the busiest texture behind text: keep them out of the upper column.
+  float column = exp(-pow(abs(uv.x - 0.5) / 0.34, 3.0));
+  float lift = 1.0 - 0.6 * smoothstep(0.45, 0.95, uv.y) * column;
+  float alpha = clamp(body * near * ends * density, 0.0, 1.0) * readingCalm(uv) * lift *
+    (1.0 - 0.3 * column) * (0.85 + 0.15 * uPresence);
+  // Ink threads on a light surface stop short of full content contrast.
+  float ink = mix(0.72, 1.0, sceneDark());
+  vec3 color = sceneTone((0.2 + 0.55 * vDepth * core + glint * core) * ink);
   outColor = vec4(color * alpha, alpha);
 }`;
 
@@ -118,36 +182,50 @@ uniform float uTime;
 uniform float uPresence;
 uniform float uEnergy;
 out vec4 outColor;
-vec2 rotateUvs(vec2 uv, float angle) {
-  float c = cos(angle);
-  float s = sin(angle);
-  return mat2(c, -s, s, c) * uv;
-}
-float silk(vec2 vUv) {
-  vec2 uv = rotateUvs(vUv * 1.12, -0.35);
-  vec2 tex = uv * 1.12;
-  tex.y += 0.03 * (0.75 + uPresence * 0.35 + uEnergy * 0.4) * sin(8.0 * tex.x - uTime);
-  return 0.6 + 0.4 * sin(5.0 * (tex.x + tex.y +
-    cos(3.0 * tex.x + 5.0 * tex.y) + 0.02 * uTime) +
-    (0.75 + 0.3 * uPresence + 0.2 * uEnergy) * sin(20.0 * (tex.x + tex.y - 0.1 * uTime)));
+${SCENE_COMMON}
+// Long diagonal satin folds: one broad drape, a pinching secondary fold and a fine ripple.
+float silkHeight(vec2 p, float t, float flow) {
+  float h = sin(p.x * 2.2 + 1.1 * sin(p.y * 0.9 + t * 0.3) + t * 0.18) * 0.5;
+  h += sin(p.x * 3.7 - p.y * 0.6 + 1.4 * sin(p.x * 0.9 - t * 0.24) + 1.3) * 0.25;
+  h += sin(p.x * 6.3 + p.y * 1.3 + t * 0.4 + 0.8 * sin(p.y * 1.9 + t * 0.27)) * 0.08 * flow;
+  return h;
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
-  vec2 coord = vec2((uv.x - 0.5) * uResolution.x / uResolution.y + 0.5, uv.y);
-  float pattern = silk(coord);
-  float n = clamp((pattern - 0.2) / 0.8, 0.0, 1.0);
-  vec2 stepSize = vec2(1.0) / uResolution;
-  float gx = silk(coord + vec2(stepSize.x, 0.0)) - pattern;
-  float gy = silk(coord + vec2(0.0, stepSize.y)) - pattern;
-  vec3 normal = normalize(vec3(-gx * 26.0, -gy * 26.0, 1.0));
-  vec3 light = normalize(vec3(-0.55, 0.7, 0.85));
+  float aspect = uResolution.x / uResolution.y;
+  vec2 p = vec2((uv.x - 0.5) * aspect, uv.y - 0.5) * 2.8;
+  float c = cos(-0.62);
+  float s = sin(-0.62);
+  p = mat2(c, -s, s, c) * p;
+  float t = uTime;
+  float flow = 1.0 + 0.6 * uPresence + 0.5 * uEnergy;
+  float e = 0.004;
+  float h = silkHeight(p, t, flow);
+  vec2 slope = vec2(silkHeight(p + vec2(e, 0.0), t, flow) - h,
+                    silkHeight(p + vec2(0.0, e), t, flow) - h) / e;
+  vec3 n = normalize(vec3(-slope * 0.72, 1.0));
+  // A raking light makes the slopes, not the flat cloth, carry the sheen.
+  vec3 light = normalize(vec3(-0.55, 0.62, 0.5));
   vec3 halfway = normalize(light + vec3(0.0, 0.0, 1.0));
-  float gloss = pow(max(dot(normal, halfway), 0.0), 48.0) * smoothstep(0.25, 0.85, n);
-  float sheen = clamp(pow(n, 5.0) * 0.65 + gloss * 0.4, 0.0, 1.0);
-  float center = exp(-pow((uv.x - 0.5) / 0.28, 2.0));
-  float alpha = (0.14 + n * 0.25 + sheen * 0.22) *
-    (1.0 - center * 0.72) * (0.85 + uPresence * 0.15);
-  vec3 color = mix(uContent, uAccent, 0.18 + sheen * 0.28);
+  float diffuse = max(dot(n, light), 0.0);
+  float facing = max(dot(n, halfway), 0.0);
+  float sheen = pow(facing, 10.0);
+  float spec = pow(facing, 60.0);
+  // Troughs sit in their own shadow.
+  float cavity = smoothstep(-0.85, 0.55, h);
+  float calm = readingCalm(uv);
+  float dark = sceneDark();
+  // Dark theme: satin glows out of the ground; troughs fall back to it.
+  float lit = 0.08 + 0.78 * pow(diffuse, 1.5) * cavity + 0.35 * sheen + spec;
+  vec3 darkColor = sceneTone(0.22 + 0.4 * sheen + 0.5 * spec);
+  // Light theme: folds read as soft shade with the crests left to the paper.
+  float shade = pow(1.0 - diffuse * mix(0.6, 1.0, cavity), 1.6);
+  float shadeAlpha = 0.04 + 0.66 * shade;
+  vec3 lightColor = mix(uAccent, uContent, 0.3 + 0.32 * shade);
+  float gain = 0.88 + 0.16 * uPresence + 0.06 * uEnergy;
+  float alpha = mix(shadeAlpha, lit, dark) * calm * gain;
+  alpha = clamp(alpha + sceneDither() / 255.0, 0.0, 1.0);
+  vec3 color = mix(lightColor, darkColor, dark);
   outColor = vec4(color * alpha, alpha);
 }`;
 
@@ -187,6 +265,7 @@ uniform float uPresence;
 uniform float uEnergy;
 out vec4 outColor;
 ${DARK_VEIL_CPPN}
+${SCENE_COMMON}
 void main() {
   vec2 screen = gl_FragCoord.xy / uResolution;
   vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution) / uResolution.y;
@@ -201,10 +280,20 @@ void main() {
   vec3 latent = 0.1 * flow * vec3(sin(0.3 * t), sin(0.69 * t), sin(0.44 * t));
   vec3 veil = cppn(uv, latent).rgb;
   float fold = dot(veil, vec3(0.3, 0.5, 0.2));
-  float center = exp(-pow((screen.x - 0.5) / 0.28, 2.0));
-  float alpha = (0.07 + pow(fold, 1.3) * 0.65) * (1.0 - center * 0.72);
-  alpha *= 0.8 + uPresence * 0.15 + uEnergy * 0.05;
-  vec3 color = mix(uContent, uAccent, 0.35 + veil.b * 0.35);
+  // The trained veil lives almost entirely below 0.25 luminance; lift that band into a
+  // soft density and keep the rare bright filaments as its luminous core.
+  float density = smoothstep(0.004, 0.2, fold);
+  float glow = pow(density, 1.2);
+  float core = smoothstep(0.18, 0.62, fold);
+  // A faint haze ties the filaments together like a nebula.
+  float haze = smoothstep(0.0, 0.08, fold) * 0.5 + 0.5 * smoothstep(1.0, 0.1, screen.y);
+  float dark = sceneDark();
+  float gain = 0.84 + 0.18 * uPresence + 0.08 * uEnergy;
+  float alpha = (0.07 * haze + glow * mix(0.55, 0.8, dark) + core * mix(0.15, 0.35, dark)) *
+    readingCalm(screen) * gain;
+  alpha = clamp(alpha + sceneDither() / 255.0, 0.0, 1.0);
+  float tint = clamp(core + density * 0.25, 0.0, 1.0);
+  vec3 color = mix(mix(uAccent, uContent, 0.3 + 0.3 * core), sceneTone(0.05 + 0.85 * tint), dark);
   outColor = vec4(color * alpha, alpha);
 }`;
 
@@ -217,102 +306,50 @@ uniform float uTime;
 uniform float uPresence;
 uniform float uEnergy;
 out vec4 outColor;
-#define TAU 6.28318
-
-vec3 gradientHash(vec3 p) {
-  p = vec3(
-    dot(p, vec3(127.1, 311.7, 234.6)),
-    dot(p, vec3(269.5, 183.3, 198.3)),
-    dot(p, vec3(169.5, 283.3, 156.9))
-  );
-  vec3 h = fract(sin(p) * 43758.5453123);
-  float phi = acos(2.0 * h.x - 1.0);
-  float theta = TAU * h.y;
-  return vec3(cos(theta) * sin(phi), sin(theta) * cos(phi), cos(phi));
-}
-
-float quinticSmooth(float t) {
-  float t2 = t * t;
-  float t3 = t * t2;
-  return 6.0 * t3 * t2 - 15.0 * t2 * t2 + 10.0 * t3;
-}
-
-vec3 cosineGradient(float t, vec3 a, vec3 b, vec3 c, vec3 d) {
-  return a + b * cos(TAU * (c * t + d));
-}
-
-float perlin3D(float amplitude, float frequency, float px, float py, float pz) {
-  float x = px * frequency;
-  float y = py * frequency;
-
-  float fx = floor(x);
-  float fy = floor(y);
-  float fz = floor(pz);
-  float cx = ceil(x);
-  float cy = ceil(y);
-  float cz = ceil(pz);
-
-  vec3 g000 = gradientHash(vec3(fx, fy, fz));
-  vec3 g100 = gradientHash(vec3(cx, fy, fz));
-  vec3 g010 = gradientHash(vec3(fx, cy, fz));
-  vec3 g110 = gradientHash(vec3(cx, cy, fz));
-  vec3 g001 = gradientHash(vec3(fx, fy, cz));
-  vec3 g101 = gradientHash(vec3(cx, fy, cz));
-  vec3 g011 = gradientHash(vec3(fx, cy, cz));
-  vec3 g111 = gradientHash(vec3(cx, cy, cz));
-
-  float d000 = dot(g000, vec3(x - fx, y - fy, pz - fz));
-  float d100 = dot(g100, vec3(x - cx, y - fy, pz - fz));
-  float d010 = dot(g010, vec3(x - fx, y - cy, pz - fz));
-  float d110 = dot(g110, vec3(x - cx, y - cy, pz - fz));
-  float d001 = dot(g001, vec3(x - fx, y - fy, pz - cz));
-  float d101 = dot(g101, vec3(x - cx, y - fy, pz - cz));
-  float d011 = dot(g011, vec3(x - fx, y - cy, pz - cz));
-  float d111 = dot(g111, vec3(x - cx, y - cy, pz - cz));
-
-  float sx = quinticSmooth(x - fx);
-  float sy = quinticSmooth(y - fy);
-  float sz = quinticSmooth(pz - fz);
-
-  float lx00 = mix(d000, d100, sx);
-  float lx10 = mix(d010, d110, sx);
-  float lx01 = mix(d001, d101, sx);
-  float lx11 = mix(d011, d111, sx);
-
-  float ly0 = mix(lx00, lx10, sy);
-  float ly1 = mix(lx01, lx11, sy);
-
-  return amplitude * mix(ly0, ly1, sz);
-}
-float auroraGlow(float t, vec2 uv, float bend) {
-  float noiseVal = 0.0;
-  float freq = 2.5;
-  float amp = 1.0 + uPresence * 0.2 + uEnergy * 0.4;
-  vec2 samplePos = uv * 1.5;
-  for (int i = 0; i < 3; i++) {
-    noiseVal += perlin3D(amp, freq, samplePos.x, samplePos.y, t);
-    amp *= 0.1;
-    freq *= 2.0;
-  }
-  float yBand = uv.y * 10.0 - (0.5 + bend) * 10.0;
-  return 0.3 * exp(1.0 - 1.1 * abs(noiseVal + yBand));
+${SCENE_COMMON}
+// One curtain: a luminous hem along a drifting arc with soft rays rising and fading above
+// it. Smooth sinusoidal folds and striations avoid blocky noise cells.
+vec3 curtain(vec2 p, float base, float rise, float seed, float t, float swing) {
+  float hem = base + swing * (0.08 * sin(p.x * 0.8 + t * 0.18 + seed) +
+    0.04 * sin(p.x * 1.9 - t * 0.23 + seed * 1.7) + 0.018 * sin(p.x * 4.6 + t * 0.3 + seed * 2.3));
+  float d = p.y - hem;
+  // Rays lean slightly with height and drift sideways like hanging light.
+  float rx = p.x + d * 0.3 + 0.08 * sin(p.x * 1.4 + t * 0.22 + seed);
+  float rays = (0.5 + 0.5 * sin(rx * 90.0 + 2.5 * sin(rx * 13.0 + t * 0.25 + seed))) *
+    (0.6 + 0.4 * sin(rx * 31.0 - t * 0.2 + seed));
+  rays = 0.5 + 0.5 * rays;
+  float sweep = (0.5 + 0.5 * sin(rx * 3.1 + t * 0.14 + seed)) *
+    (0.62 + 0.38 * sin(rx * 7.3 - t * 0.2 + seed * 1.3));
+  sweep = 0.2 + 0.8 * sweep;
+  float above = exp(-max(d, 0.0) / rise) * smoothstep(-0.015, 0.025, d);
+  float below = exp(-pow(min(d, 0.0) / 0.025, 2.0));
+  float body = max(above, below * 0.6) * rays * sweep;
+  float edge = exp(-pow(d / 0.026, 2.0)) * (0.55 + 0.45 * rays) * sweep;
+  float aura = exp(-abs(d) / 0.14) * sweep;
+  return vec3(body, edge, aura);
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
-  vec2 field = gl_FragCoord.xy / uResolution.y;
-  float t = 0.4 * uTime;
-  float bend = sin(field.x * 1.2 + t * 0.2) * (0.025 + uPresence * 0.02 + uEnergy * 0.03);
-  float glow1 = auroraGlow(t, field, bend);
-  float glow2 = auroraGlow(t + 0.9, field, -bend);
-  vec3 gradient1 = cosineGradient(uv.x + t * 0.05, vec3(0.7), vec3(0.3), vec3(1.0), vec3(0.2));
-  vec3 gradient2 = cosineGradient(uv.x + t * 0.03, vec3(0.7), vec3(0.3), vec3(1.0), vec3(0.4));
-  vec3 col = 0.99 * glow1 * gradient1 * mix(uContent, uAccent, 0.25);
-  col += 0.99 * glow2 * gradient2 * uAccent;
-  float strength = glow1 + glow2;
-  vec3 tint = col / max(strength, 0.0001);
-  float center = exp(-pow((uv.x - 0.5) / 0.3, 2.0));
-  float alpha = (1.0 - exp(-strength * 1.8)) * 0.62 * (1.0 - center * 0.72);
-  outColor = vec4(tint * alpha, alpha);
+  vec2 p = vec2(gl_FragCoord.x / uResolution.y, uv.y);
+  float t = uTime;
+  float swing = 1.0 + 0.5 * uPresence + 0.6 * uEnergy;
+  vec3 far = curtain(p, 0.38, 0.22, 4.0, t * 0.8, swing);
+  vec3 near = curtain(p, 0.2, 0.2, 23.0, t * 1.1, swing);
+  float body = far.x * 0.5 + near.x;
+  float hem = far.y * 0.55 + near.y * 1.2;
+  float aura = far.z * 0.06 + near.z * 0.1;
+  // Slow luminance drift along the arc, in place of upstream hue cycling.
+  float drift = 0.75 + 0.25 * sin(p.x * 1.7 - t * 0.12);
+  float dark = sceneDark();
+  float gain = 0.84 + 0.2 * uPresence + 0.08 * uEnergy;
+  float density = 1.0 - exp(-((body + hem * 0.8) * drift + aura) * 2.8);
+  // The sky above the curtains stays quiet behind the conversation.
+  float sky = 1.0 - 0.65 * smoothstep(0.5, 0.95, uv.y);
+  float alpha = density * mix(0.78, 0.95, dark) * readingCalm(uv) * sky * gain;
+  alpha = clamp(alpha + sceneDither() / 255.0, 0.0, 1.0);
+  float lift = clamp(hem * 0.9 + near.x * 0.15, 0.0, 1.0);
+  vec3 color = mix(mix(uAccent, uContent, 0.26 + 0.3 * lift), sceneTone(0.05 + 0.75 * lift), dark);
+  outColor = vec4(color * alpha, alpha);
 }`;
 
 const FLOATING_LINES_FRAGMENT = `#version 300 es
@@ -324,46 +361,62 @@ uniform float uTime;
 uniform float uPresence;
 uniform float uEnergy;
 out vec4 outColor;
-vec2 warp(vec2 p, float rotate, float flip) {
-  float angle = rotate * log(length(p) + 1.0);
-  vec2 r = p * mat2(cos(angle), sin(angle), -sin(angle), cos(angle));
-  if (flip > 0.5) r.x = -r.x;
-  return r;
-}
+${SCENE_COMMON}
+const int RIBBON_LINES = 7;
 void main() {
   vec2 uv = gl_FragCoord.xy / uResolution;
-  vec2 screen = (2.0 * gl_FragCoord.xy - uResolution) / uResolution.y;
-  screen.y = -screen.y;
+  vec2 p = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
+  float px = 1.0 / uResolution.y;
+  float t = uTime;
+  float swell = 1.0 + 0.3 * uPresence + 0.4 * uEnergy;
+  float ink = 1.0 - sceneDark();
   float cover = 0.0;
   vec3 colorSum = vec3(0.0);
-  for (int w = 0; w < 3; w++) {
-    float family = float(w);
-    float rotate = w == 0 ? -0.4 : w == 1 ? 0.2 : -1.0;
-    float lift = w == 0 ? 0.5 : w == 1 ? 0.0 : -0.7;
-    vec2 r = warp(screen, rotate, w == 0 ? 1.0 : 0.0);
-    float sx = sin(r.x);
-    float cx = cos(r.x);
-    for (int i = 0; i < 6; i++) {
-      float line = float(i);
-      float offset = 1.0 + family * 0.5 + line * 0.2;
-      float along = line * 0.16 + family * 3.0;
-      float phase = along + offset + uTime * 0.1;
-      float amp = sin(offset + uTime * 0.2) * 0.3 * (1.0 + uPresence * 0.35 + uEnergy * 0.55);
-      float y = (sx * cos(phase) + cx * sin(phase)) * amp;
-      float m = r.y + lift - y;
-      float slope = length(vec2(dFdx(m), dFdy(m)));
-      float d = abs(m) / max(slope, 1e-5);
-      float width = 0.7 + uPresence * 0.2 + uEnergy * 0.3;
-      float core = 1.0 - smoothstep(max(0.0, width - 0.75), width + 0.75, d);
-      float halo = exp(-d / 3.0) * 0.16;
-      float alpha = clamp((core * 0.65 + halo) * (w == 1 ? 1.0 : 0.65), 0.0, 0.9);
-      vec3 tint = mix(uContent, uAccent, 0.2 + line / 6.0 * 0.6);
+  // Back to front: farther ribbons are smaller, dimmer, softer and slower.
+  for (int f = 0; f < 3; f++) {
+    float depth = float(f) / 2.0;
+    float scale = mix(0.62, 1.0, depth);
+    float speed = mix(0.55, 1.0, depth);
+    float seed = float(f) * 2.17;
+    float x = p.x / scale;
+    float base = mix(-0.07, -0.24, depth) + p.x * mix(0.1, 0.2, depth) * (f == 1 ? -1.0 : 1.0);
+    float amp = mix(0.07, 0.11, depth) * swell;
+    float wave = amp * sin(x * 1.6 + t * 0.32 * speed + seed) +
+      amp * 0.45 * sin(x * 3.1 - t * 0.21 * speed + seed * 1.7);
+    float centerY = base + wave * scale;
+    float twist = x * 2.0 + t * 0.18 * speed + seed * 1.3;
+    float halfWidth = mix(0.045, 0.085, depth) * scale * cos(twist);
+    // Lines bunch up where the ribbon turns edge-on; that fold catches the light.
+    float fold = 1.0 - abs(cos(twist));
+    float coreWidth = mix(0.35, 0.75, depth);
+    float softness = mix(4.5, 2.2, depth);
+    float weight = mix(0.55, 1.0, depth);
+    float inside = abs(p.y - centerY);
+    float span = abs(halfWidth);
+    float face = 1.0 - smoothstep(span - 1.5 * px, span + 1.5 * px, inside);
+    // A faint satin face between the edges plus a wide glow give each ribbon body.
+    float across = 1.0 - inside / max(span, px);
+    float surface = face * (0.07 + 0.26 * fold) * (0.55 + 0.45 * across) * weight;
+    surface += exp(-inside / mix(0.05, 0.09, depth)) * 0.1 * weight;
+    surface = min(surface, 0.6);
+    vec3 surfaceTint = sceneTone(0.1 + 0.2 * ink + 0.45 * fold);
+    colorSum = surfaceTint * surface + colorSum * (1.0 - surface);
+    cover = surface + cover * (1.0 - surface);
+    for (int i = 0; i < RIBBON_LINES; i++) {
+      float s = float(i) / float(RIBBON_LINES - 1) * 2.0 - 1.0;
+      float m = p.y - (centerY + halfWidth * s);
+      float slope = max(length(vec2(dFdx(m), dFdy(m))), 1e-5);
+      float d = abs(m) / slope;
+      float core = 1.0 - smoothstep(coreWidth - 0.6, coreWidth + 0.7, d);
+      float halo = exp(-d / softness) * 0.2;
+      float rim = mix(0.55, 1.0, abs(s));
+      float alpha = clamp((core + halo) * weight * rim * (0.62 + 0.38 * fold), 0.0, 0.95);
+      vec3 tint = sceneTone(0.2 + 0.25 * ink + 0.45 * depth * core + 0.35 * fold * core);
       colorSum = tint * alpha + colorSum * (1.0 - alpha);
       cover = alpha + cover * (1.0 - alpha);
     }
   }
-  float center = exp(-pow((uv.x - 0.5) / 0.28, 2.0));
-  float mask = 0.8 * (1.0 - center * 0.7);
+  float mask = readingCalm(uv) * (0.86 + 0.14 * uPresence);
   outColor = vec4(colorSum * mask, cover * mask);
 }`;
 

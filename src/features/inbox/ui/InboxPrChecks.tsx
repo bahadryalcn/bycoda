@@ -199,8 +199,11 @@ function PrCheckRow({
     scroller.scrollTop +=
       (row.getBoundingClientRect().top - bounds.top) / (scaleY || 1) - scroller.clientTop;
   }, [revealToken, expandable]);
-  const [details, setDetails] = useState<GithubCheckDetails | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<{
+    key: string;
+    details: GithubCheckDetails | null;
+    error: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(false);
   const [retry, setRetry] = useState(0);
   const detailsId = useId();
@@ -215,13 +218,17 @@ function PrCheckRow({
     check.startedAt,
     check.completedAt,
   ]);
-  useEffect(() => {
-    if (autoExpand && expandable) setExpanded(true);
-  }, [autoExpand, expandable]);
-  useEffect(() => {
-    setDetails(null);
-    setError(null);
-  }, [detailsKey]);
+  // Details belong to the check revision they were fetched for, so a new key
+  // starts empty without a clearing effect.
+  const current = loaded?.key === detailsKey ? loaded : null;
+  const details = current?.details ?? null;
+  const error = current?.error ?? null;
+  const wantsAutoExpand = autoExpand && expandable;
+  const [previousWantsAutoExpand, setPreviousWantsAutoExpand] = useState(wantsAutoExpand);
+  if (previousWantsAutoExpand !== wantsAutoExpand) {
+    setPreviousWantsAutoExpand(wantsAutoExpand);
+    if (wantsAutoExpand) setExpanded(true);
+  }
   useEffect(() => {
     if (!expanded || !jobId || (!cwd && (!check.provider || check.provider === "github"))) return;
     let active = true;
@@ -230,13 +237,16 @@ function PrCheckRow({
     fetchCheckDetails(cwd, repo, check)
       .then(
         (result) => {
-          if (active) {
-            setDetails(result);
-            setError(null);
-          }
+          if (active) setLoaded({ key: detailsKey, details: result, error: null });
         },
         (reason: unknown) => {
-          if (active) setError(reason instanceof Error ? reason.message : String(reason));
+          if (!active) return;
+          const message = reason instanceof Error ? reason.message : String(reason);
+          setLoaded((previous) => ({
+            key: detailsKey,
+            details: previous?.key === detailsKey ? previous.details : null,
+            error: message,
+          }));
         },
       )
       .finally(() => {
@@ -557,9 +567,7 @@ export function InboxPrChecks({
     selection.scope === revealScope &&
     selectedChecksStillFailed(selection.checks, checks.checks),
   );
-  useEffect(() => {
-    if (selection && !selectionValid) setSelection(null);
-  }, [selection, selectionValid]);
+  if (selection && !selectionValid) setSelection(null);
   if (loading && !checks && !error) {
     return (
       <div role="status" className="flex items-center gap-2 py-5 text-ui-secondary text-(--ui-text-secondary)">

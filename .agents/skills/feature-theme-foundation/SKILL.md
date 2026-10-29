@@ -122,3 +122,13 @@ CMP-08 selected versus drop identity, CMP-14 local menu recipes and whole UIF
 family delivery remain with their control/overlay owners. Shared theme work does
 not automatically close those records, SH01 shell behavior or T3UI-07/08 product
 and native coverage. Source is uncommitted until the owner directs delivery.
+
+## VIS 2026-10-29: neutral selection, chat canvas, field focus
+
+Delivered in `src/styles/` (source only, uncommitted; no installed-build check):
+
+- `--ui-surface-selected` is a neutral content mix over the panel surface (no tinted or warm fill), used by shell rows, tabs and the Appearance preview.
+- `--ui-chat-canvas` separates the chat ground from panels; the composer uses `--ui-surface`.
+- Text fields share one 2px neutral focus ring.
+- Under `html.has-user-accent` the selection pair (`--ui-text-selection-background`/`-foreground`) and the accent solid/hover/pressed roles follow the user accent with the readability level applied (see feature-appearance). No local colour recipes were added in features.
+- Recorded from the theme sub-agent report; the integration pass did not re-measure the 2px focus ring or the canvas/composer values.

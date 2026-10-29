@@ -27,6 +27,38 @@ import {
 export const STORY_POINTS = SPRINT_STORY_POINTS;
 const COORDINATOR_KEY = "bycoda.tasks.planning-environment.v1";
 const EMPTY_BOARD: SprintBoard = { sprints: [], planning: [], sources: [] };
+const EMPTY_SYNC_ERRORS: string[] = [];
+const EMPTY_SYNC_FAILURES: Record<string, string> = {};
+
+/** Everything the planning Host last told us, tagged with the coordinator it
+ * came from. State from another coordinator is ignored when read, so changing
+ * the coordinator needs no clearing step. */
+type BoardState = {
+  key: string;
+  data: SprintBoard;
+  supported: boolean;
+  error: string | null;
+  syncErrors: string[];
+  syncFailures: Record<string, string>;
+};
+
+const boardKeyOf = (coordinatorId: string | undefined, environment: string) =>
+  `${coordinatorId ?? ""}\0${environment}`;
+
+const emptyBoardState = (key: string): BoardState => ({
+  key,
+  data: EMPTY_BOARD,
+  supported: false,
+  error: null,
+  syncErrors: EMPTY_SYNC_ERRORS,
+  syncFailures: EMPTY_SYNC_FAILURES,
+});
+
+const patchedBoardState = (
+  current: BoardState,
+  key: string,
+  patch: Partial<Omit<BoardState, "key">>,
+): BoardState => ({ ...(current.key === key ? current : emptyBoardState(key)), ...patch });
 type SourceSnapshot = {
   tasks: SprintTaskSnapshot[];
   cursor: number;
@@ -74,14 +106,7 @@ export function useSprintBoard(
       return "";
     }
   });
-  const [data, setData] = useState<SprintBoard>(EMPTY_BOARD);
-  const dataRef = useRef(data);
-  dataRef.current = data;
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [syncErrors, setSyncErrors] = useState<string[]>([]);
-  const [syncFailures, setSyncFailures] = useState<Record<string, string>>({});
-  const [supported, setSupported] = useState(false);
   const generation = useRef(0);
   const latestSync = useRef<{
     epoch: number;
@@ -96,6 +121,12 @@ export function useSprintBoard(
   const coordinator = planningCoordinator(machines, environmentId);
   const coordinatorId = coordinator?.id;
   const effectiveEnvironment = environmentId || coordinator?.environmentId || "";
+  const boardKey = boardKeyOf(coordinatorId, effectiveEnvironment);
+  const [boardState, setBoardState] = useState<BoardState>(() => emptyBoardState(boardKey));
+  const { data, supported, error, syncErrors, syncFailures } =
+    boardState.key === boardKey ? boardState : emptyBoardState(boardKey);
+  const dataRef = useRef(data);
+  dataRef.current = data;
   const projectScope = JSON.stringify(
     allowedProjects?.map(sprintProjectKey).sort() ??
       [
@@ -121,6 +152,9 @@ export function useSprintBoard(
       if (!coordinatorId || !visibleRef.current) return;
       const epoch = generation.current;
       const current = () => epoch === generation.current;
+      const key = boardKeyOf(coordinatorId, effectiveEnvironment);
+      const patchBoard = (patch: Partial<Omit<BoardState, "key">>) =>
+        setBoardState((state) => patchedBoardState(state, key, patch));
       setLoading(true);
       try {
         const capabilities = await machineCapabilities(
@@ -128,7 +162,7 @@ export function useSprintBoard(
         );
         if (!current()) return;
         const available = capabilities.includes(HOST_SPRINTS);
-        setSupported(available);
+        patchBoard({ supported: available });
         if (!available) throw new Error("Update the planning Host to use sprints.");
         let board = await remoteRequest<SprintBoard>(coordinatorId, "sprints.list");
         const failures: string[] = [];
@@ -283,18 +317,16 @@ export function useSprintBoard(
         }
         if (current()) {
           dataRef.current = board;
-          setData(board);
-          setError(null);
+          patchBoard({ data: board, error: null });
           if (sync) {
             latestSync.current = { epoch, failures: sourceFailures };
-            setSyncErrors(failures);
-            setSyncFailures(sourceFailures);
+            patchBoard({ syncErrors: failures, syncFailures: sourceFailures });
           }
         }
       } catch (reason) {
         if (current()) {
           const message = reason instanceof Error ? reason.message : String(reason);
-          setError(message);
+          patchBoard({ error: message });
           if (sync) latestSync.current = { epoch, coordinatorError: message, failures: {} };
         }
       } finally {
@@ -319,11 +351,6 @@ export function useSprintBoard(
   useEffect(() => {
     generation.current++;
     knownTasks.current.clear();
-    setData(EMPTY_BOARD);
-    setSupported(false);
-    setError(null);
-    setSyncErrors([]);
-    setSyncFailures({});
     return () => {
       generation.current++;
     };
@@ -390,7 +417,7 @@ export function useSprintBoard(
           ],
         };
         dataRef.current = next;
-        setData(next);
+        setBoardState((state) => patchedBoardState(state, boardKey, { data: next }));
         knownTasks.current.add(sprintTaskKey(ref));
       }
       requests.current.delete(`${effectiveEnvironment}:${signature}`);

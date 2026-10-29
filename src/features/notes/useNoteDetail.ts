@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getNote, peekNoteDetail, type Note, type NoteSummary } from "./notes";
+import { beginNoteWork, deriveNoteInputResult, noteInputWorkError } from "./notesInputOwners";
 
 /** An editor mounts only after the selected body arrives; a summary is never an editable blank note. */
 export function useNoteDetail(summary: NoteSummary | Note | null) {
@@ -23,11 +24,16 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
   useEffect(() => {
     if (!id || version === undefined) return;
     if (!retryCount && peekNoteDetail(id, version)) return;
+    const work = beginNoteWork("note-detail-consumer");
+    if (!work) {
+      setResult({ id, version, note: null, error: noteInputWorkError().message });
+      return;
+    }
     const key = JSON.stringify([id, version]);
     fetchingRef.current = key;
     setFetching(key);
     let active = true;
-    void getNote(id)
+    void getNote(id, work)
       .then(
         (note) => {
           if (active) setResult({ id, version, note, error: note ? null : "Note was not found" });
@@ -47,6 +53,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
           fetchingRef.current = null;
           setFetching(null);
         }
+        work();
       });
     return () => {
       active = false;
@@ -61,7 +68,7 @@ export function useNoteDetail(summary: NoteSummary | Note | null) {
   const note = useMemo(
     () =>
       detail && summary && detail.updatedAt === summary.updatedAt
-        ? { ...detail, ...summary, body: detail.body }
+        ? deriveNoteInputResult({ ...detail, ...summary, body: detail.body }, detail, summary)
         : detail,
     [detail, summary],
   );

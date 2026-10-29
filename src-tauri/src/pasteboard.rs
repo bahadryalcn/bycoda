@@ -455,7 +455,14 @@ mod path_tests {
         // arboard strips the `file://` prefix and percent-decodes, then leaves
         // the CRLF terminator attached.
         let from_clipboard = format!("{}\r\n", file.to_string_lossy());
-        let infos = crate::fs::inspect_paths(clean_clipboard_paths(vec![from_clipboard]));
+        let infos: Vec<_> = clean_clipboard_paths(vec![from_clipboard])
+            .into_iter()
+            .filter_map(|path| {
+                std::fs::metadata(&path)
+                    .ok()
+                    .map(|metadata| (std::path::PathBuf::from(path), metadata))
+            })
+            .collect();
 
         std::fs::remove_dir_all(&dir).ok();
         assert_eq!(
@@ -463,8 +470,11 @@ mod path_tests {
             1,
             "a copied file must resolve to an attachment"
         );
-        assert_eq!(infos[0].name, "All_BTech_Affiliated_2022_23.pdf");
-        assert!(!infos[0].is_dir);
+        assert_eq!(
+            infos[0].0.file_name().unwrap(),
+            "All_BTech_Affiliated_2022_23.pdf"
+        );
+        assert!(!infos[0].1.is_dir());
     }
 }
 

@@ -3,6 +3,11 @@ import {
   registerAppearanceSaveFailure,
   writeAppearanceValue,
 } from "./appearancePersistence";
+import {
+  ACCENT_READABILITY_DEFAULT,
+  isAccentReadability,
+  type AccentReadability,
+} from "./accentContrast";
 
 export const APPEARANCE_PREFERENCES_EVENT = "bycoda.appearancePreferencesChanged";
 const KEY = "bycoda.appearancePreferences.v1";
@@ -18,6 +23,7 @@ export const APPEARANCE_DEFAULTS = {
   terminalWeight: 400,
   terminalLineHeight: 1,
   contrast: 100,
+  accentReadability: ACCENT_READABILITY_DEFAULT,
   controlDensity: "compact",
   chatWidth: "comfortable",
   wordWrap: false,
@@ -33,6 +39,8 @@ export type AppearancePreferences = {
   terminalWeight: number;
   terminalLineHeight: number;
   contrast: number;
+  /** Contrast level the accent fill, its ink and text selection must reach. */
+  accentReadability: AccentReadability;
   controlDensity: "compact" | "comfortable" | "touch";
   chatWidth: "comfortable" | "wide" | "full";
   wordWrap: boolean;
@@ -75,6 +83,10 @@ export function normalizeAppearancePreferences(
       ? value.terminalLineHeight!
       : 1,
     contrast: bounded(value.contrast, 100, 75, 150),
+    // Records saved before this preference existed have no value: they resolve to "auto".
+    accentReadability: isAccentReadability(value.accentReadability)
+      ? value.accentReadability
+      : ACCENT_READABILITY_DEFAULT,
     controlDensity:
       value.controlDensity === "comfortable" || value.controlDensity === "touch"
         ? value.controlDensity
@@ -107,6 +119,7 @@ export function applyAppearancePreferences(value: AppearancePreferences) {
   const root = document.documentElement;
   root.dataset.controlDensity = value.controlDensity;
   root.dataset.codeTheme = value.codeTheme;
+  root.dataset.accentReadability = value.accentReadability;
   for (const [property, font, fallback] of [
     ["--font-sans", value.interfaceFont, "sans-serif"],
     ["--font-mono", value.codeFont, "monospace"],

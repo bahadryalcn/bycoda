@@ -9,6 +9,7 @@ import {
   type CiRepairEvidence,
   type CiRepairRequest,
 } from "../model/ciRepair";
+import { useKeyedActiveIndex } from "../../../shared/hooks/useKeyedActiveIndex";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
 import { Check, MessageSquare, Plus, Search, Sparkles, X } from "../../../shared/ui/icons";
 import { useEffect, useId, useRef, useState } from "react";
@@ -46,7 +47,6 @@ export function CheckRepairForm({
   useLocale();
   const [sessionId, setSessionId] = useState("");
   const [query, setQuery] = useState("");
-  const [active, setActive] = useState(0);
   const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -63,18 +63,13 @@ export function CheckRepairForm({
         .includes(query.trim().toLocaleLowerCase()),
     ),
   ];
+  const [active, setActive] = useKeyedActiveIndex(query, choices.length);
   const selectedTitle = sessionId
     ? repair.sessions.find((session) => session.id === sessionId)?.title || "Untitled chat"
     : "New project chat";
   useEffect(() => {
     searchRef.current?.focus();
   }, []);
-  useEffect(() => {
-    setActive(0);
-  }, [query]);
-  useEffect(() => {
-    setActive((index) => Math.min(index, choices.length - 1));
-  }, [choices.length]);
   useEffect(() => {
     listRef.current?.querySelector(`[data-active="true"]`)?.scrollIntoView?.({ block: "nearest" });
   }, [active]);

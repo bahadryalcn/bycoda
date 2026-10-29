@@ -283,7 +283,9 @@ export function CrewWorkingSettings({
                 onBulkApplied(fixed.length);
               }}
             >
-              {t("Apply")}
+              {fixed.length === 1
+                ? t("Apply to 1 member")
+                : t("Apply to {p0} members", { p0: fixed.length })}
             </Button>
           </Row>
         </Group>

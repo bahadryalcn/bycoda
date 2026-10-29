@@ -3,7 +3,7 @@ import { act, createElement, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LiveAgent } from "../model/liveAgents";
-import { LiveAgentsPreview } from "./LiveAgentsPreview";
+import { LiveAgentsPreview, summarizeLiveAgents } from "./LiveAgentsPreview";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -195,4 +195,64 @@ it("shows the provider beside the title and keeps unknown start times empty", ()
   const status = card.querySelector("[data-session-working-status]")!;
   expect(status.getAttribute("aria-label")).toBe("Working");
   expect(status.querySelector(".tabular-nums")).toBeNull();
+});
+
+describe("LiveAgentsPreview mixed collections", () => {
+  const mixed = [
+    agent("failed", "/repo/a", { issue: "failed", done: true, activity: "Failed" }),
+    agent("input", "/repo/b", { needsApproval: true, inputKind: "approval" }),
+    agent("run-1", "/repo/c"),
+    agent("run-2", "/repo/d"),
+    agent("done", "/repo/e", { done: true, activity: "Done" }),
+  ];
+
+  it("separates running, needs-attention and finished counts", () => {
+    expect(summarizeLiveAgents(mixed)).toEqual({
+      attention: 2,
+      finished: 1,
+      working: 2,
+      headline: "working",
+    });
+    expect(summarizeLiveAgents(mixed.slice(0, 2)).headline).toBe("attention");
+    expect(summarizeLiveAgents(mixed.slice(4)).headline).toBe("finished");
+  });
+
+  it("titles a mixed list by running work and reports what needs attention beside the count", () => {
+    render({ agents: mixed, collapsible: true });
+    const section = container.querySelector("[data-live-agents-preview]")!;
+    expect(section.getAttribute("data-live-agents-headline")).toBe("working");
+    const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(header.textContent).toContain("Working");
+    expect(header.textContent).toContain("2 need attention");
+    expect(header.textContent).not.toContain("Needs attention");
+    expect(container.querySelector('[aria-live="polite"]')!.textContent).toBe(
+      "2 working agents, 2 need attention, 1 finished agent",
+    );
+  });
+
+  it("titles an attention-only list Needs attention and never calls failed work finished", () => {
+    render({ agents: [mixed[0]], collapsible: true });
+    const header = container.querySelector<HTMLButtonElement>("button[aria-expanded]")!;
+    expect(header.textContent).toContain("Needs attention");
+    expect(container.querySelector("[data-live-agents-preview]")!.getAttribute("aria-label")).toBe(
+      "Agents needing attention",
+    );
+    expect(container.querySelector('[aria-live="polite"]')!.textContent).toBe("1 needs attention");
+    const card = container.querySelector('[data-live-agent-card="failed"]')!;
+    expect(card.getAttribute("data-live-agent-state")).toBe("failed");
+    expect(card.querySelector("[data-live-agent-status]")!.textContent).toContain("Failed");
+  });
+
+  it("ties the more control to the list it expands", () => {
+    render({ agents: mixed, collapsible: true });
+    const more = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("3 more"),
+    )!;
+    expect(more.getAttribute("aria-controls")).toBe(
+      container.querySelector("[data-live-agent-card]")!.closest("[id]")!.id,
+    );
+    act(() => more.click());
+    expect(more.textContent).toContain("Show less");
+    expect(container.querySelectorAll("[data-live-agent-card]")).toHaveLength(5);
+  });
 });

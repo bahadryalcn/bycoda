@@ -1,8 +1,10 @@
-/* Shared settings frame: one header row, a 52rem reading column, open topics.
+/* Shared settings frame: one header row, one shared content column, open topics.
    Pages compose Group / Row / PageHeader from settingsControls.tsx and never reskin them. */
 .bycoda-settings-workbench {
-  /* Collection-heavy pages opt into 64rem through data-settings-width="wide" on the scroller. */
-  --settings-column: 52rem;
+  /* One column for every page and sub-view (the widest existing state); no page opts into another.
+     Maximized raises it to --settings-column-maximized. Controls keep their natural sizes inside it. */
+  --settings-column: 80rem;
+  --settings-column-maximized: 96rem;
   --settings-group-gap: 28px;
   background: var(--color-background-base);
   container-type: inline-size;
@@ -181,19 +183,9 @@
 .settings-advanced:focus-visible {
   outline: none;
 }
-/* Page presentation sets how much of the track a page may use. Forms keep the readable 52rem
-   column; collections and analytics use 64rem; list/detail libraries use the room they are given. */
-[data-settings-scroller][data-settings-width="wide"] {
-  --settings-column: 64rem;
-}
-[data-settings-scroller][data-settings-width="workspace"] {
-  --settings-column: 80rem;
-}
-[data-settings-maximized] [data-settings-scroller][data-settings-width="wide"] {
-  --settings-column: 80rem;
-}
-[data-settings-maximized] [data-settings-scroller][data-settings-width="workspace"] {
-  --settings-column: 96rem;
+/* Maximizing is the only thing that widens the shared column, for every page alike. */
+.bycoda-settings-workbench[data-settings-maximized] {
+  --settings-column: var(--settings-column-maximized);
 }
 
 /* A list/detail library owns the whole panel; its header row spans the same edges as the library. */
@@ -218,6 +210,8 @@
   z-index: 1;
 }
 .bycoda-settings-form {
+  /* Content (slider thumbs, positioned controls) stays below the sticky page bar. */
+  isolation: isolate;
   max-inline-size: var(--settings-column);
   margin-inline: auto;
   padding: 8px 32px 48px;

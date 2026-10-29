@@ -291,14 +291,14 @@ struct Capture {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ProducerCapture {
+struct ProducerCapture<E> {
     version: u8,
     kind: String,
     qualified: bool,
     session_id: String,
     snapshots: Vec<Mount>,
     producer_coverage: String,
-    producer_epochs: ProducerEpochs,
+    producer_epochs: E,
     producers: Vec<Producer>,
 }
 #[derive(Deserialize)]
@@ -310,6 +310,16 @@ struct ProducerEpochs {
     editor: u64,
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct NotesProducerEpochs {
+    #[serde(deserialize_with = "safe_counter")]
+    parent: u64,
+    #[serde(deserialize_with = "safe_counter")]
+    editor: u64,
+    #[serde(deserialize_with = "safe_counter")]
+    notes: u64,
+}
+#[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum ProducerKind {
     QuestionDraft,
@@ -318,6 +328,20 @@ enum ProducerKind {
     QueueEdit,
     BtwParent,
     FileEditor,
+    NoteEditor,
+}
+impl ProducerKind {
+    fn family_index(&self) -> u64 {
+        match self {
+            Self::QuestionDraft
+            | Self::SessionParent
+            | Self::ComposerParent
+            | Self::QueueEdit
+            | Self::BtwParent => 0,
+            Self::FileEditor => 1,
+            Self::NoteEditor => 2,
+        }
+    }
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -497,58 +521,79 @@ fn validate_raw(raw: &str, session: &str) -> Result<usize, String> {
             Ok(capture.snapshots.len())
         }
         Some(Shape::Unsigned(2)) => {
-            let capture: ProducerCapture =
+            let capture: ProducerCapture<ProducerEpochs> =
                 serde_json::from_str(raw).map_err(|_| failure("INVALID_SHAPE"))?;
-            let total = capture
-                .snapshots
-                .len()
-                .checked_add(capture.producers.len())
-                .ok_or_else(|| failure("CAPACITY"))?;
-            if capture.version != 2
-                || capture.kind != "mounted-native-input-capture"
-                || capture.qualified
-                || capture.session_id != session
-                || capture.producer_coverage != "unknown"
-                || total > MAX_SNAPSHOTS
-            {
-                return Err(failure("INVALID_SHAPE"));
-            }
             let _ = (
                 capture.producer_epochs.parent,
                 capture.producer_epochs.editor,
             );
-            validate_mounts(&capture.snapshots, &shape, session)?;
-            let Some(Shape::Array(shapes)) = shape.field("producers") else {
-                return Err(failure("INVALID_SHAPE"));
-            };
-            if shapes.len() != capture.producers.len() {
-                return Err(failure("INVALID_SHAPE"));
-            }
-            let mut ids = HashSet::new();
-            for (producer, shape) in capture.producers.iter().zip(shapes) {
-                if producer.id == 0
-                    || producer.id > MAX_SAFE
-                    || producer.revision > MAX_SAFE
-                    || !ids.insert(producer.id)
-                    || producer.session_id.as_ref().is_some_and(|id| id != session)
-                {
-                    return Err(failure("INVALID_SHAPE"));
-                }
-                // The six families remain unqualified data, including nested
-                // child/provider identities which this parser never rebinds.
-                let _ = (&producer.kind, &producer.snapshot);
-                validate_undefined_paths(
-                    shape
-                        .field("snapshot")
-                        .ok_or_else(|| failure("INVALID_SHAPE"))?,
-                    &producer.undefined_paths,
-                    false,
-                )?;
-            }
-            Ok(total)
+            validate_producers(&capture, &shape, session, 2)
+        }
+        Some(Shape::Unsigned(3)) => {
+            let capture: ProducerCapture<NotesProducerEpochs> =
+                serde_json::from_str(raw).map_err(|_| failure("INVALID_SHAPE"))?;
+            let _ = (
+                capture.producer_epochs.parent,
+                capture.producer_epochs.editor,
+                capture.producer_epochs.notes,
+            );
+            validate_producers(&capture, &shape, session, 3)
         }
         _ => Err(failure("INVALID_SHAPE")),
     }
+}
+fn validate_producers<E>(
+    capture: &ProducerCapture<E>,
+    shape: &Shape,
+    session: &str,
+    version: u8,
+) -> Result<usize, String> {
+    let total = capture
+        .snapshots
+        .len()
+        .checked_add(capture.producers.len())
+        .ok_or_else(|| failure("CAPACITY"))?;
+    if capture.version != version
+        || capture.kind != "mounted-native-input-capture"
+        || capture.qualified
+        || capture.session_id != session
+        || capture.producer_coverage != "unknown"
+        || total > MAX_SNAPSHOTS
+    {
+        return Err(failure("INVALID_SHAPE"));
+    }
+    validate_mounts(&capture.snapshots, shape, session)?;
+    let Some(Shape::Array(shapes)) = shape.field("producers") else {
+        return Err(failure("INVALID_SHAPE"));
+    };
+    if shapes.len() != capture.producers.len() {
+        return Err(failure("INVALID_SHAPE"));
+    }
+    let mut ids = HashSet::new();
+    for (producer, shape) in capture.producers.iter().zip(shapes) {
+        if producer.id == 0
+            || producer.id > MAX_SAFE
+            || producer.revision > MAX_SAFE
+            || !ids.insert(producer.id)
+            || producer.session_id.as_ref().is_some_and(|id| id != session)
+            || (version == 2 && matches!(producer.kind, ProducerKind::NoteEditor))
+            || (version == 3
+                && (producer.id / 3 == 0 || producer.id % 3 != producer.kind.family_index()))
+        {
+            return Err(failure("INVALID_SHAPE"));
+        }
+        // Every family remains unqualified data. In particular, a Note editor
+        // snapshot is neither a saved-row ACK nor a Native editor-draft ACK.
+        let _ = &producer.snapshot;
+        validate_undefined_paths(
+            shape
+                .field("snapshot")
+                .ok_or_else(|| failure("INVALID_SHAPE"))?,
+            &producer.undefined_paths,
+            false,
+        )?;
+    }
+    Ok(total)
 }
 fn validate_mounts(mounted: &[Mount], shape: &Shape, session: &str) -> Result<(), String> {
     let mut mounts = HashSet::new();

@@ -10,14 +10,16 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { ChevronDown, ChevronRight } from "../../../shared/ui/icons";
 import { Toggle } from "../../settings/ui/settingsControls";
 import type { HostModelCatalog } from "../../connections/model/protocol";
-import type { CrewAgent, CrewCandidate, CrewRole } from "../model/crew";
+import type { CrewAgent, CrewCandidate, CrewPolicy, CrewRole } from "../model/crew";
 import {
   COST_LEVELS,
   QUALITY_LEVELS,
   candidateDetailLabel,
   candidateLabel,
+  candidatePassesPolicy,
   catalogCandidate,
   catalogModels,
+  memberCandidatePool,
   memberModelSummary,
 } from "../model/crewRoster";
 import { CrewRoleIcon } from "./CrewRoleIcon";
@@ -87,6 +89,7 @@ export function CrewMemberForm({
   modelError,
   advancedExtra,
   autoFocus,
+  policy,
 }: {
   cwd: string;
   catalog: HostModelCatalog;
@@ -100,6 +103,8 @@ export function CrewMemberForm({
   modelError?: string;
   advancedExtra?: ReactNode;
   autoFocus?: boolean;
+  /** The crew's working limits, when the member belongs to a crew; used to say what applies. */
+  policy?: Pick<CrewPolicy, "allowUnknownCost" | "maxEstimatedCost" | "minimumQuality">;
 }) {
   useLocale();
   const [advanced, setAdvanced] = useState(false);
@@ -112,6 +117,10 @@ export function CrewMemberForm({
     onChange({
       candidates: agent.candidates.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     });
+  const pool = memberCandidatePool(agent);
+  const eligible = policy
+    ? pool.filter((candidate) => candidatePassesPolicy(candidate, policy)).length
+    : pool.length;
   const suggestions = agent.name.trim()
     ? []
     : roleSuggestions(agent.role).filter((name) => name !== agent.name);
@@ -197,6 +206,22 @@ export function CrewMemberForm({
             onValueChange={(value) => onChange({ selection: value as CrewAgent["selection"] })}
           />
         </div>
+        <p className="text-ui-caption text-(--ui-text-secondary)">
+          {agent.selection === "fixed"
+            ? t("Always works with the model chosen below.")
+            : t("For each assignment the crew picks one of the allowed models below.")}
+          {policy && pool.length
+            ? ` ${
+                eligible === pool.length
+                  ? pool.length === 1
+                    ? t("It passes the crew's limits.")
+                    : t("All {p0} pass the crew's limits.", { p0: pool.length })
+                  : eligible
+                    ? t("{p0} of {p1} pass the crew's limits.", { p0: eligible, p1: pool.length })
+                    : t("The crew's limits exclude every model here, so this member cannot work.")
+              }`
+            : ""}
+        </p>
         {agent.selection === "fixed" ? (
           <MemberModelPicker
             cwd={cwd}
@@ -212,9 +237,7 @@ export function CrewMemberForm({
             <p className="text-ui-caption text-(--ui-text-secondary)">
               <span className="font-medium">{memberModelSummary(catalog, agent)}</span>
               {" · "}
-              {t(
-                "For each assignment the crew picks one of these models, using your ratings and the crew's working style.",
-              )}
+              {t("Your ratings and the crew's priority decide which one is used.")}
             </p>
             <SearchableSelect
               label={t("Allowed models")}

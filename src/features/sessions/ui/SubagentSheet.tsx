@@ -1,9 +1,10 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
 import { useLocale, useT } from "../../../shared/i18n";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
+import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { Alert } from "../../../shared/ui/Alert";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
 import { blockLifecycle } from "../model/activityDock";
@@ -15,7 +16,7 @@ import {
 import type { AgentStep, Block } from "../model/session";
 import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
 import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
-import { ActivityRow, agentStepBlock } from "./AgentTranscript";
+import { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
@@ -43,7 +44,9 @@ export type SubagentRelay = {
 export function useSubagentSheet(blocks: Block[], visible: boolean) {
   const [openId, setOpenId] = useState<string | null>(null);
   const blocksRef = useRef(blocks);
-  blocksRef.current = blocks;
+  useLayoutEffect(() => {
+    blocksRef.current = blocks;
+  }, [blocks]);
   // Where focus was when the panel opened, so closing puts it back.
   const returnFocus = useRef<HTMLElement | null>(null);
 
@@ -84,10 +87,14 @@ export function useSubagentSheet(blocks: Block[], visible: boolean) {
 
   const block = openId ? blocks.find((entry) => entry.id === openId) : undefined;
   // The run vanished (a rewind, a deleted turn): nothing left to show.
-  const gone = openId !== null && !block;
+  if (openId !== null && !block) setOpenId(null);
+  // The panel is gone without `close`; hand focus back once it has unmounted.
   useEffect(() => {
-    if (gone) close();
-  }, [gone, close]);
+    if (openId !== null) return;
+    const target = returnFocus.current;
+    returnFocus.current = null;
+    if (target?.isConnected) target.focus({ preventScroll: true });
+  }, [openId]);
 
   return { block, open, close };
 }
@@ -620,49 +627,19 @@ function CopyTranscriptButton({
   status: string;
 }) {
   const t = useT();
-  const [state, setState] = useState<"idle" | "pending" | "copied" | "failed">("idle");
-  const timer = useRef<number | null>(null);
-  const pending = useRef(false);
-  const generation = useRef(0);
-  const clearTimer = () => {
-    if (timer.current != null) window.clearTimeout(timer.current);
-    timer.current = null;
-  };
-  // A different run invalidates any copy in flight and any shown outcome.
-  useEffect(() => {
-    generation.current += 1;
-    pending.current = false;
-    clearTimer();
-    setState("idle");
-    return () => {
-      generation.current += 1;
-      clearTimer();
-    };
-  }, [block.id]);
+  // A different run invalidates any copy in flight and any shown outcome; streaming
+  // content of the same run does not, because the text is read when the click happens.
+  const feedback = useCopyFeedback({ resetKeys: [block.id], successMs: 2000 });
   const command = !isSubagentBlock(block);
   const copy = () => {
-    if (pending.current) return;
     const text = command ? commandDetailsCopyText(block, busy, status, t) : agentRunMarkdown(block, status);
     if (!text) return;
-    pending.current = true;
-    const requested = generation.current;
-    setState("pending");
-    const settle = (next: "copied" | "failed") => {
-      if (generation.current !== requested) return;
-      pending.current = false;
-      clearTimer();
-      setState(next);
-      if (next === "copied") timer.current = window.setTimeout(() => setState("idle"), 2000);
-    };
-    void copyText(text).then(
-      () => settle("copied"),
-      () => settle("failed"),
-    );
+    feedback.copy(() => copyText(text));
   };
   const label =
-    state === "copied"
+    feedback.copied
       ? t("Copied")
-      : state === "failed"
+      : feedback.failed
         ? t("Copy failed. Try again.")
         : command
           ? t("Copy details")
@@ -672,12 +649,12 @@ function CopyTranscriptButton({
       className="shrink-0"
       variant="ghost"
       type="button"
-      loading={state === "pending"}
+      loading={feedback.pending}
       onClick={copy}
       title={command ? label : t("{p0} (Markdown)", { p0: label })}
       aria-label={label}
     >
-      {state === "copied" ? (
+      {feedback.copied ? (
         <Check className="size-4" strokeWidth={1.75} />
       ) : (
         <Copy className="size-4" strokeWidth={1.75} />

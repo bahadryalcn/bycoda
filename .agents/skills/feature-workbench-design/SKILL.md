@@ -835,3 +835,11 @@ design decisions: completed ordinary operations use a compact summary with detai
 on demand, and activity uses one simple state signal with the existing figure
 optional. Their implementation is pending; active work, failure, approval and full
 inspection remain visible/reachable. No additional proposal is adopted here.
+
+## VIS 2026-10-29: collapsed rail
+
+Delivered in source (uncommitted; unit and fixture evidence only):
+
+- The collapsed rail shows the product logo, a merged top row, and icon-only entries (name as accessible name and tooltip, e.g. Inbox and Projects and groups).
+- Search in the title bar is a ghost icon button without a field fill.
+- Logo and merged top-row behaviour are recorded from the shell sub-agent report; not re-inspected beyond the compact-navigation fixture.

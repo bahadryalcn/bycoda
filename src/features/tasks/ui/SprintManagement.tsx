@@ -563,10 +563,10 @@ function SprintCompletion({
           sprint.projects.some((project) => sprintProjectKey(project) === sprintProjectKey(task)),
         ),
   );
-  useEffect(() => {
-    if (target !== "backlog" && !targets.some((sprint) => sprint.id === target))
-      setTarget("backlog");
-  }, [target, targets]);
+  // A chosen sprint that stops accepting the selected tasks falls back to the
+  // backlog; the choice itself stays, so it applies again if it becomes valid.
+  const effectiveTarget =
+    target !== "backlog" && !targets.some((sprint) => sprint.id === target) ? "backlog" : target;
   return (
     <Modal
       title={t("Complete sprint")}
@@ -589,7 +589,7 @@ function SprintCompletion({
                 ? {
                     rollover: {
                       taskKeys: selected,
-                      targetSprintId: target === "backlog" ? null : target,
+                      targetSprintId: effectiveTarget === "backlog" ? null : effectiveTarget,
                     },
                   }
                 : {},
@@ -633,7 +633,7 @@ function SprintCompletion({
         {selected.length ? (
           <SearchableSelect
             label={t("Move selected tasks to")}
-            value={target}
+            value={effectiveTarget}
             onChange={setTarget}
             options={[
               { value: "backlog", label: t("Backlog") },

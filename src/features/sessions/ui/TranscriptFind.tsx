@@ -67,8 +67,7 @@ export const TranscriptFind = memo(function TranscriptFind({
     () => peekTranscriptJump(sessionId ?? ""),
     () => null,
   );
-  const adoptedJump = useRef(0);
-  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
+  const [adoptedJump, setAdoptedJump] = useState(0);
 
   const openFind = useCallback(() => {
     setOpen(true);
@@ -108,21 +107,16 @@ export const TranscriptFind = memo(function TranscriptFind({
   // A result opened from the cross-session search arrives as a jump carrying
   // its query: show it here, on the matching block, so next/previous work.
   // A query this find would not match is left to the jump's own highlight.
-  useEffect(() => {
-    if (!jump?.query || !visible || adoptedJump.current === jump.token) return;
-    if (!findTranscriptBlocks(blocks, jump.query).includes(jump.blockId)) return;
-    adoptedJump.current = jump.token;
-    setQuery(jump.query);
-    setOpen(true);
-    setJumpTarget(jump.blockId);
-  }, [jump, visible, blocks]);
-
-  useEffect(() => {
-    if (!jumpTarget) return;
-    const index = matches.indexOf(jumpTarget);
-    if (index >= 0) setActive(index);
-    setJumpTarget(null);
-  }, [jumpTarget, matches]);
+  if (jump?.query && visible && adoptedJump !== jump.token) {
+    const jumpMatches = findTranscriptBlocks(blocks, jump.query);
+    const index = jumpMatches.indexOf(jump.blockId);
+    if (index >= 0) {
+      setAdoptedJump(jump.token);
+      setQuery(jump.query);
+      setOpen(true);
+      setActive(index);
+    }
+  }
 
   useEffect(() => {
     if (!open || !visible) return;

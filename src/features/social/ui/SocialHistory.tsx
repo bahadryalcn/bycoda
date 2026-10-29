@@ -8,7 +8,7 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import type { SocialJob, SocialSnapshot } from "../model/social";
@@ -193,12 +193,14 @@ export function JobHistory({
   const [page, setPage] = useState(0);
   const [since, setSince] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  useEffect(() => {
-    if (!accountIntent) return;
+  const intentKey = accountIntent ? `${accountIntent.token}:${accountIntent.accountId}` : "";
+  const [appliedIntent, setAppliedIntent] = useState("");
+  if (accountIntent && intentKey !== appliedIntent) {
+    setAppliedIntent(intentKey);
     setAccountId(accountIntent.accountId);
     setPage(0);
     setSelectedId(null);
-  }, [accountIntent?.accountId, accountIntent?.token]);
+  }
   const hostFiltered = useSocialWorkspaceFilter(
     snapshot,
     "jobs",
@@ -434,7 +436,6 @@ function JobDetail({ job, snapshot, client, run, outsideFilters, onClearFilters 
   const campaign = campaigns.find((item) => item.id === job.campaignId);
   const link = resultUrl(job.url);
   const cancellation = socialJobCancellation(job);
-  const technical = Boolean(job.dispatchedAt || job.attempts || job.platformId || job.delivery?.code !== undefined || job.payload.youtube || job.payload.tiktok || job.payload.facebook || job.payload.snapchat);
   const errorSummary = job.error && job.error.length > 320 ? `${job.error.slice(0, 320)}…` : job.error;
   const perform = (action: "jobs.retry" | "jobs.cancel", key: string, message: string) => {
     setActionError(null);
@@ -474,16 +475,17 @@ function JobDetail({ job, snapshot, client, run, outsideFilters, onClearFilters 
     {job.payload.recipientId || job.payload.threadId || job.payload.postId || job.payload.objectPostId ? <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-ui-caption">
       {[[t("Recipient"), job.payload.recipientId], [t("Conversation"), job.payload.threadId], [t("Post"), job.payload.postId || job.payload.objectPostId]].map(([label, value]) => value ? <div key={label} className="contents"><dt className="text-(--ui-text-secondary)">{label}</dt><dd className="wrap-anywhere">{value}</dd></div> : null)}
     </dl> : null}
-    {technical ? <details className="text-ui-caption text-(--ui-text-secondary)">
+    <details className="text-ui-caption text-(--ui-text-secondary)">
       <summary>{t("Technical details")}</summary>
       <div className="mt-2 flex min-w-0 flex-col gap-1">
+        <span className="wrap-anywhere">{t("Record ID")}: {job.id}</span>
         {job.dispatchedAt ? <span>{t("Send started {p0}", { p0: time(job.dispatchedAt) })}</span> : null}
         {job.attempts ? <span>{t("{p0} attempts", { p0: job.attempts })}</span> : null}
         {job.platformId ? <span className="wrap-anywhere">{t("Platform reference")}: {job.platformId}</span> : null}
         {job.delivery?.code !== undefined ? <span>{t("Delivery code")}: {job.delivery.code}</span> : null}
         {job.payload.youtube || job.payload.tiktok || job.payload.facebook || job.payload.snapchat ? <pre className="max-w-full overflow-auto whitespace-pre-wrap wrap-anywhere">{JSON.stringify({ youtube: job.payload.youtube, tiktok: job.payload.tiktok, facebook: job.payload.facebook, snapchat: job.payload.snapchat }, null, 2)}</pre> : null}
       </div>
-    </details> : null}
+    </details>
     {actionError?.id === job.id ? <Notice kind="error">{actionError.message}</Notice> : null}
     <div className="flex flex-wrap items-center gap-2">
       {link ? <a className="social-result-link" href={link} target="_blank" rel="noreferrer">{t("Open on platform")}</a> : null}

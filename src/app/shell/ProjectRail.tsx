@@ -35,6 +35,7 @@ import {
   MoreHorizontal,
   Pin,
   PinOff,
+  CircleAlert,
   File,
   StickyNote,
   Plus,
@@ -85,32 +86,23 @@ import {
   loadPinnedProjects,
   loadRecents,
   newProjectPaths,
-  loadProjectRailOrder,
   projectRailSections,
   sameProjectPath,
   savePinnedProjects,
-  saveProjectRailOrder,
-  subscribeProjectPathsChanged,
   syncProjectRailOrder,
   toggleProjectPin,
   type RecentProject,
 } from "../../features/projects/model/recents";
 import {
-  loadTabGroupColors,
   loadRailBackgrounds,
   railBackgroundColor,
-  loadTabGroupCustomColors,
-  loadTabGroupLabels,
-  loadTabGroupMascots,
   resolveTabGroupColor,
   resolveTabGroupLabel,
   resolveTabGroupLogo,
   resolveTabGroupMascot,
 } from "../../features/workspace/model/tabGroups";
 import {
-  loadProjectGroupAssignments,
   changeProjectGroupMembers,
-  loadProjectGroups,
   moveProjectGroup,
   projectGroupColor,
   projectGroupIdForPath,
@@ -121,14 +113,16 @@ import {
   type ProjectGroup,
 } from "../../features/projects/model/projectGroups";
 import { shouldShowLiveAgents, type LiveAgent } from "../../features/sessions/model/liveAgents";
-import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview";
+import {
+  LiveAgentsPreview,
+  summarizeLiveAgents,
+} from "../../features/sessions/ui/LiveAgentsPreview";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { RailAction, RailSearch } from "./RailAction";
 import {
   dismissRemoteProjects,
-  remoteOnlyProjects,
   type RemoteOnlyProject,
 } from "../../features/sync/model/syncProjects";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
@@ -177,6 +171,8 @@ import {
   useRailSections,
   type RailSectionDrag,
 } from "./useRailSections";
+import { commitProjectRailOrder, useProjectRailData } from "./useProjectRailData";
+import { useRetainedWhileClosing } from "./useRetainedWhileClosing";
 
 /** The macOS window buttons take the top 78px, plus room for the panel toggle. */
 const PROJECT_RAIL_MAC_MIN = 112;
@@ -194,6 +190,11 @@ type Props = {
   resizable?: boolean;
   /** Navigator embeds the same project/group ledger without application chrome. */
   presentation?: "panel" | "navigator";
+  /**
+   * Narrows the listed projects and groups by name or path. Only the list shown changes: the
+   * saved order, pins, group membership and project data are never filtered.
+   */
+  projectFilter?: string;
   cwd: string;
   recents: RecentProject[];
   inboxUnseen?: boolean;
@@ -223,6 +224,11 @@ type Props = {
   onOpenSyncedProject?: (projectId: string, name: string) => void | Promise<void>;
   onRemoveProject?: (path: string, options: { purgeData: boolean }) => void | Promise<void>;
   liveAgents?: LiveAgent[];
+  /**
+   * The layout owner decides whether this rail shows the live-agent summary. The compact
+   * Projects popup turns it off while the sidebar already shows the canonical summary.
+   */
+  showLiveAgents?: boolean;
   activeSessionId?: string;
   onSelectAgent?: (sessionId: string) => void;
   onPreviewSession?: (sessionId: string, options?: { keepOpen?: boolean }) => void;
@@ -248,6 +254,7 @@ export function ProjectRail({
   visible = true,
   resizable = true,
   presentation = "panel",
+  projectFilter = "",
   cwd,
   recents,
   inboxUnseen = false,
@@ -276,6 +283,7 @@ export function ProjectRail({
   onOpenSyncedProject,
   onRemoveProject,
   liveAgents = [],
+  showLiveAgents = true,
   activeSessionId,
   onSelectAgent,
   onPreviewSession,
@@ -305,40 +313,17 @@ export function ProjectRail({
     initial: loadProjectRailWidth(),
     onCommit: saveProjectRailWidth,
   });
-  const [railOrder, setRailOrder] = useState(loadProjectRailOrder);
-  const [pinnedPaths, setPinnedPaths] = useState(loadPinnedProjects);
-  const [groupLabels, setGroupLabels] = useState(loadTabGroupLabels);
-  const [groupColors, setGroupColors] = useState(loadTabGroupColors);
-  const [groupMascots, setGroupMascots] = useState(loadTabGroupMascots);
-  const [groupCustomColors, setGroupCustomColors] = useState(loadTabGroupCustomColors);
-  const [projectGroups, setProjectGroups] = useState(loadProjectGroups);
-  const [projectGroupAssignments, setProjectGroupAssignments] = useState(
-    loadProjectGroupAssignments,
-  );
-  const [remoteOnly, setRemoteOnly] = useState<RemoteOnlyProject[]>(remoteOnlyProjects);
-  useEffect(() => {
-    const reload = () => {
-      setRemoteOnly(remoteOnlyProjects());
-      setRailOrder(loadProjectRailOrder());
-      setPinnedPaths(loadPinnedProjects());
-      setGroupLabels(loadTabGroupLabels());
-      setGroupColors(loadTabGroupColors());
-      setGroupMascots(loadTabGroupMascots());
-      setGroupCustomColors(loadTabGroupCustomColors());
-      setProjectGroups(loadProjectGroups());
-      setProjectGroupAssignments(loadProjectGroupAssignments());
-    };
-    const unsubscribe = subscribeProjectPathsChanged(reload);
-    // Another window moved a group or a project: its writes arrive as storage events.
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key.startsWith("bycoda.project")) reload();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
+  const {
+    railOrder,
+    pinnedPaths,
+    groupLabels,
+    groupColors,
+    groupMascots,
+    groupCustomColors,
+    projectGroups,
+    projectGroupAssignments,
+    remoteOnly,
+  } = useProjectRailData();
   const [lastSessionsShown, setLastSessionsShown] = useState(false);
   const [crewsShown, setCrewsShown] = useState(false);
   const [inboxMenu, setInboxMenu] = useState<{
@@ -440,43 +425,95 @@ export function ProjectRail({
       ),
     [projectGroups],
   );
+  const filterQuery = projectFilter.trim().toLocaleLowerCase();
+  const projectMatches = (path: string) =>
+    !filterQuery ||
+    [
+      resolveTabGroupLabel(projectKey(path), groupLabels, projectName(path)),
+      projectName(path),
+      path,
+    ]
+      .join("\n")
+      .toLocaleLowerCase()
+      .includes(filterQuery);
   const pinnedProjects = useMemo(
     () =>
       sections.pinned.filter(
-        (item) => !isProjectLockedIn(lock, item.path) && !workspaceRootKeys.has(pathKey(item.path)),
+        (item) =>
+          !isProjectLockedIn(lock, item.path) &&
+          !workspaceRootKeys.has(pathKey(item.path)) &&
+          projectMatches(item.path),
       ),
-    [lock, sections.pinned, workspaceRootKeys],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lock, sections.pinned, workspaceRootKeys, filterQuery, groupLabels],
   );
   const groupedProjectSections = useMemo(() => {
     const byGroup = new Map<string, RecentProject[]>(projectGroups.map((group) => [group.id, []]));
     const ungrouped: RecentProject[] = [];
+    // A group whose own name matches keeps all of its projects visible.
+    const groupNameMatches = (groupId: string | undefined) =>
+      Boolean(filterQuery) &&
+      Boolean(groupId) &&
+      (projectGroups.find((group) => group.id === groupId)?.name ?? "")
+        .toLocaleLowerCase()
+        .includes(filterQuery);
     for (const project of sections.projects) {
       if (workspaceRootKeys.has(pathKey(project.path))) continue;
       const groupId = projectGroupIdForPath(project.path, projectGroupAssignments);
+      if (!projectMatches(project.path) && !groupNameMatches(groupId)) continue;
       const items = groupId ? byGroup.get(groupId) : undefined;
       if (items) items.push(project);
       else ungrouped.push(project);
+    }
+    const workspaceItemsOf = (groupId: string) =>
+      [...sections.pinned, ...sections.projects].filter(
+        (project) =>
+          projectGroupIdForPath(project.path, projectGroupAssignments) === groupId &&
+          !workspaceRootKeys.has(pathKey(project.path)) &&
+          !isProjectLockedIn(lock, project.path) &&
+          (projectMatches(project.path) || groupNameMatches(groupId)),
+      );
+    // While filtering, keep a group that matched itself or holds a match, plus its parents.
+    const keptGroupIds = new Set<string>();
+    if (filterQuery) {
+      const parentOf = new Map(
+        projectGroups.map((group) => [
+          group.id,
+          projectGroupParentId(group, projectGroups, projectGroupAssignments),
+        ]),
+      );
+      for (const group of projectGroups) {
+        if (
+          !groupNameMatches(group.id) &&
+          (byGroup.get(group.id)?.length ?? 0) === 0 &&
+          workspaceItemsOf(group.id).length === 0
+        )
+          continue;
+        for (
+          let id: string | undefined = group.id;
+          id && !keptGroupIds.has(id);
+          id = parentOf.get(id) ?? undefined
+        )
+          keptGroupIds.add(id);
+      }
     }
     return {
       ungrouped,
       grouped: projectGroups
         .filter((group) => !hiddenGroupIds.has(group.id))
+        .filter((group) => !filterQuery || keptGroupIds.has(group.id))
         .map((group) => ({
           group,
           parentId: projectGroupParentId(group, projectGroups, projectGroupAssignments),
           locked: lock.lockedGroupIds.has(group.id),
           items: lock.lockedGroupIds.has(group.id) ? [] : (byGroup.get(group.id) ?? []),
-          workspaceItems: lock.lockedGroupIds.has(group.id)
-            ? []
-            : [...sections.pinned, ...sections.projects].filter(
-                (project) =>
-                  projectGroupIdForPath(project.path, projectGroupAssignments) === group.id &&
-                  !workspaceRootKeys.has(pathKey(project.path)) &&
-                  !isProjectLockedIn(lock, project.path),
-              ),
+          workspaceItems: lock.lockedGroupIds.has(group.id) ? [] : workspaceItemsOf(group.id),
         })),
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    filterQuery,
+    groupLabels,
     lock,
     hiddenGroupIds,
     projectGroupAssignments,
@@ -486,13 +523,11 @@ export function ProjectRail({
     workspaceRootKeys,
   ]);
   useEffect(() => {
-    setRailOrder((prev) => {
-      const synced = syncProjectRailOrder(prev, allProjects);
-      if (synced.join("\0") === prev.join("\0")) return prev;
-      saveProjectRailOrder(synced);
-      return synced;
-    });
-  }, [allProjects]);
+    // Compute from the committed order, then persist once outside the updater.
+    const synced = syncProjectRailOrder(railOrder, allProjects);
+    if (synced.join("\0") === railOrder.join("\0")) return;
+    commitProjectRailOrder(synced);
+  }, [allProjects, railOrder]);
 
   useEffect(() => {
     // Saving announces the change, which reloads `pinnedPaths`.
@@ -550,15 +585,13 @@ export function ProjectRail({
   const onReorderPinned = (ids: string[]) => {
     const subset = new Set(pinnedProjects.map((item) => item.path));
     const next = reorderSubset(railOrder, ids, subset);
-    setRailOrder(next);
-    saveProjectRailOrder(next);
+    commitProjectRailOrder(next);
   };
 
   const onReorderProjects = (ids: string[]) => {
     const subset = new Set(ids);
     const next = reorderSubset(railOrder, ids, subset);
-    setRailOrder(next);
-    saveProjectRailOrder(next);
+    commitProjectRailOrder(next);
   };
 
   const pinnedIds = pinnedProjects.map((item) => item.path);
@@ -787,7 +820,12 @@ export function ProjectRail({
         emptyLabel={
           sections.projects.length === 0 && projectGroups.length === 0
             ? "No projects yet"
-            : undefined
+            : filterQuery &&
+                pinnedProjects.length === 0 &&
+                groupedProjectSections.ungrouped.length === 0 &&
+                groupedProjectSections.grouped.length === 0
+              ? t("No projects found")
+              : undefined
         }
         onAdd={onOpenProject}
         remoteOnly={remoteOnly}
@@ -813,6 +851,32 @@ export function ProjectRail({
       />
     ),
   };
+  const liveStatus = showLiveAgents ? (
+    <>
+      {/* The status block is inset 7px (bycoda.css), the same column as the tools above. */}
+      <div className="shrink-0 @max-[140px]/rail:hidden">
+        <LiveAgentsPreview
+          agents={visibleLiveAgents}
+          activeSessionId={activeSessionId}
+          onSelect={onSelectAgent}
+          collapsible
+          groupLabels={groupLabels}
+          groupColors={groupColors}
+          groupCustomColors={groupCustomColors}
+          groupMascots={groupMascots}
+        />
+      </div>
+      <CompactLiveAgents
+        agents={visibleLiveAgents}
+        activeSessionId={activeSessionId}
+        onSelect={onSelectAgent}
+        groupLabels={groupLabels}
+        groupColors={groupColors}
+        groupCustomColors={groupCustomColors}
+        groupMascots={groupMascots}
+      />
+    </>
+  ) : null;
   return (
     <nav
       ref={resize.setPaneRef}
@@ -1081,29 +1145,7 @@ export function ProjectRail({
             ) : null}
             <div className="bycoda-rail-status shrink-0">
               {recoveryControl}
-              {/* The status block is inset 7px (bycoda.css); the live-agents header and cards
-                  carry their own px-2, so they sit on the same column as the ledger sections. */}
-              <div className="-mx-[7px] shrink-0 @max-[140px]/rail:hidden">
-                <LiveAgentsPreview
-                  agents={visibleLiveAgents}
-                  activeSessionId={activeSessionId}
-                  onSelect={onSelectAgent}
-                  collapsible
-                  groupLabels={groupLabels}
-                  groupColors={groupColors}
-                  groupCustomColors={groupCustomColors}
-                  groupMascots={groupMascots}
-                />
-              </div>
-              <CompactLiveAgents
-                agents={visibleLiveAgents}
-                activeSessionId={activeSessionId}
-                onSelect={onSelectAgent}
-                groupLabels={groupLabels}
-                groupColors={groupColors}
-                groupCustomColors={groupCustomColors}
-                groupMascots={groupMascots}
-              />
+              {navigator ? null : liveStatus}
             </div>
             <ProjectMultiSelect
               paths={selectionPaths}
@@ -1116,8 +1158,7 @@ export function ProjectRail({
               }
               onMove={(selected, step) => {
                 const next = moveSelection(selected, step);
-                setRailOrder(next);
-                saveProjectRailOrder(next);
+                commitProjectRailOrder(next);
               }}
               onRemove={
                 onRemoveProject
@@ -1138,6 +1179,8 @@ export function ProjectRail({
                 }}
                 className="bycoda-project-ledger flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
               >
+                {/* The popup has one scroll owner: its live summary scrolls with the list. */}
+                {navigator ? <div className="bycoda-rail-status">{liveStatus}</div> : null}
                 {rail.order.map((id) => (
                   <Fragment key={id}>{sectionNodes[id]}</Fragment>
                 ))}
@@ -1600,20 +1643,11 @@ function ProjectGroupSection({
   const showBody = expanded && !folded;
   const { viewportRef, contentRef, settledOpen } = useCollapsibleHeight(showBody, folded || locked);
   // Keep rows alive for the closing transition, then release their subscriptions.
-  const [retainedBody, setRetainedBody] = useState(expanded);
-  const renderBody = !locked && (expanded || retainedBody);
-  useEffect(() => {
-    if (expanded) {
-      setRetainedBody(true);
-      return;
-    }
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setRetainedBody(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setRetainedBody(false), COLLAPSE_DURATION_MS + 100);
-    return () => window.clearTimeout(timer);
-  }, [expanded]);
+  const [retainedBody, releaseRetainedBody] = useRetainedWhileClosing(
+    expanded,
+    COLLAPSE_DURATION_MS + 100,
+  );
+  const renderBody = !locked && retainedBody;
   const linkStatus = useLinkedGroupStatus(group.id);
   const workspaceRoot = projectGroupWorkspaceRoot(group);
   const workspaceSelected = !!workspaceRoot && !searchActive && sameProjectPath(workspaceRoot, cwd);
@@ -1888,7 +1922,7 @@ function ProjectGroupSection({
             event.propertyName === "height" &&
             !expanded
           ) {
-            setRetainedBody(false);
+            releaseRetainedBody();
           }
         }}
       >
@@ -2271,8 +2305,20 @@ function CompactLiveAgents({
 }) {
   const t = useT();
   if (!shouldShowLiveAgents(agents, activeSessionId)) return null;
-  const working = agents.filter((agent) => !agent.done).length;
-  const heading = working > 0 ? "Working" : "Finished";
+  const summary = summarizeLiveAgents(agents);
+  const working = summary.working;
+  const headlineCount =
+    summary.headline === "working"
+      ? summary.working
+      : summary.headline === "attention"
+        ? summary.attention
+        : summary.finished;
+  const heading =
+    summary.headline === "working"
+      ? t("Working")
+      : summary.headline === "attention"
+        ? t("Needs attention")
+        : t("Finished");
   return (
     <section
       aria-label={t("{p0} agents", { p0: heading })}
@@ -2280,23 +2326,33 @@ function CompactLiveAgents({
     >
       <div
         role="img"
-        aria-label={`${heading}, ${agents.length}`}
-        title={`${heading} · ${agents.length}`}
-        className={`my-1 size-1.5 shrink-0 rounded-full ${
-          working > 0 ? "bg-accent" : "bg-(--ui-text-muted)"
-        }`}
-      />
+        aria-label={`${heading}, ${headlineCount}`}
+        title={`${heading} · ${headlineCount}`}
+        className="my-1 grid size-3 shrink-0 place-items-center"
+      >
+        {summary.headline === "attention" ? (
+          <CircleAlert className="icon-xs text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
+        ) : (
+          <span
+            className={`size-1.5 rounded-full ${
+              working > 0 ? "bg-accent" : "bg-(--ui-text-muted)"
+            }`}
+          />
+        )}
+      </div>
       <div className="flex max-h-[30vh] w-full flex-col gap-px overflow-y-auto overscroll-none">
         {agents.map((agent) => {
           const seed = projectName(agent.cwd);
           const key = projectKey(agent.cwd);
           const project = resolveTabGroupLabel(key, groupLabels, seed);
           const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
-          const activity = agent.needsApproval
-            ? t(agent.inputKind === "question" ? "Question" : "Need approval")
-            : agent.done
-              ? "Done"
-              : agent.activity;
+          const activity = agent.issue
+            ? t(agent.issue === "retrying" ? "Retrying" : "Failed")
+            : agent.needsApproval
+              ? t(agent.inputKind === "question" ? "Question" : "Need approval")
+              : agent.done
+                ? "Done"
+                : agent.activity;
           const parts = [agent.title, project, activity].filter(Boolean);
           return (
             <Button

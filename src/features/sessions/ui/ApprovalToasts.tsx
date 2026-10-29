@@ -14,7 +14,7 @@ import {
   Settings,
   X,
 } from "../../../shared/ui/icons";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { allowsProjectNotification } from "../../notifications/model/notificationPreferences";
 import { knownNotificationProject } from "../../notifications/model/notificationProjects";
@@ -121,21 +121,27 @@ export function ApprovalToasts({
   const previousRequests = useRef<Set<string> | null>(null);
   const [popupsEnabled, setPopupsEnabled] = useState(readPopupsEnabled);
   const [dismissed, setDismissed] = useState<ReadonlySet<string>>(() => new Set());
-  const occurred = useRef(new Map<string, number>());
+  const [occurred, setOccurred] = useState<ReadonlyMap<string, number>>(() => new Map());
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const optionsPanel = useRef<HTMLDivElement>(null);
   const [optionsAnchor, setOptionsAnchor] = useState<HTMLButtonElement | null>(null);
   const panelId = useId();
   // Keep arrival times while hidden/focused so project mute/resume cannot replay old requests.
-  const currentKeys = new Set(notices.map(noticeKey));
-  for (const key of occurred.current.keys()) {
-    if (!currentKeys.has(key)) occurred.current.delete(key);
-  }
-  for (const notice of notices) {
-    const key = noticeKey(notice);
-    if (!occurred.current.has(key)) occurred.current.set(key, Date.now());
-  }
+  // Synced before paint; a notice without a recorded time yet counts as arriving now.
+  useLayoutEffect(() => {
+    const now = Date.now();
+    setOccurred((previous) => {
+      const keys = notices.map(noticeKey);
+      const current = new Set(keys);
+      if (previous.size === current.size && keys.every((key) => previous.has(key))) {
+        return previous;
+      }
+      const next = new Map<string, number>();
+      for (const key of keys) next.set(key, previous.get(key) ?? now);
+      return next;
+    });
+  }, [notices]);
   const open = notices.filter((notice) => !isProjectLockedIn(lock, notice.session.cwd));
   const hasLocked = open.length < notices.length;
   const visibleHistory = history.filter((entry) => !isProjectLockedIn(lock, entry.cwd));
@@ -165,14 +171,12 @@ export function ApprovalToasts({
         /* Keep the local history if optional persistence fails. */
       });
   }, [notices, history]);
-  useEffect(() => {
-    const keys = new Set(notices.map(noticeKey));
-    if (hasLocked) keys.add("locked");
-    setDismissed((previous) => {
-      const next = new Set([...previous].filter((key) => keys.has(key)));
-      return next.size === previous.size ? previous : next;
-    });
-  }, [notices, hasLocked]);
+  // Dismissals end with their notice, so a notice that returns is shown again.
+  const liveKeys = new Set(notices.map(noticeKey));
+  if (hasLocked) liveKeys.add("locked");
+  if ([...dismissed].some((key) => !liveKeys.has(key))) {
+    setDismissed(new Set([...dismissed].filter((key) => liveKeys.has(key))));
+  }
   const count = open.length + (hasLocked ? 1 : 0) + (localHostNotice.visible ? 1 : 0);
   const eligible = popupNotices.filter((notice) => {
     if (isProjectLockedIn(lock, notice.session.cwd) || dismissed.has(noticeKey(notice)))
@@ -183,7 +187,7 @@ export function ApprovalToasts({
       allowsProjectNotification({
         projectId: project.id,
         category: "agentInput",
-        occurredAt: occurred.current.get(noticeKey(notice)),
+        occurredAt: occurred.get(noticeKey(notice)),
       })
     );
   });
@@ -531,7 +535,7 @@ export function ApprovalToasts({
                         <ApprovalToastCard
                           key={noticeKey(notice)}
                           notice={notice}
-                          occurredAt={occurred.current.get(noticeKey(notice))}
+                          occurredAt={occurred.get(noticeKey(notice))}
                           onFocusSession={focusSession}
                           onApproval={onApproval}
                         />

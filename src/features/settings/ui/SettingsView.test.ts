@@ -632,9 +632,8 @@ describe("settings pages", () => {
     await render("worktrees", { embedded: true, onClose, onToggleMaximize });
     expect(container.querySelector(".bycoda-settings-titlebar")).toBeNull();
     expect(container.querySelector('[aria-label="Back to workspace"]')).toBeNull();
-    expect(container.querySelector("[data-app-settings]")?.getAttribute("data-settings-presentation")).toBe(
-      "workspace",
-    );
+    // No page-type presentation: every page shares one width.
+    expect(container.querySelector("[data-settings-presentation], [data-settings-width]")).toBeNull();
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
     });

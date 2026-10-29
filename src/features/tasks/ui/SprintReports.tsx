@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocale, useT } from "../../../shared/i18n";
 import { BarChart, LineChart, type LineChartDatum } from "../../../shared/ui/Charts";
 import { Button } from "../../../shared/ui/Button";
+import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { sprintProjectKey, type SprintReport, type SprintTotals } from "../model/hostSprints";
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
@@ -23,10 +24,19 @@ export function SprintReports({
   board,
   sprintId,
   projectKey,
+  onChooseSprint,
+  onOpenSprints,
+  onOpenBacklog,
 }: {
   board: SprintBoardController;
   sprintId: string;
   projectKey?: string;
+  /** Selects the sprint to report on. */
+  onChooseSprint?: (sprintId: string) => void;
+  /** Goes to the sprint list, where a sprint is created or started. */
+  onOpenSprints?: () => void;
+  /** Goes to the backlog, where tasks are added and planned. */
+  onOpenBacklog?: () => void;
 }) {
   const t = useT();
   const locale = useLocale();
@@ -202,7 +212,34 @@ export function SprintReports({
         </p>
       ) : null}
       {!sprintId ? (
-        <p className="sprint-muted">{t("Choose a sprint to inspect its progress and burndown.")}</p>
+        <div className="sprint-report-empty">
+          <p className="sprint-muted">
+            {board.sprints.length > 0
+              ? t("Choose a sprint to inspect its progress and burndown.")
+              : t("No sprints yet. Create and start a sprint to see its progress here.")}
+          </p>
+          <div className="sprint-actions">
+            {board.sprints.length > 0 && onChooseSprint ? (
+              <SearchableSelect
+                label={t("Sprint")}
+                placeholder={t("Choose sprint")}
+                value=""
+                options={board.sprints.map((sprint) => ({ value: sprint.id, label: sprint.name }))}
+                onChange={onChooseSprint}
+              />
+            ) : null}
+            {onOpenSprints ? (
+              <Button variant="secondary" onClick={onOpenSprints}>
+                {board.sprints.length > 0 ? t("Open sprints") : t("Go to Sprints")}
+              </Button>
+            ) : null}
+            {onOpenBacklog ? (
+              <Button variant="ghost" onClick={onOpenBacklog}>
+                {t("Open backlog")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
       ) : null}
       {totals ? (
         <>
@@ -360,7 +397,7 @@ export function SprintReports({
           </details>
         </>
       ) : null}
-      <h3>{t("Sprint velocity")}</h3>
+      {sprintId || velocity.length ? <h3>{t("Sprint velocity")}</h3> : null}
       {velocity.length ? (
         <>
           <BarChart
@@ -392,9 +429,9 @@ export function SprintReports({
             </div>
           </details>
         </>
-      ) : (
+      ) : sprintId ? (
         <p className="sprint-muted">{t("Complete a sprint to see recorded velocity.")}</p>
-      )}
+      ) : null}
     </section>
   );
 }

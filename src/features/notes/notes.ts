@@ -1,5 +1,6 @@
 import { projectDisplayName } from "../projects/model/projectNames";
 import { invoke } from "@tauri-apps/api/core";
+import { beginNoteServiceIntent } from "./noteServiceIntents";
 import { fuzzyMatch } from "../../shared/lib/fuzzy";
 import type { ProjectFile } from "../../platform/tauri/fs";
 import type { RankedFile } from "../files/model/fileIndex";
@@ -8,6 +9,12 @@ import { isMarkdownBlockquotePosition } from "../sessions/model/quoteDraft";
 import { looksLikeProject } from "../projects/model/recents";
 import { t } from "../../shared/i18n";
 import { composeNoteContext, noteContextMeta } from "./noteContext";
+import {
+  requireNoteWork,
+  deriveNoteInputResult,
+  publishNoteInputResult,
+  type NoteInputWork,
+} from "./notesInputOwners";
 
 export const NOTE_TITLE_MAX = 200;
 export function noteTitleError(title: string): string | undefined {
@@ -41,7 +48,10 @@ export type NoteSummary = NoteMetadata & { preview: string };
 
 export function summarizeNote(note: Note | NoteSummary): NoteSummary {
   const { body, preview, ...metadata } = note as Note & Partial<NoteSummary>;
-  return { ...metadata, preview: notePreview(body ?? preview ?? "", note.title) };
+  return deriveNoteInputResult(
+    { ...metadata, preview: notePreview(body ?? preview ?? "", note.title) },
+    note,
+  );
 }
 
 export type NoteUpsert = {
@@ -96,6 +106,25 @@ let summaryGeneration = 0;
 const detailCache = new Map<string, Note>();
 const detailInflight = new Map<string, Promise<Note | null>>();
 const MAX_CACHED_NOTE_BODIES = 8;
+// Fulfilled local Native results only, scoped to this renderer/profile lifetime.
+// Reading this data never refreshes a file grant or bypasses the asset protocol.
+const noteImagePathCache = new Map<string, string>();
+let noteImagePathGeneration = {};
+const MAX_CACHED_NOTE_IMAGE_PATHS = 256;
+export function peekNoteImagePath(asset: string): string | null {
+  return noteImagePathCache.get(asset) ?? null;
+}
+/** Discard derived display data on a physical profile/window reset, not note writes. */
+export function invalidateNoteImagePaths() {
+  noteImagePathGeneration = {};
+  noteImagePathCache.clear();
+}
+export function forgetNoteImagePaths(id: string) {
+  noteImagePathGeneration = {};
+  const prefix = `/note-assets/${id}/`;
+  for (const asset of noteImagePathCache.keys())
+    if (asset.startsWith(prefix)) noteImagePathCache.delete(asset);
+}
 
 function cacheNoteDetail(note: Note) {
   detailCache.delete(note.id);
@@ -196,79 +225,168 @@ export function searchNotes(query: string): Promise<string[]> {
   return invoke<string[]>("notes_search", { query });
 }
 
-export async function getNote(id: string): Promise<Note | null> {
+export async function getNote(id: string, parent?: NoteInputWork): Promise<Note | null> {
   const existing = detailInflight.get(id);
   if (existing) return existing;
+  const work = requireNoteWork("notes-detail-read", parent);
   const requestGeneration = summaryGeneration;
-  const promise = invoke<Note | null>("notes_get", { id })
+  let request: Promise<Note | null>;
+  try {
+    request = invoke<Note | null>("notes_get", { id });
+  } catch (error) {
+    work();
+    throw error;
+  }
+  const promise = request
     .then((note) => {
       if (note && requestGeneration === summaryGeneration) cacheNoteDetail(note);
       return note;
     })
     .finally(() => {
       if (detailInflight.get(id) === promise) detailInflight.delete(id);
+      work();
     });
   detailInflight.set(id, promise);
   return promise;
 }
 
-export async function upsertNote(note: NoteUpsert): Promise<Note> {
-  const titleError = noteTitleError(note.title ?? "");
-  if (titleError) throw new Error(titleError);
-  const saved = await invoke<Note>("notes_upsert", { note });
-  const previous = cache;
-  const previousSummaries = summaryCache;
-  invalidateNotes();
-  if (previous) cache = [saved, ...previous.filter((item) => item.id !== saved.id)];
-  if (previousSummaries)
-    summaryCache = [
-      summarizeNote(saved),
-      ...previousSummaries.filter((item) => item.id !== saved.id),
-    ];
-  cacheNoteDetail(saved);
-  return saved;
+/** An actual Native grant belongs to the requesting original operation, never a rendered URL. */
+export async function resolveNoteImagePath(asset: string, parent?: NoteInputWork): Promise<string> {
+  // A rendered image can consume an already fulfilled result while admission is
+  // closed. Explicit original work always performs the real current Native grant.
+  const cached = !parent && peekNoteImagePath(asset);
+  if (cached) return cached;
+  const work = requireNoteWork("note-image-path", parent);
+  const generation = noteImagePathGeneration;
+  try {
+    const args = { asset };
+    return await beginNoteServiceIntent("notes_image_path", args, work).execute(
+      () => invoke<string>("notes_image_path", args),
+      (path) => {
+        if (generation !== noteImagePathGeneration)
+          throw new Error("Image path source changed before display preparation.");
+        if (typeof path !== "string" || !path)
+          throw new Error("Image path resolution was not observed.");
+        noteImagePathCache.delete(asset);
+        noteImagePathCache.set(asset, path);
+        while (noteImagePathCache.size > MAX_CACHED_NOTE_IMAGE_PATHS)
+          noteImagePathCache.delete(noteImagePathCache.keys().next().value!);
+      },
+    );
+  } finally {
+    work();
+  }
 }
 
-export async function deleteNote(id: string, expectedUpdatedAt?: number): Promise<void> {
+export async function upsertNote(note: NoteUpsert, parent?: NoteInputWork): Promise<Note> {
+  const titleError = noteTitleError(note.title ?? "");
+  if (titleError) throw new Error(titleError);
+  const work = requireNoteWork("notes-upsert", parent);
+  try {
+    const args = { note };
+    return await beginNoteServiceIntent("notes_upsert", args, work).execute(
+      () => invoke<Note>("notes_upsert", args),
+      (saved) => {
+        publishNoteInputResult(work, saved);
+        const previous = cache;
+        const previousSummaries = summaryCache;
+        invalidateNotes();
+        if (previous) cache = [saved, ...previous.filter((item) => item.id !== saved.id)];
+        if (previousSummaries)
+          summaryCache = [
+            summarizeNote(saved),
+            ...previousSummaries.filter((item) => item.id !== saved.id),
+          ];
+        cacheNoteDetail(saved);
+      },
+    );
+  } finally {
+    work();
+  }
+}
+
+export async function deleteNote(
+  id: string,
+  expectedUpdatedAt?: number,
+  parent?: NoteInputWork,
+): Promise<void> {
   if (expectedUpdatedAt === undefined) throw new Error("Refresh this note before deleting it.");
-  await invoke("notes_delete", { id, expectedUpdatedAt });
-  const previous = cache;
-  const previousSummaries = summaryCache;
-  invalidateNotes();
-  if (previous) cache = previous.filter((item) => item.id !== id);
-  if (previousSummaries) summaryCache = previousSummaries.filter((item) => item.id !== id);
+  const work = requireNoteWork("notes-delete", parent);
+  try {
+    const args = { id, expectedUpdatedAt };
+    await beginNoteServiceIntent("notes_delete", args, work).execute(
+      () => invoke<void>("notes_delete", args),
+      () => {
+        forgetNoteImagePaths(id);
+        const previous = cache;
+        const previousSummaries = summaryCache;
+        invalidateNotes();
+        if (previous) cache = previous.filter((item) => item.id !== id);
+        if (previousSummaries) summaryCache = previousSummaries.filter((item) => item.id !== id);
+      },
+    );
+  } finally {
+    work();
+  }
 }
 
 /** Explicitly associate an existing note with a session; ordinary saves preserve it. */
-export async function linkNoteToSession(id: string, sessionId: string): Promise<Note> {
-  const saved = await invoke<Note>("notes_link_session", { id, sessionId });
-  const previous = cache;
-  const previousSummaries = summaryCache;
-  invalidateNotes();
-  if (previous) cache = previous.map((item) => (item.id === id ? saved : item));
-  if (previousSummaries)
-    summaryCache = previousSummaries.map((item) => (item.id === id ? summarizeNote(saved) : item));
-  cacheNoteDetail(saved);
-  return saved;
+export async function linkNoteToSession(
+  id: string,
+  sessionId: string,
+  parent?: NoteInputWork,
+): Promise<Note> {
+  const work = requireNoteWork("notes-link", parent);
+  try {
+    const args = { id, sessionId };
+    return await beginNoteServiceIntent("notes_link_session", args, work).execute(
+      () => invoke<Note>("notes_link_session", args),
+      (saved) => {
+        publishNoteInputResult(work, saved);
+        const previous = cache;
+        const previousSummaries = summaryCache;
+        invalidateNotes();
+        if (previous) cache = previous.map((item) => (item.id === id ? saved : item));
+        if (previousSummaries)
+          summaryCache = previousSummaries.map((item) =>
+            item.id === id ? summarizeNote(saved) : item,
+          );
+        cacheNoteDetail(saved);
+      },
+    );
+  } finally {
+    work();
+  }
 }
 
-export async function createNote(input: {
-  title?: string;
-  body?: string;
-  tags?: string[];
-  sourceSessionId?: string;
-  sourceCwd?: string;
-}): Promise<Note> {
-  const body = (input.body ?? "").replace(/\r\n?/g, "\n");
-  return upsertNote({
-    id: crypto.randomUUID(),
-    expectedUpdatedAt: 0,
-    title: (input.title ?? noteTitle(body)).slice(0, MAX_TITLE),
-    body,
-    tags: normalizeNoteTags(input.tags ?? []),
-    ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
-    ...(input.sourceCwd ? { sourceCwd: input.sourceCwd } : {}),
-  });
+export async function createNote(
+  input: {
+    title?: string;
+    body?: string;
+    tags?: string[];
+    sourceSessionId?: string;
+    sourceCwd?: string;
+  },
+  parent?: NoteInputWork,
+): Promise<Note> {
+  const work = requireNoteWork("notes-create", parent);
+  try {
+    const body = (input.body ?? "").replace(/\r\n?/g, "\n");
+    return await upsertNote(
+      {
+        id: crypto.randomUUID(),
+        expectedUpdatedAt: 0,
+        title: (input.title ?? noteTitle(body)).slice(0, MAX_TITLE),
+        body,
+        tags: normalizeNoteTags(input.tags ?? []),
+        ...(input.sourceSessionId ? { sourceSessionId: input.sourceSessionId } : {}),
+        ...(input.sourceCwd ? { sourceCwd: input.sourceCwd } : {}),
+      },
+      work,
+    );
+  } finally {
+    work();
+  }
 }
 
 /** Canonical, case-insensitive tags for storage and filtering. */

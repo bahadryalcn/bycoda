@@ -122,8 +122,8 @@ it("shows Settings in the shared Modal with maximize and no duplicate window chr
   );
   expect(html).toContain('data-modal="Settings"');
   expect(html).toContain("bycoda-settings-dialog");
-  // Skills is a list/detail library, so the dialog sizes it as a workspace.
-  expect(html).toContain('data-settings-dialog-mode="workspace"');
+  // Every page shares one dialog geometry; only maximize changes it.
+  expect(html).toContain('data-settings-dialog-mode="standard"');
   const shown = view.mock.calls[0][0] as Record<string, unknown>;
   expect(shown.embedded).toBe(true);
   expect(shown.maximized).toBe(false);

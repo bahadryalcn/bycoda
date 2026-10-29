@@ -3,7 +3,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Pencil, Plus, Trash2 } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
 
 import { loginHarness } from "../../../integrations/harness/core/auth";
 
@@ -70,6 +70,10 @@ const SETTINGS_HARNESSES: readonly HarnessId[] = [
   "antigravity",
 ];
 
+/** Serialized account list: changes whenever any provider's accounts change in this or another window. */
+const providerAccountsSnapshot = () =>
+  JSON.stringify(PROVIDER_ACCOUNT_PROVIDERS.flatMap(providerAccounts));
+
 export type AccountEditor = {
   provider: ProviderAccountProvider;
   accountId?: string;
@@ -84,8 +88,15 @@ export function ProviderAccountsSettings({
   onBusyChange?: (busy: boolean) => void;
 }) {
   useLocale();
-  const [version, setVersion] = useState(0);
-  const [editor, setEditor] = useState<AccountEditor | null>(null);
+  const accountsRevision = useSyncExternalStore(
+    subscribeProviderAccounts,
+    providerAccountsSnapshot,
+    providerAccountsSnapshot,
+  );
+  // Local refreshes cover sign-in and removal results the account list itself does not show.
+  const [refreshes, setVersion] = useState(0);
+  const version = `${refreshes}|${accountsRevision}`;
+  const [editor, setEditorState] = useState<AccountEditor | null>(null);
   const [working, setWorking] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState<ProviderAccount | null>(null);
@@ -93,9 +104,13 @@ export function ProviderAccountsSettings({
   const busy = useRef(false);
   const pendingAccount = useRef<ProviderAccount | null>(null);
   const registrationAbort = useRef<AbortController | null>(null);
-  useEffect(() => {
-    onBusyChange?.(Boolean(working || editor));
-  }, [working, editor, onBusyChange]);
+  const editorOpen = useRef(false);
+  // The parent hears about busy where it changes: an operation starts or ends, or the editor opens or closes.
+  const setEditor = (next: AccountEditor | null) => {
+    editorOpen.current = next !== null;
+    setEditorState(next);
+    onBusyChange?.(busy.current || editorOpen.current);
+  };
   useEffect(
     () => () => {
       registrationAbort.current?.abort();
@@ -118,6 +133,7 @@ export function ProviderAccountsSettings({
     if (busy.current) return false;
     busy.current = true;
     setWorking(key);
+    onBusyChange?.(true);
     setError(null);
     setCompletedSignIn(null);
     return true;
@@ -125,9 +141,8 @@ export function ProviderAccountsSettings({
   const finish = () => {
     busy.current = false;
     setWorking(null);
+    onBusyChange?.(editorOpen.current);
   };
-
-  useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
 
   const startAdd = (provider: ProviderAccountProvider) => {
     if (busy.current) return;
@@ -328,7 +343,11 @@ export function ProviderAccountsSettings({
                   },
                 }}
               />
-              <TerminalProfileDiscovery provider={accountProvider} disabled={Boolean(working)} />
+              <TerminalProfileDiscovery
+                key={accountProvider}
+                provider={accountProvider}
+                disabled={Boolean(working)}
+              />
             </>
           ) : null}
         </div>
@@ -364,7 +383,7 @@ export function ProviderAccountsSettings({
                         editor={editor}
                         working={Boolean(working)}
                         onLabel={(label) =>
-                          setEditor((current) => (current ? { ...current, label } : current))
+                          setEditorState((current) => (current ? { ...current, label } : current))
                         }
                         onCancel={cancelEditor}
                         onSubmit={submitEditor}
@@ -485,7 +504,7 @@ export function ProviderAccountsSettings({
                       editor={editor}
                       working={Boolean(working)}
                       onLabel={(label) =>
-                        setEditor((current) => (current ? { ...current, label } : current))
+                        setEditorState((current) => (current ? { ...current, label } : current))
                       }
                       onCancel={cancelEditor}
                       onSubmit={submitEditor}

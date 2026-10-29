@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../../shared/i18n";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import {
   providerAccounts,
   subscribeProviderAccounts,
@@ -8,17 +7,20 @@ import {
 } from "../../providers/model/providerAccounts";
 import type { HarnessId } from "../../sessions/model/session";
 
-/** Local profile choices must never be offered as accounts on another computer. */
+/**
+ * Account context beside a task or goal model picker. On this computer the account is chosen
+ * inside the picker itself (`accountChoices`), so this only flags a saved account that no longer
+ * exists. Local profile choices must never be offered as accounts on another computer, so other
+ * hosts show where the account is selected instead.
+ */
 export function TaskAccountPicker({
   harness,
   accountId,
   local,
-  onChange,
 }: {
   harness: HarnessId;
   accountId?: string;
   local: boolean;
-  onChange: (id: string) => void;
 }) {
   const t = useT();
   const [, refresh] = useState(0);
@@ -32,21 +34,14 @@ export function TaskAccountPicker({
           : t("Host default account")}
       </span>
     );
-  const accounts = providerAccounts(harness);
-  const options = [
-    { value: "default", label: t("Host default account") },
-    ...accounts
-      .filter((account) => account.id !== "default")
-      .map((account) => ({ value: account.id, label: account.label })),
-  ];
-  if (accountId && !options.some((option) => option.value === accountId))
-    options.push({ value: accountId, label: t("Unavailable account") });
+  const missing =
+    accountId !== undefined &&
+    accountId !== "default" &&
+    !providerAccounts(harness).some((account) => account.id === accountId);
+  if (!missing) return null;
   return (
-    <SearchableSelect
-      label={t("Account")}
-      value={accountId ?? "default"}
-      options={options}
-      onChange={onChange}
-    />
+    <span role="status" className="task-account-context text-(--ui-tone-warning-fg)">
+      {t("Unavailable account")}
+    </span>
   );
 }

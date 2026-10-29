@@ -13,7 +13,6 @@ import {
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
-import type { ComposerPreparation } from "../data/composerClosure";
 import {
   retainParentInput,
   useParentInputClosure,
@@ -39,9 +38,6 @@ import {
 } from "../model/translationHistory";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { TranslationResultDialog } from "./TranslationResultDialog";
-import { registerBrowserComposer } from "../../host-tools/browserComposer";
-import { registerDeviceImageComposer } from "../../devices/deviceImageComposer";
-import { registerLogsComposer } from "../../host-tools/logsComposer";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useLocale, useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
@@ -83,7 +79,6 @@ import {
 import {
   memo,
   useCallback,
-  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -96,11 +91,8 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
 import {
   attachmentsFromFiles,
-  MAX_ATTACHMENTS,
-  attachmentsFromPaths,
   filesFromClipboard,
   mergeAttachments,
   pickAttachments,
@@ -122,26 +114,14 @@ import {
   messageFilesFromClipboard,
   nativeClipboardAttachments,
 } from "../../../platform/tauri/clipboard";
-import {
-  EXPLORER_FILE_POINTER_DRAG_EVENT,
-  type ExplorerFilePointerDragDetail,
-} from "../../../shared/lib/drag";
-import { dragPointToClient } from "../../../shared/lib/dragPoint";
 import type { ContextUsage } from "../model/contextUsage";
 import type { Block } from "../model/session";
 import type { SessionUsage } from "../model/sessionUsage";
+import { peekProjectFiles } from "../../files/model/fileIndex";
 import {
-  loadProjectFiles,
-  peekProjectFiles,
-  recentOpenedFiles,
-  subscribeProjectFiles,
-} from "../../files/model/fileIndex";
-import {
-  buildMentionIndex,
   fileMentionParts,
   mentionLabel,
   mentionTokenAt,
-  rankMentionFiles,
   replaceMentionToken,
   type MentionIndex,
   type MentionToken,
@@ -177,6 +157,7 @@ import { useQueuedSteerRoute, useQueuedTargetSummary } from "../model/reactiveRe
 import { moveQueuedMessage, resolveFollowUpRoute, runningTargetOf } from "../model/messageQueue";
 import { HarnessIcon } from "./HarnessIcon";
 import { useAnimatedReorder } from "../../../shared/hooks/useAnimatedReorder";
+import { announceDrag } from "../../../shared/lib/drag";
 import type { UserQuestionPrompt, UserQuestionReply } from "../model/userQuestion";
 import { historyKey, type HistoryBrowse } from "../model/composerHistory";
 import { isImeComposition } from "../../../shared/lib/keyboard";
@@ -230,16 +211,9 @@ import {
 } from "../../settings/model/settings";
 import {
   isNoteMentionPath,
-  loadNoteSummaries,
-  peekNoteSummaries,
-  rankNoteFiles,
-  notesAsProjectFiles,
-  type NoteSummary,
   type NoteComposerCard,
 } from "../../notes";
 import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
-import { useCliCommands } from "./useCliCommands";
-import { useComposerSkills } from "./useComposerSkills";
 import { UsageLimitNotice } from "./UsageLimitNotice";
 import {
   supportsProviderAccounts,
@@ -249,7 +223,6 @@ import { consumePlanCommand, PLAN_COMMAND } from "../model/plan";
 import { consumeOperatorCommand, OPERATOR_COMMAND } from "../model/operatorCommand";
 import { consumeOrchestratorCommand, ORCHESTRATOR_COMMAND } from "../model/orchestratorCommand";
 import { consumeDraftCommand, DRAFT_COMMAND } from "../model/draftCommand";
-import { SUBAGENTS_COMMAND, TASK_COMMAND } from "../model/delegationCommands";
 import {
   leadingModeCommand,
   MODE_COMMAND_INDENT,
@@ -257,11 +230,9 @@ import {
   ModeCommandText,
   type ModeCommandToken,
 } from "./modeCommands";
-import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix, supportsBtwHarness } from "../model/btw";
-import { COMPACT_COMMAND, isCompactCommand } from "../model/compact";
+import { BTW_COMMAND, consumeBtwCommand, consumeBtwPrefix } from "../model/btw";
+import { isCompactCommand } from "../model/compact";
 import {
-  CLEAR_SESSION_COMMAND,
-  NEW_SESSION_COMMAND,
   isClearSessionCommand,
   isNewSessionCommand,
   type NewSessionOptions,
@@ -293,17 +264,9 @@ import {
   getComposerDraftMode,
   setComposerDraftMode,
   setComposerDraftSnapshot,
-  setComposerAttachments,
   setComposerMcpTags,
   takeComposerNotice,
 } from "../model/draftCache";
-import { type McpConnection } from "../../settings/model/mcp";
-import {
-  getCachedMcpSettings,
-  loadMcpSettings,
-  subscribeMcpSettings,
-  type McpSettingsSnapshot,
-} from "../../settings/model/mcpSettingsCache";
 import type { LastTurnRecall } from "../model/editLastTurn";
 import {
   isDefaultQueueChord,
@@ -316,14 +279,25 @@ import {
   isInterruptChord,
   STOP_TURN_COMMAND,
 } from "../model/sessionKeys";
-import {
-  insertTemplateBody,
-  loadPromptTemplates,
-  subscribePromptTemplates,
-  templateSkill,
-  templateTriggerAt,
-} from "../model/promptTemplates";
+import { insertTemplateBody, templateTriggerAt } from "../model/promptTemplates";
 import { SessionDirsPicker } from "./SessionDirsPicker";
+import {
+  deferredExternalDraftToApply,
+  externalDraftAction,
+  type DeferredExternalDraft,
+} from "./composerExternalDraft";
+import { useComposerMcpCatalog } from "./useComposerMcpCatalog";
+import { useComposerMentionSources } from "./useComposerMentionSources";
+import { useComposerSlashInventory } from "./useComposerSlashInventory";
+import { applyTextareaEdit } from "./composerTextareaEdit";
+import { useEditingLastTurn } from "./useEditingLastTurn";
+import {
+  useAttachmentSink,
+  useComposerAttachmentLifecycle,
+  useComposerAttachmentReads,
+} from "./useComposerAttachments";
+import { useComposerFileDrop } from "./useComposerFileDrop";
+import { useComposerRegistrations } from "./useComposerRegistrations";
 
 type Props = {
   enabled?: boolean;
@@ -460,6 +434,11 @@ type Props = {
   onRecallMessageReady?: (recall: (value: LastTurnRecall) => void) => void;
   recalledMessage?: { id: string; value: LastTurnRecall };
   onRecalledMessageApplied?: (id: string) => void;
+  /**
+   * Owner-supplied edit marker. Without it the Composer holds the flag itself;
+   * `onEditingLastTurnChange` then only reports changes.
+   */
+  editingLastTurn?: boolean;
   onEditingLastTurnChange?: (editing: boolean) => void;
   children?: ReactNode;
 };
@@ -625,6 +604,8 @@ function MessageQueue({
     "y",
     undefined,
     {
+      // The row's text is the whole row; speak a short fixed name, not the message body.
+      label: () => t("Queued message"),
       onEnd: () => {
         const drag = dragAdmission.current;
         if (!drag) return;
@@ -660,6 +641,13 @@ function MessageQueue({
     if (next === messages) return;
     refocus.current = id;
     onReorder?.(next.map((message) => message.id));
+    announceDrag(
+      t("Moved {p0} to position {p1} of {p2}", {
+        p0: t("Queued message"),
+        p1: next.findIndex((message) => message.id === id) + 1,
+        p2: next.length,
+      }),
+    );
   };
   const [editingId, setEditingId] = useState<string>();
   const onEditingChangeRef = useRef(onEditingChange);
@@ -1125,6 +1113,7 @@ export const Composer = memo(function Composer({
   onRecallMessageReady,
   recalledMessage,
   onRecalledMessageApplied,
+  editingLastTurn,
   onEditingLastTurnChange,
   children,
 }: Props) {
@@ -1162,11 +1151,29 @@ export const Composer = memo(function Composer({
     selection: ComposerTranslationSelection;
     target: TextActionTarget;
   } | null>(null);
-  const translationHistoryRef = useRef<TranslationHistory | null>(null);
-  useEffect(() => {
-    translationHistoryRef.current = null;
+  // A translation belongs to one draft: another session or an accepted external
+  // reset drops the open request and invalidates the remembered history. The
+  // epoch tags the history instead of clearing a ref during render.
+  const [translationScope, setTranslationScope] = useState({
+    sessionId,
+    draftResetToken,
+    epoch: 0,
+  });
+  if (
+    translationScope.sessionId !== sessionId ||
+    translationScope.draftResetToken !== draftResetToken
+  ) {
+    setTranslationScope({ sessionId, draftResetToken, epoch: translationScope.epoch + 1 });
     setTranslationRequest(null);
-  }, [sessionId, draftResetToken]);
+  }
+  const translationHistoryRef = useRef<{
+    epoch: number;
+    history: TranslationHistory;
+  } | null>(null);
+  const currentTranslationHistory = () =>
+    translationHistoryRef.current?.epoch === translationScope.epoch
+      ? translationHistoryRef.current.history
+      : null;
   const [inputResize] = useState(createComposerResizeFrame);
   const [modelPickerRequest, setModelPickerRequest] = useState(0);
   const accountProvider = supportsProviderAccounts(harness) ? harness : undefined;
@@ -1181,7 +1188,6 @@ export const Composer = memo(function Composer({
   );
   const attachmentsRef = useRef(attachments);
   const borrowedAttachmentIdsRef = useRef(new Set<string>());
-  const attachmentLifecycleRef = useRef(0);
   const consumedQuoteId = useRef<number | null>(null);
   const draftRevisionRef = useRef(0);
   const userEditBeforeRef = useRef<string | null>(null);
@@ -1252,11 +1258,17 @@ export const Composer = memo(function Composer({
     executionCwd,
     draftWorkspace && enabled && !busy,
   );
+  // "HEAD" (for example from an automation) names the checked-out branch; it is
+  // resolved here on every read instead of being written back to the owner.
+  const effectiveWorktreeBase =
+    draftWorkspace && workspaceMode === "worktree" && worktreeBase === "HEAD"
+      ? (draftBranches?.current || worktreeBase)
+      : worktreeBase;
   const workspaceCreation = useWorkspaceCreation(
     cwd,
     draftWorkspace && enabled && looksLikeProject(cwd),
     workspaceMode,
-    worktreeBase,
+    effectiveWorktreeBase,
   );
   const remoteWorkspaceCreationBlocked =
     draftWorkspace &&
@@ -1281,29 +1293,11 @@ export const Composer = memo(function Composer({
     draftWorkspace && (workspaceCreation.pending || !!workspaceCreationError);
   const resolvedWorktreeBase =
     workspaceCreation.base || branch || draftBranches?.current || undefined;
-  useEffect(() => {
-    if (
-      draftWorkspace &&
-      workspaceMode === "worktree" &&
-      worktreeBase === "HEAD" &&
-      draftBranches?.current
-    ) {
-      onWorktreeBaseChange?.(draftBranches.current);
-    }
-  }, [draftBranches?.current, draftWorkspace, onWorktreeBaseChange, workspaceMode, worktreeBase]);
-  const [hasValue, setHasValue] = useState(
-    () =>
-      (initialDraft ?? "").trim().length > 0 ||
-      attachments.length > 0 ||
-      !!inboxCard ||
-      !!noteCard ||
-      !!handoffCard,
-  );
+  const [hasText, setHasText] = useState(() => (initialDraft ?? "").trim().length > 0);
   // Says so when a restored draft lost an attachment whose file is gone.
   const [pasteError, setPasteError] = useState<string | null>(
     () => (sessionId ? takeComposerNotice(sessionId) : undefined) ?? null,
   );
-  const [fileDrag, setFileDrag] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const [modeOpen, setModeOpen] = useState(false);
   const [planSelected, setPlanSelected] = useState(false);
@@ -1354,11 +1348,30 @@ export const Composer = memo(function Composer({
   const [sessionFolderOpen, setSessionFolderOpen] = useState(false);
   const [sessionFolders, setSessionFolders] = useState<SessionFolder[]>([]);
   const [sessionFolderSelected, setSessionFolderSelected] = useState(false);
+  // The folder choice belongs to one working directory.
+  const [folderScopeCwd, setFolderScopeCwd] = useState(cwd);
+  if (folderScopeCwd !== cwd) {
+    setFolderScopeCwd(cwd);
+    setSessionFolderOpen(false);
+    setSessionFolderSelected(false);
+  }
   const [mcpPickerOpen, setMcpPickerOpen] = useState(false);
-  const [mcpConnections, setMcpConnections] = useState<McpConnection[]>([]);
-  const [mcpStatus, setMcpStatus] = useState<Map<string, string>>(new Map());
-  const [mcpLoading, setMcpLoading] = useState(false);
-  const [mcpError, setMcpError] = useState("");
+  // An open MCP picker lists one project's servers for one provider and session.
+  const [mcpScope, setMcpScope] = useState({ executionCwd, harness, sessionId });
+  if (
+    mcpScope.executionCwd !== executionCwd ||
+    mcpScope.harness !== harness ||
+    mcpScope.sessionId !== sessionId
+  ) {
+    setMcpScope({ executionCwd, harness, sessionId });
+    setMcpPickerOpen(false);
+  }
+  const mcpCatalog = useComposerMcpCatalog({
+    executionCwd,
+    harness,
+    active: mcpPickerOpen,
+  });
+  const { status: mcpStatus, loading: mcpLoading, error: mcpError } = mcpCatalog;
   const [selectedMcp, setSelectedMcpState] = useState<McpTag[]>(() =>
     sessionId ? getComposerMcpTags(sessionId) : [],
   );
@@ -1406,17 +1419,10 @@ export const Composer = memo(function Composer({
   const remote = remoteSession;
   // Workspace APIs route remote:// paths to their owning machine.
   const localCwd = executionCwd;
-  const [files, setFiles] = useState<ProjectFile[]>(() => peekProjectFiles(localCwd) ?? []);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const spelling = useComposerSpelling();
   const queueShortcut = useKeybindingShortcut(QUEUE_MESSAGE_COMMAND);
   const stopShortcut = useKeybindingShortcut(STOP_TURN_COMMAND);
-  const promptTemplates = useSyncExternalStore(
-    subscribePromptTemplates,
-    loadPromptTemplates,
-    () => [],
-  );
-  const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? []);
   const [mention, setMention] = useState<MentionToken | null>(null);
   const [mentionSelection, setMentionSelection] = useState({
     query: "",
@@ -1437,7 +1443,18 @@ export const Composer = memo(function Composer({
       };
     });
   };
-  const [resendEdited, setResendEdited] = useState(false);
+  const [localResendEdited, setLocalResendEdited] = useEditingLastTurn(
+    sessionId,
+    editLastTurnSupported,
+  );
+  const resendEdited = editingLastTurn ?? localResendEdited;
+  const setResendEdited = useCallback(
+    (editing: boolean) => {
+      if (editingLastTurn === undefined) setLocalResendEdited(editing);
+      onEditingLastTurnChange?.(editing);
+    },
+    [editingLastTurn, onEditingLastTurnChange, setLocalResendEdited],
+  );
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
 
@@ -1454,144 +1471,27 @@ export const Composer = memo(function Composer({
     draft.length === 0 && attachments.length === 0 && !inboxCard && !noteCard && !handoffCard;
   const skillPickerOpen = creatingSkill || slash !== null;
   const pickerOpen = skillPickerOpen || sessionFolderOpen || mcpPickerOpen;
-  const skillCatalog = useComposerSkills({
-    harness,
-    executionCwd: localCwd,
-    sessionId,
-    pickerOpen,
-  });
-  const skills = skillCatalog.skills;
-  const templateItems = useMemo(() => promptTemplates.map(templateSkill), [promptTemplates]);
-  // The CLI's own commands never replace a Bycoda command or a skill that
-  // Bycoda already lists under the same name.
-  const takenNames = useMemo(
-    () =>
-      new Set([
-        ...[
-          PLAN_COMMAND,
-          COMPACT_COMMAND,
-          NEW_SESSION_COMMAND,
-          CLEAR_SESSION_COMMAND,
-          SESSION_FOLDER_COMMAND,
-          MCP_COMMAND,
-          OPERATOR_COMMAND,
-          ORCHESTRATOR_COMMAND,
-          DRAFT_COMMAND,
-          BTW_COMMAND,
-          RESUME_COMMAND,
-          SUBAGENTS_COMMAND,
-          TASK_COMMAND,
-        ].map((command) => command.name),
-        "mono",
-        "bycoda",
-        ...skills.map((skill) => skill.name),
-      ]),
-    [skills],
-  );
-  const cliCommands = useCliCommands({
-    harness,
-    localCwd,
-    sessionId,
-    menuOpen: pickerOpen,
-    taken: takenNames,
-    files: skills,
-  });
-  const slashItems = useMemo(
-    () => [
-      ...(onNewSession ? [NEW_SESSION_COMMAND, CLEAR_SESSION_COMMAND] : []),
-      ...(remote
-        ? [
-            ...(remoteFeatures?.plan ? [PLAN_COMMAND] : []),
-            COMPACT_COMMAND,
-            ...skills.filter(
-              (skill) =>
-                skill.name !== NEW_SESSION_COMMAND.name &&
-                skill.name !== CLEAR_SESSION_COMMAND.name &&
-                (skill.kind === "file" || skill.kind === "native"),
-            ),
-            ...cliCommands.slashCommands,
-          ]
-        : [
-            SESSION_FOLDER_COMMAND,
-            MCP_COMMAND,
-            OPERATOR_COMMAND,
-            ...(hideTopBar ? [] : [ORCHESTRATOR_COMMAND]),
-            PLAN_COMMAND,
-            SUBAGENTS_COMMAND,
-            TASK_COMMAND,
-            ...(canSaveDraft && onSaveDraft ? [DRAFT_COMMAND] : []),
-            COMPACT_COMMAND,
-            ...(supportsBtwHarness(harness) ? [BTW_COMMAND] : []),
-            // Reading and replaying stored conversations is written against
-            // Claude Code's own on-disk format, so the command only exists
-            // where it works.
-            ...((harness === "claude" || harness === "codex") && onResumeProviderSession
-              ? [RESUME_COMMAND]
-              : []),
-            ...skills.filter(
-              (skill) =>
-                ![
-                  NEW_SESSION_COMMAND.name,
-                  CLEAR_SESSION_COMMAND.name,
-                  OPERATOR_COMMAND.name,
-                  "mono",
-                  "bycoda",
-                ].includes(skill.name) &&
-                (skill.kind === "native" ||
-                  (skill.name !== PLAN_COMMAND.name &&
-                    skill.name !== COMPACT_COMMAND.name &&
-                    skill.name !== SESSION_FOLDER_COMMAND.name &&
-                    skill.name !== MCP_COMMAND.name &&
-                    skill.name !== ORCHESTRATOR_COMMAND.name &&
-                    skill.name !== DRAFT_COMMAND.name &&
-                    skill.name !== RESUME_COMMAND.name &&
-                    skill.name !== BTW_COMMAND.name &&
-                    skill.name !== SUBAGENTS_COMMAND.name &&
-                    skill.name !== TASK_COMMAND.name)),
-            ),
-            ...cliCommands.slashCommands,
-          ]),
-      ...templateItems,
-    ],
-    [
+  const { skillCatalog, promptTemplates, dollarSkills, rankedSkills, skillNames } =
+    useComposerSlashInventory({
       harness,
-      templateItems,
-      skills,
-      cliCommands.slashCommands,
+      executionCwd: localCwd,
+      sessionId,
+      pickerOpen,
       remote,
-      remoteFeatures?.plan,
+      remotePlan: !!remoteFeatures?.plan,
       hideTopBar,
-      canSaveDraft,
-      onSaveDraft,
-      onResumeProviderSession,
-      onNewSession,
-    ],
-  );
-  const skillLimit = hasNativeCommands(harness) ? Number.POSITIVE_INFINITY : undefined;
-  const rankedSkills = useMemo(
-    () =>
-      rankSkills(
-        slash?.trigger === "$" ? cliCommands.dollarSkills : slashItems,
-        slash?.query ?? "",
-        slash?.trigger === "$" ? undefined : skillLimit,
-      ),
-    [cliCommands.dollarSkills, slash?.trigger, slash?.query, slashItems, skillLimit],
-  );
+      canStartNewSession: !!onNewSession,
+      canSaveDraft: canSaveDraft && !!onSaveDraft,
+      canResumeProviderSession: !!onResumeProviderSession,
+      slashTrigger: slash?.trigger,
+      slashQuery: slash?.query ?? "",
+    });
   const sessionDirsHarness =
     harness === "claude" || harness === "codex" || harness === "antigravity";
   const showSessionDirs =
     !remote && !compact && sessionDirsHarness && isLocalProject(cwd ?? executionCwd);
   const attachmentsSupported =
     (!remote || !!remoteFeatures?.attachments) && harnessSupportsAttachments(harness);
-  const skillNames = useMemo(
-    () =>
-      new Set(
-        [...slashItems, ...cliCommands.dollarSkills]
-          .filter((skill) => skill.kind !== "template")
-          .map((skill) => skill.invocation),
-      ),
-    [slashItems, cliCommands.dollarSkills],
-  );
   const leadingMode = leadingModeCommand(draft, skillNames, { shell: true });
   const modeIndent = leadingMode ? MODE_COMMAND_INDENT : undefined;
   // No token can be styled without one of these introducers. Plain drafts use
@@ -1601,25 +1501,17 @@ export const Composer = memo(function Composer({
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
   }, [modeIndent]);
-  const mentionFiles = useMemo(
-    () => (!remote && notesEnabled ? [...files, ...notesAsProjectFiles(notes)] : files),
-    [files, notes, notesEnabled, remote],
-  );
-  const mentionIndex = useMemo(() => buildMentionIndex(mentionFiles), [mentionFiles]);
+  const { mentionIndex, rankedFiles } = useComposerMentionSources({
+    executionCwd,
+    remote,
+    notesEnabled,
+    mentionOpen,
+    mentionQuery: mention?.query ?? "",
+  });
   const mentionIndexRef = useRef<MentionIndex>(mentionIndex);
   useLayoutEffect(() => {
     mentionIndexRef.current = mentionIndex;
   }, [mentionIndex]);
-  const deferredMentionQuery = useDeferredValue(mention?.query ?? "");
-  const rankedFiles = useMemo(() => {
-    if (!mentionOpen) return [];
-    const fileHits = looksLikeProject(executionCwd)
-      ? rankMentionFiles(files, deferredMentionQuery, recentOpenedFiles(executionCwd))
-      : [];
-    const noteHits = !remote && notesEnabled ? rankNoteFiles(notes, deferredMentionQuery) : [];
-    const seen = new Set(noteHits.map((file) => file.path));
-    return [...noteHits, ...fileHits.filter((file) => !seen.has(file.path))];
-  }, [executionCwd, files, deferredMentionQuery, mentionOpen, notes, notesEnabled, remote]);
   const skillActive =
     skillSelection.query === (slash?.query ?? "") && skillSelection.cwd === cwd
       ? Math.max(0, Math.min(skillSelection.index, rankedSkills.length - 1))
@@ -1629,14 +1521,9 @@ export const Composer = memo(function Composer({
       ? Math.max(0, Math.min(mentionSelection.index, rankedFiles.length - 1))
       : 0;
 
-  const syncHasValue = useCallback(
-    (text: string, files: Attachment[]) => {
-      setHasValue(
-        text.trim().length > 0 || files.length > 0 || !!inboxCard || !!noteCard || !!handoffCard,
-      );
-    },
-    [inboxCard, noteCard, handoffCard],
-  );
+  /** Only the textarea's own text is state; files and cards are read at render. */
+  const syncHasText = useCallback((text: string) => setHasText(text.trim().length > 0), []);
+  const hasValue = hasText || attachments.length > 0 || !!inboxCard || !!noteCard || !!handoffCard;
 
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive = operatorSelected || leadingMode?.name === OPERATOR_COMMAND.name;
@@ -1659,63 +1546,31 @@ export const Composer = memo(function Composer({
     el.setSelectionRange(0, 0);
     setDraft(next);
     publishDraft(next);
-    syncHasValue(next, attachmentsRef.current);
+    syncHasText(next);
   };
 
+  const resetMcpCatalog = mcpCatalog.reset;
   const openMcpPicker = useCallback(() => {
-    setMcpConnections([]);
-    setMcpStatus(new Map());
-    setMcpError("");
-    setMcpLoading(true);
+    resetMcpCatalog();
     setMcpPickerOpen(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mcpPickerOpen) return;
-    const apply = (snapshot: McpSettingsSnapshot) => {
-      setMcpConnections(snapshot.servers);
-      setMcpStatus(
-        new Map(
-          snapshot.servers
-            .filter((server) => server.provider === "claude")
-            .map((server) => [server.name, server.status]),
-        ),
-      );
-      setMcpError(snapshot.error);
-      setMcpLoading(false);
-    };
-    const stop = subscribeMcpSettings(executionCwd, apply);
-    const cached = getCachedMcpSettings(executionCwd);
-    if (cached) apply(cached);
-    void loadMcpSettings(executionCwd, false, {
-      claudeHealth: harness === "claude",
-    });
-    return stop;
-  }, [executionCwd, harness, mcpPickerOpen]);
-
-  useEffect(() => {
-    setMcpPickerOpen(false);
-  }, [executionCwd, harness, sessionId]);
+  }, [resetMcpCatalog]);
 
   useEffect(() => {
     if (sessionId) mountedClosure.publishCache(() => setComposerMcpTags(sessionId, selectedMcp));
   }, [sessionId, selectedMcp]);
 
-  useEffect(() => {
-    // Object URLs die with this pane, so the saved copy keeps none.
-    if (sessionId) {
-      mountedClosure.publishCache(() =>
-        setComposerAttachments(
-          sessionId,
-          attachments.map(({ previewUrl: _preview, ...file }) => file),
-        ),
-      );
-    }
-  }, [sessionId, attachments]);
-
-  useEffect(() => {
-    syncHasValue(ref.current?.value ?? "", attachmentsRef.current);
-  }, [inboxCard, noteCard, handoffCard, syncHasValue]);
+  useComposerAttachmentLifecycle({
+    sessionId,
+    harness,
+    attachments,
+    attachmentsRef,
+    borrowedAttachmentIdsRef,
+    pasteGenerationRef,
+    inputRef: ref,
+    mountedClosure,
+    setAttachments,
+    syncHasText,
+  });
 
   /** Text goes at the caret when the input has focus, otherwise at the end. */
   const insertIntoDraft = useCallback(
@@ -1754,59 +1609,26 @@ export const Composer = memo(function Composer({
       draftRevisionRef.current += 1;
       // Skipped duplicates are not in `next`, so they get no token either.
       insertIntoDraft(tokensForIncoming(previous, next.slice(previous.length)));
-      syncHasValue(ref.current?.value ?? "", next);
+      syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [harness, insertIntoDraft, syncHasValue],
+    [harness, insertIntoDraft, syncHasText],
   );
 
-  useEffect(() => {
-    if (!sessionId || !cwd || disabled) return;
-    return registerBrowserComposer(cwd, sessionId, (file) => {
-      if (!canMutateDraft()) return false;
-      if (!attachmentsSupported || attachmentsRef.current.length >= MAX_ATTACHMENTS) return false;
-      addAttachments([file]);
-      return attachmentsRef.current.some((entry) => entry.id === file.id);
-    });
-  }, [cwd, sessionId, disabled, attachmentsSupported, addAttachments]);
-
-  useEffect(() => {
-    if (!sessionId || !cwd || disabled) return;
-    return registerDeviceImageComposer(cwd, sessionId, (file, context) => {
-      if (!canMutateDraft()) return false;
-      const el = ref.current;
-      const previous = attachmentsRef.current;
-      if (!el || !attachmentsSupported || previous.length >= MAX_ATTACHMENTS) return false;
-      const next = mergeAttachments(previous, [file]);
-      if (!next.some((entry) => entry.id === file.id)) return false;
-      const token = tokensForIncoming(previous, next.slice(previous.length)).trim();
-      const text = `${el.value}${el.value ? "\n\n" : ""}${token}\n${context}`;
-      // Accept the image and context in one synchronous draft edit. A refusal
-      // above leaves both the existing text and the attachment list untouched.
-      applyTextareaEdit(el, text, text.length);
-      attachmentsRef.current = next;
-      setAttachments(next);
-      setPasteError(null);
-      draftRevisionRef.current += 1;
-      syncHasValue(el.value, next);
-      el.focus();
-      return true;
-    });
-  }, [cwd, sessionId, disabled, attachmentsSupported, syncHasValue]);
-
-  useEffect(() => {
-    if (!sessionId || !cwd || disabled) return;
-    return registerLogsComposer(cwd, sessionId, (text) => {
-      if (!canMutateDraft()) return false;
-      if (!ref.current || !text) return false;
-      draftRevisionRef.current += 1;
-      const next = `${ref.current.value}${ref.current.value ? "\n\n" : ""}${text}`;
-      applyTextareaEdit(ref.current, next, next.length);
-      syncHasValue(ref.current.value, attachmentsRef.current);
-      ref.current.focus();
-      return true;
-    });
-  }, [cwd, sessionId, disabled, syncHasValue]);
+  useComposerRegistrations({
+    cwd,
+    sessionId,
+    disabled,
+    attachmentsSupported,
+    inputRef: ref,
+    attachmentsRef,
+    draftRevisionRef,
+    canMutateDraft,
+    addAttachments,
+    setAttachments,
+    setPasteError,
+    syncHasText,
+  });
 
   const insertAttachmentToken = useCallback(
     (id: string) => {
@@ -1851,112 +1673,24 @@ export const Composer = memo(function Composer({
           applyTextareaEdit(el, text, caret);
         }
       }
-      syncHasValue(ref.current?.value ?? "", next);
+      syncHasText(ref.current?.value ?? "");
       ref.current?.focus();
     },
-    [syncHasValue],
+    [syncHasText],
   );
   // IPC listener registration is asynchronous; changing providers must not
   // detach it or leave it reading obsolete capabilities and callbacks.
-  const fileDropStateRef = useRef({
-    attachmentsSupported,
-    remote,
-    addAttachments,
+  const attachmentSink = useAttachmentSink({ attachmentsSupported, remote, addAttachments });
+  const { rememberAttachmentRead, readDroppedAttachments } = useComposerAttachmentReads({
+    parentInputRef,
+    mountedClosure,
+    sinkRef: attachmentSink,
+    attachmentApplyDepth,
+    pasteGenerationRef,
+    pasteFailuresRef,
+    pasteFlightRef,
+    setPasteError,
   });
-  useLayoutEffect(() => {
-    fileDropStateRef.current = { attachmentsSupported, remote, addAttachments };
-  }, [attachmentsSupported, remote, addAttachments]);
-
-  const rememberAttachmentRead = useCallback(
-    (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
-      let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
-      if (!parentAttempt) return;
-      const initialParentAttempt = parentAttempt;
-      let generation = pasteGenerationRef.current;
-      let failures = pasteFailuresRef.current;
-      const work = mountedClosure.prepare((accepted) => {
-        if (parentAttempt!.settled) parentAttempt = parentAttempt!.resume();
-        const attempt = parentAttempt;
-        if (!attempt) throw new Error("Parent preparation owner changed.");
-        void accepted.whenSettled?.().then(attempt.finish, attempt.finish);
-        // Another failed read still cancels ordinary pending reads/Send, but
-        // cannot silently turn this retained selection into a different draft.
-        // Only non-failure generation transitions invalidate explicit retry.
-        if (pasteGenerationRef.current - generation !== pasteFailuresRef.current - failures)
-          throw new Error("Attachment preparation belongs to an earlier draft.");
-        generation = pasteGenerationRef.current;
-        failures = pasteFailuresRef.current;
-        return read({
-          ...accepted,
-          isCurrent: () => pasteGenerationRef.current === generation,
-          apply: (mutation) =>
-            attempt.apply(() =>
-              accepted.apply(() => {
-                attachmentApplyDepth.current++;
-                try {
-                  return mutation();
-                } finally {
-                  attachmentApplyDepth.current--;
-                }
-              }),
-            ),
-        });
-      });
-      void work.then(initialParentAttempt.finish, initialParentAttempt.finish);
-      const flight = work.then(
-        () => undefined,
-        (reason: unknown) => {
-          if (pasteGenerationRef.current !== generation) return;
-          // Abort a Send already waiting on this failed read, retaining its text.
-          pasteGenerationRef.current += 1;
-          pasteFailuresRef.current += 1;
-          // The retained intent owns this failure transition only. A genuine
-          // later reset/send still makes its explicit retry stale before work.
-          generation = pasteGenerationRef.current;
-          failures = pasteFailuresRef.current;
-          setPasteError(reason instanceof Error ? reason.message : String(reason));
-        },
-      );
-      const previous = pasteFlightRef.current;
-      const joined = previous ? previous.then(() => flight) : flight;
-      pasteFlightRef.current = joined;
-      void joined.finally(() => {
-        if (pasteFlightRef.current === joined) pasteFlightRef.current = null;
-      });
-    },
-    [mountedClosure],
-  );
-
-  const readDroppedAttachments = useCallback(
-    (read: () => Promise<Attachment[]>) => {
-      setPasteError(null);
-      rememberAttachmentRead((accepted) =>
-        Promise.resolve()
-          .then(read)
-          .then((incoming) =>
-            accepted.apply(() => {
-              if (!accepted.isCurrent() || !fileDropStateRef.current.attachmentsSupported) {
-                incoming.forEach(revokeAttachment);
-                return;
-              }
-              if (incoming.length === 0) {
-                setPasteError(
-                  "Nothing to attach from that drop — the file may have been moved, renamed, or deleted.",
-                );
-                return;
-              }
-              fileDropStateRef.current.addAttachments(incoming);
-            }),
-          )
-          .catch((reason: unknown) => {
-            if (!accepted.isCurrent()) return;
-            accepted.fail(reason);
-            setPasteError(reason instanceof Error ? reason.message : String(reason));
-          }),
-      );
-    },
-    [rememberAttachmentRead],
-  );
 
   // The text as it was just before a user edit. Only a native `beforeinput`
   // sets it, so programmatic text changes never count as the user deleting a
@@ -1988,90 +1722,90 @@ export const Composer = memo(function Composer({
     return () => el.removeEventListener("beforeinput", onBeforeInput);
   }, []);
 
-  useEffect(() => {
-    const lifecycle = ++attachmentLifecycleRef.current;
-    return () => {
-      queueMicrotask(() => {
-        if (attachmentLifecycleRef.current !== lifecycle) return;
-        // Retirement captures refs before teardown and keeps accepted reads and
-        // actual Native writes alive. A failed capture keeps its only data owner.
-        void mountedClosure.retire().then(
-          () => {
-            if (attachmentLifecycleRef.current !== lifecycle) return;
-            pasteGenerationRef.current += 1;
-            releaseAttachments(attachmentsRef.current, borrowedAttachmentIdsRef.current);
-            attachmentsRef.current = [];
-            borrowedAttachmentIdsRef.current.clear();
-          },
-          () => {},
-        );
-      });
-    };
-  }, [mountedClosure]);
-
-  useEffect(() => {
-    if (harnessSupportsAttachments(harness)) return;
-    const previous = attachmentsRef.current;
-    if (previous.length === 0) return;
-    mountedClosure.changed();
-    releaseAttachments(previous, borrowedAttachmentIdsRef.current);
-    attachmentsRef.current = [];
-    setAttachments([]);
-    syncHasValue(ref.current?.value ?? "", []);
-  }, [harness, syncHasValue]);
-  useEffect(() => {
-    setSessionFolderOpen(false);
-    setSessionFolderSelected(false);
-  }, [cwd]);
-
-  useEffect(() => {
-    let cancelled = false;
-    const apply = (next: ProjectFile[]) => {
-      if (!cancelled) setFiles(next);
-    };
-    const cached = peekProjectFiles(localCwd);
-    apply(cached ?? []);
-    if (!localCwd) return;
-    void loadProjectFiles(localCwd, mentionOpen && !remote)
-      .then(apply)
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-      });
-    const unsub = subscribeProjectFiles(() => {
-      const next = peekProjectFiles(localCwd);
-      if (next) apply(next);
-    });
-    return () => {
-      cancelled = true;
-      unsub();
-    };
-  }, [localCwd, mentionOpen, remote]);
-
-  useEffect(() => {
-    if (remote || !mentionOpen || !notesEnabled) return;
-    let cancelled = false;
-    void loadNoteSummaries()
-      .then((next) => {
-        if (!cancelled) setNotes(next);
-      })
-      .catch((error) => console.warn("Loading composer notes failed", error));
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionOpen, notesEnabled, remote]);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || !initialDraft) return;
-    if (el.value !== initialDraft) mountedClosure.changed();
-    draftTextRef.current = initialDraft;
-    if (el.value !== initialDraft) el.value = initialDraft;
+  // An accepted external draft takes the same projection path as a native edit:
+  // the textarea stays the authority and writes first, then the draft text,
+  // Send/placeholder state and token menus follow it. Echoes of the current
+  // text only refresh the ref, and nothing is written during an IME composition.
+  const applyExternalDraft = (el: HTMLTextAreaElement, text: string) => {
+    const replaced = el.value !== text;
+    if (replaced) {
+      mountedClosure.changed();
+      draftRevisionRef.current += 1;
+      el.value = text;
+    }
+    draftTextRef.current = text;
     if (!positionedInitialDraft.current) {
       const end = el.value.length;
       el.setSelectionRange(end, end);
       positionedInitialDraft.current = true;
     }
     resizeComposer(el);
+    if (!replaced) return;
+    setDraft(text);
+    syncHasText(text);
+    setSlash(null);
+    setMention(null);
+  };
+  const applyExternalDraftRef = useRef(applyExternalDraft);
+  useLayoutEffect(() => {
+    applyExternalDraftRef.current = applyExternalDraft;
+  });
+  const composingRef = useRef(false);
+  const deferredExternalDraftRef = useRef<DeferredExternalDraft | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    let settle: number | undefined;
+    let valueAtStart = "";
+    const start = () => {
+      composingRef.current = true;
+      valueAtStart = el.value;
+    };
+    const end = () => {
+      composingRef.current = false;
+      // Text the user just composed wins: a draft that arrived during that
+      // composition is refused rather than written over it.
+      if (el.value !== valueAtStart) deferredExternalDraftRef.current = null;
+      if (!deferredExternalDraftRef.current) return;
+      // Some engines dispatch the final input event after compositionend. Let
+      // it update the revision first so a deferred draft never overwrites it.
+      window.clearTimeout(settle);
+      settle = window.setTimeout(() => {
+        if (composingRef.current) return;
+        const text = deferredExternalDraftToApply({
+          deferred: deferredExternalDraftRef.current,
+          revision: draftRevisionRef.current,
+          domValue: el.value,
+        });
+        deferredExternalDraftRef.current = null;
+        if (text !== null) applyExternalDraftRef.current(el, text);
+      }, 0);
+    };
+    el.addEventListener("compositionstart", start);
+    el.addEventListener("compositionend", end);
+    return () => {
+      window.clearTimeout(settle);
+      el.removeEventListener("compositionstart", start);
+      el.removeEventListener("compositionend", end);
+    };
+  }, []);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !initialDraft) return;
+    const action = externalDraftAction({
+      external: initialDraft,
+      domValue: el.value,
+      composing: composingRef.current,
+    });
+    if (action === "defer") {
+      deferredExternalDraftRef.current = {
+        text: initialDraft,
+        revision: draftRevisionRef.current,
+      };
+      return;
+    }
+    deferredExternalDraftRef.current = null;
+    applyExternalDraft(el, initialDraft);
   }, [initialDraft]);
 
   // Drafts changed while hidden could not be measured. Inbox panes are portaled
@@ -2122,8 +1856,8 @@ export const Composer = memo(function Composer({
     setMention(null);
     setCreatingSkill(false);
     setCreateError(null);
-    syncHasValue("", attachmentsRef.current);
-  }, [draftResetToken, clearComposer, syncHasValue]);
+    syncHasText("");
+  }, [draftResetToken, clearComposer, syncHasText]);
 
   const syncHighlightScroll = useCallback((el: HTMLTextAreaElement) => {
     const highlight = highlightRef.current;
@@ -2156,7 +1890,7 @@ export const Composer = memo(function Composer({
     const dollar = token ? null : dollarTokenAt(el.value, cursor);
     setSlash(
       token ??
-        (dollar && rankSkills(cliCommands.dollarSkills, dollar.query, 1).length > 0
+        (dollar && rankSkills(dollarSkills, dollar.query, 1).length > 0
           ? dollar
           : null),
     );
@@ -2178,7 +1912,7 @@ export const Composer = memo(function Composer({
       el.value = result.draft;
       resizeComposer(el);
       setDraft(result.draft);
-      syncHasValue(result.draft, attachmentsRef.current);
+      syncHasText(result.draft);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
@@ -2187,7 +1921,7 @@ export const Composer = memo(function Composer({
       el.focus();
     }
     onQuoteRequestConsumed?.(quoteRequest.id);
-  }, [onQuoteRequestConsumed, quoteRequest, syncHasValue]);
+  }, [onQuoteRequestConsumed, quoteRequest, syncHasText]);
 
   // `/btw ` opens the side conversation as soon as it is typed, carrying any
   // text after it over as the unsent side question.
@@ -2205,12 +1939,12 @@ export const Composer = memo(function Composer({
       draftRevisionRef.current += 1;
       setDraft("");
       publishDraft("");
-      syncHasValue("", attachmentsRef.current);
+      syncHasText("");
       setSlash(null);
       setMention(null);
       return true;
     },
-    [canMutateDraft, handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasValue],
+    [canMutateDraft, handoffCard, inboxCard, noteCard, onBtwCommand, publishDraft, syncHasText],
   );
 
   const pickSkill = useCallback(
@@ -2231,7 +1965,7 @@ export const Composer = memo(function Composer({
         el.setSelectionRange(token.start, token.start);
         setDraft(next);
         publishDraft(next);
-        syncHasValue(next, attachmentsRef.current);
+        syncHasText(next);
         setSlash(null);
         openMcpPicker();
         return;
@@ -2246,7 +1980,7 @@ export const Composer = memo(function Composer({
         if (next[cursor] === " ") cursor += 1;
         el.setSelectionRange(cursor, cursor);
         setDraft(next);
-        syncHasValue(next, attachmentsRef.current);
+        syncHasText(next);
         setSlash(null);
         setCreatingSkill(false);
         openSessionFolderPicker();
@@ -2265,7 +1999,7 @@ export const Composer = memo(function Composer({
         el.setSelectionRange(token.start, token.start);
         setDraft(cleared);
         publishDraft(cleared);
-        syncHasValue(cleared, attachmentsRef.current);
+        syncHasText(cleared);
         setSlash(null);
         setCreatingSkill(false);
         onResumeProviderSession();
@@ -2288,7 +2022,7 @@ export const Composer = memo(function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
-      syncHasValue(next, attachmentsRef.current);
+      syncHasText(next);
       setSlash(null);
       setCreatingSkill(false);
       if (skill.kind === "builtin" && skill.name === BTW_COMMAND.name) {
@@ -2304,7 +2038,7 @@ export const Composer = memo(function Composer({
       openMcpPicker,
       onResumeProviderSession,
       openSessionFolderPicker,
-      syncHasValue,
+      syncHasText,
     ],
   );
 
@@ -2328,11 +2062,11 @@ export const Composer = memo(function Composer({
       if (next[cursor] === " ") cursor += 1;
       el.setSelectionRange(cursor, cursor);
       setDraft(next);
-      syncHasValue(next, attachmentsRef.current);
+      syncHasText(next);
       setMention(null);
       el.focus();
     },
-    [canMutateDraft, syncHasValue, remote],
+    [canMutateDraft, syncHasText, remote],
   );
 
   const lastFocusToken = useRef(focusToken);
@@ -2368,124 +2102,18 @@ export const Composer = memo(function Composer({
     ref.current?.focus();
   }, [disabled, focused, question, busy, focusToken]);
 
+  const fileDrag = useComposerFileDrop({
+    enabled,
+    disabled,
+    attachmentsSupported,
+    boxRef,
+    sinkRef: attachmentSink,
+    readDroppedAttachments,
+    setPasteError,
+  });
   useEffect(() => {
-    if (!enabled || disabled) {
-      setFileDrag(false);
-      return;
-    }
-    const dropRoot = () => boxRef.current;
-    let nativeDropAt = 0;
-
-    const overTarget = (x: number, y: number) => {
-      const root = dropRoot();
-      if (!root) return false;
-      const rect = root.getBoundingClientRect();
-      return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-    };
-
-    const onDragOver = (event: DragEvent) => {
-      const data = event.dataTransfer;
-      if (!hasFiles(data)) return;
-      event.preventDefault();
-      const supported = fileDropStateRef.current.attachmentsSupported;
-      data.dropEffect = supported ? "copy" : "none";
-      setFileDrag(supported);
-    };
-    const onDragLeave = (event: DragEvent) => {
-      const root = dropRoot();
-      if (!root) return;
-      const next = event.relatedTarget as Node | null;
-      if (next && root.contains(next)) return;
-      setFileDrag(false);
-    };
-    const onDrop = (event: DragEvent) => {
-      const data = event.dataTransfer;
-      if (!hasFiles(data)) return;
-      event.preventDefault();
-      setFileDrag(false);
-      if (!fileDropStateRef.current.attachmentsSupported) return;
-      if (Date.now() - nativeDropAt < 250) return;
-      const files = filesFromClipboard(data);
-      if (files.length === 0) return;
-      readDroppedAttachments(() => attachmentsFromFiles(files));
-    };
-
-    const onExplorerFilePointerDrag = (event: Event) => {
-      if (fileDropStateRef.current.remote) return;
-      const detail = (event as CustomEvent<ExplorerFilePointerDragDetail>).detail;
-      if (!detail || detail.type === "end") {
-        setFileDrag(false);
-        return;
-      }
-      const over = overTarget(detail.x, detail.y);
-      const supported = fileDropStateRef.current.attachmentsSupported;
-      if (detail.type === "move") {
-        setFileDrag(over && supported);
-        return;
-      }
-      setFileDrag(false);
-      if (!over || !supported) return;
-      readDroppedAttachments(() => attachmentsFromPaths(detail.paths ?? [detail.path]));
-    };
-
-    const root = dropRoot();
-    root?.addEventListener("dragover", onDragOver);
-    root?.addEventListener("dragleave", onDragLeave);
-    root?.addEventListener("drop", onDrop);
-    window.addEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, onExplorerFilePointerDrag);
-
-    let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void getCurrentWebview()
-      .onDragDropEvent((event) => {
-        if (cancelled) return;
-        if (event.payload.type === "leave") {
-          setFileDrag(false);
-          return;
-        }
-        const { x, y } = event.payload.position;
-        const point = dragPointToClient(x, y);
-        const over = overTarget(point.x, point.y);
-        const supported = fileDropStateRef.current.attachmentsSupported;
-        if (event.payload.type === "enter" || event.payload.type === "over") {
-          setFileDrag(over && supported);
-          return;
-        }
-        if (event.payload.type !== "drop") return;
-        setFileDrag(false);
-        if (!over || !supported) return;
-        if (event.payload.paths.length === 0) {
-          setPasteError(
-            "This drag did not provide a file. Save the image, then drag the saved file here.",
-          );
-          return;
-        }
-        nativeDropAt = Date.now();
-        const paths = event.payload.paths;
-        readDroppedAttachments(() => attachmentsFromPaths(paths));
-      })
-      .then((fn) => {
-        if (cancelled) fn();
-        else unlisten = fn;
-      })
-      .catch((error) => {
-        console.warn("Composer operation failed", error);
-      });
-
-    return () => {
-      cancelled = true;
-      root?.removeEventListener("dragover", onDragOver);
-      root?.removeEventListener("dragleave", onDragLeave);
-      root?.removeEventListener("drop", onDrop);
-      window.removeEventListener(EXPLORER_FILE_POINTER_DRAG_EVENT, onExplorerFilePointerDrag);
-      unlisten?.();
-    };
-  }, [disabled, enabled, readDroppedAttachments]);
-  useEffect(() => {
-    if (!attachmentsSupported) {
-      pasteGenerationRef.current += 1;
-      setFileDrag(false);
-    }
+    // Reads begun before files became unsupported must not land on this draft.
+    if (!attachmentsSupported) pasteGenerationRef.current += 1;
   }, [attachmentsSupported]);
   const restoreDraft = useCallback(
     (text: string, nextAttachments: Attachment[], borrowedIds?: ReadonlySet<string>) => {
@@ -2505,10 +2133,10 @@ export const Composer = memo(function Composer({
       );
       attachmentsRef.current = nextAttachments;
       setAttachments(nextAttachments);
-      syncHasValue(text, nextAttachments);
+      syncHasText(text);
       ref.current?.focus();
     },
-    [publishDraft, syncHasValue],
+    [publishDraft, syncHasText],
   );
 
   const exitEditMode = useCallback(() => {
@@ -2521,16 +2149,15 @@ export const Composer = memo(function Composer({
     attachmentsRef.current = [];
     setAttachments([]);
     setResendEdited(false);
-    onEditingLastTurnChange?.(false);
     setPlusOpen(false);
     setModeOpen(false);
     setSlash(null);
     setMention(null);
     setMcpPickerOpen(false);
     setSelectedMcp([]);
-    syncHasValue("", []);
+    syncHasText("");
     ref.current?.focus();
-  }, [clearComposer, onEditingLastTurnChange, syncHasValue]);
+  }, [clearComposer, setResendEdited, syncHasText]);
 
   const recallLastTurn = useCallback(() => {
     if (!canMutateDraft()) return;
@@ -2549,15 +2176,14 @@ export const Composer = memo(function Composer({
       new Set(lastTurnRecall.attachments.map((file) => file.id)),
     );
     setResendEdited(true);
-    onEditingLastTurnChange?.(true);
   }, [
     editLastTurnSupported,
     onRecallLastTurn,
     exitEditMode,
     lastTurnRecall,
-    onEditingLastTurnChange,
     resendEdited,
     restoreDraft,
+    setResendEdited,
   ]);
 
   const applyExternalRecall = useCallback(
@@ -2571,9 +2197,8 @@ export const Composer = memo(function Composer({
       // rather than retaining the previous draft's selection.
       ref.current?.setSelectionRange(value.text.length, value.text.length);
       setResendEdited(false);
-      onEditingLastTurnChange?.(false);
     },
-    [onEditingLastTurnChange, restoreDraft],
+    [restoreDraft, setResendEdited],
   );
   const recallMessage = useCallback(
     (value: LastTurnRecall) => {
@@ -2596,20 +2221,11 @@ export const Composer = memo(function Composer({
   }, [onRecallMessageReady, recallMessage]);
 
   useEffect(() => {
+    // The edit marker resets with the session during render (useEditingLastTurn);
+    // the revision and recalled-history refs can only be retired after commit.
     draftRevisionRef.current += 1;
-    setResendEdited(false);
-    onEditingLastTurnChange?.(false);
-  }, [sessionId, onEditingLastTurnChange]);
-
-  useEffect(() => {
     historyRef.current = null;
   }, [sessionId]);
-
-  useEffect(() => {
-    if (editLastTurnSupported) return;
-    setResendEdited(false);
-    onEditingLastTurnChange?.(false);
-  }, [editLastTurnSupported, onEditingLastTurnChange]);
 
   useEffect(() => {
     if (!editLastTurnSupported || !onRecallLastTurnReady) return;
@@ -2781,8 +2397,7 @@ export const Composer = memo(function Composer({
       setSlash(null);
       setMention(null);
       setResendEdited(false);
-      onEditingLastTurnChange?.(false);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     if (isNewSessionCommand(value) && onNewSession) {
@@ -2792,7 +2407,7 @@ export const Composer = memo(function Composer({
       setDraft("");
       publishDraft("");
       setSlash(null);
-      syncHasValue("", attachmentsRef.current);
+      syncHasText("");
       if (continuation) onNewSession(undefined, continuation);
       else onNewSession();
       return;
@@ -2811,7 +2426,7 @@ export const Composer = memo(function Composer({
       setModeOpen(false);
       setSlash(null);
       setMention(null);
-      syncHasValue("", attachmentsRef.current);
+      syncHasText("");
       onResumeProviderSession(...continuationArgs);
       return;
     }
@@ -2819,7 +2434,7 @@ export const Composer = memo(function Composer({
       mcpInsertAt.current = 0;
       clearComposer();
       setSlash(null);
-      syncHasValue("", attachments);
+      syncHasText("");
       openMcpPicker();
       return;
     }
@@ -2872,7 +2487,7 @@ export const Composer = memo(function Composer({
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     const folderCommand = consumeSessionFolderCommand(value);
@@ -2913,7 +2528,7 @@ export const Composer = memo(function Composer({
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", []);
+      syncHasText("");
       return;
     }
     if (folderCommand.matched && onPlaceInFolder && !sessionFolderSelected) {
@@ -2932,7 +2547,7 @@ export const Composer = memo(function Composer({
       setMention(null);
       setCreatingSkill(false);
       setCreateError(null);
-      syncHasValue("", attachmentsRef.current);
+      syncHasText("");
       return;
     }
 
@@ -3054,7 +2669,6 @@ export const Composer = memo(function Composer({
                 selectedMcpRef.current = resendSelectedMcp;
                 setSelectedMcpState(resendSelectedMcp);
                 setResendEdited(!providerRewound);
-                onEditingLastTurnChange?.(!providerRewound);
               },
             }
           : {}),
@@ -3079,7 +2693,6 @@ export const Composer = memo(function Composer({
     setAttachments([]);
     setSelectedMcp([]);
     setResendEdited(false);
-    onEditingLastTurnChange?.(false);
     setPlanSelected(false);
     setOperatorSelected(false);
     setOrchestrationSelected(false);
@@ -3092,7 +2705,7 @@ export const Composer = memo(function Composer({
     setCreatingSkill(false);
     setCreateError(null);
     setPasteError(null);
-    syncHasValue("", []);
+    syncHasText("");
   };
   useLayoutEffect(() => {
     submitContinuationRef.current = completeSubmit;
@@ -3121,7 +2734,7 @@ export const Composer = memo(function Composer({
       !(slash || mentionOpen || pickerOpen)
     ) {
       const version = translationHistoryKey(
-        translationHistoryRef.current,
+        currentTranslationHistory(),
         e.currentTarget.value,
         e.key,
       );
@@ -3461,11 +3074,11 @@ export const Composer = memo(function Composer({
     rememberAttachmentRead((accepted) =>
       pickAttachments(selection).then((files) =>
         accepted.apply(() => {
-          if (!accepted.isCurrent() || !fileDropStateRef.current.attachmentsSupported) {
+          if (!accepted.isCurrent() || !attachmentSink.current.attachmentsSupported) {
             files.forEach(revokeAttachment);
             return;
           }
-          fileDropStateRef.current.addAttachments(files);
+          attachmentSink.current.addAttachments(files);
           ref.current?.focus();
         }),
       ),
@@ -3656,7 +3269,7 @@ export const Composer = memo(function Composer({
               selected.end,
               translation,
             );
-            translationHistoryRef.current = history;
+            translationHistoryRef.current = { epoch: translationScope.epoch, history };
             applyTextareaEdit(el, history.translated, selected.start + translation.length);
             el.focus();
           }}
@@ -3723,7 +3336,7 @@ export const Composer = memo(function Composer({
         {mcpPickerOpen ? (
           <ComposerSuggestions anchor={boxRef} below={shell}>
             <McpServerPicker
-              connections={mcpConnections}
+              connections={mcpCatalog.connections}
               harness={harness}
               claudeStatus={mcpStatus}
               loading={mcpLoading}
@@ -3754,7 +3367,7 @@ export const Composer = memo(function Composer({
                   el.setSelectionRange(at + insertion.length, at + insertion.length);
                   draftRevisionRef.current += 1;
                   setDraft(next);
-                  syncHasValue(next, attachmentsRef.current);
+                  syncHasText(next);
                   setMention(null);
                 }
                 mcpInsertAt.current = null;
@@ -3789,7 +3402,7 @@ export const Composer = memo(function Composer({
                   el.value = `${el.value} `;
                   resizeComposer(el);
                   setDraft(el.value);
-                  syncHasValue(el.value, attachmentsRef.current);
+                  syncHasText(el.value);
                   el.setSelectionRange(el.value.length, el.value.length);
                 } else {
                   el.setSelectionRange(cursor, cursor);
@@ -3862,7 +3475,7 @@ export const Composer = memo(function Composer({
                           resizeComposer(el);
                           el.setSelectionRange(token.start, token.start);
                           setDraft(next);
-                          syncHasValue(next, attachments);
+                          syncHasText(next);
                         }
                         setCreatingSkill(false);
                         setSlash(null);
@@ -4032,7 +3645,7 @@ export const Composer = memo(function Composer({
                   return;
                 }
                 const el = e.currentTarget;
-                const history = translationHistoryRef.current;
+                const history = currentTranslationHistory();
                 if (history && el.value !== history.original && el.value !== history.translated)
                   translationHistoryRef.current = null;
                 // A user edit that took a token out of the text takes its
@@ -4059,7 +3672,7 @@ export const Composer = memo(function Composer({
                 if (sessionFolderSelected && !consumeSessionFolderCommand(el.value).matched) {
                   setSessionFolderSelected(false);
                 }
-                syncHasValue(el.value, attachmentsRef.current);
+                syncHasText(el.value);
                 syncTokensFromTextarea(el);
               }}
             />
@@ -4267,7 +3880,7 @@ export const Composer = memo(function Composer({
                       el.setSelectionRange(next.length, next.length);
                       resizeComposer(el);
                       setDraft(next);
-                      syncHasValue(next, attachmentsRef.current);
+                      syncHasText(next);
                       setSlash({
                         start,
                         end: next.length,
@@ -4815,21 +4428,5 @@ export function ComposerAction({
     >
       <ArrowUp className="size-3.5" strokeWidth={2.25} />
     </Button>
-  );
-}
-
-/** Edits the textarea the way typing would, so React and every draft listener see it. */
-function applyTextareaEdit(el: HTMLTextAreaElement, text: string, caret: number) {
-  el.value = text;
-  el.setSelectionRange(caret, caret);
-  el.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function hasFiles(data: DataTransfer | null): data is DataTransfer {
-  if (!data) return false;
-  return (
-    data.files.length > 0 ||
-    [...data.types].some((type) => type === "Files" || type === "application/x-moz-file") ||
-    Array.from(data.items ?? []).some((item) => item.kind === "file")
   );
 }

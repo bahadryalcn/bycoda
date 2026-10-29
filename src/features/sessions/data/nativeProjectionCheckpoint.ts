@@ -42,7 +42,9 @@ import {
 
 const uuid = z
   .string()
-  .regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  .regex(
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+  );
 const identity = z
   .string()
   .min(1)
@@ -66,7 +68,11 @@ const scopeFields = {
   expiresInMs: z.number().int().min(1).max(30_000),
 };
 const prepareSchema = z.strictObject(scopeFields);
-const challengeSchema = z.strictObject({ ...scopeFields, nonce: uuid, roundId: uuid });
+const challengeSchema = z.strictObject({
+  ...scopeFields,
+  nonce: uuid,
+  roundId: uuid,
+});
 const finishedSchema = z.strictObject({
   version: z.literal(1),
   qualified: z.literal(false),
@@ -109,7 +115,9 @@ const rawStatusSchema = z.strictObject({
     .optional(),
 });
 export type NativeProjectionPrepare = Readonly<z.infer<typeof prepareSchema>>;
-export type NativeProjectionChallenge = Readonly<z.infer<typeof challengeSchema>>;
+export type NativeProjectionChallenge = Readonly<
+  z.infer<typeof challengeSchema>
+>;
 export const NATIVE_PROJECTION_CHECKPOINT_LIMITS = Object.freeze({
   retainedPrepares: 4,
   seenPrepareIds: 256,
@@ -123,6 +131,8 @@ export const NATIVE_PROJECTION_MISSING_COVERAGE = Object.freeze([
   "multi-input-provenance",
   "provider-closure",
   "producer-coverage",
+  "notes-input-coverage",
+  "host-notes-writer-closure",
 ]);
 type Closure = {
   captureAndFlush(): Promise<{ readonly missingCoverage: readonly string[] }>;
@@ -130,7 +140,10 @@ type Closure = {
   reopen(owner: object): void;
 };
 type ClosureOptions = { owner: object; timeoutMs: number; signal: AbortSignal };
-type NativeInvoke = (command: string, args: Record<string, unknown>) => Promise<unknown>;
+type NativeInvoke = (
+  command: string,
+  args: Record<string, unknown>,
+) => Promise<unknown>;
 export type NativeProjectionCheckpointOptions = {
   invoke?: NativeInvoke;
   sessions?: () => readonly Session[];
@@ -199,7 +212,8 @@ if (import.meta.hot)
 export function createNativeProjectionCheckpointService(
   options: NativeProjectionCheckpointOptions = {},
 ) {
-  const nativeInvoke = options.invoke ?? ((command, args) => invoke(command, args));
+  const nativeInvoke =
+    options.invoke ?? ((command, args) => invoke(command, args));
   const sessions = options.sessions ?? getSessions;
   const registry = options.drain ?? rendererPersistenceDrain;
   const flush = options.flush ?? flushSessionWritesStrict;
@@ -213,7 +227,8 @@ export function createNativeProjectionCheckpointService(
   let disposeTask: Promise<void> | undefined;
   function collect(entry: Entry) {
     if (!entry.released || entry.jobs) return;
-    if (entries.get(entry.scope.prepareId) === entry) entries.delete(entry.scope.prepareId);
+    if (entries.get(entry.scope.prepareId) === entry)
+      entries.delete(entry.scope.prepareId);
     if (!entries.size) {
       for (const done of idle) done();
       idle.clear();
@@ -221,7 +236,10 @@ export function createNativeProjectionCheckpointService(
     }
   }
   /** Charge before invoking a factory; cancellation never settles this actual promise. */
-  function actual<T>(entry: Entry, operation: () => T | Promise<T>): Promise<T> {
+  function actual<T>(
+    entry: Entry,
+    operation: () => T | Promise<T>,
+  ): Promise<T> {
     entry.jobs++;
     let result: Promise<T>;
     try {
@@ -242,17 +260,23 @@ export function createNativeProjectionCheckpointService(
       },
     );
   }
-  const wait = <T>(entry: Entry, promise: Promise<T>) => Promise.race([promise, entry.interrupt]);
+  const wait = <T>(entry: Entry, promise: Promise<T>) =>
+    Promise.race([promise, entry.interrupt]);
   function current(id: string): Session {
     const matches = sessions().filter((session) => session.id === id);
-    if (matches.length !== 1 || !isPersistableId(id) || !shouldPersistSession(matches[0]))
+    if (
+      matches.length !== 1 ||
+      !isPersistableId(id) ||
+      !shouldPersistSession(matches[0])
+    )
       throw new CheckpointError("session-unavailable");
     return matches[0];
   }
   function assertOpen(entry: Entry): void {
     if (entry.released || entry.releaseRequested || stopping)
       throw new CheckpointError("cancelled");
-    if (performance.now() >= entry.deadline) throw new CheckpointError("deadline");
+    if (performance.now() >= entry.deadline)
+      throw new CheckpointError("deadline");
   }
   function assertEntry(entry: Entry): Session {
     assertOpen(entry);
@@ -262,10 +286,17 @@ export function createNativeProjectionCheckpointService(
       throw new CheckpointError("model-replaced");
     return session;
   }
-  function comparison(entry: Entry): SessionOutputFullCandidateComparison | null {
+  function comparison(
+    entry: Entry,
+  ): SessionOutputFullCandidateComparison | null {
     const session = assertEntry(entry);
-    if (entry.target && session !== entry.target) throw new CheckpointError("model-changed");
-    if (!entry.candidate || getSessionOutputFullCandidate(session) !== entry.candidate) return null;
+    if (entry.target && session !== entry.target)
+      throw new CheckpointError("model-changed");
+    if (
+      !entry.candidate ||
+      getSessionOutputFullCandidate(session) !== entry.candidate
+    )
+      return null;
     const result = getSessionOutputFullCandidateComparison(entry.candidate);
     if (!result) {
       const negative = inspectNativeOutputDelivery(session.id);
@@ -281,7 +312,8 @@ export function createNativeProjectionCheckpointService(
       !result.items.length ||
       result.items.some(
         (item) =>
-          (item.batch.logicalSessionId ?? item.batch.sessionId) !== entry.scope.sessionId ||
+          (item.batch.logicalSessionId ?? item.batch.sessionId) !==
+            entry.scope.sessionId ||
           item.batch.ownerEpoch !== entry.scope.windowEpoch,
       )
     )
@@ -304,8 +336,11 @@ export function createNativeProjectionCheckpointService(
       !entry.rawCaptureJson ||
       !entry.inputAdmission?.current() ||
       !entry.producerInputs?.current() ||
-      encodeNativeProducerCapture(entry.scope.sessionId, entry.rawCapture, entry.producerInputs) !==
-        entry.rawCaptureJson
+      encodeNativeProducerCapture(
+        entry.scope.sessionId,
+        entry.rawCapture,
+        entry.producerInputs,
+      ) !== entry.rawCaptureJson
     )
       throw new CheckpointError("raw-capture-changed");
     const claim = comparison(entry);
@@ -353,7 +388,10 @@ export function createNativeProjectionCheckpointService(
     entry.releaseTask = pending;
     return pending;
   }
-  async function publish(entry: Entry, status: "prepared" | "busy" | "unverified") {
+  async function publish(
+    entry: Entry,
+    status: "prepared" | "busy" | "unverified",
+  ) {
     if (entry.sentStatus || entry.released) return;
     entry.sentStatus = status;
     await actual(entry, () =>
@@ -371,7 +409,10 @@ export function createNativeProjectionCheckpointService(
       }),
     );
   }
-  async function observeRawAfterRejectedVerify(entry: Entry, challenge: NativeProjectionChallenge) {
+  async function observeRawAfterRejectedVerify(
+    entry: Entry,
+    challenge: NativeProjectionChallenge,
+  ) {
     const cutoff = Math.min(
       entry.deadline,
       performance.now() + NATIVE_PROJECTION_CHECKPOINT_LIMITS.rawStatusMs,
@@ -391,15 +432,23 @@ export function createNativeProjectionCheckpointService(
     if (!stillOwned()) return;
     entry.rawStatusQueried = true;
     const task = actual(entry, async () => {
-      const result = await nativeInvoke("native_projection_checkpoint_raw_status", {
-        prepareId: challenge.prepareId,
-        nonce: challenge.nonce,
-        comparisonJson: entry.comparisonJson,
-        rawCaptureJson: entry.rawCaptureJson,
-      });
+      const result = await nativeInvoke(
+        "native_projection_checkpoint_raw_status",
+        {
+          prepareId: challenge.prepareId,
+          nonce: challenge.nonce,
+          comparisonJson: entry.comparisonJson,
+          rawCaptureJson: entry.rawCaptureJson,
+        },
+      );
       if (!stillOwned()) return;
       const parsed = rawStatusSchema.safeParse(result);
-      if (!parsed.success || parsed.data.status !== "retained" || !parsed.data.receipt) return;
+      if (
+        !parsed.success ||
+        parsed.data.status !== "retained" ||
+        !parsed.data.receipt
+      )
+        return;
       const sql = parsed.data.receipt.sql;
       if (
         sql.nonce !== challenge.nonce ||
@@ -418,16 +467,21 @@ export function createNativeProjectionCheckpointService(
         crypto.subtle.digest("SHA-256", comparison),
       ]);
       const hex = (bytes: ArrayBuffer) =>
-        Array.from(new Uint8Array(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
-      const snapshots = Object.getOwnPropertyDescriptor(entry.rawCapture, "snapshots")
-        ?.value as unknown[];
+        Array.from(new Uint8Array(bytes), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join("");
+      const snapshots = Object.getOwnPropertyDescriptor(
+        entry.rawCapture,
+        "snapshots",
+      )?.value as unknown[];
       if (
         !stillOwned() ||
         sql.rawCapture.byteLength !== raw.byteLength ||
         sql.rawCapture.snapshotCount !==
           snapshots.length +
             (entry.producerInputs?.parent.snapshots.length ?? 0) +
-            (entry.producerInputs?.editor.snapshots.length ?? 0) ||
+            (entry.producerInputs?.editor.snapshots.length ?? 0) +
+            (entry.producerInputs?.notes?.snapshots.length ?? 0) ||
         sql.rawCapture.sha256 !== hex(digests[0]!) ||
         sql.rawCapture.comparisonSha256 !== hex(digests[1]!)
       )
@@ -476,7 +530,10 @@ export function createNativeProjectionCheckpointService(
       await wait(
         entry,
         new Promise<void>((resolve) =>
-          setTimeout(resolve, NATIVE_PROJECTION_CHECKPOINT_LIMITS.candidatePollMs),
+          setTimeout(
+            resolve,
+            NATIVE_PROJECTION_CHECKPOINT_LIMITS.candidatePollMs,
+          ),
         ),
       );
     }
@@ -502,13 +559,16 @@ export function createNativeProjectionCheckpointService(
       const config = {
         owner: entry.owner,
         signal: entry.controller.signal,
-        timeoutMs: Math.min(30_000, Math.max(1, Math.ceil(entry.deadline - performance.now()))),
+        timeoutMs: Math.min(
+          30_000,
+          Math.max(1, Math.ceil(entry.deadline - performance.now())),
+        ),
       };
-      entry.inputAdmission = (options.beginInputs ?? beginNativeProducerInputClosure)(
-        entry.scope.sessionId,
-        config,
-      );
-      if (!entry.inputAdmission.current()) throw new CheckpointError("input-admission-unavailable");
+      entry.inputAdmission = (
+        options.beginInputs ?? beginNativeProducerInputClosure
+      )(entry.scope.sessionId, config);
+      if (!entry.inputAdmission.current())
+        throw new CheckpointError("input-admission-unavailable");
       entry.closure = options.quickBegin
         ? options.quickBegin(config)
         : mountedBegin([entry.scope.sessionId], config);
@@ -518,7 +578,12 @@ export function createNativeProjectionCheckpointService(
       );
       assertOpen(entry);
       entry.missing = Object.freeze(
-        [...new Set([...NATIVE_PROJECTION_MISSING_COVERAGE, ...captured.missingCoverage])].sort(),
+        [
+          ...new Set([
+            ...NATIVE_PROJECTION_MISSING_COVERAGE,
+            ...captured.missingCoverage,
+          ]),
+        ].sort(),
       );
       if (!session) throw new CheckpointError("session-unavailable");
       assertEntry(entry);
@@ -558,7 +623,12 @@ export function createNativeProjectionCheckpointService(
         entry.producerInputs!,
       );
       entry.missing = Object.freeze(
-        [...new Set([...entry.missing, ...entry.producerInputs!.missingCoverage])].sort(),
+        [
+          ...new Set([
+            ...entry.missing,
+            ...entry.producerInputs!.missingCoverage,
+          ]),
+        ].sort(),
       );
       assertPrepared(entry);
       entry.phase = "prepared";
@@ -574,7 +644,9 @@ export function createNativeProjectionCheckpointService(
             : error instanceof NativeCaptureJsonError
               ? `producer-capture-${error.code}`
               : "preparation-unverified";
-      entry.missing = Object.freeze([...new Set([...entry.missing, reason])].sort());
+      entry.missing = Object.freeze(
+        [...new Set([...entry.missing, reason])].sort(),
+      );
       if (!entry.sentStatus) {
         try {
           await publish(entry, "unverified");
@@ -617,7 +689,8 @@ export function createNativeProjectionCheckpointService(
         seen.size >= NATIVE_PROJECTION_CHECKPOINT_LIMITS.seenPrepareIds ||
         entries.size >= NATIVE_PROJECTION_CHECKPOINT_LIMITS.retainedPrepares ||
         [...entries.values()].some(
-          (entry) => !entry.released && entry.scope.sessionId === scope.sessionId,
+          (entry) =>
+            !entry.released && entry.scope.sessionId === scope.sessionId,
         )
       )
         return Promise.resolve();
@@ -667,7 +740,10 @@ export function createNativeProjectionCheckpointService(
           ? (entry.verifyTask ?? Promise.resolve())
           : Promise.resolve();
       entry.challenge = challenge;
-      entry.deadline = Math.min(entry.deadline, performance.now() + challenge.expiresInMs);
+      entry.deadline = Math.min(
+        entry.deadline,
+        performance.now() + challenge.expiresInMs,
+      );
       clearTimeout(entry.timer);
       entry.timer = setTimeout(
         () => {
@@ -697,8 +773,10 @@ export function createNativeProjectionCheckpointService(
           if (!entry.released && !entry.releaseRequested) assertPrepared(entry);
           // Only Native finished/releaseReady confirms that its actual round reopened.
         } catch {
-          if (actualVerifyRejected) await observeRawAfterRejectedVerify(entry, challenge);
-          if (!entry.released) await requestRelease(entry, "verification-unverified");
+          if (actualVerifyRejected)
+            await observeRawAfterRejectedVerify(entry, challenge);
+          if (!entry.released)
+            await requestRelease(entry, "verification-unverified");
         }
       })();
       return entry.verifyTask;
@@ -718,10 +796,17 @@ export function createNativeProjectionCheckpointService(
         qualified: false as const,
         scopeComplete: false as const,
         activePrepares: entries.size,
-        actualJobs: [...entries.values()].reduce((sum, entry) => sum + entry.jobs, 0),
-        releasing: [...entries.values()].filter((entry) => entry.releaseRequested).length,
+        actualJobs: [...entries.values()].reduce(
+          (sum, entry) => sum + entry.jobs,
+          0,
+        ),
+        releasing: [...entries.values()].filter(
+          (entry) => entry.releaseRequested,
+        ).length,
         seenPrepareIds: seen.size,
-        retainedRaw: [...entries.values()].some((entry) => entry.retainedRaw === true),
+        retainedRaw: [...entries.values()].some(
+          (entry) => entry.retainedRaw === true,
+        ),
         missingCoverage: NATIVE_PROJECTION_MISSING_COVERAGE,
         limits: NATIVE_PROJECTION_CHECKPOINT_LIMITS,
       });
@@ -729,7 +814,8 @@ export function createNativeProjectionCheckpointService(
     dispose(): Promise<void> {
       if (disposeTask) return disposeTask;
       stopping = true;
-      for (const entry of entries.values()) void requestRelease(entry, "renderer-disposed");
+      for (const entry of entries.values())
+        void requestRelease(entry, "renderer-disposed");
       disposeTask = entries.size
         ? new Promise<void>((resolve) => idle.add(resolve))
         : Promise.resolve();
@@ -753,7 +839,10 @@ export function installNativeProjectionCheckpointReceiver(
     // window must never close this window's mounted input or admit local saves.
     const window = getCurrentWebviewWindow();
     for (const [name, callback] of [
-      ["native-projection-finished", (payload: unknown) => service.handleFinished(payload)],
+      [
+        "native-projection-finished",
+        (payload: unknown) => service.handleFinished(payload),
+      ],
       [
         "native-projection-challenge",
         (payload: unknown) => {
@@ -767,7 +856,9 @@ export function installNativeProjectionCheckpointReceiver(
         },
       ],
     ] as const) {
-      const unlisten = await window.listen<unknown>(name, (event) => callback(event.payload));
+      const unlisten = await window.listen<unknown>(name, (event) =>
+        callback(event.payload),
+      );
       if (stopping) {
         unlisten();
         return;
@@ -781,7 +872,10 @@ export function installNativeProjectionCheckpointReceiver(
     const settled = service.dispose();
     disposal = (async () => {
       await ready.catch(() => {});
-      for (const name of ["native-projection-prepare", "native-projection-challenge"]) {
+      for (const name of [
+        "native-projection-prepare",
+        "native-projection-challenge",
+      ]) {
         subscriptions.get(name)?.();
         subscriptions.delete(name);
       }

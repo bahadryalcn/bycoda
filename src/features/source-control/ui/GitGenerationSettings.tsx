@@ -78,9 +78,7 @@ export function GitGenerationModelControl({
         values={values}
         project={cwd}
         allowedHarnesses={TEXT_HARNESSES}
-        hideSettings
         showEffortSummary
-        showExtras
         extrasDisabled={disabled}
         onChange={(nextHarness, nextModel) => {
           if (disabled) return;

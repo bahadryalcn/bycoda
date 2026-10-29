@@ -148,7 +148,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     loadClaudeHooks,
     subscribeClaudeHooks,
   );
-  const [scope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
+  const [selectedScope, setScope] = useState<string>(GLOBAL_PROVIDER_SCOPE);
   const [hiddenGlobally, setHiddenGlobally] = useStoredPreferenceState(
     loadHiddenPickerProviders,
     subscribePickerVisibility,
@@ -195,6 +195,10 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
     return options;
   }, [getLocale(), cwd, recents]);
 
+  // A project that left the options falls back to Global without rewriting the selection.
+  const scope = scopeOptions.some((option) => option.value === selectedScope)
+    ? selectedScope
+    : GLOBAL_PROVIDER_SCOPE;
   const project = scope === GLOBAL_PROVIDER_SCOPE ? null : scope;
   const projectSettings = project ? loadProjectProviderSettings(project) : {};
   // A project without overrides inherits the global default provider, the same
@@ -206,12 +210,6 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   useEffect(() => {
     void probeHarnessAvailability();
   }, []);
-
-  useEffect(() => {
-    if (!scopeOptions.some((option) => option.value === scope)) {
-      setScope(GLOBAL_PROVIDER_SCOPE);
-    }
-  }, [scope, scopeOptions]);
 
   const onClaudeHooks = (next: boolean) => {
     saveClaudeHooks(next);
@@ -1023,7 +1021,7 @@ function ProviderCliHeader({ harness }: { harness: HarnessId }) {
         settingIds={[`cli-path-${harness}`]}
         title={t("CLI path and installation")}
       >
-        <ProviderBinaryControl provider={harness} showLabel />
+        <ProviderBinaryControl key={harness} provider={harness} showLabel />
         {!available && hasProbedHarnessAvailability() ? (
           <section className="provider-cli-install">
             <h3>{t("Installation help")}</h3>

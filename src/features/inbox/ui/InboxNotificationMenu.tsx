@@ -1,6 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   inboxHasUnseenItems,
   knownInboxEntries,
@@ -31,15 +31,32 @@ type Props = {
 export function InboxNotificationMenu({ x, y, projectPaths, onOpenSettings, onClose }: Props) {
   useLocale();
   const notificationProjects = useNotificationProjects(projectPaths);
-  const [saveError, setError] = useState<string | null>(null);
-  const [customOpen, setCustomOpen] = useState(false);
   useInboxSeenTick();
   const preferences = useProjectNotificationPreferences();
   const pathsKey = JSON.stringify(projectPaths);
-  useEffect(() => {
-    setCustomOpen(false);
-    setError(null);
-  }, [pathsKey]);
+  // Dialog state belongs to the project set it was opened for; a different set
+  // starts closed and error-free without a reset effect.
+  const [local, setLocal] = useState({
+    key: pathsKey,
+    customOpen: false,
+    error: null as string | null,
+  });
+  const scoped =
+    local.key === pathsKey ? local : { key: pathsKey, customOpen: false, error: null };
+  const customOpen = scoped.customOpen;
+  const saveError = scoped.error;
+  const setCustomOpen = (next: boolean) =>
+    setLocal((previous) => ({
+      ...(previous.key === pathsKey ? previous : { key: pathsKey, error: null }),
+      key: pathsKey,
+      customOpen: next,
+    }));
+  const setError = (next: string | null) =>
+    setLocal((previous) => ({
+      ...(previous.key === pathsKey ? previous : { customOpen: false }),
+      key: pathsKey,
+      error: next,
+    }));
   const entries = knownInboxEntries(projectPaths);
   const hasUnread = inboxHasUnseenItems(entries);
 

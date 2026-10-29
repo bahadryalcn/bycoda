@@ -81,6 +81,34 @@ describe("pacing uncle", () => {
     expect(ctx.fillRect).toHaveBeenCalled();
     vi.unstubAllGlobals();
   });
+  it("draws a different character for each crew theme, classic being the rosary uncle", () => {
+    vi.stubGlobal(
+      "Path2D",
+      class {
+        rect() {}
+      },
+    );
+    const fills = (theme: "classic" | "lotr" | "star-wars") => {
+      const colors = new Set<string>();
+      const target: Record<string, unknown> = {};
+      const ctx = new Proxy(target, {
+        get: (_, key: string) => (key in target ? target[key] : (target[key] = vi.fn())),
+        set: (_, key: string, value: unknown) => {
+          if (key === "fillStyle") colors.add(String(value));
+          target[key] = value;
+          return true;
+        },
+      }) as unknown as CanvasRenderingContext2D;
+      for (let t = 0; t < 20; t += 0.2) drawPacingUncle(ctx, 80, 32, t, theme);
+      return [...colors].sort().join("|");
+    };
+    const classic = fills("classic");
+    expect(classic).not.toBe("");
+    expect(fills("lotr")).not.toBe(classic);
+    expect(fills("star-wars")).not.toBe(classic);
+    expect(fills("lotr")).not.toBe(fills("star-wars"));
+    vi.unstubAllGlobals();
+  });
   it("leaves the canvas untouched while the frame does not change", () => {
     const target: Record<string, unknown> = {};
     const ctx = new Proxy(target, {

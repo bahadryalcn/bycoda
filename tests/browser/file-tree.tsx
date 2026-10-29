@@ -27,12 +27,22 @@ const dirs = new Map<string, FsEntry[]>([
       entry("src", "/fixture", true),
       entry("dest", "/fixture", true),
       entry("bulk", "/fixture", true),
+      entry("assets", "/fixture", true),
       entry("a.ts"),
       entry("b.ts"),
     ],
   ],
   ["/fixture/src", [entry("deep.ts", "/fixture/src")]],
   ["/fixture/dest", []],
+  [
+    "/fixture/assets",
+    [
+      entry("images", "/fixture/assets", true),
+      entry("logo.svg", "/fixture/assets"),
+      entry("a-very-long-asset-file-name-for-narrow-sidebars.min.generated.svg", "/fixture/assets"),
+    ],
+  ],
+  ["/fixture/assets/images", [entry("hero.png", "/fixture/assets/images")]],
   [
     "/fixture/bulk",
     Array.from({ length: 350 }, (_, i) =>
@@ -44,7 +54,13 @@ const callbacks = new Map<number, (event: unknown) => void>(),
   listeners = new Map<string, number>();
 let nextId = 0;
 const operations: { command: string; args: Record<string, unknown> }[] = [];
-const operationState = { hold: false, finish: () => {} };
+const operationState = {
+  hold: false,
+  finish: () => {},
+  /** Holds the next create_path until `finishCreate` runs, to show the pending row. */
+  holdCreate: false,
+  finishCreate: () => {},
+};
 Object.assign(window, {
   treeOperationState: operationState,
   treeNativeEmit: (name: string, payload: unknown) =>
@@ -85,6 +101,19 @@ Object.assign(window, {
         );
         return path;
       }
+      if (command === "create_path") {
+        operations.push({ command, args });
+        if (operationState.holdCreate)
+          await new Promise<void>((resolve) => {
+            operationState.finishCreate = resolve;
+          });
+        const parent = String(args.parent),
+          name = String(args.name);
+        // Names starting with "denied" stand in for a permission/remote rejection.
+        if (name.startsWith("denied")) throw new Error(`Permission denied: cannot create ${name}`);
+        dirs.set(parent, [...(dirs.get(parent) ?? []), entry(name, parent, Boolean(args.isDir))]);
+        return `${parent}/${name}`;
+      }
       if (command === "copy_path") {
         operations.push({ command, args });
         const parent = String(args.destParent),
@@ -115,7 +144,12 @@ function Fixture() {
             className="flex min-h-0 max-w-full flex-col"
             style={{ width: "min(320px,100vw)" }}
           >
-            <FileTree cwd="/fixture" rootLabel="Fixture" onOpenFile={(path) => setOpened(path)} />
+            <FileTree
+              cwd="/fixture"
+              rootLabel="Fixture"
+              onOpenFile={(path) => setOpened(path)}
+              onSearch={() => setOpened("search")}
+            />
           </section>
           <output aria-label="Opened file" className="min-w-0 flex-1 truncate">
             {opened}

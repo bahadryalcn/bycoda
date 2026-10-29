@@ -2,7 +2,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { t, useLocale } from "../../../shared/i18n";
-import { useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useContext, useRef, useState, useSyncExternalStore } from "react";
 import { findModel } from "../../sessions/model/models";
 import { orchestrator } from "../model/orchestration";
 import { orchestrationTaskLabel, type OrchestrationSummary } from "../model/orchestrationSummary";
@@ -32,13 +32,16 @@ export function OrchestrationSidebarAgents({
   const pending = pendingAction !== null;
   const inFlight = useRef(false);
   // Rows expand independently, so several agents can be watched side by side.
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
   // Revealing a worker from its toast opens that row without closing others.
   const revealed = workers.selectedId;
-  useEffect(() => {
-    if (revealed)
-      setExpanded((current) => (current.has(revealed) ? current : new Set(current).add(revealed)));
-  }, [revealed]);
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(
+    () => new Set(revealed ? [revealed] : []),
+  );
+  const [seenRevealed, setSeenRevealed] = useState(revealed);
+  if (revealed !== seenRevealed) {
+    setSeenRevealed(revealed);
+    if (revealed && !expanded.has(revealed)) setExpanded(new Set(expanded).add(revealed));
+  }
   const toggle = (sessionId: string, isOpen: boolean) => {
     setExpanded((current) => {
       const next = new Set(current);

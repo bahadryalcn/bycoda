@@ -46,3 +46,55 @@ it("keeps the textarea's text node when a parent re-renders with the latest draf
     vi.restoreAllMocks();
   }
 });
+
+it("projects an accepted external draft into Send and refuses to replace an IME composition", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const render = (initialDraft: string | undefined) =>
+    root.render(
+      createElement(Composer, {
+        focused: false,
+        harness: "codex",
+        model: "",
+        runtimeMode: "supervised",
+        executionCwd: "~",
+        initialDraft,
+        hideTopBar: true,
+        onFocus: vi.fn(),
+        onCwdChange: vi.fn(),
+        onModelChange: vi.fn(),
+        onRuntimeModeChange: vi.fn(),
+        onSubmit: vi.fn(),
+      }),
+    );
+  const send = () => container.querySelector<HTMLButtonElement>('button[aria-label="Send"]')!;
+  try {
+    await act(async () => render(undefined));
+    const textarea = container.querySelector("textarea")!;
+    expect(send().disabled).toBe(true);
+    // The parent hands the mounted, empty input a nonempty draft.
+    await act(async () => render("/plan "));
+    expect(textarea.value).toBe("/plan ");
+    expect(send().disabled).toBe(false);
+
+    // A different external draft arriving mid-composition leaves the input alone.
+    await act(async () => {
+      textarea.dispatchEvent(new Event("compositionstart", { bubbles: true }));
+      textarea.value = "/plan 你";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => render("something else"));
+    expect(textarea.value).toBe("/plan 你");
+    await act(async () => {
+      textarea.dispatchEvent(new Event("compositionend", { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(textarea.value).toBe("/plan 你");
+  } finally {
+    act(() => root.unmount());
+    container.remove();
+    vi.restoreAllMocks();
+  }
+});

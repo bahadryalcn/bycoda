@@ -18,10 +18,15 @@ import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { JobHistory } from "./SocialHistory";
 import type { SocialContact, SocialSnapshot, SocialThread } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
-import { REMOTE_PROVIDERS } from "../../connections/model/protocol";
+import { SocialModelField } from "./SocialModelField";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { DEFAULT_SOCIAL_POLICIES, effectiveSocialPolicy } from "../model/socialPolicy";
 import { DraftList } from "./SocialDrafts";
+import {
+  CONTACT_IMPORT_MAX_BYTES,
+  previewContactImport,
+  type ContactImportPreview,
+} from "../model/socialContactImport";
 import { SocialBulkComposer } from "./SocialBulkComposer";
 import { contactTarget } from "./socialBulk";
 import {
@@ -58,6 +63,7 @@ export function Audience({
   const [createRequest, setCreateRequest] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const importSection = useRef<HTMLDetailsElement>(null);
+  const [importPreview, setImportPreview] = useState<{ name: string; preview: ContactImportPreview }>();
   useEffect(() => {
     if (importOpen) importSection.current?.scrollIntoView({ block: "nearest" });
   }, [importOpen]);
@@ -132,7 +138,7 @@ export function Audience({
               })();
             }}
           >
-            <h3>{t("Create segment")}</h3>
+            <h3 className="sr-only">{t("Create segment")}</h3>
             <TextField
               disabled={socialLocked}
               label={t("Name")}
@@ -140,19 +146,21 @@ export function Audience({
               maxLength={200}
               required
             />
-            <TextField
-              disabled={socialLocked}
-              label={t("User-provided tags")}
-              name="tags"
-              placeholder={t("Separate with commas")}
-            />
-            <TextField
-              disabled={socialLocked}
-              label={t("Language")}
-              name="language"
-              maxLength={30}
-              placeholder="tr"
-            />
+            <div className="social-form-pair">
+              <TextField
+                disabled={socialLocked}
+                label={t("User-provided tags")}
+                name="tags"
+                placeholder={t("Separate with commas")}
+              />
+              <TextField
+                disabled={socialLocked}
+                label={t("Language")}
+                name="language"
+                maxLength={30}
+                placeholder="tr"
+              />
+            </div>
             <Projects
               projects={projects}
               selected={selectedProjects}
@@ -178,19 +186,21 @@ export function Audience({
         data-empty={!snapshot.contacts.length}
       >
         <section className="social-collection-list">
-          <h2>
-            {t("Contacts")} <small>{contacts.length}</small>
-          </h2>
+          <div className="social-list-heading">
+            <h2>
+              {t("Contacts")} <small>{contacts.length}</small>
+            </h2>
+          </div>
           <div className="social-list-tools">
-            <label>
-              {t("Search contacts or tags")}
-              <SearchInput
-                disabled={socialLocked}
-                appearance="field"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-            </label>
+            <SearchInput
+              className="social-list-search"
+              aria-label={t("Search contacts or tags")}
+              placeholder={t("Name or tag")}
+              disabled={socialLocked}
+              appearance="field"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
             <SocialFilters
               activeCount={Number(!!segment) + Number(!!accountFilter)}
               onReset={() => {
@@ -368,35 +378,98 @@ export function Audience({
           )}
           <details ref={importSection} className="social-settings" open={importOpen} onToggle={(event) => setImportOpen(event.currentTarget.open)}>
             <summary>{t("Import contacts")}</summary>
-            <p className="text-ui-caption text-(--ui-text-secondary)">{t("JSON array, up to 1 MiB. Fields: accountId, platformId, name, projectIds, tags, language. Import does not grant sending permission.")}</p>
+            <p className="text-ui-caption text-(--ui-text-secondary)">{t("Choose a JSON file. You review every row before anything is imported, and importing never grants permission to message anyone.")}</p>
             <TextField
-              disabled={socialLocked}
+              key={importPreview?.name ?? "no-file"}
+              disabled={socialLocked || pendingUi.is("contacts.import")}
               label={t("JSON contact list")}
               type="file"
               accept="application/json,.json"
               onChange={(event) => {
                 const file = event.target.files?.[0];
-                if (file)
-                  void pendingUi.run("contacts.import", () =>
-                    run(async () => {
-                      if (file.size > 1024 * 1024)
-                        throw new Error(t("The import can be at most 1 MiB."));
-                      const contacts = JSON.parse(await file.text());
-                      if (!Array.isArray(contacts))
-                        throw new Error(t("The file must contain a JSON contact list."));
-                      await client.request("contacts.import", { contacts });
-                    }),
-                  );
+                if (!file) return;
+                void (async () => {
+                  const preview: ContactImportPreview =
+                    file.size > CONTACT_IMPORT_MAX_BYTES
+                      ? { rows: [], error: t("The import can be at most 1 MiB.") }
+                      : previewContactImport(await file.text(), {
+                          accounts: snapshot.accounts,
+                          projectIds: projects.map((project) => project.id),
+                        });
+                  setImportPreview({ name: file.name, preview });
+                })();
               }}
             />
+            {importPreview ? (() => {
+              const { preview } = importPreview;
+              const valid = preview.rows.filter((row) => row.contact);
+              const invalid = preview.rows.filter((row) => !row.contact);
+              const ignored = [...new Set(preview.rows.flatMap((row) => row.ignored))];
+              return (
+                <div className="social-import-preview" role="group" aria-label={t("Import preview")}>
+                  {preview.error ? (
+                    <Notice kind="error" title={t("This file cannot be imported")}>{preview.error}</Notice>
+                  ) : (
+                    <>
+                      <p>
+                        <strong>{importPreview.name}</strong> · {t("{p0} contacts ready", { p0: valid.length })}
+                        {invalid.length ? " · " + t("{p0} rows need attention", { p0: invalid.length }) : ""}
+                      </p>
+                      {invalid.length ? (
+                        <Notice kind="warning" title={t("These rows will be skipped")}>
+                          <ul>
+                            {invalid.slice(0, 8).map((row) => (
+                              <li key={row.row}>{t("Row {p0}", { p0: row.row })}: {row.issues.join(" ")}</li>
+                            ))}
+                          </ul>
+                          {invalid.length > 8 ? <p>{t("And {p0} more rows.", { p0: invalid.length - 8 })}</p> : null}
+                        </Notice>
+                      ) : null}
+                      {ignored.length ? (
+                        <p className="text-ui-caption text-(--ui-text-secondary)">
+                          {t("Not imported: {p0}. Consent and eligibility are never taken from a file.", { p0: ignored.join(", ") })}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
+                  <div className="social-actions">
+                    {!preview.error && valid.length ? (
+                      <Button
+                        loading={pendingUi.is("contacts.import")}
+                        disabled={socialLocked}
+                        onClick={() =>
+                          void (async () => {
+                            if (
+                              await pendingUi.run("contacts.import", () =>
+                                run(
+                                  () => client.request("contacts.import", { contacts: valid.map((row) => row.contact) }),
+                                  t("{p0} contacts imported. They have no messaging consent yet.", { p0: valid.length }),
+                                ),
+                              )
+                            )
+                              setImportPreview(undefined);
+                          })()
+                        }
+                      >
+                        {invalid.length ? t("Import {p0} valid contacts", { p0: valid.length }) : t("Import {p0} contacts", { p0: valid.length })}
+                      </Button>
+                    ) : null}
+                    <Button variant="ghost" disabled={socialLocked || pendingUi.is("contacts.import")} onClick={() => setImportPreview(undefined)}>
+                      {t("Choose another file")}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })() : null}
             {pendingUi.is("contacts.import") ? (
               <Progress label={t("Operation in progress…")} />
             ) : null}
-            <p>
-              {t(
-                "The accountId, platformId, name, projectIds, tags and language fields can be used. Importing does not create sending permission.",
-              )}
-            </p>
+            <details>
+              <summary>{t("File format")}</summary>
+              <p className="text-ui-caption text-(--ui-text-secondary)">
+                {t("JSON array, up to 1 MiB and 500 contacts. Fields: accountId, platformId, name, projectIds, tags, language, profileUrl.")}
+              </p>
+            </details>
           </details>
         </section>
         <section className="social-collection-detail" hidden={!snapshot.contacts.length}>
@@ -590,7 +663,7 @@ function ContactForm({
         })();
       }}
     >
-      <h3>{contact ? t("Update contact") : t("New contact")}</h3>
+      <h3 className="sr-only">{contact ? t("Update contact") : t("New contact")}</h3>
       <label>
         {t("Account")}
         <NativeSearchableSelect
@@ -636,21 +709,23 @@ function ContactForm({
         defaultValue={contact?.profileUrl}
         placeholder="https://"
       />
-      <TextField
-        disabled={socialLocked}
-        label={t("Tags")}
-        name="tags"
-        defaultValue={contact?.tags.join(", ")}
-        placeholder={t("Separate with commas")}
-      />
-      <TextField
-        disabled={socialLocked}
-        label={t("Language")}
-        name="language"
-        maxLength={30}
-        defaultValue={contact?.language}
-        placeholder="tr"
-      />
+      <div className="social-form-pair">
+        <TextField
+          disabled={socialLocked}
+          label={t("Tags")}
+          name="tags"
+          defaultValue={contact?.tags.join(", ")}
+          placeholder={t("Separate with commas")}
+        />
+        <TextField
+          disabled={socialLocked}
+          label={t("Language")}
+          name="language"
+          maxLength={30}
+          defaultValue={contact?.language}
+          placeholder="tr"
+        />
+      </div>
       <Projects projects={projects} selected={projectIds} onChange={setProjectIds} />
       <details className="social-settings">
         <summary>{t("Contact eligibility and explicit consent")}</summary>
@@ -958,34 +1033,16 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
             </label>
             <details className="social-settings">
               <summary>{t("Use a different AI agent for this rule")}</summary>
-              <label>
-                {t("AI agent for this rule")}
-                <NativeSelect
-                  disabled={socialLocked}
-                  value={agent}
-                  onChange={(event) => {
-                    setAgent(event.target.value);
-                    setAgentModel("");
-                  }}
-                >
-                  <option value="">{t("Inherit the global / platform agent")}</option>
-                  {REMOTE_PROVIDERS.map((id) => (
-                    <option key={id} value={id}>
-                      {HARNESS_TITLE[id]}
-                    </option>
-                  ))}
-                </NativeSelect>
-              </label>
-              {agent ? (
-                <TextField
-                  disabled={socialLocked}
-                  label={t("AI model for this rule")}
-                  value={agentModel}
-                  maxLength={200}
-                  placeholder={t("Empty: the agent's default model")}
-                  onChange={(event) => setAgentModel(event.target.value)}
-                />
-              ) : null}
+              <SocialModelField
+                label={t("AI agent and model for this rule")}
+                inheritLabel={t("Use the global agent")}
+                disabled={socialLocked}
+                value={{ provider: agent, model: agentModel }}
+                onChange={(next) => {
+                  setAgent(next.provider);
+                  setAgentModel(next.model);
+                }}
+              />
             </details>
             <details className="social-settings">
               <summary>{t("Advanced options: daily limit and stop phrases")}</summary>

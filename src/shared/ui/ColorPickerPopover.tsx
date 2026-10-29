@@ -2,6 +2,7 @@ import { useT } from "../i18n";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -106,14 +107,17 @@ export function ColorPickerPopover({ value, onChange, disabled = false, readOnly
   const svRef = useRef<HTMLDivElement>(null);
   const hueRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  // Follow an external value change during render; keep the current hue when it already maps to the value.
+  const [syncedValue, setSyncedValue] = useState(value);
+  if (syncedValue !== value) {
     const hex = normalizeHex(value);
-    const previous = currentHsv.current;
-    const next = hsvToHex(previous.h, previous.s, previous.v) === hex ? previous : hexToHsv(hex);
-    currentHsv.current = next;
-    setHsv(next);
+    setSyncedValue(value);
+    setHsv(hsvToHex(hsv.h, hsv.s, hsv.v) === hex ? hsv : hexToHsv(hex));
     setHexDraft(hex);
-  }, [value]);
+  }
+  useLayoutEffect(() => {
+    currentHsv.current = hsv;
+  }, [hsv]);
   useEffect(() => () => dragCleanup.current?.(), []);
 
   const inert = disabled || readOnly;

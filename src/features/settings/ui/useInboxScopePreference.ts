@@ -55,7 +55,11 @@ export function useInboxScopePreference<T extends string | number>(
     if (pending.current) update(pending.current);
     else reload();
   }, [reload, update]);
+  // The initial state already read the current scope; only a new owner or key needs a fresh read.
+  const loadedFor = useRef({ owner, reload });
   useEffect(() => {
+    if (loadedFor.current.owner === owner && loadedFor.current.reload === reload) return;
+    loadedFor.current = { owner, reload };
     pending.current = null;
     reload();
   }, [owner, reload]);

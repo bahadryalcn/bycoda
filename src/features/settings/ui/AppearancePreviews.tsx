@@ -1,6 +1,7 @@
 import { themePalette } from "../../../shared/theme/palette";
+import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { t, useLocale } from "../../../shared/i18n";
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Group, Row, Segmented, Select, Slider } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
@@ -97,58 +98,86 @@ export function accentSourceLabel(a: { accentColor: string | null }) {
   return palette ? t("Accent: {p0} palette", { p0: palette.name }) : t("Accent: custom");
 }
 
-/** Uses the real action, selection and bubble roles; clicks affect only this sample. */
-export function AccentUsagePreview() {
+/** The palette's own surface values for its swatch; these show a selectable option, not live UI. */
+function paletteSwatch(p: (typeof presets)[number], light: boolean): CSSProperties {
+  const saturation = light ? Math.round(p.saturation * 0.2) : p.saturation;
+  const base = light ? 94 : p.lightness + 5;
+  const raised = light ? 100 : p.lightness + 13;
+  return {
+    "--palette-base": `hsl(${p.hue} ${saturation}% ${base}%)`,
+    "--palette-raised": `hsl(${p.hue} ${saturation}% ${raised}%)`,
+    "--palette-accent": p.accent,
+  } as CSSProperties;
+}
+
+/**
+ * One live sample of the current appearance: surface steps, text, link, selection and the
+ * accent action. Every color is a theme role, so it follows the palette, accent, mode and
+ * contrast as they change. It is a picture, not a control (inert), and has no state of its own.
+ */
+export function AppearancePreview() {
   useLocale();
-  const [sent, setSent] = useState(false);
-  const [selected, setSelected] = useState(true);
   return (
-    <Row
-      label={t("Preview")}
-      feedback={
-        sent ? (
-          <p
-            role="status"
-            className="user-message-bubble m-0 w-fit max-w-full rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-content"
-          >
-            {t("Message")}
+    <figure className="appearance-preview">
+      <figcaption className="appearance-preview-title">{t("Preview")}</figcaption>
+      <div className="appearance-preview-window" inert aria-hidden="true">
+        <div className="appearance-preview-rail">
+          <span>{t("Workspace")}</span>
+          <span data-selected="true">{t("Chat")}</span>
+          <span>{t("Terminal")}</span>
+        </div>
+        <div className="appearance-preview-main">
+          <p className="user-message-bubble appearance-preview-bubble">{t("Message")}</p>
+          <p className="appearance-preview-text">
+            {PRODUCT_IDENTITY.displayName} <mark>{t("Selection")}</mark>{" "}
+            <span className="appearance-preview-link">Aa</span>
           </p>
-        ) : undefined
-      }
-    >
-      <Button variant="primary" tone="accent" aria-pressed={sent} onClick={() => setSent(!sent)}>
-        {t("Send")}
-      </Button>
-      <Button
-        variant="item"
-        selected={selected}
-        aria-pressed={selected}
-        onClick={() => setSelected(!selected)}
-      >
-        {t("Selection")}
-      </Button>
-    </Row>
+          <div className="appearance-preview-lines">
+            <i />
+            <i />
+          </div>
+          <div className="appearance-preview-composer">
+            <span className="appearance-preview-placeholder" />
+            <Button variant="primary" tone="accent" size="sm" tabIndex={-1}>
+              {t("Send")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </figure>
   );
 }
 
-/** Mode and palette. Accent has its own topic because it is an override on top of the palette. */
-export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSettings }) {
+/** Mode, palette and accent as one related group; the caller supplies the accent rows. */
+export function AppearanceStudio({
+  appearance: a,
+  children,
+}: {
+  appearance: AppearanceSettings;
+  children?: ReactNode;
+}) {
   useLocale();
   const light = useColorScheme() === "light";
   const selected = matchThemePalette(a);
+  const resetScope = t(
+    "Resets the color scheme, palette tint, accent and accent readability. Other appearance settings stay.",
+  );
   const resetColors = () => {
     a.onThemePreference(THEME_PREFERENCE_DEFAULT);
     a.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
     a.onDarkLightness(THEME_DARK_LIGHTNESS_DEFAULT);
     a.onAccentColor(ACCENT_COLOR_DEFAULT);
+    // Accent readability is a color preference, so it returns to Auto with the accent.
+    a.onPreferences({ ...a.preferences, accentReadability: APPEARANCE_DEFAULTS.accentReadability });
   };
   return (
     <Group
       title={t("Color scheme")}
+      description={resetScope}
       action={
         <Button
           variant="ghost"
-          tooltip={t("Resets the color scheme, palette tint and accent. Other appearance settings stay.")}
+          tooltip={resetScope}
           startIcon={<RotateCcw aria-hidden className="icon-sm" />}
           onClick={resetColors}
         >
@@ -160,7 +189,11 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
         id="theme"
         label={t("Mode")}
         scope={
-          <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
+          a.themePreference === "system" ? (
+            <span role="status">
+              {t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}
+            </span>
+          ) : undefined
         }
       >
         <Segmented<ThemePreference>
@@ -195,7 +228,7 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
         label={t("Theme palettes")}
         scope={
           selected
-            ? t("{p0} is selected. One palette, in daylight or after hours.", { p0: selected.name })
+            ? undefined
             : t("Your custom colors are active. Adjust them in Custom surface colors.")
         }
       >
@@ -205,6 +238,7 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
             return (
               <Button
                 variant="item"
+                align="start"
                 selected={on}
                 key={p.name}
                 className="appearance-palette"
@@ -216,27 +250,22 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
                   a.onAccentColor(p.accent);
                 }}
               >
-                {/* The dot shows the selectable palette's own data; control colors remain semantic. */}
                 <span
-                  className="appearance-palette-dot"
+                  className="appearance-palette-swatch"
                   aria-hidden="true"
-                  style={
-                    {
-                      "--palette-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
-                      "--palette-accent": p.accent,
-                    } as CSSProperties
-                  }
+                  style={paletteSwatch(p, light)}
                 >
                   <i />
-                  <i />
+                  <b />
                 </span>
                 <span className="appearance-palette-name">{p.name}</span>
-                {on ? <Check aria-hidden className="icon-xs" strokeWidth={2} /> : null}
+                {on ? <Check aria-hidden className="icon-xs ms-auto" strokeWidth={2} /> : null}
               </Button>
             );
           })}
         </div>
       </Row>
+      {children}
     </Group>
   );
 }

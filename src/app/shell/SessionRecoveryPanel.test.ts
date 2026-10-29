@@ -89,6 +89,20 @@ async function click(label: string) {
   });
 }
 
+async function maintain(label: string) {
+  await act(async () => {
+    container
+      .querySelector<HTMLButtonElement>('button[aria-label="Recovery list maintenance"]')!
+      .click();
+  });
+  const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((row) =>
+    row.getAttribute("aria-label")?.startsWith(label),
+  )!;
+  await act(async () => {
+    item.click();
+  });
+}
+
 describe("session recovery navigation", () => {
   it("keeps failed verification distinct from missing records and retries that read", async () => {
     vi.mocked(getSession)
@@ -136,22 +150,22 @@ describe("session recovery navigation", () => {
   });
   it("removes selected entries without opening or deleting conversations", async () => {
     act(() => container.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    await click("Remove selected");
+    await maintain("Remove 1 selected from list");
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(["alpha"]);
     expect(onOpen).not.toHaveBeenCalled();
     expect(onClose).not.toHaveBeenCalled();
   });
   it("clears completed entries while preserving working entries", async () => {
     render([], recovery, [sessions[0], { ...sessions[1], busy: false, blocks: [] }]);
-    await click("Clear completed");
+    await maintain("Remove 1 completed from list");
     expect(onRemove).toHaveBeenCalledExactlyOnceWith(["beta"]);
   });
   it("reports cleanup errors and leaves entries available to retry", async () => {
     onRemove.mockRejectedValueOnce(new Error("disk"));
-    await click("Clear list");
+    await maintain("Clear recovery list (2)");
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("Try again");
     expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
-    await click("Clear list");
+    await maintain("Clear recovery list (2)");
     expect(container.querySelector('[role="alert"]')).toBeNull();
   });
   beforeEach(() => {
@@ -332,5 +346,74 @@ describe("session recovery navigation", () => {
     render([], remoteRecovery, []);
     expect(container.textContent).toContain("2 previous sessions");
     localStorage.clear();
+  });
+  it("names list maintenance truthfully with target counts and keeps it out of the main actions", async () => {
+    const direct = [...container.querySelectorAll("button")].map((button) => button.textContent);
+    expect(direct.some((text) => text?.startsWith("Clear"))).toBe(false);
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="Recovery list maintenance"]')!
+        .click();
+    });
+    const rows = [...document.querySelectorAll('[role="menuitem"]')];
+    expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
+      "Remove 0 selected from list",
+      "Remove 0 completed from list",
+      "Clear recovery list (2)",
+    ]);
+    expect(rows[0].hasAttribute("disabled")).toBe(true);
+    expect(rows[2].getAttribute("aria-description")).toContain("history is kept");
+  });
+  it("states the Open all scope in visible text, including entries hidden by search", () => {
+    expect(container.textContent).toContain("Open all opens all 2 recovered sessions.");
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search recovered sessions"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "alpha",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain(
+      "Open all opens all 2 recovered sessions, including 1 not shown here.",
+    );
+    expect(container.textContent).toContain("Showing 1 of 2");
+  });
+  it("separates a search miss from an empty attention filter and offers a way out", async () => {
+    const finished = {
+      ...sessions[1],
+      busy: false,
+      blocks: [{ id: "done", role: "user" as const, text: "Task", durationMs: 10 }],
+    };
+    render([], recovery, [{ ...sessions[0], busy: false, blocks: finished.blocks }, finished]);
+    expect(container.textContent).toContain("No sessions need attention");
+    await click("Show all sessions");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Search recovered sessions"]',
+    )!;
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "zzz",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(container.textContent).toContain("No matching sessions");
+    await click("Clear search");
+    expect(container.querySelectorAll('input[type="checkbox"]')).toHaveLength(2);
+  });
+  it("shows open failures next to the open actions and list failures with the list", async () => {
+    onOpen.mockRejectedValueOnce(new Error("missing"));
+    await click("Open all");
+    expect(container.querySelector(".recovery-footer [role='alert']")).not.toBeNull();
+    onRemove.mockRejectedValueOnce(new Error("disk"));
+    await maintain("Clear recovery list (2)");
+    expect(container.querySelector(".recovery-footer [role='alert']")).toBeNull();
+    expect(container.querySelector(".recovery-pane > [role='alert']")?.textContent).toContain(
+      "Try again",
+    );
   });
 });

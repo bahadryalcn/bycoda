@@ -69,13 +69,11 @@ export function WorktreePicker({
     const frame = requestAnimationFrame(() => search.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [open]);
-  useEffect(() => {
-    if (!enabled) {
-      setOpen(false);
-      setCreating(false);
-      setBranchPicker(false);
-    }
-  }, [enabled]);
+  if (!enabled && (open || creating || branchPicker)) {
+    setOpen(false);
+    setCreating(false);
+    setBranchPicker(false);
+  }
   const dismiss = () => {
     setOpen(false);
     setQuery("");

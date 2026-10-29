@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { isZoomWheel, wheelZoomFactor } from "../../features/files/ui/documentZoom";
 import { claimTrackpadMagnify } from "../../platform/tauri/trackpadZoom";
 
@@ -21,7 +21,20 @@ export function useImageZoom(ref: RefObject<HTMLElement | null>, source: string,
     if (drag.current && ref.current?.hasPointerCapture?.(drag.current.id)) ref.current.releasePointerCapture(drag.current.id);
     drag.current = null; update(FIT);
   }, [ref, update]);
-  useEffect(reset, [source, reset]);
+  // A different image starts at fit: adjust during render instead of resetting in an effect.
+  const [zoomSource, setZoomSource] = useState(source);
+  if (zoomSource !== source) { setZoomSource(source); setValue(FIT); }
+  useLayoutEffect(() => { current.current = FIT; }, [source]);
+  // Leaving an image (or unmounting) ends an in-flight drag and releases its pointer capture.
+  useEffect(() => {
+    const element = ref.current;
+    return () => {
+      const start = drag.current;
+      const target = ref.current ?? element;
+      if (start && target?.hasPointerCapture?.(start.id)) target.releasePointerCapture(start.id);
+      drag.current = null;
+    };
+  }, [ref, source]);
   const zoom = useCallback((factor: number, clientX?: number, clientY?: number) => {
     const element = ref.current;
     const box = element?.getBoundingClientRect();

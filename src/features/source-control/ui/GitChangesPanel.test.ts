@@ -6,6 +6,13 @@ import { resetGitIndexStore } from "../model/gitIndexStore";
 import { resetGitResourceCache } from "../hooks/useGitResource";
 import { resetGitPanelState, withGitOperation } from "../model/gitPanelState";
 
+vi.mock("../../../shared/model/appConfirm", async () => {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return {
+    confirmInApp: (request: { title: string; message: string; confirmLabel: string }) =>
+      ask(request.message, { title: request.title, okLabel: request.confirmLabel }),
+  };
+});
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   ask: vi.fn(async () => true),
   message: vi.fn(async () => {}),
@@ -1512,8 +1519,11 @@ describe("GitChangesPanel loading and publication recovery", () => {
     vi.mocked(gitDiffIndex).mockResolvedValue(index());
     await act(async () => trust.click());
     expect(ask).toHaveBeenLastCalledWith(
-      expect.stringContaining("/repo-untrusted"),
-      expect.objectContaining({ okLabel: "Trust this repository" }),
+      expect.stringContaining("safe.directory"),
+      expect.objectContaining({
+        title: expect.stringContaining("/repo-untrusted"),
+        okLabel: "Trust this repository",
+      }),
     );
     expect(gitTrustRepository).toHaveBeenCalledExactlyOnceWith("/repo-untrusted");
   });

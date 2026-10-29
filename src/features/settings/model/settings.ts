@@ -762,6 +762,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     keywords: "borders secondary text softer stronger",
   },
   {
+    id: "accent-readability",
+    section: "appearance",
+    get label() {
+      return t("Accent readability");
+    },
+    keywords: "accent color contrast text selection readable auto strong buttons",
+  },
+  {
     id: "chat-width",
     section: "chat",
     get label() {
