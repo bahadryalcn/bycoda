@@ -1,6 +1,7 @@
 import { subscribePreferenceChanges } from "../../../shared/lib/storedSetting";
 import { invoke } from "@tauri-apps/api/core";
 import { projectName } from "../../../shared/lib/paths";
+import { t } from "../../../shared/i18n";
 import type { Session } from "../../sessions/model/session";
 import { loadSoundsEnabled, playCue } from "../../settings/model/sounds";
 import { isProjectLocked } from "../../group-lock/model/groupLock";
@@ -292,7 +293,7 @@ export async function notifyDailySummary(headline: string): Promise<boolean> {
   return deliver({
     sessionId: BACKGROUND_NOTIFICATION_TARGETS.summary,
     kind: "finished",
-    title: "Daily summary",
+    title: t("Daily summary"),
     subtitle: "",
     body: headline,
     projectName: "",

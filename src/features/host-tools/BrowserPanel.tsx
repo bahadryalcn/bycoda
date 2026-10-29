@@ -275,7 +275,9 @@ function ProjectBrowserPanel({
         });
     }, 90);
   };
-  const action = async (work: () => Promise<unknown>) => {
+  // `keepSelection` marks a failure that left the capture valid (for example a
+  // composer that rejected delivery), so it stays selected and can be retried.
+  const action = async (work: () => Promise<unknown>, keepSelection?: { current: boolean }) => {
     if (pending.current || !alive.current) return;
     pending.current = true;
     const version = generation.current;
@@ -286,7 +288,7 @@ function ProjectBrowserPanel({
     } catch (cause) {
       if (alive.current && version === generation.current) {
         setError(cause instanceof Error ? cause.message : String(cause));
-        setSelection(undefined);
+        if (!keepSelection?.current) setSelection(undefined);
       }
     } finally {
       if (version === generation.current) {
@@ -490,6 +492,7 @@ function ProjectBrowserPanel({
         {t("Shared host browser")}
         {hostLabel ? ` · ${hostLabel}` : ""}
       </h3>
+      <div className="host-browser-bar">
       <form
         className="host-browser-toolbar"
         aria-label={t("Open a website")}
@@ -518,7 +521,7 @@ function ProjectBrowserPanel({
           tooltip={t("Open website")}
           disabled={busy || selecting || setupRequired || !validUrl}
         >
-          <Globe className="icon-md" aria-hidden />
+          <Globe className="icon-sm" aria-hidden />
         </Button>
         <Button
           motion="none"
@@ -530,7 +533,7 @@ function ProjectBrowserPanel({
           disabled={busy || !state?.open}
           onClick={() => void action(() => request("browser.frame"))}
         >
-          <RefreshCw className="icon-md" aria-hidden />
+          <RefreshCw className="icon-sm" aria-hidden />
         </Button>
       </form>
       <div
@@ -550,9 +553,9 @@ function ProjectBrowserPanel({
           onClick={() => setLive((value) => !value)}
         >
           {live ? (
-            <Pause className="icon-md" aria-hidden />
+            <Pause className="icon-sm" aria-hidden />
           ) : (
-            <Play className="icon-md" aria-hidden />
+            <Play className="icon-sm" aria-hidden />
           )}
         </Button>
         <Button
@@ -565,7 +568,7 @@ function ProjectBrowserPanel({
           disabled={!frame}
           onClick={() => setActualSize((value) => !value)}
         >
-          <Maximize2 className="icon-md" aria-hidden />
+          <Maximize2 className="icon-sm" aria-hidden />
         </Button>
         <Button
           ref={controlsTrigger}
@@ -581,11 +584,8 @@ function ProjectBrowserPanel({
             setControlsOpen((open) => !open);
           }}
         >
-          <SlidersHorizontal className="icon-md" aria-hidden />
+          <SlidersHorizontal className="icon-sm" aria-hidden />
         </Button>
-        <span className="sr-only" role="status">
-          {browserStatus}
-        </span>
         <Button
           motion="none"
           type="button"
@@ -617,7 +617,7 @@ function ProjectBrowserPanel({
             })
           }
         >
-          <CursorMagicSelection className="icon-md" aria-hidden />
+          <CursorMagicSelection className="icon-sm" aria-hidden />
         </Button>
         {selecting ? (
           <Button
@@ -628,7 +628,7 @@ function ProjectBrowserPanel({
             tooltip={t("Cancel selection")}
             onClick={cancelSelection}
           >
-            <X className="icon-md" aria-hidden />
+            <X className="icon-sm" aria-hidden />
           </Button>
         ) : null}
         {selection ? (
@@ -647,7 +647,7 @@ function ProjectBrowserPanel({
               setSelectionOpen((value) => !value);
             }}
           >
-            <MessageSquarePlus className="icon-md" aria-hidden />
+            <MessageSquarePlus className="icon-sm" aria-hidden />
           </Button>
         ) : null}
         <span className="host-browser-action-spacer" />
@@ -667,7 +667,7 @@ function ProjectBrowserPanel({
             disabled={busy}
             onClick={() => void action(() => request("browser.claim", { takeover: true }))}
           >
-            <Lock className="icon-md" aria-hidden />
+            <Lock className="icon-sm" aria-hidden />
           </Button>
         ) : null}
         {state?.open && state.controlling ? (
@@ -681,15 +681,32 @@ function ProjectBrowserPanel({
             disabled={busy}
             onClick={() => void action(() => request("browser.release"))}
           >
-            <LockOpen className="icon-md" aria-hidden />
+            <LockOpen className="icon-sm" aria-hidden />
           </Button>
         ) : null}
       </div>
-      {state?.url && state.url !== url.trim() ? (
-        <p className="sr-only" title={state.url}>
-          {state.url}
-        </p>
-      ) : null}
+      </div>
+      {/* Visible state: page the host is on, browser/control state, in-flight
+          work and why element selection may be unavailable. */}
+      <div className="host-browser-statusline" data-browser-state={
+        !state ? (error ? "unavailable" : "checking") : state.open ? "open" : "closed"
+      }>
+        <span className="host-browser-state-chip" role="status">
+          <span className="host-browser-state-dot" aria-hidden />
+          {busy ? t("Working on the host…") : browserStatus}
+        </span>
+        {state?.open && state.url ? (
+          <span className="host-browser-current-url" title={state.url}>
+            <span className="host-browser-current-label">{t("Current page")}</span>
+            {state.url}
+          </span>
+        ) : null}
+        {!annotationsAllowed ? (
+          <span className="host-browser-restriction">
+            {t("Browser selections can be attached only on this conversation's project host.")}
+          </span>
+        ) : null}
+      </div>
       {error ? (
         <div className="host-browser-error">
           <details role="alert">
@@ -735,11 +752,6 @@ function ProjectBrowserPanel({
                 </p>
               </InfoPopover>
             </div>
-          ) : null}
-          {!annotationsAllowed ? (
-            <p className="sr-only">
-              {t("Browser selections can be attached only on this conversation's project host.")}
-            </p>
           ) : null}
           {limitation ? (
             <Alert tone="info" role="status">
@@ -910,24 +922,31 @@ function ProjectBrowserPanel({
                 type="button"
                 variant="primary"
                 disabled={!canInput}
-                onClick={() =>
+                onClick={() => {
+                  const deliveryFailed = { current: false };
                   void action(async () => {
                     const result = await request("browser.annotation.read");
                     if (!result?.selection || !composerSessionId || !sessionId) return;
-                    await attachBrowserSelectionAcrossWindows(
-                      cwd,
-                      composerSessionId,
-                      sessionId,
-                      result.selection,
-                      comment,
-                      composerWindow,
-                    );
+                    try {
+                      await attachBrowserSelectionAcrossWindows(
+                        cwd,
+                        composerSessionId,
+                        sessionId,
+                        result.selection,
+                        comment,
+                        composerWindow,
+                      );
+                    } catch (cause) {
+                      // The capture and comment are still valid; keep them for a retry.
+                      deliveryFailed.current = true;
+                      throw cause;
+                    }
                     cancelSelection();
                     setNotice(t("Added to composer. Review the attachment and send when ready."));
-                  })
-                }
+                  }, deliveryFailed);
+                }}
               >
-                {t("Add selection to composer")}
+                {error ? t("Retry adding selection") : t("Add selection to composer")}
               </Button>
               <Button
                 motion="none"
@@ -947,6 +966,11 @@ function ProjectBrowserPanel({
                 {t("Remove selection")}
               </Button>
             </div>
+            {error ? (
+              <p role="alert" className="host-browser-target text-danger">
+                {error}
+              </p>
+            ) : null}
             <details className="host-browser-disclosure">
               <summary>{t("Details")}</summary>
               <BrowserAnnotationDetails annotation={selection} />
@@ -1007,7 +1031,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "key", key: "Enter" }))}
               >
-                <CornerDownRight className="icon-md" aria-hidden />
+                <CornerDownRight className="icon-sm" aria-hidden />
               </Button>
               <Button
                 motion="none"
@@ -1018,7 +1042,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "scroll", y: -500 }))}
               >
-                <ChevronUp className="icon-md" aria-hidden />
+                <ChevronUp className="icon-sm" aria-hidden />
               </Button>
               <Button
                 motion="none"
@@ -1029,7 +1053,7 @@ function ProjectBrowserPanel({
                 disabled={!canPageInput}
                 onClick={() => void action(() => input({ kind: "scroll", y: 500 }))}
               >
-                <ChevronDown className="icon-md" aria-hidden />
+                <ChevronDown className="icon-sm" aria-hidden />
               </Button>
             </div>
             {canPageInput ? null : (

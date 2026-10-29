@@ -164,6 +164,7 @@ function isStatusStep(block: Block): boolean {
  * neither work nor chrome, so it keeps its own row live and settled alike.
  */
 export function isActivityBlock(block: Block): boolean {
+  if (block.inlineVisual) return false;
   if (isThinkingBlock(block)) return true;
   if (block.role === "system") {
     // A command the user ran is theirs, not the agent's work: it keeps its row.

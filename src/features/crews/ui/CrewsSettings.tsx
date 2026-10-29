@@ -4,6 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Plus } from "../../../shared/ui/icons";
 import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
+import "../../settings/ui/SettingsCollection.css";
 import { useProjectCrews } from "../model/crewClient";
 import { saveCrewsOnRail, useCrewsOnRail } from "../model/crewAppearance";
 import { CrewAvatar } from "./CrewAvatar";
@@ -28,6 +29,7 @@ export function CrewsSettings({
   const shown = useCrewsOnRail();
   const state = useProjectCrews(cwd);
   const data = state.data;
+  const noProject = !cwd || cwd === "~";
   const [dialog, setDialog] = useState<{
     crewId?: string;
     createScope?: "project" | "global";
@@ -70,6 +72,9 @@ export function CrewsSettings({
               >
                 {state.error.message}
               </Alert>
+            ) : noProject ? (
+              // The query is disabled without a real project folder: say so instead of loading forever.
+              <Alert tone="info">{t("Open a project to manage its crews.")}</Alert>
             ) : (
               <Alert tone="info">{t("Loading crews…")}</Alert>
             )}
@@ -98,43 +103,46 @@ export function CrewsSettings({
             {data.definitions.length === 0 ? (
               <Row label={t("No crews yet")} />
             ) : (
-              data.definitions.map((crew) => (
-                <Row
-                  key={crew.id}
-                  label={
-                    // Scope and size are data, not help text: they stay visible in the row.
-                    <span className="flex min-w-0 items-center gap-2">
-                      <CrewAvatar crew={crew} className="icon-md" />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate">{crew.name}</span>
-                        <span className="truncate text-ui-caption font-normal text-(--ui-text-secondary)">
+              <div className="settings-collection">
+                <div
+                  className="settings-collection-list"
+                  role="region"
+                  aria-label={t("Your crews")}
+                  tabIndex={0}
+                >
+                  {data.definitions.map((crew) => (
+                    <div key={crew.id} className="settings-collection-row">
+                      <CrewAvatar crew={crew} className="icon-md shrink-0" />
+                      <div className="settings-collection-main">
+                        <p className="settings-collection-title">{crew.name}</p>
+                        {/* Scope and size are data, not help text: they stay visible in the row. */}
+                        <p className="settings-collection-meta">
                           {[
                             crew.projectId ? t("This project") : t("All projects on this host"),
                             t("{p0} members", { p0: crew.agents.length }),
                           ].join(" · ")}
-                        </span>
-                      </span>
-                    </span>
-                  }
-                >
-                  <div className="flex flex-wrap items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      aria-label={t("Crew work: {p0}", { p0: crew.name })}
-                      onClick={() => setManagedCrewId(crew.id)}
-                    >
-                      {t("Crew work")}
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      aria-label={t("Edit {p0}", { p0: crew.name })}
-                      onClick={() => setDialog({ crewId: crew.id })}
-                    >
-                      {t("Edit")}
-                    </Button>
-                  </div>
-                </Row>
-              ))
+                        </p>
+                      </div>
+                      <div className="settings-collection-actions">
+                        <Button
+                          variant="ghost"
+                          aria-label={t("Crew work: {p0}", { p0: crew.name })}
+                          onClick={() => setManagedCrewId(crew.id)}
+                        >
+                          {t("Crew work")}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          aria-label={t("Edit {p0}", { p0: crew.name })}
+                          onClick={() => setDialog({ crewId: crew.id })}
+                        >
+                          {t("Edit")}
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </>
         )}

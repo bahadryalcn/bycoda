@@ -322,7 +322,7 @@ export const PromptOutline = memo(function PromptOutline({
             </p>
           ) : null}
           {preview.detail ? (
-            <p className="line-clamp-2 border-l-2 border-(--ui-tone-neutral-border) pl-3 text-sm leading-snug text-(--ui-text-secondary)">
+            <p className="line-clamp-2 text-ui-caption leading-snug text-(--ui-text-secondary)">
               {preview.detail}
             </p>
           ) : null}

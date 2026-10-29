@@ -7,6 +7,9 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction, TransactionBe
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod checkpoint;
+pub(crate) use checkpoint::{validate_capture_at, EditorDraftValidationReceipt};
+
 const MAX_SAFE: u64 = 9_007_199_254_740_991;
 const MAX_TEXT: usize = 2 * 1024 * 1024;
 const MAX_DOCUMENT: usize = 4 * 1024 * 1024;

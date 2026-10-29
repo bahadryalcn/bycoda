@@ -28,7 +28,7 @@ import {
   type JiraTransition,
 } from "../model/jiraBoard";
 import "./jira-board.css";
-import { JIRA_CHANGE_EVENT, loadHiddenJiraProjectIds } from "../model/jira";
+import { JIRA_CHANGE_EVENT, readHiddenJiraProjectIds } from "../model/jira";
 
 type Group = {
   id: string;
@@ -97,6 +97,7 @@ export function JiraBoardView({
   const mounted = useRef(true);
   const operation = useRef(false);
   const readOperation = useRef(false);
+  const writeFailed = useRef(false);
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
   const scopeIdentity = useRef("");
@@ -181,9 +182,12 @@ export function JiraBoardView({
       setLoading(false);
       return;
     }
+    const keepWriteError = writeFailed.current;
+    writeFailed.current = false;
     if (operation.current) return;
     setLoading(true);
-    setError(null);
+    // The reload that follows a failed write must not hide why the write failed.
+    if (!keepWriteError) setError(null);
     if (!changed) setGroups((old) => old.map((group) => ({ ...group, stale: true })));
     setPick(null);
     setMoveKey(null);
@@ -359,7 +363,8 @@ export function JiraBoardView({
     configuration?.rankFieldId != null &&
     !search.trim() &&
     !groups.some((g) => g.token || !g.loaded || g.stale || g.error) &&
-    loadHiddenJiraProjectIds().length === 0;
+    // An unreadable saved scope disables ranking rather than assuming nothing is hidden.
+    readHiddenJiraProjectIds()?.length === 0;
 
   async function mutate(action: () => Promise<void>) {
     if (operation.current || readOperation.current) return;
@@ -370,11 +375,15 @@ export function JiraBoardView({
     setNotice("");
     setPick(null);
     setMoveKey(null);
+    writeFailed.current = false;
     try {
       await action();
       if (generation.current === request) setNotice(t("Saved to Jira"));
     } catch (reason) {
-      if (generation.current === request) setError(message(reason));
+      if (generation.current === request) {
+        writeFailed.current = true;
+        setError(message(reason));
+      }
     } finally {
       operation.current = false;
       if (mounted.current) {
@@ -562,7 +571,7 @@ export function JiraBoardView({
     return (
       <article
         key={issue.identifier}
-        className="jira-board-card rounded-(--radius-control) border border-(--ui-tone-neutral-border) bg-(--ui-surface) p-2"
+        className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-2"
         data-dragging={dragKey === issue.identifier || undefined}
         data-drop={hover === id || undefined}
         data-jira-drop={id}
@@ -595,6 +604,17 @@ export function JiraBoardView({
             </span>
             <span className="text-ui-caption text-(--ui-text-secondary)">{issue.identifier}</span>
           </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Drag {p0}", { p0: issue.identifier })}
+            disabled={locked}
+            motion="none"
+            data-jira-drag-handle=""
+            className="jira-board-drag-handle shrink-0"
+          >
+            <GripVertical className="icon-sm" aria-hidden="true" />
+          </Button>
           <InlineAction
             reveal="always"
             disabled={locked || items.length === 0}
@@ -609,21 +629,10 @@ export function JiraBoardView({
             <MoreHorizontal className="icon-sm" aria-hidden="true" />
           </InlineAction>
         </ActionHost>
-        <div className="mt-1 flex min-w-0 items-center gap-2 text-ui-caption text-(--ui-text-secondary)">
+        <div className="flex min-w-0 items-center gap-2 px-3 pb-1 text-ui-caption text-(--ui-text-secondary)">
           <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
             {issue.state} · {issue.assignees[0]?.login ?? t("Unassigned")}
           </span>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Drag {p0}", { p0: issue.identifier })}
-            disabled={locked}
-            motion="none"
-            data-jira-drag-handle=""
-            className="jira-board-drag-handle shrink-0"
-          >
-            <GripVertical className="icon-sm" aria-hidden="true" />
-          </Button>
         </div>
         {moveKey === id && moveAnchor ? (
           <DropdownMenu
@@ -691,12 +700,21 @@ export function JiraBoardView({
         }),
       );
     } catch (reason) {
-      if (request === generation.current)
+      if (request === generation.current) {
+        // A board without backlog support is a capability note, not a failed read.
+        const backlogUnsupported =
+          group.id === "backlog" && /backlogs? (?:are|is) not supported/i.test(message(reason));
+        if (backlogUnsupported) setBacklogUnavailable(true);
         setGroups((old) =>
           old.map((g) =>
-            g.id === group.id ? { ...g, error: message(reason), autoPaused: true } : g,
+            g.id !== group.id
+              ? g
+              : backlogUnsupported
+                ? { ...g, issues: [], token: null, loaded: true, stale: false, error: undefined }
+                : { ...g, error: message(reason), autoPaused: true },
           ),
         );
+      }
     } finally {
       readOperation.current = false;
       if (mounted.current) setReadingGroup(null);
@@ -743,9 +761,9 @@ export function JiraBoardView({
       aria-label={t("Jira board")}
       aria-busy={loading || busy}
     >
-      <div className="flex shrink-0 flex-wrap items-end gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
-        <label className="grid min-w-0 gap-1 text-ui-caption text-(--ui-text-secondary)">
-          {t("Board")}
+      <div className="jira-board-band flex shrink-0 flex-wrap items-center gap-2 px-3 py-2">
+        <label className="min-w-0">
+          <span className="sr-only">{t("Board")}</span>
           <SearchableSelect
             label={t("Jira board")}
             options={
@@ -779,8 +797,8 @@ export function JiraBoardView({
           />
         </fieldset>
         {mode === "kanban" ? (
-          <label className="grid min-w-0 gap-1 text-ui-caption text-(--ui-text-secondary)">
-            {t("Issue scope")}
+          <label className="min-w-0">
+            <span className="sr-only">{t("Issue scope")}</span>
             <SearchableSelect
               label={t("Issue scope")}
               options={[
@@ -801,13 +819,14 @@ export function JiraBoardView({
             />
           </label>
         ) : null}
-        <label className="grid min-w-40 flex-1 gap-1 text-ui-caption text-(--ui-text-secondary)">
-          {t("Filter loaded issues")}
+        <label className="min-w-40 flex-1">
+          <span className="sr-only">{t("Filter loaded issues")}</span>
           <SearchInput
             appearance="field"
             fieldSize="sm"
             type="search"
             aria-label={t("Filter loaded issues")}
+            placeholder={t("Filter loaded issues")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -847,7 +866,7 @@ export function JiraBoardView({
         <p className="jira-board-hint">
           {search.trim()
             ? t("Ranking is disabled while filtering. Status and sprint moves remain available.")
-            : loadHiddenJiraProjectIds().length
+            : (readHiddenJiraProjectIds()?.length ?? 1)
               ? t("Ranking is unavailable while projects are hidden.")
               : t(
                   "Ranking is unavailable until all board groups and pages are loaded and current.",
@@ -922,7 +941,7 @@ export function JiraBoardView({
                 data-jira-group={group.id}
                 data-jira-column={index}
               >
-                <header className="sticky top-0 z-1 mb-2 flex min-w-0 items-center gap-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1 py-2">
+                <header className="sticky top-0 z-1 mb-2 flex min-w-0 items-center gap-2 bg-(--color-background-base) px-1 py-2">
                   <h2 className="min-w-0 flex-1 break-words text-ui-secondary font-medium [overflow-wrap:anywhere]">
                     {column.name}
                   </h2>
@@ -958,7 +977,7 @@ export function JiraBoardView({
               aria-label={t("Unmapped statuses")}
               onScroll={(event) => demand(event, groups[0])}
             >
-              <header className="sticky top-0 z-1 mb-2 border-b border-(--ui-tone-neutral-border) bg-(--ui-surface) px-1 py-2">
+              <header className="sticky top-0 z-1 mb-2 bg-(--color-background-base) px-1 py-2">
                 <h2 className="text-ui-secondary font-medium">{t("Unmapped statuses")}</h2>
               </header>
               {visible(
@@ -992,7 +1011,7 @@ export function JiraBoardView({
             return (
               <section
                 key={group.id}
-                className="jira-board-sprint mb-3 rounded-(--radius-control) border border-(--ui-tone-neutral-border) p-2"
+                className="jira-board-sprint mb-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) p-2"
                 data-drop={hover === group.id || undefined}
                 aria-label={group.name}
                 data-jira-drop={group.id}

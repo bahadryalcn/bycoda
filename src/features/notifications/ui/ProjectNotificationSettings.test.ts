@@ -324,3 +324,24 @@ it("dismisses the mute menu and custom date picker without changing preferences"
   expect(document.activeElement).toBe(trigger);
   expect(loadNotificationPreferences()["repository:github.com/me/private"]).toBeUndefined();
 });
+
+it("shows unreadable saved choices as unavailable, pauses edits and recovers on retry", async () => {
+  updateNotificationPreferences(["repository:github.com/me/private"], { disabled: ["issues"] });
+  localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+  await act(async () =>
+    root.render(createElement(ProjectNotificationSettings, { cwd: "/work/target" })),
+  );
+  expect(container.textContent).toContain("Saved project notification choices could not be read");
+  await act(async () => categoriesButton("me/private").click());
+  const issues = checkbox("Issues and Linear tasks for me/private");
+  expect(issues.hasAttribute("disabled")).toBe(true);
+
+  localStorage.setItem("bycoda.projectNotifications.v1", "{}");
+  await act(async () => {
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Retry")!
+      .click();
+  });
+  expect(container.textContent).not.toContain("could not be read");
+  expect(checkbox("Issues and Linear tasks for me/private").hasAttribute("disabled")).toBe(false);
+});

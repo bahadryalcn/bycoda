@@ -83,7 +83,8 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
     "src/features/a-very-long-feature-directory/another-long-nested-directory/selected-hunk-review.ts";
   await expect(page.getByTitle(repository, { exact: true })).toBeVisible();
   const file = page.locator(`[data-diff-file="${repository}/${relative}"]`);
-  await expect(file.locator("header span[title]").first()).toHaveAttribute(
+  // The file header is a labelled action group; its middle-truncated path keeps the full path in `title`.
+  await expect(file.getByRole("group").first().locator("span[title]").first()).toHaveAttribute(
     "title",
     /selected-hunk-review\.ts/,
   );
@@ -93,7 +94,7 @@ test("hunk targets retain identity and allow keyboard and pointer recovery after
   await page.keyboard.press("Enter");
   await expect(page.getByRole("alert")).toContainText("Fixture index.lock");
   await expect(file).toBeVisible();
-  await expect(file.locator("header button[aria-expanded]")).toHaveAttribute(
+  await expect(file.getByRole("group").first().locator("button[aria-expanded]")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -182,7 +183,10 @@ test("repository overview collapses with keyboard and preserves open panels and 
   await expect(message).toHaveValue("Keep my submodule draft");
   await overview.click();
   await selector.click();
-  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
+  // Option names carry the path description (label + path) in the accessible name.
+  await page
+    .getByRole("option", { name: "Submodule · core-pack /fixture/core-pack", exact: true })
+    .click();
   await expect(overview).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByRole("textbox", { name: "Commit message", exact: true })).toHaveValue(
     "Keep my submodule draft",
@@ -198,7 +202,10 @@ test("repository choice survives sidebar remount and reload before delayed submo
   const selector = page.getByRole("button", { name: /^Repository:/ });
   await expect(page.locator('[data-git-repository="/fixture/core-pack"]')).toBeVisible();
   await selector.click();
-  await page.getByRole("option", { name: "Submodule · core-pack", exact: true }).click();
+  // Option names carry the path description (label + path) in the accessible name.
+  await page
+    .getByRole("option", { name: "Submodule · core-pack /fixture/core-pack", exact: true })
+    .click();
   await expect(selector).toContainText("Submodule · core-pack");
   await page.evaluate(async () => {
     await (window as unknown as { gitFixtureRemount: () => Promise<void> }).gitFixtureRemount();
@@ -512,7 +519,7 @@ test("checkout rows preserve identity, keyboard selection and searchable selecti
   await page.getByRole("combobox").fill("audit");
   await page
     .getByRole("option", {
-      name: "audit/2026-10-14-long-branch-name-for-responsive-review · /trees/audit/very-long-worktree-folder-name",
+      name: "audit/2026-10-14-long-branch-name-for-responsive-review · /trees/audit/very-long-worktree-folder-name /trees/audit/very-long-worktree-folder-name",
       exact: true,
     })
     .click();

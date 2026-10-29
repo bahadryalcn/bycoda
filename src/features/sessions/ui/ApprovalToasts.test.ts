@@ -173,7 +173,7 @@ it("limits a backlog of twenty requests to three popups and lists all in the cen
   expect(button("Notifications").textContent).toBe("20");
   act(() => button("View all pending requests (20)").click());
   expect(visibleRequests()).toHaveLength(20);
-  act(() => button("Notification settings…").click());
+  act(() => button("Notification options").click());
   act(() => button("Hide all popups").click());
   act(() => button("Close").click());
   expect(visibleRequests()).toHaveLength(0);
@@ -184,7 +184,7 @@ it("limits a backlog of twenty requests to three popups and lists all in the cen
 it("persists the popup switch while keeping requests accessible", () => {
   act(() => render([notice("work", "question")]));
   act(() => button("Notifications").click());
-  act(() => button("Notification settings…").click());
+  act(() => button("Notification options").click());
   act(() => button("Show request popups").click());
   expect(localStorage.getItem("bycoda.notifications.agentInput.popups.v1")).toBe("false");
   act(() => button("Close").click());
@@ -192,7 +192,7 @@ it("persists the popup switch while keeping requests accessible", () => {
   expect(visibleRequests()).toHaveLength(0);
   act(() => button("Notifications").click());
   expect(visibleRequests()).toHaveLength(1);
-  act(() => button("Notification settings…").click());
+  act(() => button("Notification options").click());
   act(() => button("Show request popups").click());
   act(() => button("Close").click());
   expect(visibleRequests()).toHaveLength(1);
@@ -228,7 +228,7 @@ it("allows a later request to reuse a resolved request ID", () => {
   expect(visibleRequests()).toHaveLength(1);
 });
 
-it("keeps expired requests in history without approval controls and can clear them", () => {
+it("keeps expired requests in history without approval controls and can clear them", async () => {
   act(() => render([notice("work")]));
   act(() => render([]));
   act(() => button("Notifications").click());
@@ -237,17 +237,17 @@ it("keeps expired requests in history without approval controls and can clear th
   expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
   expect(document.querySelector('[role="tabpanel"] button')).toBeNull();
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toHaveLength(1);
-  act(() => button("Notification settings…").click());
+  act(() => button("Notification options").click());
   let now = 1000;
   vi.spyOn(performance, "now").mockImplementation(() => now);
   const morph = (label: string) =>
     [...document.querySelectorAll<HTMLButtonElement>("button")].find(
       (item) => !item.closest("[inert]") && item.textContent?.includes(label),
     )!;
-  act(() => morph("Clear notification history").click());
+  act(() => morph("Clear recent requests").click());
   now += 300;
-  act(() => morph("Confirm delete").click());
-  expect(document.body.textContent).toContain("No notification history");
+  await act(async () => morph("Confirm delete").click());
+  expect(document.body.textContent).toContain("No recent requests");
   expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
 });
 
@@ -444,3 +444,104 @@ it.each(["resume", "expiry", "category"] as const)(
     expect(visibleRequests()).toHaveLength(1);
   },
 );
+
+function renderWith(notices: Notice[], props: Partial<ComponentProps<typeof ApprovalToasts>> = {}) {
+  root.render(createElement(ApprovalToasts, { notices, onApproval, onFocusSession, ...props }));
+}
+
+it("keeps an unconfirmed approval retryable and blocks a second decision while it is pending", async () => {
+  let reject!: (error: Error) => void;
+  const decide = vi.fn(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
+  await act(async () => renderWith([notice("work")], { onApproval: decide }));
+  const allow = () => button("Allow") as HTMLButtonElement;
+  act(() => allow().click());
+  act(() => allow().click());
+  expect(decide).toHaveBeenCalledTimes(1);
+  expect(button("Deny").disabled).toBe(true);
+  await act(async () => reject(new Error("offline")));
+  expect(document.body.textContent).toContain("The decision may not have been delivered");
+  expect(allow().disabled).toBe(false);
+  act(() => allow().click());
+  expect(decide).toHaveBeenCalledTimes(2);
+});
+
+it("treats a false approval result as undelivered", async () => {
+  const decide = vi.fn(async () => false);
+  await act(async () => renderWith([notice("work")], { onApproval: decide }));
+  await act(async () => button("Deny").click());
+  expect(document.body.textContent).toContain("The decision may not have been delivered");
+});
+
+it("keeps history when the durable clear fails and offers a retry", async () => {
+  act(() => render([notice("work")]));
+  act(() => render([]));
+  act(() => button("Notifications").click());
+  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
+  act(() => button("Notification options").click());
+  let now = 1000;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  const morph = (label: string) =>
+    [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+      (item) => !item.closest("[inert]") && item.textContent?.includes(label),
+    )!;
+  const realSetItem = localStorage.setItem.bind(localStorage);
+  const setItem = vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (key === NOTIFICATION_HISTORY_KEY) throw new Error("quota");
+    realSetItem(key, value);
+  });
+  act(() => morph("Clear recent requests").click());
+  now += 300;
+  await act(async () => morph("Confirm delete").click());
+  expect(document.querySelector('[role="tabpanel"]')?.textContent).toContain("Request work");
+  expect(document.body.textContent).toContain("Request history could not be cleared");
+  setItem.mockRestore();
+  await act(async () => {
+    [...document.querySelectorAll<HTMLButtonElement>('[role="tabpanel"] button')]
+      .find((item) => item.textContent === "Retry")!
+      .click();
+  });
+  expect(document.body.textContent).toContain("No recent requests");
+  expect(JSON.parse(localStorage.getItem(NOTIFICATION_HISTORY_KEY)!)).toEqual([]);
+});
+
+it("does not show unreadable history as empty", () => {
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, "{broken");
+  act(() => render([]));
+  act(() => button("Notifications").click());
+  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
+  expect(document.body.textContent).toContain("Request history could not be read");
+  expect(document.body.textContent).not.toContain("No recent requests");
+});
+
+it("keeps an expanded history entry open when newer arrivals are added", () => {
+  act(() => render([notice("first", "question")]));
+  act(() => render([]));
+  act(() => button("Notifications").click());
+  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
+  const details = document.querySelector<HTMLDetailsElement>(".notification-history-details")!;
+  details.open = true;
+  act(() => render([notice("second", "question")]));
+  expect(document.querySelectorAll(".notification-history-details")).toHaveLength(2);
+  const reused = [...document.querySelectorAll<HTMLDetailsElement>(".notification-history-details")];
+  expect(reused).toContain(details);
+  expect(details.open).toBe(true);
+});
+
+it("opens a history conversation through the owner and reports an unavailable one", async () => {
+  const open = vi.fn(async () => false);
+  act(() => renderWith([notice("work", "question")], { onOpenHistorySession: open }));
+  act(() => renderWith([], { onOpenHistorySession: open }));
+  act(() => button("Notifications").click());
+  act(() => document.querySelector<HTMLButtonElement>('[role="tab"]:last-child')!.click());
+  await act(async () => button("Open session").click());
+  expect(open).toHaveBeenCalledWith("work", "/projects/work");
+  expect(document.body.textContent).toContain("This conversation is no longer available");
+  open.mockResolvedValueOnce(true as never);
+  await act(async () => button("Open session").click());
+  expect(document.querySelector('[role="dialog"]')).toBeNull();
+});

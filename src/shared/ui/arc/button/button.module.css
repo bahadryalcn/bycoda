@@ -29,7 +29,7 @@
 .danger { color: var(--danger); background: var(--surface); border-color: var(--border); }
 /* A disabled outlined button keeps its shape and fades only its label, so it still reads as a button that is off, not as plain text. */
 .secondary:disabled, .danger:disabled { opacity: 1; color: var(--text-muted); background: var(--surface-muted); border-color: var(--border); }
-.danger:disabled { color: color-mix(in oklab, var(--danger) 55%, var(--surface-muted)); }
+.danger:disabled { color: var(--ui-tone-danger-disabled-fg); }
 .ghost:disabled { opacity: 1; color: var(--text-muted); }
 @media (hover: hover) and (pointer: fine) {
   .primary:hover:not(:disabled) { box-shadow: var(--shadow-resting); }

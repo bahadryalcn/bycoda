@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { deviceCommand } from "./device-process";
-import type { DeviceAction } from "../src/features/devices/types";
+import type { DeviceAction } from "../src/shared/model/host-contracts/native-devices";
 
 const PACKAGE = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const SERIAL = /^[A-Za-z0-9_.:-]{1,200}$/;
@@ -64,12 +64,17 @@ export async function androidDeviceControl(
   adbPath: string,
   serial: string,
   action: DeviceAction,
-  options: { env?: NodeJS.ProcessEnv; command?: typeof deviceCommand } = {},
+  options: {
+    env?: NodeJS.ProcessEnv;
+    command?: typeof deviceCommand;
+    authorize?: () => Promise<void>;
+  } = {},
 ): Promise<string> {
   if (typeof serial !== "string" || !SERIAL.test(serial) || serial.startsWith("-"))
     throw new Error("Invalid Android device serial");
   const command = options.command ?? deviceCommand;
-  const run = async (args: string[], inspectErrors = true) => {
+  const run = async (args: string[], inspectErrors = true, cleanup = false) => {
+    if (!cleanup) await options.authorize?.();
     const output = await command(adbPath, ["-s", serial, "shell", ...args], {
       env: options.env,
       timeoutMs: 30_000,
@@ -136,7 +141,9 @@ export async function androidDeviceControl(
       } finally {
         if (!/^\/data\/local\/tmp\/bycoda-ui-[0-9a-f-]{36}\.xml$/.test(path))
           throw new Error("Invalid owned Android snapshot path.");
-        await run(["rm", "-f", path]);
+        // Revocation must not strand the exact temporary file this operation
+        // already created. Cleanup cannot issue input or choose another path.
+        await run(["rm", "-f", path], true, true);
       }
       break;
     }
@@ -192,5 +199,6 @@ export async function androidDeviceControl(
     default:
       throw new Error("Unsupported device action");
   }
+  await options.authorize?.();
   return JSON.stringify({ success: true, data });
 }

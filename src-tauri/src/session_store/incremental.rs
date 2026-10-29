@@ -72,13 +72,13 @@ pub(super) fn checkpoint(
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockChange {
     pub index: usize,
     pub block: Value,
 }
-#[derive(Deserialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDelta {
     pub session: SessionUpsert,
@@ -94,7 +94,16 @@ pub struct DeltaAck {
     pub revision: i64,
 }
 
+#[cfg(test)]
 pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<DeltaAck>, String> {
+    apply_observed(conn, delta, |_, _| None).map(|write| write.ack)
+}
+
+pub(super) fn apply_observed(
+    conn: &Connection,
+    delta: &SessionDelta,
+    observe: impl FnOnce(&Connection, &DeltaAck) -> Option<write_receipts::Pending>,
+) -> Result<write_receipts::ObservedWrite<DeltaAck>, String> {
     authority::assert_checkpoint(conn, &delta.session.id)?;
     validate_upsert(&delta.session)?;
     if delta.length > 1_000_000
@@ -115,10 +124,10 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
         .optional()
         .map_err(|e| e.to_string())?;
     let Some((current_updated, same_divergence)) = current else {
-        return Ok(None);
+        return Ok(write_receipts::ObservedWrite::absent());
     };
     if current_updated != delta.expected_updated_at {
-        return Ok(None);
+        return Ok(write_receipts::ObservedWrite::absent());
     }
     let state: Option<(i64, i64)> = tx
         .query_row(
@@ -132,7 +141,7 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
         return Err("Transcript delta requires a full checkpoint".into());
     };
     if revision != delta.expected_revision {
-        return Ok(None);
+        return Ok(write_receipts::ObservedWrite::absent());
     }
     let revision = revision + 1;
     let id = &delta.session.id;
@@ -218,11 +227,16 @@ pub(super) fn apply(conn: &Connection, delta: &SessionDelta) -> Result<Option<De
         params![id, revision, delta.length as i64],
     )
     .map_err(|e| e.to_string())?;
-    tx.commit().map_err(|e| e.to_string())?;
-    Ok(Some(DeltaAck {
+    let ack = DeltaAck {
         updated_at,
         revision,
-    }))
+    };
+    let pending = observe(&tx, &ack);
+    tx.commit().map_err(|e| e.to_string())?;
+    Ok(write_receipts::ObservedWrite {
+        ack: Some(ack),
+        pending,
+    })
 }
 
 #[tauri::command(async)]
@@ -230,10 +244,12 @@ pub fn session_apply_delta(
     window: tauri::Window,
     store: State<'_, SessionStore>,
     delta: SessionDelta,
-) -> Result<Option<DeltaAck>, String> {
+    capture_output_receipt: Option<bool>,
+) -> Result<Option<write_receipts::NativeWriteAck<DeltaAck>>, String> {
+    let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
     crate::native_window_lifecycle::session_persistence_write(&window, &delta.session.id, || {
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        apply(&conn, &delta)
+        write_receipts::apply_delta(&store, &conn, &delta, owner)
     })
 }
 

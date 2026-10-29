@@ -21,6 +21,7 @@ import {
   reportQuitPoll,
 } from "./app/model/appLifecycle";
 import { hydrateComposerDrafts } from "./features/sessions/data/composerDraftStore";
+import { installNativeProjectionCheckpointReceiver } from "./features/sessions/data/nativeProjectionCheckpoint";
 import { homeDir, pathEnvironment } from "./platform/tauri/fs";
 import { setHomeDir, setPathEnvironment } from "./shared/lib/paths";
 import { consumeInstalledUpdate } from "./app/model/updateNotice";
@@ -33,6 +34,12 @@ import { installNativeContextMenuGuard } from "./shared/lib/nativeContextMenu";
 
 const removeContextMenuGuard = installNativeContextMenuGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
+const nativeProjectionReceiver = installNativeProjectionCheckpointReceiver();
+void nativeProjectionReceiver.ready.catch(() => undefined);
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    void nativeProjectionReceiver.dispose();
+  });
 import { bootstrap } from "./app/model/bootstrap";
 import { BootFailure } from "./app/shell/BootFailure";
 import { RecoveryBoundary } from "./shared/ui/RecoveryBoundary";

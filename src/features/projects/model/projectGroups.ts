@@ -197,13 +197,14 @@ export function rebaseProjectGroupAssignment(from: string, to: string): void {
   saveProjectGroupAssignments(next);
 }
 
+/** False when the group does not exist or the change could not be saved. */
 export function updateProjectGroup(
   id: string,
   update: (group: ProjectGroup) => ProjectGroup,
-): void {
+): boolean {
   const current = loadProjectGroups();
-  if (!current.some((group) => group.id === id)) return;
-  saveProjectGroups(current.map((group) => (group.id === id ? update(group) : group)));
+  if (!current.some((group) => group.id === id)) return false;
+  return saveProjectGroups(current.map((group) => (group.id === id ? update(group) : group)));
 }
 
 /**

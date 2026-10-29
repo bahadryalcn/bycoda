@@ -178,7 +178,7 @@ it("prevents overwriting a concurrently updated scope and reloads only on explic
   await save();
   expect(request).not.toHaveBeenCalled();
   const reset = Array.from(container.querySelectorAll("button")).find(
-    (button) => button.textContent === "Load saved settings",
+    (button) => button.textContent === "Discard edits and load saved settings",
   )!;
   await act(async () => reset.click());
   expect(container.querySelector<HTMLInputElement>('[name="maxCommentCharacters"]')!.value).toBe(

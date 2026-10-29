@@ -7,6 +7,76 @@ description: "bycoda mobile feature map: Expo routes, pairing, projects, session
 
 Purpose: connect a phone to the selected execution Host and preserve authenticated project/session controls across pairing, networking and recovery. Keywords: mobile, phone, Android, iOS, pairing, QR, LAN, Tailscale, private network, projects, sessions, terminal, PTY, Jira, preview, devices.
 
+## Mobile redesign source delivery, 2026-10-29
+
+Current owner authorization supersedes the historical read-only mobile inventory
+for this separate redesign scope. Exact owner quote, interactive session
+`93c125ce-4280-457f-9997-2282ea0fe504`, 2026-10-29:
+
+> G:\Projects\my_projects\monocode\mobile uygulamasını bütün ekranları
+> ve ortak componentleriyle baştan sona yeniden tasarla ve kodda tamamla.
+
+Mobile source baseline: separate repository `main` at
+`1ccad06216ce21f934a15f16206c81f2e3a6d174`. The redesign is uncommitted;
+no build, installation or release is implied. Parent Host/native architecture
+files and the pre-existing mobile transport test are excluded. No live feature
+claim API was exposed; available thread state and both Git roots were inspected.
+Three native workers owned disjoint feature directories; root integrated shared UI.
+
+The single complete surface tracker is
+`mobile/temp/local/2026-10-29-mobile-redesign/TODO.md`: 17 route/layout wrappers,
+65 shared presentation owners, 65 workspace, 73 management/Inbox and 41
+connection/settings/Host-tool presentation owners. It distinguishes source
+implementation from native/live acceptance; retained conforming consumers inherit
+shared facade changes. No second audit/checklist was created.
+
+Shared owners: `mobile/src/ui/tokens.ts`, `styles.ts`, `design-system.ts`,
+`navigation-row.tsx`, `select-field.tsx`, `record-card.tsx`, `floating-tab-bar.tsx`,
+`chat-composer.tsx`, `chat-activity.tsx`, `dialogs.tsx`, `buttons.tsx`,
+`machine-bar.tsx`, `brand.tsx`, `message-diagram.tsx`. Delivered behavior includes
+neutral white/graphite surfaces, compact hierarchy, unboxed lists, stable 48dp
+targets, full-width composer text above actions, and local save/review feedback.
+Feature consumers add task-based Tools groups, settings groups, flat Inbox
+reading sections, file/Git peer navigation, bounded suggestion reveal and shared
+sheet footer actions. Draft/storage/default/identity/approval and uncertain-write
+owners remain authoritative. Guides and eight existing locale catalogs updated.
+
+Evidence lives in `mobile/temp/verification/2026-10-29-mobile-redesign/complete/`.
+The first pass's 125 captures covered only 25 scenarios and did not establish complete
+visual acceptance. The owner reopened the work with the exact quote "Tamam devam et
+ozaman hepsini bitirelim /goal ile" in the same interactive redesign session on
+2026-10-29. Three native workers completed disjoint domain follow-ups; root integrated
+shared owners and the single tracker.
+
+Continuation removes multiplied nested Card gutters, gives task lists clear session
+and overflow actions, makes short preferences content-sized, keeps operation review
+footers reachable, separates Git row/menu targets, enlarges the queue editor and
+removes the embedded browser's repeated title. Default HTML uses semantic theme colors.
+
+Latest evidence: 193 actual-source synthetic scenarios, both themes at 390/320 widths:
+772 configurations / 1639 current captures / 360 local presentation actions. Complete
+contact sheets and corrected full images were opened; final metadata has zero blanks,
+page errors, overflow, unexpected consent or failed actions. Twenty additional web
+landscape/approximately 200% text captures and composer focus/draft checks passed.
+The source map explicitly separates 240 web consumers, 17 route/layout wrappers and
+four native-only counterparts; source helpers are mapped through named consumers,
+not counted as independent screens. Fixtures refuse writes and are not live acceptance.
+
+Normal `pnpm typecheck` (tsc-rs) and theme/UI/runtime/eight-locale checks passed.
+The full test snapshot passed 225 suites/992 tests; two import/mock failures were
+repaired and rerun, passing two suites/eight tests. Final relevant rerun passed five
+suites/16 tests. Source identity and concurrent transport exclusions are recorded in
+`complete/source-manifest.json`; no commit, staging, build, install or release was
+performed by this task. Existing shared index changes were preserved.
+
+Android emulator exists, but `com.bycoda.mobile` is absent and existing Expo Go
+failed to download the development update. Installation is expressly prohibited.
+iOS simulation needs macOS/Xcode. Native IME, Back, TalkBack, Dynamic Type,
+rotation, physical-device and connected permitted-Host acceptance remain open.
+Web/fixture evidence does not close them. `source-manifest.json` identifies the
+working source; installed/released source inclusion remains unknown/excluded as
+recorded in the single tracker.
+
 ## Inventory and concurrency
 
 Desktop/Host inventory starts at the s0 contract baseline. Mobile inventory was refreshed read-only on 2026-10-26 for F1 item 12 from `G:/Projects/my_projects/monocode/mobile`, a separate nested Git repository excluded from this branch. Its HEAD was `e480dac5f66e068e17cfc54a623a4d5aa7bacc39`; the inspected working snapshot had 159 changed tracked entries and 46 untracked entries. Those dirty files are part of this source inventory, not delivered by the HEAD or copied into this worktree. Counts are observations at inventory time, not stable repository properties.

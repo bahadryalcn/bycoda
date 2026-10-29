@@ -4,6 +4,7 @@ import type {
   PlanBuildTarget,
 } from "../../sessions/model/session";
 import type { ApprovalDecision, UserQuestionReply } from "../../../integrations/harness";
+import type { ProviderAccountProvider } from "../../providers/model/providerAccounts";
 
 type RemoteActions = {
   buildPlan: (blockId: string, target?: PlanBuildTarget) => void;
@@ -13,6 +14,8 @@ type RemoteActions = {
     options?: ComposerTurnOptions,
   ) => boolean | void;
   saveDraft: (text: string, attachments: Attachment[]) => boolean | void;
+  removeDraft?: (draftBlockId: string) => boolean;
+  selectAccount?: (provider: ProviderAccountProvider, accountId: string) => boolean;
   stop: () => void;
   rewind: (blockId: string) => Promise<boolean>;
   compact: () => boolean;

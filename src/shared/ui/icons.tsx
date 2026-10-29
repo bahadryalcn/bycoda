@@ -1,5 +1,5 @@
 /** Lucide glyphs behind bycoda's existing action and accessibility contracts. */
-import { forwardRef, useId } from "react";
+import { forwardRef, useId, type ReactNode } from "react";
 import {
   AlertCircle as LucideAlertCircle,
   AppWindow as LucideAppWindow,
@@ -80,6 +80,7 @@ import {
   Lock as LucideLock,
   LockOpen as LucideLockOpen,
   Maximize2 as LucideMaximize2,
+  Menu as LucideMenu,
   Minimize2 as LucideMinimize2,
   MessagesSquare as LucideMessageMultiple,
   MessageSquare as LucideMessageSquare,
@@ -169,6 +170,58 @@ function wrap(Icon: LucideIcon, name: string) {
   return Component;
 }
 
+/**
+ * Bycoda-drawn glyphs follow the same contract as the lucide wrapper above: a forwarded SVG ref, `size`
+ * (default 24, overridden by `className` such as `icon-sm`), `strokeWidth`, `color`, native SVG props, and the
+ * `title`/aria labelling rules. The `viewBox="0 0 24 24" fill="none" stroke="currentColor"` frame matches lucide so
+ * the shared Button icon sizing selectors apply to these glyphs too.
+ */
+function custom(name: string, glyph: ReactNode) {
+  const Component = forwardRef<SVGSVGElement, IconProps>(function BycodaCustomIcon(
+    {
+      size = 24,
+      strokeWidth = 1.75,
+      absoluteStrokeWidth,
+      color = "currentColor",
+      title,
+      children,
+      ...props
+    },
+    ref,
+  ) {
+    const id = useId();
+    const labeled = Boolean(title || props["aria-label"] || props["aria-labelledby"]);
+    void absoluteStrokeWidth;
+    return (
+      <svg
+        ref={ref}
+        xmlns="http://www.w3.org/2000/svg"
+        width={size}
+        height={size}
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        role={labeled ? "img" : undefined}
+        aria-hidden={labeled ? undefined : true}
+        aria-labelledby={title && !props["aria-label"] ? id : undefined}
+        {...props}
+      >
+        {title ? <title id={id}>{title}</title> : null}
+        {glyph}
+        {children}
+      </svg>
+    );
+  });
+  Component.displayName = name;
+  return Component;
+}
+
+/** Three usage bars; the settings and workspace navigation use it for Usage. */
+export const UsageIcon = custom("UsageIcon", <path d="M5 20V12M12 20V4M19 20V8" />);
+
 export const AlertCircle = wrap(LucideAlertCircle, "AlertCircle");
 export const AppWindow = wrap(LucideAppWindow, "AppWindow");
 export const Archive = wrap(LucideArchive, "Archive");
@@ -248,6 +301,7 @@ export const LoaderCircle = wrap(LucideLoaderCircle, "LoaderCircle");
 export const Lock = wrap(LucideLock, "Lock");
 export const LockOpen = wrap(LucideLockOpen, "LockOpen");
 export const Maximize2 = wrap(LucideMaximize2, "Maximize2");
+export const Menu = wrap(LucideMenu, "Menu");
 export const Minimize2 = wrap(LucideMinimize2, "Minimize2");
 export const MessageMultiple = wrap(LucideMessageMultiple, "MessageMultiple");
 export const MessageSquare = wrap(LucideMessageSquare, "MessageSquare");

@@ -2,6 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { durableWrite } from "./turn-git-history";
+import type {
+  NativeBufferClockBacking,
+  NativeBufferClockState,
+} from "./ports/native-buffer-persistence";
 
 // One fixed-width, append-and-sync record per reservation. Reading its first,
 // last and pointer records is constant work, including after a lost write ACK.
@@ -16,14 +20,7 @@ const failure = () =>
     "Native buffer reservation clock is unavailable, stale or corrupt; retained sources remain held",
   );
 type RecordValue = { value: number; clockId: string; previous: string; digest: string };
-type Head = {
-  version: 1;
-  reportId: string;
-  clockId: string;
-  base: number;
-  highWater: number;
-  digest: string;
-};
+type Head = NativeBufferClockState;
 type Marker = { version: 1; reportId: string; clockId: string; base: number };
 type Options = {
   observedVersion: number;
@@ -74,13 +71,197 @@ async function json(path: string): Promise<Record<string, unknown> | null> {
   }
 }
 
+function checkedState(state: NativeBufferClockState, reportId: string, options: Options): Head {
+  if (
+    !state ||
+    state.version !== 1 ||
+    state.reportId !== reportId ||
+    !uuid.test(state.clockId) ||
+    !integer(state.base) ||
+    !integer(state.highWater) ||
+    state.highWater < state.base ||
+    !hex.test(state.digest) ||
+    state.highWater < options.observedVersion ||
+    (options.observedClockId !== undefined && options.observedClockId !== state.clockId)
+  )
+    throw failure();
+  return state;
+}
+
+/** First SQL adoption validates the complete old chain once. The filesystem is
+ * never read again after the backing has established this report's clock. */
+async function importLegacyState(root: string, reportId: string, options: Options): Promise<Head> {
+  const directory = join(root, "native-activity", "buffer-history", "clocks");
+  const journalPath = join(directory, `${reportId}.journal`),
+    marker = await json(join(directory, `${reportId}.initialized.json`)),
+    head = await json(join(directory, `${reportId}.head.json`));
+  let journal;
+  try {
+    journal = await open(journalPath, "r");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (!journal) {
+    if (marker || head || options.observedClockId) throw failure();
+    const base = await options.bootstrap();
+    if (!integer(base) || base < options.observedVersion) throw failure();
+    const clockId = randomUUID();
+    return {
+      version: 1,
+      reportId,
+      clockId,
+      base,
+      highWater: base,
+      digest: decode(encode(base, clockId, "0".repeat(64))).digest,
+    };
+  }
+  try {
+    const initialStat = await journal.stat(),
+      size = initialStat.size;
+    if (!Number.isSafeInteger(size) || size < RECORD_BYTES || size % RECORD_BYTES !== 0)
+      throw failure();
+    const bytes = Buffer.alloc(RECORD_BYTES);
+    let first: RecordValue | undefined,
+      last: RecordValue | undefined,
+      pointed: RecordValue | undefined;
+    for (let offset = 0; offset < size; offset += RECORD_BYTES) {
+      const { bytesRead } = await journal.read(bytes, 0, RECORD_BYTES, offset);
+      if (bytesRead !== RECORD_BYTES) throw failure();
+      const record = decode(bytes);
+      if (!first) {
+        first = record;
+        if (first.previous !== "0".repeat(64)) throw failure();
+      } else if (
+        !last ||
+        record.clockId !== first.clockId ||
+        record.value !== last.value + 1 ||
+        record.previous !== last.digest
+      )
+        throw failure();
+      if (head?.highWater === record.value) pointed = record;
+      last = record;
+    }
+    const finalStat = await journal.stat();
+    if (
+      !first ||
+      !last ||
+      finalStat.size !== size ||
+      finalStat.mtimeMs !== initialStat.mtimeMs ||
+      finalStat.ctimeMs !== initialStat.ctimeMs
+    )
+      throw failure();
+    if (marker) {
+      if (
+        marker.version !== 1 ||
+        marker.reportId !== reportId ||
+        marker.clockId !== first.clockId ||
+        marker.base !== first.value
+      )
+        throw failure();
+    } else if (size !== RECORD_BYTES || head || options.observedClockId) {
+      throw failure();
+    }
+    if (
+      head &&
+      (head.version !== 1 ||
+        head.reportId !== reportId ||
+        head.clockId !== first.clockId ||
+        head.base !== first.value ||
+        !integer(head.highWater) ||
+        head.highWater < first.value ||
+        head.highWater > last.value ||
+        typeof head.digest !== "string" ||
+        !hex.test(head.digest) ||
+        !pointed ||
+        pointed.clockId !== first.clockId ||
+        pointed.digest !== head.digest)
+    )
+      throw failure();
+    return checkedState(
+      {
+        version: 1,
+        reportId,
+        clockId: first.clockId,
+        base: first.value,
+        highWater: last.value,
+        digest: last.digest,
+      },
+      reportId,
+      options,
+    );
+  } finally {
+    await journal.close();
+  }
+}
+
+async function adoptBacked(
+  root: string,
+  backing: NativeBufferClockBacking,
+  reportId: string,
+  options: Options,
+): Promise<Head> {
+  await options.authorize();
+  let state = await backing.readClock(reportId);
+  if (!state) {
+    const initial = await importLegacyState(root, reportId, options);
+    await options.authorize();
+    state = await backing.initializeClock(initial, options.authorize);
+    await options.authorize();
+  }
+  const current = checkedState(state, reportId, options);
+  await options.authorize();
+  return current;
+}
+
+async function reserveBacked(
+  root: string,
+  backing: NativeBufferClockBacking,
+  reportId: string,
+  options: Options,
+): Promise<{ value: number; clockId: string }> {
+  const current = await adoptBacked(root, backing, reportId, options);
+  if (!integer(current.highWater + 1)) throw new Error("Native buffer report version exhausted");
+  const value = current.highWater + 1;
+  const next: Head = {
+    ...current,
+    highWater: value,
+    digest: decode(encode(value, current.clockId, current.digest)).digest,
+  };
+  await options.authorize();
+  const committed = checkedState(
+    await backing.advanceClock(current, next, options.authorize),
+    reportId,
+    options,
+  );
+  await options.authorize();
+  if (
+    committed.clockId !== next.clockId ||
+    committed.base !== next.base ||
+    committed.highWater !== next.highWater ||
+    committed.digest !== next.digest
+  )
+    throw failure();
+  return { value, clockId: committed.clockId };
+}
+
 /** The owning Host serial gate must wrap reserve. This is a monotonic local
  * reservation owner, not an actor grant or coherent backup/restore proof. */
-export function createNativeBufferClock(deps: { root: string; write?: typeof durableWrite }) {
+export function createNativeBufferClock(deps: {
+  root: string;
+  write?: typeof durableWrite;
+  backing?: NativeBufferClockBacking;
+}) {
   const write = deps.write ?? durableWrite;
   return {
+    /** Retain an existing clock without manufacturing a new source/report. */
+    async adopt(reportId: string, options: Options): Promise<NativeBufferClockState> {
+      if (!hex.test(reportId) || !integer(options.observedVersion)) throw failure();
+      if (!deps.backing) throw new Error("Native buffer clock adoption requires SQL backing");
+      return adoptBacked(deps.root, deps.backing, reportId, options);
+    },
     async reserve(reportId: string, options: Options): Promise<{ value: number; clockId: string }> {
       if (!hex.test(reportId) || !integer(options.observedVersion)) throw failure();
+      if (deps.backing) return reserveBacked(deps.root, deps.backing, reportId, options);
       const directory = join(deps.root, "native-activity", "buffer-history", "clocks");
       const journalPath = join(directory, `${reportId}.journal`),
         markerPath = join(directory, `${reportId}.initialized.json`),

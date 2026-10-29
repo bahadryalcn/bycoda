@@ -227,7 +227,20 @@ import { useDragResize } from "../../shared/hooks/useDragResize";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { useGitFileStatuses } from "../../features/source-control/hooks/useGitFileStatuses";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
-import { useProjectDiffStats } from "../../features/source-control/hooks/useProjectDiffStats";
+import {
+  useProjectDiffStats,
+  useProjectsDiffStats,
+} from "../../features/source-control/hooks/useProjectDiffStats";
+import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
+import {
+  checkoutOptionLabel,
+  checkoutSelectionScope,
+  loadCheckoutSelection,
+  resolveCheckoutSelection,
+  sessionCheckout,
+} from "../../features/source-control/model/checkoutSelection";
+import type { Worktree } from "../../features/source-control/model/worktrees";
+import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { normalizeHex } from "../../shared/lib/colorUtils";
 import { useVisibleProjects, useGroupLock } from "../../features/group-lock/hooks/useGroupLock";
@@ -259,7 +272,7 @@ import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
-import { DevModeSlot, IconButton, TabVisitNav } from "./TitleBar";
+import { DevModeIndicator, IconButton, TabVisitNav } from "./TitleBar";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { Popover } from "../../shared/ui/Popover";
 import { useProjectMenu } from "./useProjectMenu";
@@ -433,6 +446,8 @@ type Props = {
   /** Linked GitHub work changed after the session last advanced. */
   linkedSessionUpdateIds?: ReadonlySet<string>;
   settingsOpen?: boolean;
+  /** Settings dialog is open; the rail selects its Settings tool but stays fully visible. */
+  settingsDialogOpen?: boolean;
   settingsSection?: SettingsSectionId;
   onOpenSettings?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
@@ -541,6 +556,7 @@ function SidebarComponent({
   inboxUnseen = false,
   linkedSessionUpdateIds = EMPTY_IDS,
   settingsOpen = false,
+  settingsDialogOpen = false,
   onOpenCrewSession,
   settingsSection = "general",
   onOpenSettings,
@@ -1098,7 +1114,64 @@ function SidebarComponent({
   const drawerAnimation = useRef<Animation | null>(null);
   const panelOpen = open || drawerVisible;
   const gitStatuses = useGitFileStatuses(gitRoot, panelOpen && tab === "files");
-  const changeStats = useProjectDiffStats(gitRoot, panelOpen && sidebarAvailable);
+  // The Changes tab totals follow the checkout the panel is showing: the stored
+  // checkout choice, or every checkout when the user picked the overview.
+  const checkoutScopeEnabled = panelOpen && sidebarAvailable && !repositoryPaths?.length;
+  const { data: checkoutTrees } = useProjectWorktrees(gitRoot, checkoutScopeEnabled);
+  const checkoutScope = useMemo(() => {
+    const trees: Worktree[] = [];
+    for (const tree of checkoutTrees?.worktrees ?? []) {
+      if (tree.missing || tree.prunable) continue;
+      if (trees.some((entry) => sameProjectPath(entry.path, tree.path))) continue;
+      trees.push(tree);
+    }
+    return trees.length > 1 ? trees : null;
+  }, [checkoutTrees]);
+  const checkoutPaths = useMemo(() => checkoutScope?.map((tree) => tree.path) ?? [], [checkoutScope]);
+  const checkoutSelectionKey = checkoutSelectionScope(gitRoot, checkoutPaths);
+  const [storedCheckout] = useRetainedState<string | null>(
+    `source-control:checkouts:${checkoutSelectionKey}:selected`,
+    () => loadCheckoutSelection(checkoutSelectionKey),
+  );
+  const selectedCheckout = checkoutScope
+    ? resolveCheckoutSelection(
+        storedCheckout,
+        gitRoot,
+        checkoutPaths,
+        Object.fromEntries(checkoutScope.map((tree) => [tree.path, tree])),
+      )
+    : null;
+  const allCheckouts = selectedCheckout === "";
+  const statsRoot = selectedCheckout ? selectedCheckout : gitRoot;
+  const singleStats = useProjectDiffStats(
+    statsRoot,
+    panelOpen && sidebarAvailable && !allCheckouts,
+  );
+  const allStats = useProjectsDiffStats(
+    allCheckouts ? checkoutPaths : [],
+    panelOpen && sidebarAvailable && allCheckouts,
+  );
+  const changeStats = allCheckouts
+    ? allStats.reduce<{ files: number; additions: number; deletions: number }>(
+        (total, stats) =>
+          stats
+            ? {
+                files: total.files + stats.files,
+                additions: total.additions + stats.additions,
+                deletions: total.deletions + stats.deletions,
+              }
+            : total,
+        { files: 0, additions: 0, deletions: 0 },
+      )
+    : singleStats;
+  const changeScopeLabel = (() => {
+    if (!checkoutScope) return "";
+    if (allCheckouts) return t("All checkouts");
+    const tree = checkoutScope.find((entry) => sameProjectPath(entry.path, selectedCheckout ?? ""));
+    if (!tree) return "";
+    const own = sessionCheckout(gitRoot, checkoutPaths);
+    return checkoutOptionLabel(tree, !!own && sameProjectPath(own, tree.path));
+  })();
 
   if (drawerOpen && (!drawerMode || !sidebarAvailable)) setDrawerOpen(false);
   if (drawerMounted !== drawerVisible && !drawerClosing) setDrawerMounted(drawerVisible);
@@ -2570,22 +2643,58 @@ function SidebarComponent({
 
   const changeAdditions = changeStats?.additions ?? 0;
   const changeDeletions = changeStats?.deletions ?? 0;
+  // Two different measures: how many files changed, and how many lines (churn).
+  // Each is named wherever it is shown so the two are never read as one number.
+  const changeFileCount = changeStats?.files ?? 0;
   const hasChangeStats = changeAdditions > 0 || changeDeletions > 0;
-  const changesLabel = hasChangeStats
+  const changedFilesText =
+    changeFileCount > 0
+      ? t(changeFileCount === 1 ? "{p0} changed file" : "{p0} changed files", {
+          p0: changeFileCount,
+        })
+      : "";
+  const changeChurnText = hasChangeStats
     ? [
-        "Changes",
-        changeAdditions > 0 ? `+${changeAdditions}` : "",
-        changeDeletions > 0 ? `-${changeDeletions}` : "",
+        changeAdditions > 0 ? t("{p0} lines added", { p0: changeAdditions }) : "",
+        changeDeletions > 0 ? t("{p0} lines removed", { p0: changeDeletions }) : "",
       ]
         .filter(Boolean)
-        .join(" ")
-    : "Changes";
+        .join(", ")
+    : "";
+  // "N files · +a −d": the compact summary shown on hover, scoped to the checkout.
+  const changeSummary = [
+    changeFileCount > 0
+      ? t(changeFileCount === 1 ? "{p0} file" : "{p0} files", { p0: changeFileCount })
+      : "",
+    hasChangeStats
+      ? [changeAdditions > 0 ? `+${changeAdditions}` : "", changeDeletions > 0 ? `−${changeDeletions}` : ""]
+          .filter(Boolean)
+          .join(" ")
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const changeSummaryTitle = [changeScopeLabel, changeSummary].filter(Boolean).join(" · ");
+  const changesLabel = [TAB_LABELS.changes, changeScopeLabel, changedFilesText, changeChurnText]
+    .filter(Boolean)
+    .join(", ");
+  // The Sessions badge counts working sessions, not all sessions.
+  const sessionsLabel = workingSessionCount
+    ? `${TAB_LABELS.sessions}, ${t(
+        workingSessionCount === 1 ? "{p0} working session" : "{p0} working sessions",
+        { p0: workingSessionCount },
+      )}`
+    : TAB_LABELS.sessions;
 
   const workspaceTabItems = visibleTabs.map((itemId) => {
     const active = tab === itemId;
     const isChangesTab = itemId === "changes";
     const Icon = COMPACT_TAB_ICONS[itemId];
-    const label = isChangesTab ? changesLabel : TAB_LABELS[itemId];
+    const label = isChangesTab
+      ? changesLabel
+      : itemId === "sessions"
+        ? sessionsLabel
+        : TAB_LABELS[itemId];
     return (
       <div
         key={itemId}
@@ -2620,11 +2729,37 @@ function SidebarComponent({
           <span className="workspace-tab-content flex min-w-0 items-center justify-center">
             <span className="block truncate leading-label">{TAB_LABELS[itemId]}</span>
             {isChangesTab && hasChangeStats ? (
-              <span className="workspace-tab-stats ms-1.5">
+              <span className="workspace-tab-stats ms-1.5" title={changeSummaryTitle}>
                 <DiffStat additions={changeAdditions} deletions={changeDeletions} />
               </span>
             ) : null}
           </span>
+          {/* Outside .workspace-tab-content so it survives the icon-only width. */}
+          {/* The file count is its own measure and stays at every width, with or without line churn
+              (binary, mode-only, conflict and count-only changes have no +/-). */}
+          {isChangesTab && changeFileCount > 0 ? (
+            <span
+              className="ms-1 inline-flex flex-none text-ui-micro tabular-nums text-(--ui-text-secondary)"
+              data-workspace-tab-file-count=""
+              role="img"
+              aria-label={[changeScopeLabel, changedFilesText].filter(Boolean).join(", ")}
+              title={changeSummaryTitle}
+            >
+              {changeFileCount > 99 ? "99+" : changeFileCount}
+            </span>
+          ) : isChangesTab && hasChangeStats ? (
+            <span
+              className="workspace-tab-stats-compact"
+              role="img"
+              aria-label={[changeScopeLabel, changeChurnText].filter(Boolean).join(", ")}
+              title={changeSummaryTitle}
+            >
+              <span
+                aria-hidden
+                className="size-1.5 self-center rounded-full bg-(--ui-text-secondary)"
+              />
+            </span>
+          ) : null}
           {itemId === "sessions" ? workingSessionsBadge : null}
         </Button>
       </div>
@@ -2633,7 +2768,7 @@ function SidebarComponent({
 
   const workspaceHeader = (
     <div
-      className="flex h-10 shrink-0 select-none items-center gap-1 border-b border-(--ui-pane-border) pl-3 pr-1.5"
+      className="flex min-h-10 shrink-0 select-none items-center gap-1 border-b border-(--ui-pane-border) pl-3 pr-1.5"
       data-tauri-drag-region="deep"
     >
       <div className="flex min-w-0 flex-1 items-center">
@@ -2682,11 +2817,11 @@ function SidebarComponent({
         <>
           {titleBarAbove ? null : (
             <div
-              className="flex h-10 shrink-0 select-none items-center border-b border-(--ui-pane-border) pr-1.5"
+              className="flex min-h-10 shrink-0 select-none items-center border-b border-(--ui-pane-border) pr-1.5"
               data-tauri-drag-region="deep"
             >
               {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
-              <DevModeSlot />
+              <div className="min-w-0 flex-1" />
               <TabVisitNav
                 canGoBack={canGoBack}
                 canGoForward={canGoForward}
@@ -2781,7 +2916,7 @@ function SidebarComponent({
         {tab === "sessions" && cwd && cwd !== "~" ? (
           <div
             data-session-list-panel
-            className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
+            className="flex min-h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
           >
             <SearchInputGroup appearance="field" className="min-w-0 flex-1">
               <Search className="icon-xs shrink-0" />
@@ -3230,6 +3365,7 @@ function SidebarComponent({
             </div>
           </>
         ) : null}
+        {railVisible || titleBarAbove ? null : <DevModeIndicator />}
       </>
       {sessionMenu ? (
         <ExplorerMenu
@@ -3437,6 +3573,7 @@ function SidebarComponent({
           onOpenSyncedProject={onOpenSyncedProject}
           onRemoveProject={onRemoveProject}
           settingsOpen={settingsOpen}
+          settingsDialogOpen={settingsDialogOpen}
           settingsSection={settingsSection}
           onOpenSettings={onOpenSettings}
           onOpenNotificationSettings={onOpenNotificationSettings}
@@ -3861,7 +3998,7 @@ function CompactProjectRail({
     >
       {titleBarAbove ? null : (
         <div
-          className="h-10 w-full shrink-0 border-b border-stroke"
+          className="min-h-10 w-full shrink-0 border-b border-stroke"
           data-tauri-drag-region="deep"
         />
       )}
@@ -4196,6 +4333,7 @@ function CompactLastSessionsAction({
       <CompactRailAction
         ref={anchor}
         label={t("Last sessions")}
+        caption={t("Recent")}
         icon={Clock}
         active={open}
         onClick={() => setOpen((value) => !value)}
@@ -4531,7 +4669,7 @@ function FolderRow({
           </>
         )}
       </span>
-      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-semibold leading-snug text-content">
+      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-content">
         {folder.name}
       </span>
       <span className="relative flex shrink-0 items-center gap-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
@@ -4636,6 +4774,8 @@ function FolderRenameRow({
 }
 
 const SESSION_PREFETCH_DELAY_MS = 120;
+/** Hover waits this long before the detail card; keyboard focus shows it at once. */
+const SESSION_DETAIL_DELAY_MS = 600;
 /** Rows created this recently slide in; older ones are just being listed. */
 const SESSION_INSERT_WINDOW_MS = 15_000;
 
@@ -4810,6 +4950,7 @@ const SessionCard = memo(function SessionCard({
     () => () => {
       cancelSessionDrag.current?.();
       cancelLongPress.current?.();
+      if (detailTimer.current != null) window.clearTimeout(detailTimer.current);
     },
     [],
   );
@@ -4817,6 +4958,10 @@ const SessionCard = memo(function SessionCard({
   const prefetchTimer = useRef<number | null>(null);
   const orchestrationTooltipRootRef = useRef<HTMLDivElement>(null);
   const orchestrationTooltipId = useId();
+  const detailRootRef = useRef<HTMLDivElement>(null);
+  const detailTimer = useRef<number | null>(null);
+  const detailId = useId();
+  const [detailOpen, setDetailOpen] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [orchestrationTooltipOpen, setOrchestrationTooltipOpen] = useState(false);
   const orchestration = session.orchestration;
@@ -4853,7 +4998,12 @@ const SessionCard = memo(function SessionCard({
     ) : !issue && !needsApproval && busy ? (
       <SessionWorkingStatus startedAt={startedAt} />
     ) : (
-      <Badge size="sm" tone={statusTone} className="shrink-0 whitespace-nowrap tabular-nums">
+      <Badge
+        size="sm"
+        tone={statusTone}
+        appearance="subtle"
+        className="shrink-0 whitespace-nowrap tabular-nums"
+      >
         {issue ? (
           <>
             <CircleAlert className="icon-xs" strokeWidth={1.75} />
@@ -4953,6 +5103,7 @@ const SessionCard = memo(function SessionCard({
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;
+    if (e.key === "Escape" && detailOpen) hideDetail();
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       onSelect(session.id, e);
@@ -4978,6 +5129,7 @@ const SessionCard = memo(function SessionCard({
       prefetchTimer.current = null;
     }
     onPrefetch?.(session.id);
+    hideDetail();
     startLongPress(event);
     if (!onPlaceOnPane && !onListDrop && !onPopOut) return;
     cancelSessionDrag.current?.();
@@ -5202,6 +5354,22 @@ const SessionCard = memo(function SessionCard({
     prefetchTimer.current = null;
   };
 
+  const scheduleDetail = () => {
+    if (detailTimer.current != null || selectionMode || orchestration) return;
+    detailTimer.current = window.setTimeout(() => {
+      detailTimer.current = null;
+      setDetailOpen(true);
+    }, SESSION_DETAIL_DELAY_MS);
+  };
+  const hideDetail = () => {
+    if (detailTimer.current != null) {
+      window.clearTimeout(detailTimer.current);
+      detailTimer.current = null;
+    }
+    setDetailOpen(false);
+  };
+  const detailVisible = detailOpen && !dragging && !pressing && !selectionMode && !orchestration;
+
   const archiveLabel = session.archived ? "Unarchive" : "Archive";
   // Expanding an orchestration card must not move its existing header. Keep
   // the collapsed top inset and give only the new detail area extra room at
@@ -5335,10 +5503,10 @@ const SessionCard = memo(function SessionCard({
   );
 
   return (
-    <div className="group relative">
+    <div ref={detailRootRef} className="group relative">
       <ActionHost
         selected={isSelected || isActive}
-        title={title}
+        title={detailVisible ? undefined : title}
         data-session-card={session.id}
         data-session-density={density}
         data-orchestration-card={orchestration ? "true" : undefined}
@@ -5346,8 +5514,14 @@ const SessionCard = memo(function SessionCard({
         data-tauri-drag-region="false"
         onPointerDown={onPointerDown}
         onDragStart={(event) => event.preventDefault()}
-        onPointerEnter={schedulePrefetch}
-        onPointerLeave={cancelScheduledPrefetch}
+        onPointerEnter={() => {
+          schedulePrefetch();
+          scheduleDetail();
+        }}
+        onPointerLeave={() => {
+          cancelScheduledPrefetch();
+          hideDetail();
+        }}
         onClick={(event) => {
           if (skipNextClick.current) {
             skipNextClick.current = false;
@@ -5359,7 +5533,7 @@ const SessionCard = memo(function SessionCard({
         onContextMenu={onContextMenu ? (event) => onContextMenu(session.id, event) : undefined}
         className={`relative border flex w-full ${onPlaceOnPane || onListDrop || onPopOut ? "cursor-grab" : "cursor-default"} select-none touch-none flex-col items-stretch gap-0 rounded-md px-2.5 text-left ${cardPaddingY} ${
           dragging ? "opacity-40" : ""
-        } ${draft && !dropTarget ? "border-dashed border-stroke" : "border-transparent"} ${
+        } border-transparent ${
           dropTarget
             ? "text-content"
             : isSelected
@@ -5373,12 +5547,6 @@ const SessionCard = memo(function SessionCard({
       >
         {dropTarget ? (
           <div className="pointer-events-none absolute inset-0 rounded-md bg-(--ui-surface-selected)" />
-        ) : null}
-        {isSelected ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent"
-          />
         ) : null}
         {dropInsert && !dropTarget ? (
           <span
@@ -5424,8 +5592,15 @@ const SessionCard = memo(function SessionCard({
             tabIndex={0}
             aria-current={isActive ? "true" : undefined}
             aria-pressed={isSelected}
+            aria-describedby={detailVisible ? detailId : undefined}
             data-session-select={session.id}
             onKeyDown={onKeyDown}
+            // Only keyboard focus lands here (mouse presses blur it), so focus opens the details.
+            onFocus={(event) => {
+              if (event.target === event.currentTarget && !orchestration && !selectionMode)
+                setDetailOpen(true);
+            }}
+            onBlur={hideDetail}
             onMouseDown={(event) => {
               if (event.button !== 0) return;
               // Shift-click can trigger :focus-visible. Mouse selection should
@@ -5435,7 +5610,7 @@ const SessionCard = memo(function SessionCard({
               const focused = event.currentTarget.ownerDocument.activeElement;
               if (focused instanceof HTMLElement) focused.blur();
             }}
-            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-1 focus-visible:ring-accent/50"
+            className="flex min-w-0 flex-1 items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-(--ui-focus-ring-color)"
           >
             {selectionMode ? (
               <span
@@ -5508,6 +5683,51 @@ const SessionCard = memo(function SessionCard({
           <OrchestrationSidebarAgents leadId={session.id} summary={orchestration!} />
         ) : null}
       </ActionHost>
+      {detailVisible ? (
+        <Popover
+          anchor={detailRootRef}
+          side="right"
+          align="start"
+          gap={6}
+          width={264}
+          maxHeight={280}
+          role="tooltip"
+          id={detailId}
+          className="pointer-events-none overflow-hidden p-2.5"
+        >
+          <p className="line-clamp-2 text-ui-secondary font-medium leading-snug text-content">
+            {title}
+          </p>
+          <dl className="mt-1.5 flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <dt className="sr-only">{t("Model")}</dt>
+              <dd className="flex min-w-0 items-center gap-1.5">
+                <HarnessIcon harness={session.harness} className="icon-xs shrink-0" />
+                <span className="min-w-0 truncate">{model}</span>
+              </dd>
+            </div>
+            {branchText ? (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <dt className="sr-only">{t(worktree ? "Worktree" : "Branch")}</dt>
+                <dd className="flex min-w-0 items-center gap-1.5">
+                  <BranchIcon className="icon-xs shrink-0" strokeWidth={1.75} />
+                  <span className="min-w-0 truncate">{gitLabel}</span>
+                </dd>
+              </div>
+            ) : null}
+            <div className="flex min-w-0 items-center gap-1.5">
+              <dt className="sr-only">{t("Project")}</dt>
+              <dd className="min-w-0 truncate" dir="auto">
+                {session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd}
+              </dd>
+            </div>
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <dt className="sr-only">{t("Status")}</dt>
+              <dd className="flex min-w-0 items-center gap-1.5">{status}</dd>
+            </div>
+          </dl>
+        </Popover>
+      ) : null}
       {orchestration && orchestrationTooltipOpen ? (
         <Popover
           anchor={orchestrationTooltipRootRef}

@@ -13,6 +13,7 @@ use uuid::Uuid;
 
 use crate::dirs_home;
 mod attachment_reads;
+mod text_admission;
 use crate::git_conflicts::{
     find_git_dir, git_unmerged_checked_for, git_unmerged_for, side_stage, stage_has_side,
     unmerged_message, unmerged_stages_for, GitConflictFile,
@@ -8093,11 +8094,13 @@ fn safe_attachment_name(name: &str) -> String {
 #[tauri::command]
 pub async fn format_text_file(
     app: AppHandle,
+    window: tauri::Window,
     path: String,
     source: String,
     cursor_offset: usize,
 ) -> Result<serde_json::Value, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    text_admission::run(admission, move || {
         let path = expand_home(&path);
         crate::file_access::require(&app, &path, false)?;
         crate::remote::local_editor_format_rpc(
@@ -8106,18 +8109,21 @@ pub async fn format_text_file(
         )
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 /// Read a reasonably sized UTF-8 file for the editor.
 #[tauri::command]
-pub async fn read_text_file(app: AppHandle, path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn read_text_file(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+) -> Result<String, String> {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    text_admission::run(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), false)?;
         read_text_file_sync(&path)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn read_text_file_sync(path: &str) -> Result<String, String> {
@@ -8142,13 +8148,18 @@ fn read_text_file_sync(path: &str) -> Result<String, String> {
 
 /// Atomically replace a text file from a temporary file in the same directory.
 #[tauri::command]
-pub async fn write_text_file(app: AppHandle, path: String, content: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn write_text_file(
+    app: AppHandle,
+    window: tauri::Window,
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    text_admission::run(admission, move || {
         crate::file_access::require(&app, &expand_home(&path), true)?;
         write_text_file_sync(&path, &content)
     })
     .await
-    .map_err(|e| e.to_string())?
 }
 
 fn write_text_file_sync(path: &str, content: &str) -> Result<(), String> {

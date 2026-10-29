@@ -3,11 +3,14 @@ import { test, expect, type Locator } from "@playwright/test";
 const effects = [
   "neural-tree",
   "latent-face",
+  "code-visage",
   "thought-weaver",
   "ascii-mask",
   "dot-grid",
   "code-rain",
 ] as const;
+/** Code figures leave the pane untouched at rest and only appear while a reply streams. */
+const restsEmpty: readonly string[] = ["latent-face", "code-visage"];
 const preferenceKey = "bycoda.liveBackground.v1";
 const ambientEffects = ["threads", "silk", "dark-veil", "soft-aurora", "floating-lines"];
 const sceneChoices = ["none", ...ambientEffects, ...effects];
@@ -49,7 +52,11 @@ for (const theme of ["dark", "light"]) {
       await page.goto(`/tests/browser/live-backgrounds.html?effect=${effect}&theme=${theme}`);
       const canvas = page.locator("[data-scene] canvas");
       await expect(canvas).toBeVisible();
-      await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
+      if (restsEmpty.includes(effect)) {
+        await expect.poll(async () => (await pixels(canvas)).visible).toBe(0);
+      } else {
+        await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
+      }
       await page.getByRole("button", { name: "Pause", exact: true }).click();
       const idle = await pixels(canvas, true);
       await page
@@ -84,7 +91,9 @@ for (const theme of ["dark", "light"]) {
         {
           // Every scene fills the pane, including narrow and full-width chats.
           await expect(canvas).toBeVisible();
-          await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
+          // Code figures keep the quiet chat empty; every other scene paints its resting artwork.
+          if (!restsEmpty.includes(effect))
+            await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
           const artwork = await canvas.boundingBox();
           const paneBox = await pane.boundingBox();
           expect(artwork).not.toBeNull();
@@ -119,7 +128,11 @@ test("every scene stays unchanged while replies stream with reduced motion", asy
   for (const effect of effects) {
     await page.goto(`/tests/browser/live-backgrounds.html?effect=${effect}&theme=dark`);
     const canvas = page.locator("[data-scene] canvas");
-    await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
+    if (restsEmpty.includes(effect)) {
+      await expect.poll(async () => (await pixels(canvas)).visible).toBe(0);
+    } else {
+      await expect.poll(async () => (await pixels(canvas)).visible).toBeGreaterThan(100);
+    }
     const before = await pixels(canvas);
     await page.getByRole("button", { name: "Start reply", exact: true }).click();
     // Observe several stream updates and frame opportunities without permitting motion.

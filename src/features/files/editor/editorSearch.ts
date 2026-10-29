@@ -825,13 +825,13 @@ const findTheme = EditorView.theme(
       fontSize: "11px",
     },
     ".cm-searchMatch": {
-      backgroundColor: "color-mix(in srgb, var(--color-search) 46%, transparent)",
+      backgroundColor: "var(--ui-editor-search-match)",
     },
     ".cm-searchMatch-selected": {
-      backgroundColor: "color-mix(in srgb, var(--color-accent) 52%, transparent)",
+      backgroundColor: "var(--ui-editor-search-match-current)",
     },
     ".cm-selectionMatch": {
-      backgroundColor: "color-mix(in srgb, var(--color-content) 14%, transparent)",
+      backgroundColor: "var(--ui-selection-inactive)",
     },
   },
   { dark: true },

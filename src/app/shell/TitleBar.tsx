@@ -9,6 +9,7 @@ import {
   ChevronRight,
   DashboardSquare,
   Inbox,
+  Menu,
   PanelLeft,
   Plus,
   Search,
@@ -16,6 +17,7 @@ import {
   SplitSquare,
   StickyNote,
   Terminal,
+  Wrench,
   X,
 } from "../../shared/ui/icons";
 import {
@@ -32,6 +34,7 @@ import {
 } from "react";
 import { basename } from "../../platform/tauri/fs";
 import { ToolNavigationContext } from "./ToolNavigation";
+import { TitleBarActionsSlot } from "./TitleBarActionsSlot";
 import { looksLikeProject } from "../../features/projects/model/recents";
 import type { HarnessId } from "../../features/sessions/model/session";
 import { CwdPicker } from "../../features/projects/ui/CwdPicker";
@@ -58,6 +61,7 @@ import {
 } from "../model/windowTransferPopout";
 import { beginWindowTabDrag } from "../model/windowDragPreview";
 import { WindowControls } from "./WindowControls";
+import { APP_MENU_TOGGLE_EVENT } from "./MenuBar";
 import { IS_MAC } from "../../platform/tauri/platform";
 import type { RecentProject } from "../../features/projects/model/recents";
 import { ExplorerMenu, type ExplorerMenuItem } from "../../features/files/ui/ExplorerMenu";
@@ -368,7 +372,7 @@ function TitleTabItem({
         sortable.setItemRef(tab.id, el);
         itemRef?.(el);
       }}
-      className="reorder-item tab-motion group @container relative flex h-full cursor-default touch-none items-center self-stretch min-w-0 w-full"
+      className="reorder-item tab-motion group @container relative flex h-(--ui-control-height-compact) w-full min-w-0 cursor-default touch-none items-center self-center"
       data-tauri-drag-region="false"
       data-tab-draggable={canDrag || undefined}
       onDragStart={(event) => event.preventDefault()}
@@ -437,15 +441,11 @@ function TitleTabItem({
             <FileTypeIcon name={fileIcon} isDir={false} size={14} />
           </span>
         )}
-        {/* Keep two-line tabs compact while leaving room for descenders. */}
-        <span className="flex min-w-0 flex-1 flex-col justify-center">
-          <span className="flex min-w-0 items-center gap-1">
+        {/* One 28px row: the headline leads, secondary meta follows when there is room. */}
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+          <span className="flex min-w-0 flex-1 items-center gap-1">
             <TabLabel
-              className={`leading-tight ${tab.previewFileId || tab.previewSessionId ? "italic" : ""} ${
-                meta
-                  ? "text-ui-secondary @min-[11rem]:text-ui-caption @min-[11rem]:font-medium"
-                  : "text-ui-secondary"
-              }`}
+              className={`leading-tight text-ui-secondary ${tab.previewFileId || tab.previewSessionId ? "italic" : ""}`}
             >
               {headline}
             </TabLabel>
@@ -468,14 +468,14 @@ function TitleTabItem({
             ) : null}
             {tab.dirty ? (
               <span
-                className="size-1.5 shrink-0 rounded-full bg-content/70"
+                className="size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary)"
                 title={t("Unsaved changes")}
                 aria-label={t("Unsaved changes")}
               />
             ) : null}
           </span>
           {meta ? (
-            <TabLabel className="hidden text-ui-caption leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
+            <TabLabel className="hidden max-w-[45%] shrink-0 text-ui-caption leading-tight text-(--ui-text-secondary) @min-[11rem]:block">
               {meta}
             </TabLabel>
           ) : null}
@@ -493,6 +493,12 @@ function TitleTabItem({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
+            onClose(tab.id);
+          }}
+          onAuxClick={(event) => {
+            // InlineAction keeps the host from seeing the click, so a middle click on the X closes here.
+            if (event.button !== 1) return;
+            event.preventDefault();
             onClose(tab.id);
           }}
           className="absolute end-0 inset-bs-1/2 -translate-y-1/2"
@@ -595,25 +601,66 @@ export function IconButton({
   );
 }
 
-export function DevModeLabel() {
+/**
+ * Compact entry to the application menus (File, View, Terminal) on platforms
+ * without a native menu bar. It toggles the same menu bar the Alt key opens.
+ */
+function AppMenuButton() {
   const t = useT();
-  if (!import.meta.env.DEV) return null;
   return (
-    <span
-      title={t("Development build")}
-      className="mr-1 min-w-0 truncate rounded-md bg-(--ui-tone-info-subtle) px-1.5 py-0.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
-    >
-      {t("Development")}
-    </span>
+    <div className="flex shrink-0 items-center ps-1.5" data-app-menu-entry>
+      <Button
+        iconOnly
+        label={t("Application menu")}
+        shortcut="Alt"
+        variant="ghost"
+        motion="none"
+        type="button"
+        title={t("Application menu")}
+        aria-label={t("Application menu")}
+        aria-haspopup="menu"
+        data-tauri-drag-region="false"
+        onClick={(event) => {
+          const rect = event.currentTarget.getBoundingClientRect();
+          window.dispatchEvent(
+            new CustomEvent(APP_MENU_TOGGLE_EVENT, {
+              detail: { x: rect.left, y: rect.bottom + 2 },
+            }),
+          );
+        }}
+      >
+        <Menu className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
+      </Button>
+    </div>
   );
 }
 
-/** Flex spacer that keeps the Development badge next to the visit arrows. */
-export function DevModeSlot({ fill = true }: { fill?: boolean }) {
-  useLocale();
+const TITLEBAR_HEIGHT = "calc(var(--ui-control-height-compact) + 0.5rem)";
+const TITLEBAR_HEIGHT_STYLE = { height: TITLEBAR_HEIGHT, minHeight: TITLEBAR_HEIGHT } as const;
+
+/**
+ * Development-build marker for the lower-left corner of a rail or sidebar: a small
+ * status-toned wrench with its word. In a rail narrower than 140px the word drops
+ * and the icon stays; the name and tooltip are always "Development build". Only
+ * development builds render it; production renders nothing.
+ */
+export function DevModeIndicator({ className }: { className?: string }) {
+  const t = useT();
+  if (!import.meta.env.DEV) return null;
   return (
-    <div className={`flex min-w-0 items-center justify-end ${fill ? "flex-1" : "shrink-0"}`}>
-      <DevModeLabel />
+    <div
+      data-dev-mode-indicator=""
+      className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
+    >
+      <span
+        role="img"
+        title={t("Development build")}
+        aria-label={t("Development build")}
+        className="inline-flex min-w-0 items-center gap-1.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
+      >
+        <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
+        <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
+      </span>
     </div>
   );
 }
@@ -1294,11 +1341,15 @@ function TitleBarComponent({
   // exempts buttons, links and inputs on its own.
   return (
     <header
-      className={`bycoda-titlebar flex h-10 shrink-0 select-none items-stretch border-b border-b-(--ui-pane-border)!${
+      className={`bycoda-titlebar flex h-9 shrink-0 select-none items-stretch border-b border-b-(--ui-pane-border)!${
         compactRail ? " body-glass" : ""
       }`}
+      // The row is one compact control plus 4px above and below, so it grows with
+      // the density and UI-scale setting instead of clipping its controls at 36px.
+      style={TITLEBAR_HEIGHT_STYLE}
       data-tauri-drag-region="deep"
     >
+      {!IS_MAC ? <AppMenuButton /> : null}
       {compactRail ? (
         <div
           data-compact-title-nav
@@ -1468,6 +1519,7 @@ function TitleBarComponent({
             <AppWindow className="icon-md" aria-hidden />
           </Button>
         ) : null}
+        <TitleBarActionsSlot />
         {trailingControls}
       </div>
       {layoutMenu && layout ? (

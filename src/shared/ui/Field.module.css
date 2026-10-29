@@ -1,0 +1,42 @@
+@layer theme, base, components, utilities;
+/* Placement belongs to the caller; presentation below stays unlayered and mirrors the Input roles. */
+@layer components {
+  .field {
+    min-inline-size: 0;
+  }
+}
+.field {
+  display: grid;
+  align-content: start;
+}
+.label {
+  margin-block-end: var(--space-2);
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.description,
+.error {
+  display: block;
+  padding-block-start: var(--space-2);
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  overflow-wrap: anywhere;
+}
+.description {
+  color: var(--text-secondary);
+}
+.error {
+  color: var(--danger);
+}
+/* Compact: toolbars and inline filters. Quiet caption label, tight messages. */
+.field[data-variant="compact"] .label {
+  margin-block-end: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] :is(.description, .error) {
+  padding-block-start: var(--space-1);
+}

@@ -134,11 +134,46 @@ export function CrewWorkDetail({
             : t("Work is paused. Nothing is running.")}
         </p>
       ) : null}
+      {/* What needs the owner comes first: decisions, acceptance and blockers lead the actions. */}
+      {requests.length || blocked.length || awaiting.length ? (
+        <div className="mt-3 flex flex-col gap-2">
+          {requests.map((message) => (
+            <Alert key={message.id} tone="warning" action={openCoordinator(`answer:${message.id}`)}>
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {t("Needs decision: {p0}", { p0: message.text })}
+              </p>
+              {crewMessageMayBeClipped(message.text) ? (
+                <p className="mt-1 text-ui-caption">
+                  {t("Showing the first {p0} characters of this message.", {
+                    p0: CREW_LIST_MESSAGE_LIMIT,
+                  })}
+                </p>
+              ) : null}
+            </Alert>
+          ))}
+          {awaiting.map((task) => (
+            <Alert key={task.id} tone="warning" action={openCoordinator(`accept:${task.id}`)}>
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {t("Awaiting acceptance: {p0}", { p0: task.title })}
+              </p>
+            </Alert>
+          ))}
+          {blocked.map((task) => (
+            <Alert key={task.id} tone="danger">
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
+              </p>
+            </Alert>
+          ))}
+        </div>
+      ) : null}
       {request.kind === "full" ? (
         request.text !== title ? (
-          <details className="mt-3 text-ui-caption text-(--ui-text-secondary)">
-            <summary className="cursor-pointer">{t("Work request")}</summary>
-            <p className="mt-2 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
+          <details className="mt-3 text-ui-secondary">
+            <summary className="cursor-pointer font-medium text-(--ui-text-secondary)">
+              {t("Work request")}
+            </summary>
+            <p className="mt-2 max-w-[46rem] whitespace-pre-wrap break-words text-content [overflow-wrap:anywhere] leading-relaxed">
               {request.text}
             </p>
           </details>
@@ -153,7 +188,7 @@ export function CrewWorkDetail({
             : t("The request text is not available from this Host.")}
         </p>
       )}
-      <div className="mt-3 flex flex-wrap items-center gap-1 border-b border-(--ui-tone-neutral-border) pb-3">
+      <div className="mt-4 flex flex-wrap items-center gap-1">
         {run.status !== "finished" ? (
           <>
             <Button
@@ -223,38 +258,6 @@ export function CrewWorkDetail({
       {error ? (
         <div className="pt-3">
           <Alert tone="danger">{error}</Alert>
-        </div>
-      ) : null}
-      {requests.length || blocked.length || awaiting.length ? (
-        <div className="flex flex-col gap-2 pt-3">
-          {requests.map((message) => (
-            <Alert key={message.id} tone="warning" action={openCoordinator(`answer:${message.id}`)}>
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {t("Needs decision: {p0}", { p0: message.text })}
-              </p>
-              {crewMessageMayBeClipped(message.text) ? (
-                <p className="mt-1 text-ui-caption">
-                  {t("Showing the first {p0} characters of this message.", {
-                    p0: CREW_LIST_MESSAGE_LIMIT,
-                  })}
-                </p>
-              ) : null}
-            </Alert>
-          ))}
-          {awaiting.map((task) => (
-            <Alert key={task.id} tone="warning" action={openCoordinator(`accept:${task.id}`)}>
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {t("Awaiting acceptance: {p0}", { p0: task.title })}
-              </p>
-            </Alert>
-          ))}
-          {blocked.map((task) => (
-            <Alert key={task.id} tone="danger">
-              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">
-                {t("Blocked: {p0}", { p0: task.error ?? task.title })}
-              </p>
-            </Alert>
-          ))}
         </div>
       ) : null}
       {run.error ? (

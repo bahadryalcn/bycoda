@@ -6,7 +6,7 @@ export function UsageMeter({ color, ...props }: UsageMeterProps & { color?: stri
   const t = useT();
   return (
     <div
-      className="bycoda-arc bycoda-arc-usage"
+      className="bycoda-arc bycoda-arc-usage bycoda-chart-colors"
       style={color ? ({ "--usage-color": color } as CSSProperties) : undefined}
     >
       <ArcUsageMeter freeLabel={t("Remaining")} overLabel={t("Over limit")} {...props} />

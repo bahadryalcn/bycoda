@@ -13,7 +13,14 @@ import {
   resolveTabGroupLabel,
   resolveTabGroupMascot,
 } from "../../workspace/model/tabGroups";
-import { Check, ChevronDown, ChevronUp, CircleAlert, Internet } from "../../../shared/ui/icons";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  Internet,
+} from "../../../shared/ui/icons";
+import { RailSectionHeader } from "../../../app/shell/useRailSections";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import { HarnessIcon } from "./HarnessIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
@@ -73,13 +80,23 @@ export function LiveAgentsPreview({
   const cap = collapsible ? 2 : LIVE_AGENT_CAP;
   const extra = agents.length - cap;
   const visible = expanded || extra <= 0 ? agents : agents.slice(0, cap);
-  const Header = collapsible ? Button : "div";
+  const title = hasIssues ? t("Needs attention") : hasWorkingAgents ? t("Working") : t("Finished");
+  const statusDot = (
+    <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
+      <span
+        className={`size-1.5 rounded-full ${
+          hasWorkingAgents ? "bg-(--color-active)" : "bg-(--ui-text-muted)"
+        }`}
+      />
+    </span>
+  );
 
   return (
     <section
       aria-label={hasWorkingAgents ? t("Working agents") : t("Finished agents")}
-      className={`min-w-0 shrink-0 ${collapsible ? "border-b border-stroke pbs-1 pbe-2" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
+      className={`min-w-0 shrink-0 ${collapsible ? "mb-3 data-[collapsed]:mb-0.5" : "px-2"} ${bottomSpacing ? "pb-2" : ""}`}
       data-live-agents-preview="full"
+      data-collapsed={collapsible && collapsed ? "" : undefined}
     >
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {workingCount === 0
@@ -101,7 +118,7 @@ export function LiveAgentsPreview({
                 { p0: workingCount, p2: finishedCount },
               )}
       </span>
-      {/* On the rail the header is a plain row in the navigation rhythm, not a framed card. */}
+      {/* On the rail the header is the shared 28px section row, not a framed card. */}
       <div
         className={
           collapsible
@@ -109,42 +126,31 @@ export function LiveAgentsPreview({
             : "overflow-hidden rounded-lg border border-(--ui-tone-accent-border) bg-(--ui-tone-accent-subtle)"
         }
       >
-        <Header
-          {...(collapsible ? { variant: "item" as const } : {})}
-          type={collapsible ? "button" : undefined}
-          aria-expanded={collapsible ? !collapsed : undefined}
-          aria-controls={collapsible ? listId : undefined}
-          onClick={collapsible ? () => setCollapsed((value) => !value) : undefined}
-          className={`flex w-full min-w-0 items-center text-start ${collapsible ? "" : "gap-2 px-2.5 py-2"}`}
-        >
-          <span
-            aria-hidden
-            className={`size-1.5 shrink-0 rounded-full ${collapsible ? "mx-1" : ""} ${
-              hasWorkingAgents ? "bg-(--color-active)" : "bg-(--ui-text-muted)"
-            }`}
+        {collapsible ? (
+          <RailSectionHeader
+            label={title}
+            icon={statusDot}
+            count={agents.length}
+            collapsed={collapsed}
+            onToggleCollapsed={() => setCollapsed((value) => !value)}
+            controlsId={listId}
           />
-          <span
-            className={`min-w-0 flex-1 truncate text-(--ui-text-secondary) ${collapsible ? "text-ui-caption font-medium" : "text-xs font-semibold"}`}
-          >
-            {hasIssues ? t("Needs attention") : hasWorkingAgents ? t("Working") : t("Finished")}
-          </span>
-          <span
-            className={`text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) ${collapsible ? "" : "rounded-md bg-(--ui-tone-accent-subtle) px-1.5"}`}
-          >
-            {agents.length}
-          </span>
-          {collapsible ? (
-            <ChevronDown
-              className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform motion-reduce:transition-none ${collapsed ? "-rotate-90" : ""}`}
-              strokeWidth={1.75}
-            />
-          ) : null}
-        </Header>
-        <div id={listId} hidden={collapsed}>
+        ) : (
+          <div className="flex w-full min-w-0 items-center gap-2 px-2.5 py-2 text-start">
+            {statusDot}
+            <span className="min-w-0 flex-1 truncate text-xs font-semibold text-(--ui-text-secondary)">
+              {title}
+            </span>
+            <span className="rounded-md bg-(--ui-tone-accent-subtle) px-1.5 text-ui-micro font-medium tabular-nums text-(--ui-text-secondary)">
+              {agents.length}
+            </span>
+          </div>
+        )}
+        <div id={listId} hidden={collapsed} className={collapsible ? "px-2" : undefined}>
           <div
             ref={lockList}
-            className={`flex flex-col gap-px px-1 ${
-              extra > 0 ? "" : "pb-1"
+            className={`flex flex-col gap-px ${collapsible ? "" : "px-1"} ${
+              extra > 0 || collapsible ? "" : "pb-1"
             } ${collapsible ? "max-h-[min(18rem,30vh)] overflow-y-auto overscroll-none [scrollbar-gutter:stable]" : expanded ? "max-h-[45vh] overflow-y-auto overscroll-none" : ""}`}
           >
             {visible.map((agent) => (
@@ -171,9 +177,9 @@ export function LiveAgentsPreview({
               className="w-full"
             >
               {expanded ? (
-                <ChevronUp className="size-3" strokeWidth={1.75} />
+                <ChevronUp className="icon-sm shrink-0" strokeWidth={1.75} />
               ) : (
-                <ChevronDown className="size-3" strokeWidth={1.75} />
+                <ChevronDown className="icon-sm shrink-0" strokeWidth={1.75} />
               )}
               {expanded ? t("Show less") : t("{p0} more", { p0: extra })}
             </Button>
@@ -228,13 +234,14 @@ function LiveAgentCard({
     .filter(Boolean)
     .join("\n");
 
+  const flagged = agent.issue || agent.needsApproval || agent.done;
   return (
     <Button
-      className="min-w-0 text-start"
+      // shrink-0: the explicit min height lets flex squeeze a row below its two lines; the list scrolls instead.
+      className="min-h-(--ui-control-height-compact) min-w-0 shrink-0 flex-col items-stretch gap-0.5 py-1 text-start"
       fullWidth
       selected={selected}
       variant="item"
-      layout="stacked"
       type="button"
       title={title}
       aria-label={[agent.title, project, activity, elapsed].filter(Boolean).join(", ")}
@@ -242,34 +249,35 @@ function LiveAgentCard({
       data-live-agent-card={agent.id}
       onClick={() => onSelect?.(agent.id)}
     >
-      <span className="flex min-w-0 items-center gap-2" data-live-agent-title>
-        <HarnessIcon harness={agent.harness} className="size-3 shrink-0" />
-        <span className="min-w-0 flex-1 truncate text-(length:--ui-font-secondary) font-medium leading-snug">
+      <span className="flex min-w-0 flex-1 items-center gap-1.5" data-live-agent-title>
+        <HarnessIcon harness={agent.harness} className="icon-sm shrink-0" />
+        <span className="min-w-0 flex-1 truncate text-ui-secondary leading-snug">
           {agent.title}
         </span>
       </span>
       <span
-        className="mbs-1 flex min-w-0 items-center gap-1.5 ps-4 text-(length:--ui-font-caption) leading-tight text-(--ui-text-muted)"
+        className="flex min-w-0 items-center gap-1.5 ps-[calc(var(--ui-icon-sm)+0.375rem)] text-ui-caption leading-tight text-(--ui-text-secondary)"
         data-live-agent-details
       >
         <ProjectMascot
           project={seed}
           color={color}
           name={resolveTabGroupMascot(key, groupMascots)}
-          className="size-3 shrink-0"
+          className="icon-xs shrink-0"
           active={live}
         />
         {remote ? (
           <Internet
             aria-label={t("On another machine")}
-            className="size-3 shrink-0"
+            className="icon-xs shrink-0"
             strokeWidth={1.75}
           />
         ) : null}
-        <span className="min-w-0 flex-1 truncate">{project}</span>
+        {/* The project name stays in the row's text and tooltip; the mascot identifies it visually. */}
+        <span className="sr-only">{project}</span>
         <span
           title={activity}
-          className={`flex min-w-0 max-w-[55%] items-center gap-1 ${agent.issue || agent.needsApproval || agent.done ? "shrink-0" : ""} ${
+          className={`flex min-w-0 items-center gap-1 ${flagged ? "flex-1" : ""} ${
             agent.issue === "failed"
               ? "text-(--ui-tone-danger-fg)"
               : agent.issue === "retrying"
@@ -282,18 +290,18 @@ function LiveAgentCard({
           }`}
         >
           {agent.issue || agent.needsApproval ? (
-            <CircleAlert className="size-3 shrink-0" strokeWidth={1.75} />
+            <CircleAlert className="icon-xs shrink-0" strokeWidth={1.75} />
           ) : agent.done ? (
-            <Check className="size-3 shrink-0" strokeWidth={2.25} />
+            <Check className="icon-xs shrink-0" strokeWidth={2.25} />
           ) : (
             <SessionWorkingStatus startedAt={agent.startedAt} />
           )}
-          {agent.issue || agent.needsApproval || agent.done ? (
-            <span className="min-w-0 truncate">{activity}</span>
-          ) : null}
+          {flagged ? <span className="min-w-0 truncate">{activity}</span> : null}
         </span>
-        {elapsed && (agent.issue || agent.needsApproval || agent.done) ? (
-          <span className="shrink-0 tabular-nums">{elapsed}</span>
+        {elapsed && flagged ? (
+          <span className="ms-auto shrink-0 tabular-nums @max-[200px]/rail:hidden">
+            {elapsed}
+          </span>
         ) : null}
       </span>
     </Button>

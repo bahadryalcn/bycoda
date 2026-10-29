@@ -226,25 +226,28 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Copy actions sit at the row's end on the row's own surface (rest, hover or current). They show for the hovered row, the
-   current row and keyboard focus inside the row; the current row is also where a tap lands on touch devices. */
+/* Copy actions live in a trailing slot the row reserves, so they never cover the key or value they act on. They show for
+   the hovered row, the current row and keyboard focus inside the row; the current row is also where a tap lands on touch
+   devices. */
+.row[data-copyable] .line {
+  padding-right: calc(var(--json-actions-slot, 3.5rem) + var(--space-1));
+}
 .actions {
   position: absolute;
   top: 1px;
   right: 0;
   bottom: 1px;
   display: flex;
+  inline-size: var(--json-actions-slot, 3.5rem);
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-1);
   padding-inline: var(--space-1);
   border-radius: 0 var(--ui-control-radius) var(--ui-control-radius) 0;
-  background: var(--ui-surface);
+  background: transparent;
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--duration-fast) var(--ease-standard);
-}
-.row[data-active] .actions {
-  background: var(--ui-surface-selected);
 }
 .row[data-active] .actions,
 .row:focus-within .actions {
@@ -308,9 +311,6 @@
     border-radius: inherit;
     background: var(--ui-surface-hover);
     pointer-events: none;
-  }
-  .row:not([data-active]):hover .actions {
-    background: var(--ui-surface-hover);
   }
   .row:hover .chevron[data-branch] {
     color: var(--foreground);

@@ -1,21 +1,20 @@
+/* Archived projects and conversations use the shared settings collection; this
+   only orders the page as an open column of groups. */
 .archive-settings {
-  min-inline-size: 0;
-}
-.archive-settings-search {
   display: flex;
-  padding: 12px 16px;
+  flex-direction: column;
+  gap: 28px;
   min-inline-size: 0;
-  border-block-end: 1px solid var(--color-stroke);
-}
-.archive-settings-search > * {
-  inline-size: min(100%, 28rem);
 }
 .archive-settings-list {
   max-block-size: min(60dvh, 36rem);
-  overflow: auto;
-  overscroll-behavior: contain;
-  min-inline-size: 0;
 }
-.archive-settings-list > .settings-feedback {
-  padding: 12px 16px;
+.archive-settings-note {
+  margin: 0 0 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.archive-settings-partial {
+  padding: 0 12px 8px;
 }

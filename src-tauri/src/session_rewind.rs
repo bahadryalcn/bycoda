@@ -4,6 +4,7 @@
 //! acknowledges the durable native receipt. These are internal adapter methods,
 //! deliberately not renderer commands accepting an untrusted Git-restored flag.
 use super::*;
+use crate::remote::NativeProjection;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -48,9 +49,19 @@ pub(crate) struct ManagedTurnRequest {
 
 /// Native providers use the same accepted-user-block boundary and Host Git
 /// history as remote providers. Neither hook invokes a native Git checkpoint.
+/// Consumption includes the local journal transition while the actual Host
+/// route/reply remains guarded; a returned observation is not application authority.
 pub(crate) trait TurnExecutionHost {
-    fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String>;
-    fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String>;
+    fn capture_before<T>(
+        &self,
+        request: &ManagedTurnRequest,
+        consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String>;
+    fn capture_after<T>(
+        &self,
+        request: &ManagedTurnRequest,
+        consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String>;
 }
 
 pub(crate) fn begin_managed_turn(
@@ -120,11 +131,14 @@ fn begin_managed_turn_inner(
             return Err("Another managed turn won execution admission".into());
         }
     }
-    let record = host.capture_before(request)?;
-    validate_turn_capture(&record, request, "before")?;
-    store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
+    host.capture_before(request, |record, projection| {
+        validate_turn_capture(record, request, "before")?;
+        NativeProjection::commit(&[projection], || {
+            store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='active' WHERE session_id=?1 AND request_json=?2 AND phase='starting'",
         params![request.session_id,signature]).map_err(|e| e.to_string())?;
-    Ok(())
+            Ok(())
+        })
+    })
 }
 
 fn pending_turn(
@@ -166,11 +180,14 @@ fn finish_managed_turn_inner(
     }
     store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='finishing' WHERE session_id=?1 AND request_json=?2",
         params![request.session_id,signature]).map_err(|e| e.to_string())?;
-    let record = host.capture_after(request)?;
-    validate_turn_capture(&record, request, "after")?;
-    store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase='finishing'",
+    host.capture_after(request, |record, projection| {
+        validate_turn_capture(record, request, "after")?;
+        NativeProjection::commit(&[projection], || {
+            store.lock_conn()?.execute("UPDATE native_managed_turns SET phase='complete' WHERE session_id=?1 AND request_json=?2 AND phase='finishing'",
         params![request.session_id,signature]).map_err(|e| e.to_string())?;
-    Ok(())
+            Ok(())
+        })
+    })
 }
 
 fn validate_turn_capture(
@@ -508,9 +525,20 @@ pub(crate) fn complete(
 /// Implemented by the authenticated local/remote Host transport. A prepared
 /// operation with unknown Git outcome returns None and remains fenced. It must
 /// never infer success from a timeout or ask a provider to revert files.
+/// Restore/finalization callbacks keep native SQL consumption inside the
+/// authenticated status/acknowledgement lifetime, including during recovery.
 pub(crate) trait RewindExecutionHost {
-    fn restored_request(&self, operation_id: &str) -> Result<Option<NativeRestoreRequest>, String>;
-    fn acknowledge(&self, operation_id: &str, receipt: &NativeRewindReceipt) -> Result<(), String>;
+    fn restored_request<T>(
+        &self,
+        operation_id: &str,
+        consume: impl FnOnce(Option<&NativeRestoreRequest>, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String>;
+    fn acknowledge<T>(
+        &self,
+        operation_id: &str,
+        receipt: &NativeRewindReceipt,
+        consume: impl FnOnce(&NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String>;
 }
 
 #[cfg(test)]
@@ -537,16 +565,24 @@ fn reconcile_for_session(
     };
     let mut blocked = Vec::new();
     for operation_id in pending {
-        let Some(request) = host.restored_request(&operation_id)? else {
+        let restored = host.restored_request(&operation_id, |request, status| {
+            let Some(request) = request else {
+                return Ok(false);
+            };
+            if request.operation_id != operation_id {
+                return Err("Execution Host returned a different rewind operation".into());
+            }
+            let receipt = NativeProjection::commit(&[status], || restore(store, request))?;
+            host.acknowledge(&operation_id, &receipt, |ack| {
+                NativeProjection::commit(&[status, ack], || {
+                    complete(store, &operation_id, &receipt)
+                })
+            })?;
+            Ok(true)
+        })?;
+        if !restored {
             blocked.push(operation_id);
-            continue;
-        };
-        if request.operation_id != operation_id {
-            return Err("Execution Host returned a different rewind operation".into());
         }
-        let receipt = restore(store, &request)?;
-        host.acknowledge(&operation_id, &receipt)?;
-        complete(store, &operation_id, &receipt)?;
     }
     Ok(blocked)
 }
@@ -610,55 +646,82 @@ fn reconcile_pending_transport(
 
 /// Concrete authenticated transport. The Host controls Git phases and receipt acknowledgement.
 impl TurnExecutionHost for crate::remote::NativeWorkspaceTransport {
-    fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
-        self.call(
+    fn capture_before<T>(
+        &self,
+        request: &ManagedTurnRequest,
+        consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.project(
             "native.turn.begin",
             serde_json::to_value(request).map_err(|e| e.to_string())?,
+            consume,
         )
     }
-    fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
-        self.call(
+    fn capture_after<T>(
+        &self,
+        request: &ManagedTurnRequest,
+        consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.project(
             "native.turn.end",
             serde_json::to_value(request).map_err(|e| e.to_string())?,
+            consume,
         )
     }
 }
 
 impl RewindExecutionHost for crate::remote::NativeWorkspaceTransport {
-    fn restored_request(&self, operation_id: &str) -> Result<Option<NativeRestoreRequest>, String> {
-        let status = self.call("native.rewind.status", json!({"operationId":operation_id}))?;
-        if status["operationId"] != operation_id {
-            return Err("Execution Host returned a different rewind operation".into());
-        }
-        if !matches!(
-            status["phase"].as_str(),
-            Some("git-restored" | "conversation-restored" | "complete")
-        ) {
-            return Ok(None);
-        }
-        let request: NativeRestoreRequest =
-            serde_json::from_value(status["restoreRequest"].clone()).map_err(|e| e.to_string())?;
-        if request.operation_id != operation_id {
-            return Err("Execution Host returned a different restore operation".into());
-        }
-        Ok(Some(request))
+    fn restored_request<T>(
+        &self,
+        operation_id: &str,
+        consume: impl FnOnce(Option<&NativeRestoreRequest>, &NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.project(
+            "native.rewind.status",
+            json!({"operationId":operation_id}),
+            |status, projection| {
+                if status["operationId"] != operation_id {
+                    return Err("Execution Host returned a different rewind operation".into());
+                }
+                if !matches!(
+                    status["phase"].as_str(),
+                    Some("git-restored" | "conversation-restored" | "complete")
+                ) {
+                    return consume(None, projection);
+                }
+                let request: NativeRestoreRequest =
+                    serde_json::from_value(status["restoreRequest"].clone())
+                        .map_err(|e| e.to_string())?;
+                if request.operation_id != operation_id {
+                    return Err("Execution Host returned a different restore operation".into());
+                }
+                consume(Some(&request), projection)
+            },
+        )
     }
-    fn acknowledge(&self, operation_id: &str, receipt: &NativeRewindReceipt) -> Result<(), String> {
-        let acknowledgement = self.call(
+    fn acknowledge<T>(
+        &self,
+        operation_id: &str,
+        receipt: &NativeRewindReceipt,
+        consume: impl FnOnce(&NativeProjection<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.project(
             "native.rewind.ack",
             json!({"operationId":operation_id,"receipt":receipt}),
-        )?;
-        if acknowledgement["operationId"] != operation_id
-            || acknowledgement["acknowledged"] != true
-            || acknowledgement["finalized"] != true
-            || acknowledgement["receipt"]["operationId"] != operation_id
-            || acknowledgement["receipt"]["conversationRevision"] != receipt.revision
-        {
-            return Err(
-                "Execution Host has not durably finalized the native rewind receipt".into(),
-            );
-        }
-        Ok(())
+            |acknowledgement, projection| {
+                if acknowledgement["operationId"] != operation_id
+                    || acknowledgement["acknowledged"] != true
+                    || acknowledgement["finalized"] != true
+                    || acknowledgement["receipt"]["operationId"] != operation_id
+                    || acknowledgement["receipt"]["conversationRevision"] != receipt.revision
+                {
+                    return Err(
+                        "Execution Host has not durably finalized the native rewind receipt".into(),
+                    );
+                }
+                consume(projection)
+            },
+        )
     }
 }
 
@@ -826,56 +889,67 @@ pub fn managed_rewind_plan(
     let boundary = validate_rewind_input(&store, &request)?;
     assert_writable(&store, request["sessionId"].as_str().unwrap())?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "sessions.native-rewind.v1")?;
-    let plan = host.call(
+    host.project(
         "native.rewind.plan",
         json!({"request":request,"conversation":boundary}),
-    )?;
-    if plan["workspaceId"] != request["workspaceId"]
-        || plan["sessionId"] != request["sessionId"]
-        || plan["expectedConversationRevision"] != boundary.revision
-        || plan["expectedRevision"] != request["expectedRevision"]
-    {
-        return Err("Execution Host returned a different rewind preview".into());
-    }
-    Ok(plan)
+        |plan, _projection| {
+            if plan["workspaceId"] != request["workspaceId"]
+                || plan["sessionId"] != request["sessionId"]
+                || plan["expectedConversationRevision"] != boundary.revision
+                || plan["expectedRevision"] != request["expectedRevision"]
+            {
+                return Err("Execution Host returned a different rewind preview".into());
+            }
+            Ok(plan.clone())
+        },
+    )
 }
 
 /// A failed/absent preparation is not evidence of no mutation. Only this
 /// authenticated, durable Host tombstone acknowledgement can release intent.
 /// If preparation won the race, return its original journal for resumption.
-fn cancel_native_preparation(
+fn cancel_native_preparation<T>(
     store: &SessionStore,
     host: &crate::remote::NativeWorkspaceTransport,
     workspace_id: &str,
     session_id: &str,
     key: &str,
-) -> Result<Option<Value>, String> {
-    let cancelled = host.call(
+    ancestors: &[&NativeProjection<'_>],
+    consume: impl FnOnce(&Value, &[&NativeProjection<'_>]) -> Result<T, String>,
+) -> Result<Option<T>, String> {
+    host.project(
         "native.rewind.cancelPreparation",
         json!({"workspaceId":workspace_id,"sessionId":session_id,"idempotencyKey":key}),
-    )?;
-    if cancelled["workspaceId"] != workspace_id
-        || cancelled["sessionId"] != session_id
-        || cancelled["idempotencyKey"] != key
-    {
-        return Err("Execution Host returned a different preparation cancellation".into());
-    }
-    if cancelled["cancelled"] == true {
-        let released = store.lock_conn()?.execute("UPDATE native_rewind_intents SET phase='complete'
+        |cancelled, projection| {
+            let mut projections = ancestors.to_vec();
+            projections.push(projection);
+            if cancelled["workspaceId"] != workspace_id
+                || cancelled["sessionId"] != session_id
+                || cancelled["idempotencyKey"] != key
+            {
+                return Err("Execution Host returned a different preparation cancellation".into());
+            }
+            if cancelled["cancelled"] == true {
+                NativeProjection::commit(&projections, || {
+                    let released = store.lock_conn()?.execute("UPDATE native_rewind_intents SET phase='complete'
             WHERE workspace_id=?1 AND idempotency_key=?2 AND operation_id IS NULL AND phase='pending'
               AND NOT EXISTS(SELECT 1 FROM native_rewind_requests WHERE workspace_id=?1 AND idempotency_key=?2)",
             params![workspace_id,key]).map_err(|e|e.to_string())?;
-        if released != 1 {
-            return Err(
-                "Native rewind cancellation identity changed; recovery remains pending".into(),
-            );
-        }
-        return Ok(None);
-    }
-    if cancelled["cancelled"] != false || cancelled["operation"].is_null() {
-        return Err("Execution Host has not confirmed preparation cancellation".into());
-    }
-    Ok(Some(cancelled["operation"].clone()))
+                    if released != 1 {
+                    return Err(
+                        "Native rewind cancellation identity changed; recovery remains pending".into(),
+                    );
+                    }
+                    Ok(())
+                })?;
+                return Ok(None);
+            }
+            if cancelled["cancelled"] != false || cancelled["operation"].is_null() {
+                return Err("Execution Host has not confirmed preparation cancellation".into());
+            }
+            consume(&cancelled["operation"], &projections).map(Some)
+        },
+    )
 }
 
 fn native_apply(
@@ -956,63 +1030,95 @@ fn native_apply_inner(
         // Preparation must acquire a durable Host reservation without changing Git.
         // After a lost response, authenticate and discover the original durable
         // operation by its key before attempting idempotent preparation again.
-        let mut found = if retry {
-            host.call(
+        // Every source of the prepared operation keeps its own transport guards
+        // through validation and the durable local operation admission.
+        let admit_prepared = |prepared: &Value,
+                              projections: &[&NativeProjection<'_>]|
+         -> Result<String, String> {
+            let operation_id = prepared["operationId"]
+                .as_str()
+                .ok_or("Execution Host returned no rewind operation")?
+                .to_owned();
+            validate_id(&operation_id, "rewind operation")?;
+            if prepared["sessionId"] != session_id
+                || prepared["workspaceId"] != workspace_id
+                || prepared["expectedConversationRevision"] != boundary.revision
+                || prepared["direction"] != serde_json::to_value(&direction).unwrap()
+            {
+                return Err("Execution Host returned a different prepared rewind".into());
+            }
+            NativeProjection::commit(projections, || {
+                native_rewind_crash_boundary("before-request-insert");
+                let conn = store.lock_conn()?;
+                let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+                tx.execute("INSERT INTO native_rewind_requests(operation_id,session_id,workspace_id,idempotency_key,mutation_json) VALUES(?1,?2,?3,?4,?5)",
+            params![operation_id,session_id,workspace_id,key,signature]).map_err(|e| e.to_string())?;
+                tx.execute("UPDATE native_rewind_intents SET operation_id=?3 WHERE workspace_id=?1 AND idempotency_key=?2",
+            params![workspace_id,key,operation_id]).map_err(|e|e.to_string())?;
+                tx.commit().map_err(|e| e.to_string())?;
+                Ok(operation_id)
+            })
+        };
+        let operation_id = if retry {
+            host.project(
                 "native.rewind.lookup",
                 json!({"workspaceId":workspace_id,"sessionId":session_id,"idempotencyKey":key}),
+                |found, lookup| {
+                    if !found.is_null() {
+                        return admit_prepared(found, &[lookup]);
+                    }
+                    cancel_native_preparation(
+                        store,
+                        host,
+                        workspace_id,
+                        session_id,
+                        key,
+                        &[lookup],
+                        admit_prepared,
+                    )?
+                    .ok_or_else(|| {
+                        "Native rewind preparation was cancelled; preview again with a new key"
+                            .into()
+                    })
+                },
             )?
         } else {
-            Value::Null
-        };
-        if retry && found.is_null() {
-            if let Some(operation) =
-                cancel_native_preparation(store, host, workspace_id, session_id, key)?
-            {
-                found = operation;
-            } else {
-                return Err(
-                    "Native rewind preparation was cancelled; preview again with a new key".into(),
-                );
-            }
-        }
-        let prepared = if found.is_null() {
-            match host.call(
+            let mut consumed = false;
+            match host.project(
                 "native.rewind.prepare",
                 json!({"request":request,"direction":direction,"conversation":boundary}),
+                |prepared, projection| {
+                    consumed = true;
+                    admit_prepared(prepared, &[projection])
+                },
             ) {
-                Ok(prepared) => prepared,
+                Ok(operation_id) => operation_id,
+                // A validation/local admission failure or a post-consumption route
+                // retirement cannot trigger another preparation/cancellation.
+                Err(error) if consumed => return Err(error),
                 Err(error) => {
-                    match cancel_native_preparation(store, host, workspace_id, session_id, key) {
-                        Ok(Some(operation)) => operation,
+                    let mut cancellation_consumed = false;
+                    match cancel_native_preparation(
+                        store,
+                        host,
+                        workspace_id,
+                        session_id,
+                        key,
+                        &[],
+                        |operation, projections| {
+                            cancellation_consumed = true;
+                            admit_prepared(operation, projections)
+                        },
+                    ) {
+                        Ok(Some(operation_id)) => operation_id,
+                        Err(recovery_error) if cancellation_consumed => return Err(recovery_error),
                         // The original failure remains visible. A matching tombstone
                         // ack lets this same app request a fresh preview immediately.
                         Ok(None) | Err(_) => return Err(error),
                     }
                 }
             }
-        } else {
-            found
         };
-        let operation_id = prepared["operationId"]
-            .as_str()
-            .ok_or("Execution Host returned no rewind operation")?
-            .to_owned();
-        validate_id(&operation_id, "rewind operation")?;
-        if prepared["sessionId"] != session_id
-            || prepared["workspaceId"] != workspace_id
-            || prepared["expectedConversationRevision"] != boundary.revision
-            || prepared["direction"] != serde_json::to_value(&direction).unwrap()
-        {
-            return Err("Execution Host returned a different prepared rewind".into());
-        }
-        native_rewind_crash_boundary("before-request-insert");
-        let conn = store.lock_conn()?;
-        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
-        tx.execute("INSERT INTO native_rewind_requests(operation_id,session_id,workspace_id,idempotency_key,mutation_json) VALUES(?1,?2,?3,?4,?5)",
-            params![operation_id,session_id,workspace_id,key,signature]).map_err(|e| e.to_string())?;
-        tx.execute("UPDATE native_rewind_intents SET operation_id=?3 WHERE workspace_id=?1 AND idempotency_key=?2",
-            params![workspace_id,key,operation_id]).map_err(|e|e.to_string())?;
-        tx.commit().map_err(|e| e.to_string())?;
         (operation_id, true)
     };
     if may_apply && receipt(store, &operation_id)?.is_none() {
@@ -1033,44 +1139,52 @@ fn native_apply_inner(
             );
         }
         // A timeout here preserves the native rescue/fence; only status can prove Git restored.
-        host.call("native.rewind.apply", json!({"operationId":operation_id,"request":request,"direction":direction,"transcriptRescueId":rescue_id}))?;
+        host.project("native.rewind.apply", json!({"operationId":operation_id,"request":request,"direction":direction,"transcriptRescueId":rescue_id}), |_, _projection| Ok(()))?;
     }
-    let Some(restore_request) = host.restored_request(&operation_id)? else {
-        return Err(
-            "Managed rewind outcome is unknown. Reconnect to the same Host before continuing."
-                .into(),
-        );
-    };
-    if restore_request.session_id != session_id || restore_request.direction != direction {
-        return Err("Execution Host returned a different native rewind".into());
-    }
-    let native_receipt = restore(store, &restore_request)?;
-    host.acknowledge(&operation_id, &native_receipt)?;
-    let status = host.call("native.rewind.status", json!({"operationId":operation_id}))?;
-    let result = status["receipt"].clone();
-    if status["phase"] != "complete"
-        || status["finalized"] != true
-        || result["operationId"] != operation_id
-        || result["workspaceId"] != workspace_id
-        || result["sessionId"] != session_id
-        || result["conversationRevision"] != native_receipt.revision
-        || result["workspaceRevision"].as_i64().is_none()
-    {
-        return Err("Execution Host has not finalized this native rewind".into());
-    }
-    complete(store, &operation_id, &native_receipt)?;
-    store
-        .lock_conn()?
-        .execute(
-            "UPDATE sessions SET workspace_revision=?2 WHERE id=?1 AND workspace_id=?3",
-            params![
-                session_id,
-                result["workspaceRevision"].as_i64(),
-                workspace_id
-            ],
-        )
-        .map_err(|e| e.to_string())?;
-    Ok(result)
+    host.restored_request(&operation_id, |restore_request, restored| {
+        let Some(restore_request) = restore_request else {
+            return Err(
+                "Managed rewind outcome is unknown. Reconnect to the same Host before continuing."
+                    .into(),
+            );
+        };
+        if restore_request.session_id != session_id || restore_request.direction != direction {
+            return Err("Execution Host returned a different native rewind".into());
+        }
+        let native_receipt =
+            NativeProjection::commit(&[restored], || restore(store, restore_request))?;
+        host.acknowledge(&operation_id, &native_receipt, |ack| {
+            host.project(
+                "native.rewind.status",
+                json!({"operationId":operation_id}),
+                |status, finalized| {
+                    let result = &status["receipt"];
+                    if status["phase"] != "complete"
+                        || status["finalized"] != true
+                        || result["operationId"] != operation_id
+                        || result["workspaceId"] != workspace_id
+                        || result["sessionId"] != session_id
+                        || result["conversationRevision"] != native_receipt.revision
+                        || result["workspaceRevision"].as_i64().is_none()
+                    {
+                        return Err("Execution Host has not finalized this native rewind".into());
+                    }
+                    NativeProjection::commit(&[restored, ack, finalized], || {
+                        complete(store, &operation_id, &native_receipt)?;
+                        store.lock_conn()?.execute(
+                        "UPDATE sessions SET workspace_revision=?2 WHERE id=?1 AND workspace_id=?3",
+                        params![
+                            session_id,
+                            result["workspaceRevision"].as_i64(),
+                            workspace_id
+                        ],
+                    ).map_err(|e| e.to_string())?;
+                        Ok(result.clone())
+                    })
+                },
+            )
+        })
+    })
 }
 
 /// Tests stop a real native process at these exact cross-store crash windows.
@@ -1361,16 +1475,84 @@ mod tests {
         fail_ack: bool,
     }
     impl RewindExecutionHost for Host {
-        fn restored_request(&self, _: &str) -> Result<Option<NativeRestoreRequest>, String> {
-            Ok(self.request.clone())
+        fn restored_request<T>(
+            &self,
+            _: &str,
+            consume: impl FnOnce(
+                Option<&NativeRestoreRequest>,
+                &NativeProjection<'_>,
+            ) -> Result<T, String>,
+        ) -> Result<T, String> {
+            consume(self.request.as_ref(), &NativeProjection::fixture())
         }
-        fn acknowledge(&self, _: &str, _: &NativeRewindReceipt) -> Result<(), String> {
+        fn acknowledge<T>(
+            &self,
+            _: &str,
+            _: &NativeRewindReceipt,
+            consume: impl FnOnce(&NativeProjection<'_>) -> Result<T, String>,
+        ) -> Result<T, String> {
             if self.fail_ack {
                 Err("offline".into())
             } else {
-                Ok(())
+                consume(&NativeProjection::fixture())
             }
         }
+    }
+
+    #[test]
+    fn checkpoint_native_reconcile_consumes_restore_and_complete_inside_host_callbacks() {
+        struct CallbackHost<'a> {
+            store: &'a SessionStore,
+            request: NativeRestoreRequest,
+            status_active: std::cell::Cell<bool>,
+        }
+        impl RewindExecutionHost for CallbackHost<'_> {
+            fn restored_request<T>(
+                &self,
+                operation_id: &str,
+                consume: impl FnOnce(
+                    Option<&NativeRestoreRequest>,
+                    &NativeProjection<'_>,
+                ) -> Result<T, String>,
+            ) -> Result<T, String> {
+                assert_eq!(operation_id, self.request.operation_id);
+                self.status_active.set(true);
+                let result = consume(Some(&self.request), &NativeProjection::fixture());
+                self.status_active.set(false);
+                result
+            }
+            fn acknowledge<T>(
+                &self,
+                operation_id: &str,
+                native_receipt: &NativeRewindReceipt,
+                consume: impl FnOnce(&NativeProjection<'_>) -> Result<T, String>,
+            ) -> Result<T, String> {
+                assert!(
+                    self.status_active.get(),
+                    "status must still guard the restore/ack"
+                );
+                assert_eq!(
+                    receipt(self.store, operation_id)?,
+                    Some(native_receipt.clone())
+                );
+                let result = consume(&NativeProjection::fixture());
+                assert!(
+                    assert_writable(self.store, &self.request.session_id).is_ok(),
+                    "completion SQL must run before acknowledgement scope ends"
+                );
+                result
+            }
+        }
+        let store = SessionStore::open_in_memory().unwrap();
+        let revision = seed(&store);
+        rescue(&store, "rewind-1", "native", revision).unwrap();
+        let host = CallbackHost {
+            store: &store,
+            request: request(revision),
+            status_active: std::cell::Cell::new(false),
+        };
+        assert!(reconcile(&store, &host).unwrap().is_empty());
+        assert!(!host.status_active.get());
     }
 
     #[test]
@@ -1441,17 +1623,70 @@ mod tests {
         blocked: bool,
     }
     impl TurnExecutionHost for TurnHost {
-        fn capture_before(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
-            Ok(
-                json!({"workspaceId":request.workspace_id,"sessionId":request.session_id,
+        fn capture_before<T>(
+            &self,
+            request: &ManagedTurnRequest,
+            consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+        ) -> Result<T, String> {
+            consume(
+                &json!({"workspaceId":request.workspace_id,"sessionId":request.session_id,
                 "userBlockId":request.user_block_id,"runId":request.run_id,"conversationRevision":request.conversation_revision,
                 "before":if self.blocked { json!({"status":"blocked","reason":"sparse checkout"}) } else { json!({"status":"complete"}) },
                 "after":if self.blocked { json!({"status":"blocked","reason":"sparse checkout"}) } else { json!({"status":"complete"}) }}),
+                &NativeProjection::fixture(),
             )
         }
-        fn capture_after(&self, request: &ManagedTurnRequest) -> Result<Value, String> {
-            self.capture_before(request)
+        fn capture_after<T>(
+            &self,
+            request: &ManagedTurnRequest,
+            consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+        ) -> Result<T, String> {
+            self.capture_before(request, consume)
         }
+    }
+
+    #[test]
+    fn checkpoint_native_turn_consumes_journal_sql_inside_capture_callbacks() {
+        struct CallbackHost<'a>(&'a SessionStore);
+        impl TurnExecutionHost for CallbackHost<'_> {
+            fn capture_before<T>(
+                &self,
+                request: &ManagedTurnRequest,
+                consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+            ) -> Result<T, String> {
+                let result = TurnHost { blocked: false }.capture_before(request, consume);
+                assert_eq!(
+                    pending_turn(self.0, &request.session_id)?.unwrap().1,
+                    "active",
+                    "active SQL must be consumed before the capture scope ends"
+                );
+                result
+            }
+            fn capture_after<T>(
+                &self,
+                request: &ManagedTurnRequest,
+                consume: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+            ) -> Result<T, String> {
+                let result = TurnHost { blocked: false }.capture_after(request, consume);
+                assert!(
+                    pending_turn(self.0, &request.session_id)?.is_none(),
+                    "completion SQL must be consumed before the capture scope ends"
+                );
+                result
+            }
+        }
+        let store = SessionStore::open_in_memory().unwrap();
+        let revision = seed(&store);
+        let request = ManagedTurnRequest {
+            workspace_id: "managed".into(),
+            session_id: "native".into(),
+            user_block_id: "u2".into(),
+            run_id: "run-2".into(),
+            conversation_revision: revision,
+        };
+        let host = CallbackHost(&store);
+        begin_managed_turn(&store, &host, &request, true).unwrap();
+        finish_managed_turn(&store, &host, &request, true).unwrap();
     }
 
     #[test]
@@ -1480,10 +1715,18 @@ mod tests {
     fn checkpoint_native_lightweight_turns_ignore_stuck_rows_without_capture() {
         struct NoCapture;
         impl TurnExecutionHost for NoCapture {
-            fn capture_before(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+            fn capture_before<T>(
+                &self,
+                _: &ManagedTurnRequest,
+                _: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+            ) -> Result<T, String> {
                 panic!("lightweight turns must not capture Git state")
             }
-            fn capture_after(&self, _: &ManagedTurnRequest) -> Result<Value, String> {
+            fn capture_after<T>(
+                &self,
+                _: &ManagedTurnRequest,
+                _: impl FnOnce(&Value, &NativeProjection<'_>) -> Result<T, String>,
+            ) -> Result<T, String> {
                 panic!("lightweight turns must not capture Git state")
             }
         }

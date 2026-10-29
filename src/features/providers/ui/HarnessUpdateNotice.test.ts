@@ -35,8 +35,11 @@ vi.mock("../../../integrations/harness/core/child", () => ({
     else installed = "2.1.285 (Claude Code)";
   }),
 }));
+const catalogModels: unknown[] = [];
 vi.mock("../../sessions/model/models", () => ({
   isPickerProviderVisible: (id: string) => id !== "codex",
+  catalogModelsFor: () => catalogModels,
+  hasLiveCatalog: () => false,
 }));
 const refreshHarnessCatalogs = vi.fn(async () => undefined);
 vi.mock("../../../integrations/harness/core/registry", () => ({
@@ -108,7 +111,9 @@ describe("HarnessUpdateNotice", () => {
       harness: "claude",
       source: expect.any(String),
     });
-    expect(notice?.textContent).toContain("Model picker refreshed");
+    expect(notice?.textContent).toContain(
+      "CLI version verified. Model discovery can be retried in Providers.",
+    );
     vi.useFakeTimers();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
@@ -200,7 +205,7 @@ describe("HarnessUpdateNotice", () => {
       expect(snapshot().runs.opencode?.status).toBe("updating");
 
       await act(async () => finishUpdate());
-      expect(snapshot().runs.opencode).toEqual({ status: "updated", version: "2.0.26" });
+      expect(snapshot().runs.opencode).toEqual({ status: "updated", version: "2.0.26", catalogRefresh: "unchanged" });
       expect(document.body.querySelector('[aria-label="Harness updates"]')).toBeNull();
       await act(async () => {
         root.render(null);

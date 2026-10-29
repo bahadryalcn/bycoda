@@ -87,15 +87,11 @@ impl Group {
             Self::Social => "social.tools.call",
         }
     }
-    fn issue(self, app: &AppHandle, params: Value) -> Result<Value, String> {
+    fn issue_method(self) -> &'static str {
         match self {
-            Self::Conversation => {
-                crate::remote::local_conversation_rpc(app, "conversation.access.issue", params)
-            }
-            Self::RuntimeLogs => {
-                crate::remote::local_runtime_logs_rpc(app, "runtimeLogs.access.issue", params)
-            }
-            Self::Social => crate::remote::local_social_rpc(app, "social.access.issue", params),
+            Self::Conversation => "conversation.access.issue",
+            Self::RuntimeLogs => "runtimeLogs.access.issue",
+            Self::Social => "social.access.issue",
         }
     }
 }
@@ -109,9 +105,46 @@ struct Route {
     current: Mutex<Value>,
     renew: Box<Renew>,
     alive: AtomicBool,
+    admission: Mutex<()>,
+    issuer: Option<Arc<crate::remote::NativeServiceChannel>>,
 }
 impl Route {
+    fn revoke(&self) {
+        let _gate = self
+            .admission
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.alive.store(false, Ordering::Release);
+    }
+    fn admit(self: &Arc<Self>) -> Result<ScopedResponseAdmission, String> {
+        let admit = || {
+            let _gate = self
+                .admission
+                .lock()
+                .map_err(|_| "Scoped response admission is unavailable")?;
+            if !self.alive.load(Ordering::Acquire) {
+                return Err("Session tool connection closed".into());
+            }
+            Ok(ScopedResponseAdmission {
+                _route: self.clone(),
+            })
+        };
+        match &self.issuer {
+            Some(issuer) => issuer.admit(admit),
+            None => admit(),
+        }
+    }
+    fn check(&self) -> Result<(), String> {
+        if !self.alive.load(Ordering::Acquire) {
+            return Err("Session tool connection closed".into());
+        }
+        if let Some(issuer) = &self.issuer {
+            issuer.check()?;
+        }
+        Ok(())
+    }
     fn token(&self) -> Result<String, String> {
+        self.check()?;
         if !self.alive.load(Ordering::Acquire) {
             return Err("Session tool connection closed".into());
         }
@@ -123,6 +156,7 @@ impl Route {
             .ok_or("Tool credential unavailable".into())
     }
     fn renew_after(&self, rejected: &str) -> Result<String, String> {
+        self.check()?;
         // The mutex deduplicates concurrent rejection recovery, never normal calls.
         let mut current = self
             .current
@@ -151,10 +185,18 @@ impl Route {
         {
             return Err("Session tool authority changed; reconnect the conversation".into());
         }
+        self.check()?;
         let token = renewed["token"].as_str().unwrap().to_owned();
         *current = renewed;
         Ok(token)
     }
+}
+
+/// Admission is serialized with both issuer retirement and route revocation.
+/// The original child may finish its already-admitted bounded response. This
+/// retains its principal without holding global/registry locks over socket IO.
+struct ScopedResponseAdmission {
+    _route: Arc<Route>,
 }
 #[derive(Default)]
 struct Registry {
@@ -313,13 +355,15 @@ pub(crate) fn redact_lines(tokens: &[String], lines: Vec<String>) -> Vec<String>
         })
         .collect()
 }
-pub(crate) fn register(
-    app: &AppHandle,
+pub(crate) fn register_pinned(
+    _app: &AppHandle,
     session: &str,
     stamp: (u64, u64),
     group: Group,
     mut grant: Value,
+    issuer: Arc<crate::remote::NativeServiceChannel>,
 ) -> Result<Value, String> {
+    // Called under the original grant projection; never re-enter its issuer gate.
     let endpoint = grant["endpoint"]
         .as_str()
         .filter(|value| upstream(value))
@@ -329,11 +373,14 @@ pub(crate) fn register(
         .as_str()
         .ok_or("Host environment required")?
         .to_owned();
+    if group != Group::Social && environment != issuer.environment_id() {
+        return Err("Scoped tool grant belongs to another Host issuer".into());
+    }
     if grant["token"].as_str().is_none() {
         return Err("Scoped tool credential required".into());
     }
     let broker = broker()?;
-    let app = app.clone();
+    let renew_issuer = issuer.clone();
     let route = Arc::new(Route {
         session: session.into(),
         group,
@@ -341,8 +388,18 @@ pub(crate) fn register(
         environment,
         scope: grant["scope"].clone(),
         current: Mutex::new(grant.clone()),
-        renew: Box::new(move |params| group.issue(&app, params)),
+        renew: Box::new(move |params| {
+            renew_issuer.project(group.issue_method(), params, |value| {
+                let mut value = value.clone();
+                if group != Group::Social || value.get("endpoint").is_none() {
+                    value["endpoint"] = json!(renew_issuer.endpoint());
+                }
+                Ok(value)
+            })
+        }),
         alive: AtomicBool::new(true),
+        admission: Mutex::new(()),
+        issuer: Some(issuer),
     });
     let capability = format!(
         "{}{}",
@@ -359,7 +416,7 @@ pub(crate) fn register(
     registry.routes.retain(|_, old| {
         let keep = old.session != session || old.group != group;
         if !keep {
-            old.alive.store(false, Ordering::Release);
+            old.revoke();
         }
         keep
     });
@@ -419,7 +476,7 @@ fn remove_session(registry: &mut Registry, session: &str) {
     registry.routes.retain(|_, route| {
         let keep = route.session != session;
         if !keep {
-            route.alive.store(false, Ordering::Release);
+            route.revoke();
         }
         keep
     });
@@ -448,7 +505,7 @@ pub(crate) fn revoke_all() {
     if let Some(Ok(broker)) = BROKER.get() {
         if let Ok(mut registry) = broker.registry.lock() {
             for route in registry.routes.values() {
-                route.alive.store(false, Ordering::Release);
+                route.revoke();
             }
             registry.routes.clear();
             registry.sessions.clear();
@@ -549,6 +606,7 @@ struct Reply {
     before_dispatch: bool,
 }
 fn forward(route: &Route, request: &Request, body: &[u8], token: &str) -> Result<Reply, String> {
+    route.check()?;
     if !route.alive.load(Ordering::Acquire) {
         return Err("Session tool connection closed".into());
     }
@@ -586,6 +644,7 @@ fn forward(route: &Route, request: &Request, body: &[u8], token: &str) -> Result
     if !route.alive.load(Ordering::Acquire) {
         return Err("Session tool connection closed".into());
     }
+    route.check()?;
     // Never forward Host bearer material in diagnostic error text.
     let result = String::from_utf8(result)
         .map_err(|_| "Invalid tool response")?
@@ -681,15 +740,11 @@ fn serve(mut socket: TcpStream, port: u16, registry: &Mutex<Registry>) {
         _admission = Some(admission);
         dispatch(&route, &request, &body)
     })();
+    let mut _response_admission = None;
     let result = result.and_then(|reply| {
-        if authority
-            .as_ref()
-            .is_some_and(|route| route.alive.load(Ordering::Acquire))
-        {
-            Ok(reply)
-        } else {
-            Err("Session tool connection closed".into())
-        }
+        let route = authority.as_ref().ok_or("Session tool connection closed")?;
+        _response_admission = Some(route.admit()?);
+        Ok(reply)
     });
     let reply = result.unwrap_or_else(|_| Reply { status: 502, body: br#"{"error":"Session tools unavailable. Reconnect the conversation; do not repeat an uncertain write."}"#.to_vec(), before_dispatch: false });
     let _ = write!(socket, "HTTP/1.1 {} Tool Response\r\nContent-Type: application/json\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nConnection: close\r\n\r\n", reply.status, reply.body.len());
@@ -701,6 +756,18 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::thread;
+
+    #[test]
+    fn scoped_response_admission_retains_original_principal_without_blocking_revocation() {
+        let route = route("http://127.0.0.1:1", Group::Conversation, |_| {
+            panic!("not a renewal")
+        });
+        let admitted = route.admit().unwrap();
+        route.revoke();
+        assert!(route.admit().is_err());
+        assert!(route.token().is_err());
+        assert!(Arc::ptr_eq(&admitted._route, &route));
+    }
 
     fn scope() -> Value {
         json!({"sessionId":"session", "projectId":"project", "provider":"codex", "environmentId":"environment"})
@@ -722,6 +789,8 @@ mod tests {
             current: Mutex::new(grant(endpoint, "old")),
             renew: Box::new(renew),
             alive: AtomicBool::new(true),
+            admission: Mutex::new(()),
+            issuer: None,
         })
     }
     fn query(group: Group, mcp: bool) -> (Request, Vec<u8>) {

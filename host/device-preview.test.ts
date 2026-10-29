@@ -46,6 +46,85 @@ function fixture() {
   return { host, previews };
 }
 describe("observable device previews", () => {
+  it("retains the accepted target and launch input across an asynchronous authority wait", async () => {
+    const { host, previews } = fixture();
+    let release!: () => void;
+    const held = new Promise<void>((ready) => {
+      release = ready;
+    });
+    const mutable = { ...input };
+    const job = previews.start(mutable, "owner", async () => {
+      await held;
+      return true;
+    });
+    mutable.deviceId = "foreign-target";
+    mutable.url = "exp://127.0.0.1:8082";
+    release();
+    await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("ready"));
+    expect(host.preflight.mock.calls.every(([id]) => id === "sim")).toBe(true);
+    expect(host.openExpo).toHaveBeenCalledWith(
+      "sim",
+      input.url,
+      expect.objectContaining({ authorized: expect.any(Function) }),
+    );
+    expect(previews.start(input, "owner").id).toBe(job.id);
+  });
+  it("retains the original job authority after completion and refuses fresh-authority rejoin", async () => {
+    const { host, previews } = fixture();
+    let authorized = true;
+    const job = previews.start(input, "owner", () => authorized);
+    await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("ready"));
+    const original = previews.resultAuthority(job.id, "owner");
+    expect(previews.resultAuthority(job.id, "owner")).toBe(original);
+    expect(await original()).toBe(true);
+    expect(await previews.authorizedStatus(job.id, "owner", true, () => true)).toHaveProperty(
+      "frame",
+    );
+    const effects = host.action.mock.calls.length;
+    authorized = false;
+    expect(previews.start(input, "owner", () => true).id).toBe(job.id);
+    await expect(previews.authorizedStatus(job.id, "owner", true, () => true)).rejects.toThrow(
+      "PREVIEW_AUTHORITY_REVOKED",
+    );
+    expect(await original()).toBe(false);
+    expect(host.action).toHaveBeenCalledTimes(effects);
+    expect(() => previews.resultAuthority(job.id, "foreign")).toThrow("PREVIEW_SCOPE_MISMATCH");
+  });
+  it("checks original authority after an awaited current request check before frame disclosure", async () => {
+    const { previews } = fixture();
+    let authorized = true;
+    const job = previews.start(input, "owner", () => authorized);
+    await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("ready"));
+    let release!: () => void;
+    const held = new Promise<void>((ready) => {
+      release = ready;
+    });
+    const read = previews.authorizedStatus(job.id, "owner", true, async () => {
+      await held;
+      return true;
+    });
+    const rejected = expect(read).rejects.toThrow("PREVIEW_AUTHORITY_REVOKED");
+    authorized = false;
+    release();
+    await rejected;
+    const authority = previews.resultAuthority(job.id, "owner");
+    authorized = true;
+    await previews.dispose();
+    expect(await authority()).toBe(false);
+  });
+  it("does not publish a frame if authority expires while its capture settles", async () => {
+    const { host, previews } = fixture();
+    let authorized = true;
+    host.capture.mockImplementationOnce(async () => {
+      authorized = false;
+      return { mime: "image/png", base64: "private-frame", capturedAt: "now" };
+    });
+    const job = previews.start(input, "owner", () => authorized);
+    await vi.waitFor(() => expect(previews.status(job.id, "owner").state).toBe("blocked"));
+    expect(previews.status(job.id, "owner", true)).not.toHaveProperty("frame");
+    expect(await previews.resultAuthority(job.id, "owner")()).toBe(false);
+    expect(host.capture).toHaveBeenCalledOnce();
+  });
   it("joins asynchronous authority checks on disposal and blocks the next device effect", async () => {
     const { host, previews } = fixture();
     let release!: () => void;
@@ -158,12 +237,20 @@ describe("observable device previews", () => {
     );
     await vi.waitFor(() => expect(previews.status(first.id, "owner").state).toBe("ready"));
     expect(host.prepareExpo).toHaveBeenCalledOnce();
-    expect(host.action).toHaveBeenCalledWith("sim", { type: "pressElement", label: "Aç" });
-    expect(host.action).toHaveBeenCalledWith("sim", {
-      type: "waitForText",
-      text: "Kilidi aç",
-      timeoutMs: 120000,
-    });
+    expect(host.action).toHaveBeenCalledWith(
+      "sim",
+      { type: "pressElement", label: "Aç" },
+      expect.objectContaining({ authorized: expect.any(Function) }),
+    );
+    expect(host.action).toHaveBeenCalledWith(
+      "sim",
+      {
+        type: "waitForText",
+        text: "Kilidi aç",
+        timeoutMs: 120000,
+      },
+      expect.objectContaining({ authorized: expect.any(Function) }),
+    );
     expect(previews.status(first.id, "owner")).not.toHaveProperty("frame");
     expect(previews.status(first.id, "owner", true)).toHaveProperty("frame.mime", "image/png");
     expect(() => previews.status(first.id, "other", true)).toThrow("PREVIEW_SCOPE_MISMATCH");

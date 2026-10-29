@@ -64,7 +64,7 @@ export function TaskReviewNotes({
               <li
                 key={note.id}
                 data-review-note={note.id}
-                className="space-y-1.5 rounded-md border border-(--ui-tone-neutral-border) p-2"
+                className="space-y-1.5 rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) p-2"
               >
                 <div className="flex flex-wrap items-center gap-2 text-ui-caption">
                   <Badge tone={resolved ? "success" : "warning"}>

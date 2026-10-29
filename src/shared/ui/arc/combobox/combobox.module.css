@@ -210,6 +210,11 @@
 .choice[aria-selected="true"]:not([data-highlighted]) {
   --ui-surface-selected: transparent;
 }
+/* Pressed outranks hover and the keyboard highlight, for selected and unselected rows alike. */
+.choice:active:not(:disabled, [aria-disabled="true"]) {
+  background: var(--ui-surface-pressed);
+  color: var(--foreground);
+}
 .choice:disabled,
 .choice[aria-disabled="true"] {
   --ui-surface-hover: transparent;
@@ -275,5 +280,23 @@
 @media (prefers-reduced-motion: reduce) {
   .choice {
     transition: none;
+  }
+}
+
+/* The active row is a surface fill; forced-colors mode keeps it visible with an outline, and a selected row keeps its check. */
+@media (forced-colors: active) {
+  .choice[data-highlighted],
+  .choice[data-active] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .choice:disabled,
+  .choice[aria-disabled="true"] {
+    color: GrayText;
+    opacity: 1;
+  }
+  .choiceCheck {
+    forced-color-adjust: auto;
+    color: CanvasText;
   }
 }

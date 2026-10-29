@@ -73,11 +73,13 @@ export function loadDailySummarySentAt(): number | null {
   }
 }
 
-export function saveDailySummarySentAt(at: number) {
+/** False when the delivery time could not be stored, so a restart could send again. */
+export function saveDailySummarySentAt(at: number): boolean {
   try {
     localStorage.setItem(LAST_SENT_KEY, String(at));
+    return true;
   } catch {
-    // private mode / quota
+    return false;
   }
 }
 

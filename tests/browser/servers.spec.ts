@@ -2,6 +2,14 @@ import { expect, test, type Locator } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 const evidence = "temp/verification/2026-10-19-servers-ux/browser";
 
+// The details popover closes on an outside press, so hide/show goes through the keyboard to keep the
+// selection that the retained panel is expected to keep (and a narrow popover can cover the button).
+async function toggleServers(page: import("@playwright/test").Page) {
+  const toggle = page.getByRole("button", { name: "Toggle servers" });
+  await toggle.focus();
+  await page.keyboard.press("Enter");
+}
+
 test("narrow workspace tools keep labels and keyboard focus across retained panels", async ({
   page,
 }) => {
@@ -208,7 +216,8 @@ for (const theme of ["light", "dark"]) {
       await page.keyboard.press("End");
       await expect(tabs.last()).toBeFocused();
       for (const group of await list.locator("[data-server-terminal-tab]").all()) {
-        const tab = (await group.getByRole("tab").boundingBox())!;
+        // The close action sits inside the tab surface (the host), beside the tab button.
+        const tab = (await group.boundingBox())!;
         const close = (await group
           .getByRole("button", { name: "Close terminal: 106", exact: true })
           .boundingBox())!;
@@ -239,7 +248,7 @@ for (const theme of ["light", "dark"]) {
         true,
       );
       await page.screenshot({ path: `${folder}/exit-${theme}-${width}.png` });
-      await page.getByRole("button", { name: "Back to servers", exact: true }).click();
+      await page.getByRole("button", { name: "Servers", exact: true }).click();
       await expect(page.getByRole("list", { name: "Servers" })).toBeVisible();
       expect(
         await page.evaluate(
@@ -265,10 +274,10 @@ for (const theme of ["light", "dark"]) {
       expect((await search.boundingBox())!.width).toBeGreaterThan(150);
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /Existing SSH target/ })
+        .getByRole("button", { name: /^Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
-      const navigation = details.getByRole("navigation", { name: "Server tools" });
+      const navigation = details.getByRole("group", { name: "Server tools" });
       const choose = (name: string) =>
         navigation.getByRole("button", { name, exact: true }).click();
       await expect(
@@ -281,14 +290,14 @@ for (const theme of ["light", "dark"]) {
       await expect(
         details.getByRole("heading", { name: "Saved commands", exact: true }),
       ).toBeVisible();
-      await choose("Settings");
+      await choose("Organization");
       await details
-        .getByRole("textbox", { name: "Group", exact: true })
+        .getByRole("combobox", { name: "Group", exact: true })
         .fill("Unfinished server group");
       await choose("Activity");
       await expect(details.getByText("No connection activity yet.", { exact: true })).toBeVisible();
-      await choose("Settings");
-      await expect(details.getByRole("textbox", { name: "Group", exact: true })).toHaveValue(
+      await choose("Organization");
+      await expect(details.getByRole("combobox", { name: "Group", exact: true })).toHaveValue(
         "Unfinished server group",
       );
       await page.screenshot({ path: `${evidence}/settings-${theme}-${width}.png` });
@@ -403,7 +412,7 @@ for (const theme of ["dark", "light"])
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`/tests/browser/servers.html?theme=${theme}`);
       const search = page.getByRole("textbox", { name: "Search servers" });
-      await expect(page.getByRole("list", { name: "Servers" }).getByRole("button")).toHaveCount(35);
+      await expect(page.getByRole("list", { name: "Servers" }).locator("[data-server-row]")).toHaveCount(35);
       await expect(page.getByRole("list", { name: "Servers" })).toContainText("Not connected");
       await mkdir(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/servers-${theme}-${width}-inventory.png` });
@@ -417,7 +426,7 @@ for (const theme of ["dark", "light"])
       const details = page.getByRole("region", { name: "Server details" });
       await expect(details).toBeInViewport();
       await expect(
-        details.getByRole("button", { name: "Edit machine", exact: true }),
+        details.getByRole("button", { name: "Server actions", exact: true }),
       ).toBeInViewport();
       await expect(
         details.getByRole("button", { name: "Reconnect", exact: true }),
@@ -437,13 +446,13 @@ for (const theme of ["dark", "light"])
       await expect
         .poll(() => inventory.evaluate((node) => node.parentElement!.scrollTop))
         .toBe(300);
-      await page.getByRole("button", { name: "Toggle servers" }).click();
-      await page.getByRole("button", { name: "Toggle servers" }).click();
+      await toggleServers(page);
+      await toggleServers(page);
       await expect
         .poll(() => inventory.evaluate((node) => node.parentElement!.scrollTop))
         .toBe(300);
       await expect(
-        details.getByRole("button", { name: "Edit machine", exact: true }),
+        details.getByRole("button", { name: "Server actions", exact: true }),
       ).toBeInViewport();
       await expect(first).toHaveAttribute("aria-pressed", "true");
       await expect(search).toHaveValue("");
@@ -451,14 +460,14 @@ for (const theme of ["dark", "light"])
         path: `${evidence}/servers-${theme}-${width}-unfiltered-selection.png`,
       });
       await search.fill("Server 01");
-      const machine = page.getByRole("list", { name: "Servers" }).getByRole("button");
+      const machine = page.getByRole("list", { name: "Servers" }).locator("[data-server-row]");
       await machine.focus();
       await page.keyboard.press("Enter");
       await expect(machine).toHaveAttribute("aria-pressed", "true");
       await expect(page.getByRole("region", { name: "Server details" })).toContainText("2222");
-      await page.getByRole("button", { name: "Toggle servers" }).click();
+      await toggleServers(page);
       await expect(search).toBeHidden();
-      await page.getByRole("button", { name: "Toggle servers" }).click();
+      await toggleServers(page);
       await expect(search).toHaveValue("Server 01");
       await expect(machine).toHaveAttribute("aria-pressed", "true");
       await expect(
@@ -467,12 +476,19 @@ for (const theme of ["dark", "light"])
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      const serversTab = page.getByRole("tab", { name: "Servers", exact: true });
-      await serversTab.focus();
-      await page.keyboard.press("ArrowRight");
-      await expect(page.getByRole("tab", { name: "Social Media", exact: true })).toBeFocused();
-      await page.keyboard.press("Home");
-      await expect(page.getByRole("tab", { name: "Servers", exact: true })).toBeFocused();
+      if (width >= 1024) {
+        const serversTab = page.getByRole("tab", { name: "Servers", exact: true });
+        await serversTab.focus();
+        await page.keyboard.press("ArrowRight");
+        await expect(page.getByRole("tab", { name: "Social Media", exact: true })).toBeFocused();
+        await page.keyboard.press("Home");
+        await expect(page.getByRole("tab", { name: "Servers", exact: true })).toBeFocused();
+      } else {
+        // Narrow shells replace the tablist with a tool picker (covered by the narrow-tools test).
+        await expect(
+          page.getByRole("button", { name: "Workspace tools: Servers", exact: true }),
+        ).toBeVisible();
+      }
       await mkdir(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/servers-${theme}-${width}.png` });
     });
@@ -482,12 +498,12 @@ test("projectless rail opens Servers and scroll is retained", async ({ page }) =
   await page.setViewportSize({ width: 1024, height: 600 });
   await page.goto("/tests/browser/servers.html?rail=expanded");
   const list = page.getByRole("list", { name: "Servers" });
-  await expect(list.getByRole("button")).toHaveCount(35);
+  await expect(list.locator("[data-server-row]")).toHaveCount(35);
   await list.evaluate((element) => {
     element.parentElement!.scrollTop = 300;
   });
   await expect.poll(() => list.evaluate((element) => element.parentElement!.scrollTop)).toBe(300);
-  await page.getByRole("button", { name: "Toggle servers" }).click();
+  await toggleServers(page);
   await page
     .getByRole("navigation", { name: "Projects", exact: true })
     .getByRole("button", { name: "Servers", exact: true })
@@ -504,14 +520,17 @@ for (const theme of ["light", "dark"]) {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/servers.html?theme=${theme}&refreshError=1`);
     const inventory = page.getByRole("list", { name: "Servers" });
-    await expect(inventory.getByRole("button")).toHaveCount(35);
+    await expect(inventory.locator("[data-server-row]")).toHaveCount(35);
     await inventory.getByRole("button").first().click();
-    await page.getByRole("button", { name: "Refresh servers", exact: true }).click();
+    // An outside press closes the details popover, so refresh by keyboard to keep the selection under test.
+    const refresh = page.getByRole("button", { name: "Refresh servers", exact: true });
+    await refresh.focus();
+    await page.keyboard.press("Enter");
     const alert = page.getByRole("alert");
     await expect(alert).toHaveCount(1);
     await expect(alert).toContainText("Showing last loaded data");
     await expect(alert.getByRole("button", { name: "Retry", exact: true })).toBeInViewport();
-    await expect(inventory.getByRole("button")).toHaveCount(35);
+    await expect(inventory.locator("[data-server-row]")).toHaveCount(35);
     await expect(inventory.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");
     await alert.getByRole("button", { name: "Retry", exact: true }).click();
     await expect(alert.getByRole("button", { name: "Retry", exact: true })).toBeEnabled();
@@ -526,13 +545,36 @@ for (const theme of ["light", "dark"]) {
 test("saved SSH command previews its target and copies without terminal input or startup execution", async ({
   page,
   context,
-}) => {
+  browserName,
+}, testInfo) => {
   await page.setViewportSize({ width: 390, height: 780 });
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  if (browserName === "webkit") {
+    // WebKit cannot grant clipboard permissions through Playwright. Capture the actual
+    // clipboard API payload; Chromium still checks its real clipboard.
+    testInfo.annotations.push({
+      type: "clipboard",
+      description:
+        "WebKit verifies clipboard API payloads with a fixture shim; Chromium verifies the real clipboard.",
+    });
+    await page.addInitScript(() => {
+      let clipboardText = "";
+      Object.defineProperty(navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            clipboardText = text;
+          },
+          readText: async () => clipboardText,
+        },
+      });
+    });
+  } else {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
   await page.goto("/tests/browser/servers.html");
   await page.getByRole("list", { name: "Servers" }).getByRole("button").first().click();
   await page
-    .getByRole("navigation", { name: "Server tools" })
+    .getByRole("group", { name: "Server tools" })
     .getByRole("button", { name: "Automation", exact: true })
     .click();
   const dialog = page.getByRole("region", { name: "Saved SSH commands", exact: true });
@@ -585,7 +627,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
   expect((await calls()).some((item) => item.command.startsWith("ssh_terminal"))).toBe(false);
   await dialog.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(
-    page.getByRole("tab", { name: "alice@quick.example.invalid:22", exact: true }),
+    page.getByRole("tab", { name: /^alice@quick\.example\.invalid:22/ }),
   ).toBeVisible();
   await expect
     .poll(
@@ -594,7 +636,7 @@ test("quick connect is explicit, leaves inventory unsaved and keeps the raw tab 
     .toBe(1);
   expect((await calls()).some((item) => item.command === "server_ssh_save")).toBe(false);
   await page.getByRole("button", { name: "Servers", exact: true }).click();
-  await expect(page.getByRole("list", { name: "Servers" }).getByRole("button")).toHaveCount(35);
+  await expect(page.getByRole("list", { name: "Servers" }).locator("[data-server-row]")).toHaveCount(35);
   expect((await calls()).some((item) => item.command === "pty_kill")).toBe(false);
   // Raw-tab survival on Bash integration is asserted in the provider lifecycle test;
   // this real xterm fixture has no remote integration capability response.
@@ -609,13 +651,16 @@ test("SSH config duplicate choices use or edit the existing record without impor
   await page.goto("/tests/browser/servers.html?sshFixture=1");
   await page
     .getByRole("list", { name: "Servers" })
-    .getByRole("button", { name: /Existing SSH target/ })
+    .getByRole("button", { name: /^Existing SSH target/ })
     .click();
   await page
-    .getByRole("navigation", { name: "Server tools" })
-    .getByRole("button", { name: "Settings", exact: true })
+    .getByRole("group", { name: "Server tools" })
+    .getByRole("button", { name: "Organization", exact: true })
     .click();
-  await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Server details" })
+    .getByRole("button", { name: "SSH settings", exact: true })
+    .click();
   const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
   await dialog.getByRole("button", { name: "Import SSH config", exact: true }).click();
   await dialog
@@ -683,20 +728,22 @@ for (const theme of ["light", "dark"])
     await quick.getByRole("button", { name: "Connect", exact: true }).click();
     await expect(
       page.getByRole("tab", {
-        name: "Production deployment connection with a deliberately long name",
-        exact: true,
+        name: /^Production deployment connection with a deliberately long name/,
       }),
     ).toBeVisible();
     await page.goto(`/tests/browser/servers.html?sshFixture=1&longLabels=1&theme=${theme}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("navigation", { name: "Server tools" })
-      .getByRole("button", { name: "Settings", exact: true })
+      .getByRole("group", { name: "Server tools" })
+      .getByRole("button", { name: "Organization", exact: true })
       .click();
-    await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "SSH settings", exact: true })
+      .click();
     const config = page.getByRole("dialog", { name: "SSH settings", exact: true });
     await config.getByRole("button", { name: "Import SSH config", exact: true }).click();
     await config
@@ -720,9 +767,13 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
   await page.goto("/tests/browser/servers.html?sshFixture=1&chainCertificate=1");
   await page
     .getByRole("list", { name: "Servers" })
-    .getByRole("button", { name: /Existing SSH target/ })
+    .getByRole("button", { name: /^Existing SSH target/ })
     .click();
-  await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Server details" })
+    .getByRole("button", { name: "Server actions", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
   const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
   await openAdvancedSshSettings(editor);
   await expect(editor.getByRole("textbox", { name: "Jump host", exact: true })).toHaveValue(
@@ -770,10 +821,13 @@ test("certificate and ordered jump chain edit retains canonical ID and previews 
   });
   expect((saved.endpoint as Record<string, unknown>).jumpHost).toBeUndefined();
   await page
-    .getByRole("navigation", { name: "Server tools" })
-    .getByRole("button", { name: "Settings", exact: true })
+    .getByRole("group", { name: "Server tools" })
+    .getByRole("button", { name: "Organization", exact: true })
     .click();
-  await page.getByRole("button", { name: "SSH settings", exact: true }).click();
+  await page
+    .getByRole("region", { name: "Server details" })
+    .getByRole("button", { name: "SSH settings", exact: true })
+    .click();
   const settings = page.getByRole("dialog", { name: "SSH settings", exact: true });
   await settings.getByRole("button", { name: "Import SSH config", exact: true }).click();
   await settings
@@ -822,10 +876,10 @@ for (const theme of ["light", "dark"]) {
     await page.screenshot({ path: `${folder}/${theme}-390-mode-review.png` });
     await option.click();
     await expect(
-      page.getByRole("tab", { name: "windows.example.invalid:22", exact: true }),
+      page.getByRole("tab", { name: /^windows\.example\.invalid:22 (?!·)/ }),
     ).toBeVisible();
     await expect(
-      page.getByRole("tab", { name: "windows.example.invalid:22 · PowerShell 7", exact: true }),
+      page.getByRole("tab", { name: /^windows\.example\.invalid:22 · PowerShell 7/ }),
     ).toBeVisible();
     await expect
       .poll(() =>
@@ -848,7 +902,7 @@ for (const theme of ["light", "dark"]) {
       calls
         .filter((r) => r.command === "ssh_terminal_quick_spawn")
         .map((r) => r.input.shellIntegration),
-    ).toEqual([undefined, "powershell"]);
+    ).toEqual(["auto", "powershell"]);
     expect(calls.some((r) => r.command === "pty_write" || r.command === "pty_kill")).toBe(false);
   });
 
@@ -917,8 +971,13 @@ for (const theme of ["light", "dark"]) {
     );
     await expect(page.getByRole("switch", { name: "Remember saved SSH tabs" })).toBeChecked();
     const preview = page
-      .locator("details")
+      .locator("details:not(:has(details))")
       .filter({ hasText: "Restored tabs reconnect only when you choose Connect." });
+    // At 390px the saved-tabs section and its pending list start collapsed.
+    const savedSection = page.locator('details:has(> summary:has-text("Saved SSH tabs")):has(details)');
+    if (!(await savedSection.evaluate((node) => (node as HTMLDetailsElement).open)))
+      await savedSection.locator(":scope > summary").click();
+    await preview.locator(":scope > summary").click();
     await expect(
       preview.getByText("fixture@duplicate.example.invalid:22", { exact: true }),
     ).toBeVisible();
@@ -954,7 +1013,7 @@ for (const theme of ["light", "dark"]) {
     );
     expect(input.connectionId).toBe("ssh-duplicate");
     expect(input.id).not.toBe("old-ui-reference");
-    expect(input.shellIntegration).toBeUndefined();
+    expect(input.shellIntegration).toBe("auto");
     expect(
       await page.evaluate(
         () =>
@@ -1112,9 +1171,13 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/tests/browser/servers.html?sshFixture&chainCertificate&theme=${theme}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
-    await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "Server actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
     await openAdvancedSshSettings(editor);
     const toggle = editor.getByRole("switch", { name: "Per-hop SSH policy", exact: true });
@@ -1212,7 +1275,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     const nativeRequests = () =>
       page.evaluate(
@@ -1226,8 +1289,8 @@ for (const theme of ["light", "dark"]) {
       false,
     );
     await page
-      .getByRole("navigation", { name: "Server tools" })
-      .getByRole("button", { name: "Settings", exact: true })
+      .getByRole("group", { name: "Server tools" })
+      .getByRole("button", { name: "Organization", exact: true })
       .click();
     await page.getByRole("button", { name: "Forward SSH agent", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "Forward SSH agent", exact: true });
@@ -1270,7 +1333,7 @@ for (const theme of ["light", "dark"]) {
     const spawn = (await nativeRequests()).find((r) => r.command === "ssh_terminal_spawn")!.input;
     expect(spawn.connectionId).toBe("ssh-duplicate");
     expect(spawn.agentForwardingReviewId).toMatch(/^synthetic-agent-review-/);
-    expect(spawn.shellIntegration).toBeUndefined();
+    expect(spawn.shellIntegration).toBe("auto");
     expect(
       (await nativeRequests()).some(
         (r) => r.command === "server_ssh_save" || r.command === "pty_write",
@@ -1286,12 +1349,16 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/tests/browser/servers.html?sshFixture&httpProxyFixture&theme=${theme}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await expect(
       page.getByText("HTTP CONNECT: proxy.example.invalid:8080", { exact: true }),
     ).toBeVisible();
-    await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "Server actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
     await expect(
       editor.getByText("HTTP CONNECT: proxy.example.invalid:8080", { exact: true }),
@@ -1353,7 +1420,11 @@ for (const theme of ["light", "dark"]) {
       id: "ssh-duplicate",
       endpoint: { httpProxy: { host: "edited-proxy.example.invalid", port: 3128 } },
     });
-    await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "Server actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     await openProxy();
     await expect(enabled).toBeChecked();
     await expect(editor.getByRole("textbox", { name: "Proxy port", exact: true })).toHaveValue(
@@ -1384,7 +1455,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     const nativeRequests = () =>
       page.evaluate(
@@ -1399,8 +1470,8 @@ for (const theme of ["light", "dark"]) {
         (r) => r.command === "ssh_terminal_spawn" || r.command === "ssh_terminal_quick_spawn",
       );
     await page
-      .getByRole("navigation", { name: "Server tools" })
-      .getByRole("button", { name: "Settings", exact: true })
+      .getByRole("group", { name: "Server tools" })
+      .getByRole("button", { name: "Organization", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH group settings", exact: true }).click();
     const modal = page.getByRole("dialog", { name: "SSH group settings", exact: true });
@@ -1495,7 +1566,7 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/tests/browser/servers.html?sshFixture&runbookFixture&theme=${theme}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     const requests = () =>
       page.evaluate(
@@ -1508,7 +1579,7 @@ for (const theme of ["light", "dark"]) {
     const starts = async () =>
       (await requests()).filter((item) => item.command === "ssh_runbook_start");
     await page
-      .getByRole("navigation", { name: "Server tools" })
+      .getByRole("group", { name: "Server tools" })
       .getByRole("button", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
@@ -1553,7 +1624,7 @@ for (const theme of ["light", "dark"]) {
     await expect(modal.getByRole("textbox", { name: "SSH script", exact: true })).toBeDisabled();
     await modal.getByRole("button", { name: "Close", exact: true }).click();
     await page
-      .getByRole("navigation", { name: "Server tools" })
+      .getByRole("group", { name: "Server tools" })
       .getByRole("button", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
@@ -1589,7 +1660,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     const requests = () =>
       page.evaluate(
@@ -1660,7 +1731,7 @@ for (const theme of ["light", "dark"]) {
     });
     await files.getByRole("button", { name: "Close", exact: true }).click();
     await page
-      .getByRole("navigation", { name: "Server tools" })
+      .getByRole("group", { name: "Server tools" })
       .getByRole("button", { name: "Port forwarding", exact: true })
       .click();
     await page.getByRole("button", { name: "Start", exact: true }).click();
@@ -1724,10 +1795,10 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("navigation", { name: "Server tools" })
+      .getByRole("group", { name: "Server tools" })
       .getByRole("button", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
@@ -1831,9 +1902,13 @@ for (const theme of ["light", "dark"]) {
     await page.goto(`/tests/browser/servers.html?sshFixture&httpProxyFixture&theme=${theme}`);
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
-    await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "Server actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
     await editor.locator("summary").filter({ hasText: "Connection proxy" }).click();
     await editor.getByRole("radio", { name: "HTTPS", exact: true }).click();
@@ -1858,7 +1933,11 @@ for (const theme of ["light", "dark"]) {
       port: 443,
       scheme: "https",
     });
-    await page.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+    await page
+      .getByRole("region", { name: "Server details" })
+      .getByRole("button", { name: "Server actions", exact: true })
+      .click();
+    await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
     await editor.locator("summary").filter({ hasText: "Connection proxy" }).click();
     await expect(editor.getByRole("radio", { name: "HTTPS", exact: true })).toBeChecked();
     await expect(editor.getByRole("textbox", { name: "Proxy port", exact: true })).toHaveValue(
@@ -1889,10 +1968,10 @@ for (const theme of ["light", "dark"]) {
       );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page
-      .getByRole("navigation", { name: "Server tools" })
+      .getByRole("group", { name: "Server tools" })
       .getByRole("button", { name: "Automation", exact: true })
       .click();
     await page.getByRole("button", { name: "SSH runbooks", exact: true }).click();
@@ -1935,7 +2014,7 @@ for (const theme of ["light", "dark"]) {
     );
     await page
       .getByRole("list", { name: "Servers" })
-      .getByRole("button", { name: /Existing SSH target/ })
+      .getByRole("button", { name: /^Existing SSH target/ })
       .click();
     await page.getByRole("button", { name: "Connect via SSH", exact: true }).click();
     await page.getByRole("button", { name: "Terminal · More actions", exact: true }).click();

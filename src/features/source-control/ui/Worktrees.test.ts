@@ -58,7 +58,7 @@ import {
   type Worktrees,
 } from "../model/worktrees";
 import { newFileTab, newTerminalFile } from "../../workspace/model/layout";
-import { gitCheckout, notifyGitChanged } from "../../../platform/tauri/fs";
+import { gitCheckout, notifyGitChanged, revealPath } from "../../../platform/tauri/fs";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { WorktreePicker } from "./WorktreePicker";
 import {
@@ -632,7 +632,7 @@ it("uses the shared project picker without leaking late worktree responses", asy
   const refresh = container.querySelector<HTMLButtonElement>('[aria-label="Refresh worktrees"]')!;
   expect(refresh.textContent).toBe("Refresh");
   expect(refresh.getAttribute("data-button-variant")).toBe("ghost");
-  expect(create.getAttribute("data-button-variant")).toBe("primary");
+  expect(create.getAttribute("data-button-variant")).toBe("secondary");
   await act(async () => picker.click());
   expect(document.querySelector('input[placeholder="Search projects..."]')).not.toBeNull();
   const secondProject = document.querySelector<HTMLButtonElement>(
@@ -1144,7 +1144,10 @@ it("shows no selected branch after removal even when the old path has a branch a
     ),
   );
   const trigger = container.querySelector<HTMLButtonElement>("button")!;
-  expect(trigger.textContent).toBe("No branch selected");
+  // MiddleTruncate keeps the complete label once in the accessibility tree and once as aria-hidden visual parts.
+  expect(trigger.querySelector("[data-middle-truncate] > span:first-child")?.textContent).toBe(
+    "No branch selected",
+  );
   expect(trigger.disabled).toBe(false);
   await act(async () => trigger.click());
   expect(document.querySelector('[aria-selected="true"]')).toBeNull();
@@ -1152,4 +1155,54 @@ it("shows no selected branch after removal even when the old path has a branch a
   expect(button("Switch branch in this working copy…").disabled).toBe(true);
   await act(async () => document.querySelector<HTMLButtonElement>('[role="option"]')!.click());
   expect(onSelect).toHaveBeenCalledWith(expect.objectContaining({ path: "/repo" }));
+});
+
+it("keeps a Reveal failure on its worktree row with a local retry", async () => {
+  vi.mocked(revealPath)
+    .mockRejectedValueOnce(new Error("no file manager"))
+    .mockResolvedValueOnce(undefined);
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/reveal-failure", onRemove: vi.fn() })),
+  );
+  const row = container.querySelector('[role="listitem"]')!;
+  await act(async () => row.querySelector<HTMLButtonElement>('[aria-label="Reveal feature"]')!.click());
+  const failure = row.querySelector('[role="alert"]')!;
+  expect(failure.textContent).toContain("no file manager");
+  // The failure is not hoisted into a page-level error above the collection.
+  expect([...container.querySelectorAll('[role="alert"]')]).toHaveLength(1);
+  await act(async () =>
+    [...failure.querySelectorAll("button")].find((node) => node.textContent === "Retry")!.click(),
+  );
+  expect(revealPath).toHaveBeenCalledTimes(2);
+  expect(row.querySelector('[role="alert"]')).toBeNull();
+});
+
+it("shows unknown publication separately from a clean working tree", async () => {
+  vi.mocked(listWorktrees).mockResolvedValue({
+    defaultRoot: "/repo-worktrees",
+    worktrees: [{ ...tree, branch: "feature", dirty: false, unpushed: null }],
+  });
+  await act(async () =>
+    root.render(createElement(WorktreesPage, { cwd: "/publication", onRemove: vi.fn() })),
+  );
+  const row = container.querySelector('[role="listitem"]')!;
+  expect(row.textContent).toContain("Clean");
+  expect(row.textContent).toContain("Publication unknown");
+});
+
+it("keeps create and delete off for a project on a connected machine", async () => {
+  await act(async () =>
+    root.render(
+      createElement(WorktreesPage, { cwd: "remote://machine/repo", onRemove: vi.fn() }),
+    ),
+  );
+  expect(container.textContent).toContain("unavailable for a project on a connected machine");
+  expect(button("Create worktree").disabled).toBe(true);
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="Delete feature"]')!.disabled).toBe(
+    true,
+  );
+  // Listing and Reveal still follow the machine that owns the path.
+  expect(container.querySelector<HTMLButtonElement>('[aria-label="Reveal feature"]')!.disabled).toBe(
+    false,
+  );
 });

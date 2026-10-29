@@ -11,11 +11,14 @@ import {
   saveCrewGrowthEnabled,
   saveCrewSceneEnabled,
   saveTabAnimationsEnabled,
+  CREW_GROWTH_ENABLED_DEFAULT,
+  CREW_SCENE_ENABLED_DEFAULT,
   loadCrewTheme,
   type CrewTheme,
   saveCrewTheme,
   subscribeCrewTheme,
 } from "../model/settings";
+import { Button } from "../../../shared/ui/Button";
 import { Group, Row, Select, Toggle } from "./settingsControls";
 
 export function TabMotionSettings() {
@@ -72,6 +75,18 @@ export function CrewSettings() {
       <Group
         title={t("Agent crew")}
         description={t("Your agent crew in new tasks and behind conversations.")}
+        action={
+          <Button
+            variant="ghost"
+            onClick={() => {
+              saveCrewSceneEnabled(CREW_SCENE_ENABLED_DEFAULT);
+              saveCrewGrowthEnabled(CREW_GROWTH_ENABLED_DEFAULT);
+              saveCrewTheme("classic");
+            }}
+          >
+            {t("Reset crew")}
+          </Button>
+        }
       >
         <Row
           id="crew-scene"

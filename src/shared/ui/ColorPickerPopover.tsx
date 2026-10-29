@@ -15,7 +15,13 @@ import styles from "./ColorPickerPopover.module.css";
 type Props = {
   value: string;
   onChange: (hex: string) => void;
+  /** The plane, hue and hex field dim and cannot be used. */
+  disabled?: boolean;
+  /** The colour is shown at full ink but cannot change. */
+  readOnly?: boolean;
 };
+
+const HEX_DRAFT = /^#?[0-9a-fA-F]{6}$/;
 
 export function ColorSwatchRow({
   colors,
@@ -91,7 +97,7 @@ export function ColorSwatchRow({
   );
 }
 
-export function ColorPickerPopover({ value, onChange }: Props) {
+export function ColorPickerPopover({ value, onChange, disabled = false, readOnly = false }: Props) {
   const t = useT();
   const [hsv, setHsv] = useState<Hsv>(() => hexToHsv(value));
   const [hexDraft, setHexDraft] = useState(() => normalizeHex(value));
@@ -110,8 +116,10 @@ export function ColorPickerPopover({ value, onChange }: Props) {
   }, [value]);
   useEffect(() => () => dragCleanup.current?.(), []);
 
+  const inert = disabled || readOnly;
   const applyHsv = useCallback(
     (updater: Hsv | ((prev: Hsv) => Hsv)) => {
+      if (inert) return;
       const next = typeof updater === "function" ? updater(currentHsv.current) : updater;
       const hex = hsvToHex(next.h, next.s, next.v);
       currentHsv.current = next;
@@ -119,13 +127,14 @@ export function ColorPickerPopover({ value, onChange }: Props) {
       setHexDraft(hex);
       onChange(hex);
     },
-    [onChange],
+    [onChange, inert],
   );
 
   const onHexInput = (raw: string) => {
+    if (inert) return;
     setHexDraft(raw);
     const trimmed = raw.trim();
-    if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) return;
+    if (!HEX_DRAFT.test(trimmed)) return;
     const hex = trimmed.startsWith("#") ? trimmed : `#${trimmed}`;
     const next = hexToHsv(hex);
     currentHsv.current = next;
@@ -135,7 +144,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const onSvPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const el = svRef.current;
-    if (!el || event.button !== 0) return;
+    if (!el || event.button !== 0 || inert) return;
     dragCleanup.current?.();
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -165,7 +174,7 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const onHuePointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     const el = hueRef.current;
-    if (!el || event.button !== 0) return;
+    if (!el || event.button !== 0 || inert) return;
     dragCleanup.current?.();
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -194,13 +203,21 @@ export function ColorPickerPopover({ value, onChange }: Props) {
 
   const preview = hsvToHex(hsv.h, hsv.s, hsv.v);
   const hueColor = hsvToHex(hsv.h, 100, 100);
+  // A half-typed or malformed draft takes the danger frame until it is completed or the field is left.
+  const hexInvalid = !inert && hexDraft.trim() !== "" && !HEX_DRAFT.test(hexDraft.trim());
 
   return (
-    <div className={styles.picker}>
+    <div
+      className={styles.picker}
+      data-disabled={disabled || undefined}
+      data-readonly={readOnly || undefined}
+    >
       <div
         ref={svRef}
         role="slider"
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        aria-readonly={readOnly || undefined}
         aria-label={t("Saturation and brightness")}
         aria-valuetext={`${Math.round(hsv.s)}%, ${Math.round(hsv.v)}%`}
         aria-description={t("Use Left/Right for saturation and Up/Down for brightness.")}
@@ -254,7 +271,9 @@ export function ColorPickerPopover({ value, onChange }: Props) {
       <div
         ref={hueRef}
         role="slider"
-        tabIndex={0}
+        tabIndex={disabled ? -1 : 0}
+        aria-disabled={disabled || undefined}
+        aria-readonly={readOnly || undefined}
         aria-label={t("Hue")}
         aria-valuemin={0}
         aria-valuemax={360}
@@ -308,6 +327,9 @@ export function ColorPickerPopover({ value, onChange }: Props) {
           className={styles.hexInput}
           type="text"
           value={hexDraft}
+          disabled={disabled}
+          readOnly={readOnly}
+          aria-invalid={hexInvalid || undefined}
           spellCheck={false}
           autoComplete="off"
           onChange={(e) => onHexInput(e.target.value)}

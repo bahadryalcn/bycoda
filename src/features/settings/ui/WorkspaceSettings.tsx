@@ -162,7 +162,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
     <div className="workspace-settings settings-topics">
       <Group
         title={t("Files and navigation")}
-        layout="full"
         scope={t("Applies across projects. Changes save automatically.")}
       >
         <Row
@@ -194,11 +193,11 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           />
         </Row>
       </Group>
+      {/* File, explorer and editor behavior read as one task; tool visibility is its own group below. */}
       {children}
       <Group
         title={t("Workspace tools")}
-        layout="full"
-        action={<WorkspaceToolsHelp />}
+        info={<WorkspaceToolsHelp />}
         scope={t("Controls navigation visibility. Hiding this tool does not stop work or change permissions.")}
       >
         <WorkspaceFeatureSettings />
@@ -215,7 +214,7 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
           />
         </Row>
       </Group>
-      {IS_MAC ? <Group title={t("Session access")} layout="full">
+      {IS_MAC ? <Group title={t("Session access")}>
         {IS_MAC && (
           <Row
             id="quick-composer"
@@ -246,7 +245,6 @@ export function WorkspacePage({ children }: { children?: ReactNode }) {
       </Group> : null}
       <Group
         title={t("Experimental settings")}
-        layout="full"
         scope={t("Applies to new turns on this computer's Host.")}
       >
         <ExactGitRewindSetting />

@@ -9,6 +9,312 @@ fn store() -> SessionStore {
     SessionStore::open_in_memory().unwrap()
 }
 
+fn execution_store() -> (
+    Arc<SessionStore>,
+    WindowBarrier,
+    super::super::window_barrier::WindowToken,
+) {
+    let mut store = store();
+    let barrier = WindowBarrier::new();
+    let window = barrier.admit_window("execution").unwrap();
+    barrier.confirm_created(&window).unwrap();
+    store.native_writer_barrier = Some(barrier.clone());
+    seed(&store, "A");
+    seed(&store, "B");
+    (Arc::new(store), barrier, window)
+}
+
+#[test]
+fn execution_reserve_and_idle_close_have_one_atomic_admission_winner_before_sql() {
+    for _ in 0..24 {
+        let (store, barrier, _) = execution_store();
+        let gate = store.authority_execution_gate();
+        // The real reserve must admit before waiting for this SQL mutex. This
+        // race would permit both winners if admission were deferred until SQL.
+        let sql = store.lock_conn().unwrap();
+        let start = Arc::new(std::sync::Barrier::new(3));
+        let reserve_start = start.clone();
+        let reserve = std::thread::spawn(move || {
+            reserve_start.wait();
+            gate.reserve("A", "provider", None)
+        });
+        let closing = barrier.clone();
+        let close_start = start.clone();
+        let close = std::thread::spawn(move || {
+            close_start.wait();
+            closing.try_close_idle_target_admission("A")
+        });
+        start.wait();
+        let closed = close.join().unwrap();
+        drop(sql);
+        let reserved = reserve.join().unwrap();
+        match (closed, reserved) {
+            (Ok(closed), Err(error)) => {
+                assert!(error.contains("AdmissionClosed"));
+                barrier.reopen_target_admission(closed).unwrap();
+            }
+            (Err(BarrierError::PendingNativeOperations), Ok(lease)) => {
+                assert!(store.assert_native_execution_idle("A").is_err());
+                lease.finish().unwrap();
+            }
+            _ => panic!("both paths admitted, or unexpected admission outcome"),
+        }
+        store.assert_native_execution_idle("A").unwrap();
+        let closed = barrier.try_close_idle_target_admission("A").unwrap();
+        barrier.reopen_target_admission(closed).unwrap();
+    }
+}
+
+#[test]
+fn execution_known_unstarted_drop_and_failed_spawn_settle_without_poisoning_ordinary_work() {
+    for failed_spawn in [false, true] {
+        let (store, barrier, _) = execution_store();
+        let gate = store.authority_execution_gate();
+        let mut lease = gate.reserve("A", "provider", None).unwrap();
+        assert!(matches!(
+            barrier.try_close_idle_target_admission("A"),
+            Err(BarrierError::PendingNativeOperations)
+        ));
+        if failed_spawn {
+            lease.begin_external().unwrap();
+            lease.spawn_failed().unwrap();
+        }
+        drop(lease);
+        store.assert_native_execution_idle("A").unwrap();
+        let closed = barrier.try_close_idle_target_admission("A").unwrap();
+        barrier.reopen_target_admission(closed).unwrap();
+        gate.reserve("A", "provider", None)
+            .unwrap()
+            .finish()
+            .unwrap();
+    }
+}
+
+#[test]
+fn execution_started_unknown_drop_retains_actual_sql_reservation_and_qualification_unknown() {
+    let (store, barrier, _) = execution_store();
+    let gate = store.authority_execution_gate();
+    let mut lease = gate.reserve("A", "provider", None).unwrap();
+    lease.begin_external().unwrap();
+    drop(lease);
+    assert!(store.assert_native_execution_idle("A").is_err());
+    store.assert_native_execution_idle("B").unwrap();
+    let phase: String = store
+        .lock_conn()
+        .unwrap()
+        .query_row(
+            "SELECT phase FROM native_authority_reservations WHERE session_id='A'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(phase, "FORKING");
+    assert!(barrier.try_close_idle_target_admission("A").is_err());
+    // Qualification loss must not disable normal, explicitly unrelated work.
+    gate.reserve("B", "provider", None)
+        .unwrap()
+        .finish()
+        .unwrap();
+    assert!(store.assert_native_execution_idle("A").is_err());
+}
+
+#[test]
+fn execution_other_session_reservation_is_not_an_idle_close_blocker_but_unknown_ingress_is_global()
+{
+    let (store, barrier, _) = execution_store();
+    let gate = store.authority_execution_gate();
+    let lease = gate.reserve("B", "provider", None).unwrap();
+    store.assert_native_execution_idle("A").unwrap();
+    with_full_projection_transaction(&store, |checked| {
+        store.assert_native_execution_idle_at(&checked, "A")?;
+        assert!(store
+            .assert_native_execution_idle_at(&checked, "B")
+            .is_err());
+        Ok(())
+    })
+    .unwrap();
+    let closed = barrier.try_close_idle_target_admission("A").unwrap();
+    assert!(gate.reserve("A", "provider", None).is_err());
+    assert!(gate.note_unknown_ingress("sessionless-test").is_err());
+    let count: i64 = store
+        .lock_conn()
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM native_authority_unknown_ingress",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 0);
+    barrier.reopen_target_admission(closed).unwrap();
+    lease.finish().unwrap();
+    gate.note_unknown_ingress("sessionless-test").unwrap();
+    for session in ["A", "B"] {
+        assert!(store.assert_native_execution_idle(session).is_err());
+    }
+    with_full_projection_transaction(&store, |checked| {
+        assert!(store
+            .assert_native_execution_idle_at(&checked, "A")
+            .is_err());
+        Ok(())
+    })
+    .unwrap();
+    assert!(barrier.try_close_idle_target_admission("B").is_err());
+}
+
+#[test]
+fn execution_legacy_native_ids_remain_usable_without_fabricated_scoped_qualification() {
+    for id in ["_native_legacy".to_owned(), "a".repeat(300)] {
+        let (store, barrier, _) = execution_store();
+        let gate = store.authority_execution_gate();
+        let lease = gate.reserve(&id, "provider", None).unwrap();
+        assert!(store.assert_native_execution_idle(&id).is_err());
+        lease.finish().unwrap();
+        store.assert_native_execution_idle(&id).unwrap();
+        if id.len() <= 256 {
+            let closed = barrier.try_close_idle_target_admission(&id).unwrap();
+            barrier.reopen_target_admission(closed).unwrap();
+        } else {
+            assert!(barrier.try_close_idle_target_admission("A").is_err());
+        }
+        gate.reserve("B", "provider", None)
+            .unwrap()
+            .finish()
+            .unwrap();
+    }
+}
+
+#[test]
+fn execution_release_drops_sql_mutex_before_waiting_for_barrier_settlement() {
+    use std::sync::mpsc;
+    use std::time::Duration;
+    let (store, barrier, window) = execution_store();
+    let lease = store
+        .authority_execution_gate()
+        .reserve("A", "provider", None)
+        .unwrap();
+    let closed = Arc::new(barrier.close_target_admission("A").unwrap());
+    let (held_tx, held_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let holding = barrier.clone();
+    let holding_closed = closed.clone();
+    let holder = std::thread::spawn(move || {
+        holding.with_target_checkpoint_scope(&holding_closed, &window, |_| {
+            held_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        })
+    });
+    held_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (commit_tx, commit_rx) = mpsc::channel();
+    store
+        .lock_conn()
+        .unwrap()
+        .commit_hook(Some(move || {
+            let _ = commit_tx.send(());
+            false
+        }))
+        .unwrap();
+    let finisher = std::thread::spawn(move || lease.finish());
+    commit_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let (probe_tx, probe_rx) = mpsc::channel();
+    let probing = store.clone();
+    let probe = std::thread::spawn(move || {
+        let _sql = probing.lock_conn().unwrap();
+        probe_tx.send(()).unwrap();
+    });
+    let available = probe_rx.recv_timeout(Duration::from_secs(2)).is_ok();
+    release_tx.send(()).unwrap();
+    holder.join().unwrap().unwrap();
+    finisher.join().unwrap().unwrap();
+    probe.join().unwrap();
+    store
+        .lock_conn()
+        .unwrap()
+        .commit_hook(None::<fn() -> bool>)
+        .unwrap();
+    assert!(
+        available,
+        "NativeOperation settlement held SQL while blocked on the barrier"
+    );
+    barrier
+        .reopen_target_admission(Arc::try_unwrap(closed).ok().unwrap())
+        .unwrap();
+    store.assert_native_execution_idle("A").unwrap();
+}
+
+#[test]
+fn execution_release_restore_failure_keeps_native_operation_after_sql_delete_commits() {
+    use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+    let (store, barrier, _) = execution_store();
+    let mut lease = store
+        .authority_execution_gate()
+        .reserve("A", "provider", None)
+        .unwrap();
+    lease.begin_external().unwrap();
+    let conn = store.lock_conn().unwrap();
+    conn.pragma_update(None, "synchronous", "NORMAL").unwrap();
+    conn.authorizer(Some(|context: AuthContext<'_>| {
+        if matches!(
+            context.action,
+            AuthAction::Pragma {
+                pragma_name: "synchronous",
+                pragma_value: Some("1")
+            }
+        ) {
+            Authorization::Deny
+        } else {
+            Authorization::Allow
+        }
+    }))
+    .unwrap();
+    drop(conn);
+    assert!(lease.spawn_failed().is_err());
+    store
+        .lock_conn()
+        .unwrap()
+        .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+        .unwrap();
+    // SQL deletion alone cannot release the actual still-unsettled operation.
+    store.assert_native_execution_idle("A").unwrap();
+    assert!(matches!(
+        barrier.try_close_idle_target_admission("A"),
+        Err(BarrierError::PendingNativeOperations)
+    ));
+    lease.spawn_failed().unwrap();
+    let closed = barrier.try_close_idle_target_admission("A").unwrap();
+    barrier.reopen_target_admission(closed).unwrap();
+}
+
+#[test]
+fn execution_release_retains_operation_until_actual_delete_commit_and_restore_succeed() {
+    let (store, barrier, _) = execution_store();
+    let mut lease = store
+        .authority_execution_gate()
+        .reserve("A", "provider", None)
+        .unwrap();
+    lease.begin_external().unwrap();
+    store
+        .lock_conn()
+        .unwrap()
+        .commit_hook(Some(|| true))
+        .unwrap();
+    assert!(lease.spawn_failed().is_err());
+    store
+        .lock_conn()
+        .unwrap()
+        .commit_hook(None::<fn() -> bool>)
+        .unwrap();
+    assert!(store.assert_native_execution_idle("A").is_err());
+    assert!(matches!(
+        barrier.try_close_idle_target_admission("A"),
+        Err(BarrierError::PendingNativeOperations)
+    ));
+    lease.spawn_failed().unwrap();
+    store.assert_native_execution_idle("A").unwrap();
+    let closed = barrier.try_close_idle_target_admission("A").unwrap();
+    barrier.reopen_target_admission(closed).unwrap();
+}
+
 #[test]
 fn retained_reader_returns_exact_existing_bytes_without_changing_authority() {
     let store = store();
@@ -79,12 +385,13 @@ fn retained_reader_rejects_foreign_scope_and_current_identity_changes() {
             .authority_retained_snapshot(env, session, "m.retained", &ids)
             .is_err());
     }
+    // This fixture injects corruption past the real immutable identity trigger.
     store
         .lock_conn()
         .unwrap()
-        .execute(
-            "UPDATE native_authority_identity SET source_store_id='replaced'",
-            [],
+        .execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_store_id='replaced'",
         )
         .unwrap();
     assert!(store
@@ -490,7 +797,14 @@ fn applied_decision_ack_rejects_inconsistent_floor_journal_and_store_without_rep
         store
             .authority_apply_host_decision(&proof(&store, &active))
             .unwrap();
-        store.lock_conn().unwrap().execute_batch(sql).unwrap();
+        let conn = store.lock_conn().unwrap();
+        if sql.starts_with("UPDATE native_authority_identity ") {
+            // Inject only the selected identity corruption past its SQL guard.
+            conn.execute_batch("DROP TRIGGER native_raw_identity_immutable")
+                .unwrap();
+        }
+        conn.execute_batch(sql).unwrap();
+        drop(conn);
         let changes = store.lock_conn().unwrap().total_changes();
         assert!(
             store

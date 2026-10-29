@@ -2,8 +2,6 @@
   display: grid;
   gap: 12px;
   min-inline-size: 0;
-  border-block-start: 1px solid var(--color-stroke);
-  padding-block-start: 20px;
   font-size: var(--ui-font-secondary);
 }
 .header,
@@ -21,10 +19,34 @@
   justify-content: space-between;
 }
 .header h2 {
+  font-size: var(--ui-font-body);
   font-weight: 500;
 }
 .actions {
   min-inline-size: 0;
+}
+/* Search and its collection controls stay on one row at every container width:
+   the search track shrinks, the filter / reset / count slot keeps its size. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px 8px;
+  min-inline-size: 0;
+}
+.search {
+  flex: 1 1 8rem;
+  min-inline-size: 0;
+  max-inline-size: 24rem;
+}
+.toolbarSlot {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+}
+.count {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 .stack,
 .help {
@@ -44,16 +66,28 @@
   padding: 16px;
   font-size: var(--ui-font-secondary);
 }
+/* Token grants share the connection list language: one bounded, quiet box. */
 .list {
   display: grid;
   max-block-size: 320px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
 .row {
-  padding-block: 10px;
-  border-block-end: 1px solid var(--color-stroke);
+  padding: 10px 16px;
+}
+/* Rows separate by spacing and hover fill, like every settings collection. */
+@media (hover: hover) and (pointer: fine) {
+  .row:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+.list:empty {
+  display: none;
 }
 .identity {
   display: grid;

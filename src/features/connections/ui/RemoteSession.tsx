@@ -1,4 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
+import { isLocalSyncMachine } from "../model/localSync";
+import { DEFAULT_PROVIDER_ACCOUNT_ID, sessionProviderAccountId, supportsProviderAccounts } from "../../providers/model/providerAccounts";
+import { acknowledgeHostSessionBinding, hostExecutionProject, hostSessionBinding, saveHostSessionBinding } from "../model/sessionExecutionBinding";
 import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
 import { discardQuestionDraft } from "../../sessions/model/questionDrafts";
@@ -96,6 +99,7 @@ import {
   remoteShellBoundTo,
   savePendingRemoteCommand,
   sessionAccessForMachine,
+  sessionExecutionClientForMachine,
   useRemoteMachines,
 } from "../model/connections";
 import { beginRemoteCreate, endRemoteCreate } from "../model/remoteCreateIntent";
@@ -166,6 +170,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
 };
 
 type Configuration = {
+  providerAccountId?: string | null;
   authorityGeneration?: number;
   harness: RemoteProvider;
   model: string;
@@ -272,10 +277,11 @@ export function RemoteSession({
   render: (overrides: RemoteSessionOverrides) => ReactNode;
 }) {
   useLocale();
-  const project = remoteProjectFor(shell.cwd);
+  const owner = hostSessionBinding(shell);
+  const project = hostExecutionProject(shell) ?? remoteProjectFor(shell.cwd);
   const { machines, loaded } = useRemoteMachines(!!project);
   const machine = project
-    ? machines.find((entry) => entry.environmentId === project.environmentId)
+    ? machines.find((entry) => entry.environmentId === project.environmentId && (!owner || (entry.id === owner.machineId && isLocalSyncMachine(entry))))
     : undefined;
   if (!project || !machine)
     return (
@@ -340,6 +346,10 @@ function ConnectedRemoteSession({
 }) {
   useLocale();
   const visibleRef = useRef(visible);
+  const owner = hostSessionBinding(shell);
+  const displayPath = (path: string) => owner ? path : remotePath(machine.environmentId, path);
+  const executionClient = sessionExecutionClientForMachine(machine.id, machine.environmentId, false, true);
+  const ownerRequest = <T,>(method: string, params: unknown = {}) => remoteRequest<T>(machine.id, method, params, false, false, machine.environmentId);
   const wake = useRef<() => void>(() => {});
   useEffect(() => {
     visibleRef.current = visible;
@@ -357,7 +367,7 @@ function ConnectedRemoteSession({
             machine.id,
             machine.environmentId,
             attachmentOwner,
-            (method, params) => remoteRequest(machine.id, method, params),
+            (method, params) => ownerRequest(method, params),
           )
         : undefined,
     [ownsAttachments, machine.id, machine.environmentId, attachmentOwner],
@@ -385,12 +395,12 @@ function ConnectedRemoteSession({
   useEffect(() => {
     if (ownership && online)
       void retryAttachmentOwnershipReleases(machine.id, machine.environmentId, (method, params) =>
-        remoteRequest(machine.id, method, params),
+        ownerRequest(method, params),
       ).catch(console.warn);
   }, [ownership, online, machine.id, machine.environmentId]);
-  const connection = useRemoteConnection(project.key);
+  const connection = useRemoteConnection(owner?.environmentId ?? project.key);
   const [error, setError] = useState("");
-  const [sessionId, setSessionId] = useState(() => remoteSessionFor(shell.id));
+  const [sessionId, setSessionId] = useState(() => owner?.created ? owner.sessionId : remoteSessionFor(shell.id));
   const boundSession = useRef(sessionId);
   const bindingVersion = useRef(0);
   const deletedHostBinding = useRef<string | undefined>(undefined);
@@ -401,7 +411,8 @@ function ConnectedRemoteSession({
   const deletingSession = useRef<string | undefined>(undefined);
   useEffect(() => {
     const changed = () => {
-      const next = remoteSessionFor(shell.id);
+      const binding = hostSessionBinding(shell);
+      const next = binding?.created ? binding.sessionId : remoteSessionFor(shell.id);
       const owner = `${machine.id}:${machine.environmentId}`;
       if (owner !== boundOwner.current) {
         boundOwner.current = owner;
@@ -515,7 +526,7 @@ function ConnectedRemoteSession({
   const [catalogError, setCatalogError] = useState("");
   const [catalogRefresh, setCatalogRefresh] = useState(0);
   const [selectedCwd, setSelectedCwd] = useState(
-    () => remotePendingWorktree(shell.id) ?? project.cwd,
+    () => remotePendingWorktree(shell.id) ?? (owner ? shell.worktreeCwd : undefined) ?? project.cwd,
   );
   const [draftWorkspaceMode, setDraftWorkspaceMode] = useState<WorkspaceMode | undefined>(
     shell.workspaceMode,
@@ -524,6 +535,7 @@ function ConnectedRemoteSession({
   // exists. Hosts advertising managedCreation validate it before binding ownership.
   const creationIdentityKey = `bycoda.managedCreate:${machine.environmentId}:${shell.id}`;
   const managedCreateId = () => {
+    if (owner) return owner.sessionId;
     const existing = localStorage.getItem(creationIdentityKey);
     if (existing) return existing;
     const id = crypto.randomUUID();
@@ -568,9 +580,11 @@ function ConnectedRemoteSession({
     model: shell.model,
     settings: shell.modelSettings ?? {},
     mode: shell.runtimeMode,
+    ...(owner && supportsProviderAccounts(shell.harness) ? { providerAccountId: sessionProviderAccountId(shell.harness, shell) === DEFAULT_PROVIDER_ACCOUNT_ID ? null : sessionProviderAccountId(shell.harness, shell) } : {}),
   }));
   // Changes to a started session, applied when it is idle.
   const [changes, setChanges] = useState<Configuration>();
+  const failedAccountConfiguration = useRef<Configuration | undefined>(undefined);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -616,7 +630,7 @@ function ConnectedRemoteSession({
   }, [hostSession?.id, shell.id]);
   const executionCwd = hostSession?.cwd ?? selectedCwd;
   const { branches } = useProjectBranchesState(
-    remotePath(machine.environmentId, executionCwd),
+    displayPath(executionCwd),
     online,
   );
   const activeSessionId = hostSession?.id ?? sessionId;
@@ -684,7 +698,7 @@ function ConnectedRemoteSession({
             machine.environmentId,
             ownership,
             sources,
-            (method, params) => remoteRequest(machine.id, method, params),
+            (method, params) => ownerRequest(method, params),
           );
         });
       void chain.catch(console.warn);
@@ -804,7 +818,7 @@ function ConnectedRemoteSession({
       try {
         if (!described) {
           const host = requireHostDescriptor(
-            await remoteRequest<HostDescriptor>(machine.id, "environment.describe", {
+            await ownerRequest<HostDescriptor>("environment.describe", {
               supportedProviders: REMOTE_PROVIDERS,
             }),
           );
@@ -1004,6 +1018,7 @@ function ConnectedRemoteSession({
         readGeneration = ownerResetGeneration;
         let next = sessionId
           ? await loadRemoteSession(machine.id, sessionId, known, {
+              executionClient,
               waitMs:
                 !unsubscribeChannel &&
                 visibleRef.current &&
@@ -1069,7 +1084,7 @@ function ConnectedRemoteSession({
           return;
         if (next && !verifiedProjects.has(next.projectId)) {
           await verifyRemoteProjectAlias(
-            (method, params) => remoteRequest(machine.id, method, params),
+            (method, params) => ownerRequest(method, params),
             { projectId: project.projectId, cwd: project.cwd },
             next.projectId,
           );
@@ -1260,7 +1275,7 @@ function ConnectedRemoteSession({
     let disposed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const load = () =>
-      void remoteRequest<HostModelCatalog>(machine.id, "models.list", {
+      void ownerRequest<HostModelCatalog>("models.list", {
         projectId: project.projectId,
         progressive: true,
       })
@@ -1313,15 +1328,54 @@ function ConnectedRemoteSession({
     model: hostSession.model,
     settings: hostSession.modelSettings ?? {},
     mode: hostSession.runtimeMode,
+    ...(owner ? { providerAccountId: hostSession.providerAccountId ?? null } : {}),
   };
   const configuration = saved ? (changes ?? saved) : draft;
+  useEffect(() => {
+    const binding = hostSessionBinding(shell);
+    if (!binding || binding.created) return;
+    try {
+      saveHostSessionBinding({ ...shell, harness: draft.harness, model: draft.model,
+        modelSettings: draft.settings, runtimeMode: draft.mode,
+        providerAccountId: draft.providerAccountId ?? undefined,
+        workspaceMode: draftWorkspaceMode, worktreeBase: draftWorktreeBase,
+        worktreeCwd: selectedCwd === project.cwd ? undefined : selectedCwd,
+      }, binding);
+    } catch (reason) {
+      setError(String(reason));
+    }
+  }, [shell.id, draft.harness, draft.model, draft.settings, draft.mode, draft.providerAccountId, draftWorkspaceMode, draftWorktreeBase, selectedCwd]);
   const updateConfiguration = (update: (current: Configuration) => Configuration) => {
+    failedAccountConfiguration.current = undefined;
     if (saved)
       setChanges({
         ...update(changes ?? saved),
         authorityGeneration: remoteIntentAuthority(snapshot).authorityGeneration,
       });
     else setDraft(update);
+  };
+
+  const accountAvailable = (provider: "codex" | "claude", accountId: string): boolean => {
+    if (!owner || preparingRef.current) return false;
+    if (hostSession && !descriptor?.capabilities.includes("sessions.configure.providerAccount.v1")) {
+      setError(t(HOST_UPDATE_NOTICE));
+      return false;
+    }
+    const accounts = catalog?.accounts?.[provider];
+    if (accounts && !accounts.some((account) => account.id === accountId)) {
+      setError(t("This account is not available on the owning Host."));
+      return false;
+    }
+    if (!accounts && accountId !== (hostSession?.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID)) {
+      setError(t("Update the Host to load its available accounts."));
+      return false;
+    }
+    return true;
+  };
+  const selectAccount = (provider: "codex" | "claude", accountId: string): boolean => {
+    if (provider !== configuration.harness || !accountAvailable(provider, accountId)) return false;
+    updateConfiguration((current) => ({ ...current, providerAccountId: accountId === DEFAULT_PROVIDER_ACCOUNT_ID ? null : accountId }));
+    return true;
   };
 
   const selectedTurnModel = (): NonNullable<Block["turnModel"]> => ({
@@ -1402,12 +1456,13 @@ function ConnectedRemoteSession({
       if (!receipt) {
         const dispatchDone = startPerformanceSpan("dispatch", {}, traceId);
         try {
-          receipt = await sessionAccessForMachine(machine.id, false, true).dispatch(command);
+          receipt = await executionClient.dispatchCommand(command);
         } finally {
           dispatchDone();
         }
       }
       if (!receipt) throw new Error(t("The host did not confirm the request."));
+      if (owner) acknowledgeHostSessionBinding(shell, receipt.sessionId, receipt.authorityGeneration);
       if (command.type === "create" && command.sessionId && receipt.sessionId !== command.sessionId)
         throw new Error(t("The host did not confirm the request."));
       recordPerformanceEvent("host-ack", { revision: receipt.revision }, traceId);
@@ -1419,7 +1474,7 @@ function ConnectedRemoteSession({
         if (receipt.runId) {
           // A newer turn may already exist. Cancel only the run this command
           // accepted, never whichever run happens to be in the latest snapshot.
-          await sessionAccessForMachine(machine.id, false, true).dispatch({
+          await executionClient.dispatchCommand({
             type: "cancel",
             commandId: crypto.randomUUID(),
             sessionId: receipt.sessionId,
@@ -1555,7 +1610,7 @@ function ConnectedRemoteSession({
       setRefresh((value) => value + 1);
       return receipt;
     } catch (reason) {
-      reportRemoteConnection(project.key, "session", reason);
+      reportRemoteConnection(machine.environmentId, "session", reason);
       if (!alive.current || version !== bindingVersion.current) return undefined;
       const message = String(reason);
       lastRunFailure.current = message;
@@ -1591,7 +1646,7 @@ function ConnectedRemoteSession({
     const version = bindingVersion.current;
     deletingSession.current = id;
     try {
-      await sessionAccessForMachine(machine.id, false, true).delete(
+      await sessionAccessForMachine(machine.id, false, true, machine.environmentId).delete(
         id,
         project.projectId,
         snapshot?.session.id === id ? snapshot.authorityGeneration : undefined,
@@ -1640,12 +1695,14 @@ function ConnectedRemoteSession({
       a.harness === b.harness &&
       a.model === b.model &&
       a.mode === b.mode &&
+      (a.providerAccountId === undefined || a.providerAccountId === b.providerAccountId) &&
       sameModelSettings(a.settings, b.settings);
     if (same(changes, saved)) {
       applied.current = undefined;
       setChanges(undefined);
       return;
     }
+    if (owner && failedAccountConfiguration.current && same(changes, failedAccountConfiguration.current)) return;
     if (
       applied.current &&
       same(changes, applied.current) &&
@@ -1674,9 +1731,11 @@ function ConnectedRemoteSession({
       model: changes.model,
       modelSettings: changes.settings,
       runtimeMode: changes.mode,
+      ...(owner && changes.providerAccountId !== undefined ? { providerAccountId: changes.providerAccountId } : {}),
     })
       .then((receipt) => {
         if (receipt) applied.current = sent;
+        else if (owner && sent.providerAccountId !== undefined) failedAccountConfiguration.current = sent;
       })
       .finally(() => {
         applying.current = false;
@@ -1827,6 +1886,7 @@ function ConnectedRemoteSession({
           ...(draftWorkspaceMode === "current" ? { workspaceMode: "current" as const } : {}),
           ...(worktreeCwd !== project.cwd ? { worktreeCwd } : {}),
           harness: draft.harness,
+          ...(draft.providerAccountId ? { providerAccountId: draft.providerAccountId } : {}),
           model: draft.model,
           modelSettings: draft.settings,
           runtimeMode: draft.mode,
@@ -1954,6 +2014,7 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
+          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
         },
       }) !== false
     );
@@ -2084,8 +2145,8 @@ function ConnectedRemoteSession({
   const shellFollowUps = useRef(new Map<string, { authorityGeneration?: number }>());
   const dispatchShell = (id: string, command: string, authorityGeneration?: number) => {
     const commandId = crypto.randomUUID();
-    return sessionAccessForMachine(machine.id, false, true)
-      .dispatch({
+    return executionClient
+      .dispatchCommand({
         type: "shell",
         ...remoteIntentAuthority({ authorityGeneration }),
         commandId,
@@ -2128,7 +2189,7 @@ function ConnectedRemoteSession({
     if (sendingRef.current || preparingRef.current) return false;
     const version = bindingVersion.current;
     const failed = (reason: unknown) => {
-      reportRemoteConnection(project.key, "session", reason);
+      reportRemoteConnection(machine.environmentId, "session", reason);
       if (alive.current && version === bindingVersion.current)
         setError(String(reason).replace(/^Error: /, ""));
     };
@@ -2271,6 +2332,7 @@ function ConnectedRemoteSession({
           harness: hostSession.harness,
           model: hostSession.model,
           modelSettings: { ...hostSession.modelSettings },
+          ...(owner ? { providerAccountId: hostSession.providerAccountId ?? "default" } : {}),
         },
       };
       if (
@@ -2400,6 +2462,7 @@ function ConnectedRemoteSession({
           harness: configuration.harness,
           model: configuration.model,
           modelSettings: { ...configuration.settings },
+          ...(owner ? { providerAccountId: configuration.providerAccountId ?? "default" } : {}),
         },
       };
       const currentQueue = queue.current();
@@ -2473,11 +2536,11 @@ function ConnectedRemoteSession({
     if (
       target &&
       saved &&
-      !sameQueuedModelTarget(target, {
+      (!sameQueuedModelTarget(target, {
         harness: saved.harness,
         model: saved.model,
         modelSettings: saved.settings,
-      })
+      }) || (owner && target.providerAccountId !== undefined && target.providerAccountId !== (saved.providerAccountId ?? "default")))
     ) {
       if (
         !providers.includes(target.harness as RemoteProvider) ||
@@ -2493,6 +2556,7 @@ function ConnectedRemoteSession({
         model: target.model,
         settings: { ...target.modelSettings },
         mode: saved.mode,
+        ...(owner && target.providerAccountId !== undefined ? { providerAccountId: target.providerAccountId === "default" ? null : target.providerAccountId } : {}),
       });
       return;
     }
@@ -2567,6 +2631,10 @@ function ConnectedRemoteSession({
     const savedSettings = hostSession?.modelSettings ?? {};
     return {
       id: `remote:${machine.environmentId}`,
+      accounts: {
+        codex: catalog?.accounts?.codex ?? [{ id: hostSession?.harness === "codex" ? hostSession.providerAccountId ?? "default" : "default", label: t("Current Host account") }],
+        claude: catalog?.accounts?.claude ?? [{ id: hostSession?.harness === "claude" ? hostSession.providerAccountId ?? "default" : "default", label: t("Current Host account") }],
+      },
       modelsFor: models,
       resolve: (harness, id = "") => {
         const provider = harness as RemoteProvider;
@@ -2659,9 +2727,11 @@ function ConnectedRemoteSession({
     }),
     id: shell.id,
     adoptedAuthorityGeneration: hostSession ? snapshot?.authorityGeneration : undefined,
-    cwd: remotePath(machine.environmentId, project.cwd),
+    hostBinding: hostSessionBinding(shell),
+    providerAccountId: configuration.providerAccountId === null ? DEFAULT_PROVIDER_ACCOUNT_ID : configuration.providerAccountId ?? (hostSession ? hostSession.providerAccountId : shell.providerAccountId),
+    cwd: displayPath(project.cwd),
     worktreeCwd:
-      executionCwd === project.cwd ? undefined : remotePath(machine.environmentId, executionCwd),
+      executionCwd === project.cwd ? undefined : displayPath(executionCwd),
     workspaceMode: hostSession ? undefined : draftWorkspaceMode,
     worktreeBase: hostSession ? undefined : draftWorktreeBase,
     branch: branches?.current ?? hostSession?.branch,
@@ -2710,7 +2780,7 @@ function ConnectedRemoteSession({
     let recovered: CommandReceipt | null | undefined;
     if (descriptor?.capabilities.includes("commands.status")) {
       try {
-        recovered = await sessionAccessForMachine(machine.id, false, true).status(
+        recovered = await executionClient.commandStatus(
           pending.commandId,
         );
       } catch (reason) {
@@ -2851,7 +2921,7 @@ function ConnectedRemoteSession({
             : undefined;
 
   const selectWorktree = async (tree: Worktree) => {
-    const parsed = parseRemotePath(tree.path);
+    const parsed = owner ? { environmentId: owner.environmentId, hostPath: tree.path } : parseRemotePath(tree.path);
     if (!parsed || parsed.environmentId !== machine.environmentId)
       throw new Error(t("Choose a worktree on this machine"));
     if (sessionId)
@@ -2918,8 +2988,8 @@ function ConnectedRemoteSession({
     if (!pageCacheOnly && target) {
       // What is queued waits for the user instead of sending as the turn ends.
       // Stop must reach the host even while a follow-up is being acknowledged.
-      void sessionAccessForMachine(machine.id, false, true)
-        .dispatch({
+      void executionClient
+        .dispatchCommand({
           type: "cancel",
           commandId: crypto.randomUUID(),
           ...target,
@@ -3154,7 +3224,7 @@ function ConnectedRemoteSession({
         environmentId: machine.environmentId,
         sessionId: targetSessionId,
       });
-      const receipt = await sessionAccessForMachine(machine.id, false, true).dispatch({
+      const receipt = await executionClient.dispatchCommand({
         type: "rewind",
         ...remoteIntentAuthority(known),
         commandId: crypto.randomUUID(),
@@ -3176,6 +3246,7 @@ function ConnectedRemoteSession({
       let updated: HostSession | undefined;
       for (let attempt = 0; attempt < 3 && stillCurrent(); attempt += 1) {
         const candidate = await loadRemoteSession(machine.id, targetSessionId, known, {
+          executionClient,
           waitMs: 0,
           pages,
           partialHistory,
@@ -3218,7 +3289,7 @@ function ConnectedRemoteSession({
         bindingVersion.current === targetBindingVersion &&
         boundSession.current === targetSessionId
       ) {
-        reportRemoteConnection(project.key, "session", reason);
+        reportRemoteConnection(machine.environmentId, "session", reason);
         setError(String(reason).replace(/^Error: /, ""));
       }
       return false;
@@ -3234,19 +3305,43 @@ function ConnectedRemoteSession({
   };
   const saveDraft = (text: string, attachments: Attachment[]) =>
     submit(text, attachments, undefined, true);
+  const removeDraft = (draftBlockId: string) => {
+      if (!hostSession || busy || pending || !online || removingDraft) return false;
+      if (
+        hostSession.blocks.find((block) => block.id === draftBlockId)?.followUpDelivery ===
+        "pending"
+      )
+        return false;
+      setRemovingDraft(draftBlockId);
+      if (hostSession.blocks.every((block) => block.id === draftBlockId))
+        void discardSession(hostSession.id);
+      else
+        void run({
+          type: "removeDraft",
+          ...remoteIntentAuthority(snapshot),
+          commandId: crypto.randomUUID(),
+          sessionId: hostSession.id,
+          draftBlockId,
+        }).then((receipt) => {
+          if (!receipt && alive.current) setRemovingDraft(undefined);
+        });
+      return true;
+    };
   useEffect(
     () =>
       registerRemoteSessionActions(shell.id, {
         buildPlan,
         submit: (text, attachments, options) => submit(text, attachments, options),
         saveDraft,
+        removeDraft,
+        selectAccount,
         stop: stopTurn,
         rewind,
         compact,
         approve,
         answer,
       }),
-    [shell.id, buildPlan, saveDraft, stopTurn, rewind, compact, approve, answer],
+    [shell.id, buildPlan, saveDraft, removeDraft, selectAccount, stopTurn, rewind, compact, approve, answer],
   );
 
   const hostFilePath = (path: string) => {
@@ -3256,7 +3351,7 @@ function ConnectedRemoteSession({
       path.startsWith("/") || path.startsWith("\\\\") || /^[A-Za-z]:[\\/]/.test(path)
         ? path
         : `${executionCwd.replace(/[\\/]+$/, "")}/${path.replace(/^\.\//, "")}`;
-    return remotePath(machine.environmentId, absolute);
+    return displayPath(absolute);
   };
 
   const outboxIssues = useRemoteOutboxIssues(project.key, machine.environmentId);
@@ -3277,7 +3372,7 @@ function ConnectedRemoteSession({
     setRemoteHistoryLoading(true);
     setRemoteHistoryError("");
     try {
-      const next = await loadRemoteHistoryPage(machine.id, sessionId, current, stillCurrent);
+      const next = await loadRemoteHistoryPage(machine.id, sessionId, current, stillCurrent, executionClient);
       if (!stillCurrent()) return 0;
       if (!next) {
         setRemoteHistoryError(
@@ -3332,7 +3427,7 @@ function ConnectedRemoteSession({
     if (!stub?.remoteContent || stub.remoteContent.revision !== revision) return;
     loadingRemoteBlocks.current.add(blockId);
     try {
-      const full = await loadRemoteBlock(machine.id, sessionId, blockId, revision);
+      const full = await loadRemoteBlock(machine.id, sessionId, blockId, revision, executionClient);
       const latest = snapshotRef.current;
       if (
         !alive.current ||
@@ -3437,12 +3532,15 @@ function ConnectedRemoteSession({
     onApproval: (_, requestId, decision) => approve(requestId, decision),
     onQuestionReply: (_, requestId, reply) => answer(requestId, reply),
     onCompactContext: compact,
-    onModelChange: (_, harness, model) => {
+    onSelectProviderAccount: owner ? (_, provider, accountId) => { selectAccount(provider, accountId); } : undefined,
+    onModelChange: (_, harness, model, accountId) => {
       if (!isRemoteProvider(harness)) return;
+      if (owner && accountId && (!supportsProviderAccounts(harness) || !accountAvailable(harness, accountId))) return;
       updateConfiguration((current) => ({
         ...current,
         harness,
         model,
+        ...(owner ? { providerAccountId: accountId === DEFAULT_PROVIDER_ACCOUNT_ID ? null : accountId ?? (current.harness === harness ? current.providerAccountId : undefined) } : {}),
         settings: carryModelSettings(
           modelSource.resolve(harness, model).settings ?? [],
           current.settings,
@@ -3470,28 +3568,7 @@ function ConnectedRemoteSession({
     onWorktreeBaseChange: (_, base) => setDraftWorktreeBase(base),
     onManageWorktrees: undefined,
     onSaveDraft: (_, text, attachments) => saveDraft(text, attachments),
-    onRemoveDraft: (_, draftBlockId) => {
-      if (!hostSession || busy || pending || !online || removingDraft) return false;
-      if (
-        hostSession.blocks.find((block) => block.id === draftBlockId)?.followUpDelivery ===
-        "pending"
-      )
-        return false;
-      setRemovingDraft(draftBlockId);
-      if (hostSession.blocks.every((block) => block.id === draftBlockId))
-        void discardSession(hostSession.id);
-      else
-        void run({
-          type: "removeDraft",
-          ...remoteIntentAuthority(snapshot),
-          commandId: crypto.randomUUID(),
-          sessionId: hostSession.id,
-          draftBlockId,
-        }).then((receipt) => {
-          if (!receipt && alive.current) setRemovingDraft(undefined);
-        });
-      return true;
-    },
+    onRemoveDraft: (_, draftBlockId) => removeDraft(draftBlockId),
     onPlaceSessionInFolder: noop,
     onDeleteQueuedMessage: (_, id) => queue.remove(id),
     onEditQueuedMessage: (_, id, text, attachments) => queue.edit(id, text, attachments),
@@ -3630,7 +3707,7 @@ function ConnectedRemoteSession({
             {t("Loading earlier messages…")}
           </div>
         ) : null}
-        <RemoteConnectionBanner cwd={project.key} stale={!!hostSession} />
+        <RemoteConnectionBanner cwd={owner?.environmentId ?? project.key} stale={!!hostSession} />
         <RemoteDataStatus
           presentation="notice"
           state={remoteDataState}

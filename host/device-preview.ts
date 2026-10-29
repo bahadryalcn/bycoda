@@ -1,33 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { DeviceHost } from "./device-host";
-import type { DeviceFrame } from "../src/features/devices/types";
+import type { DeviceEffectContext, DeviceHost } from "./device-host";
+import type {
+  DevicePreviewInput as PreviewInput,
+  DevicePreviewStage as Stage,
+  DevicePreviewSnapshot as Preview,
+} from "../src/shared/model/host-contracts/native-devices";
 import { expoManifest, expoPreviewUrl } from "./expo-go";
 import { scrubRuntimeLogText } from "./runtime-logs";
 
-type PreviewInput = {
-  requestId: string;
-  deviceId: string;
-  url: string;
-  installExpoGo?: boolean;
-  expectedText?: string;
-};
-type Stage = {
-  name: string;
-  state: "running" | "done" | "blocked";
-  code?: string;
-  message?: string;
-};
-type Preview = {
-  id: string;
-  requestId: string;
-  deviceId: string;
-  state: "queued" | "running" | "ready" | "blocked";
-  stages: Stage[];
-  verification: "launch-only" | "expected-text";
-  updatedAt: string;
-  frame?: DeviceFrame;
-  deviceName?: string;
-};
 const OPEN_LABELS = ["Open", "Aç", "Öffnen", "Ouvrir", "Abrir", "打开", "開く"];
 
 /** Bounded, observable setup jobs. Request IDs prevent duplicate launch/install attempts. */
@@ -37,6 +17,7 @@ export class DevicePreviews {
   private stopping = false;
   private owners = new Map<string, string>();
   private authorizations = new Map<string, () => boolean | Promise<boolean>>();
+  private resultAuthorizations = new Map<string, () => Promise<boolean>>();
   private work = new Set<Promise<void>>();
   constructor(
     private host: DeviceHost,
@@ -87,11 +68,30 @@ export class DevicePreviews {
       updatedAt: new Date().toISOString(),
     };
     this.jobs.set(job.id, job);
-    this.inputs.set(job.id, { ...input });
+    const acceptedInput = Object.freeze({ ...input });
+    this.inputs.set(job.id, acceptedInput);
     this.owners.set(job.id, owner);
     this.authorizations.set(job.id, authorized);
+    this.resultAuthorizations.set(job.id, async () => {
+      if (
+        this.disposed ||
+        this.jobs.get(job.id) !== job ||
+        this.authorizations.get(job.id) !== authorized
+      )
+        return false;
+      try {
+        if (!(await authorized())) return false;
+      } catch {
+        return false;
+      }
+      return (
+        !this.disposed &&
+        this.jobs.get(job.id) === job &&
+        this.authorizations.get(job.id) === authorized
+      );
+    });
     this.outsideScope(() => {
-      const running = this.run(job, input);
+      const running = this.run(job, acceptedInput);
       this.work.add(running);
       void running.finally(() => this.work.delete(running)).catch(() => {});
     });
@@ -108,6 +108,32 @@ export class DevicePreviews {
       throw new Error("PREVIEW_SCOPE_MISMATCH: This preview belongs to another conversation.");
     const { frame, ...summary } = job;
     return structuredClone({ ...summary, ...(includeFrame && frame ? { frame } : {}) });
+  }
+  /** Stable original-job disclosure capability; invoking it never copies a frame. */
+  resultAuthority(id: string, owner: string): () => Promise<boolean> {
+    this.status(id, owner);
+    const authority = this.resultAuthorizations.get(id);
+    if (!authority)
+      throw new Error("PREVIEW_NOT_FOUND: The original preview is no longer available.");
+    return authority;
+  }
+  /** A new request cannot replace the authority that originally admitted a job. */
+  async authorizedStatus(
+    id: string,
+    owner: string,
+    includeFrame = false,
+    currentAuthorized: () => boolean | Promise<boolean> = () => true,
+  ) {
+    this.status(id, owner); // Validate ownership before awaiting either callback.
+    const job = this.jobs.get(id)!;
+    const original = this.resultAuthority(id, owner);
+    if (!(await currentAuthorized()) || !(await original()))
+      throw new Error(
+        "PREVIEW_AUTHORITY_REVOKED: Preview authority expired; no frame or status was disclosed.",
+      );
+    if (this.jobs.get(id) !== job || this.resultAuthorizations.get(id) !== original)
+      throw new Error("PREVIEW_NOT_FOUND: The original preview is no longer available.");
+    return this.status(id, owner, includeFrame);
   }
   mobileStatus(owner: string, query: { id?: string; requestId?: string }, includeFrame = false) {
     if (
@@ -162,10 +188,7 @@ export class DevicePreviews {
   }
   private async run(job: Preview, input: PreviewInput) {
     job.state = "running";
-    const stage = async (name: string, work: () => Promise<void>) => {
-      const item: Stage = { name, state: "running" };
-      job.stages.push(item);
-      job.updatedAt = new Date().toISOString();
+    const authorize = async () => {
       if (this.disposed)
         throw new Error("PREVIEW_HOST_STOPPED: The device host stopped during preparation.");
       if (!(await this.authorizations.get(job.id)?.()))
@@ -174,7 +197,20 @@ export class DevicePreviews {
         );
       if (this.disposed)
         throw new Error("PREVIEW_HOST_STOPPED: The device host stopped during preparation.");
+    };
+    const effect: DeviceEffectContext = {
+      authorized: async () => {
+        await authorize();
+        return true;
+      },
+    };
+    const stage = async (name: string, work: () => Promise<void>) => {
+      const item: Stage = { name, state: "running" };
+      job.stages.push(item);
+      job.updatedAt = new Date().toISOString();
+      await authorize();
       await work();
+      await authorize();
       item.state = "done";
       job.updatedAt = new Date().toISOString();
     };
@@ -183,7 +219,7 @@ export class DevicePreviews {
         sdk = "",
         app = "";
       await stage("preflight", async () => {
-        const check = await this.host.preflight(input.deviceId);
+        const check = await this.host.preflight(input.deviceId, effect);
         if (!check.device)
           throw new Error(
             "DEVICE_NOT_FOUND: Discover devices on the selected machine and choose its exact deviceId.",
@@ -200,14 +236,14 @@ export class DevicePreviews {
         job.deviceName = check.device.name;
       });
       await stage("device-host", async () => {
-        if (!(await this.host.status()).running) await this.host.start();
+        if (!(await this.host.status(effect)).running) await this.host.start(effect);
       });
       await stage("boot", async () => {
-        const check = await this.host.preflight(input.deviceId);
+        const check = await this.host.preflight(input.deviceId, effect);
         if (!check.device?.booted) {
           if (check.device?.physical)
             throw new Error("DEVICE_OFFLINE: Connect and unlock this physical device.");
-          const booted = await this.host.boot(input.deviceId);
+          const booted = await this.host.boot(input.deviceId, effect);
           job.deviceId = booted.id;
         }
       });
@@ -215,13 +251,16 @@ export class DevicePreviews {
         sdk = (await this.manifest(input.url, platform)).sdkVersion;
       });
       await stage("expo-go", async () => {
-        app = (await this.host.prepareExpo(job.deviceId, sdk, input.installExpoGo === true)).app;
+        app = (await this.host.prepareExpo(job.deviceId, sdk, input.installExpoGo === true, effect))
+          .app;
       });
       await stage("open-app", async () => {
-        await this.host.action(job.deviceId, { type: "openApp", app });
-        await this.host.openExpo(job.deviceId, input.url);
+        await this.host.action(job.deviceId, { type: "openApp", app }, effect);
+        await this.host.openExpo(job.deviceId, input.url, effect);
         if (platform === "ios") {
-          const snapshot = JSON.parse(await this.host.action(job.deviceId, { type: "snapshot" }));
+          const snapshot = JSON.parse(
+            await this.host.action(job.deviceId, { type: "snapshot" }, effect),
+          );
           const nodes = snapshot.data?.nodes ?? snapshot.data?.snapshot?.nodes ?? [];
           if (
             nodes.some((node: any) => node.type === "Alert" && /Expo\s?Go/i.test(node.label ?? ""))
@@ -234,21 +273,31 @@ export class DevicePreviews {
               throw new Error(
                 "EXPO_CONFIRMATION_REQUIRED: Confirm opening Expo Go on the selected simulator.",
               );
-            await this.host.action(job.deviceId, { type: "pressElement", label: buttons[0].label });
+            await this.host.action(
+              job.deviceId,
+              { type: "pressElement", label: buttons[0].label },
+              effect,
+            );
           }
         }
       });
       if (input.expectedText)
         await stage("app-content", async () => {
-          await this.host.action(job.deviceId, {
-            type: "waitForText",
-            text: input.expectedText!,
-            timeoutMs: 120_000,
-          });
+          await this.host.action(
+            job.deviceId,
+            {
+              type: "waitForText",
+              text: input.expectedText!,
+              timeoutMs: 120_000,
+            },
+            effect,
+          );
         });
       await stage("screen", async () => {
         if (platform === "ios") {
-          const snapshot = JSON.parse(await this.host.action(job.deviceId, { type: "snapshot" }));
+          const snapshot = JSON.parse(
+            await this.host.action(job.deviceId, { type: "snapshot" }, effect),
+          );
           const nodes = snapshot.data?.nodes ?? snapshot.data?.snapshot?.nodes ?? [];
           if (
             nodes.some((node: any) => node.type === "Alert" && /Expo\s?Go/i.test(node.label ?? ""))
@@ -266,10 +315,12 @@ export class DevicePreviews {
                 node.hittable,
             )
           )
-            await this.host.action(job.deviceId, { type: "pressElement", label: "Close" });
+            await this.host.action(job.deviceId, { type: "pressElement", label: "Close" }, effect);
         }
         for (const older of this.jobs.values()) older.frame = undefined;
-        job.frame = await this.host.capture(job.deviceId);
+        const frame = await this.host.capture(job.deviceId, effect);
+        await authorize();
+        job.frame = frame;
       });
       job.state = "ready";
     } catch (cause) {
@@ -285,7 +336,8 @@ export class DevicePreviews {
       job.state = "blocked";
     } finally {
       job.updatedAt = new Date().toISOString();
-      this.authorizations.delete(job.id);
+      // Retain the original callback with the bounded outcome history. A fresh
+      // caller/re-enrollment must not resurrect disclosure of this old job.
     }
   }
 }

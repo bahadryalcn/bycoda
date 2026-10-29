@@ -517,7 +517,7 @@ export function SurfaceTabs({
             title={t("Drag to reorder pane")}
             aria-label={t("Drag to reorder pane")}
             tabIndex={-1}
-            className="grid h-7.5 w-5 shrink-0 cursor-grab place-items-center rounded-md text-content/35 hover:bg-content/5 hover:text-content/70 active:cursor-grabbing touch-none"
+            className="grid h-7 w-5 shrink-0 cursor-grab place-items-center rounded-md text-(--ui-text-muted) hover:bg-(--ui-surface-hover) hover:text-content active:cursor-grabbing touch-none"
             onPointerDown={(event) => {
               if (event.button !== 0) return;
               event.preventDefault();
@@ -696,6 +696,12 @@ export function SurfaceTabs({
                 onPointerDown={(event) => event.stopPropagation()}
                 onClick={(event) => {
                   event.stopPropagation();
+                  onCloseFile(file.id);
+                }}
+                onAuxClick={(event) => {
+                  // InlineAction keeps the host from seeing the click, so a middle click on the X closes here.
+                  if (closing || event.button !== 1) return;
+                  event.preventDefault();
                   onCloseFile(file.id);
                 }}
                 className="absolute end-1 inset-y-0 my-auto"

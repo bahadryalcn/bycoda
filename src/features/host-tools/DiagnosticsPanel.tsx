@@ -200,10 +200,18 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
           disabled={busy}
           onClick={() => void read()}
         >
-          <RefreshCw className="icon-md" aria-hidden />
+          <RefreshCw className="icon-sm" aria-hidden />
         </Button>
         <span role="status" className="resource-sample-status">
           {busy ? t("Measuring…") : sample ? time(sample.at) : t("No samples yet")}
+        </span>
+        <span
+          className="resource-scope"
+          title={t(
+            "Samples only when requested. CPU and memory describe the host's Node process; provider child processes are excluded. Up to 60 samples are retained.",
+          )}
+        >
+          {hostLabel ?? t("Host process")} · {t("Node process only")}
         </span>
         <InfoPopover label={t("Measurement details")}>
           <p>{hostLabel ?? t("Host process")}</p>
@@ -236,7 +244,14 @@ function ProjectDiagnosticsPanel({ cwd, hostTarget = { kind: "project" }, hostLa
         </Alert>
       ) : null}
       {!sample && !busy && !error ? (
-        <EmptyState description={t("Take a sample to start the charts.")} />
+        <EmptyState
+          description={t("Take a sample to start the charts.")}
+          action={
+            <Button variant="primary" disabled={busy} onClick={() => void read()}>
+              {t("Take a sample")}
+            </Button>
+          }
+        />
       ) : null}
       {sample ? (
         <>

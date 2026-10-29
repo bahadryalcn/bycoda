@@ -198,8 +198,8 @@ export function TerminalTools({
             <Button
               variant="ghost"
               size="sm"
-              title={t("Previous match")}
-              aria-label={t("Previous match")}
+              iconOnly
+              label={t("Previous match")}
               disabled={!query}
               onClick={() => find(true)}
             >
@@ -208,8 +208,8 @@ export function TerminalTools({
             <Button
               variant="ghost"
               size="sm"
-              title={t("Next match")}
-              aria-label={t("Next match")}
+              iconOnly
+              label={t("Next match")}
               disabled={!query}
               onClick={() => find(false)}
             >
@@ -320,8 +320,8 @@ export function TerminalTools({
           <Button
             variant="ghost"
             size="sm"
-            title={t("Close")}
-            aria-label={t("Close")}
+            iconOnly
+            label={t("Close")}
             onClick={close}
           >
             <X size={14} />
@@ -386,6 +386,25 @@ export function TerminalTools({
         controls
       ) : (
         <div className={styles.menuTrigger}>
+          {terminal && fontSize !== undefined && savedFontSize !== undefined && fontSize !== savedFontSize ? (
+            <div className={styles.zoom} role="status" data-terminal-zoom="">
+              <span className={styles.zoomValue}>
+                {t("Terminal font size")}: {fontSize}px
+              </span>
+              {onResetFontSize ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    onResetFontSize();
+                    terminal.focus();
+                  }}
+                >
+                  {t("Reset text size")}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -401,8 +420,9 @@ export function TerminalTools({
           <Button
             variant="ghost"
             size="sm"
-            title={`${t("Command suggestions")} (Ctrl+Space)`}
-            aria-label={t("Command suggestions")}
+            iconOnly
+            label={t("Command suggestions")}
+            tooltip={`${t("Command suggestions")} (Ctrl+Space)`}
             aria-pressed={mode === "command"}
             disabled={!ready || alternate}
             onClick={() => {
@@ -450,7 +470,7 @@ export function TerminalTools({
                   aria-label={`${t("Terminal")} · ${t("More actions")}`}
                   onDismiss={() => setMenuOpen(false)}
                 >
-                  {controls}
+                  <div className={styles.popoverBody}>{controls}</div>
                   {fontSize !== undefined ? (
                     <div className={styles.row}>
                       <span className={styles.hint} role="status">

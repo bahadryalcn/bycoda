@@ -25,6 +25,13 @@ import { useStableHandlers } from "../../shared/hooks/useStableHandlers";
 
 type MenuKey = "file" | "view" | "terminal";
 
+/**
+ * Window event the title bar's compact application-menu button dispatches. It
+ * toggles the same menu bar the Alt key does; `detail` is the viewport point
+ * (the button's bottom-left) where the first menu should drop down.
+ */
+export const APP_MENU_TOGGLE_EVENT = "bycoda:app-menu-toggle";
+
 type Props = {
   onNew: () => void;
   onNewTerminal?: () => void;
@@ -76,6 +83,8 @@ const MemoMenuBar = memo(function MenuBar({
   const [open, setOpen] = useState(false);
   const [activeMenu, setActiveMenu] = useState<MenuKey | null>(null);
   const [menuAnchor, setMenuAnchor] = useState<{ x: number; y: number } | null>(null);
+  // The title bar's compact button opens the menus as one popover, not as the menubar band.
+  const [popover, setPopover] = useState<{ x: number; y: number } | null>(null);
   const [, refreshShortcuts] = useState(loadKeybindingOverrides);
   const [autosave, setAutosave] = useState(loadAutosave);
   const barRef = useRef<HTMLDivElement>(null);
@@ -87,9 +96,20 @@ const MemoMenuBar = memo(function MenuBar({
   const shortcut = (command: string, keys: string) =>
     keybindingShortcutLabel(command, keys) ?? undefined;
 
-  // Toggle with standalone Alt key tap
+  // Toggle with a standalone Alt tap or F10 (outside terminals, where F10 belongs to the program).
   useEffect(() => {
     let altPressedAlone = false;
+
+    const toggle = () => {
+      setOpen((prev) => {
+        if (prev) {
+          setActiveMenu(null);
+          setMenuAnchor(null);
+          return false;
+        }
+        return true;
+      });
+    };
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Alt") {
@@ -97,18 +117,22 @@ const MemoMenuBar = memo(function MenuBar({
       } else if (altPressedAlone) {
         altPressedAlone = false;
       }
+      if (
+        e.key === "F10" &&
+        !e.altKey &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.shiftKey &&
+        !(e.target instanceof Element && e.target.closest(".xterm"))
+      ) {
+        e.preventDefault();
+        toggle();
+      }
     };
 
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.key === "Alt" && altPressedAlone) {
-        setOpen((prev) => {
-          if (prev) {
-            setActiveMenu(null);
-            setMenuAnchor(null);
-            return false;
-          }
-          return true;
-        });
+        toggle();
         altPressedAlone = false;
       }
     };
@@ -138,10 +162,29 @@ const MemoMenuBar = memo(function MenuBar({
     setMenuAnchor(null);
   }, []);
 
+  // The title bar's compact menu button opens File, View and Terminal as one popover
+  // under the button (no extra band); with no anchor it falls back to the Alt menubar.
+  useEffect(() => {
+    const onToggle = (event: Event) => {
+      if (open || activeMenu || popover) {
+        setOpen(false);
+        setPopover(null);
+        closeMenu();
+        return;
+      }
+      const anchor = (event as CustomEvent<{ x: number; y: number } | undefined>).detail;
+      if (anchor) setPopover(anchor);
+      else setOpen(true);
+    };
+    window.addEventListener(APP_MENU_TOGGLE_EVENT, onToggle);
+    return () => window.removeEventListener(APP_MENU_TOGGLE_EVENT, onToggle);
+  }, [open, activeMenu, popover, closeMenu]);
+
   const handlePick = useCallback(
     (id: string) => {
       closeMenu();
       setOpen(false);
+      setPopover(null);
 
       switch (id) {
         case "new_tab":
@@ -504,6 +547,25 @@ const MemoMenuBar = memo(function MenuBar({
         ];
     }
   };
+
+  if (popover) {
+    return (
+      <ContextMenu
+        x={popover.x}
+        y={popover.y}
+        items={[
+          ...getMenuItems("file"),
+          { kind: "sep" },
+          ...getMenuItems("view"),
+          { kind: "sep" },
+          ...getMenuItems("terminal"),
+        ]}
+        ariaLabel={t("Application menu")}
+        onPick={handlePick}
+        onClose={() => setPopover(null)}
+      />
+    );
+  }
 
   if (!open && !activeMenu) {
     return null;

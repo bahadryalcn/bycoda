@@ -36,10 +36,10 @@ export type RulerOptions = {
 };
 
 export const RULER_COLORS = {
-  add: "--color-diff-add",
-  del: "--color-diff-del",
-  mod: "--ui-tone-warning-fg",
-  conflict: "--ui-tone-info-fg",
+  add: "--ui-diff-ruler-add",
+  del: "--ui-diff-ruler-del",
+  mod: "--ui-diff-ruler-mod",
+  conflict: "--ui-diff-ruler-conflict",
 } as const;
 
 /**

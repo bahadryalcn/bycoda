@@ -125,6 +125,14 @@
   flex: none;
 }
 
+/* Touch density keeps the clear action a full-size target: the coarse-pointer extension of
+   the inline action is invisible to hit-testing of the measured control. */
+html[data-control-density="touch"] .clear[data-search-clear] {
+  inline-size: var(--ui-control-clear-size);
+  block-size: var(--ui-control-clear-size);
+  min-block-size: var(--ui-control-clear-size);
+}
+
 .standalone .clear {
   position: absolute;
   inset-inline-end: 4px;

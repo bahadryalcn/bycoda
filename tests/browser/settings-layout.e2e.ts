@@ -31,12 +31,36 @@ for (const [theme, width] of [
       );
       const form = page.locator(`[data-settings-section="${section}"]`);
       await expect(form).toBeVisible();
-      const dimensions = await form.evaluate((node) => ({
-        width: node.clientWidth,
-        parent: node.parentElement!.clientWidth,
-        scroll: node.scrollWidth,
-      }));
-      expect(dimensions.width, section).toBeGreaterThan(dimensions.parent * 0.95);
+      // The redesign replaced "fill the panel" with a readable bounded column: the form fills the
+      // panel until it reaches its column cap (52rem, or 64rem for collection pages), then centres.
+      const dimensions = await form.evaluate((node) => {
+        const bounds = node.getBoundingClientRect();
+        const parent = node.parentElement!.getBoundingClientRect();
+        const cap = Number.parseFloat(getComputedStyle(node).maxWidth);
+        return {
+          width: node.clientWidth,
+          parent: node.parentElement!.clientWidth,
+          scroll: node.scrollWidth,
+          cap: Number.isFinite(cap) ? cap : Infinity,
+          leading: bounds.left - parent.left,
+          trailing: parent.right - bounds.right,
+        };
+      });
+      // Page presentation sets the track: preferences (including Inbox and Archive) 52rem,
+      // collections 64rem, list/detail libraries 80rem.
+      const expectedCap = ["worktrees"].includes(section)
+        ? 80
+        : ["providers", "mcp", "connections", "keybindings", "limits"].includes(section)
+          ? 64
+          : 52;
+      expect(dimensions.cap, section).toBe(expectedCap * 16);
+      expect(dimensions.width, section).toBeGreaterThan(
+        Math.min(dimensions.parent, dimensions.cap) * 0.95,
+      );
+      expect(dimensions.width, section).toBeLessThanOrEqual(dimensions.cap + 1);
+      // Once capped the column centres in the panel (the scroller's stable gutter allows a few px).
+      if (dimensions.parent - dimensions.width > 40)
+        expect(Math.abs(dimensions.leading - dimensions.trailing), section).toBeLessThanOrEqual(20);
       expect(dimensions.scroll, section).toBeLessThanOrEqual(dimensions.width + 1);
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -56,13 +80,14 @@ for (const [theme, width] of [
         for (const peer of cards)
           if (section !== "general" && Math.abs(card.top - peer.top) < 2)
             expect(Math.abs(card.height - peer.height), section).toBeLessThan(2);
-      if (section === "notifications" && width > 1000) {
+      if (section === "notifications") {
+        // Topics stack in one readable column; project exceptions are a separate collection below.
         const grid = form.locator(".notification-alert-settings");
         expect(
           await grid.evaluate(
             (node) => getComputedStyle(node).gridTemplateColumns.split(" ").length,
           ),
-        ).toBe(2);
+        ).toBe(1);
       }
       if (section === "chat") {
         const templates = form.locator(".settings-templates");
@@ -133,4 +158,20 @@ test("Turkish policies and limits remain usable at intermediate widths", async (
       path: `temp/verification/2026-10-18-settings-layout/limits-tr-${width}.png`,
     });
   }
+});
+
+test("keybinding rows keep command and key on one line at 800px", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.goto("/tests/browser/settings.html?section=keybindings&theme=light&lang=en");
+  const rows = page.locator('[data-settings-section="keybindings"] .settings-row');
+  await expect(rows.first()).toBeVisible();
+  const sampled = await rows.evaluateAll((nodes) =>
+    nodes.slice(0, 12).map((node) => {
+      const label = node.querySelector(".settings-row-label")!.getBoundingClientRect();
+      const control = node.querySelector(".settings-row-control")!.getBoundingClientRect();
+      return { sameLine: control.top < label.bottom - 1, height: node.getBoundingClientRect().height };
+    }),
+  );
+  expect(sampled.length).toBeGreaterThan(5);
+  for (const row of sampled) expect(row.sameLine).toBe(true);
 });

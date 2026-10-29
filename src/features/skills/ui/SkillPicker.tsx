@@ -17,8 +17,15 @@ import {
 import { isLocalProject } from "../../projects/model/recents";
 import { isValidSkillName, slugSkillName, type Skill } from "../model/skills";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import {
+  retainParentInput,
+  useParentInputClosure,
+  useParentInputsClosed,
+  mutateParentInput,
+} from "../../sessions/data/parentInputClosure";
 
 type Props = {
+  parentSessionId?: string;
   skills: Skill[];
   /** What a row starts with: `/` for commands, `$` for Codex skills. */
   prefix?: "/" | "$";
@@ -38,6 +45,7 @@ type Props = {
 };
 
 export function SkillPicker({
+  parentSessionId,
   skills,
   prefix = "/",
   query,
@@ -66,6 +74,7 @@ export function SkillPicker({
     >
       {creating ? (
         <CreateSkillForm
+          parentSessionId={parentSessionId}
           query={query}
           cwd={cwd}
           error={error}
@@ -220,6 +229,7 @@ function SkillList({
 
 /** Shared starter-skill form for the composer picker and Settings. */
 export function CreateSkillForm({
+  parentSessionId,
   query,
   cwd,
   monospace = true,
@@ -229,6 +239,7 @@ export function CreateSkillForm({
   onCancel,
   onCreate,
 }: {
+  parentSessionId?: string;
   query: string;
   cwd: string;
   monospace?: boolean;
@@ -243,6 +254,26 @@ export function CreateSkillForm({
   const project = isLocalProject(cwd);
   const [name, setName] = useState(() => slugSkillName(query));
   const [scope, setScope] = useState<"project" | "user">(project ? "project" : "user");
+  const form = useRef<HTMLFormElement>(null);
+  const parentClosed = useParentInputsClosed(parentSessionId);
+  const parentInput = useParentInputClosure(
+    {
+      kind: "composer-parent",
+      sessionId: parentSessionId,
+      snapshot: () => ({
+        source: "create-skill-form",
+        rawName: input.current?.value ?? name,
+        name,
+        scope,
+        query,
+        cwd,
+        project,
+        busy,
+        error,
+      }),
+    },
+    form,
+  );
 
   useEffect(() => {
     input.current?.focus();
@@ -254,16 +285,34 @@ export function CreateSkillForm({
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!valid || busy) return;
-    onCreate(slug, project ? scope : "user");
+    if (!valid || busy || !parentInput.canMutate()) return;
+    mutateParentInput(parentInput, () => {
+      const data = {
+        source: "create-skill-intent",
+        rawName: input.current?.value ?? name,
+        name,
+        slug,
+        scope: project ? scope : "user",
+        cwd,
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: parentSessionId,
+        snapshot: () => data,
+      });
+      onCreate(slug, project ? scope : "user");
+      retained.update({ ...data, disposition: "accepted-unknown" });
+    });
   };
 
   return (
     <form
+      ref={form}
       onSubmit={submit}
       onKeyDown={(e) => {
         if (e.key !== "Escape") return;
         e.preventDefault();
+        parentInput();
         onCancel();
       }}
       className="px-2.5 py-2"
@@ -280,14 +329,24 @@ export function CreateSkillForm({
         placeholder={t("skill-name")}
         aria-label={t("Skill name")}
         disabled={busy}
-        onChange={(e) => setName(e.target.value)}
+        readOnly={parentClosed}
+        onChange={(e) => {
+          if (parentInput.canMutate()) setName(e.target.value);
+        }}
       />
+      {parentClosed ? (
+        <p role="status" className="mb-2 text-ui-micro text-(--ui-text-secondary)">
+          {t("Preparing session checkpoint. Your draft is kept.")}
+        </p>
+      ) : null}
       <RadioGroup
         compact
         label={t("Scope")}
         value={scope}
-        disabled={busy}
-        onValueChange={(value) => setScope(value as "project" | "user")}
+        disabled={busy || parentClosed}
+        onValueChange={(value) => {
+          if (parentInput.canMutate()) setScope(value as "project" | "user");
+        }}
         options={[
           {
             value: "project",
@@ -318,10 +377,19 @@ export function CreateSkillForm({
         </p>
       )}
       <div className="flex items-center justify-end gap-1">
-        <Button variant="ghost" size="sm" type="button" disabled={busy} onClick={onCancel}>
+        <Button
+          variant="ghost"
+          size="sm"
+          type="button"
+          disabled={busy}
+          onClick={() => {
+            parentInput();
+            onCancel();
+          }}
+        >
           {t("Cancel")}
         </Button>
-        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy}>
+        <Button variant="ghost" size="sm" type="submit" disabled={!valid || busy || parentClosed}>
           {busy ? t("Creating…") : t("Create")}
         </Button>
       </div>

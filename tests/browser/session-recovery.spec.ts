@@ -29,7 +29,10 @@ for (const theme of ["dark", "light"]) {
         (element as HTMLElement).style.width = `${width}px`;
       }, width);
       await expect(search).toBeVisible();
-      await expect(recovery.locator(".recovery-rail-count")).toBeVisible();
+      // Exactly one count: the corner badge on a label-less rail, else the plain section count.
+      await expect(
+        recovery.locator(".recovery-rail-count:visible, .recovery-rail-number:visible"),
+      ).toHaveCount(1);
       const bounds = await rail.boundingBox();
       for (const control of [search, recovery]) {
         const box = (await control.boundingBox())!;
@@ -65,7 +68,10 @@ test("all recovered projects remain searchable, selectable and reopenable", asyn
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByRole("checkbox")).toHaveCount(6);
-  await expect(dialog.getByRole("status")).toContainText("1 Failed");
+  await expect(dialog.getByRole("status").filter({ hasText: "previous sessions" })).toContainText(
+    "6 need attention",
+  );
+  await expect(dialog.getByText("Failed", { exact: true })).toHaveCount(1);
   await dialog.getByRole("radio", { name: /All sessions/ }).click();
   await expect(dialog.getByRole("checkbox")).toHaveCount(24);
   await dialog.getByRole("textbox", { name: "Search recovered sessions" }).fill("conversation 24");
@@ -87,7 +93,7 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
   await page.goto("/tests/browser/session-recovery.html");
   const dialog = page.getByRole("dialog", { name: "Recovered sessions" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("button", { name: "Restore previous layout" })).toBeInViewport();
+  await expect(dialog.getByRole("button", { name: "Restore chat layout" })).toBeInViewport();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
   );
@@ -95,7 +101,7 @@ test("the summary and bulk controls fit a narrow viewport", async ({ page }) => 
     path: "temp/verification/2026-10-13-session-recovery/narrow-500.png",
     animations: "disabled",
   });
-  await dialog.getByRole("button", { name: "Restore previous layout" }).click();
+  await dialog.getByRole("button", { name: "Restore chat layout" }).click();
   await expect(page.getByTestId("opened")).toContainText('"layout":true');
   const result = JSON.parse(await page.getByTestId("opened").innerText()) as { ids: string[] };
   expect(result.ids).toHaveLength(24);

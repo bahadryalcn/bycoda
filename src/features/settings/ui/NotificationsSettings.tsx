@@ -29,7 +29,7 @@ import {
 } from "../../notifications/model/notifications";
 import { Button } from "../../../shared/ui/Button";
 import { loadSoundsEnabled, saveSoundsEnabled, subscribeSoundsEnabled } from "../model/sounds";
-import { AdvancedSettings, Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
+import { Group, Row, Select, Toggle, SettingsFeedback } from "./settingsControls";
 import "./NotificationsSettings.css";
 
 export function NotificationAlerts() {
@@ -123,11 +123,59 @@ export function NotificationAlerts() {
       if (next) void checkPermission(true);
     });
   };
+  const permissionStatus = (
+    <div className="notification-permission-status">
+      {!permissionError && !permissionPending && notificationPermission === "granted" ? (
+        <div className="notification-permission-message">
+          <p>{t("System permission granted")}</p>
+          <Button variant="ghost" onClick={() => void checkPermission()}>{t("Refresh")}</Button>
+        </div>
+      ) : (
+        <SettingsFeedback
+          state={
+            permissionError
+              ? "error"
+              : permissionPending
+                ? "loading"
+                : notificationPermission === "granted"
+                  ? "success"
+                  : "warning"
+          }
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button loading={permissionPending === "probe"} disabled={permissionPending !== null} onClick={() => void checkPermission()}>{t("Refresh")}</Button>
+              {notificationsEnabled && notificationPermission === "prompt" ? (
+                <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>{t("Request permission")}</Button>
+              ) : null}
+            </div>
+          }
+        >
+          {permissionError ? (
+            t("Status unavailable")
+          ) : permissionPending ? (
+            permissionPending === "request" ? t("Waiting for approval…") : t("Loading…")
+          ) : (
+            <>
+              {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
+              {notificationPermission === "unsupported"
+                ? t("Not available on this platform")
+                : null}
+              {notificationPermission === "unavailable" ? t("Status unavailable") : null}
+              {notificationPermission === "prompt"
+                ? t(
+                    "System permission has not been granted yet. Enabling notifications requests permission.",
+                  )
+                : null}
+            </>
+          )}
+        </SettingsFeedback>
+      )}
+    </div>
+  );
   return (
     <div className="notification-alert-settings settings-topics">
       <Group
         title={t("Application alerts")}
-        layout="full"
         persistence={{ mode: "automatic" }}
         description={t("Delivery preferences for all projects on this computer.")}
       >
@@ -145,7 +193,12 @@ export function NotificationAlerts() {
           description={t("Show alerts from other sessions or while {p0} is in the background.", {
             p0: PRODUCT_IDENTITY.displayName,
           })}
-          feedback={saveFeedback("notifications")}
+          feedback={
+            <>
+              {saveFeedback("notifications")}
+              {permissionStatus}
+            </>
+          }
         >
           <Toggle
             label={t("Desktop notifications")}
@@ -154,57 +207,9 @@ export function NotificationAlerts() {
             disabled={permissionPending !== null}
           />
         </Row>
-        <div className="notification-permission-status">
-          {!permissionError && !permissionPending && notificationPermission === "granted" ? (
-            <div className="notification-permission-message">
-              <p>{t("System permission granted")}</p>
-              <Button variant="ghost" onClick={() => void checkPermission()}>{t("Refresh")}</Button>
-            </div>
-          ) : (
-            <SettingsFeedback
-              state={
-                permissionError
-                  ? "error"
-                  : permissionPending
-                    ? "loading"
-                    : notificationPermission === "granted"
-                      ? "success"
-                      : "warning"
-              }
-              action={
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button loading={permissionPending === "probe"} disabled={permissionPending !== null} onClick={() => void checkPermission()}>{t("Refresh")}</Button>
-                  {notificationsEnabled && notificationPermission === "prompt" ? (
-                    <Button loading={permissionPending === "request"} disabled={permissionPending !== null} onClick={() => void checkPermission(true)}>{t("Request permission")}</Button>
-                  ) : null}
-                </div>
-              }
-            >
-              {permissionError ? (
-                t("Status unavailable")
-              ) : permissionPending ? (
-                permissionPending === "request" ? t("Waiting for approval…") : t("Loading…")
-              ) : (
-                <>
-                  {notificationPermission === "denied" ? <NotificationsBlocked /> : null}
-                  {notificationPermission === "unsupported"
-                    ? t("Not available on this platform")
-                    : null}
-                  {notificationPermission === "unavailable" ? t("Status unavailable") : null}
-                  {notificationPermission === "prompt"
-                    ? t(
-                        "System permission has not been granted yet. Enabling notifications requests permission.",
-                      )
-                    : null}
-                </>
-              )}
-            </SettingsFeedback>
-          )}
-        </div>
       </Group>
       <Group
         title={t("Desktop alert events")}
-        layout="full"
         description={t(
           "Choose which agent events reach your desktop. Click an alert to open its session.",
         )}
@@ -244,36 +249,28 @@ export function NotificationAlerts() {
           </Row>
         ))}
       </Group>
-      <Group title={t("Daily summary")} layout="full" scope={t("Uses this computer’s local clock.")}>
+      <Group
+        title={t("Daily summary")}
+        scope={t("Uses this computer’s local clock.")}
+        description={t(
+          "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
+        )}
+        dependency={
+          !notificationsEnabled
+            ? t("Enable Notifications to deliver the daily summary. Your schedule is preserved.")
+            : notificationPermission === "denied" || notificationPermission === "unsupported"
+              ? t(
+                  "The summary schedule is saved, but desktop delivery requires system notification access.",
+                )
+              : undefined
+        }
+      >
         <Row
-          dependency={
-            !notificationsEnabled
-              ? t("Enable Notifications to deliver the daily summary. Your schedule is preserved.")
-              : notificationPermission === "denied" || notificationPermission === "unsupported"
-                ? t(
-                    "The summary schedule is saved, but desktop delivery requires system notification access.",
-                  )
-                : undefined
-          }
           id="daily-summary"
           label={t("Daily summary")}
           description={t("A daily overview of background tasks and goals across machines.")}
-          feedback={<>{saveFeedback("summary-enabled")}{saveFeedback("summary-time")}</>}
+          feedback={saveFeedback("summary-enabled")}
         >
-          {
-            <Select
-              label={t("Daily summary time")}
-              value={summaryTime}
-              options={[...new Set([...DAILY_SUMMARY_TIMES, summaryTime])].sort().map((time) => ({
-                value: time,
-                label: time,
-              }))}
-              onChange={(time) => {
-                commitPreference("summary-time", () => saveDailySummaryTime(time), () => setSummaryTime(time));
-              }}
-              disabled={!notificationsEnabled || !summaryEnabled}
-            />
-          }
           <Toggle
             label={t("Daily summary")}
             on={summaryEnabled}
@@ -283,13 +280,25 @@ export function NotificationAlerts() {
             }}
           />
         </Row>
-        <AdvancedSettings title={t("Schedule details")} defaultOpen={false}>
-          <p>
-            {t(
-              "One daily notification summarizes background tasks and goals across machines. The time uses this computer’s local clock; if the app opens later, the summary is delivered then. Click it to open the summary.",
-            )}
-          </p>
-        </AdvancedSettings>
+        {/* No row id: search indexes the delivery time under the "daily-summary" entry above. */}
+        <Row
+          label={t("Delivery time")}
+          description={t("Local time when the summary is sent.")}
+          feedback={saveFeedback("summary-time")}
+        >
+          <Select
+            label={t("Daily summary time")}
+            value={summaryTime}
+            options={[...new Set([...DAILY_SUMMARY_TIMES, summaryTime])].sort().map((time) => ({
+              value: time,
+              label: time,
+            }))}
+            onChange={(time) => {
+              commitPreference("summary-time", () => saveDailySummaryTime(time), () => setSummaryTime(time));
+            }}
+            disabled={!notificationsEnabled || !summaryEnabled}
+          />
+        </Row>
       </Group>
     </div>
   );

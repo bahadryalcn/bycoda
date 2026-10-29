@@ -115,11 +115,13 @@ export function UsageTrend({
         data={series.length ? data : []}
         emptyLabel={t("No usage recorded in this period.")}
         selectSeriesLabel={t("Choose a series to show")}
-        series={series.map((s) => ({
+        series={series.map((s, index) => ({
           key: s.key,
           label: s.label,
           color: usageChartColor(colors, s.key),
           area: false,
+          // Series differ by stroke pattern as well as colour (solid, dash, dot).
+          pattern: (["solid", "dash", "dot"] as const)[index % 3],
         }))}
         height={250}
         curve="linear"

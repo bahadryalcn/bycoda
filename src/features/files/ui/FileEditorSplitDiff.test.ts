@@ -91,13 +91,16 @@ describe("split diff layout in the file editor", () => {
   const after = () => EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-merge-b")!)!;
   const before = () =>
     EditorView.findFromDOM(container.querySelector<HTMLElement>(".cm-merge-a")!)!;
-  const counter = () => container.querySelector('[role="toolbar"] span.font-mono')?.textContent;
+  const counter = () =>
+    [...container.querySelectorAll('[role="toolbar"] span')]
+      .map((node) => node.textContent)
+      .find((text) => /^\d+\/\d+$/.test(text ?? ""));
   const toggle = () =>
     container.querySelector<HTMLButtonElement>('button[aria-label^="Diff view:"]')!;
 
   async function chooseLayout(label: string) {
     await act(async () => toggle().click());
-    const option = [...document.querySelectorAll<HTMLButtonElement>('[role="option"]')].find(
+    const option = [...document.querySelectorAll<HTMLElement>('[role="menuitemradio"]')].find(
       (node) => node.textContent?.includes(label),
     )!;
     await act(async () => option.click());
@@ -112,7 +115,8 @@ describe("split diff layout in the file editor", () => {
     expect(after().state.doc.toString()).toBe(disk);
     expect(before().state.readOnly).toBe(true);
     expect(after().state.readOnly).toBe(false);
-    expect(toggle().textContent).toContain("Side-by-side view");
+    // The icon-only toggle names the active layout through its accessible name.
+    expect(toggle().getAttribute("aria-label")).toContain("Side-by-side view");
     await act(async () => vi.waitFor(() => expect(counter()).toBe("1/1")));
     expect(container.querySelectorAll(".cm-merge-a .cm-changedLine")).toHaveLength(1);
     expect(container.querySelectorAll(".cm-merge-b .cm-changedLine")).toHaveLength(1);
@@ -223,7 +227,7 @@ describe("split diff layout in the file editor", () => {
     expect(view.state.selection.main.head).toBe(3);
     expect(dirty.at(-1)).toBe(true);
     expect(localStorage.getItem("bycoda.diffLayout")).toBe("inline");
-    expect(toggle().textContent).toContain("Inline");
+    expect(toggle().getAttribute("aria-label")).toContain("Inline");
   });
 
   it("adapts to editor width while retaining unsaved text, selection, history and external focus", async () => {

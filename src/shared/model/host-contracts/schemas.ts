@@ -20,6 +20,8 @@ export const SignedSafeIntegerSchema = z
 export const WIRE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\s\S])/;
 export const WIRE_METHOD_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z][A-Za-z0-9]*){1,7}(?![\s\S])/;
 export const WIRE_CAPABILITY_PATTERN = /^[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z0-9]+){1,7}(?![\s\S])/;
+export const WIRE_UUID_V4_PATTERN =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\s\S])/;
 export const IdentifierSchema = z.string().regex(WIRE_IDENTIFIER_PATTERN);
 export const MethodNameSchema = z.string().regex(WIRE_METHOD_PATTERN);
 export const CapabilityNameSchema = z.string().regex(WIRE_CAPABILITY_PATTERN);

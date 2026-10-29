@@ -13,6 +13,7 @@ import {
 } from "../../src/features/sessions/model/models";
 import { modelsForClaudeVersion } from "../../src/integrations/harness/providers/claude/claudeCatalog";
 import { languageReady } from "../../src/shared/i18n";
+import { Button } from "../../src/shared/ui/Button";
 import { WandSparkles } from "../../src/shared/ui/icons";
 import "./git-generation.css";
 
@@ -40,13 +41,15 @@ function Fixture() {
             onChange={(e) => setDraft(e.target.value)}
           />
           <div className="absolute right-1 top-1 flex items-center rounded-md bg-content/10">
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              label="Generate commit message"
               aria-label="Generate commit message"
-              className="grid size-5 place-items-center rounded-md text-content hover:bg-content/20"
             >
-              <WandSparkles className="size-3" />
-            </button>
+              <WandSparkles className="size-3.5" strokeWidth={1.75} />
+            </Button>
             <GitGenerationSettings
               cwd="/fixture"
               preferred="claude"
@@ -62,7 +65,9 @@ function Fixture() {
             Commit
           </button>
         </div>
-        <div className="mt-3 text-[11px] text-content/50">STAGED CHANGES · 3</div>
+        <div className="mt-3 text-[11px] text-content/50">
+          STAGED CHANGES · 3
+        </div>
         <div className="py-2 text-[12px]">
           claudeAdvisor.ts
           <br />
@@ -77,4 +82,6 @@ function Fixture() {
     </ModelSourceContext.Provider>
   );
 }
-void languageReady.then(() => createRoot(document.getElementById("root")!).render(<Fixture />));
+void languageReady.then(() =>
+  createRoot(document.getElementById("root")!).render(<Fixture />),
+);

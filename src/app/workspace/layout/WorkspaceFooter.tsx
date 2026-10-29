@@ -152,6 +152,8 @@ function WorkspaceFooterComponent({
             (harnessUpdateHeight ? harnessUpdateHeight + 8 : 0)
           }
           onFocusSession={onOpenApprovalSession}
+          onOpenHistorySession={(sessionId) => onOpenApprovalSession(sessionId)}
+          onOpenSettings={() => openSettings("notifications", "notifications")}
           onApproval={onApproval}
         />
       </div>

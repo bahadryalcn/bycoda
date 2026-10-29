@@ -54,7 +54,11 @@ export type HostDispatchContext = {
   exposeQueueAttachments?: HostDomainContext["exposeQueueAttachments"];
   retargetTask?: HostDomainContext["retargetTask"];
   devServerAccess?: HostDomainContext["devServerAccess"];
-  nativeBufferRecovery?: HostDomainContext["nativeBufferRecovery"];
+  workspaceOwner?: HostDomainContext["workspaceOwner"];
+  nativeServices?: HostDomainContext["nativeServices"];
+  nativeDevices?: HostDomainContext["nativeDevices"];
+  nativeDelivery?: HostDomainContext["nativeDelivery"];
+  retainResultAuthority?: HostDomainContext["retainResultAuthority"];
   /** Retains backend admission even when a client stops waiting for legacy I/O. */
   trackWork?: <T>(action: () => Promise<T>) => Promise<T>;
 };
@@ -188,7 +192,11 @@ export function createHostDispatcher(services: HostServices) {
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,
         devServerAccess: context.devServerAccess,
-        nativeBufferRecovery: context.nativeBufferRecovery,
+        workspaceOwner: context.workspaceOwner,
+        nativeServices: context.nativeServices,
+        nativeDevices: context.nativeDevices,
+        nativeDelivery: context.nativeDelivery,
+        retainResultAuthority: context.retainResultAuthority,
       };
       try {
         const read = () =>

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { hostSessionBinding } from "./sessionExecutionBinding";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import type { Session } from "../../sessions/model/session";
 import {
@@ -78,7 +79,7 @@ export function useDesktopLive(
           clientId: desktopClientId,
           request: (payload) =>
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
-          sessions: () => sessionsRef.current,
+          sessions: () => sessionsRef.current.filter((session) => !hostSessionBinding(session)),
           writers: retainedHarnessWriters,
           projectDirectory: () =>
             withMobileProjectLogos(

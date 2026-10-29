@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { useSessionStop, type SessionStopDeps } from "./useSessionStop";
 import { isSessionErrorBlock, sessionIssue } from "../../../features/sessions/model/sessionIssue";
+import { registerRemoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 
 const { cancel, notify, noteStop, cancelAdopted } = vi.hoisted(() => ({
   cancel: vi.fn(),
@@ -164,4 +165,18 @@ it("tells the shared queue about Stop so an unsettled send pauses it when it set
   const id = current().id;
   stop(id);
   expect(noteStop).toHaveBeenCalledExactlyOnceWith(id);
+});
+
+it("routes explicitly Host-owned local Stop to the owner and stays closed after detach", () => {
+  const id = current().id;
+  deps.sessionsRef.current = [{ ...current(), hostBinding: { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: id, authorityGeneration: 1, created: true } }];
+  const ownerStop = vi.fn();
+  const detach = registerRemoteSessionActions(id, { stop: ownerStop } as never);
+  stop(id);
+  expect(ownerStop).toHaveBeenCalledOnce();
+  detach();
+  stop(id);
+  expect(cancel).not.toHaveBeenCalled();
+  expect(cancelAdopted).not.toHaveBeenCalled();
+  expect(noteStop).not.toHaveBeenCalled();
 });

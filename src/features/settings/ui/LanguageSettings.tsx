@@ -30,7 +30,7 @@ export function LanguageSettings() {
     }
   };
   return (
-    <Group title={t("Language")} layout="full">
+    <Group title={t("Language")}>
       <Row
         id="interface-language"
         label={t("Application language")}

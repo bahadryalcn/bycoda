@@ -54,6 +54,9 @@ import type {
 } from "../model/protocol";
 import { preloadModelPicker } from "../../sessions/ui/ModelPicker";
 import { invalidateMachineSnapshot } from "../../automations/model/machineSnapshot";
+import { newLocalHostSession } from "../model/newLocalHostSession";
+import { hostSessionBinding, restoreHostSessionShell } from "../model/sessionExecutionBinding";
+import { shouldPersistSession, upsertSession } from "../../sessions/data/sessionStore";
 
 const transportProbe = vi.hoisted(() => ({
   current: undefined as RemoteSessionOverrides | undefined,
@@ -589,6 +592,14 @@ beforeEach(() => {
     }
     throw new Error(`Unexpected method ${method}`);
   });
+  // The real Tauri JSON boundary omits undefined optional projection fields.
+  const requestWire = vi.mocked(invoke).getMockImplementation()!;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    const value = await requestWire(command, input);
+    const method = (input as { method?: string } | undefined)?.method;
+    return command === "remote_request" && method?.startsWith("sessions.") && value !== undefined
+      ? JSON.parse(JSON.stringify(value)) : value;
+  });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -1048,9 +1059,14 @@ it("uses the normal composer with the host branch in its top row", async () => {
   // Nothing from the old standalone remote view or local-only tools.
   expect(container.textContent).not.toContain("New remote session");
   expect(container.textContent).not.toContain("Apply settings");
-  expect(byLabel("Add files or choose a mode")?.closest(".hidden")).toBeNull();
-  await act(async () => byLabel("Add files or choose a mode")!.click());
+  expect(byLabel("Add files or skills")?.closest(".hidden")).toBeNull();
+  expect(byLabel("Mode")?.closest(".hidden")).toBeNull();
+  await act(async () => byLabel("Add files or skills")!.click());
   expect(document.body.textContent).toContain("Upload file");
+  // Skills are local-only; the remote add menu offers files alone.
+  expect(document.body.textContent).not.toContain("Skills");
+  await act(async () => byLabel("Add files or skills")!.click());
+  await act(async () => byLabel("Mode")!.click());
   expect(document.body.textContent).toContain("Plan mode");
   expect(document.body.textContent).toContain("Draft");
   expect(document.body.textContent).not.toContain("Operator");
@@ -1281,7 +1297,7 @@ it("holds explicit worktree remote creation and drafts when the Host lacks manag
   expect(commands).toEqual([]);
   expect(remoteSessionFor("shell")).toBeUndefined();
 
-  await act(async () => byLabel("Add files or choose a mode")!.click());
+  await act(async () => byLabel("Mode")!.click());
   const draft = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Save this message without starting"),
   );
@@ -1526,7 +1542,7 @@ it("transport: drops settings from the tab that the host's model does not offer"
 it("sends a remote plan turn from the plus menu", async () => {
   openExistingChat();
   await render();
-  await act(async () => byLabel("Add files or choose a mode")!.click());
+  await act(async () => byLabel("Mode")!.click());
   const plan = [...document.body.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Plan mode"),
   )!;
@@ -4219,4 +4235,171 @@ it("releases desktop attachment ownership only after a successful host handoff",
   expect(requests.indexOf(release!)).toBeGreaterThan(
     requests.findIndex((request) => request.method === "commands.dispatch"),
   );
+});
+
+
+/** Fake provider/Host over the actual desktop request adapter. No live profile. */
+function localExecutionHost(options: { loseCreateReceipt?: boolean } = {}) {
+  const original = vi.mocked(invoke).getMockImplementation()!;
+  const receipts = new Map<string, { payload: string; receipt: { commandId: string; sessionId: string; revision: number; authorityGeneration?: number; runId?: string } }>();
+  const local = { ...machine, localHost: true, name: "This computer", endpoint: "http://127.0.0.1:3776" };
+  let lost = false;
+  vi.mocked(invoke).mockImplementation(async (command, input) => {
+    if (command === "local_host_connect") return local;
+    if (command === "list_project_files" || command === "list_claude_commands") return [];
+    if (command === "remote_machines") return [local];
+    const request = input as { method?: string; params?: HostCommand } | undefined;
+    if (request?.method === "projects.open") return { id: "project", cwd: "/home/me/repo", name: "repo" };
+    if (request?.method === "environment.describe") {
+      const descriptor = await original(command, input) as HostDescriptor;
+      return { ...descriptor, capabilities: [...descriptor.capabilities, "sessions.createFirstTurn", "commands.status", "sessions.configure.providerAccount.v1"] };
+    }
+    if (request?.method === "models.list") {
+      const models = await original(command, input) as HostModelCatalog;
+      return { ...models, accounts: { codex: [{ id: "default", label: "Host default" }, { id: "host-work", label: "Host work" }, { id: "work-account", label: "Work account" }], claude: [{ id: "default", label: "Host default" }] } };
+    }
+    if (request?.method === "commands.status") {
+      statusRequests.push(request.params!.commandId);
+      return receipts.get(request.params!.commandId)?.receipt ?? null;
+    }
+    if (request?.method === "commands.dispatch") {
+      if (machineDown) throw new Error(machineDown);
+      const intent = request.params!;
+      const payload = JSON.stringify(intent);
+      const prior = receipts.get(intent.commandId);
+      if (prior) {
+        if (prior.payload !== payload) throw new Error("same ID with different payload");
+        return prior.receipt;
+      }
+      const receipt = dispatch(intent);
+      if (intent.type === "configure" && intent.providerAccountId !== undefined && host)
+        host = { ...host, session: { ...host.session, providerAccountId: intent.providerAccountId ?? undefined } };
+      if (intent.type === "create" && host) {
+        host = { ...host, session: { ...host.session, id: intent.sessionId!, providerAccountId: intent.providerAccountId,
+          blocks: intent.firstTurn ? [{ id: intent.firstTurn.commandId, role: "user", text: intent.firstTurn.text }] : [] } };
+      }
+      const accepted = { ...receipt, sessionId: host!.session.id,
+        ...(intent.type === "create" || intent.type === "send" ? { runId: "local-run" } : {}) };
+      receipts.set(intent.commandId, { payload, receipt: accepted });
+      if (intent.type === "create" && options.loseCreateReceipt && !lost) {
+        lost = true;
+        throw new Error("Receipt lost after atomic create and first turn");
+      }
+      return accepted;
+    }
+    return original(command, input);
+  });
+  return { receipts };
+}
+
+it("local Host opt-in: real creation and first send preserve local cwd, account and durable owner", async () => {
+  localExecutionHost();
+  const session = await newLocalHostSession("/home/me/repo", "supervised");
+  session.harness = "codex";
+  session.model = gpt.id;
+  session.providerAccountId = "work-account";
+  session.workspaceMode = "current";
+  await render(session);
+  await sendTransport("First local Host message");
+  await vi.waitFor(() => expect(commands, container.textContent ?? "").toHaveLength(1));
+  expect(commands[0]).toMatchObject({ type: "create", sessionId: session.id, projectId: "project", workspaceMode: "current", providerAccountId: "work-account",
+    firstTurn: { type: "send", text: "First local Host message" } });
+  expect(hostSessionBinding(session)).toMatchObject({ sessionId: session.id, authorityGeneration: null, created: true });
+  expect(transportProbe.current?.session?.cwd).toBe("/home/me/repo");
+  expect(shouldPersistSession({ ...session, blocks: host!.session.blocks })).toBe(false);
+  await upsertSession({ ...session, blocks: host!.session.blocks });
+  expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send")).toBe(false);
+  await sendTransport("Second local Host message");
+  expect(commands.at(-1)).toMatchObject({ type: "send", sessionId: session.id, text: "Second local Host message" });
+});
+
+it("local Host opt-in: lost atomic first-turn receipt survives restart and reconciles the same ID", async () => {
+  localExecutionHost({ loseCreateReceipt: true });
+  const session = await newLocalHostSession("/home/me/repo");
+  await render(session);
+  await sendTransport("Preserve exactly once");
+  const pending = pendingRemoteCommand(session.cwd, "env", null, session.id)!;
+  expect(pending).toMatchObject({ type: "create", commandId: session.id, firstTurn: { text: "Preserve exactly once" } });
+  expect(() => savePendingRemoteCommand(session.cwd, "env", { ...pending, model: "changed" } as HostCommand, session.id)).toThrow("changed");
+  await act(async () => root.unmount());
+  resetRemoteSessionCachesForTests();
+  root = createRoot(container);
+  const restored = restoreHostSessionShell(session.id)!;
+  await render(restored);
+  const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry")!;
+  expect(retry).toBeTruthy();
+  await act(async () => retry.click());
+  await settle();
+  expect(statusRequests).toContain(session.id);
+  expect(commands).toHaveLength(1);
+  expect(hostSessionBinding(restored)).toMatchObject({ authorityGeneration: null, created: true });
+  expect(host!.session.blocks.filter((block) => block.text === "Preserve exactly once")).toHaveLength(1);
+  expect(pendingRemoteCommand(session.cwd, "env", null, session.id)).toBeUndefined();
+});
+
+it("local Host opt-in: offline owners keep the original intent and cannot execute through Native", async () => {
+  localExecutionHost();
+  const session = await newLocalHostSession("/home/me/repo");
+  await render(session);
+  machineDown = "Host offline";
+  await sendTransport("Hold on this Host");
+  expect(commands).toHaveLength(0);
+  expect(hostSessionBinding(session)?.sessionId).toBe(session.id);
+  expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send")).toBe(false);
+});
+
+
+it("local Host opt-in: first send keeps an existing selected worktree separate from project cwd", async () => {
+  localExecutionHost();
+  const session = await newLocalHostSession("/home/me/repo");
+  session.workspaceMode = "current";
+  session.worktreeCwd = "/home/me/repo-existing-worktree";
+  await render(session);
+  await sendTransport("Use selected checkout");
+  expect(commands[0]).toMatchObject({ type: "create", projectId: "project", workspaceMode: "current", worktreeCwd: session.worktreeCwd });
+  expect(transportProbe.current?.session).toMatchObject({ cwd: session.cwd, worktreeCwd: session.worktreeCwd });
+  expect(transportProbe.current?.session?.worktreeCwd).not.toContain("remote://");
+});
+
+it("local Host opt-in: Stop fences stale attachment completion and a newer manual send survives", async () => {
+  localExecutionHost();
+  const session = await newLocalHostSession("/home/me/repo");
+  await render(session);
+  let release!: () => void;
+  attachmentReadDelay = new Promise<void>((resolve) => { release = resolve; });
+  await act(async () => {
+    expect(transportProbe.current!.onSubmit!(session.id, "Stale upload", [{ id: "old-file", name: "note.txt", kind: "file", mimeType: "text/plain", size: 1, path: "C:/fixture/note.txt" }])).toBe(true);
+  });
+  await settle();
+  await act(async () => transportProbe.current!.onStop!(session.id));
+  attachmentReadDelay = undefined;
+  await sendTransport("Newer manual send");
+  await act(async () => release());
+  await settle();
+  const creates = commands.filter((command) => command.type === "create");
+  expect(creates).toHaveLength(1);
+  expect(creates[0]).toMatchObject({ firstTurn: { text: "Newer manual send" } });
+  expect(commands.some((command) => "text" in command && command.text === "Stale upload")).toBe(false);
+});
+
+
+it("local Host opt-in: named account selection and default clearing configure only the owning Host", async () => {
+  localExecutionHost();
+  const session = await newLocalHostSession("/home/me/repo");
+  session.harness = "codex"; session.model = gpt.id; session.providerAccountId = "default";
+  await render(session);
+  await sendTransport("Start on default");
+  await act(async () => transportProbe.current!.onModelChange!(session.id, "codex", gpt.id, "host-work"));
+  await settle();
+  expect(commands.at(-1)).toMatchObject({ type: "configure", sessionId: session.id, providerAccountId: "host-work" });
+  await act(async () => transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "default"));
+  await settle();
+  expect(commands.at(-1)).toMatchObject({ type: "configure", providerAccountId: null });
+  const before = commands.length;
+  await act(async () => transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "native-only"));
+  await settle();
+  expect(commands).toHaveLength(before);
+  expect(vi.mocked(invoke).mock.calls.some(([method]) => method.startsWith("harness_"))).toBe(false);
+  const requests = vi.mocked(invoke).mock.calls.filter(([method, input]) => method === "remote_request" && (input as { method?: string })?.method === "commands.dispatch");
+  expect(requests.every(([, input]) => (input as { expectedEnvironmentId?: string }).expectedEnvironmentId === "env")).toBe(true);
 });

@@ -89,6 +89,33 @@ marketing typography into the workbench.
 
 ## Layout
 
+Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
+
+> en soldaki menülerdeki projeler groups last sessions filan aralarında boşluk var ve çok yer kpalıyorlar.
+
+> en üstteki development yazısınıda sol alta renkli şekilde yazalım yada ikon ile gösterelim
+
+> Ayarlar ekranıda full screen olmak zorunda değil gibi artık
+
+The project rail uses one neutral ground. Its tools fill the available rail width
+without an inner raised tray, decorative frame or an unrelated surface color.
+Collapsed section headings use a tight shared rhythm; spacing after expanded
+content is a separate role. Section add and overflow actions occupy one aligned
+trailing slot. These overflow actions remain visible and keyboard discoverable;
+do not globally change unrelated inline-action reveal behavior. Development build
+identity belongs in the lower-left footer as a compact semantic status label or
+icon with a useful accessible name, including the collapsed/hidden-rail fallback.
+
+Settings presentation follows the task. Ordinary preferences use a bounded shell
+with the workspace context retained behind it; list/detail workspaces such as
+Skills use a wide, maximize-capable shell. Analytics and collection managers may
+also use the wider presentation. A universal narrow content column inside a
+full-window replacement leaves unnecessary empty space and does not satisfy this
+direction. Reuse the existing overlay/focus/navigation owners, retain the same
+mounted page across maximize/restore and preserve drafts, selected items, search
+targets and return navigation. Narrow windows may use the viewport and the
+existing category picker. Specific dimensions remain implementation proposals.
+
 Give each surface a clear purpose and keep its heading, content and actions
 aligned. Keep toolbars and lists compact; give reading and form areas more
 breathing room through line height, field grouping and spacing. This contrast

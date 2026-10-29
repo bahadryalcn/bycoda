@@ -1,7 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { opendir } from "node:fs/promises";
-import type { Dir } from "node:fs";
 import { join } from "node:path";
+
+export interface NativeBufferDirectoryEntry {
+  name: string;
+  /** A bounded metadata scan that produces no catalog entry (for example a duplicate). */
+  ignored?: true;
+  isFile(): boolean;
+  isDirectory(): boolean;
+}
+/** Read-only directory cursor; implementations must not eagerly load all names. */
+export interface NativeBufferDirectory {
+  read(): Promise<NativeBufferDirectoryEntry | null>;
+  close(): Promise<void>;
+}
 
 export type NativeBufferRecoveryCursor = { version: 1; cursorId: string; page: number };
 type Page<Row> = {
@@ -25,9 +37,9 @@ type Context<Row> = {
   deadline: number;
   busy: boolean;
   phase: "active" | "history" | "done";
-  active: Dir | null;
-  roots: Dir | null;
-  leaf: Dir | null;
+  active: NativeBufferDirectory | null;
+  roots: NativeBufferDirectory | null;
+  leaf: NativeBufferDirectory | null;
   leafId: string | null;
   pending: Entry | null;
   reader: { length: number; at(index: number): Row } | null;
@@ -78,6 +90,7 @@ async function close<Row>(context: Context<Row>) {
 export function createNativeBufferCatalog<Row>(deps: {
   activeDirectory: string;
   historyDirectory: string;
+  openDirectory?(path: string): Promise<NativeBufferDirectory | null>;
   now?(): number;
   activeReadBound: number;
   historyReadBound: number;
@@ -87,7 +100,8 @@ export function createNativeBufferCatalog<Row>(deps: {
   finalize?(row: Row, device: string): Promise<Row>;
 }) {
   const contexts = new Map<string, Context<Row>>(),
-    now = deps.now ?? Date.now;
+    now = deps.now ?? Date.now,
+    openDirectory = deps.openDirectory ?? directory;
   async function retire(context: Context<Row>) {
     clearTimeout(context.timer);
     await close(context);
@@ -148,7 +162,7 @@ export function createNativeBufferCatalog<Row>(deps: {
           deadline: now() + DEADLINE_MS,
           busy: false,
           phase: "active",
-          active: await directory(deps.activeDirectory),
+          active: await openDirectory(deps.activeDirectory),
           roots: null,
           leaf: null,
           leafId: null,
@@ -209,10 +223,10 @@ export function createNativeBufferCatalog<Row>(deps: {
               await context.active?.close();
               context.active = null;
               context.phase = "history";
-              context.roots = await directory(deps.historyDirectory);
+              context.roots = await openDirectory(deps.historyDirectory);
               continue;
             }
-            if (!name.isFile() || !/^[a-f0-9]{64}\.json$/.test(name.name)) continue;
+            if (name.ignored || !name.isFile() || !/^[a-f0-9]{64}\.json$/.test(name.name)) continue;
             entry = { kind: "active", reportId: name.name.slice(0, -5) };
           }
           if (!entry && context.phase === "history") {
@@ -224,9 +238,9 @@ export function createNativeBufferCatalog<Row>(deps: {
                 await close(context);
                 break;
               }
-              if (!root.isDirectory() || !hex.test(root.name)) continue;
+              if (root.ignored || !root.isDirectory() || !hex.test(root.name)) continue;
               context.leafId = root.name;
-              context.leaf = await directory(join(deps.historyDirectory, root.name));
+              context.leaf = await openDirectory(join(deps.historyDirectory, root.name));
               continue;
             }
             const name = await context.leaf.read();
@@ -237,7 +251,8 @@ export function createNativeBufferCatalog<Row>(deps: {
               context.leafId = null;
               continue;
             }
-            if (!name.isFile() || !/^\d{16}-[a-f0-9]{64}\.json$/.test(name.name)) continue;
+            if (name.ignored || !name.isFile() || !/^\d{16}-[a-f0-9]{64}\.json$/.test(name.name))
+              continue;
             entry = { kind: "history", reportId: context.leafId!, name: name.name };
           }
           if (!entry) {

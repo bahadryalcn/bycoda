@@ -139,3 +139,19 @@
   min-height: 0;
   overflow: hidden;
 }
+
+/* Compact variant: toolbar and inline-filter fields share the 28px control height and caption label. */
+.field[data-variant="compact"] .label {
+  margin-bottom: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.field[data-variant="compact"] .input {
+  min-height: var(--ui-control-height-compact);
+}
+.field[data-variant="compact"] .input.withEndAdornment {
+  padding-inline-end: calc(var(--ui-control-height-compact) + var(--space-2));
+}
+.field[data-variant="compact"] :is(.description, .error) {
+  padding-top: var(--space-1);
+}

@@ -127,3 +127,14 @@
   color: var(--color-content);
   font-weight: 500;
 }
+
+/* Measurement scope stays visible: these numbers are the host Node process. */
+.resource-scope {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

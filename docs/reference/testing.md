@@ -183,6 +183,29 @@ inclusion and cannot satisfy the CI requirement for clean-source evidence.
 
 ## Packaged native smoke
 
+For an isolated development run while another owner edits the checkout,
+`pnpm exec node scripts/build/dev-native.mjs --frozen-source <absolute-root> --bootstrap
+--workspace-id <id> --run-id <unique-id> --shared-target <dedicated-cache-root>`
+uses a frozen source directory with its own dependency links, Host build,
+Vite server, profiles and copied executable. The cache root must belong to this
+verification lane; do not reuse an active owner's Cargo target. The launcher
+leases the derived target before compiling and copies the executable before
+releasing it. `--cargo-target <absolute-target>` is an optional explicit override;
+all users of that target must still share the same cache lease root.
+
+The frozen root requires `frozen-source.json`: schema version 1, an original
+`BuildIdentityManifest` in `identity` (channel `dev`), and `files` entries with
+relative `path` and SHA-256 `sha256`. Create the directory from
+`sourceFiles()` and use `captureBuildIdentity()` to verify the copied bytes
+against a stable original source before writing the inventory. No synthetic Git
+metadata is needed. The launcher verifies every inventory entry and the aggregate
+source fingerprint before starting children and again after compilation; changed
+or missing inputs fail the run. Its run record names the frozen root and manifest.
+Capture metadata must compare against that frozen identity, and report any later
+checkout changes separately. Native CDP evidence still requires the running
+`build_identity` to match the run manifest. This mode performs no installation
+and provides no release or user-acceptance evidence.
+
 ```sh
 node scripts/build/package-smoke.mjs --manifest <stage>/manifest.json --root <stage> --output temp/verification/<id>/package-smoke.json
 ```

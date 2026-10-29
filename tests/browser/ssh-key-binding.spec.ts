@@ -11,12 +11,12 @@ for (const theme of ["light", "dark"]) {
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /Existing SSH target/ })
+        .getByRole("button", { name: /^Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       await details
-        .getByRole("navigation", { name: "Server tools" })
-        .getByRole("button", { name: "Settings", exact: true })
+        .getByRole("group", { name: "Server tools" })
+        .getByRole("button", { name: "Organization", exact: true })
         .click();
       await details.getByRole("button", { name: "SSH settings", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "SSH settings", exact: true });
@@ -76,7 +76,7 @@ for (const theme of ["light", "dark"]) {
       );
       await page
         .getByRole("list", { name: "Servers" })
-        .getByRole("button", { name: /Existing SSH target/ })
+        .getByRole("button", { name: /^Existing SSH target/ })
         .click();
       const details = page.getByRole("region", { name: "Server details" });
       const credentials = details.getByRole("region", { name: "Credentials" });
@@ -107,7 +107,11 @@ for (const theme of ["light", "dark"]) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
-      await details.getByRole("button", { name: "Edit SSH server", exact: true }).click();
+      await page
+        .getByRole("region", { name: "Server details" })
+        .getByRole("button", { name: "Server actions", exact: true })
+        .click();
+      await page.getByRole("menuitem", { name: "Edit SSH server", exact: true }).click();
       const editor = page.getByRole("dialog", { name: "Edit SSH server", exact: true });
       await expect(editor.getByRole("button", { name: /^Choose SSH key:/ })).toBeVisible();
       await expect(editor.getByText("Advanced SSH settings", { exact: true })).toBeVisible();

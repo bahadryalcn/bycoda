@@ -162,3 +162,40 @@ it("renders verification exceptions and enables retry", async () => {
   expect(document.querySelector('[role="alert"]')?.textContent).toBe("Could not read settings");
   expect(document.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
 });
+
+it("cannot be dismissed while the check runs and keeps an unsaved change open", async () => {
+  let resolve!: (value: VerifyResult) => void;
+  const pending = new Promise<VerifyResult>((done) => {
+    resolve = done;
+  });
+  const onDone = vi.fn();
+  const onClose = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(PasswordPromptDialog, {
+        title: "Remove",
+        description: "",
+        submitLabel: "Remove",
+        verify: () => pending,
+        onDone,
+        onClose,
+      }),
+    ),
+  );
+  document.querySelector<HTMLInputElement>('input[type="password"]')!.value = "password";
+  act(() => {
+    submit();
+  });
+  const cancel = [...document.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Cancel",
+  )!;
+  expect(cancel.disabled).toBe(true);
+  act(() => cancel.click());
+  expect(onClose).not.toHaveBeenCalled();
+  await act(async () => {
+    resolve({ ok: true, incomplete: "not-saved" });
+  });
+  expect(onDone).not.toHaveBeenCalled();
+  expect(document.querySelector('[role="alert"]')?.textContent).toContain("could not be saved");
+  expect(cancel.disabled).toBe(false);
+});

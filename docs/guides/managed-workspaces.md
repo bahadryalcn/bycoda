@@ -43,6 +43,13 @@ not require managed-workspace admission. For a worktree, review the selected
 execution Host and committed base; missing Host support shows an update requirement.
 The quick composer follows the same policy and preserves an explicit
 **Current checkout** choice when the project default is Worktree.
+
+In that page, refreshing keeps an unsaved policy draft. If the Host policy changed
+meanwhile, choose **Reload** or **Keep my edits** before saving. Saving stores the
+whole project override, and **Use Host defaults** removes it. Inventory, policy and
+storage each keep their last loaded data with their own Retry when a read fails.
+For remote projects, creating and deleting managed directories is unavailable;
+listing and reveal still work.
 If the bundled local Host update is waiting for active sessions, the composer
 explains that it will install automatically after those sessions finish. You can
 wait for the update, or choose **Use current checkout** for this draft. An explicit

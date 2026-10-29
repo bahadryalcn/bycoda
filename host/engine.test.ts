@@ -28,7 +28,7 @@ import { execFileAsync } from "../src/shared/lib/processExecution.node";
 const cleanups: Array<() => Promise<void> | void> = [];
 
 it("validates and persists the explicitly selected profile before sending a new host session", async () => {
-  const { engine, store, project, turns } = await setup();
+  const { engine, store, project, turns, waitForTurnStart } = await setup();
   const command = {
     type: "create",
     commandId: "named-profile",
@@ -46,7 +46,8 @@ it("validates and persists the explicitly selected profile before sending a new 
     sessionId: created.sessionId,
     text: "hello",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   expect(turns[0].input.providerAccountId).toBe("account-work");
   expect(() => parseCommand({ ...command, providerAccountId: "../outside" })).toThrow(
     "Invalid provider account ID",
@@ -54,7 +55,7 @@ it("validates and persists the explicitly selected profile before sending a new 
 });
 
 it("sends the reviewed note snapshot once while persisting display metadata without its body", async () => {
-  const { engine, store, id, turns, provider } = await setup();
+  const { engine, store, id, turns, provider, waitForTurnStart } = await setup();
   const noteCard = {
     id: "note-a",
     slug: "review",
@@ -72,7 +73,8 @@ it("sends the reviewed note snapshot once while persisting display metadata with
   expect(provider.send).not.toHaveBeenCalled();
   const receipt = await engine.command(command);
   expect(await engine.command(command)).toEqual(receipt);
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   expect(turns[0].input.text).toContain('Referenced note "Review":\n\nReviewed note body');
   const user = (await store.session(id)).session.blocks.find(
     (block) => block.id === command.commandId,
@@ -89,9 +91,11 @@ it("sends the reviewed note snapshot once while persisting display metadata with
     engine.command({ ...command, noteCard: { ...noteCard, body: "Changed snapshot" } }),
   ).rejects.toThrow();
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, receipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   await engine.command({ ...command, commandId: "note-only", text: "" });
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   expect(turns[1].input.text).toContain("Use this note.");
   turns[1].finish();
 });
@@ -117,7 +121,7 @@ it("rejects unsupported note context actions before changing the conversation", 
 });
 
 it("keeps a Codex goal command leading while carrying reviewed note content in runtime instructions", async () => {
-  const { engine, store, id, turns } = await setup();
+  const { engine, store, id, turns, waitForTurnStart } = await setup();
   await engine.command({
     type: "send",
     commandId: "goal-note-context",
@@ -130,7 +134,8 @@ it("keeps a Codex goal command leading while carrying reviewed note content in r
       body: "Check keyboard and focus.",
     },
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   expect(turns[0].input.text).toBe("/goal Review the changes");
   expect(turns[0].input.runtimeInstructions).toContain("Check keyboard and focus.");
   expect(
@@ -141,7 +146,7 @@ it("keeps a Codex goal command leading while carrying reviewed note content in r
 });
 
 it("keeps browser annotation attachments bound to their exact project and conversation", async () => {
-  const { engine, store, id, project, turns, provider } = await setup();
+  const { engine, store, id, project, turns, provider, waitForTurnStart } = await setup();
   const fileId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   await writeAttachmentChunk(store, {
     id: fileId,
@@ -208,7 +213,8 @@ it("keeps browser annotation attachments bound to their exact project and conver
   expect(await store.session(id)).toEqual(original);
   expect(provider.send).not.toHaveBeenCalled();
   await engine.command({ ...base, attachments: [file] });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   expect(turns[0].input.attachments?.[0]?.browserAnnotation).toMatchObject({
     sessionId: id,
     projectId: project.id,
@@ -219,17 +225,19 @@ it("keeps browser annotation attachments bound to their exact project and conver
 });
 
 it("clears the same host session durably and starts the next turn without the old binding", async () => {
-  const { engine, store, id, provider, turns } = await setup();
-  await engine.command({
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  const runReceipt = await engine.command({
     type: "send",
     commandId: "before-clear",
     sessionId: id,
     text: "Old context",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onEvent({ type: "session.providerBound", providerSessionId: "old-native" });
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   vi.mocked(provider.stop).mockClear();
   vi.mocked(provider.bind).mockClear();
   const command = { type: "send", commandId: "clear", sessionId: id, text: "/clear" };
@@ -246,15 +254,17 @@ it("clears the same host session durably and starts the next turn without the ol
     sessionId: id,
     text: "New context",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   expect(turns[1].input.text).toBe("New context");
   expect(provider.bind).not.toHaveBeenCalled();
 });
 
 it("rejects clearing a running host session", async () => {
-  const { engine, id, provider, turns } = await setup();
+  const { engine, id, provider, turns, waitForTurnStart } = await setup();
   await engine.command({ type: "send", commandId: "running", sessionId: id, text: "Keep working" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   await expect(
     engine.clearConversation({
       type: "send",
@@ -288,33 +298,59 @@ it("surfaces provider startup rejection as a failed turn outside folded activity
 });
 
 it("tells who is waiting on a turn how it ended, and why a conversation cannot start one", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   const ended: Array<{ cancelled?: boolean; error?: string; interrupted?: boolean }> = [];
   engine.onSettled = (_id, outcome) => void ended.push(outcome);
   expect(await engine.busyReason(id)).toBeUndefined();
   // A turn that ends well.
-  await engine.command({ type: "send", commandId: "ok-1", sessionId: id, text: "one" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const first = await engine.command({
+    type: "send",
+    commandId: "ok-1",
+    sessionId: id,
+    text: "one",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].finish();
-  await vi.waitFor(() => expect(ended).toHaveLength(1));
+  await engine.waitForRun(id, first.runId);
+  expect(ended).toHaveLength(1);
   expect(ended[0]).toEqual({});
   // A turn the user stopped is not a failure, whatever the provider says.
-  await engine.command({ type: "send", commandId: "ok-2", sessionId: id, text: "two" });
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  const second = await engine.command({
+    type: "send",
+    commandId: "ok-2",
+    sessionId: id,
+    text: "two",
+  });
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   await engine.command({
     type: "cancel",
     commandId: "stop-2",
     sessionId: id,
     runId: (await store.session(id)).runId!,
   });
-  await vi.waitFor(() => expect(ended).toHaveLength(2));
+  await engine.waitForRun(id, second.runId);
+  expect(ended).toHaveLength(2);
   expect(ended[1]).toEqual({ cancelled: true });
   // A provider that fails carries its message.
+  let failedStarted!: () => void;
+  const failureStarted = new Promise<void>((resolve) => {
+    failedStarted = resolve;
+  });
   provider.send = vi.fn(async () => {
+    failedStarted();
     throw new Error("provider exploded");
   });
-  await engine.command({ type: "send", commandId: "ok-3", sessionId: id, text: "three" });
-  await vi.waitFor(() => expect(ended).toHaveLength(3));
+  const third = await engine.command({
+    type: "send",
+    commandId: "ok-3",
+    sessionId: id,
+    text: "three",
+  });
+  await failureStarted;
+  await engine.waitForRun(id, third.runId);
+  expect(ended).toHaveLength(3);
   expect(ended[2]).toEqual({ error: "provider exploded" });
   // The host going down is told apart too.
   const stopping = engine.close();
@@ -323,15 +359,16 @@ it("tells who is waiting on a turn how it ended, and why a conversation cannot s
 });
 
 it("attributes only successful edit tool paths to the active checkpoint turn", async () => {
-  const { engine, store, id, turns } = await setup();
+  const { engine, store, id, turns, waitForTurnStart } = await setup();
   const claim = vi.spyOn(engine.checkpoints, "claim").mockResolvedValue(undefined);
-  await engine.command({
+  const receipt = await engine.command({
     type: "send",
     commandId: "checkpoint-tools",
     sessionId: id,
     text: "Edit files",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onEvent({
     type: "tool.updated",
     id: "read",
@@ -361,14 +398,16 @@ it("attributes only successful edit tool paths to the active checkpoint turn", a
     ["new.txt"],
   );
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, receipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
 });
 
 it("steers the active host turn without replacing it, and deduplicates retries", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   provider.steer = vi.fn(async () => {});
   await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   const runId = (await store.session(id)).runId!;
   turns[0].input.onAccepted?.();
   const command = { type: "steer", commandId: "redirect", sessionId: id, runId, text: "second" };
@@ -389,17 +428,18 @@ it("steers the active host turn without replacing it, and deduplicates retries",
 });
 
 it("stops only the exact delegated task of the active host run and deduplicates receipt replay", async () => {
-  const { engine, store, id, provider, turns } = await setup("claude");
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup("claude");
   expect(engine.supportsItemStop("claude")).toBe(false);
   provider.stopItem = vi.fn(async () => {});
   expect(engine.supportsItemStop("claude")).toBe(true);
-  await engine.command({
+  const runReceipt = await engine.command({
     type: "send",
     commandId: "parent-start",
     sessionId: id,
     text: "Delegate review",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onAccepted?.();
   turns[0].input.onEvent({
     type: "tool.updated",
@@ -450,13 +490,20 @@ it("stops only the exact delegated task of the active host run and deduplicates 
     (await store.session(id)).session.blocks.find((entry) => entry.id === block.id)?.tool?.status,
   ).toBe("running");
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
 });
 
 it("rejects a historical pending agent block during a newer parent run and never cancels unsupported providers", async () => {
-  const { engine, store, id, provider, turns } = await setup("claude");
-  await engine.command({ type: "send", commandId: "old-parent", sessionId: id, text: "Old task" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup("claude");
+  const first = await engine.command({
+    type: "send",
+    commandId: "old-parent",
+    sessionId: id,
+    text: "Old task",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onAccepted?.();
   turns[0].input.onEvent({
     type: "tool.updated",
@@ -493,7 +540,8 @@ it("rejects a historical pending agent block during a newer parent run and never
   await expect(engine.command(unsupported)).rejects.toThrow(/provider cannot stop/);
   expect(provider.cancel).not.toHaveBeenCalled();
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, first.runId);
+  expect((await store.session(id)).status).toBe("idle");
   provider.stopItem = vi.fn(async () => {});
   const prior = await store.session(id);
   await store.save(
@@ -515,8 +563,14 @@ it("rejects a historical pending agent block during a newer parent run and never
     },
     { type: "test.pendingHistoricalAgent" },
   );
-  await engine.command({ type: "send", commandId: "new-parent", sessionId: id, text: "New task" });
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  const second = await engine.command({
+    type: "send",
+    commandId: "new-parent",
+    sessionId: id,
+    text: "New task",
+  });
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   const current = await store.session(id);
   expect(current.session.blocks.find((entry) => entry.id === old.id)?.tool?.status).toBe("running");
   await expect(
@@ -524,24 +578,27 @@ it("rejects a historical pending agent block during a newer parent run and never
   ).rejects.toThrow(/subagent changed/);
   expect(provider.stopItem).not.toHaveBeenCalled();
   turns[1].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, second.runId);
+  expect((await store.session(id)).status).toBe("idle");
 });
 
 it("previews contextual transfers without execution and creates an idle handoff with the exact reviewed brief", async () => {
-  const { engine, store, id, provider, turns } = await setup();
-  await engine.command({
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  const runReceipt = await engine.command({
     type: "send",
     commandId: "source-context",
     sessionId: id,
     text: "Implement search",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onEvent({
     type: "message.delta",
     text: "Search implemented with keyboard support.",
   });
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   const source = await store.session(id);
   const reply = source.session.blocks.find((block) => block.role === "assistant")!;
   const input = {
@@ -577,17 +634,19 @@ it("previews contextual transfers without execution and creates an idle handoff 
 });
 
 it("binds second opinion to the reviewed source and target with one explicit new request", async () => {
-  const { engine, store, id, provider, turns } = await setup();
-  await engine.command({
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  const runReceipt = await engine.command({
     type: "send",
     commandId: "source-second",
     sessionId: id,
     text: "Review search",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onEvent({ type: "message.delta", text: "The search is correct." });
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   const source = await store.session(id);
   const reply = source.session.blocks.find((block) => block.role === "assistant")!;
   const input = {
@@ -620,7 +679,8 @@ it("binds second opinion to the reviewed source and target with one explicit new
   };
   const receipt = await engine.command(command);
   expect(await engine.command(command)).toEqual(receipt);
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   expect(turns[1].input.sessionId).toBe(receipt.sessionId);
   expect(turns[1].input.text).toContain(preview.contextText);
   expect(turns[1].input.text).toContain("The search is correct");
@@ -641,17 +701,19 @@ it("binds second opinion to the reviewed source and target with one explicit new
 });
 
 it("previews a desktop-only source without adoption and rechecks its exact context after explicit adoption", async () => {
-  const { engine, store, id, provider, turns } = await setup();
-  await engine.command({
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
+  const runReceipt = await engine.command({
     type: "send",
     commandId: "desktop-source-turn",
     sessionId: id,
     text: "Continue search",
   });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onEvent({ type: "message.delta", text: "Search work is ready." });
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   const base = await store.session(id);
   const epoch = Date.now();
   const desktop = {
@@ -689,10 +751,11 @@ it("previews a desktop-only source without adoption and rechecks its exact conte
 });
 
 it("Stop cancels a host follow-up waiting for provider startup", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   provider.steer = vi.fn(async () => {});
   await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   const runId = (await store.session(id)).runId!;
   await engine.command({
     type: "steer",
@@ -715,7 +778,7 @@ it("Stop cancels a host follow-up waiting for provider startup", async () => {
 });
 
 it("retains rejected follow-ups and their attachments as drafts without replaying ambiguous delivery", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   provider.steer = vi.fn(async () => {
     throw new Error("transport closed before acknowledgement");
   });
@@ -732,8 +795,14 @@ it("retains rejected follow-ups and their attachments as drafts without replayin
     size: 5,
     data: Buffer.from("notes").toString("base64"),
   });
-  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const runReceipt = await engine.command({
+    type: "send",
+    commandId: "start",
+    sessionId: id,
+    text: "first",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onAccepted?.();
   const command = {
     type: "steer",
@@ -752,7 +821,8 @@ it("retains rejected follow-ups and their attachments as drafts without replayin
     ).toBe(true),
   );
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   expect(
     (await store.session(id)).session.blocks.find((block) => block.id === command.commandId),
   ).toMatchObject({
@@ -775,10 +845,16 @@ it("retains rejected follow-ups and their attachments as drafts without replayin
 });
 
 it("keeps every accepted follow-up when the primary turn settles before startup acceptance", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   provider.steer = vi.fn(async () => {});
-  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const runReceipt = await engine.command({
+    type: "send",
+    commandId: "start",
+    sessionId: id,
+    text: "first",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   for (const commandId of ["waiting-a", "waiting-b"]) {
     await engine.command({
       type: "steer",
@@ -789,7 +865,8 @@ it("keeps every accepted follow-up when the primary turn settles before startup 
     });
   }
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   expect(provider.steer).not.toHaveBeenCalled();
   expect((await store.session(id)).session.blocks.filter((block) => block.draft)).toMatchObject([
     { id: "waiting-a", text: "waiting-a", followUpDelivery: "undelivered" },
@@ -808,12 +885,13 @@ it("keeps every accepted follow-up when the primary turn settles before startup 
   expect(
     (await store.session(id)).session.blocks.find((block) => block.id === "waiting-b")?.draft,
   ).toBe(true);
-  await vi.waitFor(() => expect(turns).toHaveLength(2));
+  await waitForTurnStart(2);
+  expect(turns).toHaveLength(2);
   expect(turns[1].input.text).toBe("waiting-a");
 });
 
 it("does not expose an idle session before in-flight follow-up delivery retires", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   let rejectSteer!: (reason: Error) => void;
   provider.steer = vi.fn(
     () =>
@@ -821,8 +899,14 @@ it("does not expose an idle session before in-flight follow-up delivery retires"
         rejectSteer = reject;
       }),
   );
-  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const runReceipt = await engine.command({
+    type: "send",
+    commandId: "start",
+    sessionId: id,
+    text: "first",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onAccepted?.();
   await engine.command({
     type: "steer",
@@ -840,7 +924,8 @@ it("does not expose an idle session before in-flight follow-up delivery retires"
     engine.command({ type: "send", commandId: "too-soon", sessionId: id, text: "third" }),
   ).rejects.toThrow("already running");
   rejectSteer(new Error("provider retired"));
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   expect(
     (await store.session(id)).session.blocks.find((block) => block.id === "in-flight"),
   ).toMatchObject({
@@ -850,13 +935,15 @@ it("does not expose an idle session before in-flight follow-up delivery retires"
 });
 
 it("persists the accepted run ID in receipts even after a replacement turn starts", async () => {
-  const { engine, store, id, turns } = await setup();
+  const { engine, store, id, turns, waitForTurnStart } = await setup();
   const command = { type: "send", commandId: "first", sessionId: id, text: "first" };
   const receipt = await engine.command(command);
   expect(receipt.runId).toBe((await store.session(id)).runId);
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].finish();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, receipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   await engine.command({ type: "send", commandId: "replacement", sessionId: id, text: "second" });
   expect((await store.session(id)).runId).not.toBe(receipt.runId);
   expect(await engine.command(command)).toEqual(receipt);
@@ -864,7 +951,7 @@ it("persists the accepted run ID in receipts even after a replacement turn start
 });
 
 it("keeps a follow-up uncertain when Stop makes its provider resolve without delivery", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   let finishSteer!: () => void;
   provider.steer = vi.fn(
     () =>
@@ -873,7 +960,8 @@ it("keeps a follow-up uncertain when Stop makes its provider resolve without del
       }),
   );
   await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   turns[0].input.onAccepted?.();
   const runId = (await store.session(id)).runId!;
   await engine.command({
@@ -897,7 +985,7 @@ it("keeps a follow-up uncertain when Stop makes its provider resolve without del
 });
 
 it("protects a delivery draft from removal until the host turn retires", async () => {
-  const { engine, store, id, provider, turns } = await setup();
+  const { engine, store, id, provider, turns, waitForTurnStart } = await setup();
   let finishSteer!: () => void;
   provider.steer = vi.fn(
     () =>
@@ -905,8 +993,14 @@ it("protects a delivery draft from removal until the host turn retires", async (
         finishSteer = resolve;
       }),
   );
-  await engine.command({ type: "send", commandId: "start", sessionId: id, text: "first" });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  const runReceipt = await engine.command({
+    type: "send",
+    commandId: "start",
+    sessionId: id,
+    text: "first",
+  });
+  await waitForTurnStart();
+  expect(turns).toHaveLength(1);
   await engine.command({
     type: "steer",
     commandId: "redirect",
@@ -936,7 +1030,8 @@ it("protects a delivery draft from removal until the host turn retires", async (
   await new Promise<void>((resolve) => setImmediate(resolve));
   expect(provider.stop).not.toHaveBeenCalled();
   finishSteer();
-  await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+  await engine.waitForRun(id, runReceipt.runId);
+  expect((await store.session(id)).status).toBe("idle");
   await engine.command({
     type: "removeDraft",
     commandId: "remove-retired",
@@ -1102,11 +1197,28 @@ async function setup(
   const store = new HostStore(join(directory, "host.db"));
   const project = await store.addProject(directory, "Test");
   const turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
+  const starts = new Map<number, { promise: Promise<void>; resolve: () => void }>();
+  // A durable command receipt precedes real file-history/Git preparation. Wait
+  // on the fake provider's actual admission, under the unchanged test timeout.
+  const waitForTurnStart = (count = 1): Promise<void> => {
+    if (turns.length >= count) return Promise.resolve();
+    let signal = starts.get(count);
+    if (!signal) {
+      let resolve!: () => void;
+      const promise = new Promise<void>((done) => {
+        resolve = done;
+      });
+      starts.set(count, (signal = { promise, resolve }));
+    }
+    return signal.promise;
+  };
   const provider: HostProvider = {
     send: vi.fn(
       (input) =>
         new Promise<void>((resolve) => {
           turns.push({ input, finish: resolve });
+          starts.get(turns.length)?.resolve();
+          starts.delete(turns.length);
         }),
     ),
     cancel: vi.fn(async () => {
@@ -1147,6 +1259,7 @@ async function setup(
     project,
     engine,
     turns,
+    waitForTurnStart,
     id: created.sessionId,
   };
 }
@@ -1189,7 +1302,7 @@ function managedHistory() {
 
 describe("managed turn boundaries", () => {
   it("uses successful post-write Codex proof without late pre-edit capture", async () => {
-    const { engine, store, id, directory, turns } = await setup();
+    const { engine, store, id, directory, turns, waitForTurnStart } = await setup();
     const cwd = join(directory, "proof-repo");
     mkdirSync(cwd);
     writeFileSync(join(cwd, "own.txt"), "before\n");
@@ -1212,7 +1325,8 @@ describe("managed turn boundaries", () => {
       sessionId: id,
       text: "Replace file",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     writeFileSync(join(cwd, "own.txt"), "after\n");
     for (const [callId, kind, contents] of [
       ["delete", "delete", "before\n"],
@@ -1274,7 +1388,7 @@ describe("managed turn boundaries", () => {
   it.each([false, true])(
     "records and safely restores per-message files with exact rewind OFF (worktree %s)",
     async (managed) => {
-      const { engine, store, id, directory, provider, turns } = await setup();
+      const { engine, store, id, directory, provider, turns, waitForTurnStart } = await setup();
       const cwd = join(directory, "repo");
       mkdirSync(cwd);
       writeFileSync(join(cwd, "own.txt"), "before own\n");
@@ -1309,7 +1423,8 @@ describe("managed turn boundaries", () => {
         sessionId: id,
         text: "Edit two files",
       });
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      await waitForTurnStart();
+      expect(turns).toHaveLength(1);
       writeFileSync(join(cwd, "own.txt"), "own edit\n");
       writeFileSync(join(cwd, "foreign.txt"), "session edit\n");
       turns[0].input.onEvent({
@@ -1346,7 +1461,7 @@ describe("managed turn boundaries", () => {
   it.each(["unset", "off"])(
     "runs three lightweight worktree sends without capture, admission or retirement (%s)",
     async (setting) => {
-      const { store, id, provider, turns, directory } = await setup();
+      const { store, id, provider, turns, directory, waitForTurnStart } = await setup();
       const original = await store.session(id);
       await store.save(
         {
@@ -1384,7 +1499,8 @@ describe("managed turn boundaries", () => {
           sessionId: id,
           text: `Send ${turn}`,
         });
-        await vi.waitFor(() => expect(turns).toHaveLength(turn + 1));
+        await waitForTurnStart(turn + 1);
+        expect(turns).toHaveLength(turn + 1);
         expect(turns[turn].input.cwd).toBe(directory);
         turns[turn].finish();
         await restarted.waitForRun(id, receipt.runId);
@@ -1533,7 +1649,7 @@ describe("managed turn boundaries", () => {
   });
 
   it("normalizes adopted project cwd and dispatches stale managed snapshots in the authoritative execution directory", async () => {
-    const { engine, store, id, directory, turns, provider } = await setup();
+    const { engine, store, id, directory, turns, provider, waitForTurnStart } = await setup();
     const { adapter } = managedHistory();
     const owned = join(directory, "owned-execution");
     adapter.workspaceForSession = async (value) =>
@@ -1568,7 +1684,8 @@ describe("managed turn boundaries", () => {
       sessionId: adopted.session.id,
       text: "Implement here",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.cwd).toBe(owned);
     await vi.waitFor(() =>
       expect(provider.generateTitle).toHaveBeenCalledWith({
@@ -1719,7 +1836,7 @@ describe("managed turn boundaries", () => {
   });
 
   it("creates unattended managed sessions with authoritative identity and holds admission through provider completion", async () => {
-    const { engine, store, project, directory, turns } = await setup();
+    const { engine, store, project, directory, turns, waitForTurnStart } = await setup();
     const { adapter } = managedHistory();
     const release = vi.fn(async () => {});
     adapter.workspaceForSession = async (value) =>
@@ -1754,7 +1871,8 @@ describe("managed turn boundaries", () => {
       worktreeCwd: join(directory, "owned"),
       branch: "bycoda/s/owned",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(adapter.startActivity).toHaveBeenCalledWith(expect.anything(), "provider");
     expect(turns[0].input.cwd).toBe(join(directory, "owned"));
     expect(release).not.toHaveBeenCalled();
@@ -1888,7 +2006,11 @@ describe("managed turn boundaries", () => {
 
   it("captures each delivered steer before sending it and completes every accepted boundary", async () => {
     const { adapter, records } = managedHistory();
-    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup(
+      "codex",
+      {},
+      adapter,
+    );
     provider.steer = vi.fn(async () => {
       expect(records.has("steer-boundary")).toBe(true);
     });
@@ -1898,7 +2020,8 @@ describe("managed turn boundaries", () => {
       sessionId: id,
       text: "work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onAccepted?.();
     await engine.command({
       type: "steer",
@@ -1914,7 +2037,8 @@ describe("managed turn boundaries", () => {
       ).not.toBe(true),
     );
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, receipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect([...records.keys()]).toEqual(["primary-boundary", "steer-boundary"]);
     expect(records.get("primary-boundary")?.after?.status).toBe("complete");
     expect(records.get("steer-boundary")?.after?.status).toBe("complete");
@@ -2026,14 +2150,15 @@ describe("managed turn boundaries", () => {
   });
 
   it("settles an owned provider but refuses unconfirmed background writers", async () => {
-    const { engine, store, id, turns } = await setup();
+    const { engine, store, id, turns, waitForTurnStart } = await setup();
     await engine.command({
       type: "send",
       commandId: "settle-provider",
       sessionId: id,
       text: "work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const adapter = engine.conversationRewindAdapter();
     await adapter.settle(id);
     expect((await store.session(id)).status).toBe("idle");
@@ -2051,7 +2176,11 @@ describe("managed turn boundaries", () => {
 
   it("captures the accepted block before execution and the settled head afterward", async () => {
     const { adapter } = managedHistory();
-    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup(
+      "codex",
+      {},
+      adapter,
+    );
     vi.mocked(adapter.history.begin).mockImplementationOnce(async (request) => {
       expect(provider.send).not.toHaveBeenCalled();
       expect(request.userBlockId).toBe("accepted-boundary");
@@ -2090,17 +2219,19 @@ describe("managed turn boundaries", () => {
       },
     }));
     const legacyBegin = vi.spyOn(engine.checkpoints, "begin");
-    await engine.command({
+    const receipt = await engine.command({
       type: "send",
       commandId: "accepted-boundary",
       sessionId: id,
       text: "change source",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(adapter.history.end).not.toHaveBeenCalled();
     expect(legacyBegin).not.toHaveBeenCalled();
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, receipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect(adapter.history.end).toHaveBeenCalledWith(
       expect.objectContaining({ userBlockId: "accepted-boundary", sessionId: id }),
     );
@@ -2162,19 +2293,37 @@ describe("managed turn boundaries", () => {
 
   it("keeps previous boundaries through compaction and captures compaction separately", async () => {
     const { adapter, records } = managedHistory();
-    const { engine, store, id, provider, turns } = await setup("codex", {}, adapter);
-    await engine.command({
+    const { engine, store, id, provider, turns, waitForTurnStart } = await setup(
+      "codex",
+      {},
+      adapter,
+    );
+    const firstRunReceipt = await engine.command({
       type: "send",
       commandId: "before-compact",
       sessionId: id,
       text: "first",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
-    provider.compact = vi.fn(async () => {});
-    await engine.command({ type: "compact", commandId: "compact-boundary", sessionId: id });
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, firstRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
+    let compactStarted!: () => void;
+    const compactStart = new Promise<void>((resolve) => {
+      compactStarted = resolve;
+    });
+    provider.compact = vi.fn(async () => {
+      compactStarted();
+    });
+    const secondRunReceipt = await engine.command({
+      type: "compact",
+      commandId: "compact-boundary",
+      sessionId: id,
+    });
+    await compactStart;
+    await engine.waitForRun(id, secondRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect([...records.keys()]).toEqual(["before-compact", "compact-boundary"]);
     expect(records.get("before-compact")?.before.status).toBe("complete");
     expect(records.get("compact-boundary")?.after?.status).toBe("complete");
@@ -2224,7 +2373,7 @@ describe("handoff context capacity", () => {
   }
 
   it("sends a long Turkish request with an unknown window and reduced history", async () => {
-    const { engine, store, turns, id } = await seedHandoff();
+    const { engine, store, turns, id, waitForTurnStart } = await seedHandoff();
     const text = "Türkçe isteği değiştirmeden gönder. ".repeat(1000);
     expect(Buffer.byteLength(text)).toBeGreaterThan(20_000);
     await expect(
@@ -2235,7 +2384,8 @@ describe("handoff context capacity", () => {
         text,
       }),
     ).resolves.toBeDefined();
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toContain(text);
     expect(turns[0].input.text).toContain("handoff-history");
     expect(turns[0].input.text).not.toContain("Previous history. ".repeat(10_000));
@@ -2246,7 +2396,8 @@ describe("handoff context capacity", () => {
   });
 
   it("uses a tiny discovered window, persists a non-blocking notice, and resets the old thread", async () => {
-    const { engine, store, provider, turns, id, directory } = await seedHandoff(32);
+    const { engine, store, provider, turns, id, directory, waitForTurnStart } =
+      await seedHandoff(32);
     await expect(
       engine.command({
         type: "send",
@@ -2255,7 +2406,8 @@ describe("handoff context capacity", () => {
         text: "Continue the work.",
       }),
     ).resolves.toBeDefined();
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toBe("Continue the work.");
     expect(provider.stop).toHaveBeenCalledWith(id);
     const session = (await store.session(id)).session;
@@ -2275,9 +2427,10 @@ describe("handoff context capacity", () => {
     const expanded = `Injected skill policy. ${"policy ".repeat(2000)}\n${text}`;
     const skill = vi.spyOn(skillPrompts, "prepareHostSkillPrompt").mockResolvedValue(expanded);
     cleanups.push(() => skill.mockRestore());
-    const { engine, store, turns, id } = await seedHandoff(1024);
+    const { engine, store, turns, id, waitForTurnStart } = await seedHandoff(1024);
     await engine.command({ type: "send", commandId: "skill-accounting", sessionId: id, text });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(skill).toHaveBeenCalledTimes(1);
     expect(turns[0].input.text).toBe(expanded);
     const session = (await store.session(id)).session;
@@ -2287,7 +2440,7 @@ describe("handoff context capacity", () => {
   });
 
   it("budgets real machine restrictions at the final provider boundary without duplicating them", async () => {
-    const { engine, store, provider, turns, id } = await seedHandoff(2048);
+    const { engine, store, provider, turns, id, waitForTurnStart } = await seedHandoff(2048);
     const policy = {
       disabledNames: Array.from({ length: 200 }, (_, i) => `disabled-skill-${i}`),
       disabledPaths: Array.from({ length: 200 }, (_, i) => `C:/skills/disabled-${i}/SKILL.md`),
@@ -2303,7 +2456,8 @@ describe("handoff context capacity", () => {
       sessionId: id,
       text: "Continue.",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toBe("Continue.");
     expect(turns[0].input.skillPolicy).toEqual(policy);
     const instructions = turns[0].input.runtimeInstructions!;
@@ -2323,14 +2477,15 @@ describe("handoff context capacity", () => {
     const hint = "Runtime skill policy. ".repeat(1000);
     const hints = vi.spyOn(runtimeGuidance, "harnessRuntimeHints").mockResolvedValue(hint);
     cleanups.push(() => hints.mockRestore());
-    const { engine, store, turns, id } = await seedHandoff(1024);
+    const { engine, store, turns, id, waitForTurnStart } = await seedHandoff(1024);
     await engine.command({
       type: "send",
       commandId: "runtime-accounting",
       sessionId: id,
       text: "Continue.",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toBe("Continue.");
     expect(turns[0].input.runtimeInstructions).toBe(hint);
     const session = (await store.session(id)).session;
@@ -2428,8 +2583,14 @@ describe("headless session ownership", () => {
   });
 
   it("dispatches a Codex to Gemini handoff only through the Gemini adapter with its selected model", async () => {
+    let targetStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      targetStarted = resolve;
+    });
     const target: HostProvider = {
-      send: vi.fn(async () => {}),
+      send: vi.fn(async () => {
+        targetStarted();
+      }),
       cancel: vi.fn(async () => {}),
       stop: vi.fn(async () => {}),
       bind: vi.fn(),
@@ -2468,7 +2629,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Continue the earlier work",
     });
-    await vi.waitFor(() => expect(target.send).toHaveBeenCalledTimes(1));
+    await started;
+    expect(target.send).toHaveBeenCalledTimes(1);
     const input = vi.mocked(target.send).mock.calls[0][0];
     expect(input.model).toBe("antigravity:gemini-3.8-flash-high");
     expect(input.sessionId).toBe(id);
@@ -2487,7 +2649,7 @@ describe("headless session ownership", () => {
   it.each(REMOTE_PROVIDERS)(
     "rewinds durably and sends only retained context for %s",
     async (harness) => {
-      const { engine, store, provider, turns, id } = await setup(harness);
+      const { engine, store, provider, turns, id, waitForTurnStart } = await setup(harness);
       const initial = await store.session(id);
       await store.save(
         {
@@ -2523,13 +2685,14 @@ describe("headless session ownership", () => {
       expect(saved.session.pendingContextReplay).toContain("Keep this request");
       expect(saved.session.pendingContextReplay).toContain("Keep this answer");
 
-      await engine.command({
+      const sent = await engine.command({
         type: "send",
         commandId: "after-rewind",
         sessionId: id,
         text: "Continue",
       });
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      await waitForTurnStart();
+      expect(turns).toHaveLength(1);
       expect(turns[0].input.text).toContain("Keep this request");
       expect(turns[0].input.text).not.toContain("Remove this request");
       expect(turns[0].input.text).not.toContain("Remove this answer");
@@ -2537,7 +2700,8 @@ describe("headless session ownership", () => {
       turns[0].input.onAccepted?.();
       expect((await store.session(id)).session.pendingContextReplay).toBeUndefined();
       turns[0].finish();
-      await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+      await engine.waitForRun(id, sent.runId);
+      expect((await store.session(id)).status).toBe("idle");
     },
   );
 
@@ -2596,7 +2760,7 @@ describe("headless session ownership", () => {
   });
 
   it("keeps the visible transcript when a native rewind commits unsuccessfully and prepares fresh replay", async () => {
-    const { engine, store, provider, turns, id } = await setup();
+    const { engine, store, provider, turns, id, waitForTurnStart } = await setup();
     const { adapter } = managedHistory();
     adapter.workspaceForSession = async () => null;
     engine.setManagedTurnHistoryAdapter(adapter);
@@ -2668,7 +2832,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Continue",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toContain("Retain this request");
     expect(turns[0].input.text).toContain("This must remain visible");
   });
@@ -2754,7 +2919,7 @@ describe("headless session ownership", () => {
   });
 
   it("applies host skill instructions while retaining the original user transcript", async () => {
-    const { engine, store, turns, id, directory } = await setup("claude");
+    const { engine, store, turns, id, directory, waitForTurnStart } = await setup("claude");
     const folder = join(directory, ".agents/skills/remote-review");
     mkdirSync(folder, { recursive: true });
     writeFileSync(join(folder, "SKILL.md"), "Use the host review checklist");
@@ -2764,7 +2929,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "/remote-review inspect",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toContain("Use the host review checklist");
     expect(
       (await store.session(id)).session.blocks.find((block) => block.role === "user")?.text,
@@ -2852,7 +3018,7 @@ describe("headless session ownership", () => {
   });
 
   it("continues the same adopted chat with retained context after a desktop provider switch", async () => {
-    const { engine, store, id, turns, provider } = await setup("claude");
+    const { engine, store, id, turns, provider, waitForTurnStart } = await setup("claude");
     const initial = await store.session(id);
     const adopted = await store.save(
       {
@@ -2892,7 +3058,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Continue",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.model).toBe("codex:new");
     expect(turns[0].input.text).toContain("Remember the original request");
     expect(turns[0].input.text).toContain("The earlier answer");
@@ -2951,9 +3118,15 @@ describe("headless session ownership", () => {
   });
 
   it("keeps a turn's output over a desktop copy saved before it ended", async () => {
-    const { engine, store, turns, id } = await setup("claude");
-    await engine.command({ type: "send", commandId: "send", sessionId: id, text: "Review it" });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    const { engine, store, turns, id, waitForTurnStart } = await setup("claude");
+    const runReceipt = await engine.command({
+      type: "send",
+      commandId: "send",
+      sessionId: id,
+      text: "Review it",
+    });
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     // The desktop mirrors the session while the turn is still running.
     const midTurn = structuredClone(await store.session(id));
     midTurn.updatedAt = Date.now();
@@ -2962,7 +3135,8 @@ describe("headless session ownership", () => {
     turns[0].input.onEvent({ type: "message.delta", text: "VERDICT: PASS" });
     turns[0].input.onEvent({ type: "message.completed" });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, runReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
 
     await engine.refreshFromDesktop(midTurn);
     const reply = (blocks: { role: string; text: string }[]) =>
@@ -3319,7 +3493,7 @@ describe("headless session ownership", () => {
   });
 
   it("switches a historic chat between providers with context on the next send", async () => {
-    const { engine, store, turns, id } = await setup("claude");
+    const { engine, store, turns, id, waitForTurnStart } = await setup("claude");
     const value = await store.session(id);
     await store.save(
       {
@@ -3362,7 +3536,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Continue the fix",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toContain("Repair the model picker");
     expect(turns[0].input.text).toContain("Continue the fix");
     expect((await store.session(id)).session.blocks).toContainEqual(
@@ -3430,7 +3605,7 @@ describe("headless session ownership", () => {
   it.each(["send", "compact"] as const)(
     "clears the old draft when a normal %s starts",
     async (type) => {
-      const { engine, store, turns, provider, id } = await setup();
+      const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
       provider.compact = (input) => provider.send({ ...input, text: "/compact" });
       await engine.command({
         type: "draft",
@@ -3445,20 +3620,22 @@ describe("headless session ownership", () => {
         text: "New work",
       });
       expect((await store.session(id)).session.blocks.some((block) => block.draft)).toBe(false);
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      await waitForTurnStart();
+      expect(turns).toHaveLength(1);
       turns[0].finish();
     },
   );
 
   it("contains a persistence failure while requesting approval", async () => {
-    const { engine, store, turns, provider, id } = await setup();
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
     await engine.command({
       type: "send",
       commandId: "approval-failure",
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(store, "save").mockImplementationOnce(() => {
       throw new Error("disk full");
@@ -3479,7 +3656,7 @@ describe("headless session ownership", () => {
   });
 
   it("stores a remote draft with an uploaded file, then sends it in plan mode", async () => {
-    const { engine, store, turns, id } = await setup();
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
     const fileId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     expect(
       await writeAttachmentChunk(store, {
@@ -3516,7 +3693,8 @@ describe("headless session ownership", () => {
       intent: "plan",
       draftBlockId: "draft-1",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input).toMatchObject({
       intent: "plan",
       attachments: [{ name: "notes.txt", size: 5 }],
@@ -3527,7 +3705,7 @@ describe("headless session ownership", () => {
   });
 
   it("passes an uploaded image to the host provider on an attachment-only turn", async () => {
-    const { engine, store, turns, id } = await setup("claude");
+    const { engine, store, turns, id, waitForTurnStart } = await setup("claude");
     const fileId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
     const image = Buffer.from("image-bytes");
     await writeAttachmentChunk(store, {
@@ -3551,7 +3729,8 @@ describe("headless session ownership", () => {
         },
       ],
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.attachments?.[0]).toMatchObject({
       name: "shot.png",
       data: image.toString("base64"),
@@ -3598,20 +3777,22 @@ describe("headless session ownership", () => {
   });
 
   it("marks a reviewed host plan as built after its build turn", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const firstRunReceipt = await engine.command({
       type: "send",
       commandId: "plan-turn",
       sessionId: id,
       text: "Plan this",
       intent: "plan",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({ type: "plan", text: "# Steps\n\n1. Change code" });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, firstRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     const plan = (await store.session(id)).session.blocks.find((block) => block.role === "plan")!;
-    await engine.command({
+    const secondRunReceipt = await engine.command({
       type: "send",
       commandId: "build-turn",
       sessionId: id,
@@ -3622,11 +3803,13 @@ describe("headless session ownership", () => {
     expect(
       (await store.session(id)).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("building");
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await waitForTurnStart(2);
+    expect(turns).toHaveLength(2);
     expect(turns[1].input.text).toContain(`<approved_plan>\n${plan.text}\n</approved_plan>`);
     expect(turns[1].input.text).not.toContain("stale client copy");
     turns[1].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, secondRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect(
       (await store.session(id)).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("built");
@@ -3655,18 +3838,20 @@ describe("headless session ownership", () => {
   });
 
   it("builds exact edited plan text only against the reviewed base", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const firstRunReceipt = await engine.command({
       type: "send",
       commandId: "review-plan",
       sessionId: id,
       text: "Plan this",
       intent: "plan",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({ type: "plan", text: "# Original\n1. First" });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, firstRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     const plan = (await store.session(id)).session.blocks.find((block) => block.role === "plan")!;
     await expect(
       engine.command({
@@ -3682,7 +3867,7 @@ describe("headless session ownership", () => {
     expect((await store.session(id)).status).toBe("idle");
     expect(turns).toHaveLength(1);
     const edited = "# Edited\n1. Second";
-    await engine.command({
+    const secondRunReceipt = await engine.command({
       type: "send",
       commandId: "build-reviewed",
       sessionId: id,
@@ -3691,7 +3876,8 @@ describe("headless session ownership", () => {
       planBlockId: plan.id,
       expectedPlanText: plan.text,
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await waitForTurnStart(2);
+    expect(turns).toHaveLength(2);
     expect(turns[1].input.text).toContain(`<approved_plan>\n${edited}\n</approved_plan>`);
     expect(
       (await store.session(id)).session.blocks.find((block) => block.id === plan.id),
@@ -3700,47 +3886,52 @@ describe("headless session ownership", () => {
       plan: { status: "building", approvedText: edited, originalText: plan.text, edited: true },
     });
     turns[1].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, secondRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
   });
 
   it("captures a text-only host plan and builds its exact stored text after explicit message approval", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const firstRunReceipt = await engine.command({
       type: "send",
       commandId: "text-plan",
       sessionId: id,
       text: "Investigate search",
       intent: "plan",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input.text).toContain("You are in plan mode");
     const text = "# Implementation plan\n\n1. Add search.\n2. Verify keyboard access.";
     turns[0].input.onEvent({ type: "message.delta", text });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, firstRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     const plan = (await store.session(id)).session.blocks.find((block) => block.role === "plan")!;
     expect(plan?.text).toBe(text);
-    await engine.command({
+    const secondRunReceipt = await engine.command({
       type: "send",
       commandId: "approve-message",
       sessionId: id,
       text: "planı uygula",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await waitForTurnStart(2);
+    expect(turns).toHaveLength(2);
     expect(turns[1].input.intent).toBe("build");
     expect(turns[1].input.text).toContain(`<approved_plan>\n${text}\n</approved_plan>`);
     expect(
       (await store.session(id)).session.blocks.find((block) => block.id === plan.id)?.plan,
     ).toMatchObject({ status: "building", approvedText: text });
     turns[1].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, secondRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect(
       (await store.session(id)).session.blocks.find((block) => block.id === plan.id)?.plan?.status,
     ).toBe("built");
   });
 
   it("keeps a manually renamed title when first-turn generation finishes later", async () => {
-    const { engine, store, provider, turns, id } = await setup();
+    const { engine, store, provider, turns, id, waitForTurnStart } = await setup();
     let finishTitle: (title: { title: string; workItem: null }) => void = () => {};
     provider.generateTitle = vi.fn(
       () =>
@@ -3748,18 +3939,20 @@ describe("headless session ownership", () => {
           finishTitle = resolve;
         }),
     );
-    await engine.command({
+    const runReceipt = await engine.command({
       type: "send",
       commandId: "name-first-turn",
       sessionId: id,
       text: "Fix remote project titles",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     await engine.updateSession(id, { title: "codex · My own title" });
     finishTitle({ title: "Generated title", workItem: null });
     await vi.waitFor(() => expect(provider.generateTitle).toHaveBeenCalledTimes(1));
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, runReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect((await store.session(id)).session.title).toBe("codex · My own title");
   });
 
@@ -3933,7 +4126,7 @@ describe("headless session ownership", () => {
     }
   });
   it("keeps the checkout idle while a branch switch is in progress", async () => {
-    const { engine, project, id, turns } = await setup();
+    const { engine, project, id, turns, waitForTurnStart } = await setup();
     let finishSwitch = () => {};
     const switching = engine.withIdleProject(
       project.id,
@@ -3968,32 +4161,40 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].finish();
   });
 
   it("runs provider context compaction once and persists its transcript marker", async () => {
     const { engine, store, provider, id } = await setup();
     let finishCompact = () => {};
+    let compactStarted!: () => void;
+    const compactStart = new Promise<void>((resolve) => {
+      compactStarted = resolve;
+    });
     provider.compact = vi.fn(
       () =>
         new Promise<void>((resolve) => {
           finishCompact = resolve;
+          compactStarted();
         }),
     );
     const command = { type: "compact", commandId: "compact", sessionId: id };
     const receipt = await engine.command(command);
     expect(await engine.command(command)).toEqual(receipt);
-    await vi.waitFor(() => expect(provider.compact).toHaveBeenCalledTimes(1));
+    await compactStart;
+    expect(provider.compact).toHaveBeenCalledTimes(1);
     expect((await store.session(id)).session.blocks).toContainEqual(
       expect.objectContaining({ text: "/compact" }),
     );
     finishCompact();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, receipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
   });
 
   it("persists model and permission changes for the next turn and rejects changes mid-turn", async () => {
-    const { engine, store, turns, id } = await setup();
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
     const change = {
       type: "configure",
       commandId: "settings",
@@ -4015,7 +4216,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Continue",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(turns[0].input).toMatchObject({
       model: "codex:new",
       modelSettings: { reasoningEffort: "high" },
@@ -4025,7 +4227,7 @@ describe("headless session ownership", () => {
     turns[0].finish();
   });
   it("keeps working with no client, persists output, and deduplicates a lost acknowledgement", async () => {
-    const { engine, store, turns, provider, id } = await setup();
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
     const command = {
       type: "send",
       commandId: "send-once",
@@ -4034,7 +4236,8 @@ describe("headless session ownership", () => {
     };
     const receipt = await engine.command(command);
     expect(await engine.command(command)).toEqual(receipt);
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(provider.send).toHaveBeenCalledTimes(1);
     const before = (await store.session(id)).revision;
     turns[0].input.onEvent({
@@ -4046,7 +4249,8 @@ describe("headless session ownership", () => {
       text: "still working while disconnected",
     });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, receipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect(
       (await store.session(id)).session.blocks.some((block) =>
         block.text.includes("still working"),
@@ -4069,14 +4273,15 @@ describe("headless session ownership", () => {
   it.each(["codex", "claude"] as const)(
     "keeps %s turn timing and model provenance after settlement and reconnect",
     async (harness) => {
-      const { engine, store, turns, id } = await setup(harness);
-      await engine.command({
+      const { engine, store, turns, id, waitForTurnStart } = await setup(harness);
+      const receipt = await engine.command({
         type: "send",
         commandId: "first-turn",
         sessionId: id,
         text: "Inspect the project",
       });
-      await vi.waitFor(() => expect(turns).toHaveLength(1));
+      await waitForTurnStart();
+      expect(turns).toHaveLength(1);
       const running = await store.session(id);
       expect(running.session.blocks[0]).toMatchObject({
         id: "first-turn",
@@ -4085,7 +4290,8 @@ describe("headless session ownership", () => {
       });
       turns[0].input.onEvent({ type: "message.delta", text: "Found it" });
       turns[0].finish();
-      await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+      await engine.waitForRun(id, receipt.runId);
+      expect((await store.session(id)).status).toBe("idle");
 
       const reconnected = await store.sync(id);
       expect(reconnected.kind).toBe("snapshot");
@@ -4109,7 +4315,7 @@ describe("headless session ownership", () => {
   );
 
   it("serializes concurrent sends and accepts only one approval decision for a run", async () => {
-    const { engine, store, turns, provider, id } = await setup();
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
     await engine.command({
       type: "send",
       commandId: "send",
@@ -4124,7 +4330,8 @@ describe("headless session ownership", () => {
         text: "More work",
       }),
     ).rejects.toThrow("already running");
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({
       type: "approval.requested",
       requestId: 7,
@@ -4156,14 +4363,15 @@ describe("headless session ownership", () => {
   });
 
   it("stores pending questions and rejects a second device's stale answer", async () => {
-    const { engine, store, turns, provider, id } = await setup();
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
     await engine.command({
       type: "send",
       commandId: "send",
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({
       type: "question.asked",
       requestId: 3,
@@ -4254,7 +4462,7 @@ describe("headless session ownership", () => {
   });
 
   it("resumes a conversation under its provider account", async () => {
-    const { engine, store, provider, turns, id } = await setup("claude");
+    const { engine, store, provider, turns, id, waitForTurnStart } = await setup("claude");
     const value = await store.session(id);
     await store.save(
       {
@@ -4269,7 +4477,8 @@ describe("headless session ownership", () => {
       { type: "test.seed" },
     );
     await engine.command({ type: "send", commandId: "send", sessionId: id, text: "Continue" });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     expect(provider.bind).toHaveBeenLastCalledWith(
       id,
       "account-thread",
@@ -4281,14 +4490,15 @@ describe("headless session ownership", () => {
   });
 
   it("retries a failed event write and settles the stopped turn", async () => {
-    const { engine, store, turns, id } = await setup();
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
     await engine.command({
       type: "send",
       commandId: "send",
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const original = store.save.bind(store);
     let failed = false;
     vi.spyOn(store, "save").mockImplementation((value, event) => {
@@ -4318,7 +4528,7 @@ describe("headless session ownership", () => {
   });
 
   it("retries a failed final settlement", async () => {
-    const { engine, store, turns, id } = await setup();
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
     const ended: Array<{
       cancelled?: boolean;
       error?: string;
@@ -4332,7 +4542,8 @@ describe("headless session ownership", () => {
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const original = store.save.bind(store);
     let failed = false;
     vi.spyOn(store, "save").mockImplementation((value, event) => {
@@ -4362,14 +4573,15 @@ describe("headless session ownership", () => {
   });
 
   it("batches streamed output and syncs only changed blocks", async () => {
-    const { engine, store, turns, id, project } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, project, waitForTurnStart } = await setup();
+    const runReceipt = await engine.command({
       type: "send",
       commandId: "send",
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const started = (await store.session(id)).revision;
     for (let index = 0; index < 50; index++)
       turns[0].input.onEvent({
@@ -4393,7 +4605,8 @@ describe("headless session ownership", () => {
 
     const streamed = (await store.session(id)).revision;
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, runReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     const settled = await store.sync(id, streamed);
     if (settled.kind !== "delta") throw new Error("Expected a delta");
     expect(settled.blocks.some((block) => block.role === "user" && block.durationMs != null)).toBe(
@@ -4409,14 +4622,15 @@ describe("headless session ownership", () => {
   });
 
   it("catches a client up from a stale copy even after the host trimmed its event log", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const runReceipt = await engine.command({
       type: "send",
       commandId: "work",
       sessionId: id,
       text: "Work",
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     const stale = await store.session(id);
     // The app went away here; the turn keeps producing output meanwhile.
     for (let step = 0; step < 3; step++) {
@@ -4431,7 +4645,8 @@ describe("headless session ownership", () => {
       text: "finished the work",
     });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, runReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     const current = await store.session(id);
     expect(current.revision).toBeGreaterThan(stale.revision + 1);
 
@@ -4462,20 +4677,22 @@ describe("headless session ownership", () => {
   });
 
   it("arms a remote usage limit only from the desktop's setting", async () => {
-    const { engine, store, turns, id } = await setup();
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
     const limit = async (commandId: string, resumeAtReset?: boolean) => {
-      await engine.command({
+      const receipt = await engine.command({
         type: "send",
         commandId,
         sessionId: id,
         text: "Work",
         ...(resumeAtReset === undefined ? {} : { resumeAtReset }),
       });
-      await vi.waitFor(() => expect(turns.at(-1)?.input.text).toBe("Work"));
+      await waitForTurnStart();
+      expect(turns.at(-1)?.input.text).toBe("Work");
       const turn = turns.pop()!;
       turn.input.onEvent({ type: "usage.limited", resetsAt: 5_000 });
       turn.finish();
-      await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+      await engine.waitForRun(id, receipt.runId);
+      expect((await store.session(id)).status).toBe("idle");
       return (await store.session(id)).session.usageLimit;
     };
     expect(await limit("off", false)).toEqual({
@@ -4494,18 +4711,20 @@ describe("headless session ownership", () => {
   });
 
   it("cancels, re-arms, and dismisses a remote usage limit", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const runReceipt = await engine.command({
       type: "send",
       commandId: "limited",
       sessionId: id,
       text: "Work",
       resumeAtReset: true,
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({ type: "usage.limited", resetsAt: 5_000 });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, runReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
 
     await engine.command({
       type: "usageLimit",
@@ -4537,21 +4756,23 @@ describe("headless session ownership", () => {
   });
 
   it("clears the usage limit once the host accepts the next turn", async () => {
-    const { engine, store, turns, id } = await setup();
-    await engine.command({
+    const { engine, store, turns, id, waitForTurnStart } = await setup();
+    const firstRunReceipt = await engine.command({
       type: "send",
       commandId: "limited",
       sessionId: id,
       text: "Work",
       resumeAtReset: true,
     });
-    await vi.waitFor(() => expect(turns).toHaveLength(1));
+    await waitForTurnStart();
+    expect(turns).toHaveLength(1);
     turns[0].input.onEvent({ type: "usage.limited", resetsAt: 5_000 });
     turns[0].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, firstRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect((await store.session(id)).session.usageLimit?.resumeAtReset).toBe(true);
 
-    await engine.command({
+    const secondRunReceipt = await engine.command({
       type: "send",
       commandId: "continue",
       sessionId: id,
@@ -4561,9 +4782,11 @@ describe("headless session ownership", () => {
     // Left in place, the armed limit would resume this session again after
     // the continue turn ends.
     expect((await store.session(id)).session.usageLimit).toBeUndefined();
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await waitForTurnStart(2);
+    expect(turns).toHaveLength(2);
     turns[1].finish();
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await engine.waitForRun(id, secondRunReceipt.runId);
+    expect((await store.session(id)).status).toBe("idle");
     expect((await store.session(id)).session.usageLimit).toBeUndefined();
   });
 

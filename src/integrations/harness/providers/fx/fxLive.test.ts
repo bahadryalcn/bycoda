@@ -1,4 +1,8 @@
-import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const sent: string[] = [];
@@ -212,18 +216,46 @@ describe("fx live turn sequence", () => {
   });
 });
 
-
-it("retains fx completion lineage from the real RPC response across its await",async()=>{
- sent.length=0;const sessionId="fx-causal-response";const events:HarnessEvent[]=[];
- const done=sendFxTurn({sessionId,cwd:"/repo",model:"fx:zai/glm-5.2",runtimeMode:"supervised",text:"hi",attachments:[],onEvent:event=>{captureNativeOutputEvent(sessionId,event);events.push(event);}});
- await waitFor(()=>parse().some(m=>m.method==="initialize"),"init");reply(parse().find(m=>m.method==="initialize")!.id,{protocolVersion:1});await waitFor(()=>parse().some(m=>m.method==="session/new"),"new");reply(parse().find(m=>m.method==="session/new")!.id,{sessionId:"S1",configOptions:[{id:"model",category:"model",currentValue:"zai/glm-5.2"},{id:"mode",category:"mode",currentValue:"ask"}]});await waitFor(()=>parse().some(m=>m.method==="session/set_mode"),"mode");reply(parse().find(m=>m.method==="session/set_mode")!.id,{});
- await waitFor(()=>parse().some(m=>m.method==="session/prompt"),"prompt");
- const prompt=parse().find(m=>m.method==="session/prompt")!;
- const line=JSON.stringify({jsonrpc:"2.0",id:prompt.id,result:{stopReason:"end_turn"}});
- const inspect=nativeOutputFrame(sessionId,line,()=>onLine!(line));
- expect(inspect().pendingCausalWork).toBeGreaterThan(0);
- await done;const event=events.find(e=>e.type==="message.completed")!;
- expect(getNativeOutputEventOrigin(event)).not.toBeNull();
- expect(inspect()).toMatchObject({pendingCausalWork:0,applicationThrough:null});
- await stopFxSession(sessionId);
+it("retains fx completion lineage from the real RPC response across its await", async () => {
+  sent.length = 0;
+  const sessionId = "fx-causal-response";
+  const events: HarnessEvent[] = [];
+  const done = sendFxTurn({
+    sessionId,
+    cwd: "/repo",
+    model: "fx:zai/glm-5.2",
+    runtimeMode: "supervised",
+    text: "hi",
+    attachments: [],
+    onEvent: (event) => {
+      captureNativeOutputEvent(sessionId, event);
+      events.push(event);
+    },
+  });
+  await waitFor(() => parse().some((m) => m.method === "initialize"), "init");
+  reply(parse().find((m) => m.method === "initialize")!.id, { protocolVersion: 1 });
+  await waitFor(() => parse().some((m) => m.method === "session/new"), "new");
+  reply(parse().find((m) => m.method === "session/new")!.id, {
+    sessionId: "S1",
+    configOptions: [
+      { id: "model", category: "model", currentValue: "zai/glm-5.2" },
+      { id: "mode", category: "mode", currentValue: "ask" },
+    ],
+  });
+  await waitFor(() => parse().some((m) => m.method === "session/set_mode"), "mode");
+  reply(parse().find((m) => m.method === "session/set_mode")!.id, {});
+  await waitFor(() => parse().some((m) => m.method === "session/prompt"), "prompt");
+  const prompt = parse().find((m) => m.method === "session/prompt")!;
+  const line = JSON.stringify({
+    jsonrpc: "2.0",
+    id: prompt.id,
+    result: { stopReason: "end_turn" },
+  });
+  const inspect = nativeOutputFrame(sessionId, line, () => onLine!(line));
+  expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+  await done;
+  const event = events.find((e) => e.type === "message.completed")!;
+  expect(getNativeOutputEventOrigin(event)).not.toBeNull();
+  expect(inspect()).toMatchObject({ pendingCausalWork: 0, applicationThrough: null });
+  await stopFxSession(sessionId);
 });

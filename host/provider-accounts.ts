@@ -1,4 +1,4 @@
-import { readFile, realpath, stat, symlink, lstat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat, symlink, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { desktopDatabasePaths } from "./desktopSessions";
@@ -30,6 +30,85 @@ export type ProviderAccountEnvironment = {
   set: Record<string, string>;
   remove: string[];
 };
+export type HostProviderAccountCatalog = Partial<
+  Record<"codex" | "claude", { id: string; label: string }[]>
+>;
+const ACCOUNT_ID = /^[A-Za-z0-9_-]{1,80}$/;
+const MAX_CATALOG_ACCOUNTS = 128;
+
+/** Safe Host-machine inventory only. No credential contents, auth output, email,
+ * external profile path or renderer-side account metadata is read or returned. */
+export async function hostProviderAccounts(
+  roots: string[] = desktopDatabasePaths().map(dirname),
+): Promise<HostProviderAccountCatalog> {
+  const catalog: HostProviderAccountCatalog = {};
+  for (const provider of ["codex", "claude"] as const) {
+    const ids = new Set<string>();
+    for (const root of [...new Set(roots)].slice(0, 16)) {
+      const entries = await readdir(join(root, "provider-accounts", provider), {
+        withFileTypes: true,
+      }).catch(() => []);
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        if (ids.size >= MAX_CATALOG_ACCOUNTS) break;
+        if (
+          entry.name !== DEFAULT_ACCOUNT_ID &&
+          !entry.name.startsWith(TERMINAL_PREFIX) &&
+          ACCOUNT_ID.test(entry.name) &&
+          (await isDirectory(join(root, "provider-accounts", provider, entry.name)))
+        )
+          ids.add(entry.name);
+      }
+      const registry = join(root, "terminal-profiles.json");
+      const registrySize = (await stat(registry).catch(() => null))?.size;
+      if (registrySize !== undefined && registrySize <= 256 * 1024) {
+        const raw = await readFile(registry, "utf8").catch(() => null);
+        try {
+          const value: unknown = raw ? JSON.parse(raw) : null;
+          if (value && typeof value === "object" && !Array.isArray(value)) {
+            for (const key of Object.keys(value).sort()) {
+              if (ids.size >= MAX_CATALOG_ACCOUNTS) break;
+              const id = key.startsWith(`${provider}:`) ? key.slice(provider.length + 1) : "";
+              const path = (value as Record<string, unknown>)[key];
+              if (
+                id.startsWith(TERMINAL_PREFIX) &&
+                ACCOUNT_ID.test(id) &&
+                typeof path === "string" &&
+                (await isDirectory(path))
+              )
+                ids.add(id);
+            }
+          }
+        } catch {
+          /* Malformed registry grants no account selection. */
+        }
+      }
+    }
+    catalog[provider] = [
+      { id: DEFAULT_ACCOUNT_ID, label: "Host default" },
+      ...[...ids]
+        .sort()
+        .map((id, index) => ({ id, label: `${PROFILES[provider].label} account ${index + 1}` })),
+    ];
+  }
+  return catalog;
+}
+
+/** Read-only validation before a configure transaction mutates its session. */
+export async function assertHostProviderAccount(
+  provider: string,
+  id: string,
+  roots?: string[],
+): Promise<string | undefined> {
+  if ((provider !== "codex" && provider !== "claude") || !ACCOUNT_ID.test(id))
+    throw new Error("Invalid provider account ID");
+  if (id === DEFAULT_ACCOUNT_ID) return undefined;
+  // Use the exact same resolution as actual provider CLI launch, without the
+  // environment preparation's agent-link writes or any credential inspection.
+  // Catalog truncation does not make an already known real profile invalid.
+  if (!(await providerAccountDir(provider, id, roots)))
+    throw new Error("Provider account is not available on this Host");
+  return id;
+}
 
 async function isDirectory(path: string): Promise<boolean> {
   return (await stat(path).catch(() => null))?.isDirectory() ?? false;
@@ -66,7 +145,10 @@ async function linkSharedAgents(shared: string, dir: string): Promise<void> {
   const source = join(shared, "agents");
   const link = join(dir, "agents");
   if (!(await isDirectory(source)) || (await lstat(link).catch(() => null))) return;
-  const [a, b] = await Promise.all([realpath(shared).catch(() => shared), realpath(dir).catch(() => dir)]);
+  const [a, b] = await Promise.all([
+    realpath(shared).catch(() => shared),
+    realpath(dir).catch(() => dir),
+  ]);
   if (a === b) return;
   await symlink(source, link, process.platform === "win32" ? "junction" : "dir").catch((error) =>
     console.warn(`[host] could not share ${source} with ${link}:`, error),

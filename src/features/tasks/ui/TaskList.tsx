@@ -100,7 +100,7 @@ export function TaskList({
           </Button>
           <span
             role="status"
-            className="min-w-24 text-center text-xs tabular-nums text-(--ui-text-secondary)"
+            className="min-w-24 text-center text-ui-caption tabular-nums text-(--ui-text-secondary)"
           >
             {start + 1}–{Math.min(start + TASK_PAGE_SIZE, tasks.length)} / {tasks.length}
           </span>

@@ -2683,6 +2683,12 @@ function Workspace({
     onRunSessionProjectAction,
   });
 
+  // Settings is a dialog over the visible work context: the shared Modal makes the background
+  // inert and owns Escape and focus return, so the workspace chrome, project rail and session
+  // sidebar stay mounted. `settingsPageOpen` is the legacy full-window page flag (always off
+  // while Settings presents as a dialog) that those chrome conditions still read.
+  const settingsPageOpen = false;
+
   const {
     chromeSurfaceOpen,
     compactProjectRail,
@@ -2694,7 +2700,7 @@ function Workspace({
     toolWindow,
     windowTransfer,
     searchViewOpen,
-    settingsOpen,
+    settingsOpen: settingsPageOpen,
     inboxViewOpen,
     notesViewOpen,
     automationsViewOpen,
@@ -2745,6 +2751,10 @@ function Workspace({
   // Closed surfaces keep the lists they last showed; they catch up when opened.
   const searchHistory = useHeldValue(projectHistory, searchViewOpen || searchDialogOpen);
   const settingsSurfaceOpen = settingsOpen || !!worktreeManagementRequest;
+  const onRetryHistory = useCallback(
+    () => refreshHistory(sidebarCwd),
+    [refreshHistory, sidebarCwd],
+  );
   const settingsSessions = useHeldValue(sessions, settingsSurfaceOpen);
   const settingsHistory = useHeldValue(sidebarHistory, settingsSurfaceOpen);
 
@@ -3035,7 +3045,8 @@ function Workspace({
                   unseenFinishedIds={unseenFinishedIds}
                   inboxUnseen={inboxUnseen}
                   linkedSessionUpdateIds={linkedSessionUpdateIds}
-                  settingsOpen={settingsOpen}
+                  settingsOpen={settingsPageOpen}
+                  settingsDialogOpen={settingsOpen}
                   settingsSection={settingsSection}
                   onOpenSettings={sidebarActions.onOpenSettings}
                   onOpenNotificationSettings={sidebarActions.onOpenNotificationSettings}
@@ -3052,7 +3063,7 @@ function Workspace({
                   data-workspace-chrome
                   className={
                     searchViewOpen ||
-                    settingsOpen ||
+                    settingsPageOpen ||
                     inboxViewOpen ||
                     notesViewOpen ||
                     serversViewOpen ||
@@ -3062,7 +3073,7 @@ function Workspace({
                   }
                   aria-hidden={
                     searchViewOpen ||
-                    settingsOpen ||
+                    settingsPageOpen ||
                     inboxViewOpen ||
                     notesViewOpen ||
                     serversViewOpen ||
@@ -3070,7 +3081,7 @@ function Workspace({
                   }
                   inert={
                     searchViewOpen ||
-                    settingsOpen ||
+                    settingsPageOpen ||
                     inboxViewOpen ||
                     notesViewOpen ||
                     serversViewOpen ||
@@ -3163,7 +3174,7 @@ function Workspace({
                     onOpenInboxSession={onOpenInboxSession}
                     visibleRecents={visibleRecents}
                     searchViewOpen={searchViewOpen}
-                    settingsOpen={settingsOpen}
+                    settingsOpen={settingsPageOpen}
                     notesViewOpen={notesViewOpen}
                     serversViewOpen={serversViewOpen}
                     automationsViewOpen={automationsViewOpen}
@@ -3249,6 +3260,7 @@ function Workspace({
                   launchAutomation={launchAutomation}
                 />
                 <WorkspaceSettingsSurface
+                  presentation="dialog"
                   worktreeManagementRequest={worktreeManagementRequest}
                   worktreeManagementRevision={worktreeManagementRevision}
                   setWorktreeManagementRequest={setWorktreeManagementRequest}
@@ -3261,6 +3273,9 @@ function Workspace({
                   visibleRecents={visibleRecents}
                   sidebarCwd={sidebarCwd}
                   sidebarHistory={settingsHistory}
+                  historyFailed={historyFailed}
+                  historyPending={historyPending}
+                  onRetryHistory={onRetryHistory}
                   sessions={settingsSessions}
                   onCheckWorktreeRemoval={onCheckWorktreeRemoval}
                   onDeleteWorktreeSessions={onDeleteWorktreeSessions}
@@ -3282,7 +3297,7 @@ function Workspace({
                   notesViewOpen={notesViewOpen}
                   serversViewOpen={serversViewOpen}
                   automationsViewOpen={automationsViewOpen}
-                  settingsOpen={settingsOpen}
+                  settingsOpen={settingsPageOpen}
                   settingsSection={settingsSection}
                   pullRequestsOnly={pullRequestsOnly}
                   setPullRequestsOnly={setPullRequestsOnly}

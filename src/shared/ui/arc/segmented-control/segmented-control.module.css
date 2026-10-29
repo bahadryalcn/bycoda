@@ -125,3 +125,18 @@
     transition: none;
   }
 }
+
+/* The selected plate is a background only; system colours keep it distinct in forced-colors mode. */
+@media (forced-colors: active) {
+  .selection {
+    forced-color-adjust: none;
+    background: Highlight;
+  }
+  .button[data-selected="true"] {
+    forced-color-adjust: none;
+    color: HighlightText;
+  }
+  .button:disabled {
+    color: GrayText;
+  }
+}

@@ -79,6 +79,19 @@ impl State {
 
     fn target_idle(&self, session_id: &str, target: &TargetState) -> Result<(), BarrierError> {
         self.qualified()?;
+        self.target_operations_idle(session_id)?;
+        if target.checkpoints.len() != self.windows.len()
+            || target
+                .checkpoints
+                .values()
+                .any(|lanes| *lanes != [Some(target.round); 2])
+        {
+            return Err(BarrierError::MissingNativeCheckpoint);
+        }
+        Ok(())
+    }
+
+    fn target_operations_idle(&self, session_id: &str) -> Result<(), BarrierError> {
         if self.operations.values().any(|operation| {
             operation
                 .session_id
@@ -92,14 +105,6 @@ impl State {
         }
         if self.windows.values().any(|window| !window.created) {
             return Err(BarrierError::PendingNativeWindow);
-        }
-        if target.checkpoints.len() != self.windows.len()
-            || target
-                .checkpoints
-                .values()
-                .any(|lanes| *lanes != [Some(target.round); 2])
-        {
-            return Err(BarrierError::MissingNativeCheckpoint);
         }
         Ok(())
     }
@@ -142,6 +147,37 @@ impl WindowBarrier {
         &self,
         session_id: &str,
     ) -> Result<ClosedTargetAdmission, BarrierError> {
+        self.close_target_admission_inner(session_id, false, None, || false)
+    }
+
+    /// Observer preflight and closure are atomic with actual process/session
+    /// admissions. Failure never leaves a partially closed target gate.
+    pub(crate) fn try_close_idle_target_admission(
+        &self,
+        session_id: &str,
+    ) -> Result<ClosedTargetAdmission, BarrierError> {
+        self.close_target_admission_inner(session_id, true, None, || false)
+    }
+
+    /// Additional reject policies, checked at the actual admission point after
+    /// waiting for the mutex. The predicate must be a nonblocking local check;
+    /// it cannot acquire Store/barrier locks or establish qualifying authority.
+    pub(crate) fn try_close_idle_target_admission_before(
+        &self,
+        session_id: &str,
+        expires: std::time::Instant,
+        is_cancelled: impl FnOnce() -> bool,
+    ) -> Result<ClosedTargetAdmission, BarrierError> {
+        self.close_target_admission_inner(session_id, true, Some(expires), is_cancelled)
+    }
+
+    fn close_target_admission_inner(
+        &self,
+        session_id: &str,
+        require_idle: bool,
+        expires: Option<std::time::Instant>,
+        is_cancelled: impl FnOnce() -> bool,
+    ) -> Result<ClosedTargetAdmission, BarrierError> {
         validate_session(session_id)?;
         let mut state = self.lock()?;
         state.qualified()?;
@@ -150,6 +186,12 @@ impl WindowBarrier {
         }
         if state.targets.len() >= MAX_TARGET_CLOSURES {
             return Err(BarrierError::CapacityExceeded);
+        }
+        if require_idle {
+            state.target_operations_idle(session_id)?;
+        }
+        if expires.is_some_and(|expires| std::time::Instant::now() >= expires) || is_cancelled() {
+            return Err(BarrierError::CheckpointExpired);
         }
         let round = state.id()?;
         let epoch = state.tick()?;
@@ -214,7 +256,17 @@ impl WindowBarrier {
         session_id: &str,
         _lane: NativeLane,
     ) -> Result<NativeOperation, BarrierError> {
-        self.begin_target_operation(window, session_id, None)
+        self.begin_target_operation(window, session_id, None, None)
+    }
+
+    /// Actual Native execution lease; it is not owned by a renderer/window and
+    /// survives callback/waiter disposal through real process/SQL settlement.
+    pub(crate) fn begin_process_session_write(
+        &self,
+        session_id: &str,
+    ) -> Result<NativeOperation, BarrierError> {
+        validate_session(session_id)?;
+        self.begin_process_operation(Some(session_id))
     }
 
     /// Missing native window attribution still taints all qualification. It
@@ -240,7 +292,25 @@ impl WindowBarrier {
         lane: NativeLane,
     ) -> Result<NativeOperation, BarrierError> {
         self.owns(&closed.owner)?;
-        self.begin_target_operation(window, &closed.session_id, Some((closed, lane)))
+        self.begin_target_operation(window, &closed.session_id, Some((closed, lane)), None)
+    }
+
+    /// Deadline is checked at the actual admission point under the state lock.
+    /// Waiting for that lock never reserves work after the challenge expires.
+    pub(crate) fn begin_target_checkpoint_before(
+        &self,
+        closed: &ClosedTargetAdmission,
+        window: &WindowToken,
+        lane: NativeLane,
+        expires: std::time::Instant,
+    ) -> Result<NativeOperation, BarrierError> {
+        self.owns(&closed.owner)?;
+        self.begin_target_operation(
+            window,
+            &closed.session_id,
+            Some((closed, lane)),
+            Some(expires),
+        )
     }
 
     /// Only bounded local SQL may run here. Hold barrier-before-Store lock order
@@ -268,6 +338,7 @@ impl WindowBarrier {
         window: &WindowToken,
         session_id: &str,
         checkpoint: Option<(&ClosedTargetAdmission, NativeLane)>,
+        expires: Option<std::time::Instant>,
     ) -> Result<NativeOperation, BarrierError> {
         validate_session(session_id)?;
         self.owns(&window.owner)?;
@@ -301,6 +372,9 @@ impl WindowBarrier {
         };
         if state.operations.len() >= MAX_OPERATIONS {
             return Err(BarrierError::CapacityExceeded);
+        }
+        if expires.is_some_and(|expires| std::time::Instant::now() >= expires) {
+            return Err(BarrierError::CheckpointExpired);
         }
         let id = state.id()?;
         let epoch = state.tick()?;

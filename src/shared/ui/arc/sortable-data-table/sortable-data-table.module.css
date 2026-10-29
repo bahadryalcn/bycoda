@@ -104,7 +104,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 .table[data-selectable] tbody tr[data-selected] td {
-  --cell-fill: color-mix(in oklab, var(--accent) 8%, var(--cell-base));
+  --cell-fill: var(--ui-surface-selected);
 }
 .table[data-selectable] [data-primary]:not([data-sortable]),
 .table[data-selectable] th[data-primary] .sortButton {
@@ -227,7 +227,7 @@
 /* The native checkbox is hidden, so its keyboard focus outline is drawn on the visible box. */
 .selectInput:focus-visible + .selectBox {
   outline: var(--focus-outline-width, 2px) solid
-    var(--focus-outline, color-mix(in oklab, var(--accent-strong) 72%, transparent));
+    var(--focus-outline, var(--ui-focus-ring-color));
   outline-offset: 2px;
 }
 .selectInput:active + .selectBox {
@@ -300,10 +300,10 @@
 
 @media (hover: hover) and (pointer: fine) {
   .table tbody tr:hover td {
-    --cell-fill: color-mix(in oklab, var(--foreground) 3%, var(--cell-base));
+    --cell-fill: var(--ui-surface-hover);
   }
   .table[data-selectable] tbody tr[data-selected]:hover td {
-    --cell-fill: color-mix(in oklab, var(--accent) 11%, var(--cell-base));
+    --cell-fill: var(--ui-surface-selected);
   }
   .table tbody tr:has(.empty):hover td {
     --cell-fill: var(--cell-base);
@@ -444,7 +444,7 @@
     padding-left: 44px;
   }
   .table[data-selectable] tbody tr[data-selected] {
-    --row-fill: color-mix(in oklab, var(--accent) 8%, var(--surface));
+    --row-fill: var(--ui-surface-selected);
   }
   .table tbody tr:last-child {
     border-bottom: 0;
@@ -514,10 +514,10 @@
 }
 @media (max-width: 620px) and (hover: hover) and (pointer: fine) {
   .table tbody tr:hover {
-    --row-fill: color-mix(in oklab, var(--foreground) 3%, var(--surface));
+    --row-fill: var(--ui-surface-hover);
   }
   .table[data-selectable] tbody tr[data-selected]:hover {
-    --row-fill: color-mix(in oklab, var(--accent) 11%, var(--surface));
+    --row-fill: var(--ui-surface-selected);
   }
   .table tbody tr:hover td {
     background: transparent;

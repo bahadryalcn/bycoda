@@ -1,6 +1,12 @@
 import { writeChild } from "./child";
 import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
-import { captureNativeOutputWork, nativeOutputSink, trackNativeOutputWork, invalidateNativeOutputSession, type NativeOutputWork } from "./nativeOutputDelivery";
+import {
+  captureNativeOutputWork,
+  nativeOutputSink,
+  trackNativeOutputWork,
+  invalidateNativeOutputSession,
+  type NativeOutputWork,
+} from "./nativeOutputDelivery";
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -33,8 +39,17 @@ export class JsonRpcResponseError extends Error {
 const WRITE_TIMEOUT_MS = 15_000;
 
 export type JsonRpcHandlers = {
-  onNotification?: (method: string, params: unknown, work?: NativeOutputWork) => void | Promise<void>;
-  onRequest?: (id: JsonRpcId, method: string, params: unknown, work?: NativeOutputWork) => void | Promise<void>;
+  onNotification?: (
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
+  onRequest?: (
+    id: JsonRpcId,
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
 };
 
 export type JsonRpcClientOptions = {
@@ -167,14 +182,18 @@ export class JsonRpcClient {
           if (!consume) {
             // A bare await has no automatic asynchronous renderer scope.
             captureNativeOutputWork()?.fail("rpc-response-consumer-untracked");
-            resolve(value as T); return;
+            resolve(value as T);
+            return;
           }
           const work = captureNativeOutputWork();
           try {
-            const actual = Promise.resolve().then(nativeOutputSink(work, () => consume(value as T, work)));
+            const actual = Promise.resolve().then(
+              nativeOutputSink(work, () => consume(value as T, work)),
+            );
             void trackNativeOutputWork(actual, work).then(resolve, reject);
           } catch (error) {
-            work?.fail("rpc-response-consumer-failed"); reject(error);
+            work?.fail("rpc-response-consumer-failed");
+            reject(error);
           }
         },
         reject: (error) => {
@@ -295,8 +314,12 @@ export class JsonRpcClient {
     // promise remains charged until its own settlement.
     const writeWork = captureNativeOutputWork();
     let actualWrite: Promise<void>;
-    try { actualWrite = trackNativeOutputWork(writeChild(this.sessionId, line), writeWork); }
-    catch (error) { writeWork?.fail("rpc-write-rejected"); throw error; }
+    try {
+      actualWrite = trackNativeOutputWork(writeChild(this.sessionId, line), writeWork);
+    } catch (error) {
+      writeWork?.fail("rpc-write-rejected");
+      throw error;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([
@@ -356,7 +379,12 @@ export class JsonRpcClient {
       this.serverRequests.set(String(msg.id), msg.method);
       const work = captureNativeOutputWork();
       try {
-        const actual = this.handlers.onRequest?.(msg.id, msg.method, msg.params, ...(work ? [work] as const : []));
+        const actual = this.handlers.onRequest?.(
+          msg.id,
+          msg.method,
+          msg.params,
+          ...(work ? ([work] as const) : []),
+        );
         void trackNativeOutputWork(Promise.resolve(actual), work).catch(() =>
           console.warn(`[bycoda] ${this.label} server request handler failed`),
         );
@@ -370,10 +398,20 @@ export class JsonRpcClient {
     if (msg.method) {
       const work = captureNativeOutputWork();
       try {
-        const actual = this.handlers.onNotification?.(msg.method, msg.params, ...(work ? [work] as const : []));
-        if (actual) void trackNativeOutputWork(Promise.resolve(actual), work).catch(() => console.warn(`[bycoda] ${this.label} notification handler failed`));
+        const actual = this.handlers.onNotification?.(
+          msg.method,
+          msg.params,
+          ...(work ? ([work] as const) : []),
+        );
+        if (actual)
+          void trackNativeOutputWork(Promise.resolve(actual), work).catch(() =>
+            console.warn(`[bycoda] ${this.label} notification handler failed`),
+          );
         else work?.finish();
-      } catch (error) { work?.fail("rpc-notification-handler-failed"); throw error; }
+      } catch (error) {
+        work?.fail("rpc-notification-handler-failed");
+        throw error;
+      }
     } else if (msg.id != null) {
       console.warn(`[bycoda] ${this.label} malformed JSON-RPC response`, {
         id: msg.id,

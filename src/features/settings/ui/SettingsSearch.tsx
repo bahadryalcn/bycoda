@@ -32,6 +32,8 @@ export function SettingsSearch({
   return (
     <ExpandingSearch
       className="settings-search"
+      variant="ghost"
+      expandedWidth={240}
       label={t("Search settings")}
       clearLabel={t("Clear settings search")}
       resultsLabel={t("Settings search results")}

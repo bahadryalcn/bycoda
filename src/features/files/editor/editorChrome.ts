@@ -40,8 +40,8 @@ function editorThemeStyles(dark: boolean) {
       },
       ".cm-gutters": {
         backgroundColor: "transparent",
-        color: "var(--ui-text-secondary)",
-        borderRight: "1px solid color-mix(in srgb, var(--color-content) 7%, transparent)",
+        color: "var(--ui-editor-gutter-text)",
+        borderRight: "1px solid var(--color-stroke)",
         paddingLeft: "4px",
       },
       ".cm-lineNumbers .cm-gutterElement": {
@@ -54,17 +54,17 @@ function editorThemeStyles(dark: boolean) {
       ".cm-foldGutter .cm-gutterElement": {
         padding: "0 2px",
         cursor: "pointer",
-        color: "color-mix(in srgb, var(--color-content) 45%, transparent)",
+        color: "var(--ui-editor-gutter-text)",
       },
       ".cm-foldPlaceholder": {
-        color: "color-mix(in srgb, var(--color-content) 40%, transparent)",
+        color: "var(--ui-text-muted)",
       },
       ".cm-activeLine": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
+        backgroundColor: "var(--ui-editor-active-line)",
       },
       ".cm-activeLineGutter": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
-        color: "color-mix(in srgb, var(--color-content) 70%, transparent)",
+        backgroundColor: "var(--ui-editor-active-line)",
+        color: "var(--ui-editor-gutter-active-text)",
       },
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
         // Overlay fill preserves the syntax glyphs rather than replacing their ink.
@@ -77,27 +77,27 @@ function editorThemeStyles(dark: boolean) {
         borderLeftColor: "var(--color-content)",
       },
       ".cm-matchingBracket": {
-        backgroundColor: "color-mix(in srgb, var(--color-content) 14%, transparent)",
-        outline: "1px solid color-mix(in srgb, var(--color-content) 28%, transparent)",
+        backgroundColor: "var(--ui-surface-hover)",
+        outline: "1px solid var(--ui-pane-border)",
       },
       ".cm-nonmatchingBracket": {
-        backgroundColor: "color-mix(in srgb, var(--color-danger) 32%, transparent)",
-        outline: "1px solid color-mix(in srgb, var(--color-danger) 55%, transparent)",
-      },
-      ".cm-panels, .cm-tooltip": {
-        backgroundColor: "var(--color-background-base)",
-        color: "var(--color-content)",
+        backgroundColor: "var(--ui-selection-inactive)",
+        outline: "1px solid var(--color-danger)",
       },
       ".cm-panels": {
-        borderColor: "color-mix(in srgb, var(--color-content) 10%, transparent)",
+        backgroundColor: "var(--color-background-base)",
+        color: "var(--color-content)",
+        borderColor: "var(--color-stroke)",
       },
       ".cm-tooltip": {
-        border: "1px solid color-mix(in srgb, var(--color-content) 12%, transparent)",
+        backgroundColor: "var(--ui-surface-raised)",
+        color: "var(--color-content)",
+        border: "1px solid var(--ui-pane-border)",
         borderRadius: "6px",
         overflow: "hidden",
       },
       ".cm-tooltip.cm-tooltip-autocomplete": {
-        backgroundColor: "var(--color-background-base)",
+        backgroundColor: "var(--ui-surface-raised)",
       },
       ".cm-tooltip-autocomplete > ul": {
         fontFamily: "var(--font-mono)",
@@ -108,11 +108,11 @@ function editorThemeStyles(dark: boolean) {
         padding: "2px 8px",
       },
       ".cm-tooltip-autocomplete > ul > li[aria-selected]": {
-        backgroundColor: "color-mix(in srgb, var(--color-accent) 25%, transparent)",
+        backgroundColor: "var(--ui-surface-selected)",
         color: "var(--color-content)",
       },
       ".cm-completionDetail": {
-        color: "color-mix(in srgb, var(--color-content) 50%, transparent)",
+        color: "var(--ui-text-secondary)",
         fontStyle: "normal",
         marginLeft: "8px",
       },

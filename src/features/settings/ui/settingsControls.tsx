@@ -54,16 +54,21 @@ export function SettingsFeedback({
   state,
   children,
   action,
-  presentation = "surface",
+  presentation = "quiet",
 }: {
   state: "loading" | "success" | "error" | "empty" | "warning";
   children: ReactNode;
   action?: ReactNode;
-  /** Quiet empty information inside an already framed Group. Errors retain Alert. */
-  presentation?: "surface" | "inset";
+  /**
+   * `quiet` (default): one inline line, tone glyph plus neutral text and the recovery action,
+   * with no fill or border. Role and live-region semantics are unchanged, so errors stay
+   * announced and visible. `surface`: the filled, bordered notice for blocking states.
+   * `inset`: quiet empty information inside an already framed Group (errors still use Alert).
+   */
+  presentation?: "quiet" | "surface" | "inset";
 }) {
   return (
-    <div className="settings-feedback" data-state={state}>
+    <div className="settings-feedback" data-state={state} data-presentation={presentation}>
       {state === "empty" && presentation === "inset" ? (
         <div
           role="status"
@@ -87,6 +92,7 @@ export function SettingsFeedback({
           role={state === "error" ? "alert" : "status"}
           aria-live={state === "error" ? "assertive" : "polite"}
           aria-atomic="true"
+          inline={presentation !== "surface"}
           action={action}
         >
           {children}
@@ -301,8 +307,12 @@ export function SettingsPageHelp({
 }
 
 /**
- * A titled card of related settings. Everything on a page lives in one, so a
- * page reads as a handful of topics instead of one long list of switches.
+ * A titled topic of related settings. Everything on a page lives in one, so a page
+ * reads as a handful of topics instead of one long list of switches.
+ *
+ * `variant="open"` (default) has no frame, row dividers or heading rule; topics are
+ * separated by spacing. `variant="box"` is for ownership/editing units only (credential
+ * forms, repeated list editors, danger zones): `--ui-surface` + hairline editor border.
  */
 export function Group({
   id,
@@ -310,6 +320,9 @@ export function Group({
   description,
   action,
   layout = "columns",
+  variant = "open",
+  descriptionVisible = false,
+  info,
   scope,
   dependency,
   persistence,
@@ -321,14 +334,20 @@ export function Group({
   title: ReactNode;
   description?: string;
   action?: ReactNode;
+  /** Kept for existing callers; the frame no longer changes with it. */
   layout?: "columns" | "full";
+  variant?: "open" | "box";
+  /** Show the description as secondary text under the title instead of an info popover. */
+  descriptionVisible?: boolean;
+  /** Longer explanation for an information popover beside the title. */
+  info?: ReactNode;
   children: ReactNode;
 } & SettingDetails) {
   const revealed = useContext(RevealedSetting);
   const flash = id != null && revealed === id;
   const headingId = useId();
   const descriptionId = useId();
-  const hasInfo = Boolean(description);
+  const hasInfo = Boolean(description) && !descriptionVisible;
   const hasDescription = Boolean(description || scope || dependency || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
@@ -338,6 +357,7 @@ export function Group({
       data-setting-id={id}
       data-revealed={flash || undefined}
       data-settings-layout={layout}
+      data-settings-variant={variant}
       tabIndex={-1}
       aria-labelledby={headingId}
       aria-describedby={hasDescription ? descriptionId : undefined}
@@ -354,10 +374,14 @@ export function Group({
                 <p>{description}</p>
               </InfoPopover>
             ) : null}
+            {info}
           </div>
           <div id={descriptionId}>
             {hasInfo ? (
               <p className="sr-only">{description}</p>
+            ) : null}
+            {descriptionVisible && description ? (
+              <p className="settings-description settings-help-text">{description}</p>
             ) : null}
             <SettingContext scope={scope} dependency={dependency} />
             <SettingDescriptionText persistence={persistence} />
@@ -386,6 +410,9 @@ export function Row({
   persistence,
   feedback,
   controlId,
+  stacked = false,
+  descriptionVisible = false,
+  info,
   children,
 }: {
   /** Matches a `SETTINGS_INDEX` id so search can scroll here. */
@@ -395,12 +422,18 @@ export function Row({
   children?: ReactNode;
   /** Optional native control id for a clickable label. */
   controlId?: string;
+  /** Wide controls (text fields, editors, lists) sit under the label at full width. */
+  stacked?: boolean;
+  /** Show the description as secondary text under the label instead of an info popover. */
+  descriptionVisible?: boolean;
+  /** Longer explanation for an information popover beside the label. */
+  info?: ReactNode;
 } & SettingDetails) {
   const revealed = useContext(RevealedSetting);
   const flash = id != null && revealed === id;
   const labelId = useId();
   const descriptionId = useId();
-  const hasInfo = Boolean(description);
+  const hasInfo = Boolean(description) && !descriptionVisible;
   const hasDescription = Boolean(description || scope || dependency || persistence);
   const controls = useControlDescriptions(hasDescription ? descriptionId : undefined);
 
@@ -409,6 +442,7 @@ export function Row({
       id={id ? settingDomId(id) : undefined}
       data-setting-id={id}
       data-revealed={flash || undefined}
+      data-stacked={stacked || undefined}
       tabIndex={-1}
       className="settings-row"
     >
@@ -432,10 +466,14 @@ export function Row({
               <p>{description}</p>
             </InfoPopover>
           ) : null}
+          {info}
         </div>
         <div id={descriptionId}>
           {hasInfo ? (
             <p className="sr-only">{description}</p>
+          ) : null}
+          {descriptionVisible && description ? (
+            <p className="settings-description settings-help-text">{description}</p>
           ) : null}
           <SettingContext scope={scope} dependency={dependency} />
           <SettingDescriptionText persistence={persistence} />

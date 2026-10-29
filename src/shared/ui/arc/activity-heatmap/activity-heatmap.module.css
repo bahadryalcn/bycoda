@@ -323,6 +323,21 @@
   box-shadow: inset 0 0 0 1.5px var(--foreground);
 }
 
+/* Intensity is also a centre dot that grows with the level (none, small, medium, large), on the cell and its legend swatch,
+   so the scale reads without colour. */
+.root[data-markers] .cell[data-level="2"],
+.root[data-markers] .swatch[data-level="2"]::before {
+  background-image: radial-gradient(circle at center, var(--surface) 0 12%, transparent 15%);
+}
+.root[data-markers] .cell[data-level="3"],
+.root[data-markers] .swatch[data-level="3"]::before {
+  background-image: radial-gradient(circle at center, var(--surface) 0 22%, transparent 25%);
+}
+.root[data-markers] .cell[data-level="4"],
+.root[data-markers] .swatch[data-level="4"]::before {
+  background-image: radial-gradient(circle at center, var(--surface) 0 34%, transparent 37%);
+}
+
 /* One bubble for the whole grid. The outer layer glides between cells; the bubble fades and scales from its tail. */
 .tip {
   position: absolute;

@@ -1,6 +1,8 @@
 import { test, expect, type Page, type Locator } from "@playwright/test";
 const fixture = "/tests/browser/host-tools.html";
 const captures = "temp/verification/2026-10-12-tools-usability/browser";
+/** Container width (px) from which the tool tab strip replaces the narrow selector (36rem). */
+const NARROW_TOOLS_WIDTH = 576;
 
 async function selectTool(page: Page, name: string, scope: Page | Locator = page) {
   await expect(scope.locator(".host-tools-topbar")).toBeVisible();
@@ -25,19 +27,38 @@ test("tools share a compact responsive top bar", async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto(`${fixture}?detached=1`);
     await selectTool(page, "Host browser");
+    // Tool navigation is a visible tablist; the machine (and workspace when
+    // there is room) sit in the same row's trailing slot.
     const bar = page.locator(".host-tools-topbar");
-    await expect(bar.getByRole("button", { name: /^Tool machine:/ })).toBeVisible();
+    const context = bar.locator(".host-tools-contextbar");
+    await expect(context.getByRole("button", { name: /^Tool machine:/ })).toBeVisible();
     expect(await bar.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-    {
-      const boxes = await Promise.all([
-        bar.getByRole("button", { name: "Conversation tool selection", exact: true }).boundingBox(),
-        bar.locator(".host-tools-machine").boundingBox(),
-      ]);
-      const centers = boxes.map((box) => box!.y + box!.height / 2);
-      expect(Math.max(...centers) - Math.min(...centers)).toBeLessThan(2);
-      expect((await bar.boundingBox())!.height).toBeLessThan(52);
-      expect(boxes[0]!.x).toBeGreaterThan(boxes[1]!.x);
+    const tabs = bar.getByRole("tablist", { name: "Conversation tool selection", exact: true });
+    if (width >= NARROW_TOOLS_WIDTH) {
+      // Wide panes keep the visible tab strip.
+      await expect(tabs.getByRole("tab")).toHaveCount(5);
+      await expect(tabs.getByRole("tab", { name: "Host browser", exact: true })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      for (const tab of await tabs.getByRole("tab").all()) await expect(tab).toBeVisible();
+    } else {
+      // Narrow panes swap it for one named selector that shows the current tool.
+      await expect(tabs.getByRole("tab")).toHaveCount(0);
+      const selector = bar.getByRole("button", { name: "Conversation tool selection", exact: true });
+      await expect(selector).toContainText("Host browser");
+      await selector.click();
+      await expect(page.getByRole("menuitemradio")).toHaveCount(5);
+      await expect(page.getByRole("menuitemradio", { name: "Host browser", exact: true })).toBeChecked();
+      await page.keyboard.press("Escape");
+      await expect(selector).toBeFocused();
     }
+    const barBox = (await bar.boundingBox())!;
+    const contextBox = (await context.boundingBox())!;
+    expect(barBox.height).toBeLessThan(44);
+    expect(contextBox.height).toBeLessThan(44);
+    expect(contextBox.y).toBeGreaterThanOrEqual(barBox.y - 1);
+    expect(contextBox.y + contextBox.height).toBeLessThanOrEqual(barBox.y + barBox.height + 1);
     await page.screenshot({ path: `temp/verification/2026-10-15-tools-topbar/${width}.png` });
   }
 });
@@ -46,7 +67,7 @@ test("device preview uses the dock height with compact controls", async ({ page 
     await page.setViewportSize({ width, height: 988 });
     await page.goto(`${fixture}?detached=1&lang=tr`);
     await selectTool(page, "Cihazlar");
-    await page.getByRole("button", { name: "Önyükleme", exact: true }).click();
+    await page.getByRole("button", { name: "Emülatörü başlat", exact: true }).click();
     const image = page.getByRole("img", { name: "Geçerli cihaz ekranı" });
     await expect(image).toBeVisible();
     const preview = page.locator(".device-panel-stage");
@@ -80,8 +101,8 @@ for (const action of ["Process details", "Stop", "Restart"]) {
     await page.setViewportSize({ width: 726, height: 660 });
     await page.goto(fixture);
     await selectTool(page, "Development servers");
-    const server = page.getByRole("article", { name: "Demo dev server", exact: true });
-    await server.getByText("Process and controls", { exact: true }).click();
+    // The selected server's process controls are always visible (no disclosure).
+    const server = page.getByRole("complementary", { name: "Demo dev server", exact: true });
     await server.getByRole("button", { name: action, exact: true }).click();
     const details = page.getByRole("region", { name: "Selected process details" });
     await expect(details).toBeFocused();
@@ -121,9 +142,10 @@ test("direct UI API opens devices on the right, selects a Mac, moves and closes 
     panels: [{ tab: "devices", machine: "machine:fixture-mac", mounted: true }],
   });
   const dock = page.locator(".tools-workspace-dock");
-  await dock.getByRole("button", { name: "Conversation tool selection", exact: true }).click();
-  await expect(page.getByRole("menuitemradio", { name: "Devices", exact: true })).toBeChecked();
-  await page.keyboard.press("Escape");
+  // A docked pane is narrow, so the current tool shows in the one named selector.
+  await expect(
+    dock.getByRole("button", { name: "Conversation tool selection", exact: true }),
+  ).toContainText("Devices");
   await expect(page.locator(".tools-workspace")).toHaveAttribute("data-placement", "right");
   await expect(dock.getByRole("button", { name: /Fixture MacBook/ }).first()).toBeVisible();
   await api("ui.tools.open", { tab: "logs" });
@@ -172,7 +194,11 @@ test("shows neutral log canvas, source prefixes and six distinct severity colors
   expect(channels).toHaveLength(3);
   expect(Math.max(...channels) - Math.min(...channels)).toBeLessThanOrEqual(8);
   await page.screenshot({ path: "temp/verification/2026-10-13-logs-simplify/log-colors.png" });
-  await page.getByRole("button", { name: "HTTP", exact: true }).click();
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  const filters = page.getByRole("dialog", { name: "Log filters", exact: true });
+  await filters.getByRole("button", { name: "Log level: All levels", exact: true }).click();
+  await page.getByRole("option", { name: "HTTP", exact: true }).click();
+  await page.keyboard.press("Escape");
   await expect(timeline.locator(".runtime-log-row")).toHaveCount(1);
   await expect(timeline.getByText("GET /dashboard 200 in 12ms", { exact: true })).toBeVisible();
 });
@@ -230,11 +256,11 @@ test("starts live logs and moves a separate panel without covering the workspace
   expect(reads).toBeGreaterThan(0);
   const placement = page.getByRole("button", { name: "Panel placement", exact: true });
   await placement.click();
-  await expect(page.getByRole("dialog", { name: "Panel placement", exact: true })).toBeVisible();
+  await expect(page.getByRole("menu", { name: "Panel placement", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(placement).toBeFocused();
   await placement.click();
-  await page.getByRole("button", { name: "Separate Logs panel", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Separate Logs panel", exact: true }).click();
   const dock = page.getByRole("complementary", { name: "Tool panels" });
   await expect(dock).toBeVisible();
   await expect(dock.locator(".tools-workspace-toolbar")).toHaveCount(1);
@@ -247,8 +273,7 @@ test("starts live logs and moves a separate panel without covering the workspace
     const trigger = dock.getByRole("button", { name: /^Placement:/ });
     await trigger.click();
     await page
-      .getByRole("dialog", { name: "Placement", exact: true })
-      .getByRole("button", {
+      .getByRole("menuitemradio", {
         name: `Dock ${placement[0].toUpperCase()}${placement.slice(1)}`,
         exact: true,
       })
@@ -312,7 +337,8 @@ test("inspects unified logs, prepares an agent draft and clears a scoped view", 
   expect(draft).toMatch(/untrusted/i);
   await panel.getByRole("button", { name: "More actions", exact: true }).click();
   await page.getByRole("menuitem", { name: "Clear view", exact: true }).click();
-  await panel.getByRole("button", { name: "Refresh", exact: true }).click();
+  // The cleared (empty) view also offers its own Refresh; the toolbar one comes first.
+  await panel.getByRole("button", { name: "Refresh", exact: true }).first().click();
   await expect(timeline.getByText("Failed to fetch project activity", { exact: true })).toHaveCount(
     0,
   );
@@ -346,7 +372,9 @@ test("keeps the log workspace within narrow and wide layouts", async ({ page }) 
     const logBox = await page.locator(".runtime-logs-timeline").boundingBox();
     expect(logBox!.height).toBeGreaterThan(120);
     await expect(page.getByRole("button", { name: "Filters", exact: true })).toBeInViewport();
+    await page.getByRole("button", { name: "Website monitors", exact: true }).click();
     await expect(page.getByLabel("Website port or URL")).toBeInViewport();
+    await page.keyboard.press("Escape");
     await page
       .getByRole("button", { name: "Add to conversation", exact: true })
       .scrollIntoViewIfNeeded();
@@ -370,8 +398,8 @@ test("selects local and remote tool machines while clearing the previous browser
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   const machine = page.getByRole("button", { name: /^Tool machine:/ });
-  await expect(machine).toHaveAccessibleName("Tool machine: Project host · This computer");
-  await selectOption(page, page, "Tool machine", "This computer");
+  await expect(machine).toHaveAccessibleName("Tool machine: This computer");
+  await selectOption(page, page, "Tool machine", "This computer Local app");
   await page.getByRole("button", { name: "Open website", exact: true }).click();
   await expect(
     page.getByRole("img", {
@@ -472,9 +500,9 @@ test("shows unavailable external logs and asks for explicit restart information"
 }) => {
   await page.goto(fixture);
   await selectTool(page, "Development servers");
-  const external = page.getByRole("article", { name: "External server", exact: true });
-  await expect(external.getByText("Project association uncertain")).toBeVisible();
-  await external.getByText("Process and controls", { exact: true }).click();
+  await page.getByRole("button", { name: /External server/ }).click();
+  const external = page.getByRole("complementary", { name: "External server", exact: true });
+  await expect(external.getByText(/Project association uncertain/)).toBeVisible();
   await external.getByRole("button", { name: "Restart", exact: true }).click();
   const details = page.getByRole("region", { name: "Selected process details" });
   await expect(details.getByRole("button", { name: "Confirm restart" })).toBeDisabled();
@@ -527,6 +555,8 @@ test("opens the browser and sends input using its control lease", async ({ page 
     },
   ]);
   await page.getByRole("button", { name: "Release", exact: true }).click();
+  // Releasing the lease dismisses the controls popover; reopen it to see the state.
+  await page.getByRole("button", { name: "Browser controls and setup", exact: true }).click();
   await expect(page.getByRole("button", { name: "Type text" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Refresh frame" })).toBeEnabled();
 });
@@ -560,7 +590,7 @@ test("starts, boots and captures a device and stops live viewing on tab change",
     await page.evaluate(() => (window as unknown as { hostToolDraft: string }).hostToolDraft),
   ).toContain("demo-emulator");
   await expect(page.getByRole("button", { name: "Capture", exact: true })).toBeDisabled();
-  await page.getByRole("button", { name: "Boot", exact: true }).click();
+  await page.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Live view" })).toBeChecked();
   await page.getByRole("switch", { name: "Allow device control", exact: true }).check();
@@ -599,13 +629,24 @@ for (const locale of ["en", "tr"]) {
         locale === "en"
           ? ["Devices", "Host browser", "Development servers", "Logs", "Resource usage"]
           : ["Cihazlar", "Tarayıcı", "Geliştirme sunucuları", "Loglar", "Kaynak kullanımı"];
-      const toolMenu = page.getByRole("button", {
+      const toolTabs = page.getByRole("tablist", {
         name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
         exact: true,
       });
-      await toolMenu.click();
-      await expect(page.getByRole("menuitemradio")).toHaveCount(5);
-      await page.keyboard.press("Escape");
+      const wideTools = width >= NARROW_TOOLS_WIDTH;
+      if (wideTools) {
+        await expect(toolTabs.getByRole("tab")).toHaveCount(5);
+        for (const name of names)
+          await expect(toolTabs.getByRole("tab", { name, exact: true })).toBeVisible();
+      } else {
+        await expect(toolTabs.getByRole("tab")).toHaveCount(0);
+        await expect(
+          page.getByRole("button", {
+            name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
+            exact: true,
+          }),
+        ).toBeVisible();
+      }
       for (let index = 0; index < 5; index++) {
         await selectTool(page, names[index]);
         await expect(page.getByRole("tabpanel")).toBeVisible();
@@ -698,17 +739,17 @@ for (const locale of ["en", "tr"]) {
           }
         }
       }
-      {
-        const selector = page.getByRole("button", {
-          name: locale === "en" ? "Conversation tool selection" : "Konuşma aracı seçimi",
-          exact: true,
-        });
-        await selector.focus();
-        await page.keyboard.press("Enter");
+      if (wideTools) {
+        // Roving tab focus: Home and End move selection and focus along the tablist.
+        const first = toolTabs.getByRole("tab", { name: names[0], exact: true });
+        const last = toolTabs.getByRole("tab", { name: names[4], exact: true });
+        await last.focus();
+        await page.keyboard.press("Home");
+        await expect(first).toBeFocused();
+        await expect(first).toHaveAttribute("aria-selected", "true");
         await page.keyboard.press("End");
-        await page.keyboard.press("Enter");
-        await expect(selector).toBeFocused();
-        await expect(selector).toContainText(names[4]);
+        await expect(last).toBeFocused();
+        await expect(last).toHaveAttribute("aria-selected", "true");
       }
       expect(errors).toEqual([]);
     });
@@ -771,6 +812,11 @@ test("finds servers by port and name and retains list scroll across updates and 
   });
   const scrollBefore = await panel.evaluate((element) => element.scrollTop);
   expect(scrollBefore).toBeGreaterThan(0);
+  // The reading position is the row under the viewport: a banner inserted above the
+  // list may move scrollTop (scroll anchoring) but must not move what the user reads.
+  const anchor = list.getByRole("listitem").nth(12);
+  const anchorTop = async () => (await anchor.boundingBox())!.y;
+  const anchoredAt = await anchorTop();
   const controls = page.getByRole("region", { name: "Development servers", exact: true });
   const refresh = () =>
     controls
@@ -785,8 +831,8 @@ test("finds servers by port and name and retains list scroll across updates and 
   await expect(list.getByRole("listitem")).toHaveCount(26);
   await expect(page.locator('.dev-servers-panel[aria-busy="true"]')).toHaveCount(0);
   await expect
-    .poll(() => panel.evaluate((element) => element.scrollTop))
-    .toBeCloseTo(scrollBefore, 0);
+    .poll(anchorTop)
+    .toBeCloseTo(anchoredAt, 0);
   await page.evaluate(() => {
     (
       window as unknown as { hostToolFixture: { scanFailure: boolean } }
@@ -798,8 +844,8 @@ test("finds servers by port and name and retains list scroll across updates and 
   ).toBeAttached();
   await expect(list.getByRole("listitem")).toHaveCount(26);
   await expect
-    .poll(() => panel.evaluate((element) => element.scrollTop))
-    .toBeCloseTo(scrollBefore, 0);
+    .poll(anchorTop)
+    .toBeCloseTo(anchoredAt, 0);
   await page.evaluate(() => {
     const fixture = (
       window as unknown as { hostToolFixture: { scanFailure: boolean; updateServer: () => void } }
@@ -814,8 +860,8 @@ test("finds servers by port and name and retains list scroll across updates and 
     list.getByRole("listitem", { name: "Updated preview server", exact: true }),
   ).toBeAttached();
   await expect
-    .poll(() => panel.evaluate((element) => element.scrollTop))
-    .toBeCloseTo(scrollBefore, 0);
+    .poll(anchorTop)
+    .toBeCloseTo(anchoredAt, 0);
 });
 
 test("compact browser keeps preview and keyboard controls usable at all panel widths", async ({
@@ -971,7 +1017,7 @@ test("shared host danger feedback preserves server selection and recovery in bot
     await page.goto(`${fixture}?detached=1&theme=${theme}`);
     await selectTool(page, "Development servers");
     const servers = page.getByRole("list", { name: "Development servers", exact: true });
-    const selected = servers.getByRole("button", { name: /^Demo dev server/ });
+    const selected = servers.getByRole("button", { name: /Demo dev server/ });
     await expect(selected).toHaveAttribute("aria-pressed", "true");
     await page.evaluate(() => {
       (

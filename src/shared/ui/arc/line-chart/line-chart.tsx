@@ -39,6 +39,9 @@ export interface LineChartSeries {
   color?: string;
   /** Draws a dashed stroke, useful for a previous period or a target. */
   dashed?: boolean;
+  /** Stroke pattern, so series differ by more than color. Overrides `dashed`. When omitted, a chart with several series
+   *  and no explicit `dashed` assigns solid, dashed, then dotted in series order. */
+  pattern?: "solid" | "dash" | "dot";
   /** Fills the area under the line with a faint tint of its color. Defaults to true for the first series. */
   area?: boolean;
 }
@@ -117,12 +120,20 @@ const fadeFast = { duration: duration.instant, ease: [...ease.standard] } as con
 /** Room above the top gridline, and the gap between the crosshair and its tooltip. */
 const TOP = 12,
   GAP = 14;
-const PALETTE = ["var(--accent)", "var(--ui-text-secondary)", "var(--ui-surface-selected)"];
+const PALETTE = ["var(--accent)", "var(--ui-text-secondary)", "var(--ui-text-muted)"];
 const grouped = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 const colorOf = (series: LineChartSeries, index: number) =>
   series.color ?? PALETTE[Math.min(index, PALETTE.length - 1)];
+const AUTO_PATTERNS = ["solid", "dash", "dot"] as const;
+const patternOf = (series: LineChartSeries, index: number, count: number) =>
+  series.pattern ??
+  (series.dashed
+    ? "dash"
+    : series.dashed === undefined && count > 1
+      ? AUTO_PATTERNS[index % AUTO_PATTERNS.length]
+      : "solid");
 const clean = (value: number) => Number(value.toPrecision(12));
 
 /** Clean gridlines: the smallest step of 1, 2, 2.5, or 5 that covers the data in four rows or fewer, from zero unless the data dips below it. */
@@ -668,6 +679,7 @@ export function LineChart({
               <span
                 className={styles.swatch}
                 data-dashed={line.dashed || undefined}
+                data-pattern={patternOf(line, at, series.length)}
                 aria-hidden="true"
               />
               <span className={styles.toggleLabel}>{line.label}</span>
@@ -759,6 +771,7 @@ export function LineChart({
                     }}
                     className={styles.line}
                     data-dashed={line.dashed || undefined}
+                    data-pattern={patternOf(line, at, series.length)}
                   />
                 </g>
               ))}
@@ -790,7 +803,11 @@ export function LineChart({
                 className={styles.tipRow}
                 style={{ "--series": colorOf(line, series.indexOf(line)) } as CSSProperties}
               >
-                <span className={styles.tipSwatch} data-dashed={line.dashed || undefined} />
+                <span
+                  className={styles.tipSwatch}
+                  data-dashed={line.dashed || undefined}
+                  data-pattern={patternOf(line, series.indexOf(line), series.length)}
+                />
                 <span className={styles.tipName}>{line.label}</span>
                 <span className={styles.tipValue}>
                   {format((reading ?? data[last])?.values[line.key] ?? 0, line)}

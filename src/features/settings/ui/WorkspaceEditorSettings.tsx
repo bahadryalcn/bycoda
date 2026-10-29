@@ -22,7 +22,7 @@ export function WorkspaceEditorSettings() {
     setFormatError(saved !== next);
   };
   return (
-    <Group title={t("Editor")} layout="full">
+    <Group title={t("Editor")}>
       <Row
         id="auto-save"
         label={t("Autosave")}

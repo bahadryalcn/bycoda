@@ -1,7 +1,12 @@
+// @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
 import {
+  ADD_TO_CHAT_EVENT,
   acknowledgeQuoteRequest,
+  appendComposerInsert,
   appendSelectionQuote,
+  requestAddToChat,
+  type AddToChatRequest,
   composerSeedForAddToChat,
   consumeQuoteRequest,
   isMarkdownBlockquotePosition,
@@ -10,7 +15,13 @@ import {
 
 describe("appendSelectionQuote", () => {
   it("formats a multiline selection and leaves room for a reply", () => {
-    expect(appendSelectionQuote("", " line one\r\nline two ")).toBe("> line one\n> line two\n\n");
+    expect(appendSelectionQuote("", "line one\r\nline two")).toBe("> line one\n> line two\n\n");
+  });
+
+  it("keeps leading indentation and drops only surrounding blank lines", () => {
+    expect(appendSelectionQuote("", "\n  \n    if ready:\n        run()\n\n")).toBe(
+      ">     if ready:\n>         run()\n\n",
+    );
   });
 
   it("preserves intentional blank lines inside a quote", () => {
@@ -27,6 +38,31 @@ describe("appendSelectionQuote", () => {
 
   it("ignores whitespace-only selections", () => {
     expect(appendSelectionQuote("draft", "  \n ")).toBe("draft");
+  });
+});
+
+describe("appendComposerInsert", () => {
+  it("keeps the exact selected text and normalizes CRLF only", () => {
+    expect(appendComposerInsert("", "  key:\r\n    child: 1\r\n")).toBe("  key:\n    child: 1\n\n");
+  });
+
+  it("ignores whitespace-only text", () => {
+    expect(appendComposerInsert("draft", " \n\t ")).toBe("draft");
+  });
+});
+
+describe("requestAddToChat", () => {
+  it("dispatches the indented text unchanged and skips empty selections", () => {
+    const events: AddToChatRequest[] = [];
+    const onAdd = (event: Event) => events.push((event as CustomEvent<AddToChatRequest>).detail);
+    window.addEventListener(ADD_TO_CHAT_EVENT, onAdd);
+    try {
+      requestAddToChat("   \n ");
+      requestAddToChat("    indented\r\n  more\r\n", "plain");
+    } finally {
+      window.removeEventListener(ADD_TO_CHAT_EVENT, onAdd);
+    }
+    expect(events).toEqual([{ text: "    indented\n  more", mode: "plain" }]);
   });
 });
 

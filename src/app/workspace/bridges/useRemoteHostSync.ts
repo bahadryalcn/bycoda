@@ -14,6 +14,7 @@ import type { DesktopLiveHandlers } from "../../../features/connections/model/de
 import type { HostSession } from "../../../features/connections/model/protocol";
 import { remoteSessionState } from "../../../features/connections/model/remoteSessionState";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
+import { acknowledgeHostSessionBinding, hostSessionBinding, saveHostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import type { LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
 import { t } from "../../../shared/i18n";
 
@@ -79,6 +80,19 @@ export function useRemoteHostSync(): RemoteHostSync {
     setSessions((current) => {
       const shell = current.find((entry) => entry.id === shellId);
       if (!shell) return current;
+      const owner = hostSessionBinding(shell);
+      if (owner) {
+        acknowledgeHostSessionBinding(shell, snapshot.session.id, snapshot.authorityGeneration);
+        const host = snapshot.session;
+        const next = saveHostSessionBinding({
+          ...shell, ...host, id: shell.id, cwd: shell.cwd,
+          hostBinding: hostSessionBinding(shell),
+          worktreeCwd: host.worktreeCwd || (host.cwd !== shell.cwd ? host.cwd : undefined),
+          busy: snapshot.status === "running", continuingElsewhere: undefined,
+          historyPartial: snapshot.history?.before !== undefined,
+        }, hostSessionBinding(shell)!);
+        return current.map((entry) => entry.id === shellId ? next : entry);
+      }
       const project = remoteProjectFor(shell.cwd);
       if (!project) return current;
       return current.map((entry) =>

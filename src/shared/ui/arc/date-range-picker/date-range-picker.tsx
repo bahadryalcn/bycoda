@@ -763,8 +763,12 @@ export function DateRangePicker({
     });
     return () => cancelAnimationFrame(frame);
   }, [expandInFlow, open, reduced]);
+  const wasOpen = useRef(false);
   useEffect(() => {
-    if (open) return;
+    // Only bring the trigger back after the panel closes; mounting a closed picker off-screen must not scroll the page.
+    const closed = wasOpen.current && !open;
+    wasOpen.current = open;
+    if (!closed) return;
     const trigger = triggerRef.current;
     if (!trigger) return;
     const rect = trigger.getBoundingClientRect();
@@ -1035,6 +1039,7 @@ export function DateRangePicker({
         aria-expanded={readOnly ? undefined : open}
         aria-controls={open ? `${uid}-panel` : undefined}
         aria-label={`${label}: ${committedText}`}
+        title={committedText}
         disabled={!today || disabled}
         inert={open || undefined}
         onClick={openPanel}

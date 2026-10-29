@@ -8,6 +8,16 @@ import {
 } from "./workspace-paths";
 import { durableWrite } from "./turn-git-history";
 import { createNativeBufferClock } from "./native-buffer-clock";
+import { createNativeBufferRetention } from "./native-buffer-retention";
+import {
+  createNativeBufferRetentionImporter,
+  type NativeBufferRetentionImporter,
+} from "./native-buffer-retention-import";
+import { createNativeBufferDirectories } from "./native-buffer-directories";
+import type {
+  NativeBufferClockState,
+  NativeBufferPersistence,
+} from "./ports/native-buffer-persistence";
 import {
   createNativeBufferTemplates,
   prepareNativeBufferTemplate,
@@ -21,6 +31,12 @@ import {
 export type { NativeBufferRecoveryCursor } from "./native-buffer-catalog";
 import type { ManagedWorkspace, WorkspaceActivity } from "./workspace-contracts";
 import type { WorkspaceOwnerAuthorization } from "./workspace-service-contracts";
+import { NativeDeliveryIdentitySchema } from "../src/shared/model/host-contracts/native-delivery-identity";
+import type {
+  NativeBufferDeliveryBinding,
+  NativeBufferDeliveryOptions,
+  NativeBufferDeliveryProof,
+} from "./domains/native-delivery/ports";
 
 /** Native provenance is routing/retention metadata, never an enrolled actor grant. */
 export interface NativeBufferSourceMetadata {
@@ -64,6 +80,7 @@ interface BufferLease extends NativeBufferSnapshot {
   receivedAt: number;
   retiredAt?: number;
   recovery?: RecoveryMetadata;
+  originalDelivery?: NativeBufferDeliveryBinding;
 }
 type Captured = {
   reportId: string;
@@ -121,7 +138,9 @@ type Dependencies = {
   serial<T>(action: () => Promise<T>): Promise<T>;
   authenticate(owner: WorkspaceOwnerAuthorization): Promise<string>;
   now?(): number;
-  /** Failure injection only; production uses the existing exact durable writer. */
+  /** Actual critical Host storage; absent only for legacy/unqualified fixtures. */
+  persistence?: NativeBufferPersistence;
+  /** Legacy filesystem failure injection; SQL-backed writes are staged instead. */
   write?: typeof durableWrite;
 };
 type CapturedAuthorization = {
@@ -260,6 +279,26 @@ function parseStored(raw: Buffer, expectedReportId: string): Captured {
   if (new Set(owners.map((owner) => owner.ownerId)).size !== owners.length)
     throw new Error("Native buffer report has duplicate owners and remains held");
   const report = { ...value, owners } as unknown as BufferLease;
+  if (value.originalDelivery !== undefined) {
+    const binding = value.originalDelivery;
+    if (
+      !record(binding) ||
+      Object.keys(binding).some(
+        (key) =>
+          !["originalId", "sha256", "byteLength", "principalId", "environmentId"].includes(key),
+      ) ||
+      typeof binding.principalId !== "string" ||
+      !hex.test(binding.principalId)
+    )
+      throw new Error("Native buffer delivery binding is corrupt and remains held");
+    NativeDeliveryIdentitySchema.parse({
+      originalId: binding.originalId,
+      sha256: binding.sha256,
+      byteLength: binding.byteLength,
+    });
+    identity(binding.environmentId, "delivery environment");
+    report.originalDelivery = binding as NativeBufferDeliveryBinding;
+  }
   if (reportKey(report) !== expectedReportId)
     throw new Error("Native buffer report identity changed");
   if (value.recovery !== undefined) {
@@ -402,8 +441,27 @@ function sourceReference(value: unknown): NativeBufferRecoverySource {
  * a bounded retention policy. No method resolves dirty/unknown sources. */
 export function createNativeBufferReports(deps: Dependencies) {
   const now = deps.now ?? Date.now;
-  const write = deps.write ?? durableWrite;
-  const clock = createNativeBufferClock({ root: deps.root, write });
+  const persistence = deps.persistence;
+  const retention = persistence
+    ? createNativeBufferRetention({ root: deps.root, persistence })
+    : undefined;
+  const directories = persistence
+    ? createNativeBufferDirectories({ root: deps.root, persistence })
+    : undefined;
+  const write = retention ? retention.write : (deps.write ?? durableWrite);
+  let importer: NativeBufferRetentionImporter<Captured> | undefined;
+  const clock = createNativeBufferClock({
+    root: deps.root,
+    write: deps.write,
+    backing: persistence
+      ? {
+          readClock: (id) => persistence.readClock(id),
+          initializeClock: (state, authorize) => importer!.initializeClock(state, authorize),
+          advanceClock: (expected, next, authorize) =>
+            persistence.advanceClock(expected, next, authorize),
+        }
+      : undefined,
+  });
   const directory = join(deps.root, "native-activity", "buffers");
   const history = join(deps.root, "native-activity", "buffer-history");
   const refreshed = new Set<string>();
@@ -417,7 +475,20 @@ export function createNativeBufferReports(deps: Dependencies) {
       source.reportId,
       `${source.reportVersion.toString().padStart(16, "0")}-${source.snapshotDigest}.json`,
     );
+  const rawArchivePath = (
+    source: Pick<NativeBufferRecoverySource, "reportId" | "reportVersion" | "snapshotDigest">,
+  ) =>
+    join(
+      history,
+      "raw",
+      source.reportId,
+      `${source.reportVersion.toString().padStart(16, "0")}-${source.snapshotDigest}.bin`,
+    );
   async function names(path: string) {
+    if (directories) return directories.names(path);
+    return legacyNames(path);
+  }
+  async function legacyNames(path: string) {
     try {
       return (await readdir(path)).sort();
     } catch (error) {
@@ -426,6 +497,10 @@ export function createNativeBufferReports(deps: Dependencies) {
     }
   }
   async function readBounded(path: string, limit: number): Promise<Buffer | null> {
+    if (retention) return retention.read(path, limit, () => readLegacyBounded(path, limit));
+    return readLegacyBounded(path, limit);
+  }
+  async function readLegacyBounded(path: string, limit: number): Promise<Buffer | null> {
     let file;
     try {
       file = await open(path, "r");
@@ -453,20 +528,21 @@ export function createNativeBufferReports(deps: Dependencies) {
     }
   }
   async function current(id: string): Promise<Captured | null> {
-    const raw = await readBounded(snapshotPath(id), MAX_REPORT_BYTES);
+    const raw =
+      persistence && (await persistence.readClock(id))
+        ? await retention!.sqlOnly(() => readBounded(snapshotPath(id), MAX_REPORT_BYTES))
+        : await readBounded(snapshotPath(id), MAX_REPORT_BYTES);
     return raw ? parseStored(raw, id) : null;
   }
-  async function snapshots() {
-    const result: Captured[] = [];
+  async function* snapshots() {
     const before = (await names(directory)).filter((name) => /^[a-f0-9]{64}\.json$/.test(name));
     for (const name of before) {
       const captured = await current(name.slice(0, -5));
-      if (captured) result.push(captured);
+      if (captured) yield captured;
     }
     const after = (await names(directory)).filter((name) => /^[a-f0-9]{64}\.json$/.test(name));
     if (JSON.stringify(before) !== JSON.stringify(after))
       throw new Error("Native buffer inventory changed and remains held; retry");
-    return result;
   }
   async function authenticate(owner: CapturedAuthorization, expected?: string) {
     const unchanged = () =>
@@ -485,15 +561,83 @@ export function createNativeBufferReports(deps: Dependencies) {
     if (existing) {
       if (!existing.equals(raw))
         throw new Error("Native buffer immutable retention identity changed");
+      if (retention) await retention.write(path, raw, true);
       return;
     }
-    await write(path, raw);
+    if (retention) await retention.write(path, raw, true);
+    else await write(path, raw);
   }
   const templates = createNativeBufferTemplates({
     directory: history,
     read: readBounded,
     immutable,
   });
+  const authorizeOwner = (owner: CapturedAuthorization) => async () => {
+    await authenticate(owner);
+  };
+  const mutate = async <T>(owner: CapturedAuthorization, action: () => Promise<T>) => {
+    await initializeRetention();
+    return deps.serial(() =>
+      retention ? retention.mutate(authorizeOwner(owner), action) : action(),
+    );
+  };
+  function retainCertificate(captured: Captured, state: NativeBufferClockState) {
+    const value = captured.value,
+      version = reportVersion(value);
+    if (!retention || value.recovery?.kind === "hold" || !value.recovery?.clockId || version < 1)
+      return;
+    if (
+      state.reportId !== captured.reportId ||
+      state.clockId !== value.recovery.clockId ||
+      state.highWater < version
+    )
+      throw new Error("Native buffer retained source disagrees with its reserved clock");
+    retention.certificate({
+      reportId: captured.reportId,
+      reportVersion: version,
+      snapshotDigest: captured.snapshotDigest,
+      byteLength: captured.raw.length,
+      clockId: state.clockId,
+      raw: captured.raw,
+      ...(value.originalDelivery ? { originalDelivery: value.originalDelivery } : {}),
+    });
+  }
+  async function sqlArchive<T>(id: string, action: () => Promise<T>): Promise<T> {
+    return persistence && (await persistence.readClock(id)) ? retention!.sqlOnly(action) : action();
+  }
+  importer =
+    persistence && retention
+      ? createNativeBufferRetentionImporter<Captured>({
+          persistence,
+          retention,
+          currentDirectory: directory,
+          historyDirectory: history,
+          maximumReportBytes: MAX_REPORT_BYTES,
+          maximumManifestBytes: MAX_MANIFEST_BYTES,
+          maximumCatalogBytes: MAX_CATALOG_BYTES,
+          serial: deps.serial,
+          names,
+          legacyNames,
+          read: readBounded,
+          current,
+          snapshotPath,
+          manifestPath,
+          archive,
+          readArchive,
+          state: (captured) => ({
+            version: reportVersion(captured.value),
+            clockId: captured.value.recovery?.clockId,
+            hold: captured.value.recovery?.kind === "hold",
+          }),
+          readCatalog: (receipt, maximum) => templates.read(receipt, maximum),
+          bootstrap: bootstrapVersion,
+          adopt: (id, options) => clock.adopt(id, options),
+          certificate: retainCertificate,
+        })
+      : undefined;
+  function initializeRetention() {
+    return importer?.initialize() ?? Promise.resolve();
+  }
   async function archive(captured: Captured) {
     const reference = {
       reportId: captured.reportId,
@@ -502,7 +646,36 @@ export function createNativeBufferReports(deps: Dependencies) {
       ownerId: "unused",
       ownerVersion: 0,
     };
-    const retained = await readArchive(reference);
+    let retained: Captured | null;
+    try {
+      retained = retention
+        ? await retention.captureReads(() => readArchive(reference))
+        : await readArchive(reference);
+    } catch (error) {
+      if (
+        !retention ||
+        !(error instanceof Error) ||
+        !/Native buffer (immutable|shared template)/.test(error.message)
+      )
+        throw error;
+      const header = await readBounded(manifestPath(reference), MAX_MANIFEST_BYTES);
+      const value: unknown = header ? JSON.parse(header.toString("utf8")) : null;
+      if (
+        !record(value) ||
+        ![1, 2].includes(value.version as number) ||
+        value.reportId !== reference.reportId ||
+        value.reportVersion !== reference.reportVersion ||
+        value.snapshotDigest !== captured.snapshotDigest ||
+        value.byteLength !== captured.raw.length
+      )
+        throw error;
+      // Authorized migration/retention can preserve a known exact current body
+      // even if an older archive lost an encoding piece. Keep its original
+      // manifest unchanged; the independent raw copy is not an actor or repair.
+      await retention.write(rawArchivePath(reference), captured.raw, true);
+      await retention.write(manifestPath(reference), header!, true);
+      return;
+    }
     if (retained) {
       if (!retained.raw.equals(captured.raw))
         throw new Error("Native buffer retained source bytes changed");
@@ -573,7 +746,56 @@ export function createNativeBufferReports(deps: Dependencies) {
       throw new Error("Native buffer retained metadata exceeds archive limit; source remains held");
     await immutable(manifestPath(manifest), body);
   }
+  async function writeSnapshot(id: string, raw: string | Buffer) {
+    if (!persistence) {
+      await write(snapshotPath(id), raw);
+      return;
+    }
+    const bytes = Buffer.isBuffer(raw) ? raw : Buffer.from(raw),
+      captured = parseStored(bytes, id);
+    await write(snapshotPath(id), bytes);
+    await archive(captured);
+    const state = await persistence.readClock(id);
+    if (state) retainCertificate(captured, state);
+  }
   async function readArchive(
+    source: NativeBufferRecoverySource,
+    manifestRaw?: Buffer,
+  ): Promise<Captured | null> {
+    if (persistence && source.reportVersion >= 1) {
+      const certificate = await persistence.readCertificate(
+        {
+          reportId: source.reportId,
+          reportVersion: source.reportVersion,
+          snapshotDigest: source.snapshotDigest,
+        },
+        MAX_REPORT_BYTES,
+      );
+      if (certificate) {
+        const captured = parseStored(certificate.raw, source.reportId);
+        if (
+          captured.snapshotDigest !== source.snapshotDigest ||
+          reportVersion(captured.value) !== source.reportVersion
+        )
+          throw new Error("Native buffer retained certificate disagrees with its exact source");
+        return { ...captured, archiveReadBytes: certificate.raw.length };
+      }
+    }
+    if (persistence) {
+      const raw = await persistence.read(retention!.key(rawArchivePath(source)), MAX_REPORT_BYTES);
+      if (raw) {
+        const captured = parseStored(raw, source.reportId);
+        if (
+          captured.snapshotDigest !== source.snapshotDigest ||
+          reportVersion(captured.value) !== source.reportVersion
+        )
+          throw new Error("Native buffer retained raw source disagrees with its exact identity");
+        return { ...captured, archiveReadBytes: raw.length };
+      }
+    }
+    return sqlArchive(source.reportId, () => readArchiveArtifacts(source, manifestRaw));
+  }
+  async function readArchiveArtifacts(
     source: NativeBufferRecoverySource,
     manifestRaw?: Buffer,
   ): Promise<Captured | null> {
@@ -668,7 +890,7 @@ export function createNativeBufferReports(deps: Dependencies) {
     if (!stored) throw new Error("Native workspace registry identity is unavailable");
     const workspace = { ...stored, path: await canonicalWorkspaceEntry(stored.path) };
     const result = new Map<string, WorkspaceActivity>();
-    for (const captured of await snapshots()) {
+    for await (const captured of snapshots()) {
       const report = captured.value;
       if (report.retiredAt !== undefined) continue;
       const stale =
@@ -703,11 +925,16 @@ export function createNativeBufferReports(deps: Dependencies) {
     return [...result.values()];
   }
 
-  function updateBuffers(input: NativeBufferSnapshot, authorization: WorkspaceOwnerAuthorization) {
+  function updateBuffers(
+    input: NativeBufferSnapshot,
+    authorization: WorkspaceOwnerAuthorization,
+    delivery?: NativeBufferDeliveryOptions,
+  ) {
     // Capture caller data before the shared gate/first await; never mutate it.
     const request: unknown = structuredClone(input),
-      owner = captureOwner(authorization);
-    return deps.serial(async () => {
+      owner = captureOwner(authorization),
+      deliveryBinding = delivery ? structuredClone(delivery.binding) : undefined;
+    return mutate(owner, async () => {
       const device = await authenticate(owner);
       if (!record(request)) throw new Error("Invalid native buffer snapshot");
       identity(request.clientId, "client identity");
@@ -745,6 +972,7 @@ export function createNativeBufferReports(deps: Dependencies) {
         throw new Error("Native buffer instance already retired");
       if (previous && previous.value.processId !== request.processId)
         throw new Error("Native instance process identity changed");
+      if (retention) await importer!.importReport(id, previous, authorizeOwner(owner));
       const reservation = await clock.reserve(id, {
         observedVersion: previous ? reportVersion(previous.value) : 0,
         observedClockId: previous?.value.recovery?.clockId,
@@ -871,6 +1099,7 @@ export function createNativeBufferReports(deps: Dependencies) {
         owners: [...nextOwners.values()],
         device,
         receivedAt: now(),
+        ...(deliveryBinding ? { originalDelivery: deliveryBinding } : {}),
         recovery: {
           version: 1,
           kind: "projection",
@@ -885,13 +1114,23 @@ export function createNativeBufferReports(deps: Dependencies) {
       if (Buffer.byteLength(bytes) > MAX_REPORT_BYTES)
         throw new Error("Native buffer retained projection is too large and remains held");
       await authenticate(owner, device);
+      if (delivery) {
+        await delivery.prepared({
+          reportId: id,
+          reportVersion: version,
+          snapshotDigest: sha(Buffer.from(bytes)),
+          byteLength: Buffer.byteLength(bytes),
+        });
+        await authenticate(owner, device);
+      }
       if (previous) await archive(previous);
       await authenticate(owner, device);
       for (const hold of pendingHolds)
         await immutable(snapshotPath(reportKey(hold.value)), JSON.stringify(hold.value));
       await authenticate(owner, device);
-      await write(snapshotPath(id), bytes);
-      refreshed.add(id);
+      await writeSnapshot(id, bytes);
+      if (retention) retention.afterCommit(() => refreshed.add(id));
+      else refreshed.add(id);
       await authenticate(owner, device);
       return { acknowledged: true as const };
     });
@@ -903,7 +1142,7 @@ export function createNativeBufferReports(deps: Dependencies) {
   ) {
     const input = structuredClone(request),
       owner = captureOwner(authorization);
-    return deps.serial(async () => {
+    return mutate(owner, async () => {
       const device = await authenticate(owner);
       identity(input.clientId, "client identity");
       identity(input.instanceId, "instance identity");
@@ -916,7 +1155,7 @@ export function createNativeBufferReports(deps: Dependencies) {
         throw new Error("Dirty or unknown buffers require explicit owner recovery");
       await archive(captured);
       await authenticate(owner, device);
-      await write(snapshotPath(id), JSON.stringify({ ...captured.value, retiredAt: now() }));
+      await writeSnapshot(id, JSON.stringify({ ...captured.value, retiredAt: now() }));
       await authenticate(owner, device);
       return { acknowledged: true as const };
     });
@@ -932,7 +1171,7 @@ export function createNativeBufferReports(deps: Dependencies) {
   ) {
     const input = structuredClone(request),
       owner = captureOwner(authorization);
-    return deps.serial(async () => {
+    return mutate(owner, async () => {
       const device = await authenticate(owner);
       identity(input.clientId, "client identity");
       identity(input.instanceId, "instance identity");
@@ -946,7 +1185,7 @@ export function createNativeBufferReports(deps: Dependencies) {
       const latest = await current(reportKey({ device, ...input }));
       if (!latest || latest.value.retiredAt !== undefined)
         throw new Error("Fresh native instance report required");
-      for (const captured of await snapshots()) {
+      for await (const captured of snapshots()) {
         const prior = captured.value;
         if (
           prior.device !== device ||
@@ -973,11 +1212,9 @@ export function createNativeBufferReports(deps: Dependencies) {
         if (!dead) throw new Error("Previous native process is not proven dead");
         await archive(captured);
         await authenticate(owner, device);
-        await write(
-          snapshotPath(captured.reportId),
-          JSON.stringify({ ...prior, retiredAt: now() }),
-        );
+        await writeSnapshot(captured.reportId, JSON.stringify({ ...prior, retiredAt: now() }));
         await authenticate(owner, device);
+        if (retention) await retention.flush(authorizeOwner(owner));
       }
       return { acknowledged: true as const };
     });
@@ -1023,6 +1260,7 @@ export function createNativeBufferReports(deps: Dependencies) {
   const catalog = createNativeBufferCatalog<NativeBufferRecoveryMetadata>({
     activeDirectory: directory,
     historyDirectory: join(history, "reports"),
+    ...(directories ? { openDirectory: directories.open } : {}),
     now,
     activeReadBound: MAX_REPORT_BYTES,
     historyReadBound: MAX_HISTORY_READ_BYTES,
@@ -1040,134 +1278,144 @@ export function createNativeBufferReports(deps: Dependencies) {
         bytes: captured.raw.length,
       };
     },
-    history: async (id, name, device) => {
-      const match = /^(\d{16})-([a-f0-9]{64})\.json$/.exec(name);
-      if (!match) throw new Error("Invalid native buffer catalog manifest identity");
-      const source = {
-        reportId: id,
-        reportVersion: Number(match[1]),
-        snapshotDigest: match[2],
-        ownerId: "unused",
-        ownerVersion: 0,
-      };
-      const raw = await readBounded(manifestPath(source), MAX_MANIFEST_BYTES);
-      if (!raw) throw new Error("Native buffer catalog manifest changed");
-      const value: unknown = JSON.parse(raw.toString("utf8"));
-      if (
-        !record(value) ||
-        ![1, 2].includes(value.version as number) ||
-        value.reportId !== id ||
-        value.reportVersion !== source.reportVersion ||
-        value.snapshotDigest !== source.snapshotDigest ||
-        !integer(value.byteLength) ||
-        value.byteLength > MAX_REPORT_BYTES
-      )
-        throw new Error("Native buffer catalog manifest is corrupt");
-      let catalogReadBytes = 0;
-      if (value.version === 2 && value.catalogBody !== undefined) {
-        try {
-          if (typeof value.catalogDigest !== "string" || !hex.test(value.catalogDigest))
-            throw new Error("Native buffer catalog digest is corrupt");
-          const decoded = await templates.read(value.catalogBody, MAX_CATALOG_BYTES);
-          catalogReadBytes = decoded.bytes;
-          if (sha(decoded.raw) !== value.catalogDigest)
-            throw new Error("Native buffer catalog digest changed");
-          value.catalog = JSON.parse(decoded.raw.toString("utf8"));
-        } catch {
-          // Charge the complete optional-index read bound on failure, then keep
-          // valid exact raw history discoverable through its independent body.
-          catalogReadBytes = NATIVE_BUFFER_TEMPLATE_DESCRIPTOR_BYTES + MAX_CATALOG_BYTES;
-          delete value.catalog;
-        }
-      }
-      if (value.catalog !== undefined) {
-        try {
-          if (
-            typeof value.device !== "string" ||
-            !hex.test(value.device) ||
-            !Array.isArray(value.catalog) ||
-            value.catalog.length > 20_000 ||
-            value.catalogDigest !== digest(value.catalog)
-          )
-            throw new Error("Native buffer catalog metadata is corrupt");
-          if (value.device !== device) return { records: [], bytes: raw.length + catalogReadBytes };
-          const records = value.catalog.map((item): NativeBufferRecoveryMetadata => {
-            if (!record(item)) throw new Error("Native buffer catalog row is corrupt");
-            const reference = sourceReference(item.source);
-            identity(item.clientId, "catalog client identity");
-            identity(item.instanceId, "catalog instance identity");
-            if (
-              reference.reportId !== id ||
-              reference.reportVersion !== source.reportVersion ||
-              reference.snapshotDigest !== source.snapshotDigest ||
-              reportKey({ device, clientId: item.clientId, instanceId: item.instanceId }) !== id ||
-              !integer(item.processId) ||
-              item.processId === 0 ||
-              !integer(item.updatedAt) ||
-              !integer(item.byteLength) ||
-              item.byteLength !== value.byteLength ||
-              !integer(item.bufferCount) ||
-              !integer(item.dirtyCount) ||
-              item.dirtyCount > item.bufferCount ||
-              typeof item.unknown !== "boolean" ||
-              typeof item.ownerMissing !== "boolean" ||
-              typeof item.compatibilityHoldId !== "string" ||
-              !hex.test(item.compatibilityHoldId) ||
-              !["physical", "legacy"].includes(item.lineage as string) ||
-              !["held", "historical"].includes(item.retention as string) ||
-              typeof item.inspectable !== "boolean" ||
-              item.inspectable !== value.byteLength <= MAX_DISCLOSURE_BYTES ||
-              item.verification !== "raw-checked" ||
-              item.qualified !== false ||
-              item.resolution !== "unsupported"
-            )
-              throw new Error("Native buffer catalog row is corrupt");
-            const provenanceValue = item.provenance === null ? null : provenance(item.provenance);
-            return {
-              source: reference,
-              clientId: item.clientId,
-              instanceId: item.instanceId,
-              processId: item.processId,
-              updatedAt: item.updatedAt,
-              byteLength: item.byteLength,
-              bufferCount: item.bufferCount,
-              dirtyCount: item.dirtyCount,
-              unknown: item.unknown,
-              provenance: provenanceValue,
-              lineage: item.lineage as NativeBufferRecoveryMetadata["lineage"],
-              ownerMissing: item.ownerMissing,
-              retention: item.retention as NativeBufferRecoveryMetadata["retention"],
-              compatibilityHoldId: item.compatibilityHoldId,
-              verification: "metadata-only",
-              inspectable: item.inspectable,
-              qualified: false,
-              resolution: "unsupported",
-            };
-          });
-          return { records, bytes: raw.length + catalogReadBytes };
-        } catch {
-          /* A corrupt optional index cannot hide valid immutable body chunks. */
-        }
-      }
-      // Old manifests have no metadata index. One bounded body may be inspected
-      // lazily in this page; ordinary indexed history never loads body chunks.
-      const captured = await readArchive(source, raw);
-      if (!captured || captured.value.device !== device)
-        return {
-          records: [],
-          bytes: catalogReadBytes + (captured?.archiveReadBytes ?? raw.length),
+    history: (id, name, device) =>
+      sqlArchive(id, async () => {
+        const match = /^(\d{16})-([a-f0-9]{64})\.json$/.exec(name);
+        if (!match) throw new Error("Invalid native buffer catalog manifest identity");
+        const source = {
+          reportId: id,
+          reportVersion: Number(match[1]),
+          snapshotDigest: match[2],
+          ownerId: "unused",
+          ownerVersion: 0,
         };
-      const owners = ownersOf(captured).filter(
-        (item) => !captured.value.recovery?.heldOwnerIds.includes(item.ownerId),
-      );
-      return {
-        length: owners.length,
-        at: (index) => metadata(captured, owners[index], "historical"),
-        bytes: catalogReadBytes + (captured.archiveReadBytes ?? raw.length + captured.raw.length),
-      };
-    },
+        const raw = await readBounded(manifestPath(source), MAX_MANIFEST_BYTES);
+        if (!raw) throw new Error("Native buffer catalog manifest changed");
+        const value: unknown = JSON.parse(raw.toString("utf8"));
+        if (
+          !record(value) ||
+          ![1, 2].includes(value.version as number) ||
+          value.reportId !== id ||
+          value.reportVersion !== source.reportVersion ||
+          value.snapshotDigest !== source.snapshotDigest ||
+          !integer(value.byteLength) ||
+          value.byteLength > MAX_REPORT_BYTES
+        )
+          throw new Error("Native buffer catalog manifest is corrupt");
+        let catalogReadBytes = 0;
+        if (value.version === 2 && value.catalogBody !== undefined) {
+          try {
+            if (typeof value.catalogDigest !== "string" || !hex.test(value.catalogDigest))
+              throw new Error("Native buffer catalog digest is corrupt");
+            const decoded = await templates.read(value.catalogBody, MAX_CATALOG_BYTES);
+            catalogReadBytes = decoded.bytes;
+            if (sha(decoded.raw) !== value.catalogDigest)
+              throw new Error("Native buffer catalog digest changed");
+            value.catalog = JSON.parse(decoded.raw.toString("utf8"));
+          } catch {
+            // Charge the complete optional-index read bound on failure, then keep
+            // valid exact raw history discoverable through its independent body.
+            catalogReadBytes = NATIVE_BUFFER_TEMPLATE_DESCRIPTOR_BYTES + MAX_CATALOG_BYTES;
+            delete value.catalog;
+          }
+        }
+        if (value.catalog !== undefined) {
+          try {
+            if (
+              typeof value.device !== "string" ||
+              !hex.test(value.device) ||
+              !Array.isArray(value.catalog) ||
+              value.catalog.length > 20_000 ||
+              value.catalogDigest !== digest(value.catalog)
+            )
+              throw new Error("Native buffer catalog metadata is corrupt");
+            if (value.device !== device)
+              return { records: [], bytes: raw.length + catalogReadBytes };
+            const records = value.catalog.map((item): NativeBufferRecoveryMetadata => {
+              if (!record(item)) throw new Error("Native buffer catalog row is corrupt");
+              const reference = sourceReference(item.source);
+              identity(item.clientId, "catalog client identity");
+              identity(item.instanceId, "catalog instance identity");
+              if (
+                reference.reportId !== id ||
+                reference.reportVersion !== source.reportVersion ||
+                reference.snapshotDigest !== source.snapshotDigest ||
+                reportKey({ device, clientId: item.clientId, instanceId: item.instanceId }) !==
+                  id ||
+                !integer(item.processId) ||
+                item.processId === 0 ||
+                !integer(item.updatedAt) ||
+                !integer(item.byteLength) ||
+                item.byteLength !== value.byteLength ||
+                !integer(item.bufferCount) ||
+                !integer(item.dirtyCount) ||
+                item.dirtyCount > item.bufferCount ||
+                typeof item.unknown !== "boolean" ||
+                typeof item.ownerMissing !== "boolean" ||
+                typeof item.compatibilityHoldId !== "string" ||
+                !hex.test(item.compatibilityHoldId) ||
+                !["physical", "legacy"].includes(item.lineage as string) ||
+                !["held", "historical"].includes(item.retention as string) ||
+                typeof item.inspectable !== "boolean" ||
+                item.inspectable !== value.byteLength <= MAX_DISCLOSURE_BYTES ||
+                item.verification !== "raw-checked" ||
+                item.qualified !== false ||
+                item.resolution !== "unsupported"
+              )
+                throw new Error("Native buffer catalog row is corrupt");
+              const provenanceValue = item.provenance === null ? null : provenance(item.provenance);
+              return {
+                source: reference,
+                clientId: item.clientId,
+                instanceId: item.instanceId,
+                processId: item.processId,
+                updatedAt: item.updatedAt,
+                byteLength: item.byteLength,
+                bufferCount: item.bufferCount,
+                dirtyCount: item.dirtyCount,
+                unknown: item.unknown,
+                provenance: provenanceValue,
+                lineage: item.lineage as NativeBufferRecoveryMetadata["lineage"],
+                ownerMissing: item.ownerMissing,
+                retention: item.retention as NativeBufferRecoveryMetadata["retention"],
+                compatibilityHoldId: item.compatibilityHoldId,
+                verification: "metadata-only",
+                inspectable: item.inspectable,
+                qualified: false,
+                resolution: "unsupported",
+              };
+            });
+            return { records, bytes: raw.length + catalogReadBytes };
+          } catch {
+            /* A corrupt optional index cannot hide valid immutable body chunks. */
+          }
+        }
+        // Old manifests have no metadata index. One bounded body may be inspected
+        // lazily in this page; ordinary indexed history never loads body chunks.
+        const captured = await readArchive(source, raw);
+        if (!captured || captured.value.device !== device)
+          return {
+            records: [],
+            bytes: catalogReadBytes + (captured?.archiveReadBytes ?? raw.length),
+          };
+        const owners = ownersOf(captured).filter(
+          (item) => !captured.value.recovery?.heldOwnerIds.includes(item.ownerId),
+        );
+        return {
+          length: owners.length,
+          at: (index) => metadata(captured, owners[index], "historical"),
+          bytes: catalogReadBytes + (captured.archiveReadBytes ?? raw.length + captured.raw.length),
+        };
+      }),
     finalize: async (row) => {
       if (row.retention === "current") return row;
+      if (persistence) {
+        if (
+          await persistence.hasEntry("native-activity/buffers", `${row.compatibilityHoldId}.json`)
+        )
+          return { ...row, retention: "held" as const };
+        if (await persistence.readClock(row.source.reportId)) return row;
+      }
       try {
         await lstat(snapshotPath(row.compatibilityHoldId));
         return { ...row, retention: "held" as const };
@@ -1257,9 +1505,66 @@ export function createNativeBufferReports(deps: Dependencies) {
       };
     });
   }
+  function verifyDelivery(
+    input: { binding: NativeBufferDeliveryBinding; proof: NativeBufferDeliveryProof },
+    authorization: WorkspaceOwnerAuthorization,
+  ) {
+    const request = structuredClone(input),
+      owner = captureOwner(authorization);
+    return deps.serial(async () => {
+      const device = await authenticate(owner),
+        { proof, binding } = request;
+      if (
+        !hex.test(proof.reportId) ||
+        !hex.test(proof.snapshotDigest) ||
+        !integer(proof.reportVersion) ||
+        proof.reportVersion < 1 ||
+        !integer(proof.byteLength) ||
+        proof.byteLength > MAX_REPORT_BYTES
+      )
+        throw new Error("Native buffer delivery proof is corrupt and remains held");
+      const floor = persistence ? await persistence.readClock(proof.reportId) : undefined;
+      if (persistence && !floor) {
+        await authenticate(owner, device);
+        return false;
+      }
+      const find = async () => {
+        let captured = await current(proof.reportId);
+        if (
+          !captured ||
+          captured.snapshotDigest !== proof.snapshotDigest ||
+          reportVersion(captured.value) !== proof.reportVersion
+        )
+          captured = await readArchive({ ...proof, ownerId: "delivery-proof", ownerVersion: 0 });
+        return captured;
+      };
+      const captured = retention ? await retention.sqlOnly(find) : await find();
+      const tag = captured?.value.originalDelivery;
+      const matches =
+        !!captured &&
+        captured.value.device === device &&
+        captured.raw.length === proof.byteLength &&
+        captured.snapshotDigest === proof.snapshotDigest &&
+        reportVersion(captured.value) === proof.reportVersion &&
+        (!persistence ||
+          (!!floor &&
+            captured.value.recovery?.clockId === floor.clockId &&
+            floor.highWater >= proof.reportVersion)) &&
+        !!tag &&
+        tag.originalId === binding.originalId &&
+        tag.sha256 === binding.sha256 &&
+        tag.byteLength === binding.byteLength &&
+        tag.principalId === binding.principalId &&
+        tag.environmentId === binding.environmentId;
+      await authenticate(owner, device);
+      return matches;
+    });
+  }
   return {
+    initializeRetention,
     probe,
     updateBuffers,
+    verifyDelivery,
     retireBuffers,
     reconcileBuffers,
     listRecovery,

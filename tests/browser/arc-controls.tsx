@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import { Button } from "../../src/shared/ui/Button";
 import { Checkbox } from "../../src/shared/ui/Checkbox";
 import { ControlSpecimen } from "../../src/shared/ui/ControlSpecimen";
-import { ControlStateMatrix, type ControlMatrixLayout } from "./arc-controls-matrix";
 import { NativeSearchableSelect } from "../../src/shared/ui/NativeSearchableSelect";
 import { Badge } from "../../src/shared/ui/Badge";
 import { Alert } from "../../src/shared/ui/Alert";
@@ -526,15 +525,16 @@ function Fixture() {
   );
 }
 
-// ?view=matrix renders only the shared real-control state matrix (FIXTURE evidence, never
-// installed/native acceptance). Optional: &theme=light|dark and &layout=default|narrow|short.
-function MatrixFixture({ initialLayout }: { initialLayout: ControlMatrixLayout }) {
+// ?matrix (alias ?view=matrix) renders the state matrix of the one ControlSpecimen reference on its own.
+// FIXTURE evidence only, never installed/native acceptance. Optional: &theme=light|dark and
+// &layout=default|narrow|short (container stress of the behaviour matrix).
+function SharedMatrixFixture({ layout }: { layout: "default" | "narrow" | "short" }) {
   const [light, setLight] = useState(document.documentElement.classList.contains("theme-light"));
   return (
-    <main className="h-full overflow-auto p-6 text-content">
-      <div className="mx-auto grid max-w-3xl gap-5">
+    <main className="h-full overflow-auto p-6 text-content" data-shared-matrix="">
+      <div className="mx-auto grid max-w-4xl gap-5">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-xl font-medium">bycoda control matrix</h1>
+          <h1 className="text-xl font-medium">bycoda shared state matrix</h1>
           <Button
             onClick={() => {
               document.documentElement.classList.toggle("theme-light", !light);
@@ -544,7 +544,7 @@ function MatrixFixture({ initialLayout }: { initialLayout: ControlMatrixLayout }
             {light ? "Dark theme" : "Light theme"}
           </Button>
         </div>
-        <ControlStateMatrix initialLayout={initialLayout} />
+        <ControlSpecimen matrix="only" matrixLayout={layout} />
       </div>
     </main>
   );
@@ -556,9 +556,9 @@ if (params.get("theme")) {
 }
 const layoutParam = params.get("layout");
 createRoot(document.getElementById("root")!).render(
-  params.get("view") === "matrix" ? (
-    <MatrixFixture
-      initialLayout={layoutParam === "narrow" || layoutParam === "short" ? layoutParam : "default"}
+  params.get("view") === "matrix" || params.has("matrix") ? (
+    <SharedMatrixFixture
+      layout={layoutParam === "narrow" || layoutParam === "short" ? layoutParam : "default"}
     />
   ) : (
     <Fixture />

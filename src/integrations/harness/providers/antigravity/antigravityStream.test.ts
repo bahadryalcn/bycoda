@@ -10,7 +10,13 @@ type Handlers = {
 // a scripted turn. `hang` leaves a turn open so it can be cancelled.
 const host = vi.hoisted(() => ({
   handlers: new Map<string, Handlers>(),
-  spawns: [] as { key: string; command: string; args: string[]; cwd: string; logicalSessionId?: string }[],
+  spawns: [] as {
+    key: string;
+    command: string;
+    args: string[];
+    cwd: string;
+    logicalSessionId?: string;
+  }[],
   writes: [] as { key: string; text: string }[],
   killed: [] as string[],
   hang: false,
@@ -21,33 +27,46 @@ const host = vi.hoisted(() => ({
 }));
 
 vi.mock("../../core/child", () => ({
-  spawnChild: vi.fn(async (key: string, command: string, args: string[], cwd: string, _account?:unknown, _provider?:unknown, _generic?:unknown, _authority?:unknown, _guard?:unknown, logicalSessionId?:string) => {
-    host.spawns.push({ key, command, args, cwd, logicalSessionId });
-    // agy opens a new conversation unless the resume id is one it knows.
-    const at = args.indexOf("--conversation");
-    const resumed = at >= 0 && args[at + 1] !== "lost" ? args[at + 1] : undefined;
-    host.conv.set(key, resumed ?? `conv-${++host.seq}`);
-    setTimeout(() => {
-      const line = host.handlers.get(key)?.line;
-      if (!line) return;
-      if (host.failStart) {
+  spawnChild: vi.fn(
+    async (
+      key: string,
+      command: string,
+      args: string[],
+      cwd: string,
+      _account?: unknown,
+      _provider?: unknown,
+      _generic?: unknown,
+      _authority?: unknown,
+      _guard?: unknown,
+      logicalSessionId?: string,
+    ) => {
+      host.spawns.push({ key, command, args, cwd, logicalSessionId });
+      // agy opens a new conversation unless the resume id is one it knows.
+      const at = args.indexOf("--conversation");
+      const resumed = at >= 0 && args[at + 1] !== "lost" ? args[at + 1] : undefined;
+      host.conv.set(key, resumed ?? `conv-${++host.seq}`);
+      setTimeout(() => {
+        const line = host.handlers.get(key)?.line;
+        if (!line) return;
+        if (host.failStart) {
+          line(
+            JSON.stringify({
+              event: "result",
+              result: { conversation_id: "", status: "ERROR", error: host.failStart },
+            }),
+          );
+          return;
+        }
         line(
           JSON.stringify({
-            event: "result",
-            result: { conversation_id: "", status: "ERROR", error: host.failStart },
+            event: "init",
+            conversation_id: host.conv.get(key),
+            init: { cwd, tools: [], permission_mode: "request-review" },
           }),
         );
-        return;
-      }
-      line(
-        JSON.stringify({
-          event: "init",
-          conversation_id: host.conv.get(key),
-          init: { cwd, tools: [], permission_mode: "request-review" },
-        }),
-      );
-    }, 0);
-  }),
+      }, 0);
+    },
+  ),
   watchChild: vi.fn((key: string, line: Handlers["line"], exit: Handlers["exit"]) => {
     host.handlers.set(key, { line, exit });
   }),
@@ -133,8 +152,8 @@ beforeEach(async () => {
 });
 
 describe("antigravity stream-json transport", () => {
-  it("passes only an explicitly prepared logical hint to the generated route",async()=>{
-    await send(turn("hint",{nativeOutputSessionId:"s1"}).input);
+  it("passes only an explicitly prepared logical hint to the generated route", async () => {
+    await send(turn("hint", { nativeOutputSessionId: "s1" }).input);
     expect(host.spawns[0].logicalSessionId).toBe("s1");
   });
   it("spawns agy in the project folder and streams one turn", async () => {

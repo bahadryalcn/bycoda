@@ -9,6 +9,8 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
   description?: string;
   error?: string;
   fieldClassName?: string;
+  /** `form` (default) is comfortable; `compact` is the toolbar/inline composition. */
+  fieldVariant?: "form" | "compact";
   hideLabel?: boolean;
 }
 /* Digits roll up when a number grows and down when it shrinks; `custom` hands the latest direction to digits already leaving. */
@@ -208,7 +210,17 @@ function MessageRow({
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { label, description, error, id, className, fieldClassName, hideLabel = false, ...props },
+  {
+    label,
+    description,
+    error,
+    id,
+    className,
+    fieldClassName,
+    fieldVariant = "form",
+    hideLabel = false,
+    ...props
+  },
   ref,
 ) {
   const generatedId = useId();
@@ -216,7 +228,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
   const hintId = description ? `${controlId}-description` : undefined;
   const errorId = error ? `${controlId}-error` : undefined;
   return (
-    <div className={[styles.field, fieldClassName].filter(Boolean).join(" ")}>
+    <div
+      className={[styles.field, fieldClassName].filter(Boolean).join(" ")}
+      data-variant={fieldVariant}
+    >
       {!hideLabel && <label htmlFor={controlId}>{label}</label>}
       <textarea
         {...props}

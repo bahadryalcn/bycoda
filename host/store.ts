@@ -14,6 +14,7 @@ import {
 import { normalizeProjectPath } from "./desktopSessions";
 import { isSessionErrorBlock, sessionIssue } from "../src/features/sessions/model/sessionIssue";
 import { StoreDatabase, type StoreStatement } from "./store-db";
+import { initializeNativeDeliveryStore } from "./native-delivery-store";
 import { randomUUID, createHash, randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import type {
@@ -415,6 +416,7 @@ export class HostStore {
       CREATE TABLE IF NOT EXISTS events (session_id TEXT NOT NULL REFERENCES sessions(id), revision INTEGER NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(session_id, revision));
       CREATE TABLE IF NOT EXISTS devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, hash TEXT NOT NULL UNIQUE);
       CREATE TABLE IF NOT EXISTS sync_records (table_name TEXT NOT NULL, id TEXT NOT NULL, value TEXT, rev INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (table_name, id));`);
+    await initializeNativeDeliveryStore(this.db);
     // Additive, host-local records: deleting a conversation or project must not
     // cascade into loss of branch ownership, recovery journals or receipts.
     await this.db.exec(`

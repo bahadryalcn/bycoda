@@ -17,29 +17,48 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     .getByRole("button", { name: "Generate commit message", exact: true })
     .boundingBox())!;
   expect(Math.abs(extrasBounds.y - generateBounds.y)).toBeLessThan(2);
-  expect(Math.abs(extrasBounds.x - (generateBounds.x + generateBounds.width))).toBeLessThan(2);
+  expect(
+    Math.abs(extrasBounds.x - (generateBounds.x + generateBounds.width)),
+  ).toBeLessThan(2);
   await page.getByRole("button", { name: "AI generation settings" }).click();
   await expect(page.getByText("Automatic", { exact: true })).toBeVisible();
   await expect(page.getByText("Main model", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Extras", exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Extras", exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("button", { name: /Claude Haiku 4.5/ }).click();
   await page.getByRole("button", { name: /^Extras/ }).click();
-  const advisor = page.getByRole("combobox", { name: "Advisor", exact: true });
+  // Advisor and subagent model use the shared searchable picker; its native select stays hidden.
+  const advisor = page.getByRole("button", { name: "Advisor", exact: true });
   await expect(advisor).toBeVisible();
   await expect(advisor).toHaveCSS("color-scheme", "dark");
-  await advisor.selectOption("opus");
-  await page.getByRole("combobox", { name: "Subagent model", exact: true }).selectOption("haiku");
+  await advisor.click();
+  await page.getByRole("option", { name: "Opus", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Subagent model", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Haiku", exact: true }).click();
   await page
     .getByRole("combobox", { name: "Subagent model policy", exact: true })
     .selectOption("force");
   await expect(page.getByTestId("choice")).toHaveText(/"advisor":"opus"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"subagentModel":"haiku"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"subagentPolicy":"force"/);
-  await expect(page.getByTestId("choice")).toHaveText(/"model":"claude:haiku-4.5"/);
-  await expect(page.getByRole("textbox", { name: "Commit message" })).toHaveValue(
-    "Keep this commit draft",
+  await expect(page.getByTestId("choice")).toHaveText(
+    /"subagentModel":"haiku"/,
   );
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(page.getByTestId("choice")).toHaveText(
+    /"subagentPolicy":"force"/,
+  );
+  await expect(page.getByTestId("choice")).toHaveText(
+    /"model":"claude:haiku-4.5"/,
+  );
+  await expect(
+    page.getByRole("textbox", { name: "Commit message" }),
+  ).toHaveValue("Keep this commit draft");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
   await page.screenshot({
     path: testInfo.outputPath("git-generation-narrow.png"),
   });
@@ -49,7 +68,9 @@ test("Git generation exposes advisor controls in a narrow panel and keeps the dr
     path: testInfo.outputPath("git-generation-main-and-extras.png"),
   });
   await page.reload();
-  await expect(page.getByRole("button", { name: "AI generation settings" })).toHaveText("");
+  await expect(
+    page.getByRole("button", { name: "AI generation settings" }),
+  ).toHaveText("");
   await page.getByRole("button", { name: "AI generation settings" }).click();
   await page.getByRole("button", { name: "Use default selection" }).click();
   await expect(page.getByTestId("choice")).toHaveText("");

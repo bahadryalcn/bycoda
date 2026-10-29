@@ -10,6 +10,7 @@ import { SlidersHorizontal } from "../../shared/ui/icons";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { TextField } from "../../shared/ui/TextField";
 import { Button } from "../../shared/ui/Button";
+import { FilterTrigger } from "../../shared/ui/FilterTrigger";
 import { SearchInput, SearchInputGroup } from "../../shared/ui/SearchInput";
 import { useRetainedState } from "../../shared/hooks/useRetainedState";
 import {
@@ -428,6 +429,13 @@ function ScopedRuntimeLogsPanel({
     }
   };
 
+  // The icon buttons act on different scopes; say which one applies right now.
+  const attachScope = chosen.length
+    ? t("{p0} selected logs", { p0: chosen.length })
+    : t("{p0} visible events", { p0: visibleEntries.length });
+  const exportScope = chosen.length
+    ? t("{p0} selected logs", { p0: chosen.length })
+    : t("{p0} visible events", { p0: filtered.length });
   const empty =
     !started && !busy
       ? t(
@@ -444,6 +452,54 @@ function ScopedRuntimeLogsPanel({
               : t(
                   "Open a page in Browser or start a managed server in Servers to begin capturing.",
                 );
+
+  // The trigger counts and resets the popup's own filters (type, source, level);
+  // the search box and grouping toggle keep their controls.
+  const logFilterCount =
+    (source !== "all" ? 1 : 0) + (sourceIds.length > 0 ? 1 : 0) + (level !== "all" ? 1 : 0);
+  const resetLogFilters = () => {
+    setSource("all");
+    setSourceIds([]);
+    setLevel("all");
+  };
+  // Each empty state offers the one local action that resolves it; the source
+  // of captured output stays in the toolbar (website monitors) and the servers tool.
+  const emptyAction = !started && !busy ? (
+    <Button variant="secondary" size="sm" onClick={togglePause}>
+      {t("Read logs")}
+    </Button>
+  ) : error && !loaded ? undefined : paused && !buffer.entries.length ? (
+    <Button variant="secondary" size="sm" onClick={togglePause}>
+      {t("Resume")}
+    </Button>
+  ) : buffer.entries.length && !filtered.length ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => {
+        setSource("all");
+        setSourceIds([]);
+        setLevel("all");
+        setSearch("");
+      }}
+    >
+      {t("Reset filters")}
+    </Button>
+  ) : target.kind === "project" && loaded && !buffer.entries.length ? (
+    <Button
+      variant="secondary"
+      size="sm"
+      onClick={() => {
+        setFiltersOpen(false);
+        setMoreOpen(false);
+        setMonitorsOpen(true);
+      }}
+    >
+      {t("Capture a website")}
+    </Button>
+  ) : undefined;
+  const emptyRetry =
+    started && !(buffer.entries.length && !filtered.length) ? () => void read() : undefined;
 
   return (
     <section
@@ -468,13 +524,13 @@ function ScopedRuntimeLogsPanel({
             searchPlaceholder={t("Search sources by name or URL")}
           />
         </div>
-        <Button
+        <FilterTrigger
           ref={filterTrigger}
-          variant="ghost"
-          iconOnly
           label={t("Filters")}
-          tooltip={t("Filters")}
-          selected={source !== "all" || sourceIds.length > 0 || level !== "all"}
+          icon={<SlidersHorizontal className="icon-sm" />}
+          activeCount={logFilterCount}
+          onReset={resetLogFilters}
+          resetLabel={t("Reset filters")}
           aria-haspopup="dialog"
           aria-expanded={filtersOpen}
           onClick={() => {
@@ -482,9 +538,7 @@ function ScopedRuntimeLogsPanel({
             setMoreOpen(false);
             setFiltersOpen((value) => !value);
           }}
-        >
-          <SlidersHorizontal className="icon-md" />
-        </Button>
+        />
         {filtersOpen ? (
           <Popover
             anchor={filterTrigger}
@@ -544,7 +598,7 @@ function ScopedRuntimeLogsPanel({
           </Popover>
         ) : null}
         <SearchInputGroup appearance="field" className="runtime-logs-search">
-          <Search className="icon-md" />
+          <Search className="icon-sm" />
           <SearchInput
             focusOwner="group"
             type="search"
@@ -567,9 +621,10 @@ function ScopedRuntimeLogsPanel({
             disabled={!chosen.length && !visibleEntries.length}
             loading={inspecting}
             onClick={inspect}
-            title={t("Selected logs or visible errors are added to your draft for review.")}
+            title={`${t("Selected logs or visible errors are added to your draft for review.")}
+${attachScope}`}
           >
-            <Bot className="icon-md" />
+            <Bot className="icon-sm" />
           </Button>
           <Button
             motion="none"
@@ -656,6 +711,7 @@ function ScopedRuntimeLogsPanel({
                   kind: "item",
                   id: "export",
                   label: t("Export logs"),
+                  description: exportScope,
                   disabled: exporting || (!chosen.length && !filtered.length),
                 },
                 { kind: "sep" },
@@ -868,6 +924,17 @@ function ScopedRuntimeLogsPanel({
               }
               title={loaded && !buffer.entries.length ? t("Waiting for logs") : t("Runtime logs")}
               description={empty}
+              kind={
+                error && !loaded
+                  ? "unavailable"
+                  : buffer.entries.length && !filtered.length
+                    ? "filtered"
+                    : "empty"
+              }
+              action={emptyAction}
+              onRetry={emptyRetry}
+              retryLabel={t("Refresh")}
+              retrying={busy}
             />
           )}
         </SurfaceSelection>
@@ -888,7 +955,9 @@ function ScopedRuntimeLogsPanel({
               : paused
                 ? t("Paused")
                 : loaded
-                  ? t("Live")
+                  ? buffer.entries.length
+                    ? t("Live")
+                    : `${t("Live")} · ${t("Waiting for logs")}`
                   : t("Connecting…")}
         </Badge>
         <div className="runtime-logs-selection">

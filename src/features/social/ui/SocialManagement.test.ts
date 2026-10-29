@@ -467,7 +467,11 @@ describe("Social management workflows", () => {
     await render(Campaigns, value);
     await click("Saved campaign");
     await click("Edit draft");
-    const dialog = () => document.body.querySelector<HTMLElement>('[role="dialog"]');
+    // The content list's options popover is also a dialog; the composer is the modal.
+    const dialog = () =>
+      document.body.querySelector<HTMLElement>(
+        '[role="dialog"]:not([aria-label="Loaded content options"])',
+      );
     expect(dialog()).toBeTruthy();
     expect(dialog()!.textContent).toContain("Edit campaign draft");
     await act(async () => closeComposer(control("Campaign name", document.body).closest("form")!));

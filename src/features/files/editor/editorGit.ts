@@ -991,9 +991,8 @@ const gitTheme = EditorView.theme({
     userSelect: "none",
     borderRadius: "4px",
     color: "var(--color-content)",
-    background: "color-mix(in srgb, var(--color-background-base) 92%, transparent)",
-    boxShadow:
-      "0 0 0 1px color-mix(in srgb, var(--color-content) 14%, transparent), 0 6px 16px color-mix(in srgb, var(--palette-hex000) 22%, transparent)",
+    background: "var(--ui-surface-raised)",
+    boxShadow: "0 0 0 1px var(--ui-pane-border), var(--ui-elevation-floating)",
   },
   ".cm-gitHunkBtn": {
     display: "grid",
@@ -1007,7 +1006,7 @@ const gitTheme = EditorView.theme({
     cursor: "pointer",
   },
   ".cm-gitHunkBtn:hover": {
-    backgroundColor: "color-mix(in srgb, var(--color-content) 12%, transparent)",
+    backgroundColor: "var(--ui-surface-hover)",
   },
   ".cm-gitHunkBtn:focus-visible": {
     outline: "1px solid var(--color-accent)",

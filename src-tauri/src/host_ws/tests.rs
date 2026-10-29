@@ -1,6 +1,388 @@
 use super::*;
 
 #[test]
+fn generic_ws_cannot_bypass_private_native_or_raw_development_gateway_ingress() {
+    let broker = HostWsBroker::default();
+    let route = NativeRoute::new(
+        "machine",
+        "host.1",
+        "http://127.0.0.1:9",
+        "fake-device-token",
+        "private-boundary",
+    )
+    .unwrap();
+    for method in [
+        "native.turn.begin",
+        "native.buffers.upload.start",
+        "native.buffers.recovery.list",
+        "devServers.bridgeCheck",
+        "devServers.bridgeOpen",
+        "devServers.bridgeRead",
+        "devServers.bridgeWrite",
+        "devServers.bridgeClose",
+    ] {
+        assert!(Contracts::get().unwrap().methods.contains_key(method));
+        assert!(!HostWsBroker::supports_method(method));
+        assert!(!HostWsBroker::supports_params(method, &json!({})));
+        assert!(
+            broker
+                .begin_request(
+                    &route,
+                    "window",
+                    method,
+                    json!({}),
+                    RequestOptions::default()
+                )
+                .err()
+                .unwrap()
+                .unsupported
+        );
+    }
+    for method in [
+        "workspaces.cleanup.plan",
+        "workspaces.cleanup.apply",
+        "workspaces.cleanup.status",
+    ] {
+        assert!(HostWsBroker::supports_method(method));
+    }
+}
+
+#[test]
+fn absolute_operation_deadline_includes_handshake_admission_without_dispatch() {
+    Contracts::get().unwrap();
+    let (release_tx, release_rx) = mpsc::sync_channel(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        tokio::task::spawn_blocking(move || release_rx.recv().unwrap())
+            .await
+            .unwrap();
+        hello(&mut socket, &["projects.list"], "host.1").await;
+        match time::timeout(Duration::from_millis(150), socket.next()).await {
+            Err(_) | Ok(None) | Ok(Some(Ok(Message::Close(_)))) => {}
+            Ok(Some(Err(tokio_tungstenite::tungstenite::Error::Io(error))))
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::ConnectionAborted
+                        | std::io::ErrorKind::ConnectionReset
+                        | std::io::ErrorKind::UnexpectedEof
+                ) => {}
+            observed => {
+                panic!("Expired operation must not dispatch a domain request: {observed:?}")
+            }
+        }
+    });
+    let broker = HostWsBroker::default();
+    let started = Instant::now();
+    let pending = broker
+        .begin_request(
+            &server.route(),
+            "absolute-native",
+            "projects.list",
+            json!({}),
+            RequestOptions {
+                response_timeout: Some(Duration::from_secs(2)),
+                absolute_deadline: Some(started + Duration::from_millis(150)),
+                ..RequestOptions::default()
+            },
+        )
+        .unwrap();
+    let failure = pending.wait().unwrap_err();
+    assert!(!failure.uncertain && !failure.unsupported);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    release_tx.send(()).unwrap();
+    drop(server);
+    broker.shutdown();
+}
+
+#[test]
+fn absolute_deadline_detaches_dispatched_effect_and_status_keeps_original_identity() {
+    Contracts::get().unwrap();
+    let (started_tx, started_rx) = mpsc::sync_channel(1);
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &["commands.dispatch", "commands.status"],
+            "host.1",
+        )
+        .await;
+        let command = next(&mut socket).await;
+        assert_eq!(command["params"]["commandId"], "absolute-original");
+        started_tx.send(()).unwrap();
+        loop {
+            let request = next(&mut socket).await;
+            assert_ne!(request["method"], "commands.dispatch");
+            if request["method"] == "commands.status" {
+                assert_eq!(request["params"]["commandId"], "absolute-original");
+                result(&mut socket, &request, Value::Null).await;
+                break;
+            }
+            assert_eq!(request["method"], "requests.cancel");
+            result(&mut socket, &request, Value::Null).await;
+        }
+    });
+    let broker = HostWsBroker::default();
+    let route = server.route();
+    let pending = broker
+        .begin_request(
+            &route,
+            "absolute-native",
+            "commands.dispatch",
+            json!({"type":"compact","commandId":"absolute-original","sessionId":"session.1"}),
+            RequestOptions {
+                absolute_deadline: Some(Instant::now() + Duration::from_millis(500)),
+                ..RequestOptions::default()
+            },
+        )
+        .unwrap();
+    started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    let failure = pending.wait().unwrap_err();
+    assert!(failure.uncertain && !failure.unsupported);
+    assert_eq!(failure.command_id.as_deref(), Some("absolute-original"));
+    assert_eq!(
+        broker
+            .request(
+                &route,
+                "absolute-native",
+                "commands.status",
+                json!({"commandId":"absolute-original"}),
+                RequestOptions::default()
+            )
+            .unwrap()
+            .result,
+        Value::Null
+    );
+    broker.shutdown();
+}
+
+fn native_recovery_source() -> Value {
+    json!({"reportId":"a".repeat(64),"reportVersion":1,"ownerId":"native-owner","ownerVersion":1,"snapshotDigest":"b".repeat(64)})
+}
+fn native_recovery_page() -> Value {
+    json!({"version":1,"qualified":false,"records":[],"next":null,"incomplete":false,"duplicatesPossible":false})
+}
+fn native_recovery_status() -> Value {
+    json!({"version":1,"qualified":false,"source":native_recovery_source(),"found":false,"inspectable":false,"resolution":"unsupported"})
+}
+
+#[test]
+fn native_profile_callers_keep_actual_pending_work_independent_of_window_detach() {
+    use super::native_profile::NativeProfileBroker;
+    let (started, waiting) = mpsc::channel();
+    let (release, released) = mpsc::channel();
+    let (done, finished) = mpsc::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[
+                "native.buffers.recovery.list",
+                "native.buffers.recovery.status",
+            ],
+            "host.1",
+        )
+        .await;
+        let first = next(&mut socket).await;
+        assert_eq!(first["method"], "native.buffers.recovery.list");
+        started.send(()).unwrap();
+        tokio::task::spawn_blocking(move || released.recv().unwrap())
+            .await
+            .unwrap();
+        result(&mut socket, &first, native_recovery_page()).await;
+        let second = next(&mut socket).await;
+        assert_eq!(second["method"], "native.buffers.recovery.status");
+        result(&mut socket, &second, native_recovery_status()).await;
+        tokio::task::spawn_blocking(move || finished.recv().unwrap())
+            .await
+            .unwrap();
+    });
+    let profile = NativeProfileBroker::default();
+    let caller = profile.capture(server.route()).unwrap();
+    assert!(
+        caller
+            .begin("projects.list", json!({}), RequestOptions::default())
+            .err()
+            .unwrap()
+            .unsupported
+    );
+    let pending = caller
+        .begin(
+            "native.buffers.recovery.list",
+            json!({}),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    // Even a window label equal to the private anchor cannot address its pool.
+    let windows = HostWsBroker::default();
+    windows.detach("native-profile-owner");
+    drop(caller); // the actual pending call retains its private caller scope
+    release.send(()).unwrap();
+    let (value, guard) = pending.wait().unwrap().into_guarded();
+    assert_eq!(value, native_recovery_page());
+    guard.check().unwrap();
+    // A fresh caller reuses this context's same physical connection.
+    let second = profile.capture(server.route()).unwrap();
+    let (value, second_guard) = second
+        .begin(
+            "native.buffers.recovery.status",
+            native_recovery_source(),
+            RequestOptions::default(),
+        )
+        .unwrap()
+        .wait()
+        .unwrap()
+        .into_guarded();
+    assert_eq!(value, native_recovery_status());
+    second_guard.check().unwrap();
+    profile.invalidate_machine("machine.1");
+    assert!(guard.check().is_err() && second_guard.check().is_err());
+    assert!(second
+        .begin(
+            "native.buffers.recovery.list",
+            json!({}),
+            RequestOptions::default()
+        )
+        .is_err());
+    done.send(()).unwrap();
+}
+
+#[test]
+fn native_profile_context_is_bounded_loopback_only_and_cannot_reopen_after_shutdown() {
+    use super::native_profile::NativeProfileBroker;
+    let profile = NativeProfileBroker::default();
+    let remote = NativeRoute::new(
+        "machine",
+        "environment",
+        "https://example.invalid",
+        "fixture-token",
+        "native-selected",
+    )
+    .unwrap();
+    assert!(profile.capture(remote).is_err());
+    assert!(!NativeProfileBroker::supports_params(
+        "projects.list",
+        &json!({})
+    ));
+    assert!(!NativeProfileBroker::supports_params(
+        "native.buffers.recovery.status",
+        &json!({})
+    ));
+    let route = NativeRoute::new(
+        "machine",
+        "environment",
+        "http://127.0.0.1:1",
+        "fixture-token",
+        "native-selected",
+    )
+    .unwrap();
+    let callers = (0..128)
+        .map(|_| profile.capture(route.clone()).unwrap())
+        .collect::<Vec<_>>();
+    assert!(profile.capture(route.clone()).is_err());
+    drop(callers);
+    let caller = profile.capture(route.clone()).unwrap();
+    profile.shutdown();
+    assert!(profile.capture(route).is_err());
+    assert!(caller
+        .begin(
+            "native.buffers.recovery.list",
+            json!({}),
+            RequestOptions::default()
+        )
+        .is_err());
+}
+
+#[test]
+fn native_profile_bulk_keeps_caller_and_disclosure_guard_through_real_download() {
+    use super::native_profile::NativeProfileBroker;
+    let _serial = BULK_TEST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let value = json!({"version":1,"qualified":false,"source":native_recovery_source(),
+        "rawReport":"x".repeat(1_200_000),"owner":{"ownerId":"native-owner","updatedAt":1,"unknown":false,"buffers":[]},"resolution":"unsupported"});
+    let bytes = Arc::new(serde_json::to_vec(&value).unwrap());
+    let data = bytes.clone();
+    let (started, waiting) = mpsc::sync_channel(1);
+    let (done, finished) = mpsc::channel();
+    let server = Server::spawn(move |listener| async move {
+        let mut socket = accept(&listener).await;
+        hello(
+            &mut socket,
+            &[
+                "native.buffers.recovery.read",
+                "native.buffers.recovery.status",
+            ],
+            "host.1",
+        )
+        .await;
+        let read = next(&mut socket).await;
+        result(&mut socket, &read, json!({"$bulk":descriptor(&data)})).await;
+        let (stream, _) = listener.accept().await.unwrap();
+        let (release, released) = mpsc::sync_channel(1);
+        let first_bytes = data.clone();
+        let first = tokio::task::spawn_blocking(move || {
+            http_chunk(
+                stream.into_std().unwrap(),
+                &first_bytes,
+                0,
+                Some(started),
+                Some(released),
+            )
+        });
+        let other = next(&mut socket).await;
+        assert_eq!(other["method"], "native.buffers.recovery.status");
+        result(&mut socket, &other, native_recovery_status()).await;
+        release.send(()).unwrap();
+        first.await.unwrap();
+        for offset in (65536..data.len()).step_by(65536) {
+            let (stream, _) = listener.accept().await.unwrap();
+            let data = data.clone();
+            tokio::task::spawn_blocking(move || {
+                http_chunk(stream.into_std().unwrap(), &data, offset, None, None)
+            })
+            .await
+            .unwrap();
+        }
+        tokio::task::spawn_blocking(move || finished.recv().unwrap())
+            .await
+            .unwrap();
+    });
+    let profile = NativeProfileBroker::default();
+    let caller = profile.capture(server.route()).unwrap();
+    let pending = caller
+        .begin(
+            "native.buffers.recovery.read",
+            native_recovery_source(),
+            RequestOptions::default(),
+        )
+        .unwrap();
+    drop(caller);
+    let call = thread::spawn(move || pending.wait());
+    waiting.recv_timeout(Duration::from_secs(3)).unwrap();
+    assert_eq!(bulk::in_flight(), (1, bytes.len()));
+    let other = profile.capture(server.route()).unwrap();
+    other
+        .begin(
+            "native.buffers.recovery.status",
+            native_recovery_source(),
+            RequestOptions::default(),
+        )
+        .unwrap()
+        .wait()
+        .unwrap();
+    let (actual, guard) = call.join().unwrap().unwrap().into_guarded();
+    assert_eq!(actual, value);
+    assert_eq!(bulk::in_flight(), (1, bytes.len()));
+    guard.check().unwrap();
+    profile.invalidate_environment("host.1");
+    assert!(guard.check().is_err());
+    drop(guard);
+    assert_eq!(bulk::in_flight(), (0, 0));
+    done.send(()).unwrap();
+}
+
+#[test]
 fn native_profile_recovery_cannot_use_a_renderer_selected_generic_ws_route() {
     let broker = HostWsBroker::default();
     let route = NativeRoute::new(
@@ -52,12 +434,12 @@ use tokio_tungstenite::{
     WebSocketStream,
 };
 
-struct Server {
-    endpoint: String,
+pub(crate) struct Server {
+    pub(crate) endpoint: String,
     task: Option<thread::JoinHandle<()>>,
 }
 impl Server {
-    fn spawn<F, Fut>(run: F) -> Self
+    pub(crate) fn spawn<F, Fut>(run: F) -> Self
     where
         F: FnOnce(TcpListener) -> Fut + Send + 'static,
         Fut: Future<Output = ()> + 'static,
@@ -106,7 +488,7 @@ impl Drop for Server {
 type ServerSocket = WebSocketStream<TcpStream>;
 // Tungstenite fixes this callback's error type to its HTTP upgrade response.
 #[allow(clippy::result_large_err)]
-async fn accept(listener: &TcpListener) -> ServerSocket {
+pub(crate) async fn accept(listener: &TcpListener) -> ServerSocket {
     let (stream, _) = listener.accept().await.unwrap();
     accept_hdr_async(
         stream,
@@ -131,7 +513,7 @@ async fn accept(listener: &TcpListener) -> ServerSocket {
     .unwrap()
 }
 
-async fn next(socket: &mut ServerSocket) -> Value {
+pub(crate) async fn next(socket: &mut ServerSocket) -> Value {
     loop {
         match socket.next().await.unwrap().unwrap() {
             Message::Text(text) => return serde_json::from_str(&text).unwrap(),
@@ -141,7 +523,7 @@ async fn next(socket: &mut ServerSocket) -> Value {
         }
     }
 }
-async fn result(socket: &mut ServerSocket, request: &Value, result: Value) {
+pub(crate) async fn result(socket: &mut ServerSocket, request: &Value, result: Value) {
     socket
         .send(Message::Text(
             json!({"jsonrpc":"2.0", "id":request["id"], "result":result})
@@ -151,7 +533,7 @@ async fn result(socket: &mut ServerSocket, request: &Value, result: Value) {
         .await
         .unwrap();
 }
-async fn hello(socket: &mut ServerSocket, methods: &[&str], environment: &str) {
+pub(crate) async fn hello(socket: &mut ServerSocket, methods: &[&str], environment: &str) {
     let contracts = Contracts::get().unwrap();
     let mut capabilities = std::collections::BTreeSet::from(["transport.ws.read.v2".to_owned()]);
     for method in methods {
@@ -1366,9 +1748,13 @@ fn early_stream_snapshot_is_delivered_after_registration_without_implicit_ack() 
     broker.shutdown();
 }
 
-static BULK_TEST: Mutex<()> = Mutex::new(());
+pub(crate) static BULK_TEST: Mutex<()> = Mutex::new(());
 
-fn descriptor(bytes: &[u8]) -> Value {
+pub(crate) fn bulk_in_flight() -> (usize, usize) {
+    bulk::in_flight()
+}
+
+pub(crate) fn descriptor(bytes: &[u8]) -> Value {
     let expires = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
@@ -1377,7 +1763,7 @@ fn descriptor(bytes: &[u8]) -> Value {
     json!({"kind":"bulk","transferId":"transfer.fixture","environmentId":"host.1",
         "totalBytes":bytes.len(),"chunkBytes":65536,"sha256":format!("{:x}",Sha256::digest(bytes)),"expiresAt":expires})
 }
-fn http_chunk(
+pub(crate) fn http_chunk(
     mut stream: std::net::TcpStream,
     bytes: &[u8],
     offset: usize,

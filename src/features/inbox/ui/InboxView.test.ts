@@ -48,14 +48,15 @@ function renderDetail(inboxItem: InboxItem, relatedSessions: SessionSummary[] = 
 }
 
 describe("InboxDetail layout", () => {
-  it("uses GitHub's purple check for issues closed as completed", () => {
+  it("marks issues closed as completed with the success check and a Completed label", () => {
     const completed = inboxStatusMark(item({ state: "closed", stateReason: "completed" }));
     expect(completed.Icon.displayName).toBe("CheckCircle");
-    expect(completed.className).toBe("text-(--color-feature)");
+    expect(completed.className).toBe("text-(--ui-tone-success-fg)");
+    expect(completed.label).toBe("Completed");
 
     const notPlanned = inboxStatusMark(item({ state: "closed", stateReason: "not_planned" }));
     expect(notPlanned.Icon.displayName).toBe("CircleX");
-    expect(notPlanned.className).toBe("text-(--ui-tone-danger-fg)");
+    expect(notPlanned.className).toBe("text-(--ui-text-secondary)");
   });
 
   it("renders a linked item as a standalone, closable side panel", () => {
@@ -110,7 +111,7 @@ describe("InboxDetail layout", () => {
     expect(header).toContain("Ask");
     expect(header).toContain("Open on GitHub");
     expect(header).toContain("Unassigned");
-    expect(header).toContain("whitespace-nowrap");
+    expect(identityTag).toContain("flex-wrap");
     expect(header).not.toContain("data-inbox-detail-fixed-header");
     expect(identityTag).not.toContain("border-b");
     expect(header).not.toContain("local-project");

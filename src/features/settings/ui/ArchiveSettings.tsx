@@ -1,8 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { SearchInput } from "../../../shared/ui/SearchInput";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
@@ -14,8 +13,10 @@ import { RemoveProjectDialog } from "../../projects/ui/RemoveProjectDialog";
 import { prettyCwd, projectKey, projectName } from "../../../shared/lib/paths";
 
 import {
-  loadArchivedProjects,
+  loadRecents,
   looksLikeProject,
+  readArchivedProjects,
+  sameProjectPath,
   subscribeArchivedProjects,
   type ArchivedProject,
 } from "../../projects/model/recents";
@@ -30,22 +31,38 @@ import type { SessionSummary } from "../../sessions/data/sessionStore";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
+import { CollectionToolbar } from "./SettingsCollection";
 import "./ArchiveSettings.css";
 
-export function useArchivedProjects(): ArchivedProject[] {
-  const [items, setItems] = useState(loadArchivedProjects);
+/** Archived projects plus whether the stored list could be read at all. */
+export function useArchivedProjectsRead(): {
+  items: ArchivedProject[];
+  unavailable: boolean;
+  retry: () => void;
+} {
+  const [read, setRead] = useState(readArchivedProjects);
   const lock = useLockSnapshot();
+  const retry = useCallback(() => setRead(readArchivedProjects()), []);
   useEffect(() => {
-    const refresh = () => setItems(loadArchivedProjects());
-    const unsubscribe = subscribeArchivedProjects(refresh);
-    window.addEventListener("storage", refresh);
+    const unsubscribe = subscribeArchivedProjects(retry);
+    window.addEventListener("storage", retry);
+    window.addEventListener("focus", retry);
     return () => {
       unsubscribe();
-      window.removeEventListener("storage", refresh);
+      window.removeEventListener("storage", retry);
+      window.removeEventListener("focus", retry);
     };
-  }, []);
+  }, [retry]);
   // An archived project can still sit in a locked group.
-  return useMemo(() => items.filter((item) => !isProjectLockedIn(lock, item.path)), [items, lock]);
+  const items = useMemo(
+    () => read.items.filter((item) => !isProjectLockedIn(lock, item.path)),
+    [read, lock],
+  );
+  return { items, unavailable: read.state === "unavailable", retry };
+}
+
+export function useArchivedProjects(): ArchivedProject[] {
+  return useArchivedProjectsRead().items;
 }
 
 export function archivedProjectLabel(path: string): string {
@@ -60,9 +77,12 @@ export function ArchivePage({
   onDeleteSession,
   onRestoreProject,
   onDeleteProject,
+  sessionsStatus,
 }: {
   cwd: string;
   sessions: SessionSummary[];
+  /** Whether `sessions` is a complete answer. Anything but "ready" must not read as an empty archive. */
+  sessionsStatus?: { state: "loading" | "unavailable" | "ready"; error?: string; onRetry?: () => void };
   onOpenSession: (sessionId: string) => void;
   onArchiveSession: (sessionId: string, archived: boolean) => void | boolean | Promise<void | boolean>;
   onDeleteSession: (sessionId: string) => void | boolean | Promise<void | boolean>;
@@ -78,7 +98,11 @@ export function ArchivePage({
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const inFlight = useRef(new Set<string>());
-  const archivedProjects = useArchivedProjects();
+  const {
+    items: archivedProjects,
+    unavailable: archivedProjectsUnavailable,
+    retry: retryArchivedProjects,
+  } = useArchivedProjectsRead();
   const availableProjects = useRef(archivedProjects);
   availableProjects.current = archivedProjects;
   useEffect(() => {
@@ -125,6 +149,19 @@ export function ArchivePage({
     }
   };
 
+  // The restore callback has no result, so confirm it from the stores it writes.
+  const restoreProject = async (path: string) => {
+    await onRestoreProject?.(path);
+    const archivedNow = readArchivedProjects();
+    const stillArchived =
+      archivedNow.state === "unavailable" ||
+      archivedNow.items.some((item) => sameProjectPath(item.path, path));
+    const onRail = loadRecents().some((item) => sameProjectPath(item.path, path));
+    if (stillArchived || !onRail) {
+      throw new Error(t("The project could not be restored. It may still be archived."));
+    }
+  };
+
   const onShowArchived = (showArchived: boolean) => {
     const next = { ...loadSessionSidebarFilters(), showArchived };
     saveSessionSidebarFilters(next);
@@ -133,70 +170,105 @@ export function ArchivePage({
     setFilterError(saved.showArchived !== showArchived);
   };
 
+  const sessionsReady = !sessionsStatus || sessionsStatus.state === "ready";
   return (
     <div className="archive-settings settings-topics">
       <Group
         id="archived-projects"
         title={t("Archived projects")}
-        layout="full"
         scope={t(
           "Scope: archived projects in this app. Locked projects appear after unlocking their group.",
         )}
-        description={t(
+        description={`${t(
           "Archive a project from the rail to keep its chats without listing it in the sidebar.",
-        )}
-        dependency={t(
+        )} ${t(
           "Restore returns a project to the sidebar. Delete removes its conversations and app entry after confirmation; its folder stays on disk.",
-        )}
+        )}`}
       >
-        <div className="archive-settings-search">
-          <SearchInput appearance="field" aria-label={t("Search archived projects")} placeholder={t("Search archived projects")} value={projectQuery} onChange={(event) => setProjectQuery(event.target.value)} />
-        </div>
         {!onRestoreProject || !onDeleteProject ? (
-          <p className="px-4 py-3 text-ui-caption text-(--ui-text-secondary)">
+          <p className="archive-settings-note">
             {t("Some project actions are unavailable in this view. Open the project to manage it.")}
           </p>
         ) : null}
-        {archivedProjects.length === 0 ? (
+        {archivedProjectsUnavailable ? (
+          <SettingsFeedback
+            state="error"
+            action={<Button onClick={retryArchivedProjects}>{t("Retry")}</Button>}
+          >
+            {t("Archived projects could not be read. Saved data was left unchanged.")}
+          </SettingsFeedback>
+        ) : archivedProjects.length === 0 ? (
           <SettingsFeedback state="empty" presentation="inset">
             {t("No archived projects.")}
           </SettingsFeedback>
         ) : (
-          <div className="archive-settings-list" role="region" aria-label={t("Archived projects")} tabIndex={0}>
-          {matchingProjects.length === 0 ? <SettingsFeedback state="empty" presentation="inset">{t("No matching archived projects.")}</SettingsFeedback> : null}
-          {matchingProjects.map((project) => (
+          <div className="settings-collection">
+            <CollectionToolbar
+              label={t("Search archived projects")}
+              query={projectQuery}
+              onQueryChange={setProjectQuery}
+              count={t("Showing {p0} of {p1} archived projects", {
+                p0: matchingProjects.length,
+                p1: archivedProjects.length,
+              })}
+            />
             <div
-              key={project.path}
-              className="flex flex-wrap items-center gap-3 border-b border-stroke px-4 py-2.5 last:border-b-0"
+              className="settings-collection-list archive-settings-list"
+              role="region"
+              aria-label={t("Archived projects")}
+              tabIndex={0}
             >
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-ui-secondary">
-                  {archivedProjectLabel(project.path)}
-                </div>
-                <div className="break-all text-ui-micro text-(--ui-text-muted)">
-                  {prettyCwd(project.path)}
-                </div>
-              </div>
-              {onRestoreProject ? (
-                <Button className="shrink-0" loading={!!pending[`restore:${project.path}`]} disabled={!!pending[`restore:${project.path}`]} onClick={() => void run(`restore:${project.path}`, () => onRestoreProject(project.path)).catch(() => {})}>
-                  {t("Restore")}
-                </Button>
-              ) : null}
-              {onDeleteProject ? (
-                <div className="ms-2 shrink-0 border-s border-stroke ps-3">
-                  <Button
-                    className="shrink-0"
-                    variant="danger"
-                    disabled={!!pending[`restore:${project.path}`]}
-                    onClick={() => setDeleting(project)}
-                  >
-                    {t("Delete")}
+              {matchingProjects.length === 0 ? (
+                <div className="settings-collection-empty">
+                  <p role="status">{t("No matching archived projects.")}</p>
+                  <Button variant="ghost" onClick={() => setProjectQuery("")}>
+                    {t("Clear search")}
                   </Button>
                 </div>
               ) : null}
-              {errors[`restore:${project.path}`] ? <SettingsFeedback state="error">{errors[`restore:${project.path}`]}</SettingsFeedback> : null}
+              {matchingProjects.map((project) => (
+                <div key={project.path} className="settings-collection-row">
+                  <div className="settings-collection-main">
+                    <p className="settings-collection-title">{archivedProjectLabel(project.path)}</p>
+                    <p className="settings-collection-meta">{prettyCwd(project.path)}</p>
+                  </div>
+                  <div className="settings-collection-actions">
+                    {onRestoreProject ? (
+                      <Button
+                        className="shrink-0"
+                        loading={!!pending[`restore:${project.path}`]}
+                        disabled={!!pending[`restore:${project.path}`]}
+                        onClick={() =>
+                          void run(`restore:${project.path}`, () => restoreProject(project.path)).catch(
+                            () => {},
+                          )
+                        }
+                      >
+                        {t("Restore")}
+                      </Button>
+                    ) : null}
+                    {onDeleteProject ? (
+                      <Button
+                        className="shrink-0"
+                        variant="danger"
+                        disabled={!!pending[`restore:${project.path}`]}
+                        onClick={() => setDeleting(project)}
+                      >
+                        {t("Delete")}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {errors[`restore:${project.path}`] ? (
+                    <div className="settings-collection-feedback">
+                      <SettingsFeedback state="error">
+                        {errors[`restore:${project.path}`]}
+                      </SettingsFeedback>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}</div>
+          </div>
         )}
       </Group>
 
@@ -213,67 +285,136 @@ export function ArchivePage({
             : t("Archived conversations")
         }
       >
-          <Row
-            id="show-archived"
-            label={t("Archived conversations only")}
-            dependency={t("Show archived conversations instead of active conversations in the sidebar. This does not change the lists on this page.")}
-            feedback={filterError ? <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback> : undefined}
-          >
-            <Toggle
-              label={t("Show archived in the sidebar")}
-              on={filters.showArchived}
-              onChange={onShowArchived}
-            />
-          </Row>
-        <div className="archive-settings-search">
-          <SearchInput appearance="field" aria-label={t("Search archived conversations")} placeholder={t("Search archived conversations")} value={sessionQuery} onChange={(event) => setSessionQuery(event.target.value)} />
-        </div>
         {!looksLikeProject(cwd) ? (
           <SettingsFeedback state="empty" presentation="inset">
             {t("Open a project to see its archived conversations.")}
+          </SettingsFeedback>
+        ) : sessionsStatus?.state === "loading" && archived.length === 0 ? (
+          <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+        ) : sessionsStatus?.state === "unavailable" && archived.length === 0 ? (
+          <SettingsFeedback
+            state="error"
+            action={
+              sessionsStatus.onRetry ? (
+                <Button onClick={sessionsStatus.onRetry}>{t("Retry")}</Button>
+              ) : undefined
+            }
+          >
+            {sessionsStatus.error ?? t("Archived conversations could not be loaded.")}
           </SettingsFeedback>
         ) : archived.length === 0 ? (
           <SettingsFeedback state="empty" presentation="inset">
             {t("No archived conversations in this project.")}
           </SettingsFeedback>
         ) : (
-          <div className="archive-settings-list" role="region" aria-label={t("Archived conversations")} tabIndex={0}>
-          {matchingSessions.length === 0 ? <SettingsFeedback state="empty" presentation="inset">{t("No matching archived conversations.")}</SettingsFeedback> : null}
-          {matchingSessions.map((session) => (
-            <div
-              key={session.id}
-              className="flex flex-wrap items-center gap-3 border-b border-stroke px-4 py-2.5 last:border-b-0"
-            >
-              <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
-              <Button
-                className="min-w-0 flex-1"
-                align="start"
-                variant="ghost"
-                size="sm"
-                type="button"
-                onClick={() => onOpenSession(session.id)}
-              >
-                {sessionDisplayTitle(session.title, session.harness)}
-              </Button>
-              <span className="shrink-0 text-ui-micro text-(--ui-text-muted) tabular-nums">
-                {formatDate(session.updatedAt)}
-              </span>
-              <Button className="shrink-0" loading={!!pending[`unarchive:${session.id}`]} disabled={!!pending[`delete:${session.id}`]} onClick={() => void run(`unarchive:${session.id}`, () => onArchiveSession(session.id, false)).catch(() => {})}>
-                {t("Unarchive")}
-              </Button>
-              <div className="ms-2 shrink-0 border-s border-stroke ps-3">
-                <ConfirmMorph
-                  label={t("Delete")}
-                  tone="danger"
-                  confirmMode="press"
-                  disabled={!!pending[`unarchive:${session.id}`]}
-                  onConfirm={() => run(`delete:${session.id}`, () => onDeleteSession(session.id))}
-                />
+          <div className="settings-collection">
+            <CollectionToolbar
+              label={t("Search archived conversations")}
+              query={sessionQuery}
+              onQueryChange={setSessionQuery}
+              count={t("Showing {p0} of {p1} archived conversations", {
+                p0: matchingSessions.length,
+                p1: archived.length,
+              })}
+            />
+            {!sessionsReady ? (
+              <div className="archive-settings-partial">
+                <SettingsFeedback
+                  state="warning"
+                  action={
+                    sessionsStatus?.onRetry ? (
+                      <Button onClick={sessionsStatus.onRetry}>{t("Retry")}</Button>
+                    ) : undefined
+                  }
+                >
+                  {t("This list may be incomplete.")} {sessionsStatus?.error}
+                </SettingsFeedback>
               </div>
-              {errors[`unarchive:${session.id}`] ? <SettingsFeedback state="error">{errors[`unarchive:${session.id}`]}</SettingsFeedback> : null}
+            ) : null}
+            <div
+              className="settings-collection-list archive-settings-list"
+              role="region"
+              aria-label={t("Archived conversations")}
+              tabIndex={0}
+            >
+              {matchingSessions.length === 0 ? (
+                <div className="settings-collection-empty">
+                  <p role="status">{t("No matching archived conversations.")}</p>
+                  <Button variant="ghost" onClick={() => setSessionQuery("")}>
+                    {t("Clear search")}
+                  </Button>
+                </div>
+              ) : null}
+              {matchingSessions.map((session) => (
+                <div key={session.id} className="settings-collection-row">
+                  <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
+                  <Button
+                    className="min-w-0 flex-1"
+                    align="start"
+                    variant="ghost"
+                    size="sm"
+                    type="button"
+                    onClick={() => onOpenSession(session.id)}
+                  >
+                    {sessionDisplayTitle(session.title, session.harness)}
+                  </Button>
+                  <span className="shrink-0 text-ui-caption text-(--ui-text-secondary) tabular-nums">
+                    {formatDate(session.updatedAt)}
+                  </span>
+                  <div className="settings-collection-actions">
+                    <Button
+                      className="shrink-0"
+                      loading={!!pending[`unarchive:${session.id}`]}
+                      disabled={!!pending[`delete:${session.id}`]}
+                      onClick={() =>
+                        void run(`unarchive:${session.id}`, () =>
+                          onArchiveSession(session.id, false),
+                        ).catch(() => {})
+                      }
+                    >
+                      {t("Unarchive")}
+                    </Button>
+                    <ConfirmMorph
+                      label={t("Delete")}
+                      tone="danger"
+                      confirmMode="press"
+                      disabled={!!pending[`unarchive:${session.id}`]}
+                      onConfirm={() => run(`delete:${session.id}`, () => onDeleteSession(session.id))}
+                    />
+                  </div>
+                  {errors[`unarchive:${session.id}`] ? (
+                    <div className="settings-collection-feedback">
+                      <SettingsFeedback state="error">
+                        {errors[`unarchive:${session.id}`]}
+                      </SettingsFeedback>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
             </div>
-          ))}</div>
+          </div>
         )}
+      </Group>
+
+      <Group title={t("Sidebar")}>
+        <Row
+          id="show-archived"
+          label={t("Archived conversations only")}
+          dependency={t(
+            "Show archived conversations instead of active conversations in the sidebar. This does not change the lists on this page.",
+          )}
+          feedback={
+            filterError ? (
+              <SettingsFeedback state="error">{t("Could not save changes")}</SettingsFeedback>
+            ) : undefined
+          }
+        >
+          <Toggle
+            label={t("Show archived in the sidebar")}
+            on={filters.showArchived}
+            onChange={onShowArchived}
+          />
+        </Row>
       </Group>
 
       {deleting && archivedProjects.some((project) => project.path === deleting.path) ? (

@@ -7,6 +7,7 @@ import { useOverlay } from "./overlay";
 import { useImageZoom } from "../hooks/useImageZoom";
 import { ImageCompare } from "./ImageCompare";
 import { Button } from "./Button";
+import { MediaToolbar, MediaToolbarButton } from "./MediaToolbar";
 
 type Props = {
   src: string;
@@ -77,18 +78,15 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
         <p title={alt} className="text-ui-secondary text-on-solid min-w-0 flex-1 truncate">
           {alt}
         </p>
-        <Button
+        <MediaToolbarButton
           ref={closeRef}
           type="button"
-          iconOnly
           label={t("Close image preview")}
           tooltip={t("Close")}
-          variant="secondary"
-          size="lg"
           onClick={onClose}
         >
-          <X className="size-4" strokeWidth={2} />
-        </Button>
+          <X className="icon-sm" strokeWidth={1.75} />
+        </MediaToolbarButton>
       </div>
       <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center">
         {failed ? (
@@ -159,36 +157,31 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
         {viewing ? (
-          <div className="flex items-center gap-1">
-            <Button
-              variant="secondary"
-              iconOnly
+          <MediaToolbar label={t("Zoom")}>
+            <MediaToolbarButton
               label={t("Zoom out")}
-              tooltip={t("Zoom out")}
               onClick={() => imageZoom.zoom(1 / 1.5)}
             >
-              <Minus className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="secondary"
-              iconOnly
-              label={t("Zoom in")}
-              tooltip={t("Zoom in")}
-              onClick={() => imageZoom.zoom(1.5)}
+              <Minus className="icon-sm" aria-hidden />
+            </MediaToolbarButton>
+            <span
+              aria-live="polite"
+              title={t("Zoom level")}
+              className="text-ui-caption text-on-solid min-w-[3.25rem] text-center tabular-nums"
             >
-              <Plus className="icon-md" aria-hidden />
-            </Button>
-            <Button
-              variant="secondary"
-              iconOnly
+              {Math.round(imageZoom.value.scale * 100)}%
+            </span>
+            <MediaToolbarButton label={t("Zoom in")} onClick={() => imageZoom.zoom(1.5)}>
+              <Plus className="icon-sm" aria-hidden />
+            </MediaToolbarButton>
+            <MediaToolbarButton
               label={t("Reset zoom")}
-              tooltip={t("Reset zoom")}
               disabled={!zoomed}
               onClick={() => imageZoom.reset()}
             >
-              <Maximize2 className="icon-md" aria-hidden />
-            </Button>
-          </div>
+              <Maximize2 className="icon-sm" aria-hidden />
+            </MediaToolbarButton>
+          </MediaToolbar>
         ) : null}
         <input
           ref={pickerRef}
@@ -211,7 +204,7 @@ export function ImageLightbox({ src, alt, onClose }: Props) {
         />
         <Button
           variant="secondary"
-          startIcon={<ImagePlus className="icon-md" aria-hidden />}
+          startIcon={<ImagePlus className="icon-sm" aria-hidden />}
           onClick={() => pickerRef.current?.click()}
         >
           {t("Compare with image")}

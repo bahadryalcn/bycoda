@@ -27,12 +27,41 @@
   color: var(--text-secondary);
   pointer-events: auto;
 }
+/* Ghost (default): while closed the shell is only the hit area of an ordinary 28px ghost
+   icon button; the Button trigger paints hover/pressed/focus. Opening reveals the field frame. */
+.root[data-variant="ghost"] .shell {
+  border-radius: var(--ui-control-radius);
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.root[data-variant="ghost"] .shell:not([data-expanded]) {
+  border-color: transparent;
+  background: transparent;
+}
+.root[data-variant="ghost"] .shell:not([data-expanded]):hover {
+  color: var(--ui-tone-neutral-fg);
+}
+.root[data-variant="ghost"] .icon {
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
+  inset-inline-start: calc((var(--control-height-sm) - var(--ui-icon-sm)) / 2);
+}
+@media (prefers-reduced-motion: reduce) {
+  .root[data-variant="ghost"] .shell {
+    transition: none;
+  }
+}
 .root[data-anchor="start"] .shell {
   inset-inline-end: auto;
   inset-inline-start: 0;
 }
 .shell[data-expanded] {
   border-color: var(--border-strong);
+}
+/* A detached ghost search opens over its neighbours instead of reserving a slot for the field. */
+.root[data-detached] .shell[data-expanded] {
+  z-index: 2;
 }
 .shell .trigger {
   position: absolute;

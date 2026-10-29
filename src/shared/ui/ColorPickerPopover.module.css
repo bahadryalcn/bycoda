@@ -141,3 +141,17 @@
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
+
+/* State contract: disabled dims the surfaces; read-only keeps full ink but drops the interactive cursor. */
+.picker[data-disabled] :is(.plane, .hue, .preview) {
+  cursor: not-allowed;
+  opacity: var(--ui-disabled-opacity, 0.5);
+}
+.picker[data-readonly] :is(.plane, .hue) {
+  cursor: default;
+}
+/* A long or wrapped readout never pushes the preview out of the picker. */
+.hexInput {
+  min-inline-size: 0;
+  text-overflow: ellipsis;
+}

@@ -18,6 +18,7 @@ import {
   recordFeatureHealth,
 } from "./remoteLifecycle";
 import { recordRemoteConnection, resetRemoteHealth } from "./remoteHealth";
+import { NativeHostConnectionError } from "../../../platform/tauri/hostConnection";
 
 const down = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 const machine = {
@@ -27,6 +28,191 @@ const machine = {
   environmentId: "env",
   ssh: { target: "me@mini", remotePort: 3774 },
 };
+
+it.each([
+  [
+    "devices.preview",
+    { deviceId: "simulator", requestId: "original-preview", url: "exp://127.0.0.1:8081" },
+  ],
+  [
+    "devices.preview.mobile.start",
+    {
+      projectId: "project",
+      deviceId: "simulator",
+      requestId: "original-preview",
+      url: "exp://127.0.0.1:8081",
+    },
+  ],
+  ["devices.setup", { agentAccess: false }],
+  ["devices.stop", {}],
+  ["devices.action", { deviceId: "simulator", action: { type: "home" } }],
+  ["devices.capture", { deviceId: "simulator" }],
+] as const)(
+  "preserves an ordinary %s Native HTTP unknown outcome without inventing envelope identity",
+  async (method, params) => {
+    const marker = `The device operation may have completed [RPC_DEVICE_OUTCOME_UNKNOWN] (${method}). Its outcome is unknown. Do not repeat the request; inspect its original device or preview status and reconnect the selected machine if access changed.`;
+    invoke.mockRejectedValueOnce(marker);
+    const error = await remoteRequest("m1", method, params).catch((reason: unknown) => reason);
+    expect(error).toMatchObject({
+      name: "NativeHostConnectionError",
+      code: "RPC_DEVICE_OUTCOME_UNKNOWN",
+      method,
+      uncertain: true,
+      unsupported: false,
+      retry: "never",
+      requestId: null,
+      generation: null,
+      commandId: null,
+    });
+    if (method === "devices.preview" || method === "devices.preview.mobile.start")
+      expect(error).toHaveProperty("previewRequestId", "original-preview");
+    else expect(error).not.toHaveProperty("previewRequestId");
+    expect(error).not.toHaveProperty("result");
+    expect(error).not.toHaveProperty("frame");
+    expect(invoke).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each([
+  "RPC_AUTHORIZATION: Device credential is invalid or revoked",
+  "[RPC_DEVICE_OUTCOME_UNKNOWN]",
+  "The operation outcome is unknown",
+  "The device operation may have completed [RPC_DEVICE_OUTCOME_UNKNOWN] (devices.stop). Its outcome is unknown. Do not repeat the request; inspect its original device or preview status and reconnect the selected machine if access changed.",
+])("preserves ordinary errors outside the exact device HTTP marker: %s", async (reason) => {
+  invoke.mockRejectedValueOnce(reason);
+  await expect(
+    remoteRequest("m1", "devices.preview", { requestId: "original-preview" }),
+  ).rejects.toBe(reason);
+  expect(invoke).toHaveBeenCalledTimes(1);
+});
+
+it("does not interpret device HTTP marker prose on a pure query", async () => {
+  const reason =
+    "The device operation may have completed [RPC_DEVICE_OUTCOME_UNKNOWN] (files.list). Its outcome is unknown. Do not repeat the request; inspect its original device or preview status and reconnect the selected machine if access changed.";
+  invoke.mockRejectedValueOnce(reason);
+  await expect(remoteRequest("m1", "files.list")).rejects.toBe(reason);
+});
+
+it.each([
+  [
+    "devices.preview",
+    { deviceId: "simulator", requestId: "original-preview", url: "exp://127.0.0.1:8081" },
+  ],
+  ["devices.action", { deviceId: "simulator", action: { type: "press", x: 1, y: 2 } }],
+  ["devices.capture", { deviceId: "simulator" }],
+  ["devices.boot", { deviceId: "simulator" }],
+  ["devices.start", {}],
+  ["devices.setup", { projectId: "project", agentAccess: false }],
+  ["devices.stop", { projectId: "project" }],
+  [
+    "devices.preview.mobile.start",
+    {
+      projectId: "project",
+      deviceId: "simulator",
+      requestId: "original-preview",
+      url: "exp://127.0.0.1:8081",
+      installExpoGo: false,
+    },
+  ],
+] as const)(
+  "keeps superseded %s effects unknown without disclosing or repeating them",
+  async (method, params) => {
+    for (const outcome of ["success", "failure"] as const) {
+      adoptRemoteMachineInventory([
+        machine,
+        { ...machine, id: "issuer", environmentId: "issuer-env" },
+      ]);
+      const issuerGeneration = readRemoteLifecycle("issuer-env").generation;
+      let finish!: (value: unknown) => void;
+      let fail!: (reason: unknown) => void;
+      invoke.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = resolve;
+            fail = reject;
+          }),
+      );
+      const pending = remoteRequest("m1", method, params).catch((error: unknown) => error);
+      const sends = invoke.mock.calls.filter(([command]) => command === "remote_request").length;
+      adoptRemoteMachineInventory([
+        { ...machine, ssh: { ...machine.ssh, target: "me@replacement" } },
+        { ...machine, id: "issuer", environmentId: "issuer-env" },
+      ]);
+      if (outcome === "success")
+        finish({ frame: { base64: "private-frame" }, result: "old-device-result" });
+      else
+        fail(
+          new NativeHostConnectionError({
+            code: "RPC_WS_DISCONNECTED",
+            message: "Possibly accepted device reply was lost",
+            generation: 41,
+            requestId: "rpc-original",
+            commandId: null,
+            uncertain: true,
+            unsupported: false,
+          }),
+        );
+      const error = await pending;
+      expect(error).toMatchObject({
+        name: "NativeHostConnectionError",
+        code: "RPC_WS_ROUTE_RETIRED",
+        method,
+        uncertain: true,
+        unsupported: false,
+        retry: "never",
+        commandId: null,
+        requestId: outcome === "failure" ? "rpc-original" : null,
+        generation: outcome === "failure" ? 41 : null,
+      });
+      if (method === "devices.preview" || method === "devices.preview.mobile.start")
+        expect(error).toHaveProperty("previewRequestId", "original-preview");
+      else expect(error).not.toHaveProperty("previewRequestId");
+      expect(String(error)).toContain("outcome is unknown");
+      expect(String(error)).toContain("Do not repeat");
+      expect(error).not.toHaveProperty("result");
+      expect(error).not.toHaveProperty("frame");
+      expect(String(error)).not.toContain("private-frame");
+      expect(invoke.mock.calls.filter(([command]) => command === "remote_request")).toHaveLength(
+        sends,
+      );
+      expect(readRemoteLifecycle("issuer-env").generation).toBe(issuerGeneration);
+    }
+  },
+);
+
+it.each([
+  [
+    "devices.preview.mobile.status",
+    { projectId: "project", requestId: "original-preview", includeFrame: true },
+  ],
+  ["devices.preview.impact", { projectId: "project" }],
+] as const)("keeps stale %s reads as ordinary superseded queries", async (method, params) => {
+  for (const outcome of ["success", "failure"] as const) {
+    adoptRemoteMachineInventory([machine]);
+    let finish!: (value: unknown) => void;
+    let fail!: (reason: unknown) => void;
+    invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+    );
+    const pending = remoteRequest("m1", method, params).catch((error: unknown) => error);
+    adoptRemoteMachineInventory([
+      { ...machine, ssh: { ...machine.ssh, target: "me@replacement" } },
+    ]);
+    if (outcome === "success") finish({ frame: { base64: "private-frame" } });
+    else fail(new Error("Read reply was lost"));
+    const error = await pending;
+    expect(error).toBeInstanceOf(Error);
+    expect(error).not.toBeInstanceOf(NativeHostConnectionError);
+    expect(String(error)).toContain("Connection changed while the request was running");
+    expect(error).not.toHaveProperty("uncertain");
+    expect(error).not.toHaveProperty("previewRequestId");
+    expect(error).not.toHaveProperty("frame");
+  }
+});
 
 it.each(["success", "failure"])(
   "rejects an old route's late %s without overwriting feature health",

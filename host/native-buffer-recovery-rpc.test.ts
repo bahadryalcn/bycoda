@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, mkdir, realpath, rm, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, realpath, rm } from "node:fs/promises";
 import { once } from "node:events";
 import { WebSocket } from "ws";
 import { WS_SUBPROTOCOL } from "../src/shared/model/host-contracts";
@@ -9,6 +9,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "./engine";
 import { HostStore } from "./store";
+import { createNativeBufferPersistenceStore } from "./native-buffer-persistence-store";
 import { createHostServer } from "./server";
 import type {
   NativeBufferRecoveryMetadata,
@@ -285,14 +286,11 @@ it("moves a large exact report to authenticated WS bulk without changing retaine
   const f = await fixture();
   await f.update();
   const first = (await f.list()).result!.records[0].source;
-  const snapshot = join(
-    dirname(f.store.attachmentDir),
-    "managed-workspaces",
-    "native-activity",
-    "buffers",
-    `${first.reportId}.json`,
+  const persistence = createNativeBufferPersistenceStore(f.store),
+    snapshot = `native-activity/buffers/${first.reportId}.json`;
+  const fixtureBody = JSON.parse(
+    (await persistence.read(snapshot, 64 * 1024 * 1024))!.toString("utf8"),
   );
-  const fixtureBody = JSON.parse(await readFile(snapshot, "utf8"));
   fixtureBody.owners[0].buffers = Array.from({ length: 3000 }, (_, i) => ({
     path: join(f.path, `large-${i}-${"path".repeat(29)}.txt`),
     dirty: true,
@@ -300,7 +298,14 @@ it("moves a large exact report to authenticated WS bulk without changing retaine
   fixtureBody.owners[0].source.snapshotDigest = sha(JSON.stringify(fixtureBody.owners[0].buffers));
   const raw = JSON.stringify(fixtureBody);
   expect(Buffer.byteLength(raw)).toBeLessThan(1024 * 1024);
-  await writeFile(snapshot, raw);
+  await persistence.complete({
+    writes: [{ key: snapshot, bytes: Buffer.from(raw), immutable: false }],
+    certificates: [],
+    authorize: async () => {
+      if (!(await f.store.authenticated(f.first.token)))
+        throw new Error("Fixture paired owner revoked");
+    },
+  });
   const source = (await f.list()).result!.records[0].source;
   const socket = await f.ready();
   const response = await f.wsRpc<{
@@ -331,7 +336,7 @@ it("moves a large exact report to authenticated WS bulk without changing retaine
   expect(value.rawReport).toBe(raw);
   expect(value.qualified).toBe(false);
   expect(value.resolution).toBe("unsupported");
-  expect(await readFile(snapshot, "utf8")).toBe(raw);
+  expect((await persistence.read(snapshot, 64 * 1024 * 1024))!.toString("utf8")).toBe(raw);
   await f.store.revokeDevice(f.first.id);
   expect(
     (await fetch(`${endpoint}?offset=0`, { headers: { Authorization: `Bearer ${f.first.token}` } }))

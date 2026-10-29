@@ -65,7 +65,8 @@ test("shell counts stay compact and follow custom accents in both rail presentat
         `/tests/browser/compact-navigation.html?badgeCount=${count}${expanded ? "&expandedRail" : ""}`,
       );
       const working = page.locator("[data-workspace-working-count]");
-      const recovery = page.locator(".recovery-rail-count");
+      // The expanded rail shows the plain section count; label-less rails keep the corner badge.
+      const recovery = page.locator(expanded ? ".recovery-rail-number" : ".recovery-rail-count");
       await expect(working).toHaveText(String(Math.min(count, 9)));
       await expect(recovery).toHaveText(count > 99 ? "99+" : String(count));
       for (const light of [false, true]) {
@@ -79,7 +80,7 @@ test("shell counts stay compact and follow custom accents in both rail presentat
         for (const width of [1280, 800]) {
           await page.setViewportSize({ width, height: 900 });
           await compactAccentCounter(working);
-          await compactAccentCounter(recovery);
+          if (!expanded) await compactAccentCounter(recovery);
           const owner = page.getByRole("button", {
             name: `Recovered sessions (${count})`,
             exact: true,

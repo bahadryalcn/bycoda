@@ -755,8 +755,8 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
 }, testInfo) => {
   await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
   await page.goto("/tests/browser/social.html?tiktok=1");
-  await selectSection(page, "Kampanyalar");
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
+  await selectSection(page, "İçerik hazırla");
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
   const form = page.getByRole("dialog");
   await form.getByRole("button", { name: "Sosyal hesaplar", exact: true }).click();
   await page.getByRole("option", { name: /Demo TikTok/ }).click();
@@ -769,7 +769,7 @@ test("TikTok publishing shows current privacy choices and explicit consent witho
   await expect(form.getByLabel("Yorumlara izin ver", { exact: true })).toBeDisabled();
   await expect(form.getByLabel(/Videoyu önizledim/)).toBeDisabled();
   await form.getByRole("button", { name: "Kapat", exact: true }).click();
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -877,9 +877,9 @@ async function completionCampaign(
     else fixture.socialFixtureSeedMediaCompletion();
   }, seed);
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  await selectSection(page, "Kampanyalar");
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Yeni kampanya", exact: true });
+  await selectSection(page, "İçerik hazırla");
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill(name);
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
   const project = page.getByRole("option", { name: /Demo project/ });
@@ -973,7 +973,7 @@ test("Meta API ordered carousel becomes a reviewed Reel only after renewing appr
   );
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await form.getByRole("button", { name: "Görsel adresi ekle", exact: true }).click();
   await form.getByLabel("Görsel adresi 1", { exact: true }).fill("https://cdn.test/first.jpg");
@@ -1019,7 +1019,7 @@ test("Meta API ordered carousel becomes a reviewed Reel only after renewing appr
   const editing = page.getByRole("dialog", { name: "Kampanya taslağını düzenle", exact: true });
   await editing
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await editing.getByRole("button", { name: "Medyayı kaldır 3", exact: true }).click();
   await editing.getByRole("button", { name: "Medyayı kaldır 1", exact: true }).click();
@@ -1061,7 +1061,7 @@ test("Facebook API feed reviews ordered images and alternative text separately f
   );
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await expect(form.getByRole("button", { name: "Video adresi ekle", exact: true })).toHaveCount(0);
   for (let index = 1; index <= 2; index++) {
@@ -1110,7 +1110,7 @@ test("Facebook API Reel requires an explicit destination and real uploaded metad
   );
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await form.getByRole("button", { name: "Görsel adresi ekle", exact: true }).click();
   await form
@@ -1191,7 +1191,7 @@ test("LinkedIn API organization images use owner uploads and preserve ordered al
   const form = await completionCampaign(page, "Fixture LinkedIn API", "LinkedIn API images", "api");
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   const files = form.getByLabel("Görseller", { exact: true });
   expect((await files.getAttribute("accept"))?.split(",").sort()).toEqual([
@@ -1277,7 +1277,7 @@ test("uploaded campaign review shows exact owner image bytes and retries preview
   );
   await form
     .locator("summary")
-    .filter({ hasText: "Tek seferlik yayın zamanı, medya ve bağlantı" })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await form
     .getByLabel("Görseller", { exact: true })
@@ -1406,9 +1406,9 @@ test("Telegram channel connects one reviewed bot and queues a media-only campaig
       params: { accountId: "telegram-channel", reviewId: "fixture-channel-review-1" },
     },
   ]);
-  await selectSection(page, "Kampanyalar");
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Yeni kampanya", exact: true });
+  await selectSection(page, "İçerik hazırla");
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill("Reviewed channel image");
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
   const project = page.getByRole("option", { name: /Demo project/ });
@@ -1419,7 +1419,7 @@ test("Telegram channel connects one reviewed bot and queues a media-only campaig
   await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   const media = form.getByLabel("Resim veya video dosyası", { exact: true });
   await expect(media).not.toHaveAttribute("multiple", "");
@@ -1483,7 +1483,7 @@ test("Snapchat API requires an explicit locale and retains real Spotlight metada
   );
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   const locale = form.getByLabel("Spotlight dili ve bölgesi", { exact: true });
   const upload = form.getByLabel("Video dosyası", { exact: true });
@@ -1524,7 +1524,7 @@ test("Snapchat API requires an explicit locale and retains real Spotlight metada
   const editing = page.getByRole("dialog", { name: "Kampanya taslağını düzenle", exact: true });
   await editing
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await editing.getByLabel("Spotlight dili ve bölgesi", { exact: true }).fill("en_US");
   await editing.getByRole("button", { name: "Kampanya taslağını kaydet", exact: true }).click();
@@ -1559,7 +1559,7 @@ test("LinkedIn PDF title and single-image alternative text persist through revie
   const form = await completionCampaign(page, "Fixture LinkedIn", "LinkedIn document then image");
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   const files = form.getByLabel("Görsel, video veya PDF dosyası", { exact: true });
   await expect(files).toHaveAttribute("accept", /application\/pdf/);
@@ -1587,7 +1587,7 @@ test("LinkedIn PDF title and single-image alternative text persist through revie
   const editing = page.getByRole("dialog", { name: "Kampanya taslağını düzenle", exact: true });
   await editing
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await editing
     .getByLabel("Görsel, video veya PDF dosyası", { exact: true })
@@ -1699,7 +1699,7 @@ test("Snapchat destination and real video metadata persist while Story rejects c
   const form = await completionCampaign(page, "Fixture Snapchat", "Snapchat Spotlight then Story");
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   const upload = form.getByLabel("Video dosyası", { exact: true });
   await expect(upload).toBeDisabled();
@@ -1735,7 +1735,7 @@ test("Snapchat destination and real video metadata persist while Story rejects c
   const editing = page.getByRole("dialog", { name: "Kampanya taslağını düzenle", exact: true });
   await editing
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await editing.getByRole("radio", { name: "Herkese açık Hikâye", exact: true }).click();
   await editing.getByLabel("Bağlantı", { exact: true }).fill("https://example.test/retained-link");
@@ -1872,7 +1872,8 @@ test("non-X browser accounts connect without API configuration and preserve plat
     await expect(page.getByText("Hesap bağlandı", { exact: true }).first()).toBeVisible();
     if (platform === "Telegram") {
       const publish = page
-        .locator(".social-capability-grid > div")
+        .getByRole("region", { name: "Kullanılabilir işlemler" })
+        .getByRole("listitem")
         .filter({ hasText: /^Yayın/ })
         .first();
       await expect(publish).toContainText("Desteklenmiyor");
@@ -1933,9 +1934,9 @@ test("browser campaign uploads persist and approval binds the reviewed revision 
     (window as unknown as { socialFixtureSeedBrowser(): void }).socialFixtureSeedBrowser(),
   );
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  await selectSection(page, "Kampanyalar");
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
-  const form = page.getByRole("dialog", { name: "Yeni kampanya", exact: true });
+  await selectSection(page, "İçerik hazırla");
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
+  const form = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await form.getByLabel("Kampanya adı", { exact: true }).fill("Browser image campaign");
   await form.getByRole("button", { name: "İlgili projeler", exact: true }).click();
   const project = page.getByRole("option", { name: /Demo project/ });
@@ -1947,7 +1948,7 @@ test("browser campaign uploads persist and approval binds the reviewed revision 
   await form.getByLabel("Bu hesaba özel içerik", { exact: true }).fill("Reviewed browser caption");
   await form
     .locator("summary")
-    .filter({ hasText: /^Tek seferlik yayın zamanı, medya ve bağlantı$/ })
+    .filter({ hasText: /^Medya ve bağlantı$/ })
     .click();
   await expect(form.getByLabel("HTTPS görsel URL'si", { exact: true })).toHaveCount(0);
   await form.getByLabel("Resim veya video dosyası", { exact: true }).setInputFiles(browserImage);
@@ -2107,15 +2108,15 @@ for (const width of [390, 1440])
     await page.addInitScript(() => localStorage.setItem("bycoda.language", "tr"));
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/tests/browser/social.html?programs=1");
-    await selectSection(page, "Kampanyalar");
+    await selectSection(page, "İçerik hazırla");
     await page
       .locator(".social-campaign-modes")
-      .getByRole("button", { name: "AI kampanyaları", exact: true })
+      .getByRole("button", { name: "Özetten içerik üret", exact: true })
       .click();
     const modesBounds = await page.locator(".social-campaign-modes").boundingBox();
     const programsBounds = await page.locator(".social-programs:visible").boundingBox();
     expect(programsBounds!.y).toBeGreaterThanOrEqual(modesBounds!.y + modesBounds!.height);
-    const editor = page.getByRole("region", { name: "AI kampanyası oluştur", exact: true });
+    const editor = page.getByRole("region", { name: "Özetten içerik üret", exact: true });
     await expect(editor).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
     const form = editor.locator(".social-program-form");
@@ -2124,6 +2125,16 @@ for (const width of [390, 1440])
       steps.getByRole("button", { name: "Amaç ve içerik", exact: true }),
     ).toHaveAttribute("aria-current", "step");
     await form.getByLabel("Kampanya adı", { exact: true }).fill("Fixture campaign");
+    // Continuing past the first step requires the name, brief and an eligible target account.
+    await form.getByLabel("Konu", { exact: true }).fill("Fixture topic");
+    await form.getByLabel("Açıklama", { exact: true }).fill("Fixture description");
+    await form.getByRole("button", { name: "Hedef hesaplar", exact: true }).click();
+    await page
+      .getByRole("dialog", { name: "Hedef hesaplar seçimi", exact: true })
+      .getByRole("option")
+      .first()
+      .click();
+    await page.keyboard.press("Escape");
     await form.locator("summary").filter({ hasText: "AI modelleri ve medya" }).click();
     await form.getByLabel("Metin sağlayıcısı", { exact: true }).selectOption("codex");
     await form.getByLabel("Metin modeli", { exact: true }).fill("text-fixture");
@@ -2152,7 +2163,7 @@ for (const width of [390, 1440])
     });
     await selectSection(page, "Hesaplar");
     await expect(editor).not.toBeVisible();
-    await selectSection(page, "Kampanyalar");
+    await selectSection(page, "İçerik hazırla");
     await expect(editor).toBeVisible();
     await steps.getByRole("button", { name: "Amaç ve içerik", exact: true }).click();
     await expect(form.getByLabel("Kampanya adı", { exact: true })).toHaveValue("Fixture campaign");
@@ -2301,14 +2312,10 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
     .click();
   await page.getByRole("button", { name: "İşlem geçmişi", exact: true }).click();
   await expect(page.locator(".social-history-record")).toHaveCount(5);
-  const metadata = page
-    .locator(".social-history-record")
-    .first()
-    .locator(".social-history-metadata");
-  await expect(metadata.getByText(/^Oluşturuldu/)).not.toBeVisible();
-  await metadata.locator("summary").click();
-  await expect(metadata.getByText(/^Oluşturuldu/)).toBeVisible();
-  await metadata.locator("summary").click();
+  // Created time is part of the compact record row, not behind a disclosure.
+  await expect(
+    page.locator(".social-history-record").first().getByText(/^Oluşturuldu/),
+  ).toBeVisible();
   const colors = await page
     .locator(".social-history-record .social-status-badge")
     .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).color));
@@ -2351,7 +2358,11 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
   await page.getByRole("button", { name: "Filtreleri temizle", exact: true }).click();
   const review = page.locator('.social-history-record[data-status="review"]');
   await expect(review.getByText(/aynı içeriği yeniden göndermeyin/)).toBeVisible();
-  await expect(review.getByRole("button")).toHaveCount(0);
+  // The record is one select row; it offers no retry or resend action.
+  await expect(review.getByRole("button")).toHaveCount(1);
+  await expect(
+    review.getByRole("button", { name: /^(yeniden dene|tekrar dene|yeniden gönder|gönder)/i }),
+  ).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("history-outcomes.png"),
     animations: "disabled",
@@ -2362,10 +2373,11 @@ test("owner creates and explicitly activates a daily 2–5 hour publishing plan"
   page,
 }, testInfo) => {
   await seedWorkflow(page);
-  await selectSection(page, "Otomasyonlar");
-  const editor = page.getByRole("region", { name: "Otomatik yayın planı oluştur", exact: true });
-  await expect(editor).toBeVisible();
+  await selectSection(page, "Planlar ve yanıtlar");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Otomatik yayın planı oluştur", exact: true }).click();
+  const editor = page.getByRole("dialog", { name: "Otomatik yayın planı oluştur", exact: true });
+  await expect(editor).toBeVisible();
   await editor.getByLabel("Plan adı", { exact: true }).fill("Günlük ürün yayınları");
   await editor.getByRole("button", { name: "09:00–18:00 · 2–5 saat arayla", exact: true }).click();
   await editor.getByLabel("Saat dilimi", { exact: true }).fill("Europe/Istanbul");
@@ -2552,14 +2564,16 @@ test("searchable project selections keep unfinished forms compact across section
     (window as unknown as { socialFixtureManyProjects: () => void }).socialFixtureManyProjects(),
   );
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
-  await selectSection(page, "Kampanyalar");
-  const editor = page.getByRole("dialog", { name: "Yeni kampanya", exact: true });
+  await selectSection(page, "İçerik hazırla");
+  const editor = page.getByRole("dialog", { name: "İçerik hazırla", exact: true });
   await expect(editor).not.toBeVisible();
-  const listBounds = await page.locator(".social-columns:visible").first().boundingBox();
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
-  expect((await page.locator(".social-columns:visible").first().boundingBox())!.y).toBe(
-    listBounds!.y,
-  );
+  const summary = page.getByLabel("Kampanya özeti", { exact: true });
+  const listBounds = await summary.boundingBox();
+  await page
+    .locator(".social-main")
+    .getByRole("button", { name: "İçerik hazırla", exact: true })
+    .click();
+  expect((await summary.boundingBox())!.y).toBe(listBounds!.y);
   await expect(editor).toBeVisible();
   expect((await editor.boundingBox())!.width).toBeGreaterThan(800);
   await page.getByLabel("Kampanya adı", { exact: true }).fill("Unfinished campaign");
@@ -2581,7 +2595,7 @@ test("searchable project selections keep unfinished forms compact across section
   await editor.getByRole("button", { name: "Kapat", exact: true }).click();
   await expect(editor).not.toBeVisible();
   await selectSection(page, "Hedef kitle");
-  await page.getByRole("button", { name: "Kişi ekle", exact: true }).click();
+  await page.getByRole("button", { name: "Kişi ekle", exact: true }).first().click();
   const contact = page.getByRole("dialog", { name: "Kişi ekle", exact: true });
   await contact.getByLabel("İsim", { exact: true }).fill("Unfinished contact");
   await contact.getByRole("button", { name: "İlgili projeler", exact: true }).click();
@@ -2609,8 +2623,8 @@ test("searchable project selections keep unfinished forms compact across section
   });
   await page.getByRole("button", { name: "Tamam", exact: true }).click();
   await contact.getByRole("button", { name: "Kapat", exact: true }).click();
-  await selectSection(page, "Kampanyalar");
-  await page.getByRole("button", { name: "Yeni kampanya", exact: true }).click();
+  await selectSection(page, "İçerik hazırla");
+  await page.locator(".social-main").getByRole("button", { name: "İçerik hazırla", exact: true }).click();
   await expect(page.getByLabel("Kampanya adı", { exact: true })).toHaveValue("Unfinished campaign");
   await expect(
     editor.locator(
@@ -2686,7 +2700,7 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   await expect(page.locator('.social-connection[role="status"] > strong')).toHaveText(
     "Tarayıcıda izin bekleniyor",
   );
-  for (const section of ["Kampanyalar", "Gelen kutusu", "Hedef kitle", "Otomasyonlar", "Ayarlar"]) {
+  for (const section of ["İçerik hazırla", "Gelen kutusu", "Hedef kitle", "Planlar ve yanıtlar", "Ayarlar"]) {
     await selectSection(page, section);
     await expect(page.getByRole("heading", { name: section, exact: true }).first()).toBeVisible();
     expect(
@@ -2745,22 +2759,22 @@ test("all creation forms and verified project information stay readable at deskt
       ["Hesaplar", "Hesap ekle"],
       ["Hedef kitle", "Kişi ekle"],
       ["Hedef kitle", "Segment oluştur"],
-      ["Otomasyonlar", "Otomasyon kuralı oluştur"],
-      ["Otomasyonlar", "Otomatik yayın planı oluştur"],
+      ["Planlar ve yanıtlar", "Otomasyon kuralı oluştur"],
+      ["Planlar ve yanıtlar", "Otomatik yayın planı oluştur"],
     ]) {
       await selectSection(page, section);
-      const inlinePlan = title === "Otomatik yayın planı oluştur";
-      if (section === "Otomasyonlar")
+      const planForm = title === "Otomatik yayın planı oluştur";
+      if (section === "Planlar ve yanıtlar")
         await page
           .getByRole("button", {
-            name: inlinePlan ? "Paylaşım planları" : "Yanıt kuralları",
+            name: planForm ? "Paylaşım planları" : "Yanıt kuralları",
             exact: true,
           })
           .click();
-      if (!inlinePlan) await page.getByRole("button", { name: title, exact: true }).click();
-      const editor = page.getByRole(inlinePlan ? "region" : "dialog", { name: title, exact: true });
-      if (inlinePlan) {
-        await expect(page.getByRole("dialog")).toHaveCount(0);
+      // The audience empty state repeats the header action; the first match is the header trigger.
+      await page.getByRole("button", { name: title, exact: true }).first().click();
+      const editor = page.getByRole("dialog", { name: title, exact: true });
+      if (planForm) {
         await expect(editor.getByLabel("Plan adı", { exact: true })).toBeVisible();
         await expect(editor.getByLabel("Saat dilimi", { exact: true })).toBeVisible();
       }
@@ -2777,9 +2791,9 @@ test("all creation forms and verified project information stay readable at deskt
         animations: "disabled",
         path: testInfo.outputPath(`${title}-${width}.png`),
       });
-      if (!inlinePlan) await editor.getByRole("button", { name: "Kapat", exact: true }).click();
+      await editor.getByRole("button", { name: "Kapat", exact: true }).click();
     }
-    await selectSection(page, "Kampanyalar");
+    await selectSection(page, "İçerik hazırla");
     const profile = page.locator(".social-page-secondary > details");
     if (!(await profile.evaluate((element) => (element as HTMLDetailsElement).open)))
       await profile.getByText("Ürün bilgisi ve doğrulanmış duyurular", { exact: true }).click();
@@ -2883,10 +2897,10 @@ test("populated workspace remains usable at narrow widths and in both themes", a
     await page.setViewportSize({ width: 320, height: 850 });
     for (const section of [
       "Hesaplar",
-      "Kampanyalar",
+      "İçerik hazırla",
       "Gelen kutusu",
       "Hedef kitle",
-      "Otomasyonlar",
+      "Planlar ve yanıtlar",
       "Ayarlar",
     ]) {
       await selectSection(page, section);

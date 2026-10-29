@@ -26,35 +26,59 @@ export function SourceControlSettings() {
     setDiffViewer(saved);
     setDiffError(saved !== next);
   };
+  const [generationError, setGenerationError] = useState<
+    { choice: Parameters<typeof saveDefaultGitGenerationChoice>[0] } | null
+  >(null);
+  const onGenerationChoice = (choice: Parameters<typeof saveDefaultGitGenerationChoice>[0]) => {
+    try {
+      saveDefaultGitGenerationChoice(choice);
+      setGenerationError(null);
+    } catch {
+      setGenerationError({ choice });
+    }
+  };
   return (
-    <>
+    <div className="source-control-settings settings-topics flex min-w-0 flex-col gap-7">
       <Group
         title={t("Commit and pull request generation")}
-        layout="full"
         scope={t("Used across projects unless a project has its own generation selection.")}
       >
         <Row
           id="git-generation-default"
           label={t("Model")}
           description={t("Used across projects unless a project has its own generation selection.")}
+          feedback={
+            generationError ? (
+              <SettingsFeedback
+                state="error"
+                action={
+                  <Button onClick={() => onGenerationChoice(generationError.choice)}>
+                    {t("Retry")}
+                  </Button>
+                }
+              >
+                {t("Could not save changes")}
+              </SettingsFeedback>
+            ) : undefined
+          }
         >
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
             {!gitGenerationChoice && (
               <span className="text-ui-secondary text-(--ui-text-secondary)">{t("Automatic")}</span>
             )}
             <GitGenerationModelControl
               choice={gitGenerationChoice}
-              onChange={saveDefaultGitGenerationChoice}
+              onChange={onGenerationChoice}
             />
             {gitGenerationChoice && (
-              <Button variant="link" onClick={() => saveDefaultGitGenerationChoice(undefined)}>
+              <Button variant="link" onClick={() => onGenerationChoice(undefined)}>
                 {t("Use automatic selection")}
               </Button>
             )}
           </div>
         </Row>
       </Group>
-      <Group title={t("Code review")} layout="full">
+      <Group title={t("Code review")} scope={t("Applies to all projects on this computer.")}>
         <Row
           id="diff-view"
           label={t("Diff view")}
@@ -72,6 +96,6 @@ export function SourceControlSettings() {
           />
         </Row>
       </Group>
-    </>
+    </div>
   );
 }

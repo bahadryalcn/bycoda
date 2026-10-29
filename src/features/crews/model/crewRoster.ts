@@ -166,18 +166,24 @@ export function crewPolicyImpact(
  * candidate keeps its own settings and ratings, the remaining pool is preserved,
  * and automatic members are untouched.
  */
+/**
+ * Applies one model to fixed members. A member pinned to a single model switches to
+ * the new one; a member with a candidate pool keeps the pool, puts the new model
+ * first and reuses its existing settings when the model is already in the pool.
+ */
 export function applyFixedModel(agents: readonly CrewAgent[], next: CrewCandidate): CrewAgent[] {
-  return agents.map((agent) =>
-    agent.selection === "fixed"
-      ? {
-          ...agent,
-          candidates: [
-            agent.candidates.find((candidate) => candidate.id === next.id) ?? next,
-            ...agent.candidates.filter((candidate) => candidate.id !== next.id),
-          ],
-        }
-      : agent,
-  );
+  return agents.map((agent) => {
+    if (agent.selection !== "fixed") return agent;
+    const existing = agent.candidates.find((candidate) => candidate.id === next.id);
+    if (!existing && agent.candidates.length <= 1) return { ...agent, candidates: [next] };
+    return {
+      ...agent,
+      candidates: [
+        existing ?? next,
+        ...agent.candidates.filter((candidate) => candidate.id !== next.id),
+      ],
+    };
+  });
 }
 
 /** Names for a short inline list: the first few, then how many more. */

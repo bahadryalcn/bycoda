@@ -20,7 +20,7 @@ export function WorkspaceCreationStatus({
   return (
     <div
       data-workspace-creation-status
-      className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-(--ui-text-secondary)"
+      className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)"
       role={error ? "alert" : "status"}
     >
       {error ? (
@@ -38,12 +38,23 @@ export function WorkspaceCreationStatus({
       ) : pending ? (
         t("Checking workspace policy…")
       ) : preview ? (
-        <span className="break-words">
-          {t("Based on {p0} @ {p1}; {p2} uncommitted paths excluded", {
+        // The consequence leads; the exact ref and commit are the hover detail.
+        <span
+          className="break-words"
+          title={t("Based on {p0} @ {p1}", {
             p0: shortWorkspaceRef(preview.baseRef),
             p1: preview.baseCommit.slice(0, 8),
-            p2: preview.excludedPaths,
           })}
+        >
+          <span className="text-content">
+            {t("New worktree from {p0}", { p0: shortWorkspaceRef(preview.baseRef) })}
+          </span>
+          {preview.excludedPaths > 0 ? (
+            <span className="tabular-nums">
+              {" · "}
+              {t("{p0} uncommitted changes not included", { p0: preview.excludedPaths })}
+            </span>
+          ) : null}
         </span>
       ) : null}
     </div>

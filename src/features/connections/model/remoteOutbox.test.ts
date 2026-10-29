@@ -6,9 +6,52 @@ import {
   savePendingRemoteCommand,
 } from "./connections";
 import type { HostCommand } from "./protocol";
-import { markRemoteCommandStopped, remoteCommandWasStopped } from "./remoteOutbox";
+import {
+  markRemoteCommandStopped,
+  remoteCommandWasStopped,
+  pendingRemoteAttachmentIds,
+  pendingRemoteEnvironmentAttachmentIds,
+} from "./remoteOutbox";
 
 beforeEach(() => localStorage.clear());
+
+it.each(["send", "draft"] as const)(
+  "retains an atomic %s without inventing its nested session ID",
+  (type) => {
+    const command: Extract<HostCommand, { type: "create" }> = {
+      type: "create",
+      commandId: "atomic-create",
+      projectId: "p",
+      harness: "codex",
+      model: "test",
+      runtimeMode: "supervised",
+      firstTurn: {
+        type,
+        commandId: "atomic-first",
+        text: "Original prompt",
+        attachments: [
+          {
+            id: "attachment-original",
+            name: "file.txt",
+            mimeType: "text/plain",
+            kind: "file",
+            size: 4,
+          },
+        ],
+      },
+    };
+    savePendingRemoteCommand("project", "env", command, "first-tab");
+    expect(pendingRemoteCommand("project", "env", null, "first-tab")).toEqual(command);
+    expect(command.firstTurn).not.toHaveProperty("sessionId");
+    expect(pendingRemoteAttachmentIds("project", "env", "first-tab")).toEqual([
+      "attachment-original",
+    ]);
+    expect(pendingRemoteEnvironmentAttachmentIds("env")).toEqual(["attachment-original"]);
+    expect(pendingRemoteCommand("project", "env", null, "first-tab")?.commandId).toBe(
+      "atomic-create",
+    );
+  },
+);
 it("persists Stop across command saves without changing the original request or follow-up", () => {
   savePendingRemoteCommand("project", "env", create, "first-tab", followup);
   markRemoteCommandStopped("project", "env", create.commandId);

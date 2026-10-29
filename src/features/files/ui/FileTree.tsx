@@ -1,5 +1,5 @@
 import { TextField } from "../../../shared/ui/TextField";
-import { TreeRow } from "../../../shared/ui/TreeRow";
+import { TreeRow, TreeRowIcon, TreeRowLabel, TreeRowToggle, TreeRowTrailing } from "../../../shared/ui/TreeRow";
 import { Button } from "../../../shared/ui/Button";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
@@ -1583,7 +1583,7 @@ export const FileTree = memo(function FileTree({
           onKeyDown={onKeyDown} onContextMenu={onBackgroundMenu}
           className="flex h-full min-h-0 flex-col outline-none">
           <ActionHost selected={dragOverPath === cwd}
-            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none border-b border-(--ui-pane-border) px-1">
+            className="@container/explorer-root min-h-[calc(var(--ui-control-height-compact)+0.5rem)] shrink-0 gap-0.5 rounded-none px-1">
                 <Button
                   size="sm"
                   variant="ghost"
@@ -2077,7 +2077,7 @@ const TreeNode = memo(function TreeNode({
           }}
           onContextMenu={(e) => onItemContextMenu(entry, e)}
         >
-          <span className="grid size-4 shrink-0 place-items-center text-[var(--ui-text-secondary)]">
+          <TreeRowToggle>
             {entry.isDir ? (
               open ? (
                 <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -2085,24 +2085,23 @@ const TreeNode = memo(function TreeNode({
                 <ChevronRight className="size-3.5" strokeWidth={1.75} />
               )
             ) : null}
-          </span>
-          <span className="shrink-0">
+          </TreeRowToggle>
+          <TreeRowIcon>
             <FileTypeIcon name={entry.name} isDir={entry.isDir} isOpen={open} />
-          </span>
-          <span
-            className={`min-w-0 truncate leading-label ${
-              entry.ignored ? "italic text-[var(--ui-text-secondary)]" : (gitColor ?? "")
-            }`}
-          >
+          </TreeRowIcon>
+          {/* Name stays at content weight; excluded entries recede, Git state lives in the end slot only. */}
+          <TreeRowLabel className={entry.ignored ? "italic text-[var(--ui-text-secondary)]" : undefined}>
             {entry.name}
-          </span>
+          </TreeRowLabel>
           {gitMark ? (
-            <span
-              className={`ms-auto shrink-0 pe-1 text-ui-micro font-medium ${gitColor ?? ""}`}
-              title={entry.isDir ? t("Contains changes") : t(gitMark.label)}
-            >
-              {entry.isDir ? "•" : gitMark.mark}
-            </span>
+            <TreeRowTrailing>
+              <span
+                className={`font-medium ${gitColor ?? ""}`}
+                title={entry.isDir ? t("Contains changes") : t(gitMark.label)}
+              >
+                {entry.isDir ? "•" : gitMark.mark}
+              </span>
+            </TreeRowTrailing>
           ) : null}
         </TreeRow>
       )}

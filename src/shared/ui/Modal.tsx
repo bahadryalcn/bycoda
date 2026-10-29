@@ -1,7 +1,6 @@
 import { translateAt, useLocale, type LanguageDomain } from "../i18n";
 import { NativePopupHost } from "./NativePopupHost";
-import { X } from "./icons";
-import { Button } from "./Button";
+import { PanelHeader } from "./PanelHeader";
 import { useContext, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
@@ -9,28 +8,32 @@ import { LAYER } from "../lib/layers";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
 import { OverlayMenuLayer, OverlayParent, useOverlay } from "./overlay";
 
-export type ModalSize = "sm" | "md" | "lg";
+export type ModalSize = "sm" | "md" | "lg" | "full";
 
 const WIDTH: Record<ModalSize, string> = {
   sm: "w-[min(420px,calc(100vw-24px))]",
   md: "w-[min(560px,calc(100vw-24px))]",
   lg: "w-[min(880px,calc(100vw-24px))]",
+  full: "w-[calc(100vw-24px)]",
 };
 
 /**
  * Header hierarchy follows task context with the existing props. Compact
  * workbench dialogs (`sm`) and end sheets read as panes and use the title role;
- * bounded-task dialogs (`md`, `lg`) use the heading role.
+ * bounded-task dialogs (`md`, `lg`) use the heading role. The header itself is the
+ * shared `PanelHeader` (context, title, description, 28px ghost close).
  */
-const TITLE: Record<"compact" | "task", string> = {
-  compact: "text-ui-title font-medium text-content",
-  task: "text-ui-heading font-medium text-content",
-};
+const FOOTER_ALIGN = {
+  start: "justify-start",
+  end: "justify-end",
+  between: "justify-between",
+} as const;
 
 const TOP: Record<ModalSize, string> = {
   sm: "top-[22%]",
   md: "top-[10%]",
   lg: "top-[8%]",
+  full: "inset-bs-4",
 };
 
 type Props = {
@@ -38,6 +41,8 @@ type Props = {
   onClose: () => void;
   title: string;
   description?: string;
+  /** Optional line above the title naming what the dialog acts on (project, file, session). */
+  context?: ReactNode;
   size?: ModalSize;
   /** Keeps the accessible title while letting focused content own the visual hierarchy. */
   minimalHeader?: boolean;
@@ -51,6 +56,11 @@ type Props = {
   motion?: "auto" | "none";
   /** Actions kept visible below the scrolling content. */
   footer?: ReactNode;
+  /** Horizontal alignment of footer actions. Defaults to `end`; use `between` for a leading secondary action. */
+  footerAlign?: "start" | "end" | "between";
+  /** `auto` (default): the modal owns the one vertical scroll region. `none`: the content owns its own
+   *  scrolling (lists, editors) and the modal only bounds it, so there is never a second scrollbar. */
+  scroll?: "auto" | "none";
   children: ReactNode;
 };
 
@@ -59,6 +69,7 @@ export function ModalPanel({
   onClose,
   title,
   description,
+  context,
   size = "md",
   minimalHeader = false,
   className,
@@ -66,6 +77,8 @@ export function ModalPanel({
   placement = "center",
   motion = "auto",
   footer,
+  footerAlign = "end",
+  scroll = "auto",
   children,
 }: Props) {
   const locale = useLocale(languageDomain);
@@ -85,7 +98,7 @@ export function ModalPanel({
   const titleId = `${uid}-title`;
   const descriptionId = description ? `${uid}-desc` : undefined;
   const sheet = placement === "end";
-  const titleClass = TITLE[sheet || size === "sm" ? "compact" : "task"];
+  const level = sheet || size === "sm" ? "compact" : "task";
 
   return (
     <OverlayMenuLayer.Provider value={LAYER.dialogPopover}>
@@ -111,50 +124,41 @@ export function ModalPanel({
             aria-labelledby={titleId}
             aria-describedby={descriptionId}
             onMouseDown={(event) => event.stopPropagation()}
-            className={`relative isolate flex flex-col overflow-hidden border-stroke shadow-(--ui-elevation-floating) ${sheet ? "h-full rounded-none border-s" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
+            className={`relative isolate flex flex-col overflow-hidden border-(color:--ui-pane-border) shadow-(--ui-elevation-floating) ${sheet ? "h-full rounded-none border-s" : `border rounded-(--ui-radius-popup) ${fitViewport ? "max-h-[calc(100dvh-32px)]" : ""}`} ${className ?? ""}`}
           >
             {/* The shared raised popup surface, so the dialog reads apart from the work beneath. */}
             <GlassBackdrop />
             <div className="modal-panel relative z-[1] flex min-h-0 flex-1 flex-col">
-              <header
+              <PanelHeader
                 className={
                   minimalHeader
                     ? "absolute top-3 right-3 z-[2]"
                     : sheet
-                      ? "flex shrink-0 items-start gap-2 border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
-                      : "flex shrink-0 items-start gap-2 px-4 pt-3"
+                      ? "border-b border-(--ui-tone-neutral-border) px-4 py-2.5"
+                      : "px-4 pt-3"
                 }
+                title={title}
+                titleId={titleId}
+                level={level}
+                context={minimalHeader ? undefined : context}
+                description={description}
+                descriptionId={descriptionId}
+                textOnlyForAssistiveTech={minimalHeader}
+                closeRef={closeRef}
+                closeLabel={t("Close")}
+                onClose={onClose}
+              />
+              <div
+                ref={lockOverscroll}
+                data-modal-scroll={scroll}
+                className={`min-h-0 flex-1 overscroll-none ${scroll === "none" ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}
               >
-                <div className={minimalHeader ? "sr-only" : "min-w-0 flex-1 pt-0.5"}>
-                  <h2 id={titleId} className={titleClass}>
-                    {title}
-                  </h2>
-                  {description ? (
-                    <p
-                      id={descriptionId}
-                      className="ui-secondary-text mt-0.5 break-words leading-snug"
-                    >
-                      {description}
-                    </p>
-                  ) : null}
-                </div>
-                <Button
-                  ref={closeRef}
-                  type="button"
-                  iconOnly
-                  label={t("Close")}
-                  tooltip={t("Close")}
-                  variant="ghost"
-                  onClick={onClose}
-                >
-                  <X className="size-3.5" strokeWidth={1.75} />
-                </Button>
-              </header>
-              <div ref={lockOverscroll} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
                 {children}
               </div>
               {footer ? (
-                <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3">
+                <footer
+                  className={`flex shrink-0 flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) px-4 py-3 ${FOOTER_ALIGN[footerAlign]}`}
+                >
                   {footer}
                 </footer>
               ) : null}

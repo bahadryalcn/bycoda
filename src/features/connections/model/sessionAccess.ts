@@ -28,6 +28,7 @@ export interface SessionAccess {
     revision?: number,
     /** Ask for block digests and the transcript head (`sessions.digests`). */
     digests?: boolean,
+    preview?: boolean,
   ): Promise<HostSessionPage>;
   sync(
     sessionId: string,
@@ -56,12 +57,12 @@ function hostAccess(kind: SessionAccess["kind"], request: HostSessionRequest): S
         projectId,
         ...(known === undefined ? {} : { known }),
       }),
-    page: (sessionId, before, revision, digests) =>
+    page: (sessionId, before, revision, digests, preview = true) =>
       request("sessions.page", {
         sessionId,
         before,
         revision,
-        preview: true,
+        preview,
         ...(digests ? { digests: true } : {}),
       }),
     sync: (sessionId, options = {}) => request("sessions.sync", { sessionId, ...options }),

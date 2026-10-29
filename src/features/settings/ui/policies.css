@@ -3,7 +3,7 @@
   grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
   flex: 1;
   min-block-size: 0;
-  gap: 1rem;
+  gap: 1.5rem;
   min-inline-size: 0;
 }
 .policy-sidebar {
@@ -27,9 +27,7 @@
 
 .policy-navigation {
   display: grid;
-  gap: 0.25rem;
-  padding-block: 0.25rem;
-  border-block: 1px solid var(--ui-tone-neutral-border);
+  gap: 2px;
 }
 
 .policy-link-title {
@@ -52,25 +50,25 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  background: var(--ui-surface);
+  /* Reading canvas: no extra surface, only the structural pane edge. */
   border-inline-start: 1px solid var(--color-stroke);
   padding-inline-start: clamp(1rem, 3cqi, 2rem);
 }
 .policy-reader-context {
   display: grid;
   gap: 8px;
-  max-inline-size: 80ch;
+  max-inline-size: 46rem;
   margin-block-end: 16px;
 }
 .policy-reader-context p { margin: 0; }
 
 .policy-document {
-  max-inline-size: 80ch;
+  max-inline-size: 46rem;
   margin-inline: 0;
   overflow-wrap: anywhere;
   user-select: text;
-  font-size: var(--ui-font-secondary);
-  line-height: 1.75;
+  font-size: var(--ui-font-body);
+  line-height: 1.6;
 }
 @container (max-width: 620px) {
   .policies-settings {

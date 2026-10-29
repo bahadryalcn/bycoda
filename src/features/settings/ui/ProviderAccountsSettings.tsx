@@ -332,7 +332,7 @@ export function ProviderAccountsSettings({
             </>
           ) : null}
         </div>
-        <div className="min-w-0">
+        <div className={accountProvider ? "provider-accounts-list min-w-0" : "min-w-0"}>
           {PROVIDER_ACCOUNT_PROVIDERS.map((provider) => {
             const accounts = providerAccounts(provider);
             const adding = editor?.provider === provider && !editor.accountId;
@@ -498,7 +498,7 @@ export function ProviderAccountsSettings({
         </div>
         <div
           hidden={harness !== "cursor" && harness !== "grok"}
-          className="flex flex-wrap items-center gap-2 border-t border-(--color-stroke) px-3 py-2.5"
+          className="provider-signin-box"
         >
           <span className="min-w-[12rem] flex-1 text-ui-micro text-(--ui-text-secondary)">
             {harness === "cursor"
@@ -590,7 +590,7 @@ export function ProviderAccountEditor({
   const adding = !editor.accountId;
   return (
     <form
-      className="flex min-h-11 items-center border-b border-(--color-stroke) px-3 py-1.5 last:border-b-0"
+      className="flex min-h-11 items-center px-3 py-1.5"
       onSubmit={onSubmit}
     >
       <div data-provider-account-editor-field className="flex min-w-0 flex-1 items-center gap-1.5">

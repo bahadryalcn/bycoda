@@ -1,4 +1,5 @@
 import { useCallback, type MutableRefObject } from "react";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import { formatSessionTitle, type Session } from "../../../features/sessions/model/session";
 import {
@@ -6,6 +7,7 @@ import {
   persistFingerprint,
   shouldPersistSession,
   upsertSession,
+  updateOwnedSessionMetadata,
 } from "../../../features/sessions/data/sessionStore";
 import { rememberLoadedSession } from "../../../features/sessions/data/sessionCache";
 import { t } from "../../../shared/i18n";
@@ -40,7 +42,9 @@ export function useSessionRename({
       if (open) {
         const title = formatSessionTitle(open.harness, trimmed);
         const updated = { ...open, title };
-        if (shouldPersistSession(updated)) {
+        if (hostSessionBinding(updated)) {
+          await updateOwnedSessionMetadata(sessionId, { title });
+        } else if (shouldPersistSession(updated)) {
           const saved = await upsertSession(updated);
           if (!saved) throw new Error(t("Could not save changes"));
           lastPersisted.current.set(sessionId, persistFingerprint(updated));
@@ -56,7 +60,9 @@ export function useSessionRename({
           ...restored,
           title: formatSessionTitle(restored.harness, trimmed),
         };
-        const saved = await upsertSession(updated);
+        const saved = hostSessionBinding(updated)
+          ? await updateOwnedSessionMetadata(sessionId, { title: updated.title })
+          : await upsertSession(updated);
         if (!saved) throw new Error(t("Could not save changes"));
         rememberLoadedSession(loadedSessionCache.current, updated);
         lastPersisted.current.set(sessionId, persistFingerprint(updated));

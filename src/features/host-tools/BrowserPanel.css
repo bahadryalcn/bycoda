@@ -9,14 +9,26 @@
   overflow: hidden;
 }
 
-.host-browser-panel > .host-browser-toolbar {
+/* One chrome row: address + open/refresh, then view and control tools.
+   Wraps as a unit when the pane is narrow; 28px controls, 4px gaps. */
+.host-browser-panel > .host-browser-bar {
   order: 0;
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  align-items: center;
   flex: none;
+  gap: 4px 8px;
+  padding: 2px 4px;
+  background: var(--ui-surface-panel);
+}
+
+.host-browser-bar > .host-browser-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
+  flex: 1 1 16rem;
+  align-items: center;
   gap: 2px;
-  padding: 3px 6px;
-  border-block-end: 1px solid var(--color-stroke);
+  min-inline-size: 0;
 }
 
 .host-browser-panel .host-browser-toolbar .host-browser-url {
@@ -24,15 +36,76 @@
   min-inline-size: 0;
 }
 
-.host-browser-panel > .host-browser-view-actions {
-  order: 4;
+.host-browser-bar > .host-browser-view-actions {
   display: flex;
   align-items: center;
-  flex: none;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   gap: 2px;
-  padding: 3px 6px;
-  border-block-start: 1px solid var(--color-stroke);
+  min-inline-size: 0;
+}
+
+/* Visible state line: browser state, current page, in-flight work, limits. */
+.host-browser-panel > .host-browser-statusline {
+  order: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: none;
+  gap: 2px 12px;
+  min-block-size: 1.75rem;
+  padding: 2px 8px;
+  border-block-end: 1px solid var(--color-stroke);
+  background: var(--ui-surface-panel);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+}
+
+.host-browser-state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--color-content);
+  font-weight: 500;
+}
+
+.host-browser-state-dot {
+  inline-size: 6px;
+  block-size: 6px;
+  border-radius: 50%;
+  background: var(--ui-text-muted);
+}
+
+.host-browser-statusline[data-browser-state="open"] .host-browser-state-dot {
+  background: var(--color-success);
+}
+
+.host-browser-statusline[data-browser-state="unavailable"] .host-browser-state-dot {
+  background: var(--color-danger);
+}
+
+.host-browser-current-url {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+.host-browser-current-label {
+  flex: none;
+  font-family: var(--font-sans, inherit);
+}
+
+.host-browser-restriction {
+  flex: 1 1 100%;
+  min-inline-size: 0;
 }
 
 .host-browser-control-status {
@@ -147,7 +220,7 @@
 }
 
 .host-browser-panel > :is(.host-browser-notice, .host-browser-error, .host-browser-setup) {
-  order: 1;
+  order: 2;
   flex: none;
   padding: 6px 10px;
   margin: 0;

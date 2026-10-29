@@ -83,7 +83,7 @@ it.each([
       url: "https://target.example.com",
       token: "keep-token",
     });
-    expect(container.textContent).toContain("Configured");
+    expect(container.textContent).toContain("Verified at");
     expect(container.querySelector('input[type="password"]')).toBeNull();
   },
 );
@@ -132,6 +132,8 @@ it("separates a Linear team read failure from saved credentials and offers retry
   });
   await act(async () => root.render(createElement(LinearSettings)));
   expect(container.textContent).toContain("Configured");
+  // Reading saved credentials never claims the provider accepted them.
+  expect(container.textContent).not.toContain("Verified at");
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Teams unavailable");
   fail = false;
   await click("Retry");
@@ -234,7 +236,7 @@ it.each([
       vi.mocked(invoke).mock.calls.filter(([command]) => command === saveCommand),
     ).toHaveLength(1);
     await act(async () => finish());
-    expect(container.textContent).toContain("Configured");
+    expect(container.textContent).toContain("Verified at");
     expect(container.querySelector('button[aria-busy="true"]')).toBeNull();
   },
 );

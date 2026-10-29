@@ -209,6 +209,110 @@ const reference = (association: { associationId: string; sourceEpoch: string }) 
   associationId: association.associationId,
   sourceEpoch: association.sourceEpoch,
 });
+
+describe("private source projection observation", () => {
+  const scope = { sessionId: "logical.session", migrationId: "migration.round", generation: 7 };
+  it("uses the original associated source, serializes status, and freezes the exact unqualified result", async () => {
+    const prepareId = randomUUID();
+    const f = await fixture({
+      config: { prepareId, projectionDelay: 40 },
+      registryOptions: { heartbeatMs: 10 },
+    });
+    const association = await f.registry.register(f.first.input);
+    const observed = f.registry.observeProjection(reference(association), scope);
+    const status = f.registry.status(reference(association));
+    expect(await observed).toEqual({
+      version: 1,
+      qualified: false,
+      prepareId,
+      status: "unverified",
+      receiptCount: 0,
+      missingCoverage: ["fixture-not-native-proof"],
+    });
+    expect(await status).toEqual(association);
+    const result = await f.registry.observeProjection(reference(association), scope);
+    expect(Object.isFrozen(result)).toBe(true);
+    expect(Object.isFrozen(result.missingCoverage)).toBe(true);
+    const audit = await f.audit();
+    const calls = audit.filter((entry) => entry.kind === "source-projection-observe");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toEqual({
+      version: 1,
+      kind: "source-projection-observe",
+      requestId: 1,
+      sourceEpoch: association.sourceEpoch,
+      ...scope,
+    });
+    expect(audit.findIndex((entry) => entry.kind === "source-status")).toBeGreaterThan(
+      audit.findIndex((entry) => entry.kind === "source-projection-observe"),
+    );
+    expect(f.opens).toBe(1);
+  });
+  it("rejects stale refs, caller authority and oversized generation before sending", async () => {
+    const f = await fixture();
+    const association = await f.registry.register(f.first.input);
+    await expect(
+      f.registry.observeProjection({ ...reference(association), sourceEpoch: randomUUID() }, scope),
+    ).rejects.toMatchObject({ code: "SCOPE_CHANGED" });
+    for (const invalid of [
+      { ...scope, generation: Number.MAX_SAFE_INTEGER + 1 },
+      { ...scope, qualified: true },
+      { ...scope, sessionId: "route#not-a-target" },
+    ])
+      await expect(
+        f.registry.observeProjection(reference(association), invalid),
+      ).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    expect((await f.audit()).some((entry) => entry.kind === "source-projection-observe")).toBe(
+      false,
+    );
+    expect(await f.registry.status(reference(association))).toEqual(association);
+  });
+  it("keeps the accepted queue charged while the actual child operation is pending", async () => {
+    const f = await fixture({
+      config: { projectionDelay: 100 },
+      registryOptions: { maxQueuedStatus: 1 },
+    });
+    const association = await f.registry.register(f.first.input);
+    const pending = f.registry.observeProjection(reference(association), scope);
+    await expect(f.registry.observeProjection(reference(association), scope)).rejects.toMatchObject(
+      { code: "CAPACITY" },
+    );
+    await expect(f.registry.status(reference(association))).rejects.toMatchObject({
+      code: "CAPACITY",
+    });
+    const retiring = f.registry.unregister(reference(association));
+    await expect(f.registry.observeProjection(reference(association), scope)).rejects.toMatchObject(
+      { code: "SOURCE_CLOSED" },
+    );
+    expect((await pending).qualified).toBe(false);
+    await retiring;
+    expect(f.registry.observation().sources).toBe(0);
+    expect(
+      (await f.audit()).filter((entry) => entry.kind === "source-projection-observe"),
+    ).toHaveLength(1);
+  });
+  it.each([
+    { projectionError: "DEADLINE" },
+    { disconnectProjection: true },
+    { projectionChange: { sourceEpoch: randomUUID() } },
+    { projectionObservation: { qualified: true } },
+    { projectionObservation: { receiptCount: 65 } },
+    { projectionObservation: { missingCoverage: ["🦀".repeat(129)] } },
+    { projectionObservation: { fullCheckpoint: true } },
+  ])("closes on uncertain/mismatched replies without resend: %j", async (config) => {
+    const f = await fixture({ config });
+    const association = await f.registry.register(f.first.input);
+    await expect(f.registry.observeProjection(reference(association), scope)).rejects.toBeDefined();
+    expect(f.children[0].exitCode !== null || f.children[0].signalCode !== null).toBe(true);
+    await expect(f.registry.observeProjection(reference(association), scope)).rejects.toMatchObject(
+      { code: "SOURCE_CLOSED" },
+    );
+    expect(f.opens).toBe(1);
+    expect(
+      (await f.audit()).filter((entry) => entry.kind === "source-projection-observe"),
+    ).toHaveLength(1);
+  });
+});
 const lookup = (input: {
   deploymentId: string;
   registrationNonce: string;

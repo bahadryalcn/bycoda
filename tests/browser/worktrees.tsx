@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { setRemoteCommandRunner } from "../../src/platform/tauri/fs";
 import { WorktreesPage } from "../../src/features/source-control/ui/WorktreesPage";
+import { SourceControlSettings } from "../../src/features/settings/ui/SourceControlSettings";
 import type { Worktree } from "../../src/features/source-control/model/worktrees";
 import { Modal } from "../../src/shared/ui/Modal";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
@@ -13,7 +16,12 @@ import type {
 } from "../../src/features/workspaces/model/contracts";
 
 const query = new URLSearchParams(location.search);
-const managed = query.has("managed");
+// `?populated` is the realistic Source Control settings composition: global Git preferences, a
+// selected-repository boundary, a project policy override, storage pressure and long collections.
+// `?remote` opens the same data as a project on a connected machine.
+const populated = query.has("populated");
+const remote = query.has("remote");
+const managed = query.has("managed") || populated;
 const machine = {
   id: "workspace-fixture-machine",
   environmentId: "workspace-fixture-env",
@@ -44,8 +52,68 @@ let policy: WorkspacePolicy = {
     minimumFreeBytes: 20 * 1_073_741_824,
   },
 };
-let revision = 1;
-let workspaces: ManagedWorkspace[] = [
+if (populated) {
+  policy = {
+    ...policy,
+    defaultMode: "current",
+    pinned: true,
+    retention: {
+      active: "never",
+      idle: 10 * 86_400_000,
+      finished: 3 * 86_400_000,
+      merged: 86_400_000,
+      abandoned: "never",
+    },
+  };
+}
+let revision = populated ? 7 : 1;
+const populatedWorkspace = (
+  index: number,
+  state: ManagedWorkspace["state"],
+  extra: Partial<ManagedWorkspace> = {},
+): ManagedWorkspace => ({
+  id: `managed-populated-${index}`,
+  repositoryId: "repo",
+  projectId: project.id,
+  environmentId: machine.environmentId,
+  owner: { kind: index % 2 ? "session" : "task", id: `owner-${index}-0123456789abcdef` },
+  path: `/fixture/worktrees/wt-populated-${index}-${"deep-folder-".repeat(index % 3)}end`,
+  branchRef: `refs/heads/bycoda/${index % 2 ? "s" : "t"}/${
+    [
+      "login-form-validation",
+      "fix-flaky-terminal-resize",
+      "release-notes-generator",
+      "settings-redesign-composition-with-an-unusually-long-branch-name-that-must-wrap",
+      "update-dependencies",
+      "mobile-pairing-recovery",
+      "archive-search",
+      "worktree-retention-copy",
+    ][index % 8]
+  }`,
+  baseRef: "refs/heads/main",
+  baseCommit: "a".repeat(40),
+  targetBranchRef: "refs/heads/main",
+  state,
+  directoryState: "present",
+  revision: 1,
+  lastActivityAt: 1,
+  pinned: false,
+  ...extra,
+});
+let workspaces: ManagedWorkspace[] = populated
+  ? [
+      populatedWorkspace(1, "active"),
+      populatedWorkspace(2, "idle", { pinned: true }),
+      populatedWorkspace(3, "finished"),
+      populatedWorkspace(4, "merged", { directoryState: "blocked" }),
+      populatedWorkspace(5, "abandoned"),
+      populatedWorkspace(6, "idle"),
+      populatedWorkspace(7, "merged", { directoryState: "removing" }),
+      populatedWorkspace(8, "finished", { pinned: true }),
+      populatedWorkspace(9, "merged", { directoryState: "removed" }),
+      populatedWorkspace(10, "idle"),
+    ]
+  : [
   {
     id: "managed-blocked",
     repositoryId: "repo",
@@ -80,9 +148,16 @@ let workspaces: ManagedWorkspace[] = [
     lastActivityAt: 1,
     pinned: false,
   },
-];
+    ];
 const workspaceCalls: { method: string; params: Record<string, unknown> }[] = [];
-Object.assign(window, { workspaceFixtureCalls: workspaceCalls });
+Object.assign(window, {
+  workspaceFixtureCalls: workspaceCalls,
+  // Simulates another editor saving the Host policy while this page holds unsaved edits.
+  workspaceFixtureHostChangesPolicy: () => {
+    policy = { ...policy, defaultMode: policy.defaultMode === "worktree" ? "current" : "worktree" };
+    ++revision;
+  },
+});
 
 // In-memory transport only. No owner host, filesystem or native deletion is reachable.
 mockWindows("main");
@@ -99,7 +174,7 @@ const makeTree = (name: string, branch: string, state: Partial<Worktree> = {}): 
   sessionIds: [],
   ...state,
 });
-const trees = [
+const baseTrees = [
   makeTree("settings-project", "main", { path: "/fixture/settings-project", isMain: true }),
   makeTree("fix-go-to-file-deleted-paths", "fix/go-to-file-deleted-paths"),
   makeTree("wt-mc-851db1b6", "mc/851db1b6", {
@@ -112,6 +187,26 @@ const trees = [
     locked: true,
   }),
 ];
+// Populated: every status the page can show, plus enough rows to exceed the bounded list.
+const populatedTrees = [
+  ...baseTrees.slice(0, 3),
+  makeTree("publication-unknown", "feature/publication-unknown", { unpushed: null }),
+  makeTree("three-unpublished", "feature/three-unpublished", { unpushed: 3, dirty: true }),
+  makeTree("detached-review", "", { branch: null, head: "def5678" }),
+  ...baseTrees.slice(3),
+  ...Array.from({ length: 9 }, (_, index) =>
+    makeTree(`spike-${index + 1}`, `spike/${["cache", "queue", "sync", "ui", "auth"][index % 5]}-${index + 1}`, {
+      dirty: index % 4 === 0 ? true : false,
+      unpushed: index % 3 === 0 ? 2 : 0,
+      sessionIds: index % 5 === 0 ? ["spike-session"] : [],
+    }),
+  ),
+  // A managed directory is listed once, in the managed roster, never repeated here.
+  makeTree("wt-populated-1-end", "bycoda/s/login-form-validation", {
+    path: "/fixture/worktrees/wt-populated-1-end",
+  }),
+];
+const trees = populated ? populatedTrees : baseTrees;
 mockIPC((command, args = {}) => {
   if (command === "managed_worktree_removal_plan" || command === "managed_worktree_removal_apply") {
     const method =
@@ -211,12 +306,12 @@ mockIPC((command, args = {}) => {
         root: "/fixture/worktrees",
         materializedBytes: 42 * 1_073_741_824,
         sharedCacheBytes: 8 * 1_073_741_824,
-        recoveryBytes: null,
+        recoveryBytes: populated ? Math.round(1.4 * 1_073_741_824) : null,
         freeBytes: 18 * 1_073_741_824,
         budgetBytes: policy.disk.budgetBytes,
         warningRatio: policy.disk.warningRatio,
         minimumFreeBytes: policy.disk.minimumFreeBytes,
-        materialization: "paused",
+        materialization: populated ? "allowed" : "paused",
         requiredFreeBytes: 2 * 1_073_741_824,
       };
     if (method === "workspaces.cleanup.plan") {
@@ -264,21 +359,52 @@ mockIPC((command, args = {}) => {
 applyThemePreference(
   new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
 );
+// A connected machine runs its commands through the same in-memory transport.
+if (remote) setRemoteCommandRunner((command, args) => invoke(command, args));
+const fixtureCwd = remote
+  ? `remote://${machine.environmentId}${project.cwd}`
+  : project.cwd;
+const removeDisabled = async () => {
+  throw new Error("Deletion is disabled in this fixture");
+};
 void Promise.all([setLanguagePreference("en"), setDomainLanguagePreference("git", "app")]).then(
   () => {
     createRoot(document.getElementById("root")!).render(
-      <main className="min-h-screen bg-background-base p-6 text-content">
-        <Modal title="Worktrees" size="lg" onClose={() => {}}>
-          <div className="bycoda-settings-workbench p-4">
-            <WorktreesPage
-              cwd="/fixture/settings-project"
-              onRemove={async () => {
-                throw new Error("Deletion is disabled in this fixture");
-              }}
-            />
+      populated ? (
+        // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
+        // The app shell locks the document, so the track scrolls inside itself as in Settings.
+        <main
+          className="bg-background-base text-content"
+          style={{ display: "flex", height: "100vh" }}
+        >
+          <nav
+            aria-hidden="true"
+            style={{ flex: "none", inlineSize: 200, background: "var(--ui-surface-panel)" }}
+          />
+          <div
+            className="bycoda-settings-workbench"
+            data-testid="populated-scroller"
+            style={{ flex: 1, minInlineSize: 0, overflowY: "auto" }}
+          >
+            <div data-settings-scroller data-settings-width="workspace">
+              <div className="bycoda-settings-form" data-testid="populated-settings">
+                <div className="settings-topics">
+                  <SourceControlSettings />
+                  <WorktreesPage boundary cwd={fixtureCwd} onRemove={removeDisabled} />
+                </div>
+              </div>
+            </div>
           </div>
-        </Modal>
-      </main>,
+        </main>
+      ) : (
+        <main className="min-h-screen bg-background-base p-6 text-content">
+          <Modal title="Worktrees" size="lg" onClose={() => {}}>
+            <div className="bycoda-settings-workbench p-4">
+              <WorktreesPage cwd={fixtureCwd} onRemove={removeDisabled} />
+            </div>
+          </Modal>
+        </main>
+      ),
     );
   },
 );

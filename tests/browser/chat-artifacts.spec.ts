@@ -40,7 +40,8 @@ test("background commands wrap without losing their start and remain separate", 
             .every(
               (row, i) => row.getBoundingClientRect().top >= rows[i].getBoundingClientRect().bottom,
             ),
-          divider: getComputedStyle(rows[1].parentElement!).borderTopWidth,
+          // Rows are separated by spacing, not rules: the list has no frame.
+          frame: getComputedStyle(rows[1].parentElement!).borderTopWidth,
         };
       });
       expect(geometry).toEqual({
@@ -48,7 +49,7 @@ test("background commands wrap without losing their start and remain separate", 
         startsVisible: true,
         wraps: true,
         separated: true,
-        divider: "1px",
+        frame: "0px",
       });
       await expect(
         dock.getByRole("button", { name: "Stop all background work", exact: true }),
@@ -109,11 +110,12 @@ for (const layout of ["chat", "full"] as const) {
         expect(longBox.x + longBox.width).toBeCloseTo(shortBox.x + shortBox.width, 0);
         expect(longBox.width).toBeGreaterThan(shortBox.width);
         expect(longBox.width).toBeLessThanOrEqual(row.width - 70);
-        expect(
-          await short.evaluate((node) => parseFloat(getComputedStyle(node).borderRadius)),
-        ).toBeGreaterThan(shortBox.height / 2);
+        // One bubble shape for every message length; a draft differs by fill.
+        await expect(short).toHaveCSS("border-radius", "12px");
         await expect(long).toHaveCSS("border-radius", "12px");
-        await expect(draft).toHaveCSS("border-style", "dashed");
+        const fill = (locator: typeof short) =>
+          locator.evaluate((node) => getComputedStyle(node).backgroundColor);
+        expect(await fill(draft)).not.toBe(await fill(short));
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
           width,
         );
@@ -160,7 +162,12 @@ test("chat messages, attachment references and running work keep a readable hier
       const summary = dock.locator(".activity-dock-summary");
       const trackBox = (await track.boundingBox())!;
       const summaryBox = (await summary.boundingBox())!;
-      expect(trackBox.x).toBeGreaterThanOrEqual(summaryBox.x + summaryBox.width);
+      // Wide docks keep the pacing track beside the summary; a narrow dock gives the
+      // summary its own line and the track wraps below it. Never overlapping.
+      expect(
+        trackBox.x >= summaryBox.x + summaryBox.width - 0.5 ||
+          trackBox.y >= summaryBox.y + summaryBox.height - 0.5,
+      ).toBe(true);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

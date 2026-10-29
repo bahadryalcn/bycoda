@@ -221,3 +221,25 @@
     display: none;
   }
 }
+
+/* Visible discovery state: count, paused and the workspace being scanned. */
+.dev-servers-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+.dev-servers-paused {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--color-content);
+  font-weight: 500;
+}
+.dev-server-process {
+  padding-block-start: 8px;
+}

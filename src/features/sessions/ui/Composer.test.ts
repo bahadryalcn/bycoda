@@ -1232,7 +1232,7 @@ describe("Composer question focus", () => {
     const textarea = document.querySelector("textarea")!;
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Add files or skills"]')!
         .click(),
     );
     const skillsButton = Array.from(
@@ -1561,11 +1561,11 @@ describe("Composer question focus", () => {
     );
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
         .click(),
     );
     const options = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("[data-composer-plus] button"),
+      document.querySelectorAll<HTMLButtonElement>("[data-composer-mode-menu] button"),
     );
     const operator = options.find((button) => button.textContent?.includes("Operator"))!;
     expect(operator).toBeDefined();
@@ -1995,7 +1995,7 @@ describe("Composer question focus", () => {
 
     await act(async () =>
       container
-        .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
+        .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
         .click(),
     );
     const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
@@ -2217,7 +2217,7 @@ describe("Composer question focus", () => {
     expect(container.textContent).toContain(
       "Update bycoda to create managed sessions on this remote Host.",
     );
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="Send"]')?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Send"]')?.disabled).toBe(true);
     const textarea = container.querySelector("textarea")!;
     await act(async () =>
       textarea.dispatchEvent(
@@ -2230,7 +2230,7 @@ describe("Composer question focus", () => {
       textarea.value = "/draft Keep this remote draft";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     });
-    expect(container.querySelector<HTMLButtonElement>('[aria-label="Save draft"]')?.disabled).toBe(
+    expect(container.querySelector<HTMLButtonElement>('[aria-label^="Save draft"]')?.disabled).toBe(
       true,
     );
     await act(async () =>
@@ -2423,7 +2423,7 @@ describe("Composer question focus", () => {
       );
       await act(async () =>
         container
-          .querySelector<HTMLButtonElement>('[aria-label="Add files or choose a mode"]')!
+          .querySelector<HTMLButtonElement>('[aria-label="Mode"]')!
           .click(),
       );
       const draftMode = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>

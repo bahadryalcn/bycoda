@@ -1,4 +1,8 @@
-import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: string[] = [];
@@ -127,7 +131,10 @@ async function startTurn(
     text: options.text ?? "summarize the changelog",
     attachments: [],
     onAccepted: options.onAccepted,
-    onEvent: (event) => { captureNativeOutputEvent(sessionId, event); events.push(event); },
+    onEvent: (event) => {
+      captureNativeOutputEvent(sessionId, event);
+      events.push(event);
+    },
   });
 
   await waitFor(() => parse().some((m) => m.method === "initialize"), "initialize");
@@ -2951,26 +2958,54 @@ describe("Codex failure recovery", () => {
 });
 
 it("retains each Native notification origin through delayed image and ordered queue application", async () => {
-  __codexTestReset(); sent.length=0; onLine=undefined;
-  writeChild.mockImplementation(async(_id,line)=>{sent.push(line);});
-  let release!:()=>void;
-  saveGeneratedImage.mockImplementationOnce(()=>new Promise(resolve=>{release=()=>resolve({path:"/app-data/generated-images/image.png",mimeType:"image/png",size:8});}));
-  const {events,turn}=await startTurn("codex-causal");
-  const imageLine=JSON.stringify({method:"item/completed",params:{item:{id:"causal-image",type:"imageGeneration",result:"aW1hZ2U="}}});
-  const image=nativeOutputFrame("codex-causal",imageLine,()=>onLine!(imageLine));
-  const textLine=JSON.stringify({method:"item/agentMessage/delta",params:{itemId:"causal-text",delta:"after causal image"}});
-  const text=nativeOutputFrame("codex-causal",textLine,()=>onLine!(textLine));
+  __codexTestReset();
+  sent.length = 0;
+  onLine = undefined;
+  writeChild.mockImplementation(async (_id, line) => {
+    sent.push(line);
+  });
+  let release!: () => void;
+  saveGeneratedImage.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () =>
+          resolve({ path: "/app-data/generated-images/image.png", mimeType: "image/png", size: 8 });
+      }),
+  );
+  const { events, turn } = await startTurn("codex-causal");
+  const imageLine = JSON.stringify({
+    method: "item/completed",
+    params: { item: { id: "causal-image", type: "imageGeneration", result: "aW1hZ2U=" } },
+  });
+  const image = nativeOutputFrame("codex-causal", imageLine, () => onLine!(imageLine));
+  const textLine = JSON.stringify({
+    method: "item/agentMessage/delta",
+    params: { itemId: "causal-text", delta: "after causal image" },
+  });
+  const text = nativeOutputFrame("codex-causal", textLine, () => onLine!(textLine));
   expect(image().pendingCausalWork).toBeGreaterThan(0);
   expect(text().pendingCausalWork).toBeGreaterThan(0);
-  expect(events.some(e=>e.type==="message.delta"&&e.text==="after causal image")).toBe(false);
+  expect(events.some((e) => e.type === "message.delta" && e.text === "after causal image")).toBe(
+    false,
+  );
   release();
-  await waitFor(()=>events.some(e=>e.type==="message.delta"&&e.text==="after causal image"),"causal queue");
-  const imageEvent=events.find(e=>e.type==="image.generated")!;
-  const textEvent=events.find(e=>e.type==="message.delta"&&e.text==="after causal image")!;
+  await waitFor(
+    () => events.some((e) => e.type === "message.delta" && e.text === "after causal image"),
+    "causal queue",
+  );
+  const imageEvent = events.find((e) => e.type === "image.generated")!;
+  const textEvent = events.find(
+    (e) => e.type === "message.delta" && e.text === "after causal image",
+  )!;
   expect(getNativeOutputEventOrigin(imageEvent)).not.toBeNull();
   expect(getNativeOutputEventOrigin(textEvent)).not.toBeNull();
   expect(getNativeOutputEventOrigin(imageEvent)).not.toBe(getNativeOutputEventOrigin(textEvent));
-  await vi.waitFor(()=>{expect(image().pendingCausalWork).toBe(0);expect(text().pendingCausalWork).toBe(0);});
-  notify("turn/completed",{turn:{id:"turn_1",status:"completed"}});await turn;
-  await stopCodexSession("codex-causal"); __codexTestReset();
+  await vi.waitFor(() => {
+    expect(image().pendingCausalWork).toBe(0);
+    expect(text().pendingCausalWork).toBe(0);
+  });
+  notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+  await turn;
+  await stopCodexSession("codex-causal");
+  __codexTestReset();
 });

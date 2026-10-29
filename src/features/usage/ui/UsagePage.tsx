@@ -60,12 +60,13 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
               <h2>{t("Provider account limit")}</h2>
               <Button
                 className="shrink-0"
-                aria-label={t("Refresh usage")}
-                title={t("Refresh usage")}
+                variant="ghost"
+                iconOnly
+                label={t("Refresh usage")}
+                tooltip={t("Refresh usage")}
                 onClick={() => setRefresh((v) => v + 1)}
               >
-                <RefreshCw aria-hidden strokeWidth={1.75} />
-                {t("Refresh usage")}
+                <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
               </Button>
             </div>
             <div className="usage-accounts">
@@ -92,7 +93,7 @@ export function UsagePage({ limitsOnly = false }: { limitsOnly?: boolean }) {
               ) : null}
             </div>
             <UsageBudgets refresh={refresh} />
-            <AdvancedSettings id="usage-display-preferences" settingIds={["show-remaining-usage"]} title={t("Display preferences")} defaultOpen={false}>
+            <AdvancedSettings settingIds={["show-remaining-usage"]} title={t("Display preferences")} defaultOpen={false}>
               <UsageDisplaySettings />
             </AdvancedSettings>
           </div>

@@ -15,6 +15,34 @@ type Entry = {
   passive: boolean;
 };
 const entries: Entry[] = [];
+/* WebKit does not focus a button on click, so `document.activeElement` is the body when a
+   pointer opens an overlay. The last pointer-activated control is the focus-return fallback. */
+const TRIGGER_SELECTOR =
+  "button, [role='button'], [role='combobox'], [role='menuitem'], [role='tab'], a[href], summary, [tabindex]";
+let pointerTrigger: HTMLElement | null = null;
+let pointerTriggerAt = 0;
+/** An overlay opened by a click appears within moments; an older press is not its trigger. */
+const TRIGGER_WINDOW_MS = 1500;
+if (typeof document !== "undefined") {
+  document.addEventListener(
+    "pointerdown",
+    (event) => {
+      pointerTriggerAt = performance.now();
+      pointerTrigger =
+        event.target instanceof Element ? event.target.closest<HTMLElement>(TRIGGER_SELECTOR) : null;
+    },
+    true,
+  );
+}
+function returnTarget(): HTMLElement | null {
+  if (typeof document === "undefined") return null;
+  const active = document.activeElement;
+  if (active instanceof HTMLElement && active !== document.body && active !== document.documentElement)
+    return active;
+  return pointerTrigger?.isConnected && performance.now() - pointerTriggerAt < TRIGGER_WINDOW_MS
+    ? pointerTrigger
+    : null;
+}
 /** Outer window listeners must leave Escape to the active overlay stack. */
 export function hasActiveOverlay() {
   return entries.some((entry) => !entry.passive);
@@ -177,11 +205,7 @@ export function useOverlay(
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
-  const previous = useRef(
-    typeof document !== "undefined" && document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  );
+  const previous = useRef(returnTarget());
   const parent = useContext(OverlayParent);
   const close = useRef(escape);
   close.current = escape;

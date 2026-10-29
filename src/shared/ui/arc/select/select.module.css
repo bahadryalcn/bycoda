@@ -254,3 +254,15 @@
     opacity: 0;
   }
 }
+
+/* The highlighted item is a surface fill only; forced-colors mode shows it with an outline. */
+@media (forced-colors: active) {
+  .item[data-highlighted] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  .item[data-disabled] {
+    color: GrayText;
+    opacity: 1;
+  }
+}

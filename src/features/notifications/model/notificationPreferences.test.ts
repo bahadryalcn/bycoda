@@ -7,6 +7,8 @@ import {
   notificationPreferencesSnapshot,
   subscribeNotificationPreferences,
   getProjectNotificationRule,
+  notificationPreferencesStatus,
+  retryNotificationPreferencesRead,
 } from "./notificationPreferences";
 
 beforeEach(() => localStorage.clear());
@@ -22,7 +24,7 @@ it("refuses to overwrite unreadable preferences while retaining the last known v
 
 it("does not leak an unpersisted mutation into the retained notification view", () => {
   updateNotificationPreferences(["private"], { disabled: ["issues"] });
-  const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+  const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("quota"); });
   try {
     expect(() => updateNotificationPreferences(["private"], { disabled: [] })).toThrow("quota");
     expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);
@@ -178,4 +180,27 @@ it("ignores malformed persisted entries without losing valid project choices", (
     private: { disabled: ["issues"] },
   });
   expect(allowsProjectNotification({ projectId: "broken", category: "issues" })).toBe(true);
+});
+
+it("reports unreadable preferences as unavailable, notifies subscribers and recovers on retry", () => {
+  updateNotificationPreferences(["private"], { disabled: ["issues"] });
+  expect(notificationPreferencesStatus()).toBe("ready");
+  const before = notificationPreferencesSnapshot();
+  const listener = vi.fn();
+  const unsubscribe = subscribeNotificationPreferences(listener);
+  try {
+    localStorage.setItem("bycoda.projectNotifications.v1", "{broken");
+    expect(retryNotificationPreferencesRead()).toBe("unavailable");
+    expect(listener).toHaveBeenCalled();
+    expect(notificationPreferencesStatus()).toBe("unavailable");
+    expect(notificationPreferencesSnapshot()).not.toBe(before);
+    // The last known choices stay visible but are not presented as the stored record.
+    expect(loadNotificationPreferences().private.disabled).toEqual(["issues"]);
+
+    localStorage.setItem("bycoda.projectNotifications.v1", JSON.stringify({}));
+    expect(retryNotificationPreferencesRead()).toBe("ready");
+    expect(notificationPreferencesStatus()).toBe("ready");
+  } finally {
+    unsubscribe();
+  }
 });

@@ -125,7 +125,12 @@
   --surface: var(--ui-surface-muted);
   --border-strong: var(--ui-control-border);
   min-inline-size: 0;
-  inline-size: 100%;
+}
+/* F3 contract: the default width is placement, layered below Tailwind utilities so a caller's `w-*` wins. */
+@layer components {
+  .bycoda-arc-field {
+    inline-size: 100%;
+  }
 }
 
 /* Disabled fields use a readable semantic pair instead of fading their text
@@ -165,12 +170,18 @@ html[data-control-density="touch"] .bycoda-arc-switch {
   min-inline-size: var(--ui-control-height);
 }
 
+/* F3 contract: the default width is placement, layered below Tailwind utilities so a caller's `w-*` wins. */
+@layer components {
+  .bycoda-arc.bycoda-arc-select {
+    inline-size: 100%;
+  }
+}
+
 .bycoda-arc.bycoda-arc-select {
   --border: var(--ui-control-border);
   --surface: var(--ui-surface-muted);
   display: inline-flex;
   min-block-size: var(--ui-control-height-md);
-  inline-size: 100%;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);

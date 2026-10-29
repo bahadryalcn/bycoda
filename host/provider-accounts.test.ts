@@ -2,7 +2,11 @@ import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { providerAccountEnvironment } from "./provider-accounts";
+import {
+  providerAccountEnvironment,
+  hostProviderAccounts,
+  assertHostProviderAccount,
+} from "./provider-accounts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -17,7 +21,9 @@ function temp() {
 describe("providerAccountEnvironment", () => {
   it("leaves the default account to the inherited environment", async () => {
     expect(await providerAccountEnvironment(undefined, {}, [])).toBeNull();
-    expect(await providerAccountEnvironment({ provider: "claude", id: "default" }, {}, [])).toBeNull();
+    expect(
+      await providerAccountEnvironment({ provider: "claude", id: "default" }, {}, []),
+    ).toBeNull();
   });
 
   it("runs Claude in the desktop profile and links shared agents", async () => {
@@ -61,4 +67,69 @@ describe("providerAccountEnvironment", () => {
       providerAccountEnvironment({ provider: "claude", id: "../escape" }, {}, []),
     ).rejects.toThrow("Invalid provider account id");
   });
+});
+
+it("exposes only safe metadata for real Host profiles and validates the exact launch resolution without writes", async () => {
+  const root = temp(),
+    terminal = temp();
+  const codex = join(root, "provider-accounts", "codex", "account-work");
+  mkdirSync(codex, { recursive: true });
+  mkdirSync(join(root, "provider-accounts", "claude", "account-other"), { recursive: true });
+  mkdirSync(join(root, "provider-accounts", "codex", "email@example.test"), { recursive: true });
+  writeFileSync(
+    join(codex, "auth.json"),
+    '{"email":"private@example.test","token":"DO_NOT_READ_OR_EXPOSE"}',
+  );
+  writeFileSync(
+    join(root, "terminal-profiles.json"),
+    JSON.stringify({
+      "codex:terminal-work": terminal,
+      "claude:terminal-missing": join(root, "missing"),
+      "codex:../escape": terminal,
+    }),
+  );
+  const catalog = await hostProviderAccounts([root]);
+  expect(catalog).toEqual({
+    codex: [
+      { id: "default", label: "Host default" },
+      { id: "account-work", label: "Codex account 1" },
+      { id: "terminal-work", label: "Codex account 2" },
+    ],
+    claude: [
+      { id: "default", label: "Host default" },
+      { id: "account-other", label: "Claude account 1" },
+    ],
+  });
+  const serialized = JSON.stringify(catalog);
+  for (const secret of [
+    "private@example.test",
+    "DO_NOT_READ_OR_EXPOSE",
+    root.replaceAll("\\", "\\\\"),
+    terminal.replaceAll("\\", "\\\\"),
+  ])
+    expect(serialized).not.toContain(secret);
+  expect(await assertHostProviderAccount("codex", "account-work", [root])).toBe("account-work");
+  expect(await assertHostProviderAccount("codex", "terminal-work", [root])).toBe("terminal-work");
+  expect(await assertHostProviderAccount("codex", "default", [])).toBeUndefined();
+  await expect(assertHostProviderAccount("claude", "account-work", [root])).rejects.toThrow(
+    "not available",
+  );
+  await expect(assertHostProviderAccount("pi", "account-work", [root])).rejects.toThrow(
+    "Invalid provider account",
+  );
+  expect(() => lstatSync(join(codex, "agents"))).toThrow();
+});
+
+it("bounds named Host account inventory and ignores malformed terminal metadata", async () => {
+  const root = temp();
+  for (let index = 0; index < 130; index++)
+    mkdirSync(
+      join(root, "provider-accounts", "codex", `account-${String(index).padStart(3, "0")}`),
+      { recursive: true },
+    );
+  writeFileSync(join(root, "terminal-profiles.json"), "malformed metadata");
+  const catalog = await hostProviderAccounts([root]);
+  expect(catalog.codex).toHaveLength(129);
+  expect(catalog.claude).toEqual([{ id: "default", label: "Host default" }]);
+  expect(await assertHostProviderAccount("codex", "account-129", [root])).toBe("account-129");
 });

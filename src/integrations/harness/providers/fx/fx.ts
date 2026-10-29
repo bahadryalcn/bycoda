@@ -1,4 +1,9 @@
-import { runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  runNativeOutputWork,
+  nativeOutputSink,
+  retainNativeOutputEventOrigin,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
@@ -418,34 +423,44 @@ function fxSpawnArgs(model: string): string[] {
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
-const responseScope: { work: NativeOutputWork | null } = { work: null };
-const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
-try {
-
+  const responseScope: { work: NativeOutputWork | null } = { work: null };
+  const emitNative = (event: HarnessEvent) =>
+    nativeOutputSink(responseScope.work, () => live.onEvent(event))();
   try {
-    const blocks = fxPromptBlocks(input.text);
-    if (blocks.length === 0) return;
-    const result = await live.acp.request("session/prompt", {
-        sessionId: live.acpSessionId,
-        prompt: blocks,
-      }, PROMPT_TIMEOUT_MS, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
-    if (live.cancelled) return;
-    emitNative({ type: "message.completed" });
-    emitNative({ type: "reasoning.completed" });
-    reportAcpStopReason(result, emitNative);
-  } catch (error) {
-    if (live.cancelled) return;
-    const detail = error instanceof Error ? error.message : String(error);
-    emitNative({
-      type: "session.error",
-      message: /needs access|AI Gateway|API key|Keychain/i.test(detail)
-        ? `${detail.trim()}\n\n${AUTH_HELP}`
-        : detail,
-    });
-    throw error;
+    try {
+      const blocks = fxPromptBlocks(input.text);
+      if (blocks.length === 0) return;
+      const result = await live.acp.request(
+        "session/prompt",
+        {
+          sessionId: live.acpSessionId,
+          prompt: blocks,
+        },
+        PROMPT_TIMEOUT_MS,
+        (value, work) => {
+          responseScope.work?.finish();
+          responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
+          return value;
+        },
+      );
+      if (live.cancelled) return;
+      emitNative({ type: "message.completed" });
+      emitNative({ type: "reasoning.completed" });
+      reportAcpStopReason(result, emitNative);
+    } catch (error) {
+      if (live.cancelled) return;
+      const detail = error instanceof Error ? error.message : String(error);
+      emitNative({
+        type: "session.error",
+        message: /needs access|AI Gateway|API key|Keychain/i.test(detail)
+          ? `${detail.trim()}\n\n${AUTH_HELP}`
+          : detail,
+      });
+      throw error;
+    }
+  } finally {
+    responseScope.work?.finish();
   }
-
-} finally { responseScope.work?.finish(); }
 }
 
 function ignoreUnsupportedControl(method: string, error: unknown): void {
@@ -462,19 +477,18 @@ function handleNotification(live: Live, method: string, params: unknown) {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
-return runNativeOutputWork(async (outputWork) => {
-  if (method === "session/request_permission") {
-    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
-    return;
-  }
-  await nativeOutputSink(outputWork, () => live.acp
-    .respondError(id, {
-      code: -32601,
-      message: `Method not found: ${method}`,
-    }))()
-    .catch(() => undefined);
-
-});
+  return runNativeOutputWork(async (outputWork) => {
+    if (method === "session/request_permission") {
+      await nativeOutputSink(outputWork, handlePermission)(live, id, params);
+      return;
+    }
+    await nativeOutputSink(outputWork, () =>
+      live.acp.respondError(id, {
+        code: -32601,
+        message: `Method not found: ${method}`,
+      }),
+    )().catch(() => undefined);
+  });
 }
 
 /**
@@ -483,28 +497,34 @@ return runNativeOutputWork(async (outputWork) => {
  * what left sessions stuck on "Working…" with an empty transcript.
  */
 async function handlePermission(live: Live, id: number, params: unknown) {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const request = permissionRequestFromAcp(params);
-  if (request.callId) {
-    emitNative({
-      type: "tool.updated",
-      callId: request.callId,
-      title: request.title,
-      kind: request.kind,
-      preview: request.preview,
-    });
-  }
-  const optionId = live.planning
-    ? permissionOptionId(
-        request.kind === "read" || request.kind === "search" ? "allow" : "deny",
-        request.optionIds,
-      )
-    : (autoPermissionOption(live.runtimeMode, request.optionIds) ??
-      permissionOptionId("allow", request.optionIds));
-  await nativeOutputSink(outputWork, () => live.acp.respond(id, {
-    outcome: { outcome: "selected", optionId },
-  }))();
-
-});
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const request = permissionRequestFromAcp(params);
+      if (request.callId) {
+        emitNative({
+          type: "tool.updated",
+          callId: request.callId,
+          title: request.title,
+          kind: request.kind,
+          preview: request.preview,
+        });
+      }
+      const optionId = live.planning
+        ? permissionOptionId(
+            request.kind === "read" || request.kind === "search" ? "allow" : "deny",
+            request.optionIds,
+          )
+        : (autoPermissionOption(live.runtimeMode, request.optionIds) ??
+          permissionOptionId("allow", request.optionIds));
+      await nativeOutputSink(outputWork, () =>
+        live.acp.respond(id, {
+          outcome: { outcome: "selected", optionId },
+        }),
+      )();
+    },
+    { additionalInput: true },
+  );
 }

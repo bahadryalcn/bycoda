@@ -23,6 +23,7 @@ async function render(
   programProjectId?: string,
   withProjects = false,
   detail?: ProgramDetail,
+  accounts: unknown[] = [],
 ) {
   await setLanguagePreference("en");
   const host = document.createElement("div");
@@ -36,7 +37,7 @@ async function render(
   const snapshot = {
     programsSupported: supported,
     programProjectId,
-    accounts: [],
+    accounts,
     campaigns: [],
     jobs: [],
     profiles: withProjects
@@ -95,7 +96,7 @@ describe("Social campaign program UI", () => {
   });
   it("retains discovery and stops polling when its panel is inactive", async () => {
     const { host, request } = await render(true, false);
-    expect(host.textContent).toContain("Create AI campaign");
+    expect(host.querySelector('nav[aria-label="Create AI campaign"]')).toBeTruthy();
     expect(request).not.toHaveBeenCalled();
   });
   it("presents independent agents, three schedule modes and owner-controlled approval steps", async () => {
@@ -228,33 +229,65 @@ it("keeps generated image previews separate and recovers a failed preview withou
 });
 
 it("guides first campaign setup inline and preserves content while changing steps", async () => {
-  const { host, request } = await render();
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const { host, request } = await render(true, true, undefined, true, undefined, [
+    { id: "account", platform: "x", name: "Brand", connected: true, paused: false, grants: { a: ["draft"] } },
+  ]);
   expect(host.querySelector(".social-program-inline")).toBeTruthy();
   expect(host.querySelector(".social-composer-dialog")).toBeNull();
-  const nameLabel = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
-    (label) => label.textContent === "Campaign name",
-  )!;
-  const name = document.getElementById(nameLabel.htmlFor) as HTMLInputElement;
+  const field = (label: string) => {
+    const element = Array.from(host.querySelectorAll<HTMLLabelElement>("label")).find(
+      (item) => item.textContent === label,
+    )!;
+    return document.getElementById(element.htmlFor) as HTMLInputElement | HTMLTextAreaElement;
+  };
+  const type = async (element: HTMLInputElement | HTMLTextAreaElement, value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(
+        element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(element, value);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+  const name = field("Campaign name");
   expect(name.closest("details")).toBeNull();
   const contentOptions = host.querySelector<HTMLDetailsElement>(".social-program-content-options")!;
   expect(contentOptions.open).toBe(false);
   expect(contentOptions.textContent).toContain("Brand voice");
   expect(contentOptions.querySelector("[required]")).toBeNull();
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      name,
-      "Launch week",
-    );
-    name.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await type(name, "Launch week");
   const steps = host.querySelectorAll<HTMLButtonElement>(".social-program-steps button");
+  const step = (index: number) => host.querySelector<HTMLElement>(`[data-program-step="${index}"]`)!;
+  // Later steps stay closed until the purpose step has its required content.
   await act(async () => steps[1].click());
-  expect(host.querySelector<HTMLElement>('[data-program-step="0"]')!.hidden).toBe(true);
-  expect(host.querySelector<HTMLElement>('[data-program-step="1"]')!.hidden).toBe(false);
+  expect(step(0).hidden).toBe(false);
+  expect(step(1).hidden).toBe(true);
+  expect(host.textContent).toContain(
+    "Complete the name, project, brief and eligible target accounts before continuing.",
+  );
+  expect(name.value).toBe("Launch week");
+  await chooseSocialValue(
+    host.querySelector<HTMLButtonElement>('button[aria-label^="Project:"]') ??
+      host.querySelector<HTMLButtonElement>('.social-program-field button[aria-haspopup="dialog"]')!,
+    "a",
+  );
+  await type(field("Topic"), "Launch");
+  await type(field("Description"), "Announce the launch.");
+  await chooseSocialValue(
+    host.querySelector<HTMLButtonElement>('button[aria-label^="Target accounts"]')!,
+    "account",
+  );
+  await act(async () =>
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })),
+  );
+  await act(async () => steps[1].click());
+  expect(step(0).hidden).toBe(true);
+  expect(step(1).hidden).toBe(false);
   await act(async () => steps[0].click());
   expect(name.value).toBe("Launch week");
-  expect(host.querySelector<HTMLElement>('[data-program-step="0"]')!.hidden).toBe(false);
+  expect(step(0).hidden).toBe(false);
   expect(request.mock.calls.every(([action]) => action === "programs.list")).toBe(true);
+  vi.unstubAllGlobals();
 });
 
 it("keeps schedule drafts and approval step policy when choosing visible native radio modes", async () => {

@@ -3,13 +3,55 @@
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 #[path = "conversation_servers.rs"]
 mod servers;
+
+struct DesktopOutcome {
+    value: Value,
+    device: Option<crate::remote::NativeDeviceReply>,
+}
+
+impl DesktopOutcome {
+    fn project<T>(
+        &self,
+        source: &crate::remote::NativeServiceReply,
+        consume: impl FnOnce(&Value) -> Result<T, String>,
+    ) -> Result<T, String> {
+        match &self.device {
+            Some(device) => device.project(source, |_| consume(&self.value)),
+            None => source.project(|_| consume(&self.value)),
+        }
+    }
+
+    fn finish_payload(
+        &self,
+        id: &Value,
+        source: &crate::remote::NativeServiceReply,
+    ) -> Result<Value, String> {
+        match &self.device {
+            Some(device) => device_finish_payload(id, &self.value, source, device),
+            None => self.project(source, |value| Ok(json!({"id": id, "result": value}))),
+        }
+    }
+}
+
+/// A retired target cannot disclose its result, but its original live issuer
+/// still needs the unknown outcome. Only that error crosses this fallback.
+pub(crate) fn device_finish_payload(
+    id: &Value,
+    value: &Value,
+    source: &crate::remote::NativeServiceReply,
+    device: &crate::remote::NativeDeviceReply,
+) -> Result<Value, String> {
+    device
+        .project(source, |_| Ok(json!({"id": id, "result": value})))
+        .or_else(|error| source.project(|_| Ok(json!({"id": id, "error": error}))))
+}
 
 /// Poll cadence: answers stay quick while agents are using desktop tools, idle
 /// polling slows down, and an unreachable or unpaired host backs off to 30 s.
@@ -28,40 +70,95 @@ fn next_poll_delay(failures: u32, since_request: std::time::Duration) -> std::ti
 pub fn start_desktop_relay(app: AppHandle) {
     let mut failures = 0u32;
     let mut last_request = std::time::Instant::now();
-    std::thread::spawn(move || loop {
-        let taken =
-            crate::remote::local_conversation_rpc(&app, "conversation.desktop.take", json!({}));
-        failures = if taken.is_ok() {
-            0
-        } else {
-            failures.saturating_add(1)
-        };
-        if let Ok(requests) = taken {
-            if requests.as_array().is_some_and(|list| !list.is_empty()) {
-                last_request = std::time::Instant::now();
+    std::thread::spawn(move || {
+        let mut channel: Option<Arc<crate::remote::NativeServiceChannel>> = None;
+        loop {
+            if channel
+                .as_ref()
+                .is_some_and(|channel| !channel.is_current())
+            {
+                channel = None;
             }
-            for request in requests.as_array().into_iter().flatten() {
-                let request = request.clone();
-                let app = app.clone();
-                std::thread::spawn(move || {
-                    let result = execute_desktop_request(&app, &request);
-                    let reply = match result {
-                        Ok(value) => json!({"id": request["id"], "result": value}),
-                        Err(error) => json!({"id": request["id"], "error": error}),
-                    };
-                    let _ = crate::remote::local_conversation_rpc(
-                        &app,
-                        "conversation.desktop.finish",
-                        reply,
-                    );
-                });
+            let selected = match channel.as_ref() {
+                Some(channel) => Ok(channel.clone()),
+                None => crate::remote::NativeServiceChannel::connect(&app).inspect(|selected| {
+                    channel = Some(selected.clone());
+                }),
+            };
+            let taken = selected.and_then(|issuer| {
+                let reply = Arc::new(issuer.request("conversation.desktop.take", json!({}))?);
+                let requests = reply.project(|requests| {
+                    Ok(requests
+                        .as_array()
+                        .map(|requests| requests.to_vec())
+                        .unwrap_or_default())
+                })?;
+                Ok((issuer, reply, requests))
+            });
+            failures = if taken.is_ok() {
+                0
+            } else {
+                failures.saturating_add(1)
+            };
+            if let Ok((issuer, taken, requests)) = taken {
+                if !requests.is_empty() {
+                    last_request = std::time::Instant::now();
+                }
+                for request in requests {
+                    let app = app.clone();
+                    let issuer = issuer.clone();
+                    let taken = taken.clone();
+                    std::thread::spawn(move || {
+                        let result = execute_desktop_request(&app, &request, &issuer, &taken);
+                        let reply = match &result {
+                            Ok(outcome) => outcome.finish_payload(&request["id"], &taken),
+                            Err(error) => {
+                                taken.project(|_| Ok(json!({"id": request["id"], "error": error})))
+                            }
+                        };
+                        // A completed job is returned only to its original issuer.
+                        // Preparation admits this bounded original forwarding;
+                        // all original replies remain owned through settlement.
+                        if let Ok(reply) = reply {
+                            let _ =
+                                issuer.project("conversation.desktop.finish", reply, |_| Ok(()));
+                        }
+                        drop(result);
+                    });
+                }
             }
+            std::thread::sleep(next_poll_delay(failures, last_request.elapsed()));
         }
-        std::thread::sleep(next_poll_delay(failures, last_request.elapsed()));
     });
 }
 
-fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, String> {
+fn execute_desktop_request(
+    app: &AppHandle,
+    request: &Value,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
+    taken: &crate::remote::NativeServiceReply,
+) -> Result<DesktopOutcome, String> {
+    taken.check()?;
+    if !issuer.is_current() || request["environmentId"].as_str() != Some(issuer.environment_id()) {
+        return Err("Desktop request issuer changed or does not match this request".into());
+    }
+    let mut device = None;
+    let value = execute_desktop_request_inner(app, request, issuer, taken, &mut device)?;
+    let result = DesktopOutcome { value, device };
+    result.project(taken, |_| Ok(()))?;
+    if !issuer.is_current() {
+        return Err("Desktop request issuer changed during execution".into());
+    }
+    Ok(result)
+}
+
+fn execute_desktop_request_inner(
+    app: &AppHandle,
+    request: &Value,
+    issuer: &Arc<crate::remote::NativeServiceChannel>,
+    taken: &crate::remote::NativeServiceReply,
+    device: &mut Option<crate::remote::NativeDeviceReply>,
+) -> Result<Value, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "Clock unavailable")?
@@ -143,11 +240,12 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
                 deadline: request["deadline"]
                     .as_u64()
                     .ok_or("Desktop request deadline required")?,
+                issuer: issuer.clone(),
             })
         } else {
             None
         };
-        return crate::control::conversation_ui_request_with_authority(
+        return crate::control::conversation_ui_request_pinned(
             app,
             request["sessionId"]
                 .as_str()
@@ -159,6 +257,7 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
             action,
             input.clone(),
             authority,
+            taken,
         );
     }
     if action == "tasks.write.authorize" {
@@ -229,7 +328,14 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
         }
         return Ok(json!({"approved": approved}));
     }
-    if action == "machines.list" || action.starts_with("devices.") {
+    if action == "machines.list" {
+        // This list contains saved display metadata only. Reading the store is
+        // outside the projection, whose short callback admits the returned copy.
+        let machines =
+            crate::remote::conversation_machine_call(app, action, input, "", &request["deadline"])?;
+        return taken.project(|_| Ok(machines));
+    }
+    if action.starts_with("devices.") {
         let owner = format!(
             "{}:{}",
             request["environmentId"]
@@ -239,16 +345,18 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
                 .as_str()
                 .ok_or("Session identity required")?
         );
-        let mut value = crate::remote::conversation_machine_call(
+        let reply = crate::remote::conversation_machine_call_pinned(
             app,
             action,
             input,
             &owner,
             &request["deadline"],
+            issuer,
+            taken,
         )?;
-        if action == "devices.preview" {
+        let panel = if action == "devices.preview" {
             // UI acknowledgement is independent from the asynchronous device job.
-            let panel = crate::control::conversation_ui_request(
+            let panel = crate::control::conversation_ui_request_device_pinned(
                 app,
                 request["sessionId"]
                     .as_str()
@@ -259,12 +367,25 @@ fn execute_desktop_request(app: &AppHandle, request: &Value) -> Result<Value, St
                     .ok_or("Host identity required")?,
                 "ui.tools.open",
                 json!({ "tab": "devices", "placement": "right", "machineId": input["machineId"] }),
+                None,
+                taken,
+                &reply,
             );
-            value["panel"] = match panel {
+            Some(match panel {
                 Ok(panel) => panel,
                 Err(error) => json!({ "open": false, "error": error }),
-            };
-        }
+            })
+        } else {
+            None
+        };
+        let value = reply.project(taken, |value| {
+            let mut value = value.clone();
+            if let Some(panel) = panel {
+                value["panel"] = panel;
+            }
+            Ok(value)
+        })?;
+        *device = Some(reply);
         return Ok(value);
     }
     let cwd = std::fs::canonicalize(
@@ -493,14 +614,17 @@ pub fn harness_conversation_tools_bridge(
     if session_id.is_empty() {
         return Ok(None);
     }
-    let value =
-        crate::remote::local_conversation_rpc(&app, "conversation.bridge.describe", json!({}));
-    Ok(value.ok().map(|value| {
-        crate::session_tools_bridge::metadata(
-            value,
-            crate::session_tools_bridge::Group::Conversation,
-        )
-    }))
+    let Ok(service) = crate::remote::NativeServiceChannel::connect(&app) else {
+        return Ok(None);
+    };
+    Ok(service
+        .project("conversation.bridge.describe", json!({}), |value| {
+            Ok(crate::session_tools_bridge::metadata(
+                value.clone(),
+                crate::session_tools_bridge::Group::Conversation,
+            ))
+        })
+        .ok())
 }
 
 pub fn configure_child(
@@ -542,39 +666,43 @@ pub fn configure_child(
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(grant) = crate::remote::local_conversation_rpc(
-        app,
+    let Ok(service) = crate::remote::NativeServiceChannel::connect(app) else {
+        return;
+    };
+    let _ = service.project(
         "conversation.access.issue",
         json!({"sessionId": primary}),
-    ) else {
-        return;
-    };
-    let Ok(mut grant) = crate::session_tools_bridge::register(
-        app,
-        session_id,
-        stamp,
-        crate::session_tools_bridge::Group::Conversation,
-        grant,
-    ) else {
-        return;
-    };
-    let (Some(token), Some(endpoint), Some(environment)) = (
-        grant.get("token").and_then(Value::as_str),
-        grant.get("endpoint").and_then(Value::as_str),
-        grant.get("environmentId").and_then(Value::as_str),
-    ) else {
-        return;
-    };
-    command
-        .env("BYCODA_CONVERSATION_TOKEN", token)
-        .env("BYCODA_CONVERSATION_ENDPOINT", endpoint)
-        .env("BYCODA_CONVERSATION_ENVIRONMENT", environment);
-    for field in ["appEndpoint", "appToken"] {
-        if fallback[field].is_string() {
-            grant[field] = fallback[field].clone();
-        }
-    }
-    crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+        |issued| {
+            let mut issued = issued.clone();
+            issued["endpoint"] = json!(service.endpoint());
+            let mut grant = crate::session_tools_bridge::register_pinned(
+                app,
+                session_id,
+                stamp,
+                crate::session_tools_bridge::Group::Conversation,
+                issued,
+                service.clone(),
+            )?;
+            let (Some(token), Some(endpoint), Some(environment)) = (
+                grant.get("token").and_then(Value::as_str),
+                grant.get("endpoint").and_then(Value::as_str),
+                grant.get("environmentId").and_then(Value::as_str),
+            ) else {
+                return Err("Conversation tool grant is incomplete".into());
+            };
+            command
+                .env("BYCODA_CONVERSATION_TOKEN", token)
+                .env("BYCODA_CONVERSATION_ENDPOINT", endpoint)
+                .env("BYCODA_CONVERSATION_ENVIRONMENT", environment);
+            for field in ["appEndpoint", "appToken"] {
+                if fallback[field].is_string() {
+                    grant[field] = fallback[field].clone();
+                }
+            }
+            crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+            Ok(())
+        },
+    );
 }
 
 #[cfg(test)]

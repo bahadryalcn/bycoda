@@ -48,6 +48,17 @@ const stateSchema = z.strictObject({
 export type NativeOutputMetadata = Readonly<z.infer<typeof metadataSchema>>;
 export type NativeOutputState = Readonly<z.infer<typeof stateSchema>>;
 export type NativeOutputChannel = NativeOutputMetadata["channel"];
+/** Original wire comparison fields only; never a Native authority receipt. */
+export type NativeOutputBatchDescriptor = Readonly<
+  Omit<NativeOutputMetadata, "available" | "unavailableReason">
+>;
+export type NativeOutputItemComparison = Readonly<{
+  version: 1;
+  qualified: false;
+  kind: "native-output-item-comparison";
+  batch: NativeOutputBatchDescriptor;
+  itemIndex: number;
+}>;
 export type NativeOutputItem = Readonly<{ kind: "native-output-item" }>;
 /** In-process renderer lineage only. Never serializable Native authority. */
 export type NativeOutputEventOrigin = Readonly<{ kind: "native-output-origin" }>;
@@ -61,6 +72,7 @@ export interface NativeOutputWork {
 }
 type Source = z.infer<z.ZodObject<typeof source>>;
 type Batch = {
+  readonly descriptor: NativeOutputBatchDescriptor;
   stream: Stream;
   sequence: number;
   digestVerified: boolean;
@@ -68,7 +80,19 @@ type Batch = {
   itemCount: number;
   causalPending: number;
 };
-type Item = { batch: Batch; delivered: boolean; origin?: NativeOutputEventOrigin };
+type Item = {
+  batch: Batch;
+  readonly comparison: NativeOutputItemComparison;
+  delivered: boolean;
+  outcome:
+    | "pending-parser"
+    | "emitted"
+    | "accepted-projection"
+    | "supported-no-effect"
+    | "unsupported";
+  outcomeReason: string | null;
+  origin?: NativeOutputEventOrigin;
+};
 type Stream = {
   source: Source;
   sourceKey: string;
@@ -84,18 +108,24 @@ type Stream = {
   causalFinished: number;
   additionalInputs: number;
 };
-type EventOrigin = { item: NativeOutputItem; sessionId: string; applied: boolean };
+type EventOrigin = { origin: NativeOutputEventOrigin; sessionId: string; applied: boolean };
 type Runtime = {
   streams: Map<string, Stream>;
   items: WeakMap<NativeOutputItem, Item>;
   events: WeakMap<object, EventOrigin>;
-  current: NativeOutputItem | null;
+  current: NativeOutputEventOrigin | null;
   hashJobs: number;
   overflow: boolean;
   unavailableSessions: Set<string>;
-  origins: WeakMap<NativeOutputEventOrigin, NativeOutputItem>;
+  origins: WeakMap<NativeOutputEventOrigin, readonly NativeOutputItem[]>;
+  outcomes: Map<NativeOutputItem, Item>;
+  works: WeakMap<NativeOutputWork, { active: boolean; origin: NativeOutputEventOrigin }>;
+  lineageVersion: number;
   workJobs: number;
-  timers: Map<ReturnType<typeof setTimeout>, { started: boolean; cancelled: boolean; work: NativeOutputWork | null }>;
+  timers: Map<
+    ReturnType<typeof setTimeout>,
+    { started: boolean; cancelled: boolean; work: NativeOutputWork | null }
+  >;
 };
 const hot = import.meta.hot;
 const runtime: Runtime = hot?.data.nativeOutputDelivery ?? {
@@ -107,10 +137,24 @@ const runtime: Runtime = hot?.data.nativeOutputDelivery ?? {
   overflow: false,
   unavailableSessions: new Set(),
   origins: new WeakMap(),
+  outcomes: new Map(),
+  works: new WeakMap(),
+  lineageVersion: 2,
   workJobs: 0,
   timers: new Map(),
 };
 runtime.origins ??= new WeakMap();
+// Pre-upgrade HMR handles carried only one item. They must never be interpreted
+// as a new multi-input proof, or attached to work from the replacement module.
+if (runtime.lineageVersion !== 2) {
+  for (const stream of runtime.streams.values()) stream.unavailable ??= "lineage-upgraded";
+  runtime.origins = new WeakMap();
+  runtime.events = new WeakMap();
+  runtime.current = null;
+  runtime.lineageVersion = 2;
+}
+runtime.outcomes ??= new Map();
+runtime.works ??= new WeakMap();
 runtime.workJobs ??= 0;
 runtime.timers ??= new Map();
 if (hot) hot.data.nativeOutputDelivery = runtime;
@@ -123,8 +167,11 @@ const MAX_HASH_JOBS = 32;
 const MAX_PENDING_BATCHES = 128;
 const MAX_CAUSAL_WORK = 1024;
 const MAX_BATCH_WORK = 128;
+const MAX_RETAINED_OUTCOMES = 32768;
+const MAX_JOIN_ITEMS = 128;
 const logicalSession = (value: Source) => value.logicalSessionId ?? value.sessionId;
-const matchesSession = (value: Source, sessionId: string) => value.sessionId === sessionId || logicalSession(value) === sessionId;
+const matchesSession = (value: Source, sessionId: string) =>
+  value.sessionId === sessionId || logicalSession(value) === sessionId;
 
 function key(value: Source): string {
   return JSON.stringify([value.processEpoch, value.streamEpoch]);
@@ -293,7 +340,30 @@ export function observeNativeOutputBatch(
     unavailable(stream, "invalid-payload");
     return;
   }
+  const descriptor: NativeOutputBatchDescriptor = Object.freeze({
+    version: value.version,
+    qualified: value.qualified,
+    processEpoch: value.processEpoch,
+    streamEpoch: value.streamEpoch,
+    streamKind: value.streamKind,
+    sessionId: value.sessionId,
+    ...(value.logicalSessionId === undefined ? {} : { logicalSessionId: value.logicalSessionId }),
+    sourceStoreId: value.sourceStoreId,
+    sourceProfileId: value.sourceProfileId,
+    storeInstance: value.storeInstance,
+    processId: value.processId,
+    // Wire ownerEpoch is the captured recipient incarnation, not the private
+    // original producer owner or a grant supplied by the renderer.
+    ownerEpoch: value.ownerEpoch,
+    sequence: value.sequence,
+    channel: value.channel,
+    itemCount: value.itemCount,
+    utf8Bytes: value.utf8Bytes,
+    payloadSha256: value.payloadSha256,
+    digestEncoding: value.digestEncoding,
+  });
   const batch: Batch = {
+    descriptor,
     stream,
     sequence: value.sequence,
     digestVerified: false,
@@ -303,9 +373,25 @@ export function observeNativeOutputBatch(
   };
   stream.observedThrough = value.sequence;
   stream.pending.set(batch.sequence, batch);
-  const tokens = items.map(() => {
+  const tokens = items.map((_, itemIndex) => {
     const token: NativeOutputItem = Object.freeze({ kind: "native-output-item" });
-    runtime.items.set(token, { batch, delivered: false });
+    const comparison: NativeOutputItemComparison = Object.freeze({
+      version: 1,
+      qualified: false,
+      kind: "native-output-item-comparison",
+      batch: descriptor,
+      itemIndex,
+    });
+    const owned: Item = {
+      batch,
+      comparison,
+      delivered: false,
+      outcome: "pending-parser",
+      outcomeReason: null,
+    };
+    runtime.items.set(token, owned);
+    if (runtime.outcomes.size >= MAX_RETAINED_OUTCOMES) unavailable(stream, "outcome-capacity");
+    else runtime.outcomes.set(token, owned);
     return token;
   });
   runtime.hashJobs++;
@@ -360,7 +446,7 @@ export function deliverNativeOutputItem(
 ): void {
   const owned = item && runtime.items.get(item);
   const previous = runtime.current;
-  runtime.current = owned && item ? item : null;
+  runtime.current = owned && item ? originFor(item) : null;
   try {
     handler();
     if (owned && !owned.delivered) {
@@ -381,7 +467,11 @@ export function discardNativeOutputItems(
 ): void {
   for (const item of items) {
     const owned = item && runtime.items.get(item);
-    if (owned) unavailable(owned.batch.stream, reason);
+    if (owned) {
+      owned.outcome = "unsupported";
+      owned.outcomeReason ??= reason;
+      unavailable(owned.batch.stream, reason);
+    }
   }
 }
 
@@ -389,109 +479,356 @@ export function discardNativeOutputItems(
 export function captureNativeOutputEvent(sessionId: string, event: object): void {
   const previous = runtime.events.get(event);
   if (previous) {
-    const owned = runtime.items.get(previous.item);
-    if (owned && previous.applied) unavailable(owned.batch.stream, "event-requeued-after-apply");
-    else if (owned && previous.sessionId !== sessionId) unavailable(owned.batch.stream, "event-reused");
+    if (previous.applied) failOrigin(previous.origin, "event-requeued-after-apply");
+    else if (previous.sessionId !== sessionId) failOrigin(previous.origin, "event-reused");
     return;
   }
   const current = runtime.current;
-  const owned = current && runtime.items.get(current);
-  if (!current || !owned) return;
-  if (logicalSession(owned.batch.stream.source) !== sessionId) {
-    unavailable(owned.batch.stream, "event-session-changed");
+  const items = current && originItems(current);
+  if (!current || !items?.length) return;
+  if (items.some((item) => logicalSession(item.batch.stream.source) !== sessionId)) {
+    failOrigin(current, "event-session-changed");
     return;
   }
-  runtime.events.set(event, { item: current, sessionId, applied: false });
-  if (owned.batch.stream.queuedEvents < Number.MAX_SAFE_INTEGER) owned.batch.stream.queuedEvents++;
-  else unavailable(owned.batch.stream, "event-count-capacity");
+  runtime.events.set(event, { origin: current, sessionId, applied: false });
+  for (const item of items) if (item.outcome === "pending-parser") item.outcome = "emitted";
+  for (const stream of new Set(items.map((item) => item.batch.stream))) {
+    if (stream.queuedEvents < Number.MAX_SAFE_INTEGER) stream.queuedEvents++;
+    else unavailable(stream, "event-count-capacity");
+  }
 }
 
 function originFor(item: NativeOutputItem): NativeOutputEventOrigin | null {
-  const owned = runtime.items.get(item); if (!owned) return null;
+  const owned = runtime.items.get(item);
+  if (!owned) return null;
   if (!owned.origin) {
     owned.origin = Object.freeze({ kind: "native-output-origin" });
-    runtime.origins.set(owned.origin, item);
+    runtime.origins.set(owned.origin, Object.freeze([item]));
   }
   return owned.origin;
 }
+function originItems(origin: NativeOutputEventOrigin): Item[] | null {
+  const tokens = runtime.origins.get(origin);
+  if (!tokens?.length) return null;
+  const items = tokens.map((token) => runtime.items.get(token));
+  return items.every((item): item is Item => !!item) ? items : null;
+}
+function failOrigin(origin: NativeOutputEventOrigin, reason: string) {
+  for (const item of originItems(origin) ?? []) {
+    item.outcome = "unsupported";
+    item.outcomeReason ??= reason;
+    unavailable(item.batch.stream, reason);
+  }
+}
+/** Original immutable constituents, including before their digest completes. */
+export function getNativeOutputEventOriginConstituents(
+  origin: NativeOutputEventOrigin,
+): readonly NativeOutputEventOrigin[] | null {
+  const tokens = runtime.origins.get(origin);
+  if (!tokens?.length || !originItems(origin)) return null;
+  return Object.freeze(tokens.map((token) => originFor(token)!));
+}
 /** For queued events created in the original synchronous parser scope. */
 export function captureNativeOutputCurrentEvent(event: object): void {
-  const owned = runtime.current && runtime.items.get(runtime.current);
+  const owned = runtime.current && originItems(runtime.current)?.[0];
   if (owned) captureNativeOutputEvent(logicalSession(owned.batch.stream.source), event);
 }
 export function getNativeOutputEventOrigin(event: object): NativeOutputEventOrigin | null {
   const origin = runtime.events.get(event);
-  return origin ? originFor(origin.item) : null;
+  return origin?.origin ?? null;
+}
+/** Recheck on each use, including after the real SQL ACK. Null also means the
+ * original digest is still pending; no caller DTO can replace this lookup.
+ * A previously returned frozen value remains only an untrusted comparison
+ * claim if the original source later becomes unavailable. */
+export function getNativeOutputEventOriginComparison(
+  origin: NativeOutputEventOrigin,
+  expectedSessionId?: string,
+): NativeOutputItemComparison | null {
+  const items = runtime.origins.get(origin);
+  const owned = items?.length === 1 && runtime.items.get(items[0]);
+  return owned ? originalComparison(owned, expectedSessionId, true) : null;
+}
+function originalComparison(
+  owned: Item,
+  expectedSessionId: string | undefined,
+  completed: boolean,
+): NativeOutputItemComparison | null {
+  if (completed && (!owned.delivered || !owned.batch.digestVerified)) return null;
+  // A retained pre-upgrade HMR item has no exact descriptor/index. Never
+  // reconstruct either from the current stream or from a caller's fields.
+  const comparison = owned.comparison;
+  const descriptor = owned.batch.descriptor;
+  if (
+    !comparison ||
+    !descriptor ||
+    comparison.batch !== descriptor ||
+    !Number.isSafeInteger(comparison.itemIndex) ||
+    comparison.itemIndex < 0 ||
+    comparison.itemIndex >= descriptor.itemCount
+  )
+    return null;
+  const stream = owned.batch.stream;
+  if (
+    runtime.overflow ||
+    stream.unavailable ||
+    !ownerKnown(descriptor) ||
+    runtime.streams.get(key(descriptor)) !== stream ||
+    stream.sourceKey !== binding(descriptor) ||
+    runtime.unavailableSessions.has(descriptor.sessionId) ||
+    runtime.unavailableSessions.has(logicalSession(descriptor)) ||
+    (expectedSessionId !== undefined && logicalSession(descriptor) !== expectedSessionId)
+  )
+    return null;
+  return comparison;
+}
+/** Capture exact private originals at write admission while their digest can
+ * still be pending. This is only an immutable comparison snapshot; final export
+ * must recheck completed originals after the actual ACK. */
+export function snapshotNativeOutputEventOriginComparisons(
+  origin: NativeOutputEventOrigin,
+  expectedSessionId?: string,
+): readonly NativeOutputItemComparison[] | null {
+  const items = originItems(origin);
+  if (!items) return null;
+  const comparisons = items.map((item) => originalComparison(item, expectedSessionId, false));
+  return comparisons.every((item): item is NativeOutputItemComparison => item !== null)
+    ? Object.freeze(comparisons)
+    : null;
+}
+/** All-or-nothing: one invalid constituent invalidates the entire join. */
+export function getNativeOutputEventOriginComparisons(
+  origin: NativeOutputEventOrigin,
+  expectedSessionId?: string,
+): readonly NativeOutputItemComparison[] | null {
+  const originals = getNativeOutputEventOriginConstituents(origin);
+  if (!originals) return null;
+  const comparisons = originals.map((original) =>
+    getNativeOutputEventOriginComparison(original, expectedSessionId),
+  );
+  return comparisons.every(
+    (comparison): comparison is NativeOutputItemComparison => comparison !== null,
+  )
+    ? Object.freeze(comparisons)
+    : null;
 }
 /** Capture a queued provider event before its delayed presentation. The target
  * comes only from the original private item, never a provider-specific suffix. */
 export function captureNativeOutputWorkEvent(work: NativeOutputWork | null, event: object): void {
-  const item = work && runtime.origins.get(work.origin);
-  const owned = item && runtime.items.get(item);
-  if (work && owned) work.run(() => captureNativeOutputEvent(logicalSession(owned.batch.stream.source), event));
+  const owned = work && originItems(work.origin)?.[0];
+  if (work && owned)
+    work.run(() => captureNativeOutputEvent(logicalSession(owned.batch.stream.source), event));
 }
-function runWithNativeOutputEventOrigin<T>(origin: NativeOutputEventOrigin | null, operation: () => T): T {
-  const item = origin && runtime.origins.get(origin);
-  const before = runtime.current; runtime.current = item ?? null;
-  try { return operation(); } finally { runtime.current = before; }
+function runWithNativeOutputEventOrigin<T>(
+  origin: NativeOutputEventOrigin | null,
+  operation: () => T,
+): T {
+  const before = runtime.current;
+  runtime.current = origin && originItems(origin) ? origin : null;
+  try {
+    return operation();
+  } finally {
+    runtime.current = before;
+  }
+}
+/** Preserve ordinary work without claiming partial ancestry after a failed join. */
+export function runWithoutNativeOutputOrigin<T>(operation: () => T): T {
+  return runWithNativeOutputEventOrigin(null, operation);
 }
 export function transferNativeOutputEventOrigin(from: object, to: object): void {
-  const source = runtime.events.get(from); if (!source || from === to) return;
-  const owned = runtime.items.get(source.item); if (!owned) return;
+  const source = runtime.events.get(from);
+  if (!source || from === to) return;
+  if (!originItems(source.origin)) return;
   const previous = runtime.events.get(to);
   if (source.applied || (previous && previous !== source)) {
-    unavailable(owned.batch.stream, "event-origin-transfer-conflict"); return;
+    failOrigin(source.origin, "event-origin-transfer-conflict");
+    return;
   }
   if (previous) return;
   // Replacement aliases one logical event, including its applied marker. It
   // does not mint a second queued event merely because its JS object changed.
   runtime.events.set(to, source);
 }
-export function retainNativeOutputEventOrigin(origin: NativeOutputEventOrigin, expectedSessionId?: string): NativeOutputWork | null {
-  const item = runtime.origins.get(origin); const owned = item && runtime.items.get(item);
-  if (!item || !owned) return null;
-  const { batch } = owned; const stream = batch.stream;
-  if (expectedSessionId !== undefined && logicalSession(stream.source) !== expectedSessionId) {
-    unavailable(stream, "causal-session-changed"); return null;
+export function retainNativeOutputEventOrigin(
+  origin: NativeOutputEventOrigin,
+  expectedSessionId?: string,
+): NativeOutputWork | null {
+  const items = originItems(origin);
+  if (!items) return null;
+  if (
+    expectedSessionId !== undefined &&
+    items.some((item) => logicalSession(item.batch.stream.source) !== expectedSessionId)
+  ) {
+    failOrigin(origin, "causal-session-changed");
+    return null;
   }
-  batch.causalPending ??= 0; stream.causalPending ??= 0; stream.causalFinished ??= 0;
-  if (runtime.workJobs >= MAX_CAUSAL_WORK || batch.causalPending >= MAX_BATCH_WORK) {
-    unavailable(stream, "causal-work-capacity"); return null;
+  const batches = new Set(items.map((item) => item.batch));
+  const streams = new Set(items.map((item) => item.batch.stream));
+  for (const batch of batches) batch.causalPending ??= 0;
+  for (const stream of streams) {
+    stream.causalPending ??= 0;
+    stream.causalFinished ??= 0;
   }
-  runtime.workJobs++; batch.causalPending++; stream.causalPending++;
-  let active = true;
+  if (
+    runtime.workJobs >= MAX_CAUSAL_WORK ||
+    [...batches].some((batch) => batch.causalPending >= MAX_BATCH_WORK)
+  ) {
+    failOrigin(origin, "causal-work-capacity");
+    return null;
+  }
+  runtime.workJobs++;
+  for (const batch of batches) batch.causalPending++;
+  for (const stream of streams) stream.causalPending++;
+  const state = { active: true, origin };
   const settle = (reason?: string) => {
-    if (!active) return; active = false;
-    if (reason) unavailable(stream, /^[a-z0-9-]{1,96}$/.test(reason) ? reason : "causal-work-failed");
-    runtime.workJobs--; batch.causalPending--; stream.causalPending--; stream.causalFinished++;
+    if (!state.active) return;
+    state.active = false;
+    if (reason)
+      failOrigin(origin, /^[a-z0-9-]{1,96}$/.test(reason) ? reason : "causal-work-failed");
+    runtime.workJobs--;
+    for (const batch of batches) batch.causalPending--;
+    for (const stream of streams) {
+      stream.causalPending--;
+      stream.causalFinished++;
+    }
   };
-  return Object.freeze({ origin,
+  const work: NativeOutputWork = Object.freeze({
+    origin,
     run<T>(operation: () => T): T {
-      if (!active) { unavailable(stream, "causal-work-after-finish"); return runWithNativeOutputEventOrigin(null, operation); }
+      if (!state.active) {
+        failOrigin(origin, "causal-work-after-finish");
+        return runWithNativeOutputEventOrigin(null, operation);
+      }
       return runWithNativeOutputEventOrigin(origin, operation);
     },
-    finish: () => settle(), fail: (reason: string) => settle(reason || "causal-work-failed"),
+    finish: () => settle(),
+    fail: (reason: string) => settle(reason || "causal-work-failed"),
   });
+  runtime.works.set(work, state);
+  return work;
+}
+/** Intentional ancestry union, distinct from replacement aliases. Admission is
+ * atomic: authentic active owners remain held until the joined owner exists. */
+export function joinNativeOutputWorks(
+  works: readonly NativeOutputWork[],
+  expectedSessionId?: string,
+): NativeOutputWork | null {
+  const tokens = new Set<NativeOutputItem>();
+  let scope: NativeOutputBatchDescriptor | undefined;
+  let reason: string | null = null;
+  if (!works.length || works.length > MAX_JOIN_ITEMS) reason = "causal-join-capacity";
+  for (const work of works.slice(0, MAX_JOIN_ITEMS)) {
+    const state = runtime.works.get(work);
+    const members =
+      state?.active && state.origin === work.origin && runtime.origins.get(state.origin);
+    if (!members) {
+      reason ??= "causal-join-invalid-owner";
+      continue;
+    }
+    for (const token of members) {
+      const item = runtime.items.get(token);
+      if (!item || !runtime.outcomes.has(token)) {
+        reason ??= "causal-join-invalid-item";
+        continue;
+      }
+      const descriptor = item.batch.descriptor;
+      scope ??= descriptor;
+      if (
+        scope.processEpoch !== descriptor.processEpoch ||
+        scope.sessionId !== descriptor.sessionId ||
+        logicalSession(scope) !== logicalSession(descriptor) ||
+        scope.streamKind !== descriptor.streamKind ||
+        scope.sourceStoreId !== descriptor.sourceStoreId ||
+        scope.sourceProfileId !== descriptor.sourceProfileId ||
+        scope.storeInstance !== descriptor.storeInstance ||
+        scope.processId !== descriptor.processId ||
+        scope.ownerEpoch !== descriptor.ownerEpoch ||
+        (expectedSessionId !== undefined && logicalSession(descriptor) !== expectedSessionId)
+      )
+        reason ??= "causal-join-scope";
+      if (
+        item.batch.stream.unavailable ||
+        runtime.streams.get(key(descriptor)) !== item.batch.stream ||
+        runtime.overflow ||
+        runtime.unavailableSessions.has(logicalSession(descriptor))
+      )
+        reason ??= "causal-join-unavailable";
+      tokens.add(token);
+    }
+  }
+  if (tokens.size > MAX_JOIN_ITEMS || !tokens.size) reason ??= "causal-join-capacity";
+  if (reason) {
+    for (const token of tokens) {
+      const origin = originFor(token);
+      if (origin) failOrigin(origin, reason);
+    }
+    return null;
+  }
+  const origin: NativeOutputEventOrigin = Object.freeze({ kind: "native-output-origin" });
+  runtime.origins.set(origin, Object.freeze([...tokens]));
+  return retainNativeOutputEventOrigin(origin, expectedSessionId);
+}
+/** Explicit parser census classification; a successful handler return is never
+ * evidence of supported no-effect. Only the current actual input is classified. */
+export function markNativeOutputSupportedNoEffect(reason: string): void {
+  for (const item of runtime.current ? (originItems(runtime.current) ?? []) : []) {
+    if (item.outcome === "pending-parser") {
+      item.outcome = "supported-no-effect";
+      item.outcomeReason = reason;
+    }
+  }
 }
 /** Call synchronously before creating deferred work. Additional file/HTTP input
  * is conservatively unsealed even if its scheduling has a valid parent. */
-export function captureNativeOutputWork(options: { label?: string; additionalInput?: boolean } = {}): NativeOutputWork | null {
-  const origin = runtime.current && originFor(runtime.current); if (!origin) return null;
+export function captureNativeOutputWork(
+  options: { label?: string; additionalInput?: boolean } = {},
+): NativeOutputWork | null {
+  const origin = runtime.current;
+  if (!origin) return null;
   const work = retainNativeOutputEventOrigin(origin);
-  if (work && options.additionalInput) {
-    const item = runtime.origins.get(origin)!; const stream = runtime.items.get(item)!.batch.stream;
-    stream.additionalInputs = (stream.additionalInputs ?? 0) + 1;
-    unavailable(stream, "additional-input-unsealed");
-  }
+  if (options.additionalInput) noteNativeOutputAdditionalInput(work);
   return work;
 }
-export function trackNativeOutputWork<T>(actual: Promise<T>, work: NativeOutputWork | null): Promise<T> {
-  return actual.then((value) => { work?.finish(); return value; }, (error: unknown) => { work?.fail("causal-work-rejected"); throw error; });
+/** A user decision, filesystem or HTTP result is not sealed by its parent's
+ * stdout digest. This records that gap without releasing any actual work. */
+export function noteNativeOutputAdditionalInput(work: NativeOutputWork | null): void {
+  for (const stream of new Set(
+    (work ? (originItems(work.origin) ?? []) : []).map((item) => item.batch.stream),
+  )) {
+    if ((stream.additionalInputs ?? 0) < Number.MAX_SAFE_INTEGER)
+      stream.additionalInputs = (stream.additionalInputs ?? 0) + 1;
+    unavailable(stream, "additional-input-unsealed");
+  }
 }
-export function runNativeOutputWork<T>(operation: (work: NativeOutputWork | null) => T | Promise<T>, options: { label?: string; additionalInput?: boolean } = {}): Promise<T> {
+export function trackNativeOutputWork<T>(
+  actual: Promise<T>,
+  work: NativeOutputWork | null,
+): Promise<T> {
+  return actual.then(
+    (value) => {
+      work?.finish();
+      return value;
+    },
+    (error: unknown) => {
+      work?.fail("causal-work-rejected");
+      throw error;
+    },
+  );
+}
+export function runNativeOutputWork<T>(
+  operation: (work: NativeOutputWork | null) => T | Promise<T>,
+  options: { label?: string; additionalInput?: boolean } = {},
+): Promise<T> {
   const work = captureNativeOutputWork(options);
-  try { return trackNativeOutputWork(Promise.resolve(work ? work.run(() => operation(work)) : operation(null)), work); }
-  catch (error) { work?.fail("causal-work-rejected"); return Promise.reject(error); }
+  try {
+    return trackNativeOutputWork(
+      Promise.resolve(work ? work.run(() => operation(work)) : operation(null)),
+      work,
+    );
+  } catch (error) {
+    work?.fail("causal-work-rejected");
+    return Promise.reject(error);
+  }
 }
 /** A synchronous sink for an owned deferred job. It never changes ambient
  * lineage across an await; callers must retain the job until its actual end. */
@@ -499,7 +836,7 @@ export function nativeOutputSink<Args extends unknown[], Result>(
   work: NativeOutputWork | null,
   sink: (...args: Args) => Result,
 ): (...args: Args) => Result {
-  return (...args) => work ? work.run(() => sink(...args)) : sink(...args);
+  return (...args) => (work ? work.run(() => sink(...args)) : sink(...args));
 }
 /** Admit before scheduling, and own a returned actual promise after the timer
  * fires. Clearing a running timer never settles the callback's work. */
@@ -514,13 +851,22 @@ export function scheduleNativeOutputCallback(
     state.started = true;
     const finish = () => {
       runtime.timers.delete(timer);
-      if (state.cancelled) work?.fail("causal-timer-retired"); else work?.finish();
+      if (state.cancelled) work?.fail("causal-timer-retired");
+      else work?.finish();
     };
     try {
       const actual = nativeOutputSink(work, () => callback(work))();
-      if (actual) void Promise.resolve(actual).then(finish, () => { runtime.timers.delete(timer); work?.fail("causal-timer-rejected"); });
+      if (actual)
+        void Promise.resolve(actual).then(finish, () => {
+          runtime.timers.delete(timer);
+          work?.fail("causal-timer-rejected");
+        });
       else finish();
-    } catch (error) { runtime.timers.delete(timer); work?.fail("causal-timer-rejected"); throw error; }
+    } catch (error) {
+      runtime.timers.delete(timer);
+      work?.fail("causal-timer-rejected");
+      throw error;
+    }
   }, delay);
   // Untracked ordinary timers need no registry record. Existing callbacks keep
   // their ordinary timing; failed lineage admission has already tainted source.
@@ -533,30 +879,46 @@ export function cancelNativeOutputCallback(timer: ReturnType<typeof setTimeout> 
   const state = runtime.timers.get(timer);
   if (!state) return;
   state.cancelled = true;
-  if (!state.started) { runtime.timers.delete(timer); state.work?.fail("causal-timer-retired"); }
+  if (!state.started) {
+    runtime.timers.delete(timer);
+    state.work?.fail("causal-timer-retired");
+  }
 }
 /** Called after the actual session reducer/ref update, never after parser return. */
 export function markNativeOutputEventsApplied(sessionId: string, events: readonly object[]): void {
   for (const event of events) {
     const origin = runtime.events.get(event);
     if (!origin || origin.applied) continue;
-    const owned = runtime.items.get(origin.item);
-    if (!owned) continue;
+    const items = originItems(origin.origin);
+    if (!items) continue;
     if (origin.sessionId !== sessionId) {
-      unavailable(owned.batch.stream, "event-session-changed");
+      failOrigin(origin.origin, "event-session-changed");
       continue;
     }
     origin.applied = true;
-    if (owned.batch.stream.appliedEvents < Number.MAX_SAFE_INTEGER)
-      owned.batch.stream.appliedEvents++;
-    else unavailable(owned.batch.stream, "event-count-capacity");
+    for (const stream of new Set(items.map((item) => item.batch.stream))) {
+      if (stream.appliedEvents < Number.MAX_SAFE_INTEGER) stream.appliedEvents++;
+      else unavailable(stream, "event-count-capacity");
+    }
   }
 }
 export function failNativeOutputEvents(events: readonly object[], reason: string): void {
   for (const event of events) {
     const origin = runtime.events.get(event);
-    const owned = origin && runtime.items.get(origin.item);
-    if (owned) unavailable(owned.batch.stream, reason);
+    if (origin) failOrigin(origin.origin, reason);
+  }
+}
+/** Called only after the accepted model object was enrolled by projection. */
+export function markNativeOutputOriginProjectionAccepted(
+  origin: NativeOutputEventOrigin,
+  sessionId: string,
+): void {
+  for (const item of originItems(origin) ?? []) {
+    if (logicalSession(item.batch.stream.source) !== sessionId) {
+      failOrigin(origin, "projection-session-changed");
+      return;
+    }
+    if (item.outcome !== "unsupported") item.outcome = "accepted-projection";
   }
 }
 if (hot) hot.dispose(() => invalidateNativeOutputDelivery("tracker-reloaded"));
@@ -586,6 +948,19 @@ export function inspectNativeOutputDelivery(sessionId: string) {
             nativeState: stream.terminal?.state ?? "unsealed",
             nativeLastSequence: stream.terminal?.lastSequence ?? null,
             pendingBatches: stream.pending.size,
+            outcomes: Object.freeze(
+              [...runtime.outcomes.values()]
+                .filter((item) => item.batch.stream === stream)
+                .map((item) =>
+                  Object.freeze({
+                    sequence: item.batch.sequence,
+                    itemIndex: item.comparison.itemIndex,
+                    outcome: item.outcome,
+                    reason: item.outcomeReason,
+                    unavailableReason: stream.unavailable,
+                  }),
+                ),
+            ),
             unavailableReason: stream.unavailable,
           }),
         ),

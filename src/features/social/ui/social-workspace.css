@@ -5,7 +5,7 @@
   gap: 0.875rem;
   padding: 1rem;
   color: var(--color-content);
-  background: var(--ui-surface);
+  background: var(--ui-surface-raised);
   font: var(--ui-font-secondary) var(--font-sans);
 }
 .social-help-popover p {
@@ -134,6 +134,7 @@
 }
 .social-collection-workspace[data-empty="true"] > .social-collection-list {
   border: 0;
+  background: transparent;
 }
 .social-collection-workspace[data-empty="true"] .social-list-tools {
   max-inline-size: 36rem;
@@ -186,6 +187,25 @@
 .social-account-detail > .social-form {
   margin-block: 0;
 }
+/* One rhythm: the section gap spaces blocks, so nested disclosures add no
+   padding or margins of their own and every heading shares one scale. */
+.social-account-detail > h3 {
+  margin-block: 0;
+}
+.social-account-detail .social-connection {
+  padding-block: 0;
+}
+.social-account-detail .social-connection > :is(p, strong, details, summary),
+.social-account-detail .social-connection summary {
+  margin-block: 0;
+}
+.social-account-detail .social-connection > :is(p, strong, details, div, form, label) + * {
+  margin-block-start: 0.5rem;
+}
+.social-account-detail .social-connection > strong {
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
 .social-account-capabilities h3 {
   margin-block-start: 0;
 }
@@ -214,7 +234,7 @@
   gap: 0.5rem;
   padding: 0.75rem;
   background: var(--ui-surface);
-  border-radius: var(--ui-radius-md);
+  border-radius: var(--ui-radius-card);
 }
 .social-view .social-settings-page {
   display: grid;
@@ -371,18 +391,13 @@
 .social-job-list {
   min-inline-size: 0;
 }
+/* Open list: rows are separated by spacing; each row's item Button owns hover/selected fill. */
 .social-history-records {
   display: grid;
-  padding-inline: 1rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  gap: 0.125rem;
 }
 .social-history-record {
   min-inline-size: 0;
-  padding-block: 2px;
-}
-.social-history-record:last-child {
-  border-block-end: 0;
 }
 .social-view .social-history-excerpt {
   white-space: pre-wrap;
@@ -418,8 +433,7 @@
   padding-block: 1rem;
 }
 .social-schedule-summary {
-  padding-block: 0.75rem;
-  border-block: 1px solid var(--color-stroke);
+  padding-block: 0.5rem;
   color: var(--ui-text-secondary);
 }
 .social-definition-grid {
@@ -439,20 +453,15 @@
 .social-content-pool {
   display: grid;
   gap: 0.5rem;
-  padding-block: 0.75rem;
-  border-block: 1px solid var(--color-stroke);
+  padding-block: 0.5rem;
 }
 .social-view .social-content-pool > .social-preview {
   margin: 0;
   padding-block: 0.75rem;
   padding-inline: 0;
   border: 0;
-  border-block-end: 1px solid var(--color-stroke);
   border-radius: 0;
   background: transparent;
-}
-.social-view .social-content-pool > .social-preview:last-child {
-  border-block-end: 0;
 }
 .social-view .social-content-pool label {
   margin: 0;
@@ -465,8 +474,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
-  padding-block: 0.75rem;
-  border-block-start: 1px solid var(--color-stroke);
+  padding-block: 1rem 0.5rem;
 }
 .social-workflow-steps > h3 {
   flex-basis: 100%;
@@ -498,9 +506,8 @@
   align-items: center;
   gap: 0.625rem;
   padding: 0.75rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
-  background: var(--color-selection-subtle);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-selected);
 }
 .social-bulk-toolbar > strong {
   margin-inline-end: auto;
@@ -515,9 +522,8 @@
   position: sticky;
   inset-block-start: 0;
   z-index: 2;
-  padding-block: 0.5rem;
+  padding-block: 0.5rem 0.75rem;
   margin-block: 0 0.75rem;
-  border-block-end: 1px solid var(--color-stroke);
   background: var(--color-background-base);
 }
 .social-batch-results {
@@ -526,8 +532,8 @@
 }
 .social-batch-results > :is(article, div) {
   padding: 0.75rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-card);
 }
 .social-batch-results > article {
   display: grid;
@@ -549,8 +555,8 @@
 }
 .social-pool-editor > li {
   padding: 0.625rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
 }
 .social-pool-editor > li > span {
   display: inline-block;
@@ -589,8 +595,9 @@
   display: grid;
   gap: 1rem;
   padding: 1rem;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
 }
 .social-view .social-check {
   display: flex;
@@ -600,9 +607,6 @@
 }
 .social-check input {
   margin-block-start: 0.125rem;
-}
-.social-view .social-status-dot[data-online="true"] {
-  background: var(--color-active);
 }
 @media (prefers-reduced-motion: no-preference) {
   .social-view [data-kind="loading"] > svg {

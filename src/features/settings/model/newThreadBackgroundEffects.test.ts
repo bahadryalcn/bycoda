@@ -99,4 +99,72 @@ describe("new-thread background effects", () => {
 
     expect(fetch).toHaveBeenCalledTimes(2);
   });
+
+  it("settles pending requests when the worker crashes and recreates it on retry", async () => {
+    const workers: Array<{
+      onerror: (() => void) | null;
+      onmessage: ((event: { data: unknown }) => void) | null;
+      onmessageerror: (() => void) | null;
+      postMessage: ReturnType<typeof vi.fn>;
+      terminate: ReturnType<typeof vi.fn>;
+    }> = [];
+    vi.stubGlobal(
+      "Worker",
+      vi.fn(function () {
+        const created = {
+          onerror: null,
+          onmessage: null,
+          onmessageerror: null,
+          postMessage: vi.fn(),
+          terminate: vi.fn(),
+        };
+        workers.push(created);
+        return created;
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) })),
+    );
+    const sourceKey = `/background.png?v=${Date.now()}`;
+
+    const first = prepareNewThreadBackgroundEffect(sourceKey, "asset://x/a.png", "dither", false);
+    await vi.waitFor(() => expect(workers[0]?.postMessage).toHaveBeenCalledTimes(1));
+    workers[0]!.onerror?.();
+    await expect(first).rejects.toThrow("stopped unexpectedly");
+    expect(workers[0]!.terminate).toHaveBeenCalled();
+
+    const retry = prepareNewThreadBackgroundEffect(sourceKey, "asset://x/a.png", "dither", false);
+    await vi.waitFor(() => expect(workers).toHaveLength(2));
+    await vi.waitFor(() => expect(workers[1]?.postMessage).toHaveBeenCalledTimes(1));
+    const load = workers[1]!.postMessage.mock.calls[0]![0] as { id: number; kind: string };
+    expect(load.kind).toBe("load");
+    workers[1]!.onmessage?.({ data: { id: load.id } });
+    await vi.waitFor(() => expect(workers[1]!.postMessage).toHaveBeenCalledTimes(2));
+    const render = workers[1]!.postMessage.mock.calls[1]![0] as { id: number };
+    workers[1]!.onmessage?.({ data: { id: render.id, result: new Blob(["x"]) } });
+    await expect(retry).resolves.toBeInstanceOf(Blob);
+  });
+
+  it("rejects a request the worker never answers", async () => {
+    vi.useFakeTimers();
+    // Worker state is module-level, so this reuses the silent mock worker from above.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(4) })),
+    );
+    try {
+      const hung = prepareNewThreadBackgroundEffect(
+        `/background.png?v=${Date.now()}`,
+        "asset://x/b.png",
+        "dither",
+        false,
+      );
+      const outcome = expect(hung).rejects.toThrow("did not respond");
+      await vi.advanceTimersByTimeAsync(21_000);
+      await outcome;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

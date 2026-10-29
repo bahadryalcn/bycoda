@@ -51,7 +51,7 @@ for (const theme of ["dark", "light"]) {
       await search.fill("project-39");
       await expect(list.locator("fieldset")).toHaveCount(1);
       const trigger = list.getByRole("button", {
-        name: "Notification categories for team/project-39",
+        name: "Notification categories for team/project-39 (github.com)",
       });
       await trigger.click();
       await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -59,7 +59,7 @@ for (const theme of ["dark", "light"]) {
         path: `temp/verification/2026-10-18-notifications/${theme}-${width}-categories.png`,
       });
       const category = list.getByRole("switch", {
-        name: "Agent finished for team/project-39",
+        name: "Agent finished for team/project-39 (github.com)",
         exact: true,
       });
       await category.focus();

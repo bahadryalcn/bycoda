@@ -97,13 +97,6 @@
   line-height: 20px;
 }
 
-.syncActions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr));
-  gap: 6px;
-  margin-block-start: 6px;
-}
-
 .summary {
   display: flex;
   flex-wrap: wrap;

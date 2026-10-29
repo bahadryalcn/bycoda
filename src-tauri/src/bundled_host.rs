@@ -148,6 +148,25 @@ pub(crate) enum LifecycleProbeError {
     Unconfirmed,
 }
 
+// Dirty-source build identities include their complete path inventory. Retain
+// that identity while bounding both allocation and input consumption.
+const MAX_LIFECYCLE_RESPONSE_BYTES: usize = 1024 * 1024;
+
+fn read_lifecycle_response(
+    reader: impl std::io::Read,
+) -> Result<serde_json::Value, LifecycleProbeError> {
+    use std::io::Read;
+    let mut bytes = Vec::new();
+    reader
+        .take((MAX_LIFECYCLE_RESPONSE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|_| LifecycleProbeError::Unconfirmed)?;
+    if bytes.len() > MAX_LIFECYCLE_RESPONSE_BYTES {
+        return Err(LifecycleProbeError::Unconfirmed);
+    }
+    serde_json::from_slice(&bytes).map_err(|_| LifecycleProbeError::Unconfirmed)
+}
+
 pub(crate) fn probe_lifecycle_status(
     base: &Path,
 ) -> Result<(serde_json::Value, serde_json::Value), LifecycleProbeError> {
@@ -190,9 +209,7 @@ pub(crate) fn probe_lifecycle_status(
             }
             Unconfirmed
         })?;
-    let response: serde_json::Value =
-        serde_json::from_reader(std::io::Read::take(response.into_reader(), 4096))
-            .map_err(|_| Unconfirmed)?;
+    let response = read_lifecycle_response(response.into_reader())?;
     Ok((state, response))
 }
 
@@ -696,6 +713,54 @@ mod tests {
         std::fs::write(&archive, "second build").unwrap();
         assert_ne!(first, package_identity(&archive).unwrap());
         let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn lifecycle_response_preserves_large_dirty_source_identity() {
+        let identity = serde_json::json!({
+            "pid": 77,
+            "buildIdentity": {
+                "buildId": "isolated-dirty-source",
+                "sourceFingerprint": "source-fingerprint",
+                "dirtyPaths": (0..750).map(|i| serde_json::json!({
+                    "path": format!("src/features/verification/changed-surface-{i}.tsx"),
+                    "status": "M "
+                })).collect::<Vec<_>>()
+            }
+        });
+        let body = serde_json::to_vec(&identity).unwrap();
+        assert!(body.len() > 4096);
+        assert_eq!(read_lifecycle_response(body.as_slice()).unwrap(), identity);
+    }
+
+    #[test]
+    fn lifecycle_response_rejects_oversized_truncated_and_failed_reads() {
+        struct FailedRead;
+        impl std::io::Read for FailedRead {
+            fn read(&mut self, _buffer: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("isolated read failure"))
+            }
+        }
+        for result in [
+            read_lifecycle_response(std::io::repeat(b' ')),
+            read_lifecycle_response(
+                br#"{"pid":77,"buildIdentity":{"buildId":"truncated""#.as_slice(),
+            ),
+            read_lifecycle_response(FailedRead),
+        ] {
+            assert_eq!(result, Err(LifecycleProbeError::Unconfirmed));
+        }
+        let mut boundary = b"{}".to_vec();
+        boundary.resize(MAX_LIFECYCLE_RESPONSE_BYTES, b' ');
+        assert_eq!(
+            read_lifecycle_response(boundary.as_slice()).unwrap(),
+            serde_json::json!({})
+        );
+        boundary.push(b' ');
+        assert_eq!(
+            read_lifecycle_response(boundary.as_slice()),
+            Err(LifecycleProbeError::Unconfirmed)
+        );
     }
 
     #[test]

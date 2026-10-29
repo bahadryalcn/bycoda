@@ -2,9 +2,18 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { clearedWorkspaceSession, newWorkspaceSession } from "./newWorkspaceSession";
 import { newDefaultSession, newSession, type Session } from "../../features/sessions/model/session";
+import { hostSessionBinding, saveHostSessionBinding } from "../../features/connections/model/sessionExecutionBinding";
 
 afterEach(() => localStorage.clear());
 describe("new visible-workspace sessions", () => {
+  it("keeps an explicitly Host-owned clear on that owner with a fresh identity", () => {
+    const source = newSession("codex", "G:/local");
+    const owned = saveHostSessionBinding(source, { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: source.id, authorityGeneration: null, created: true });
+    const cleared = clearedWorkspaceSession(owned);
+    expect(cleared.id).not.toBe(source.id);
+    expect(hostSessionBinding(cleared)).toMatchObject({ environmentId: "home", sessionId: cleared.id, authorityGeneration: null, created: false });
+    expect(cleared.blocks).toEqual([]);
+  });
   it("clears provider context while preserving the source configuration and history", () => {
     const source: Session = {
       ...newSession("claude", "/project", undefined, "supervised"),

@@ -49,6 +49,10 @@ describe("retained editor overview ownership", () => {
 
   function wheel(options: WheelEventInit = {}) {
     const event = new WheelEvent("wheel", { deltaY: 40, cancelable: true, ...options });
+    // happy-dom's WheelEvent drops modifier init flags; set them like a real browser would.
+    for (const key of ["ctrlKey", "shiftKey", "altKey", "metaKey"] as const) {
+      if (options[key]) Object.defineProperty(event, key, { value: true });
+    }
     ruler.dom.dispatchEvent(event);
     return event;
   }

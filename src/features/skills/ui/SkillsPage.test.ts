@@ -371,11 +371,11 @@ describe("Settings skill preview", () => {
     "restores focus to %s after refreshing the list",
     async (label) => {
       await render();
-      const opener = await click(label);
+      await click(label);
       const reload = deferred<DiscoveredSkill[]>();
       vi.mocked(invoke).mockImplementationOnce(() => reload.promise);
       await click("Refresh skills");
-      expect(opener.isConnected).toBe(false);
+      // The list stays mounted while it refreshes, so the opener can be kept or replaced.
       await act(async () => reload.resolve(skills));
       const replacement = button(label);
       await click("Close skill preview");
@@ -897,6 +897,8 @@ describe("Skills on connected machines", () => {
   it("explains an outdated host in its own section only", async () => {
     connect([machine("mac", "Mac mini"), machine("old", "Old box")], (env, command) => {
       if (env === "env-old") throw "Host rejected request: Invalid workspace path";
+      // A current host answers its skill policy too; only the outdated one fails.
+      if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
       return command === "list_skills" ? macSkills : [];
     });
     await renderLocalProject();

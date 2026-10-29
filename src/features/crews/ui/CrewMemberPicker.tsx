@@ -32,6 +32,7 @@ export function CrewMemberPicker({
   onDraftChange,
   role,
   nameError,
+  modelError,
   libraryScope,
   onLibraryScopeChange,
   saveToLibrary,
@@ -48,6 +49,7 @@ export function CrewMemberPicker({
   /** The role every picked member takes when opened from a role slot. */
   role?: CrewRole;
   nameError?: string;
+  modelError?: string;
   libraryScope: "project" | "global";
   onLibraryScopeChange: (scope: "project" | "global") => void;
   saveToLibrary: boolean;
@@ -132,7 +134,7 @@ export function CrewMemberPicker({
               <div
                 role="group"
                 aria-label={t("Selected members")}
-                className="flex min-w-0 flex-col gap-1.5 rounded-lg border border-(--ui-tone-neutral-border) p-2"
+                className="flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) bg-(--ui-surface-panel) p-2"
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
                   <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
@@ -184,13 +186,15 @@ export function CrewMemberPicker({
             ) : (
               <ul
                 aria-label={t("Member library")}
-                className="flex flex-col divide-y divide-(--ui-tone-neutral-border) overflow-hidden rounded-lg border border-(--ui-tone-neutral-border)"
+                className="flex flex-col gap-px"
               >
                 {matches.map((agent) => {
                   const checked = selected.includes(agent.id);
                   return (
                     <li key={agent.id}>
-                      <label className="flex min-w-0 cursor-pointer items-center gap-3 px-3 py-2 hover:bg-(--ui-surface-hover)">
+                      <label
+                        className={`flex min-w-0 cursor-pointer items-center gap-3 rounded-(--radius-control) px-3 py-2 hover:bg-(--ui-surface-hover) ${checked ? "bg-(--ui-surface-selected)" : ""}`}
+                      >
                         <Checkbox
                           checked={checked}
                           onChange={(event) => toggle(agent, event.target.checked)}
@@ -228,9 +232,10 @@ export function CrewMemberPicker({
             groups={data.groupsSupported}
             groupSuggestions={groups}
             nameError={nameError}
+            modelError={modelError}
             autoFocus
           />
-          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-(--ui-tone-neutral-border) p-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-2">
             <label className="flex items-center gap-2 text-ui-body">
               <Checkbox
                 checked={saveToLibrary}

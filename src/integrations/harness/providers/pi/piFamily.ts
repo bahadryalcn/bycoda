@@ -1,4 +1,13 @@
-import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink } from "../../core/nativeOutputDelivery";
+import {
+  captureNativeOutputWorkEvent,
+  captureNativeOutputWork,
+  joinNativeOutputWorks,
+  retainNativeOutputEventOrigin,
+  runWithoutNativeOutputOrigin,
+  runNativeOutputWork,
+  nativeOutputSink,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
@@ -79,12 +88,17 @@ type InFlightTool = {
   name: string;
   input: Record<string, unknown>;
   partialJson: string;
+  partialJsonWork?: NativeOutputWork | null;
+  partialJsonTracked?: boolean;
   title: string;
   /** Set on `tool_execution_end`; later progress updates are stale. */
   finished?: boolean;
 };
 
 type Live = {
+  bindingWork?: NativeOutputWork | null;
+  bindingTracked?: boolean;
+  bindingRetired?: boolean;
   skillPolicyKey?: string;
   rpc: PiRpc;
   cwd: string;
@@ -416,6 +430,7 @@ export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<v
     return;
   }
   live.cancelled = true;
+  retireToolFragments(live, "pi-fragment-cancelled");
   live.cancelGeneration += 1;
   live.muteUpdates = true;
   live.settleToken += 1;
@@ -459,6 +474,9 @@ export function stopSession(flavor: PiFlavor, sessionId: string): Promise<void> 
 
 function closeLive(live: Live): void {
   if (live) {
+    live.bindingRetired = true;
+    retirePiBinding(live, "pi-binding-session-retired");
+    retireToolFragments(live, "pi-fragment-session-retired");
     live.cancelled = true;
     live.muteUpdates = true;
     live.settleToken += 1;
@@ -641,6 +659,9 @@ async function startLive(
       input.sessionId,
       (line) => rpc.pushLine(line),
       (code) => {
+        live.bindingRetired = true;
+        retirePiBinding(live, "pi-binding-process-exited");
+        retireToolFragments(live, "pi-fragment-process-exited");
         rpc.close(new Error(`${flavor.label} exited`));
         if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
         const current = liveRef.current;
@@ -682,21 +703,25 @@ async function startLive(
 
     liveByThread.set(input.sessionId, live);
 
-    const stateFrame = await startupWait(
+    await startupWait(
       attempt,
-      rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS),
+      rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS, (stateFrame, work) => {
+        attempt.controller.signal.throwIfAborted();
+        return consumePiBindingResponse(live, stateFrame, work, () =>
+          bindState(flavor, input.sessionId, live, stateFrame.data),
+        );
+      }),
     );
     attempt.controller.signal.throwIfAborted();
-    bindState(flavor, input.sessionId, live, stateFrame.data);
     await startupWait(attempt, applyModel(flavor, live, input));
     attempt.controller.signal.throwIfAborted();
     if (live.providerSessionId) {
-      live.onEvent({
+      emitPiBindingEvent(live, {
         type: "session.providerBound",
         providerSessionId: live.providerSessionId,
       });
     }
-    live.onEvent({ type: "session.started" });
+    emitPiBindingEvent(live, { type: "session.started" });
     return live;
   } catch (error) {
     closeLive(live);
@@ -716,6 +741,7 @@ async function runTurn(flavor: PiFlavor, live: Live, input: SendTurnInput): Prom
   live.emittedAssistant = "";
   live.emittedReasoning = "";
   live.turnError = null;
+  retireToolFragments(live, "pi-fragment-turn-replaced");
   live.toolsByIndex.clear();
   live.toolsById.clear();
   live.compacting = false;
@@ -760,6 +786,7 @@ async function runTurn(flavor: PiFlavor, live: Live, input: SendTurnInput): Prom
     });
     throw error;
   } finally {
+    retireToolFragments(live, "pi-fragment-turn-retired");
     live.activeTurn = false;
     live.promptId = null;
     live.rpc.cancelRequest(promptId);
@@ -880,45 +907,57 @@ function handleFrame(
     if (type === "session_info_update") {
       const providerSessionId = stringField(rec, "sessionId");
       if (providerSessionId) {
-        bindState(flavor, sessionId, live, { sessionId: providerSessionId });
-        live.onEvent({ type: "session.providerBound", providerSessionId });
+        const work = captureNativeOutputWork();
+        try {
+          rememberPiBindingInput(live, work);
+          bindState(flavor, sessionId, live, { sessionId: providerSessionId });
+          emitPiBindingEvent(live, { type: "session.providerBound", providerSessionId });
+        } finally {
+          work?.finish();
+        }
       }
       return;
     }
     if (type === "config_update") {
-      const model = asRecord(rec.model);
-      const provider = stringField(model, "provider");
-      const modelId = stringField(model, "id");
-      const thinking = stringField(rec, "thinkingLevel");
-      const fastModeEnabled =
-        typeof rec.fastModeEnabled === "boolean" ? rec.fastModeEnabled : undefined;
-      const native = provider && modelId ? piNativeId(provider, modelId) : undefined;
-      if (native && native !== live.nativeModel) {
-        live.nativeModel = native;
-        // Capacity belongs to the active model, never the previous model.
-        const capacity = model?.contextWindow;
-        live.contextWindow =
-          typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
-            ? capacity
-            : undefined;
+      const work = captureNativeOutputWork();
+      try {
+        rememberPiBindingInput(live, work);
+        const model = asRecord(rec.model);
+        const provider = stringField(model, "provider");
+        const modelId = stringField(model, "id");
+        const thinking = stringField(rec, "thinkingLevel");
+        const fastModeEnabled =
+          typeof rec.fastModeEnabled === "boolean" ? rec.fastModeEnabled : undefined;
+        const native = provider && modelId ? piNativeId(provider, modelId) : undefined;
+        if (native && native !== live.nativeModel) {
+          live.nativeModel = native;
+          // Capacity belongs to the active model, never the previous model.
+          const capacity = model?.contextWindow;
+          live.contextWindow =
+            typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
+              ? capacity
+              : undefined;
+        }
+        if (isPiThinkingLevel(thinking)) live.thinking = thinking;
+        if (fastModeEnabled != null) {
+          live.fastModeEnabled = fastModeEnabled;
+          live.fastModeRequested = fastModeEnabled;
+        }
+        emitPiBindingEvent(live, {
+          type: "session.configChanged",
+          ...(native ? { model: `${flavor.id}:${native}` } : {}),
+          ...(isPiThinkingLevel(thinking) || fastModeEnabled != null
+            ? {
+                modelSettings: {
+                  ...(isPiThinkingLevel(thinking) ? { thinking } : {}),
+                  ...(fastModeEnabled != null ? { fast: String(fastModeEnabled) } : {}),
+                },
+              }
+            : {}),
+        });
+      } finally {
+        work?.finish();
       }
-      if (isPiThinkingLevel(thinking)) live.thinking = thinking;
-      if (fastModeEnabled != null) {
-        live.fastModeEnabled = fastModeEnabled;
-        live.fastModeRequested = fastModeEnabled;
-      }
-      live.onEvent({
-        type: "session.configChanged",
-        ...(native ? { model: `${flavor.id}:${native}` } : {}),
-        ...(isPiThinkingLevel(thinking) || fastModeEnabled != null
-          ? {
-              modelSettings: {
-                ...(isPiThinkingLevel(thinking) ? { thinking } : {}),
-                ...(fastModeEnabled != null ? { fast: String(fastModeEnabled) } : {}),
-              },
-            }
-          : {}),
-      });
       return;
     }
     if (type === "command_output") {
@@ -964,7 +1003,7 @@ function handleFrame(
   if (turnError !== null) live.turnError = turnError;
 
   const context = contextFromUsage(rec, live.contextWindow);
-  if (context) live.onEvent({ type: "context", ...context });
+  if (context) emitPiBindingEvent(live, { type: "context", ...context });
   const metrics = turnMetricsFromUsage(rec);
   if (metrics) live.onEvent({ type: "turn.metrics", ...metrics });
 
@@ -988,15 +1027,40 @@ function handleFrame(
   if (jsonDelta) {
     const tool = live.toolsByIndex.get(jsonDelta.index);
     if (tool) {
+      const current = captureNativeOutputWork({ label: "pi-tool-json-fragment" });
+      if (tool.partialJsonTracked === undefined) tool.partialJsonTracked = current !== null;
+      if (!current || !tool.partialJsonTracked) {
+        tool.partialJsonWork?.fail("pi-fragment-untracked");
+        current?.fail("pi-fragment-untracked");
+        tool.partialJsonWork = null;
+        tool.partialJsonTracked = false;
+      } else if (tool.partialJsonWork) {
+        const previous = tool.partialJsonWork;
+        const joined = joinNativeOutputWorks([previous, current], sessionId);
+        if (joined) {
+          previous.finish();
+          current.finish();
+        } else {
+          previous.fail("pi-fragment-join-failed");
+          current.fail("pi-fragment-join-failed");
+        }
+        tool.partialJsonWork = joined;
+        tool.partialJsonTracked = joined !== null;
+      } else tool.partialJsonWork = current;
       tool.partialJson += jsonDelta.delta;
       const parsed = tryParseJsonRecord(tool.partialJson);
-      if (parsed) updateTool(live, tool, parsed);
+      if (parsed) {
+        if (tool.partialJsonWork) tool.partialJsonWork.run(() => updateTool(live, tool, parsed));
+        else runWithoutNativeOutputOrigin(() => updateTool(live, tool, parsed));
+      }
     }
   }
 
   const ended = toolCallEndFromEvent(rec);
   if (ended) {
     upsertTool(live, ended.id, ended.name, ended.input);
+    const tool = live.toolsById.get(ended.id);
+    if (tool) retireToolFragment(tool, "pi-fragment-incomplete-final");
   }
 
   const execStart = toolExecutionStartFromEvent(rec);
@@ -1093,28 +1157,31 @@ function flushTurnError(flavor: PiFlavor, live: Live): void {
 }
 
 async function settleTurn(live: Live): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-  if (live.settling || live.cancelled || live.muteUpdates) return;
-  if (!live.activeTurn && !live.turnDone) return;
-  live.settling = true;
-  const token = live.settleToken;
-  try {
-    await live.rpc.request({ type: "get_session_stats" }, STATS_TIMEOUT_MS, (stats, work) => {
-    if (live.settleToken === token && !live.cancelled) {
-      const context = contextFromSessionStats(stats.data);
-      if (context) nativeOutputSink(work, () => live.onEvent({ type: "context", ...context }))();
+  return runNativeOutputWork(async (outputWork) => {
+    if (live.settling || live.cancelled || live.muteUpdates) return;
+    if (!live.activeTurn && !live.turnDone) return;
+    live.settling = true;
+    const token = live.settleToken;
+    try {
+      await live.rpc.request({ type: "get_session_stats" }, STATS_TIMEOUT_MS, (stats, work) => {
+        if (live.settleToken === token && !live.cancelled) {
+          const context = contextFromSessionStats(stats.data);
+          if (context)
+            nativeOutputSink(work, () => live.onEvent({ type: "context", ...context }))();
+        }
+        return stats;
+      });
+    } catch {
+      // meter stays on the last streamed usage
     }
-    return stats;
-    });
-  } catch {
-    // meter stays on the last streamed usage
-  }
-  if (live.settleToken === token && !live.cancelled) {
-    nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
-  }
-  if (live.settleToken === token) live.settling = false;
-
-});
+    if (live.settleToken === token && !live.cancelled) {
+      nativeOutputSink(outputWork, finishActiveTurn)(live, [
+        { type: "message.completed" },
+        { type: "reasoning.completed" },
+      ]);
+    }
+    if (live.settleToken === token) live.settling = false;
+  });
 }
 
 async function handleExtensionUi(
@@ -1123,150 +1190,170 @@ async function handleExtensionUi(
   live: Live,
   request: PiExtensionUiRequest,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  if (!needsExtensionUiReply(request)) {
-    const text = request.title ? extensionUiTitle(request) : "";
-    if (request.method === "setStatus" && request.statusKey)
-      emitNative({ type: "status", key: request.statusKey, text });
-    else if (text.trim()) emitNative({ type: "status", text });
-    return;
-  }
-
-  if (live.cancelled || live.muteUpdates) {
-    await nativeOutputSink(outputWork, writeChild)(sessionId, JSON.stringify(extensionUiResponse(request, "deny"))).catch(
-      () => undefined,
-    );
-    return;
-  }
-
-  if (
-    flavor.id === "omp" &&
-    (request.method === "select" || request.method === "input" || request.method === "editor")
-  ) {
-    const uiId = live.nextApprovalUiId++;
-    const replyPromise = new Promise<UserQuestionReply>((resolve) => {
-      live.questions.set(uiId, {
-        id: request.id,
-        resolve,
-        deliver: async (reply) => {
-          let value: string | undefined;
-          if (reply.kind === "answered") {
-            if (request.method === "select") {
-              const selected = reply.answers[request.id]?.[0];
-              if (selected !== undefined && /^\d+$/.test(selected))
-                value = request.options[Number(selected)];
-            } else value = reply.custom?.[request.id];
-          }
-          await nativeOutputSink(outputWork, writeChild)(
-            sessionId,
-            JSON.stringify({
-              type: "extension_ui_response",
-              id: request.id,
-              ...(value === undefined ? { cancelled: true } : { value }),
-            }),
-          );
-        },
-      });
-    });
-    const event: Extract<HarnessEvent, { type: "question.asked" }> = {
-      type: "question.asked",
-      requestId: uiId,
-      title: extensionUiTitle(request),
-      behavior: "blocking",
-      dismissAction: "cancel",
-      questions: [
-        {
-          id: request.id,
-          prompt: extensionUiTitle(request),
-          multiSelect: false,
-          allowCustom: request.method !== "select",
-          options:
-            request.method === "select"
-              ? request.options.map((label, index) => ({
-                  id: String(index),
-                  label: extensionUiTitle({
-                    id: request.id,
-                    method: "notify",
-                    title: label,
-                  }),
-                }))
-              : [],
-        },
-      ],
-    };
-captureNativeOutputWorkEvent(outputWork, event);
-    live.questions.get(uiId)!.event = event;
-    showNextQueuedQuestion(live);
-    const reply = await replyPromise;
-    const providerCancelled = live.questions.get(uiId)?.providerCancelled;
-    live.questions.delete(uiId);
-    let value: string | undefined;
-    if (reply.kind === "answered") {
-      if (request.method === "select") {
-        const selected = reply.answers[request.id]?.[0];
-        if (selected !== undefined && /^\d+$/.test(selected))
-          value = request.options[Number(selected)];
-      } else {
-        value = reply.custom?.[request.id];
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      if (!needsExtensionUiReply(request)) {
+        const text = request.title ? extensionUiTitle(request) : "";
+        if (request.method === "setStatus" && request.statusKey)
+          emitNative({ type: "status", key: request.statusKey, text });
+        else if (text.trim()) emitNative({ type: "status", text });
+        return;
       }
-    }
-    emitNative({
-      type: "question.resolved",
-      requestId: uiId,
-      decision:
-        live.cancelled || live.muteUpdates || providerCancelled
-          ? "cancelled"
-          : value === undefined
-            ? "skipped"
-            : "answered",
-      ...(value !== undefined && reply.kind === "answered" ? { reply } : {}),
-    });
-    showNextQueuedQuestion(live);
-    return;
-  }
 
-  const uiId = live.nextApprovalUiId++;
-  emitNative({
-    type: "approval.requested",
-    requestId: uiId,
-    title: extensionUiTitle(request),
-    kind: "other",
-  });
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(uiId, { request, resolve });
-  });
-  live.approvals.delete(uiId);
-  emitNative({ type: "approval.resolved", requestId: uiId, decision });
-  await nativeOutputSink(outputWork, writeChild)(sessionId, JSON.stringify(extensionUiResponse(request, decision))).catch(
-    () => undefined,
+      if (live.cancelled || live.muteUpdates) {
+        await nativeOutputSink(outputWork, writeChild)(
+          sessionId,
+          JSON.stringify(extensionUiResponse(request, "deny")),
+        ).catch(() => undefined);
+        return;
+      }
+
+      if (
+        flavor.id === "omp" &&
+        (request.method === "select" || request.method === "input" || request.method === "editor")
+      ) {
+        const uiId = live.nextApprovalUiId++;
+        const replyPromise = new Promise<UserQuestionReply>((resolve) => {
+          live.questions.set(uiId, {
+            id: request.id,
+            resolve,
+            deliver: async (reply) => {
+              let value: string | undefined;
+              if (reply.kind === "answered") {
+                if (request.method === "select") {
+                  const selected = reply.answers[request.id]?.[0];
+                  if (selected !== undefined && /^\d+$/.test(selected))
+                    value = request.options[Number(selected)];
+                } else value = reply.custom?.[request.id];
+              }
+              await nativeOutputSink(outputWork, writeChild)(
+                sessionId,
+                JSON.stringify({
+                  type: "extension_ui_response",
+                  id: request.id,
+                  ...(value === undefined ? { cancelled: true } : { value }),
+                }),
+              );
+            },
+          });
+        });
+        const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+          type: "question.asked",
+          requestId: uiId,
+          title: extensionUiTitle(request),
+          behavior: "blocking",
+          dismissAction: "cancel",
+          questions: [
+            {
+              id: request.id,
+              prompt: extensionUiTitle(request),
+              multiSelect: false,
+              allowCustom: request.method !== "select",
+              options:
+                request.method === "select"
+                  ? request.options.map((label, index) => ({
+                      id: String(index),
+                      label: extensionUiTitle({
+                        id: request.id,
+                        method: "notify",
+                        title: label,
+                      }),
+                    }))
+                  : [],
+            },
+          ],
+        };
+        captureNativeOutputWorkEvent(outputWork, event);
+        live.questions.get(uiId)!.event = event;
+        showNextQueuedQuestion(live);
+        const reply = await replyPromise;
+        const providerCancelled = live.questions.get(uiId)?.providerCancelled;
+        live.questions.delete(uiId);
+        let value: string | undefined;
+        if (reply.kind === "answered") {
+          if (request.method === "select") {
+            const selected = reply.answers[request.id]?.[0];
+            if (selected !== undefined && /^\d+$/.test(selected))
+              value = request.options[Number(selected)];
+          } else {
+            value = reply.custom?.[request.id];
+          }
+        }
+        emitNative({
+          type: "question.resolved",
+          requestId: uiId,
+          decision:
+            live.cancelled || live.muteUpdates || providerCancelled
+              ? "cancelled"
+              : value === undefined
+                ? "skipped"
+                : "answered",
+          ...(value !== undefined && reply.kind === "answered" ? { reply } : {}),
+        });
+        showNextQueuedQuestion(live);
+        return;
+      }
+
+      const uiId = live.nextApprovalUiId++;
+      emitNative({
+        type: "approval.requested",
+        requestId: uiId,
+        title: extensionUiTitle(request),
+        kind: "other",
+      });
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        live.approvals.set(uiId, { request, resolve });
+      });
+      live.approvals.delete(uiId);
+      emitNative({ type: "approval.resolved", requestId: uiId, decision });
+      await nativeOutputSink(outputWork, writeChild)(
+        sessionId,
+        JSON.stringify(extensionUiResponse(request, decision)),
+      ).catch(() => undefined);
+    },
+    { additionalInput: true },
   );
-
-});
 }
 
 async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInput): Promise<void> {
   const native = nativeModelId(input.model);
   const ref = parsePiModelRef(native);
   if (ref && native !== live.nativeModel) {
-    const result = await live.rpc.request({
-      type: "set_model",
-      provider: ref.provider,
-      modelId: ref.modelId,
-    });
-    live.nativeModel = native;
-    const model = asRecord(result.data);
-    const window =
-      model && typeof model.contextWindow === "number" ? model.contextWindow : undefined;
-    if (window && window > 0) live.contextWindow = window;
+    await live.rpc.request(
+      {
+        type: "set_model",
+        provider: ref.provider,
+        modelId: ref.modelId,
+      },
+      undefined,
+      (result, work) =>
+        consumePiBindingResponse(live, result, work, () => {
+          live.nativeModel = native;
+          const model = asRecord(result.data);
+          const window =
+            model && typeof model.contextWindow === "number" ? model.contextWindow : undefined;
+          if (window && window > 0) live.contextWindow = window;
+        }),
+    );
   } else if (ref) {
     live.nativeModel = native;
   }
 
   const thinking = input.modelSettings?.thinking;
   if (isPiThinkingLevel(thinking) && thinking !== live.thinking) {
-    await live.rpc.request({ type: "set_thinking_level", level: thinking }).catch(() => undefined);
-    live.thinking = thinking;
+    await live.rpc
+      .request({ type: "set_thinking_level", level: thinking }, undefined, (result, work) =>
+        consumePiBindingResponse(live, result, work, () => {
+          live.thinking = thinking;
+        }),
+      )
+      .catch(() => {
+        retirePiBinding(live, "pi-binding-configuration-failed");
+        live.thinking = thinking;
+      });
   }
 
   const fast = input.modelSettings?.fast;
@@ -1278,20 +1365,27 @@ async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInp
     const enabled = fast === "true";
     live.fastModeRequested = enabled;
     try {
-      const response = await live.rpc.request({
-        type: "set_fast_mode",
-        enabled,
-      });
-      const data = asRecord(response.data);
-      live.fastModeEnabled = typeof data?.enabled === "boolean" ? data.enabled : enabled;
+      await live.rpc.request(
+        {
+          type: "set_fast_mode",
+          enabled,
+        },
+        undefined,
+        (response, work) =>
+          consumePiBindingResponse(live, response, work, () => {
+            const data = asRecord(response.data);
+            live.fastModeEnabled = typeof data?.enabled === "boolean" ? data.enabled : enabled;
+          }),
+      );
     } catch (error) {
+      retirePiBinding(live, "pi-binding-configuration-failed");
       if (enabled) {
         live.fastModeEnabled = false;
-        live.onEvent({
+        emitPiBindingEvent(live, {
           type: "session.configChanged",
           modelSettings: { fast: "false" },
         });
-        live.onEvent({
+        emitPiBindingEvent(live, {
           type: "status",
           text:
             error instanceof Error
@@ -1309,7 +1403,61 @@ async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInp
     stateFor(flavor).liveByThread.get(input.sessionId) === live &&
     !live.muteUpdates
   ) {
-    live.onEvent({ type: "session.configChanged", model: `pi:${live.nativeModel}` });
+    emitPiBindingEvent(live, { type: "session.configChanged", model: `pi:${live.nativeModel}` });
+  }
+}
+
+function retirePiBinding(live: Live, reason: string): void {
+  live.bindingWork?.fail(reason);
+  live.bindingWork = null;
+  live.bindingTracked = false;
+}
+/** Private retained state ancestry. A bare promise result cannot enter here as
+ * an original; only the actual PiRpc consumer's authentic active work can. */
+function rememberPiBindingInput(live: Live, work: NativeOutputWork | null): void {
+  if (live.bindingRetired || !work || live.bindingTracked === false) {
+    retirePiBinding(live, "pi-binding-input-untracked");
+    work?.fail(live.bindingRetired ? "pi-binding-consumer-retired" : "pi-binding-input-untracked");
+    return;
+  }
+  const previous = live.bindingWork;
+  const retained = previous
+    ? joinNativeOutputWorks([previous, work])
+    : retainNativeOutputEventOrigin(work.origin);
+  if (!retained) {
+    retirePiBinding(live, "pi-binding-join-failed");
+    work.fail("pi-binding-join-failed");
+    return;
+  }
+  previous?.finish();
+  live.bindingWork = retained;
+  live.bindingTracked = true;
+}
+function consumePiBindingResponse(
+  live: Live,
+  response: Record<string, unknown>,
+  work: NativeOutputWork | null,
+  consume: () => void,
+): Record<string, unknown> {
+  rememberPiBindingInput(live, work);
+  if (live.bindingRetired) return response;
+  if (live.bindingWork) live.bindingWork.run(consume);
+  else runWithoutNativeOutputOrigin(consume);
+  return response;
+}
+/** Dependent events join the actual current frame, if any, with all retained
+ * binding/configuration responses. Deferred callbacks use their explicit sink. */
+function emitPiBindingEvent(live: Live, event: HarnessEvent): void {
+  const current = captureNativeOutputWork();
+  const joined =
+    live.bindingWork && current ? joinNativeOutputWorks([live.bindingWork, current]) : null;
+  try {
+    if (live.bindingWork && (!current || joined))
+      (joined ?? live.bindingWork).run(() => live.onEvent(event));
+    else runWithoutNativeOutputOrigin(() => live.onEvent(event));
+  } finally {
+    joined?.finish();
+    current?.finish();
   }
 }
 
@@ -1344,6 +1492,10 @@ function upsertTool(
   input: Record<string, unknown>,
   index?: number,
 ): void {
+  if (index != null && index >= 0) {
+    const previous = live.toolsByIndex.get(index);
+    if (previous && previous.id !== id) retireToolFragment(previous, "pi-fragment-index-replaced");
+  }
   let tool = live.toolsById.get(id);
   if (!tool) {
     tool = {
@@ -1368,6 +1520,16 @@ function upsertTool(
   }
   if (index != null && index >= 0) live.toolsByIndex.set(index, tool);
 }
+function retireToolFragment(tool: InFlightTool, reason: string): void {
+  if (tool.partialJson && !tryParseJsonRecord(tool.partialJson)) tool.partialJsonWork?.fail(reason);
+  else tool.partialJsonWork?.finish();
+  tool.partialJsonWork = null;
+  tool.partialJsonTracked = undefined;
+  tool.partialJson = "";
+}
+function retireToolFragments(live: Live, reason: string): void {
+  for (const tool of live.toolsById.values()) retireToolFragment(tool, reason);
+}
 
 function updateTool(live: Live, tool: InFlightTool, input: Record<string, unknown>): void {
   tool.input = mergeToolInput(tool.input, input);
@@ -1391,6 +1553,7 @@ function emitTaskListIfNeeded(live: Live, tool: InFlightTool): void {
 
 function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   if (!live.activeTurn && !live.turnDone) return;
+  retireToolFragments(live, "pi-fragment-incomplete-final");
   live.turnEndPending = false;
   live.activeTurn = false;
   TurnLatch.finish(live, extraEvents);

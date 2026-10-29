@@ -12,7 +12,7 @@ use base64::Engine;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,11 @@ const RETAINED_CHUNK_BYTES: usize = 16 * 1024;
 const MAX_RETAINED_BYTES: usize = 32 * 1024 * 1024;
 const MAX_RETAINED_EXPORTS: usize = 2;
 type Worker = Box<dyn FnOnce() -> SourceExit + Send + 'static>;
+/// Native composition only. Session/migration are locators, never actor grants.
+/// The callback owns accepted work until actual settlement and cooperatively
+/// checks cancellation/deadlines; transport close never means no effect.
+pub(crate) type ProjectionObserver =
+    Arc<dyn Fn(&str, &str, u64, &PipeCancellation) -> Result<Value, String> + Send + Sync>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum SourceError {
@@ -198,10 +203,33 @@ impl SourceEndpoint {
         })
     }
 
+    pub(crate) fn start_with_projection(
+        binding: CapturedSourceBinding,
+        shutdown: PipeCancellation,
+        options: SourceEndpointOptions,
+        observer: ProjectionObserver,
+    ) -> Result<Self, SourceError> {
+        Self::start_using_projection(binding, shutdown, options, Some(observer), |_, work| {
+            std::thread::Builder::new()
+                .name("native-source-endpoint".into())
+                .spawn(work)
+        })
+    }
+
     fn start_using(
         binding: CapturedSourceBinding,
         shutdown: PipeCancellation,
         options: SourceEndpointOptions,
+        spawn: impl FnOnce(&SourceEndpointDescriptor, Worker) -> std::io::Result<JoinHandle<SourceExit>>,
+    ) -> Result<Self, SourceError> {
+        Self::start_using_projection(binding, shutdown, options, None, spawn)
+    }
+
+    fn start_using_projection(
+        binding: CapturedSourceBinding,
+        shutdown: PipeCancellation,
+        options: SourceEndpointOptions,
+        observer: Option<ProjectionObserver>,
         spawn: impl FnOnce(&SourceEndpointDescriptor, Worker) -> std::io::Result<JoinHandle<SourceExit>>,
     ) -> Result<Self, SourceError> {
         PipeBudget::new(options.io_timeout, shutdown.clone())
@@ -228,6 +256,7 @@ impl SourceEndpoint {
                     worker_epoch,
                     cancellation,
                     options.io_timeout,
+                    observer,
                 )
             }),
         )
@@ -319,6 +348,15 @@ enum SourceRequest {
         request_id: u64,
         source_epoch: String,
     },
+    #[serde(rename = "source-projection-observe")]
+    ProjectionObserve {
+        version: u8,
+        request_id: u64,
+        source_epoch: String,
+        session_id: String,
+        migration_id: String,
+        generation: u64,
+    },
     #[serde(rename = "source-retained-open")]
     RetainedOpen {
         version: u8,
@@ -368,12 +406,19 @@ impl SourceRequest {
                 request_id,
                 source_epoch,
                 ..
+            }
+            | Self::ProjectionObserve {
+                version,
+                request_id,
+                source_epoch,
+                ..
             } => Some((*version, *request_id, source_epoch)),
             Self::Hello { .. } => None,
         }
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Captured native lifetime plus optional private composition.
 fn serve(
     binding: CapturedSourceBinding,
     expected: NativeCapturedSource,
@@ -382,6 +427,7 @@ fn serve(
     epoch: String,
     cancellation: PipeCancellation,
     timeout: Duration,
+    observer: Option<ProjectionObserver>,
 ) -> SourceExit {
     // Kept outside the connection closure: failed I/O drops the connection first,
     // then the retained bytes/permit, before the actual worker settles.
@@ -450,6 +496,46 @@ fn serve(
                     let mut response = identity_response(&source, &epoch, "source-status-result");
                     response["requestId"] = json!(request_id);
                     response
+                }
+                SourceRequest::ProjectionObserve {
+                    session_id,
+                    migration_id,
+                    generation,
+                    ..
+                } => {
+                    if !projection_identifier(&session_id)
+                        || !projection_identifier(&migration_id)
+                        || generation > MAX_REQUEST_ID
+                    {
+                        return Err(SourceExit::Malformed);
+                    }
+                    if retained.is_some() {
+                        return Err(SourceExit::RetainedCapacity);
+                    }
+                    let started = Instant::now();
+                    let observation =
+                        match &observer {
+                            None => projection_unverified("native-projection-not-installed"),
+                            Some(observer) => {
+                                // Never detach the actual callback, abandon its SQL job,
+                                // or synthesize a successful outcome from an I/O timeout.
+                                let result =
+                                    observer(&session_id, &migration_id, generation, &cancellation);
+                                check_binding(&binding, &expected)?;
+                                if cancellation.is_cancelled() {
+                                    return Err(SourceExit::Cancelled);
+                                }
+                                if started.elapsed() >= timeout.min(Duration::from_secs(30)) {
+                                    projection_unverified("native-projection-deadline")
+                                } else {
+                                    result.ok().and_then(projection_observation).unwrap_or_else(
+                                        || projection_unverified("native-projection-unverified"),
+                                    )
+                                }
+                            }
+                        };
+                    json!({"version":1,"kind":"source-projection-observation","requestId":request_id,
+                        "sourceEpoch":epoch,"observation":observation})
                 }
                 SourceRequest::RetainedOpen {
                     session_id,
@@ -558,6 +644,53 @@ fn read_request(
 ) -> Result<SourceRequest, SourceExit> {
     let value = connection.read_json(budget).map_err(pipe_exit)?;
     serde_json::from_value(value).map_err(|_| SourceExit::Malformed)
+}
+
+fn projection_identifier(value: &str) -> bool {
+    value
+        .as_bytes()
+        .first()
+        .is_some_and(u8::is_ascii_alphanumeric)
+        && value.len() <= 200
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._:@/-".contains(&byte))
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionObservation {
+    version: u8,
+    qualified: bool,
+    prepare_id: String,
+    status: String,
+    receipt_count: u8,
+    missing_coverage: Vec<String>,
+}
+fn projection_observation(value: Value) -> Option<Value> {
+    let observation: ProjectionObservation = serde_json::from_value(value).ok()?;
+    let id = uuid::Uuid::parse_str(&observation.prepare_id).ok()?;
+    if observation.version != 1
+        || observation.qualified
+        || id.get_version_num() != 4
+        || id.to_string() != observation.prepare_id
+        || !matches!(
+            observation.status.as_str(),
+            "observed" | "cancelled" | "unverified"
+        )
+        || observation.receipt_count > 64
+        || observation.missing_coverage.len() > 32
+        || observation.missing_coverage.iter().any(|reason| {
+            reason.is_empty() || reason.len() > 512 || reason.chars().any(char::is_control)
+        })
+    {
+        return None;
+    }
+    serde_json::to_value(observation).ok()
+}
+fn projection_unverified(reason: &str) -> Value {
+    json!({"version":1,"qualified":false,"prepareId":uuid::Uuid::new_v4().to_string(),
+        "status":"unverified","receiptCount":0,"missingCoverage":[reason]})
 }
 
 fn check_binding(

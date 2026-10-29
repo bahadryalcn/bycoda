@@ -1,6 +1,332 @@
 use super::*;
 use serde_json::json;
 
+struct PreparedQueue {
+    broker: super::super::HostWsBroker,
+    route: super::super::NativeRoute,
+    handle: Arc<super::super::Handle>,
+    receiver: tokio::sync::mpsc::Receiver<super::super::Request>,
+}
+
+impl PreparedQueue {
+    fn new() -> Self {
+        use super::super::*;
+        let broker = HostWsBroker::default();
+        let route = NativeRoute::new(
+            "fixture",
+            "env.1",
+            "http://127.0.0.1:9",
+            "fixture-token",
+            "fixture-principal",
+        )
+        .unwrap();
+        let (tx, receiver) = tokio::sync::mpsc::channel(1);
+        let shared = Arc::new(Shared {
+            route: route.clone(),
+            consumers: Mutex::new(HashMap::new()),
+            cancelled: Arc::new(Mutex::new(HashSet::new())),
+            ids: Arc::new(Mutex::new(HashMap::new())),
+            stop: AtomicBool::new(false),
+            pending: Arc::new(AtomicUsize::new(0)),
+            bytes: Arc::new(AtomicUsize::new(0)),
+            control_pending: Arc::new(AtomicUsize::new(0)),
+            control_bytes: Arc::new(AtomicUsize::new(0)),
+            next_generation: broker.next_generation.clone(),
+            last_state: Mutex::new(None),
+            permits: Arc::new(Permits::new("env.1")),
+            changed: tokio::sync::Notify::new(),
+        });
+        let handle = Arc::new(Handle { shared, tx });
+        broker
+            .connections
+            .lock()
+            .unwrap()
+            .insert(route.key.clone(), handle.clone());
+        Self {
+            broker,
+            route,
+            handle,
+            receiver,
+        }
+    }
+
+    fn prepare(&self, id: &str) -> super::super::PreparedRequest {
+        self.prepare_until(id, None)
+    }
+
+    fn prepare_until(&self, id: &str, deadline: Option<Instant>) -> super::super::PreparedRequest {
+        use super::super::*;
+        self.broker.prepare_request_scoped(&self.route, "native", "native.services.delivery.ack", json!({
+            "originalId":"11111111-1111-4111-8111-111111111111","sha256":"a".repeat(64),"byteLength":2,
+            "target":"native.services.conversation.desktop.finish","consumedResult":{"sha256":"b".repeat(64),"byteLength":17}
+        }), RequestOptions {request_id:Some(id.into()), absolute_deadline:deadline, ..RequestOptions::default()}, RequestScope::NativeService).unwrap()
+    }
+
+    fn guard(&self) -> super::super::ReplyGuard {
+        use super::super::*;
+        ReplyGuard {
+            disclosure: Some(Arc::new(ReplyDisclosure {
+                resource: self
+                    .handle
+                    .shared
+                    .permits
+                    .scope("native", "original", &json!({}))
+                    .unwrap(),
+                failure: WsFailure::local("RPC_WS_RESOURCE_RETIRED", "fixture resource retired"),
+            })),
+            bulk: None,
+        }
+    }
+}
+
+#[test]
+fn prepared_ack_enqueue_finishes_while_revoker_holds_permits_state() {
+    use super::super::ReplyGuard;
+    let mut fixture = PreparedQueue::new();
+    let guard = fixture.guard();
+    let resource = guard.disclosure.as_ref().unwrap().resource.clone();
+    let mut prepared = fixture.prepare("prepared-ack");
+    let permits = fixture.handle.shared.permits.clone();
+    let (start, started) = std::sync::mpsc::channel();
+    let (locked, state_locked) = std::sync::mpsc::channel();
+    let (enqueued, enqueue_seen) = std::sync::mpsc::channel();
+    let revoker = std::thread::spawn(move || {
+        started.recv_timeout(Duration::from_secs(3)).unwrap();
+        let state = permits.lock();
+        assert!(matches!(
+            resource.commit.try_lock(),
+            Err(std::sync::TryLockError::WouldBlock)
+        ));
+        locked.send(()).unwrap();
+        // Positive enqueue completion must arrive while real state is held.
+        // A bounded receive only releases this fixture if a regression blocks;
+        // no elapsed sleep or missing event is accepted as successful proof.
+        let observed = enqueue_seen.recv_timeout(Duration::from_secs(3));
+        drop(state);
+        Permits::revoke_resource(&mut permits.lock(), &json!({"kind":"environment"}));
+        assert!(
+            observed.is_ok(),
+            "enqueue attempted Permits.state under the retained resource gate"
+        );
+    });
+    let pending = ReplyGuard::commit_many(&[&guard], || {
+        start.send(()).unwrap();
+        state_locked.recv_timeout(Duration::from_secs(3)).unwrap();
+        let result = prepared.enqueue();
+        enqueued.send(()).unwrap();
+        Ok(result)
+    })
+    .unwrap()
+    .unwrap();
+    revoker.join().unwrap();
+    assert!(!guard.disclosure.as_ref().unwrap().resource.live());
+    let request = fixture.receiver.try_recv().unwrap();
+    assert_eq!(request.method, "native.services.delivery.ack");
+    assert!(!request.resource_scope.live());
+    drop(request);
+    drop(pending);
+    assert!(fixture.handle.shared.ids.lock().unwrap().is_empty());
+}
+
+#[test]
+fn rejected_prepared_ack_keeps_slot_cleanup_outside_resource_gates() {
+    use super::super::ReplyGuard;
+    for full_queue in [false, true] {
+        let mut fixture = PreparedQueue::new();
+        let guard = fixture.guard();
+        let _filler = if full_queue {
+            Some(fixture.prepare("filler").enqueue().unwrap())
+        } else {
+            None
+        };
+        let mut prepared = fixture.prepare("rejected");
+        if !full_queue {
+            fixture
+                .handle
+                .shared
+                .permits
+                .revoke_unary("native", "original");
+        }
+        let shared = fixture.handle.shared.clone();
+        let ids = shared.ids.lock().unwrap();
+        let (finished, completion) = std::sync::mpsc::channel();
+        let enqueue = std::thread::spawn(move || {
+            let mut called = false;
+            let result = ReplyGuard::commit_many(&[&guard], || {
+                called = true;
+                Ok(prepared.enqueue())
+            });
+            let retained = prepared.request.is_some();
+            let rejected = result.is_err() || result.is_ok_and(|nested| nested.is_err());
+            // Report positive completion while IDs is still locked. Dropping
+            // Request/Slot here would block; cleanup belongs after all gates.
+            finished.send((called, retained, rejected)).unwrap();
+            drop(prepared);
+        });
+        let observed = completion.recv_timeout(Duration::from_secs(3));
+        assert!(ids.contains_key("rejected"));
+        drop(ids);
+        enqueue.join().unwrap();
+        assert_eq!(observed.unwrap(), (full_queue, true, true));
+        assert!(!shared.ids.lock().unwrap().contains_key("rejected"));
+        if full_queue {
+            drop(fixture.receiver.try_recv().unwrap());
+        }
+        assert!(shared.ids.lock().unwrap().is_empty());
+        assert_eq!(
+            shared.pending.load(Ordering::Acquire) + shared.control_pending.load(Ordering::Acquire),
+            0
+        );
+        assert_eq!(
+            shared.bytes.load(Ordering::Acquire) + shared.control_bytes.load(Ordering::Acquire),
+            0
+        );
+    }
+}
+
+#[test]
+fn prepared_admission_never_renews_absolute_wait_but_preserves_default_grace() {
+    let mut fixture = PreparedQueue::new();
+    let deadline = Instant::now() + Duration::from_secs(1);
+    let mut prepared = fixture.prepare_until("absolute", Some(deadline));
+    let pending = prepared.enqueue().unwrap();
+    // Observe the actual admitted request at a controlled late time, as if
+    // retained resource/lifecycle admission consumed its preparation budget.
+    // This uses the same budget function as wait(), without sleeps or a fake
+    // successful network reply proving a deadline that was already renewed.
+    assert_eq!(pending.absolute_deadline, Some(deadline));
+    assert_eq!(
+        pending.wait_budget_at(deadline - Duration::from_millis(7)),
+        Duration::from_millis(7)
+    );
+    assert_eq!(
+        pending.wait_budget_at(deadline + Duration::from_millis(1)),
+        Duration::ZERO
+    );
+    drop(fixture.receiver.try_recv().unwrap());
+    drop(pending);
+    let mut normal = fixture.prepare("normal-grace");
+    let pending = normal.enqueue().unwrap();
+    assert!(pending.absolute_deadline.is_none());
+    assert_eq!(
+        pending.wait_budget_at(deadline + Duration::from_secs(120)),
+        pending.wait
+    );
+    assert!(!pending.wait.is_zero());
+    drop(fixture.receiver.try_recv().unwrap());
+}
+
+fn service_result_params(original: &str) -> Value {
+    json!({"originalId":original,"sha256":"a".repeat(64),"byteLength":123,
+        "target":"native.services.workspace.format",
+        "resultSource":{"sha256":"b".repeat(64),"byteLength":MAX_SERVICE_RESULT_BYTES},
+        "offset":0,"limit":SERVICE_RESULT_CHUNK_BYTES})
+}
+
+#[test]
+fn full_service_result_retains_each_gate_without_increasing_general_scope_budget() {
+    let permits = Permits::new("env.1");
+    let ordinary = (0..MAX_GRANTS)
+        .map(|index| {
+            permits
+                .scope(
+                    "ordinary",
+                    &index.to_string(),
+                    &json!({"projectId":"unrelated"}),
+                )
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert!(permits.scope("ordinary", "overflow", &json!({})).is_err());
+    let mut params = service_result_params("original.1");
+    let chunks = (0..MAX_SERVICE_RESULT_SCOPES)
+        .map(|index| {
+            params["offset"] = json!(index as u64 * SERVICE_RESULT_CHUNK_BYTES);
+            permits
+                .service_result_scope("service", &format!("chunk.{index}"), &params)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert!(permits
+        .service_result_scope("service", "overflow", &params)
+        .is_err());
+    assert!(permits
+        .scope("service", "general-overflow", &params)
+        .is_err());
+    assert!(chunks.iter().all(|scope| scope.live()));
+    // Every retained chunk remains visible to the original resource revoker.
+    Permits::revoke_resource(
+        &mut permits.lock(),
+        &json!({"kind":"project","projectId":"deleted"}),
+    );
+    assert!(chunks.iter().all(|scope| !scope.live()));
+    assert!(ordinary.iter().all(|scope| scope.live()));
+    drop(ordinary);
+    assert!(permits.scope("ordinary", "after-drop", &json!({})).is_ok());
+}
+
+#[test]
+fn service_result_groups_are_bounded_and_keep_individual_owner_and_request_revocation() {
+    let permits = Permits::new("env.1");
+    let base = service_result_params("original.1");
+    let mut identities = vec![base.clone(); MAX_SERVICE_RESULT_GROUPS + 1];
+    identities[1]["sha256"] = json!("c".repeat(64));
+    identities[2]["resultSource"]["sha256"] = json!("d".repeat(64));
+    identities[3]["originalId"] = json!("original.2");
+    // The fifth otherwise-identical result belongs to a separate actual caller.
+    let mut scopes = identities[..MAX_SERVICE_RESULT_GROUPS]
+        .iter()
+        .enumerate()
+        .map(|(index, params)| {
+            permits
+                .service_result_scope("owner.a", &index.to_string(), params)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert!(permits
+        .service_result_scope("owner.b", "fifth", &identities[4])
+        .is_err());
+    permits.revoke_unary("owner.a", "1");
+    assert!(!scopes[1].live());
+    assert!(scopes[0].live() && scopes[2].live() && scopes[3].live());
+    // Revocation does not evict a live holder to make room; dropping it does.
+    assert!(permits
+        .service_result_scope("owner.b", "fifth", &identities[4])
+        .is_err());
+    drop(scopes.remove(1));
+    let other = permits
+        .service_result_scope("owner.b", "fifth", &identities[4])
+        .unwrap();
+    permits.revoke_owner("owner.a");
+    assert!(scopes.iter().all(|scope| !scope.live()));
+    assert!(other.live());
+    permits.revoke_all();
+    assert!(!other.live());
+}
+
+#[test]
+fn service_result_scope_admission_rejects_unbounded_or_noncanonical_chunking() {
+    let permits = Permits::new("env.1");
+    let base = service_result_params("original.1");
+    for (key, value) in [
+        ("offset", json!(1)),
+        ("limit", json!(1)),
+        ("offset", json!(MAX_SERVICE_RESULT_BYTES)),
+    ] {
+        let mut params = base.clone();
+        params[key] = value;
+        assert!(permits
+            .service_result_scope("owner", "request", &params)
+            .is_err());
+    }
+    let mut oversized = base;
+    oversized["resultSource"]["byteLength"] = json!(MAX_SERVICE_RESULT_BYTES + 1);
+    assert!(permits
+        .service_result_scope("owner", "request", &oversized)
+        .is_err());
+    assert!(permits.lock().scopes.is_empty());
+}
+
 fn descriptor(id: &str) -> Value {
     json!({"kind":"bulk","transferId":id,"environmentId":"env.1","totalBytes":32,"chunkBytes":32,
         "sha256":"a".repeat(64),"expiresAt":bulk::millis()+60_000})

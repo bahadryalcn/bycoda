@@ -3,6 +3,9 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { routeSubmitSession } from "./submitRouting";
 import type { SubmitDeps } from "./submitTypes";
 import { sessionsRef } from "../../../../features/sessions/model/sessionsStore";
+import { remoteSessionActions } from "../../../../features/connections/model/remoteSessionActions";
+import { saveHostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
+import { newDefaultSession } from "../../../../features/sessions/model/session";
 
 const shared = vi.hoisted(() => ({ submit: vi.fn() }));
 vi.mock("../../../../features/connections/model/remoteProjects", () => ({
@@ -20,7 +23,21 @@ vi.mock("../../../../features/sessions/model/sessionsStore", () => ({
 }));
 vi.mock("./submitClearConversation", () => ({ submitClearConversation: vi.fn() }));
 
-beforeEach(() => shared.submit.mockReset());
+beforeEach(() => { shared.submit.mockReset(); localStorage.clear(); vi.mocked(remoteSessionActions).mockReset(); });
+
+it.each([undefined, "steer", "queue"] as const)("routes explicit local Host %s intent only to its registered owner", (followUpBehavior) => {
+  const session = newDefaultSession("G:/local");
+  sessionsRef.current = [saveHostSessionBinding(session, { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: session.id, authorityGeneration: 1, created: true })];
+  const submit = vi.fn(() => true);
+  vi.mocked(remoteSessionActions).mockReturnValue({ submit } as never);
+  const ctx = { refs: { windowTransferPendingRef: { current: false }, movingSessionIds: { current: new Set() }, editedResends: { isActive: () => false }, retiringTurns: { current: new Set() }, turnGen: { current: new Map() } } } as unknown as SubmitDeps;
+  expect(routeSubmitSession(ctx, { sessionId: session.id, text: "follow up", attachments: [], options: { followUpBehavior } })).toBe(true);
+  expect(submit).toHaveBeenCalledWith("follow up", [], { followUpBehavior });
+  expect(shared.submit).not.toHaveBeenCalled();
+  vi.mocked(remoteSessionActions).mockReturnValue(undefined);
+  expect(routeSubmitSession(ctx, { sessionId: session.id, text: "offline", attachments: [] })).toBe(false);
+  expect(shared.submit).not.toHaveBeenCalled();
+});
 
 it.each([
   ["another row changes", true],

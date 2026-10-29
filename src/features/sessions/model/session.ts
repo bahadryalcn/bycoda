@@ -1,4 +1,5 @@
 import { stripAttachmentTokens } from "./attachmentTokens";
+import type { InlineVisualSnapshot } from "./inlineVisual";
 import type { ToolInspection } from "./toolInspection";
 import { dropContextWindow, type ContextUsage } from "./contextUsage";
 import type { SessionUsage } from "./sessionUsage";
@@ -335,6 +336,8 @@ export type TurnMetrics = {
 };
 
 export type Block = {
+  /** Immutable self-contained visual published by a completed Conversation Tool. */
+  inlineVisual?: InlineVisualSnapshot;
   /** Bounded remote preview; full content is requested explicitly, never persisted. */
   remoteContent?: {
     revision: number;
@@ -479,6 +482,8 @@ export const RUNTIME_MODE_HINT: Record<RuntimeMode, string> = {
 export type WorkspaceMode = "current" | "worktree";
 
 export type Session = {
+  /** Explicit execution owner, independent of cwd, worktree and legacy mirrors. */
+  hostBinding?: import("../../connections/model/sessionExecutionBinding").HostSessionBinding;
   /** Incomplete remote view. Sending may proceed; authoritative persistence may not. */
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */

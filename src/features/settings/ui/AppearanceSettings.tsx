@@ -4,12 +4,13 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { ChevronLeft, ChevronRight, ImagePlus } from "../../../shared/ui/icons";
 import { CrewSettings, TabMotionSettings } from "./AppearanceBehaviorSettings";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AccentUsagePreview,
   AppearanceStudio,
   AppearanceInterface,
   AppearanceTypography,
+  accentSourceLabel,
 } from "./AppearancePreviews";
 
 import { ColorPickerPopover, ColorSwatchRow } from "../../../shared/ui/ColorPickerPopover";
@@ -20,7 +21,11 @@ import { GradientBlurBackground } from "./GradientBlurBackground";
 import { LiveBackgroundCanvas } from "./LiveBackgroundCanvas";
 import { LiveBackgroundPicker, stepLiveBackground } from "./LiveBackgroundPicker";
 import { SessionListSettings } from "./SessionListSettings";
-import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../model/settings";
+import {
+  COLLAPSED_PROJECT_RAIL_MODE_DEFAULT,
+  TAB_ANIMATIONS_ENABLED_DEFAULT,
+  saveTabAnimationsEnabled,
+} from "../model/settings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { IS_LINUX, IS_MAC } from "../../../platform/tauri/platform";
@@ -59,6 +64,8 @@ import {
 } from "../model/appearance";
 
 import {
+  LIVE_BACKGROUND_DEFAULT,
+  LIVE_BACKGROUND_INTENSITY_DEFAULT,
   LIVE_BACKGROUND_INTENSITY_MAX,
   LIVE_BACKGROUND_INTENSITY_MIN,
   liveBackgroundDescription,
@@ -69,6 +76,7 @@ import {
   useLiveBackgroundIntensity,
 } from "../model/liveBackground";
 import {
+  DECORATIVE_MOTION_DEFAULT,
   saveDecorativeMotionEnabled,
   useDecorativeMotionPreference,
   usePrefersReducedMotion,
@@ -96,14 +104,45 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
     ["motion", "Motion and crew"],
   ] as const;
 
+  const [currentTopic, setCurrentTopic] = useState<(typeof topics)[number][0]>("colors");
+  const settingsRoot = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const root = settingsRoot.current;
+    if (!root || typeof IntersectionObserver === "undefined") return;
+    const visible = new Set<string>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const id = entry.target.id.replace("appearance-topic-", "");
+          if (entry.isIntersecting) visible.add(id);
+          else visible.delete(id);
+        }
+        const first = topics.find(([id]) => visible.has(id));
+        if (first) setCurrentTopic(first[0]);
+      },
+      // The topic under the top edge of the scroller is the current one.
+      {
+        root: root.closest("[data-settings-scroller]"),
+        rootMargin: "0px 0px -70% 0px",
+      },
+    );
+    root.querySelectorAll(".appearance-section").forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
-    <div className="appearance-settings">
-      <nav aria-label={t("Appearance")} className="flex flex-wrap items-center gap-1">
+    <div className="appearance-settings" ref={settingsRoot}>
+      <nav aria-label={t("Appearance")} className="appearance-topic-nav">
         {topics.map(([id, title]) => (
           <Button
             key={id}
-            variant="link"
+            variant="tab"
+            size="sm"
+            selected={currentTopic === id}
+            aria-current={currentTopic === id ? "location" : undefined}
             onClick={() => {
+              setCurrentTopic(id);
               const topic = document.getElementById(`appearance-topic-${id}`);
               topic?.focus({ preventScroll: true });
               topic?.scrollIntoView({ block: "start" });
@@ -113,19 +152,14 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           </Button>
         ))}
       </nav>
-      <AppearanceSection
-        id="colors"
-        title={t("Theme and colors")}
-        description={[t("Theme palettes"), t("Accent color"), t("Custom surface colors")].join(
-          " · ",
-        )}
-      >
+      <AppearanceSection id="colors" title={t("Theme and colors")}>
         <AppearanceStudio appearance={appearance} />
         <Group title={t("Accent")}>
           <Row
             id="accent-color"
             label={t("Accent color")}
             description={t("Used for the composer send button and your message bubbles.")}
+            scope={accentSourceLabel(appearance)}
           >
             <AccentColorPicker value={appearance.accentColor} onChange={appearance.onAccentColor} />
           </Row>
@@ -135,62 +169,58 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
           title={t("Custom surface colors")}
           settingIds={["hue", "saturation", "dark-lightness"]}
         >
-          <Group
-            title={t("Color")}
-            description={t(
-              "Hue and saturation tint every surface. Lightness only moves the dark theme.",
-            )}
+          <p className="settings-help-text">
+            {t("Hue and saturation tint every surface. Lightness only moves the dark theme.")}
+          </p>
+          <Row
+            id="hue"
+            label={t("Hue")}
+            description={t("Base hue for accents and tinted surfaces.")}
           >
-            <Row
-              id="hue"
+            <Slider
               label={t("Hue")}
-              description={t("Base hue for accents and tinted surfaces.")}
-            >
-              <Slider
-                label={t("Hue")}
-                value={appearance.themeHue}
-                display={`${appearance.themeHue}°`}
-                min={THEME_HUE_MIN}
-                max={THEME_HUE_MAX}
-                onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
-              />
-            </Row>
-            <Row
-              id="saturation"
+              value={appearance.themeHue}
+              display={`${appearance.themeHue}°`}
+              min={THEME_HUE_MIN}
+              max={THEME_HUE_MAX}
+              onChange={(value) => appearance.onTint(value, appearance.themeSaturation)}
+            />
+          </Row>
+          <Row
+            id="saturation"
+            label={t("Saturation")}
+            description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
+          >
+            <Slider
               label={t("Saturation")}
-              description={t("How strongly the hue tints the interface. Zero keeps it neutral.")}
-            >
-              <Slider
-                label={t("Saturation")}
-                value={appearance.themeSaturation}
-                display={`${appearance.themeSaturation}%`}
-                min={THEME_SATURATION_MIN}
-                max={THEME_SATURATION_MAX}
-                onChange={(value) => appearance.onTint(appearance.themeHue, value)}
-              />
-            </Row>
-            <Row
-              id="dark-lightness"
+              value={appearance.themeSaturation}
+              display={`${appearance.themeSaturation}%`}
+              min={THEME_SATURATION_MIN}
+              max={THEME_SATURATION_MAX}
+              onChange={(value) => appearance.onTint(appearance.themeHue, value)}
+            />
+          </Row>
+          <Row
+            id="dark-lightness"
+            label={t("Dark-mode lightness")}
+            description={
+              glassDisabled
+                ? t("This only affects dark mode. Your dark-mode value is preserved.")
+                : t(
+                    "Base brightness of the dark theme. Lower values are darker; zero is true black.",
+                  )
+            }
+          >
+            <Slider
               label={t("Dark-mode lightness")}
-              description={
-                glassDisabled
-                  ? t("This only affects dark mode. Your dark-mode value is preserved.")
-                  : t(
-                      "Base brightness of the dark theme. Lower values are darker; zero is true black.",
-                    )
-              }
-            >
-              <Slider
-                label={t("Dark-mode lightness")}
-                value={appearance.themeDarkLightness}
-                display={`${appearance.themeDarkLightness}%`}
-                min={THEME_DARK_LIGHTNESS_MIN}
-                max={THEME_DARK_LIGHTNESS_MAX}
-                onChange={appearance.onDarkLightness}
-                disabled={glassDisabled}
-              />
-            </Row>
-          </Group>
+              value={appearance.themeDarkLightness}
+              display={`${appearance.themeDarkLightness}%`}
+              min={THEME_DARK_LIGHTNESS_MIN}
+              max={THEME_DARK_LIGHTNESS_MAX}
+              onChange={appearance.onDarkLightness}
+              disabled={glassDisabled}
+            />
+          </Row>
         </AdvancedSettings>
         <AppearanceSaveFeedback
           settingIds={["theme", "accent-color", "hue", "saturation", "dark-lightness"]}
@@ -199,7 +229,6 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
       <AppearanceSection
         id="reading"
         title={t("Text and readability")}
-        description={[t("Interface scale"), t("Fonts and code"), t("Contrast")].join(" · ")}
       >
         {appearance.preferencesUnavailable ? (
           <SettingsFeedback
@@ -230,11 +259,9 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
       <AppearanceSection
         id="layout"
         title={t("Layout")}
-        description={[t("Collapsed project rail"), t("Session list")].join(" · ")}
       >
         <Group
-          title={t("Layout")}
-
+          title={t("Project rail")}
           action={
             <Button
               variant="ghost"
@@ -279,10 +306,9 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
       <AppearanceSection
         id="translucency"
         title={t("Translucency")}
-        description={[t("Sidebar opacity"), t("Blur radius"), t("Main pane glass")].join(" · ")}
       >
         <Group
-          title={t("Translucency")}
+          title={t("Opacity and blur")}
           dependency={
             glassDisabled
               ? t(
@@ -308,7 +334,6 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
               {t("Reset translucency")}
             </Button>
           }
-
           description={
             glassDisabled
               ? t(
@@ -421,7 +446,6 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
       <AppearanceSection
         id="backgrounds"
         title={t("Backgrounds")}
-        description={[t("Chat background"), t("Live background")].join(" · ")}
       >
         <ChatBackgroundCard appearance={appearance} />
         <LiveBackgroundCard />
@@ -430,9 +454,21 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
       <AppearanceSection
         id="motion"
         title={t("Motion and crew")}
-        description={[t("Tab animations"), t("Agent crew")].join(" · ")}
       >
-        <Group title={t("Motion")}>
+        <Group
+          title={t("Motion")}
+          action={
+            <Button
+              variant="ghost"
+              onClick={() => {
+                saveTabAnimationsEnabled(TAB_ANIMATIONS_ENABLED_DEFAULT);
+                saveDecorativeMotionEnabled(DECORATIVE_MOTION_DEFAULT);
+              }}
+            >
+              {t("Reset motion")}
+            </Button>
+          }
+        >
           <TabMotionSettings />
           <Row
             id="decorative-motion"
@@ -466,20 +502,15 @@ function AppearanceSection({
 }: {
   id: string;
   title: string;
-  description: string;
   children: ReactNode;
 }) {
-  const headingId = useId();
   return (
     <section
       id={`appearance-topic-${id}`}
       tabIndex={-1}
       className="appearance-section"
-      aria-labelledby={headingId}
+      aria-label={title}
     >
-      <header className="appearance-section-heading">
-        <h2 id={headingId}>{title}</h2>
-      </header>
       <div className="appearance-section-body settings-topics">{children}</div>
     </section>
   );
@@ -496,46 +527,55 @@ function LiveBackgroundCard() {
       id="live-background"
       title={t("Live background")}
       description={t("Subtle full-pane motion that responds while the AI works.")}
+      action={
+        <Button
+          variant="ghost"
+          onClick={() => {
+            saveLiveBackground(LIVE_BACKGROUND_DEFAULT);
+            saveLiveBackgroundIntensity(LIVE_BACKGROUND_INTENSITY_DEFAULT);
+          }}
+        >
+          {t("Reset live background")}
+        </Button>
+      }
     >
-      <div className="border-b border-stroke p-4">
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Previous scene")}
-            onClick={() => saveLiveBackground(stepLiveBackground(effect, -1))}
-          >
-            <ChevronLeft className="icon-md" aria-hidden />
-          </Button>
-          <div className="relative h-36 min-w-0 flex-1 overflow-hidden rounded-lg border border-stroke bg-background-base">
-            {effect !== "none" ? (
-              <LiveBackgroundCanvas
-                effect={effect}
-                intensity={intensity}
-                demoSpeech
-                className="absolute inset-0"
-              />
-            ) : null}
-          </div>
-          <Button
-            variant="ghost"
-            iconOnly
-            label={t("Next scene")}
-            onClick={() => saveLiveBackground(stepLiveBackground(effect, 1))}
-          >
-            <ChevronRight className="icon-md" aria-hidden />
-          </Button>
+      <div className="appearance-live-preview">
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Previous scene")}
+          onClick={() => saveLiveBackground(stepLiveBackground(effect, -1))}
+        >
+          <ChevronLeft className="icon-sm" aria-hidden />
+        </Button>
+        <div className="appearance-live-stage">
+          {effect !== "none" ? (
+            <LiveBackgroundCanvas
+              effect={effect}
+              intensity={intensity}
+              demoSpeech
+              className="absolute inset-0"
+            />
+          ) : null}
         </div>
-        <div className="mt-2 text-center">
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Next scene")}
+          onClick={() => saveLiveBackground(stepLiveBackground(effect, 1))}
+        >
+          <ChevronRight className="icon-sm" aria-hidden />
+        </Button>
+        <div className="appearance-live-caption">
           <p className="text-ui-secondary font-medium text-content">
             {liveBackgroundLabel(effect)}
           </p>
-          <p className="mt-0.5 text-ui-caption leading-relaxed text-(--ui-text-secondary)">
+          <p className="text-ui-caption leading-relaxed text-(--ui-text-secondary)">
             {liveBackgroundDescription(effect)}
           </p>
         </div>
       </div>
-      <div className="border-b border-stroke px-4 py-3.5 last:border-b-0">
+      <div className="appearance-live-picker">
         <LiveBackgroundPicker
           value={effect}
           onChange={saveLiveBackground}
@@ -611,7 +651,7 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
       }
       description={t("An image behind your chat panes. It stays on this device.")}
     >
-      <div className="border-b border-stroke p-4 last:border-b-0">
+      <div className="appearance-bg-block">
         {hasImage ? (
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <span className="text-ui-caption text-(--ui-text-secondary)">{t("Preview")}</span>
@@ -626,10 +666,10 @@ export function ChatBackgroundCard({ appearance }: { appearance: AppearanceSetti
             />
           </div>
         ) : null}
-        <div className="overflow-hidden rounded-lg border border-stroke">
+        <div className="appearance-bg-frame">
           {hasImage ? (
             <div
-              className={`relative isolate h-36 overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
+              className={`relative isolate h-24 overflow-hidden ${imageState === "ready" ? "chat-pane-background" : ""}`}
               data-project-chat-background="false"
               data-session-empty={preview === "empty"}
             >
@@ -851,6 +891,7 @@ export function AccentColorPicker({
           side="bottom"
           align="end"
           width={248}
+          flow="scroll"
           onDismiss={() => setOpen(false)}
           className="px-2 pb-2"
         >

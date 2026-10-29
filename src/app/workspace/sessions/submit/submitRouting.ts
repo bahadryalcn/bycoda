@@ -1,4 +1,5 @@
 import type { SubmitDeps, SubmitInput } from "./submitTypes";
+import { hostSessionBinding } from "../../../../features/connections/model/sessionExecutionBinding";
 
 import { remoteProjectFor } from "../../../../features/connections/model/remoteProjects";
 import { remoteSessionActions } from "../../../../features/connections/model/remoteSessionActions";
@@ -32,7 +33,7 @@ export function routeSubmitSession(
   if (sessionsRef.current.some((session) => session.id === sessionId && session.historyLoading))
     return false;
   const remote = sessionsRef.current.find((session) => session.id === sessionId);
-  if (remote && remoteProjectFor(remote.cwd))
+  if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd)))
     return !!remoteSessionActions(sessionId)?.submit(text, attachments, options);
   if (sharedLocalQueueClaiming(sessionId) && !options?.sharedQueueClaimed) return false;
   if (options?.queuedMessageId && !options.sharedQueueClaimed && !remote?.continuingElsewhere) {

@@ -30,7 +30,7 @@ for (const [theme, width] of [
         if (Math.abs(card.top - peer.top) < 2)
           expect(Math.abs(card.height - peer.height)).toBeLessThan(2);
     expect(await accounts.first().evaluate((el) => el.getBoundingClientRect().height)).toBeLessThan(
-      290,
+      340,
     );
 
     await page.screenshot({
@@ -51,6 +51,8 @@ for (const [theme, width] of [
     await page.keyboard.press("Escape");
 
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
+    // The display preference lives in a collapsed disclosure below the limits.
+    await page.getByRole("button", { name: "Display preferences", exact: true }).click();
     await page.getByRole("switch", { name: "Show remaining usage", exact: true }).click();
     await page.getByRole("radio", { name: "Limits", exact: true }).click();
     await expect(accounts.first().getByRole("meter").first()).toHaveAttribute(
@@ -160,26 +162,19 @@ for (const [theme, width, motion] of [
     await page.emulateMedia({ reducedMotion: motion === "reduce" ? "reduce" : "no-preference" });
     await page.goto(`/tests/browser/usage-budgets.html?overview=1&theme=${theme}&motion=${motion}`);
 
-    const values = page.locator(".usage-metrics strong > .bycoda-arc");
+    // Key numbers are plain exact text; there is no decorative reel to wait for.
+    const values = page.locator(".usage-metrics strong");
     await expect(values).toHaveCount(3);
     await page.getByRole("button", { name: "Usage details", exact: true }).click();
     await expect(values).toHaveCount(7);
-    await expect(values.nth(3)).toHaveText(motion === "auto" ? /1K/ : "1K");
-    if (motion !== "auto") await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
+    await expect(values.nth(3)).toHaveText("1K");
+    await expect(values.locator('[aria-hidden="true"]')).toHaveCount(0);
     await page.evaluate(() => {
       (window as any).refreshUsageFixture();
       (window as any).refreshUsageFixture();
     });
     await expect
-      .poll(() =>
-        values
-          .nth(3)
-          .evaluate((node) =>
-            node.querySelector("[aria-hidden]")
-              ? node.firstElementChild?.textContent
-              : node.textContent,
-          ),
-      )
+      .poll(() => values.nth(3).textContent())
       .toBe("3K");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
       true,

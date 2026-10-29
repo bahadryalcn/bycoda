@@ -111,7 +111,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         </Row>
       </Group>
 
-      <Group title={t("Composer")} layout="full">
+      <Group title={t("Writing")} layout="full">
         <Row
           id="composer-spelling"
           feedback={feedback("composer-spelling")}
@@ -143,6 +143,7 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
         <TranslationSettings embedded />
         <TranslationSettings embedded action="reprompt" />
       </Group>
+      <TemplatesSettings />
       <VoiceSettings />
       <AdvancedSettings
         title={t("Advanced conversation settings")}
@@ -207,9 +208,6 @@ export function ChatPage({ appearance }: { appearance: AppearanceSettings }) {
             />
           </Row>
         </Group>
-      </AdvancedSettings>
-      <AdvancedSettings title={t("Prompt templates")} settingIds={["prompt-templates"]} defaultOpen={false}>
-        <TemplatesSettings />
       </AdvancedSettings>
     </div>
   );

@@ -1,5 +1,6 @@
 //! Native process admission shares the execution Host's managed-workspace gate.
 //! A lease is released only after confirmed child exit; uncertain exits stay fenced.
+use crate::remote::NativeProjection;
 use serde_json::json;
 use std::path::Path;
 use tauri::{AppHandle, Manager};
@@ -26,14 +27,7 @@ impl Activity {
         let host =
             crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
         let id = uuid::Uuid::new_v4().to_string();
-        let lease = host.call("native.activity.start", json!({"activityId":id,"cwd":crate::fs::path_to_js(cwd),"kind":kind,"sessionId":session_id}))?;
-        if lease["activityId"] != id
-            || !lease["workspaceId"]
-                .as_str()
-                .is_some_and(|value| !value.is_empty())
-        {
-            return Err("Execution Host did not admit managed workspace activity".into());
-        }
+        admit_activity(&host, &id, cwd, kind, session_id)?;
         Ok(Some(Self {
             host,
             id,
@@ -47,22 +41,50 @@ impl Activity {
         // Do not retry an unknown release from Drop. The durable Host lease stays
         // fenced unless this exact release receives its acknowledgement.
         self.started = true;
-        let result = self
-            .host
-            .call("native.activity.end", json!({"activityId":self.id}))?;
-        if result["acknowledged"] != true {
-            return Err("Execution Host has not acknowledged native process exit".into());
+        self.host.project(
+            "native.activity.end",
+            json!({"activityId":self.id}),
+            |result, _projection| {
+                if result["acknowledged"] != true {
+                    return Err("Execution Host has not acknowledged native process exit".into());
+                }
+                Ok(())
+            },
+        )
+    }
+}
+
+fn admit_activity(
+    host: &crate::remote::NativeWorkspaceTransport,
+    id: &str,
+    cwd: &Path,
+    kind: &str,
+    session_id: Option<&str>,
+) -> Result<(), String> {
+    let mut request = json!({"activityId":id,"cwd":crate::fs::path_to_js(cwd),"kind":kind});
+    if let Some(session_id) = session_id {
+        request["sessionId"] = json!(session_id);
+    }
+    host.project("native.activity.start", request, |lease, _projection| {
+        if lease["activityId"] != id
+            || !lease["workspaceId"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
+        {
+            return Err("Execution Host did not admit managed workspace activity".into());
         }
         Ok(())
-    }
+    })
 }
 
 impl Drop for Activity {
     fn drop(&mut self) {
         if !self.started {
-            let _ = self
-                .host
-                .call("native.activity.end", json!({"activityId":self.id}));
+            let _ = self.host.project(
+                "native.activity.end",
+                json!({"activityId":self.id}),
+                |_, _projection| Ok(()),
+            );
         }
     }
 }
@@ -399,19 +421,47 @@ fn report_buffers(
         Sha256::digest(crate::fs::path_to_js(&profile).as_bytes())
     );
     let instance_id = INSTANCE.get_or_init(|| uuid::Uuid::new_v4().to_string());
-    let response = host.call("native.buffers.update", json!({"clientId":client_id,"instanceId":instance_id,"processId":std::process::id(),"owners":owners}))?;
-    if response["acknowledged"] != true {
-        return Err("Host has not acknowledged native buffer state".into());
-    }
-    // This bridge selects only the local-sync Host, which independently proves
-    // predecessor process death before retiring any clean same-profile report.
-    // Dirty/unknown reports keep their explicit recovery fence.
-    host.call(
-        "native.buffers.reconcile",
-        json!({"clientId":client_id,"instanceId":instance_id,"predecessors":[]}),
-    )?;
-    let conn = store.lock_conn()?;
-    receipt.confirm(&conn)
+    // Recovered delivery outcomes never restore current report freshness. The
+    // bounded pass only asks the original selected Host for retained status.
+    // Historical failures remain held in their own originals. This fresh
+    // physical report still crosses its own route/journal/Host/ACK gates below;
+    // a bad older outcome must not prevent unrelated current reporting.
+    let _retirement_recovery = host.reconcile_buffer_acknowledgements(store);
+    let _historical_recovery = host.reconcile_buffer_deliveries(store);
+    let original_key = format!(
+        "buffers:{:x}",
+        Sha256::digest(
+            serde_json::to_vec(&(&receipt.owner_id, receipt.report_version, &receipt.nonce,))
+                .map_err(|error| error.to_string())?
+        )
+    );
+    host.project_buffer_original(
+        store,
+        &original_key,
+        json!({"clientId":client_id,"instanceId":instance_id,"processId":std::process::id(),"owners":owners}),
+        |response, update, original| {
+            if response["acknowledged"] != true {
+                return Err("Host has not acknowledged native buffer state".into());
+            }
+            // Keep both Host replies current through the actual local confirmation.
+            // The Host independently proves predecessor process death; dirty/unknown
+            // reports keep their explicit recovery fence.
+            host.project(
+                "native.buffers.reconcile",
+                json!({"clientId":client_id,"instanceId":instance_id,"predecessors":[]}),
+                |_, reconcile| {
+                    let admission = crate::session_store::native_delivery::completion_admission(store)?;
+                    let outcome = NativeProjection::commit(&[update, reconcile], || {
+                        crate::session_store::authority::with_full_projection_transaction(store, |tx| {
+                            receipt.confirm(tx.connection())?;
+                            crate::session_store::native_delivery::acknowledge_tx(tx.connection(), original)
+                        })
+                    });
+                    admission.finish(outcome)
+                },
+            )
+        },
+    )
 }
 
 #[tauri::command(async)]
@@ -489,14 +539,16 @@ pub(crate) fn retire_buffers(app: &AppHandle) -> Result<(), String> {
     );
     let host =
         crate::remote::NativeWorkspaceTransport::connect(app, "workspaces.native-activity.v1")?;
-    let response = host.call(
+    host.project(
         "native.buffers.retire",
         json!({"clientId":client_id,"instanceId":instance_id,"processId":std::process::id()}),
-    )?;
-    if response["acknowledged"] != true {
-        return Err("Host has not acknowledged native buffer retirement".into());
-    }
-    Ok(())
+        |response, _projection| {
+            if response["acknowledged"] != true {
+                return Err("Host has not acknowledged native buffer retirement".into());
+            }
+            Ok(())
+        },
+    )
 }
 
 pub(crate) fn assert_buffers_settled(
@@ -552,7 +604,160 @@ fn now_millis() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn original_delivery_ack_and_exact_buffer_confirmation_commit_or_roll_back_together() {
+        use crate::session_store::{authority, native_delivery as journal, SessionStore};
+        for rollback in [true, false] {
+            let store = SessionStore::open_in_memory().unwrap();
+            let prior_synchronous: i64 = store
+                .lock_conn()
+                .unwrap()
+                .pragma_query_value(None, "synchronous", |row| row.get(0))
+                .unwrap();
+            let receipt = {
+                let conn = store.lock_conn().unwrap();
+                super::BufferReportReceipt::record(&conn, "physical-test-owner", "[]".into(), 1)
+                    .unwrap()
+            };
+            let nonce = receipt.nonce.clone();
+            let original = journal::prepare(
+                &store,
+                &format!("buffer-cas:{nonce}"),
+                &"a".repeat(64),
+                "native.buffers.update",
+                r#"{"owners":[]}"#,
+            )
+            .unwrap();
+            let original = journal::mark_possible(&store, &original).unwrap();
+            let original =
+                journal::record_result(&store, &original, r#"{"acknowledged":true}"#).unwrap();
+            let admission = journal::completion_admission(&store).unwrap();
+            let result = authority::with_full_projection_transaction(&store, |tx| {
+                receipt.confirm(tx.connection())?;
+                journal::acknowledge_tx(tx.connection(), &original)?;
+                if rollback {
+                    return Err("injected final local consumer failure".into());
+                }
+                Ok(())
+            });
+            assert_eq!(admission.finish(result).is_err(), rollback);
+            let conn = store.lock_conn().unwrap();
+            let confirmed: i64 = conn.query_row(
+                "SELECT confirmed FROM native_workspace_buffers WHERE owner_id='physical-test-owner' AND report_nonce=?1",
+                [&nonce], |row| row.get(0),
+            ).unwrap();
+            let phase: String = conn
+                .query_row(
+                    "SELECT phase FROM native_delivery_originals WHERE original_id=?1",
+                    [original.id()],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(confirmed, i64::from(!rollback));
+            assert_eq!(phase, if rollback { "recorded" } else { "acknowledged" });
+            let raw: String = conn.query_row(
+                "SELECT snapshot_json FROM native_workspace_buffers WHERE owner_id='physical-test-owner'",
+                [], |row| row.get(0),
+            ).unwrap();
+            assert_eq!(
+                raw, "[]",
+                "Journal retirement must not remove the original buffer snapshot"
+            );
+            let synchronous: i64 = conn
+                .pragma_query_value(None, "synchronous", |row| row.get(0))
+                .unwrap();
+            assert_eq!(
+                synchronous, prior_synchronous,
+                "The critical transaction must restore the actual prior durability mode"
+            );
+        }
+    }
+
     use super::*;
+
+    #[test]
+    fn activity_admission_omits_absent_session_and_keeps_explicit_session() {
+        use std::io::{BufRead, BufReader, Read, Write};
+
+        for session_id in [None, Some("activity-session")] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let host = crate::remote::NativeWorkspaceTransport::for_test(format!(
+                "http://{}",
+                listener.local_addr().unwrap()
+            ));
+            let server = std::thread::spawn(move || {
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+                let (mut socket, _) = loop {
+                    match listener.accept() {
+                        Ok(socket) => break socket,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                && std::time::Instant::now() < deadline =>
+                        {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(error) => panic!("activity admission fixture was not called: {error}"),
+                    }
+                };
+                socket
+                    .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(socket.try_clone().unwrap());
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                assert!(line.starts_with("POST /rpc "));
+                let mut length = None;
+                let mut authenticated = false;
+                loop {
+                    line.clear();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    let (name, value) = line.split_once(':').unwrap();
+                    if name.eq_ignore_ascii_case("content-length") {
+                        length = Some(value.trim().parse::<usize>().unwrap());
+                    }
+                    if name.eq_ignore_ascii_case("authorization") {
+                        authenticated = value.trim() == "Bearer fixture-token";
+                    }
+                }
+                assert!(authenticated);
+                let mut bytes = vec![0; length.unwrap()];
+                reader.read_exact(&mut bytes).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+                assert_eq!(request["environmentId"], "fixture-env");
+                assert_eq!(request["method"], "native.activity.start");
+                let params = &request["params"];
+                assert_eq!(params["activityId"], "activity-id");
+                assert_eq!(params["kind"], "terminal");
+                assert!(params["cwd"].as_str().is_some_and(|cwd| !cwd.is_empty()));
+                match session_id {
+                    Some(session_id) => assert_eq!(params["sessionId"], session_id),
+                    None => assert!(params.get("sessionId").is_none()),
+                }
+                let response =
+                    json!({"result":{"activityId":"activity-id","workspaceId":"managed"}})
+                        .to_string();
+                write!(
+                    socket,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+                    response.len()
+                )
+                .unwrap();
+            });
+            let admitted = admit_activity(
+                &host,
+                "activity-id",
+                Path::new("C:/fixture/managed"),
+                "terminal",
+                session_id,
+            );
+            server.join().unwrap();
+            admitted.unwrap();
+        }
+    }
 
     struct BufferTestDirectory(std::path::PathBuf);
     impl BufferTestDirectory {

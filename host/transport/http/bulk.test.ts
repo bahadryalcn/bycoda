@@ -141,3 +141,190 @@ it("protects real HTTP chunk reads against Origin, scope replacement, expiry and
   pool.invalidate("session");
   expect((await fetch(url, { headers })).status).toBe(404);
 });
+
+it("keeps guarded copies distinct across original authorities and blocks expiry during an awaited authorization", async () => {
+  const { pool } = fixture();
+  let live = true;
+  const original = async () => live;
+  const retain = (check: () => Promise<boolean>) => {
+    const lease = pool.begin("owner", "preview");
+    pool.retainAuthority(lease, check);
+    try {
+      return BulkDescriptorSchema.parse(
+        (pool.encode(lease, { frame: "private".repeat(100) }, 1) as any).$bulk,
+      );
+    } finally {
+      pool.release(lease);
+    }
+  };
+  const first = retain(original);
+  expect(retain(original)).toEqual(first);
+  const second = retain(async () => true);
+  expect(second.transferId).not.toBe(first.transferId);
+  expect(() => pool.chunk("owner", first.transferId, 0)).toThrow("retained authority");
+  const writes: Buffer[] = [];
+  await pool.writeAuthorizedChunk(
+    "owner",
+    first.transferId,
+    0,
+    async () => true,
+    (chunk) => writes.push(chunk),
+  );
+  expect(writes).toHaveLength(1);
+  await expect(
+    pool.writeAuthorizedChunk(
+      "owner",
+      first.transferId,
+      0,
+      async () => {
+        await Promise.resolve();
+        live = false;
+        return true;
+      },
+      (chunk) => writes.push(chunk),
+    ),
+  ).rejects.toThrow("unavailable");
+  expect(writes).toHaveLength(1);
+  await pool.writeAuthorizedChunk(
+    "owner",
+    second.transferId,
+    0,
+    async () => true,
+    (chunk) => writes.push(chunk),
+  );
+  expect(writes).toHaveLength(2);
+});
+it("checks deletion again after an original result guard awaits and before writing retained bytes", async () => {
+  const { pool } = fixture(),
+    lease = pool.begin("owner", "preview");
+  pool.retainAuthority(lease, async () => {
+    await Promise.resolve();
+    pool.invalidate("preview");
+    return true;
+  });
+  const descriptor = BulkDescriptorSchema.parse(
+    (pool.encode(lease, { frame: "private".repeat(100) }, 1) as any).$bulk,
+  );
+  pool.release(lease);
+  let written = false;
+  await expect(
+    pool.writeAuthorizedChunk(
+      "owner",
+      descriptor.transferId,
+      0,
+      async () => true,
+      () => {
+        written = true;
+      },
+    ),
+  ).rejects.toThrow("unavailable");
+  expect(written).toBe(false);
+});
+
+it("rechecks the actual fetch principal after original authority awaits and the original deadline after fetch authorization awaits", async () => {
+  const { pool } = fixture(),
+    lease = pool.begin("owner", "preview");
+  let principal = true,
+    original = true,
+    phase = "principal";
+  pool.retainAuthority(lease, async () => {
+    await Promise.resolve();
+    if (phase === "principal") principal = false;
+    return original;
+  });
+  const descriptor = BulkDescriptorSchema.parse(
+    (pool.encode(lease, { frame: "private".repeat(100) }, 1) as any).$bulk,
+  );
+  pool.release(lease);
+  let writes = 0;
+  await expect(
+    pool.writeAuthorizedChunk(
+      "owner",
+      descriptor.transferId,
+      0,
+      async () => principal,
+      () => {
+        writes++;
+      },
+    ),
+  ).rejects.toThrow("unavailable");
+  phase = "expiry";
+  principal = true;
+  let calls = 0;
+  await expect(
+    pool.writeAuthorizedChunk(
+      "owner",
+      descriptor.transferId,
+      0,
+      async () => {
+        calls++;
+        await Promise.resolve();
+        if (calls === 2) original = false;
+        return principal;
+      },
+      () => {
+        writes++;
+      },
+    ),
+  ).rejects.toThrow("unavailable");
+  expect(writes).toBe(0);
+});
+
+it.each(["guard", "body"])(
+  "retains evicted snapshot byte and job charges through awaited %s settlement",
+  async (phase) => {
+    const { pool, retain } = fixture({
+      maxBytes: 80,
+      maxSnapshotBytes: 80,
+      maxTransfers: 1,
+      maxLeases: 1,
+    });
+    let release!: () => void, entered!: () => void;
+    const held = new Promise<void>((done) => {
+        release = done;
+      }),
+      started = new Promise<void>((done) => {
+        entered = done;
+      });
+    const lease = pool.begin("owner", "first");
+    pool.retainAuthority(lease, async () => {
+      if (phase === "guard") {
+        entered();
+        await held;
+      }
+      return true;
+    });
+    const descriptor = BulkDescriptorSchema.parse(
+      (pool.encode(lease, { text: "x".repeat(50) }, 1) as any).$bulk,
+    );
+    pool.release(lease);
+    const pending = pool.writeAuthorizedChunk(
+      "owner",
+      descriptor.transferId,
+      0,
+      async () => true,
+      async () => {
+        if (phase === "body") {
+          entered();
+          await held;
+        }
+      },
+    );
+    await started;
+    await expect(
+      pool.writeAuthorizedChunk(
+        "owner",
+        descriptor.transferId,
+        0,
+        async () => true,
+        () => {},
+      ),
+    ).rejects.toThrow("admission is busy");
+    pool.invalidate("first");
+    expect(() => retain("owner", "next", { text: "y".repeat(50) })).toThrow("capacity is busy");
+    release();
+    if (phase === "guard") await expect(pending).rejects.toThrow("unavailable");
+    else await pending; // Already admitted body settles; revocation cannot unsend it.
+    expect(retain("owner", "next", { text: "y".repeat(50) }).totalBytes).toBeGreaterThan(50);
+  },
+);

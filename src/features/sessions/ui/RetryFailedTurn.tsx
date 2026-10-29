@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import { useT } from "../../../shared/i18n";
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { lastTurnRecall, lastUserTurnStartIndex } from "../model/editLastTurn";
 import { isSessionErrorBlock } from "../model/sessionIssue";
@@ -73,33 +74,40 @@ export function RetryFailedTurn({
     return false;
   };
   return (
-    <div className="[padding-inline:1rem] [padding-block:0.5rem]" data-retry-failed-turn>
-      <Button
-        type="button"
-        variant="secondary"
-        size="sm"
-        motion="none"
-        loading={submitted === key}
-        onClick={() => {
-          if (submitting.current === key) return;
-          submitting.current = key;
-          setSubmitted(key);
-          try {
-            if (
-              onSubmit(retry.text, retry.attachments, {
-                ...(retry.intent ? { intent: retry.intent } : {}),
-                onSendRejected: release,
-              }) === false
-            )
-              release();
-          } catch (error) {
-            release();
-            throw error;
-          }
-        }}
-      >
-        {t("Retry")}
-      </Button>
+    <div className="px-4 py-1" data-retry-failed-turn>
+      <Alert
+        inline
+        tone="danger"
+        title={t("The last turn failed")}
+        action={
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            motion="none"
+            loading={submitted === key}
+            onClick={() => {
+              if (submitting.current === key) return;
+              submitting.current = key;
+              setSubmitted(key);
+              try {
+                if (
+                  onSubmit(retry.text, retry.attachments, {
+                    ...(retry.intent ? { intent: retry.intent } : {}),
+                    onSendRejected: release,
+                  }) === false
+                )
+                  release();
+              } catch (error) {
+                release();
+                throw error;
+              }
+            }}
+          >
+            {t("Retry")}
+          </Button>
+        }
+      />
     </div>
   );
 }

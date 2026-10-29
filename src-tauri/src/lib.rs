@@ -53,6 +53,7 @@ mod native_authority_runtime;
 mod native_authority_source;
 mod native_editor_drafts;
 mod native_language;
+mod native_projection_coordinator;
 mod native_provider_output;
 mod native_window_lifecycle;
 mod native_workspace;
@@ -462,6 +463,10 @@ pub fn run() {
             build_info::build_identity,
             native_authority_checkpoint::native_renderer_checkpoint,
             native_authority_checkpoint::native_renderer_checkpoint_status,
+            native_projection_coordinator::native_projection_checkpoint_prepared,
+            native_projection_coordinator::native_projection_checkpoint_verify,
+            native_projection_coordinator::native_projection_checkpoint_raw_status,
+            native_projection_coordinator::native_projection_checkpoint_release,
             session_store::rewind::managed_turn_begin,
             session_store::rewind::managed_turn_end,
             session_store::rewind::managed_rewind_plan,

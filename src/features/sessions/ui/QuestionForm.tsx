@@ -7,6 +7,7 @@ import { t, useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
 import {
   useEffect,
+  useLayoutEffect,
   useId,
   useMemo,
   useRef,
@@ -28,6 +29,7 @@ import {
 } from "../../../shared/ui/icons";
 import {
   questionDraftKey,
+  associateQuestionDraft,
   readQuestionDraft,
   writeQuestionDraft,
   type QuestionDraft,
@@ -41,11 +43,14 @@ import {
   type UserQuestionPrompt,
   type UserQuestionReply,
 } from "../model/userQuestion";
+import { useParentInputClosure, useParentInputsClosed } from "../data/parentInputClosure";
 
 type Props = {
   prompt: UserQuestionPrompt;
   /** Session identity; unfinished answers stay separate across sessions. */
   draftScope?: string;
+  /** Actual logical root; draftScope may instead be a remote cache namespace. */
+  parentSessionId?: string;
   onReply: (requestId: number, reply: UserQuestionReply) => void;
   onInteraction?: (requestId: number) => void;
 };
@@ -54,28 +59,78 @@ export function QuestionForm(props: Props) {
   return <QuestionFormContent key={questionDraftKey(props.draftScope, props.prompt)} {...props} />;
 }
 
-function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Props) {
+function QuestionFormContent({
+  prompt,
+  draftScope,
+  parentSessionId,
+  onReply,
+  onInteraction,
+}: Props) {
   const t = useT();
+  const parentClosed = useParentInputsClosed(parentSessionId);
   const statusId = useId();
   const [draft, setDraft] = useState<QuestionDraft>(
-    () => readQuestionDraft(draftScope, prompt) ?? { step: 0, answers: {}, custom: {} },
+    () =>
+      readQuestionDraft(draftScope, prompt) ?? {
+        step: 0,
+        answers: {},
+        custom: {},
+      },
   );
   const { step, answers, custom } = draft;
+  const draftRef = useRef(draft);
+  useLayoutEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const submitted = useRef(!!draft.delivery);
   const [submitting, setSubmitting] = useState(draft.delivery === "sending");
   const [localUnknown, setLocalUnknown] = useState(draft.delivery === "unknown");
   const [now, setNow] = useState(Date.now);
   const visible = usePresentationVisible();
+  const form = useRef<HTMLFormElement>(null);
+  const parentChanged = useParentInputClosure(
+    {
+      kind: "question-draft",
+      sessionId: parentSessionId,
+      snapshot: () => ({
+        source: "mounted-question-form",
+        draftScope,
+        questionKey: questionDraftKey(draftScope, prompt),
+        prompt,
+        draft: draftRef.current,
+        submitted: submitted.current,
+        submitting,
+        localUnknown,
+        customInputs: Array.from(
+          form.current?.querySelectorAll("textarea") ?? [],
+          (field) => field.value,
+        ),
+        optionInputs: Array.from(
+          form.current?.querySelectorAll<HTMLInputElement>("input") ?? [],
+          (field) => ({ value: field.value, checked: field.checked }),
+        ),
+      }),
+    },
+    form,
+  );
+  useLayoutEffect(() => {
+    return associateQuestionDraft(draftScope, prompt, parentSessionId);
+  }, [draftScope, prompt, parentSessionId]);
   const sending = submitting || prompt.delivery === "sending";
   const held =
-    sending || localUnknown || prompt.delivery === "unknown" || prompt.delivery === "queued";
+    parentClosed ||
+    sending ||
+    localUnknown ||
+    prompt.delivery === "unknown" ||
+    prompt.delivery === "queued";
 
   const updateDraft = (update: (current: QuestionDraft) => QuestionDraft) => {
-    setDraft((current) => {
-      const next = update(current);
-      writeQuestionDraft(draftScope, prompt, next);
-      return next;
-    });
+    if (!parentChanged.canMutate()) return;
+    parentChanged();
+    const next = update(draftRef.current);
+    draftRef.current = next;
+    writeQuestionDraft(draftScope, prompt, next);
+    setDraft(next);
   };
 
   useEffect(() => {
@@ -85,8 +140,12 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
       setLocalUnknown(false);
       setDraft((current) => {
         if (!current.delivery) return current;
-        const next = { ...current, delivery: undefined, pendingAction: undefined };
-        writeQuestionDraft(draftScope, prompt, next);
+        const next = {
+          ...current,
+          delivery: undefined,
+          pendingAction: undefined,
+        };
+        writeQuestionDraft(draftScope, prompt, next, true);
         return next;
       });
     } else if (prompt.delivery === "unknown" || prompt.delivery === "queued") {
@@ -102,6 +161,7 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
   }, [prompt.requestId, prompt.autoResolveAt, visible]);
 
   const interact = () => {
+    if (!parentChanged.canMutate()) return;
     if (prompt.autoResolveAt != null) onInteraction?.(prompt.requestId);
   };
 
@@ -120,18 +180,31 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
     pendingAction: QuestionDraft["pendingAction"] = "answer",
   ) => {
     if (submitted.current || held) return;
-    submitted.current = true;
-    setSubmitting(true);
-    setLocalUnknown(false);
-    updateDraft((current) => ({ ...current, delivery: "sending", pendingAction }));
+    const admitted = parentChanged.admit();
+    if (!admitted) return;
     try {
-      onReply(prompt.requestId, reply);
-    } catch {
-      setSubmitting(false);
-      // A callback can throw after dispatch. Only an authoritative failed
-      // transport update can establish that sending again is safe.
-      setLocalUnknown(true);
-      updateDraft((current) => ({ ...current, delivery: "unknown" }));
+      admitted.apply(() => {
+        submitted.current = true;
+        parentChanged();
+        setSubmitting(true);
+        setLocalUnknown(false);
+        updateDraft((current) => ({
+          ...current,
+          delivery: "sending",
+          pendingAction,
+        }));
+        try {
+          onReply(prompt.requestId, reply);
+        } catch {
+          setSubmitting(false);
+          // A callback can throw after dispatch. Only an authoritative failed
+          // transport update can establish that sending again is safe.
+          setLocalUnknown(true);
+          updateDraft((current) => ({ ...current, delivery: "unknown" }));
+        }
+      });
+    } finally {
+      admitted.finish();
     }
   };
   const finish = (
@@ -155,11 +228,19 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
     if (last) {
-      updateDraft((current) => ({ ...current, answers: nextAnswers, custom: nextCustom }));
+      updateDraft((current) => ({
+        ...current,
+        answers: nextAnswers,
+        custom: nextCustom,
+      }));
       finish(nextAnswers, nextCustom, "dismiss");
       return;
     }
-    updateDraft(() => ({ answers: nextAnswers, custom: nextCustom, step: index + 1 }));
+    updateDraft(() => ({
+      answers: nextAnswers,
+      custom: nextCustom,
+      step: index + 1,
+    }));
   };
 
   const continueCurrent = () => {
@@ -251,6 +332,7 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
       onChangeCapture={interact}
     >
       <form
+        ref={form}
         className={`bycoda-arc ${styles.form}`}
         aria-label={t("Question")}
         aria-busy={sending}
@@ -261,10 +343,7 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
       >
         {title || total > 1 ? (
           <div className={styles.context}>
-            <MessageSquare
-              className="size-3.5 shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
+            <MessageSquare className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
             {title ? (
               <span className={styles.contextTitle}>{title}</span>
             ) : (
@@ -316,7 +395,10 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
                 return {
                   ...current,
                   custom: { ...current.custom, [question.id]: value },
-                  answers: { ...current.answers, [question.id]: [customOptionId(question)] },
+                  answers: {
+                    ...current.answers,
+                    [question.id]: [customOptionId(question)],
+                  },
                 };
               });
             }}
@@ -324,22 +406,21 @@ function QuestionFormContent({ prompt, draftScope, onReply, onInteraction }: Pro
         </fieldset>
         <div className={styles.footer}>
           <div className={styles.feedback}>
+            {parentClosed ? (
+              <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
+            ) : null}
             <p
-              role={
-                failed || uncertain
-                  ? "alert"
-                  : "status"
-              }
+              role={failed || uncertain ? "alert" : "status"}
               className={styles.status}
               id={statusId}
               data-error={failed ? "true" : undefined}
             >
-              <StatusIcon className="size-3.5 shrink-0" />
+              <StatusIcon className="icon-sm shrink-0" />
               <span>{status}</span>
             </p>
             {prompt.autoResolveAt != null && !held ? (
               <span
-                className="text-xs text-(--ui-text-secondary) tabular-nums"
+                className="text-ui-caption text-(--ui-text-secondary) tabular-nums"
                 title={t("Interact to keep this question open.")}
               >
                 {prompt.autoResolveAt - now > 60_000
@@ -487,7 +568,7 @@ function QuestionFields({
     >
       {question.multiSelect || options.length === 0 ? <legend>{question.prompt}</legend> : null}
       {question.multiSelect ? (
-        <p className="[margin-block-start:0.5rem] text-xs text-(--ui-text-secondary)">
+        <p className="[margin-block-start:0.5rem] text-ui-caption text-(--ui-text-secondary)">
           {t("Select all that apply")}
         </p>
       ) : null}

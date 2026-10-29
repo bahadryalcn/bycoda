@@ -65,8 +65,12 @@ async function click(label: string) {
     container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!.click(),
   );
 }
-async function choose(description: string) {
-  await click("Add files or choose a mode");
+async function choose(description: string, menu: "attachments" | "mode" = "attachments") {
+  if (menu === "mode") {
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("button[data-composer-mode-trigger]")!.click(),
+    );
+  } else await click("Add files or skills");
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes(description),
   );
@@ -158,7 +162,7 @@ it("retains text and cancels a waiting Send when file inspection fails", async (
 
 it("restores the Save draft intent through the real cache after remount", async () => {
   await draw();
-  await choose("Save this message without starting the agent");
+  await choose("Save this message without starting the agent", "mode");
   const text = getComposerDraft(id);
   act(() => root.unmount());
   root = createRoot(container);
@@ -170,7 +174,7 @@ it("restores the Save draft intent through the real cache after remount", async 
 
 it("does not convert a restored Save draft intent into Send when saving is unavailable", async () => {
   await draw();
-  await choose("Save this message without starting the agent");
+  await choose("Save this message without starting the agent", "mode");
   act(() => root.unmount());
   root = createRoot(container);
   await draw({ initialDraft: getComposerDraft(id), canSaveDraft: false, onSaveDraft: undefined });

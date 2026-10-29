@@ -79,156 +79,151 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     saveKeepAwakeScreen(next);
   };
   return (
-    <div className="general-settings">
-      <div className="general-preferences">
-        <LanguageSettings />
-        {IS_WIN && (
-          <Group
-            title={t("Application behavior")}
-            layout="full"
-            scope={t("Applies to this Windows computer.")}
-          >
-            <Row
-              id="close-to-tray"
-              label={t("Close to tray")}
-              description={t(
-                "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
-              )}
-            >
-              <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
-            </Row>
-          </Group>
-        )}
-        <Group
-          title={t("Sleep")}
-          layout="full"
-          scope={t("Applies to this computer, not remote computers running agents.")}
-        >
+    <div className="general-settings settings-topics">
+      {/* Daily preferences first: language, app behavior, sleep. */}
+      <LanguageSettings />
+      {IS_WIN && (
+        <Group title={t("Application behavior")} scope={t("Applies to this Windows computer.")}>
           <Row
-            id="keep-awake"
-            label={t("Prevent sleep while agents work")}
-            description={t("Keep this computer awake while an agent is working.")}
-          >
-            <Toggle
-              label={t("Prevent sleep while agents work")}
-              on={keepAwake}
-              onChange={onKeepAwake}
-            />
-          </Row>
-          <div
-            className="general-sleep-options"
-            role="group"
-            aria-label={t("Sleep")}
-            aria-describedby={!keepAwake ? "general-sleep-dependency" : undefined}
-          >
-            {!keepAwake ? (
-              <p className="general-dependency" id="general-sleep-dependency">
-                {t(
-                  "Enable Prevent sleep while agents work to use these options. Your choices are preserved.",
-                )}
-              </p>
-            ) : null}
-            <Row
-              id="keep-awake-duration"
-              label={t("After agents finish")}
-              description={t(
-                "Choose when this computer can sleep again after the last agent finishes.",
-              )}
-            >
-              <MorphSelect
-                label={t("Stay awake after an agent ends")}
-                value={keepAwakeHoldAfter}
-                options={[...KEEP_AWAKE_HOLD_AFTER]}
-                onChange={onKeepAwakeHoldAfter}
-                disabled={!keepAwake}
-              />
-            </Row>
-            <Row
-              id="keep-awake-screen"
-              label={t("Keep the screen on")}
-              description={
-                IS_WIN || IS_MAC
-                  ? t(
-                      "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
-                    )
-                  : t(
-                      "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
-                    )
-              }
-            >
-              <Toggle
-                label={t("Keep the screen on")}
-                on={keepAwakeScreen}
-                onChange={onKeepAwakeScreen}
-                disabled={!keepAwake}
-              />
-            </Row>
-          </div>
-          <AdvancedSettings title={t("Sleep behavior")}>
-            <p className="general-detail">
-              {IS_WIN
-                ? t(
-                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
-                  )
-                : IS_MAC
-                  ? t(
-                      "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
-                    )
-                  : t(
-                      "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
-                    )}
-            </p>
-          </AdvancedSettings>
-        </Group>
-      </div>
-
-      <div className="general-support">
-        <Group title={t("Setup and help")} layout="full">
-          <Row
-            id="import-history"
-            label={t("Import history")}
+            id="close-to-tray"
+            label={t("Close to tray")}
             description={t(
-              "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
+              "Keep agents running when you close the window. Reopen or quit the app from the tray icon.",
             )}
           >
-            <Button
-              className="shrink-0"
-              onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
-            >
-              {t("Import…")}
-            </Button>
-          </Row>
-          <Row
-            id="getting-started"
-            label={t("Getting started")}
-            description={t("Connect computers, set up agents, and choose your projects.")}
-          >
-            <Button
-              className="shrink-0"
-              onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
-            >
-              {t("Open setup…")}
-            </Button>
-          </Row>
-          <Row
-            id="usage-guide"
-            label={t("Usage guide")}
-            description={t("Learn chat, queue, stop and essential shortcuts.")}
-          >
-            {/* The guide request closes Settings and walks through the workspace. */}
-            <Button className="shrink-0" onClick={openUsageGuide}>
-              {t("Open guide")}
-            </Button>
+            <Toggle label={t("Close to tray")} on={closeToTray} onChange={onCloseToTray} />
           </Row>
         </Group>
+      )}
+      <Group
+        title={t("Sleep")}
+        scope={t("Applies to this computer, not remote computers running agents.")}
+      >
+        <Row
+          id="keep-awake"
+          label={t("Prevent sleep while agents work")}
+          description={t("Keep this computer awake while an agent is working.")}
+        >
+          <Toggle
+            label={t("Prevent sleep while agents work")}
+            on={keepAwake}
+            onChange={onKeepAwake}
+          />
+        </Row>
+        <div
+          className="general-sleep-options"
+          role="group"
+          aria-label={t("Sleep")}
+          aria-describedby={!keepAwake ? "general-sleep-dependency" : undefined}
+        >
+          {!keepAwake ? (
+            <p className="general-dependency" id="general-sleep-dependency">
+              {t(
+                "Enable Prevent sleep while agents work to use these options. Your choices are preserved.",
+              )}
+            </p>
+          ) : null}
+          <Row
+            id="keep-awake-duration"
+            label={t("After agents finish")}
+            description={t("Choose when this computer can sleep again after the last agent finishes.")}
+          >
+            <MorphSelect
+              label={t("Stay awake after an agent ends")}
+              value={keepAwakeHoldAfter}
+              options={[...KEEP_AWAKE_HOLD_AFTER]}
+              onChange={onKeepAwakeHoldAfter}
+              disabled={!keepAwake}
+            />
+          </Row>
+          <Row
+            id="keep-awake-screen"
+            label={t("Keep the screen on")}
+            description={
+              IS_WIN || IS_MAC
+                ? t(
+                    "Keep the display awake while the sleep setting is active. Closing the lid or choosing Sleep still works.",
+                  )
+                : t(
+                    "Keep the display awake while the sleep setting is active. Automatic screen locking may be prevented.",
+                  )
+            }
+          >
+            <Toggle
+              label={t("Keep the screen on")}
+              on={keepAwakeScreen}
+              onChange={onKeepAwakeScreen}
+              disabled={!keepAwake}
+            />
+          </Row>
+        </div>
+        <AdvancedSettings title={t("Sleep behavior")}>
+          <p className="general-detail">
+            {IS_WIN
+              ? t(
+                  "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works. On battery-powered Modern Standby PCs, Windows may stop the request five minutes after the sleep timeout.",
+                )
+              : IS_MAC
+                ? t(
+                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Closing the lid or choosing Sleep still works.",
+                  )
+                : t(
+                    "Prevent idle sleep during agent work, and optionally after the last agent finishes. Automatic screen locking remains available. On GNOME, choosing Sleep may be blocked while this is active.",
+                  )}
+          </p>
+        </AdvancedSettings>
+      </Group>
 
-        <DiagnosticsGroup />
+      {/* Updates: version, check/install/restart state and progress share one compact action area. */}
+      <Group title={t("Updates")}>
+        <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
+      </Group>
 
-        <Group title={t("About")} layout="full">
-          <UpdateRow onOpenWhatsNew={onOpenWhatsNew} />
-          <ProductDetails />
-        </Group>
-      </div>
+      {/* Secondary: setup help, diagnostics and product details. */}
+      <Group title={t("Setup and help")}>
+        <Row
+          id="import-history"
+          label={t("Import history")}
+          description={t(
+            "Choose Claude Code and Codex conversations to import. Originals stay unchanged.",
+          )}
+        >
+          <Button
+            className="shrink-0"
+            onClick={() => window.dispatchEvent(new Event(OPEN_SESSION_IMPORT_EVENT))}
+          >
+            {t("Import…")}
+          </Button>
+        </Row>
+        <Row
+          id="getting-started"
+          label={t("Getting started")}
+          description={t("Connect computers, set up agents, and choose your projects.")}
+        >
+          <Button
+            className="shrink-0"
+            onClick={() => window.dispatchEvent(new Event(OPEN_ONBOARDING_EVENT))}
+          >
+            {t("Open setup…")}
+          </Button>
+        </Row>
+        <Row
+          id="usage-guide"
+          label={t("Usage guide")}
+          description={t("Learn chat, queue, stop and essential shortcuts.")}
+        >
+          {/* The guide request closes Settings and walks through the workspace. */}
+          <Button className="shrink-0" onClick={openUsageGuide}>
+            {t("Open guide")}
+          </Button>
+        </Row>
+      </Group>
+
+      <DiagnosticsGroup />
+
+      <Group title={t("About")}>
+        <ProductDetails />
+      </Group>
     </div>
   );
 }

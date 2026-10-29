@@ -1,4 +1,5 @@
-import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { NEW_LOCAL_HOST_SESSION } from "../../../features/connections/model/newLocalHostSession";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   keepSessionTab,
@@ -84,6 +85,26 @@ export function useNewSessionActions(deps: NewSessionActionDeps): NewSessionActi
     appendTab,
     followProject,
   } = deps;
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const session = (event as CustomEvent<Session>).detail;
+      if (!session?.hostBinding || sessionsRef.current.some((entry) => entry.id === session.id)) return;
+      const tab = newTab(session.id);
+      setSearchViewOpen(false);
+      setInboxViewOpen(false);
+      setNotesViewOpen(false);
+      setAutomationsViewOpen(false);
+      setServersViewOpen?.(false);
+      setSessions((previous) => [...previous, session]);
+      appendTab(tab, session.cwd);
+      setActiveTabId(tab.id);
+      followProject(session.cwd);
+      setComposerFocused(true);
+    };
+    window.addEventListener(NEW_LOCAL_HOST_SESSION, open);
+    return () => window.removeEventListener(NEW_LOCAL_HOST_SESSION, open);
+  }, [appendTab, followProject, setActiveTabId, setSessions]);
 
   const createWorkspaceTab = useCallback(
     (cwd: string, focus?: WorktreeFocus) => {

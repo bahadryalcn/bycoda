@@ -9,14 +9,15 @@ import { Button } from "../../shared/ui/Button";
 import { InfoPopover } from "../../shared/ui/InfoPopover";
 import { Progress } from "../../shared/ui/Progress";
 import { Popover } from "../../shared/ui/Popover";
+import { MediaToolbarButton } from "../../shared/ui/MediaToolbar";
 import {
   ImageAnnotationCanvas,
+  ImageAnnotationToolbar,
   rasterizeImageAnnotations,
   type ImageAnnotationDocument,
 } from "../../shared/ui/ImageAnnotationCanvas";
 import {
   AppWindow,
-  ArrowUp,
   Check,
   CursorMagicSelection,
   Home,
@@ -26,15 +27,12 @@ import {
   MoreHorizontal,
   Pause,
   Pencil,
-  Pin,
   Play,
   Plus,
   Minus,
   RefreshCw,
   RotateCcw,
-  Square,
   Trash2,
-  Undo2,
   X,
 } from "../../shared/ui/icons";
 import "./DevicePanel.css";
@@ -672,6 +670,17 @@ export function DevicePanel({
                     )}
               </p>
             )}
+            {device ? (
+              // The device's own state sits with its identity; the computer it runs on
+              // is the tool's context row above, so it is not repeated here.
+              <span className="device-panel-summary" data-booted={device.booted}>
+                <strong>{stateLabel(device)}</strong>
+                <span>
+                  {platformLabel(device.platform)} {device.version}
+                </span>
+                <span>{kindLabel(device)}</span>
+              </span>
+            ) : null}
             <Button
               variant="ghost"
               iconOnly
@@ -681,7 +690,7 @@ export function DevicePanel({
               disabled={unavailable("refresh", !loadingDevices)}
               onClick={refreshDevices}
             >
-              <RefreshCw className="icon-md" aria-hidden />
+              <RefreshCw className="icon-sm" aria-hidden />
             </Button>
             <Button
               variant="ghost"
@@ -692,19 +701,9 @@ export function DevicePanel({
               aria-expanded={surface === "menu"}
               onClick={(event) => openSurface("menu", event.currentTarget)}
             >
-              <MoreHorizontal className="icon-md" aria-hidden />
+              <MoreHorizontal className="icon-sm" aria-hidden />
             </Button>
           </div>
-          {device && (
-            <p className="device-panel-summary" data-booted={device.booted}>
-              <span>
-                {platformLabel(device.platform)} {device.version}
-              </span>
-              <span>{kindLabel(device)}</span>
-              <strong>{stateLabel(device)}</strong>
-              {hostLabel ? <span className="device-panel-summary-host">{hostLabel}</span> : null}
-            </p>
-          )}
           {actionCompleted && (
             <Alert
               inline
@@ -722,6 +721,151 @@ export function DevicePanel({
             >
               {t("The screen could not be refreshed. Refresh the frame; do not repeat the action.")}
             </Alert>
+          )}
+          <div className="device-panel-toolbar" role="toolbar" aria-label={t("Device actions")}>
+            <div className="device-panel-group" role="group" aria-label={t("Control")}>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Allow device control")}
+                tooltip={t("Allow device control")}
+                role="switch"
+                aria-checked={control}
+                selected={control && !annotating}
+                disabled={busy || !device?.booted}
+                onClick={() => {
+                  setControl(annotating ? true : !control);
+                  setAnnotating(false);
+                }}
+              >
+                <CursorMagicSelection className="icon-sm" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Home")}
+                tooltip={t("Home")}
+                loading={operation === "home"}
+                disabled={unavailable("home", canControlDevice && !annotating)}
+                onClick={() => action({ type: "home" })}
+              >
+                <Home className="icon-sm" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Device text input")}
+                tooltip={t("Device text input")}
+                disabled={!controlEnabled}
+                aria-haspopup="dialog"
+                aria-expanded={surface === "text"}
+                onClick={(event) => openSurface("text", event.currentTarget)}
+              >
+                <Keyboard className="icon-sm" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Choose app to open")}
+                tooltip={t("Choose app to open")}
+                disabled={!controlEnabled}
+                aria-haspopup="dialog"
+                aria-expanded={surface === "app"}
+                onClick={(event) => openSurface("app", event.currentTarget)}
+              >
+                <AppWindow className="icon-sm" aria-hidden />
+              </Button>
+            </div>
+            <div className="device-panel-group" role="group" aria-label={t("Mark")}>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Mark device screen")}
+                tooltip={t("Mark device screen")}
+                selected={annotating}
+                aria-pressed={annotating}
+                disabled={!frame || busy}
+                onClick={beginAnnotation}
+              >
+                <Pencil className="icon-sm" aria-hidden />
+              </Button>
+              {annotating && draft && onAddImage ? (
+                <Button
+                  variant="ghost"
+                  iconOnly
+                  label={t("Add marked image to draft")}
+                  tooltip={t("Add marked image to draft")}
+                  loading={operation === "addImage"}
+                  disabled={unavailable("addImage")}
+                  onClick={addImage}
+                >
+                  <MessageSquarePlus className="icon-sm" aria-hidden />
+                </Button>
+              ) : null}
+            </div>
+            <span className="device-panel-toolbar-spacer" />
+            <div className="device-panel-group" role="group" aria-label={t("View")}>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Capture")}
+                tooltip={t("Capture")}
+                loading={operation === "capture"}
+                disabled={unavailable("capture", canViewDevice && !annotating)}
+                onClick={() => void execute("capture", () => capture(selected), setFrame)}
+              >
+                <ImagePlus className="icon-sm" aria-hidden />
+              </Button>
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Live view")}
+                tooltip={t("Live view")}
+                role="switch"
+                aria-checked={live}
+                disabled={!canView}
+                onClick={() => {
+                  setAnnotating(false);
+                  setLive(!live);
+                }}
+              >
+                {live ? (
+                  <Pause className="icon-sm" aria-hidden />
+                ) : (
+                  <Play className="icon-sm" aria-hidden />
+                )}
+              </Button>
+            </div>
+          </div>
+          {toolbarReason && <p className="device-panel-reason">{toolbarReason}</p>}
+          {control && !status.agentInstalled && (
+            <div className="device-panel-setup-control">
+              <span>{t("Run setup with control enabled to install the control tools.")}</span>
+              <Button
+                variant="primary"
+                loading={operation === "setupControl"}
+                disabled={unavailable("setupControl", sdkAvailable)}
+                onClick={() => void execute("setupControl", () => api.setup(true), setStatus)}
+              >
+                {t("Set up device control")}
+              </Button>
+            </div>
+          )}
+          {operation === "press" || operation === "swipe" ? (
+            <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
+          ) : null}
+          {deviceNotice && (
+            <p className="device-panel-notice" role={deviceNotice.error ? "alert" : "status"}>
+              {deviceNotice.text}
+              <Button
+                variant="ghost"
+                iconOnly
+                label={t("Dismiss")}
+                onClick={() => setDeviceNotice(undefined)}
+              >
+                <X className="icon-sm" aria-hidden />
+              </Button>
+            </p>
           )}
           <div className="device-panel-stage">
             <div className="device-panel-viewport">
@@ -892,40 +1036,14 @@ export function DevicePanel({
               </span>
             )}
             {annotating && draft && (
-              <div
-                className="device-panel-mark-tools"
-                role="toolbar"
-                aria-label={t("Image annotation tools")}
-              >
-                {(
-                  [
-                    { value: "box", label: "Draw rectangle", icon: Square },
-                    { value: "arrow", label: "Draw arrow", icon: ArrowUp },
-                    { value: "pen", label: "Draw freehand", icon: Pencil },
-                    { value: "pin", label: "Add numbered pin", icon: Pin },
-                  ] as const
-                ).map(({ value, label, icon: Icon }) => (
-                  <Button
-                    key={value}
-                    variant="ghost"
-                    iconOnly
-                    label={t(label)}
-                    tooltip={t(label)}
-                    selected={annotationTool === value}
-                    aria-pressed={annotationTool === value}
-                    disabled={busy}
-                    onClick={() => setAnnotationTool(value)}
-                  >
-                    <Icon className="icon-md" aria-hidden />
-                  </Button>
-                ))}
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Undo annotation")}
-                  tooltip={t("Undo annotation")}
-                  disabled={busy || !draft.undo.length}
-                  onClick={() =>
+              <div className="device-panel-mark-tools">
+                <ImageAnnotationToolbar
+                  tone="surface"
+                  tool={annotationTool}
+                  onToolChange={setAnnotationTool}
+                  disabled={busy}
+                  canUndo={draft.undo.length > 0}
+                  onUndo={() =>
                     updateDraft((value) => ({
                       ...value,
                       document: value.undo[value.undo.length - 1],
@@ -933,196 +1051,52 @@ export function DevicePanel({
                       redo: [...value.redo, value.document],
                     }))
                   }
+                  labels={{
+                    toolbar: t("Image annotation tools"),
+                    box: t("Draw rectangle"),
+                    arrow: t("Draw arrow"),
+                    pen: t("Draw freehand"),
+                    pin: t("Add numbered pin"),
+                    undo: t("Undo annotation"),
+                  }}
                 >
-                  <Undo2 className="icon-md" aria-hidden />
-                </Button>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Redo annotation")}
-                  tooltip={t("Redo annotation")}
-                  disabled={busy || !draft.redo.length}
-                  onClick={() =>
-                    updateDraft((value) => ({
-                      ...value,
-                      document: value.redo[value.redo.length - 1],
-                      redo: value.redo.slice(0, -1),
-                      undo: [...value.undo, value.document],
-                    }))
-                  }
-                >
-                  <RotateCcw className="icon-md device-panel-redo" aria-hidden />
-                </Button>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Annotation note")}
-                  tooltip={t("Annotation note")}
-                  disabled={busy}
-                  aria-haspopup="dialog"
-                  aria-expanded={surface === "note"}
-                  onClick={(event) => openSurface("note", event.currentTarget)}
-                >
-                  <MessageSquarePlus className="icon-md" aria-hidden />
-                </Button>
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Finish marking")}
-                  tooltip={t("Finish marking")}
-                  disabled={busy}
-                  onClick={() => setAnnotating(false)}
-                >
-                  <Check className="icon-md" aria-hidden />
-                </Button>
+                  <MediaToolbarButton
+                    tone="surface"
+                    label={t("Redo annotation")}
+                    disabled={busy || !draft.redo.length}
+                    onClick={() =>
+                      updateDraft((value) => ({
+                        ...value,
+                        document: value.redo[value.redo.length - 1],
+                        redo: value.redo.slice(0, -1),
+                        undo: [...value.undo, value.document],
+                      }))
+                    }
+                  >
+                    <RotateCcw className="icon-sm device-panel-redo" aria-hidden />
+                  </MediaToolbarButton>
+                  <MediaToolbarButton
+                    tone="surface"
+                    label={t("Annotation note")}
+                    disabled={busy}
+                    aria-haspopup="dialog"
+                    aria-expanded={surface === "note"}
+                    onClick={(event) => openSurface("note", event.currentTarget)}
+                  >
+                    <MessageSquarePlus className="icon-sm" aria-hidden />
+                  </MediaToolbarButton>
+                  <MediaToolbarButton
+                    tone="surface"
+                    label={t("Finish marking")}
+                    disabled={busy}
+                    onClick={() => setAnnotating(false)}
+                  >
+                    <Check className="icon-sm" aria-hidden />
+                  </MediaToolbarButton>
+                </ImageAnnotationToolbar>
               </div>
             )}
           </div>
-          <div className="device-panel-toolbar" role="toolbar" aria-label={t("Device actions")}>
-            <div className="device-panel-group" role="group" aria-label={t("Control")}>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Allow device control")}
-                tooltip={t("Allow device control")}
-                role="switch"
-                aria-checked={control}
-                selected={control && !annotating}
-                disabled={busy || !device?.booted}
-                onClick={() => {
-                  setControl(annotating ? true : !control);
-                  setAnnotating(false);
-                }}
-              >
-                <CursorMagicSelection className="icon-md" aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Home")}
-                tooltip={t("Home")}
-                loading={operation === "home"}
-                disabled={unavailable("home", canControlDevice && !annotating)}
-                onClick={() => action({ type: "home" })}
-              >
-                <Home className="icon-md" aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Device text input")}
-                tooltip={t("Device text input")}
-                disabled={!controlEnabled}
-                aria-haspopup="dialog"
-                aria-expanded={surface === "text"}
-                onClick={(event) => openSurface("text", event.currentTarget)}
-              >
-                <Keyboard className="icon-md" aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Choose app to open")}
-                tooltip={t("Choose app to open")}
-                disabled={!controlEnabled}
-                aria-haspopup="dialog"
-                aria-expanded={surface === "app"}
-                onClick={(event) => openSurface("app", event.currentTarget)}
-              >
-                <AppWindow className="icon-md" aria-hidden />
-              </Button>
-            </div>
-            <div className="device-panel-group" role="group" aria-label={t("Mark")}>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Mark device screen")}
-                tooltip={t("Mark device screen")}
-                selected={annotating}
-                aria-pressed={annotating}
-                disabled={!frame || busy}
-                onClick={beginAnnotation}
-              >
-                <Pencil className="icon-md" aria-hidden />
-              </Button>
-              {annotating && draft && onAddImage ? (
-                <Button
-                  variant="ghost"
-                  iconOnly
-                  label={t("Add marked image to draft")}
-                  tooltip={t("Add marked image to draft")}
-                  loading={operation === "addImage"}
-                  disabled={unavailable("addImage")}
-                  onClick={addImage}
-                >
-                  <MessageSquarePlus className="icon-md" aria-hidden />
-                </Button>
-              ) : null}
-            </div>
-            <span className="device-panel-toolbar-spacer" />
-            <div className="device-panel-group" role="group" aria-label={t("View")}>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Capture")}
-                tooltip={t("Capture")}
-                loading={operation === "capture"}
-                disabled={unavailable("capture", canViewDevice && !annotating)}
-                onClick={() => void execute("capture", () => capture(selected), setFrame)}
-              >
-                <ImagePlus className="icon-md" aria-hidden />
-              </Button>
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Live view")}
-                tooltip={t("Live view")}
-                role="switch"
-                aria-checked={live}
-                disabled={!canView}
-                onClick={() => {
-                  setAnnotating(false);
-                  setLive(!live);
-                }}
-              >
-                {live ? (
-                  <Pause className="icon-md" aria-hidden />
-                ) : (
-                  <Play className="icon-md" aria-hidden />
-                )}
-              </Button>
-            </div>
-          </div>
-          {toolbarReason && <p className="device-panel-reason">{toolbarReason}</p>}
-          {control && !status.agentInstalled && (
-            <div className="device-panel-setup-control">
-              <span>{t("Run setup with control enabled to install the control tools.")}</span>
-              <Button
-                variant="primary"
-                loading={operation === "setupControl"}
-                disabled={unavailable("setupControl", sdkAvailable)}
-                onClick={() => void execute("setupControl", () => api.setup(true), setStatus)}
-              >
-                {t("Set up device control")}
-              </Button>
-            </div>
-          )}
-          {operation === "press" || operation === "swipe" ? (
-            <Progress compact tone="neutral" aria-label={t("Working on the host…")} />
-          ) : null}
-          {deviceNotice && (
-            <p className="device-panel-notice" role={deviceNotice.error ? "alert" : "status"}>
-              {deviceNotice.text}
-              <Button
-                variant="ghost"
-                iconOnly
-                label={t("Dismiss")}
-                onClick={() => setDeviceNotice(undefined)}
-              >
-                <X className="icon-sm" aria-hidden />
-              </Button>
-            </p>
-          )}
         </>
       )}
       {surface && (
@@ -1201,7 +1175,7 @@ export function DevicePanel({
                   disabled={zoom <= 1}
                   onClick={() => setZoom((v) => Math.max(1, v - 0.25))}
                 >
-                  <Minus className="icon-md" aria-hidden />
+                  <Minus className="icon-sm" aria-hidden />
                 </Button>
                 <Button variant="ghost" onClick={() => setZoom(1)}>
                   {t("Fit to panel")}
@@ -1213,7 +1187,7 @@ export function DevicePanel({
                   disabled={zoom >= 3}
                   onClick={() => setZoom((v) => Math.min(3, v + 0.25))}
                 >
-                  <Plus className="icon-md" aria-hidden />
+                  <Plus className="icon-sm" aria-hidden />
                 </Button>
               </div>
               {device && (
@@ -1247,9 +1221,9 @@ export function DevicePanel({
                 onChange={(event) => setApp(event.target.value)}
               />
               {device?.platform === "ios" ? (
-                <p>{t("iOS: enter the app name or bundle ID. Open the app before interacting with it.")}</p>
+                <p className="host-tool-muted">{t("iOS: enter the app name or bundle ID. Open the app before interacting with it.")}</p>
               ) : device?.platform === "android" ? (
-                <p>{t("Android: enter Settings or an app package ID.")}</p>
+                <p className="host-tool-muted">{t("Android: enter Settings or an app package ID.")}</p>
               ) : null}
               <Button
                 disabled={unavailable("openApp", canControlDevice && !annotating && !!app.trim())}
@@ -1270,7 +1244,7 @@ export function DevicePanel({
                 onChange={(event) => setText(event.target.value)}
               />
               {windowsAndroid ? (
-                <p>{t("Android text input from Windows supports printable ASCII characters only.")}</p>
+                <p className="host-tool-muted">{t("Android text input from Windows supports printable ASCII characters only.")}</p>
               ) : null}
               <Button
                 disabled={unavailable("type", canControlDevice && !annotating && !!text)}
@@ -1306,7 +1280,7 @@ export function DevicePanel({
               >
                 {t("Press coordinate")}
               </Button>
-              <p>
+              <p className="host-tool-muted">
                 {t(
                   "Android: click the screen to press at that pixel. iOS: use logical point coordinates from the accessibility snapshot.",
                 )}

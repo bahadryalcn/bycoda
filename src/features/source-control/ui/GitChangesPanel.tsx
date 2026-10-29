@@ -242,6 +242,8 @@ type Props = {
   onOpenInEditor?: (path: string, pin?: boolean) => void;
   onOpenAllChanges: (kind: GitFileDiffKind) => void;
   onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) => void;
+  /** The target header above already offers refresh: keep one refresh control. */
+  refreshInTarget?: boolean;
 };
 
 export function GitChangesPanel({
@@ -257,6 +259,7 @@ export function GitChangesPanel({
   onOpenInEditor,
   onOpenAllChanges,
   onOpenCommit,
+  refreshInTarget = false,
 }: Props) {
   "use memo";
   const t = useT();
@@ -365,6 +368,80 @@ export function GitChangesPanel({
     );
   }
 
+  // The one branch control: leads the header of the single panel and sits with
+  // the actions in a grouped repository row.
+  const branchControl =
+    detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
+      <span
+        className={`flex min-w-0 items-center gap-1 text-ui-caption text-(--ui-text-secondary) ${repository ? "max-w-[min(12rem,35cqi)]" : "max-w-[65%] shrink-0"}`}
+      >
+        <BranchPicker
+          key={cwd}
+          cwd={cwd}
+          branch={index?.branch ?? undefined}
+          enabled={enabled && !busy && !loading}
+          popoverSide="bottom"
+          onChange={() => {
+            onMutated();
+            changesRef.current?.refreshPr?.();
+          }}
+        />
+      </span>
+    ) : null;
+  // Operation results sit next to the actions that produced them (below the commit
+  // and sync controls); a collapsed repository row shows them in place.
+  const notices = (
+    <>
+      {feedback ? (
+        <>
+          <GitFeedback
+            cwd={cwd}
+            kind={feedback.kind}
+            title={feedback.title}
+            detail={feedback.detail}
+            onDismiss={() => setGitFeedback(cwd, null)}
+            onRetry={
+              feedback.retry && !busy
+                ? () =>
+                    void feedback.retry?.().catch((error) =>
+                      setGitFeedback(cwd, {
+                        kind: "error",
+                        get title() {
+                          return t("Retry failed");
+                        },
+                        detail: String(error),
+                        retry: feedback.retry,
+                      }),
+                    )
+                : undefined
+            }
+          />
+          {feedback.url ? (
+            <Button
+              variant="link"
+              size="sm"
+              className="mx-3 mb-2 self-start"
+              onClick={() =>
+                void openUrl(feedback.url!).catch((error) =>
+                  setGitFeedback(cwd, { ...feedback, detail: String(error) }),
+                )
+              }
+            >
+              {t("Open pull request")}
+            </Button>
+          ) : null}
+        </>
+      ) : null}
+      {fetchError ? (
+        <GitFeedback
+          kind="warning"
+          title={t("Automatic fetch failed; sync counts may be outdated")}
+          detail={fetchError}
+          onDismiss={() => setFetchError(null)}
+        />
+      ) : null}
+    </>
+  );
   const checkoutBranch = index ? index.branch : repository?.checkout?.branch;
   const repositoryName = repository?.checkout
     ? (checkoutBranch ??
@@ -380,7 +457,7 @@ export function GitChangesPanel({
         className={
           repository
             ? styles.header
-            : "flex h-9 shrink-0 items-center gap-1.5 border-b border-stroke px-2"
+            : "flex h-9 shrink-0 items-center gap-1.5 px-2"
         }
         data-current-checkout={repository?.current || undefined}
       >
@@ -411,7 +488,23 @@ export function GitChangesPanel({
             {repository.current ? <span className={styles.current}>{t("Current")}</span> : null}
           </Button>
         ) : (
-          <span className="shrink-0 text-[12px] font-medium text-content">{t("Changes")}</span>
+          <>
+            {branchControl ?? (
+              <span className="shrink-0 text-ui-secondary font-medium text-content">
+                {index?.repository === false || !index
+                  ? t("Changes")
+                  : `${t("Detached")} · ${(index.head ?? "").slice(0, 7)}`}
+              </span>
+            )}
+            {index?.upstream && detailsOpen ? (
+              <span
+                className="hidden min-w-0 shrink truncate text-ui-caption text-(--ui-text-secondary) @min-[24rem]/changes:block"
+                title={`${t("Upstream")} ${index.upstream}`}
+              >
+                {index.upstream}
+              </span>
+            ) : null}
+          </>
         )}
         {busy && !localProgressVisible ? (
           <span
@@ -464,7 +557,7 @@ export function GitChangesPanel({
               ) : null}
             </span>
           ) : null}
-          {detailsOpen ? (
+          {detailsOpen && !refreshInTarget ? (
             <Button
               variant="ghost"
               size="sm"
@@ -483,23 +576,7 @@ export function GitChangesPanel({
               <RefreshCw aria-hidden className="size-3.5" strokeWidth={1.75} />
             </Button>
           ) : null}
-          {detailsOpen && index?.repository !== false && (index?.branch || repository) ? (
-            <span
-              className={`flex min-w-0 items-center gap-1 text-[11px] text-[var(--ui-text-secondary)] ${repository ? "max-w-[min(12rem,35cqi)]" : ""}`}
-            >
-              <BranchPicker
-                key={cwd}
-                cwd={cwd}
-                branch={index?.branch ?? undefined}
-                enabled={enabled && !busy && !loading}
-                popoverSide="bottom"
-                onChange={() => {
-                  onMutated();
-                  changesRef.current?.refreshPr?.();
-                }}
-              />
-            </span>
-          ) : null}
+          {repository ? branchControl : null}
           <Button
             size="sm"
             variant="ghost"
@@ -573,54 +650,7 @@ export function GitChangesPanel({
           {t("Trust this repository")}
         </Button>
       ) : null}
-      {feedback ? (
-        <>
-          <GitFeedback
-            cwd={cwd}
-            kind={feedback.kind}
-            title={feedback.title}
-            detail={feedback.detail}
-            onDismiss={() => setGitFeedback(cwd, null)}
-            onRetry={
-              feedback.retry && !busy
-                ? () =>
-                    void feedback.retry?.().catch((error) =>
-                      setGitFeedback(cwd, {
-                        kind: "error",
-                        get title() {
-                          return t("Retry failed");
-                        },
-                        detail: String(error),
-                        retry: feedback.retry,
-                      }),
-                    )
-                : undefined
-            }
-          />
-          {feedback.url ? (
-            <Button
-              variant="link"
-              size="sm"
-              className="mx-3 mb-2 self-start"
-              onClick={() =>
-                void openUrl(feedback.url!).catch((error) =>
-                  setGitFeedback(cwd, { ...feedback, detail: String(error) }),
-                )
-              }
-            >
-              {t("Open pull request")}
-            </Button>
-          ) : null}
-        </>
-      ) : null}
-      {fetchError ? (
-        <GitFeedback
-          kind="warning"
-          title={t("Automatic fetch failed; sync counts may be outdated")}
-          detail={fetchError}
-          onDismiss={() => setFetchError(null)}
-        />
-      ) : null}
+      {!detailsOpen ? notices : null}
       {detailsOpen && operation && gitActions ? (
         <GitOperationBanner
           cwd={cwd}
@@ -653,6 +683,7 @@ export function GitChangesPanel({
           onOpenAllChanges={onOpenAllChanges}
           active={detailsOpen}
           onMutated={onMutated}
+          notices={notices}
         />
       </div>
       {!embedded ? (
@@ -729,6 +760,7 @@ function ChangedFiles({
   onOpenAllChanges,
   active,
   onMutated,
+  notices,
 }: {
   cwd: string;
   textHarness?: HarnessId;
@@ -756,6 +788,8 @@ function ChangedFiles({
   /** False while a repository row is collapsed: skip the pull request lookup. */
   active: boolean;
   onMutated: (paths?: string[], scope?: GitChangeScope) => void;
+  /** Operation feedback, shown beside the commit and sync actions. */
+  notices?: ReactNode;
 }) {
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -1351,7 +1385,8 @@ function ChangedFiles({
 
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)] items-start gap-1.5 border-b border-stroke p-2 @min-[30rem]/changes:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="shrink-0 border-b border-stroke">
+      <div className="flex flex-col gap-1.5 p-2">
         <div className="relative min-w-0">
           <TextareaField
             label={t("Commit message")}
@@ -1396,7 +1431,7 @@ function ChangedFiles({
               {generating ? (
                 <X className="size-3.5" strokeWidth={1.75} />
               ) : (
-                <WandSparkles className="size-3" strokeWidth={1} />
+                <WandSparkles className="size-3.5" strokeWidth={1.75} />
               )}
             </Button>
             {!isRemoteProjectPath(cwd) && (
@@ -1411,7 +1446,8 @@ function ChangedFiles({
             )}
           </div>
         </div>
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+        <div className="min-w-[9rem] flex-1">
           <SplitButton
             variant="primary"
             size="sm"
@@ -1454,17 +1490,6 @@ function ChangedFiles({
             ]}
           />
         </div>
-        {blockedMessage ? (
-          <p
-            role="alert"
-            title={blockedMessage}
-            className="col-span-full text-ui-caption leading-snug text-warning"
-          >
-            {conflicts.length === 1
-              ? t("Resolve the conflict before committing")
-              : t("Resolve {p0} conflicts before committing", { p0: conflicts.length })}
-          </p>
-        ) : null}
         {index ? (
           <GitSyncActions
             index={index}
@@ -1484,6 +1509,20 @@ function ChangedFiles({
             }}
           />
         ) : null}
+        </div>
+        {blockedMessage ? (
+          <p
+            role="alert"
+            title={blockedMessage}
+            className="text-ui-caption leading-snug text-warning"
+          >
+            {conflicts.length === 1
+              ? t("Resolve the conflict before committing")
+              : t("Resolve {p0} conflicts before committing", { p0: conflicts.length })}
+          </p>
+        ) : null}
+      </div>
+      {notices}
       </div>
       {prLoading ? (
         <p role="status" className="px-3 py-1 text-[11px] text-[var(--ui-text-secondary)]">
@@ -1814,19 +1853,12 @@ function GitSyncActions({
   if (!canPublish && !canSync && !syncing && !showCreatePr && !showViewPr) return null;
 
   return (
-    <div className={`col-span-full ${styles.syncActions}`}>
-      <div className="col-span-full flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-ui-caption text-(--ui-text-secondary)">
-        <span>{t(canPublish ? "Publish Branch" : "Upstream")}</span>
-        <MiddleTruncate mode="path" className="min-w-0 flex-1">{dest}</MiddleTruncate>
-        {behind > 0 ? <span>{t(behind === 1 ? "{p0} incoming commit" : "{p0} incoming commits", { p0: behind })}</span> : null}
-        {ahead > 0 ? <span>{t(ahead === 1 ? "{p0} unpushed commit" : "{p0} unpushed commits", { p0: ahead })}</span> : null}
-      </div>
+    <>
       {canPublish ? (
         <Button
           variant="secondary"
           size="sm"
-          fullWidth
-          title={syncTitle}
+          title={`${syncTitle} · ${dest}`}
           disabled={!!busy && !syncing}
           loading={syncing}
           loadingLabel={t("Syncing…")}
@@ -1839,8 +1871,7 @@ function GitSyncActions({
         <Button
           variant="secondary"
           size="sm"
-          fullWidth
-          title={syncTitle}
+          title={`${syncTitle}${index.upstream ? "" : ` · ${dest}`}`}
           disabled={!!busy && !syncing}
           loading={syncing}
           loadingLabel={t("Syncing…")}
@@ -1878,7 +1909,6 @@ function GitSyncActions({
         <Button
           variant="secondary"
           size="sm"
-          fullWidth
           title={createTitle}
           disabled={busy !== "pr" && (!canCreatePr || !!busy)}
           loading={busy === "pr"}
@@ -1893,7 +1923,6 @@ function GitSyncActions({
         <Button
           variant="secondary"
           size="sm"
-          fullWidth
           title={viewTitle}
           disabled={!canViewPr || !!busy}
           onClick={onViewPr}
@@ -1904,7 +1933,7 @@ function GitSyncActions({
           </span>
         </Button>
       ) : null}
-    </div>
+    </>
   );
 }
 
@@ -1986,13 +2015,13 @@ export function FileSection({
           )}
           <span
             data-file-section-title
-            className="min-w-0 truncate text-ui-caption font-semibold text-[var(--ui-text-secondary)]"
+            className="min-w-0 truncate text-ui-caption font-medium text-(--ui-text-secondary)"
           >
             {title}
           </span>
-          <Badge size="sm" className="ml-1 shrink-0 tabular-nums">
+          <span className="ml-1 shrink-0 text-ui-caption tabular-nums text-(--ui-text-secondary)">
             {countLabel ?? count}
-          </Badge>
+          </span>
         </Button>
         {headerExtra}
         {view && onToggleView ? (
@@ -2621,12 +2650,29 @@ const ChangeRow = memo(function ChangeRow({
             ) : null}
           </span>
         </Button>
-        {busy ? (
-          <WorkingIndicator label={t("Working")} />
+        {file.additions > 0 || file.deletions > 0 ? (
+          <span
+            className="hidden shrink-0 items-center gap-1 text-ui-micro font-medium tabular-nums @min-[22rem]/changes:flex"
+            title={t("{p0} lines added, {p1} lines removed", {
+              p0: file.additions,
+              p1: file.deletions,
+            })}
+          >
+            {file.additions > 0 ? <span className="text-diff-add-fg">+{file.additions}</span> : null}
+            {file.deletions > 0 ? <span className="text-diff-del-fg">-{file.deletions}</span> : null}
+          </span>
         ) : null}
-        {/* Fixed-width slot so the row never shifts. Discard lives in the context menu and the section menu. */}
-        {!busy ? <div className="flex size-6 shrink-0 items-center justify-center">
-          {kind === "staged" ? (
+        <span
+          title={statusLabel(file.status)}
+          className={`w-3.5 shrink-0 text-center font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
+        >
+          {statusLetter(file.status)}
+        </span>
+        {/* Fixed-width slot so the row never shifts. It reveals on hover and keyboard focus; discard also lives in the context menu and the section menu. */}
+        <div className="flex size-5 shrink-0 items-center justify-center">
+          {busy ? (
+            <WorkingIndicator label={t("Working")} />
+          ) : kind === "staged" ? (
             <InlineAction
               label={t("Unstage Changes")}
               disabled={busy}
@@ -2639,13 +2685,7 @@ const ChangeRow = memo(function ChangeRow({
               <Plus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           )}
-        </div> : null}
-        <span
-          title={statusLabel(file.status)}
-          className={`w-3.5 shrink-0 text-right font-mono text-ui-micro font-semibold ${statusColor(file.status)}`}
-        >
-          {statusLetter(file.status)}
-        </span>
+        </div>
       </ActionHost>
       {menu}
     </li>

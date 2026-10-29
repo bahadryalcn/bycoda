@@ -3,11 +3,18 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: 6px 12px;
+  padding: 2px 4px;
+  min-block-size: 2rem;
   min-inline-size: 0;
-  background: var(--ui-surface-raised);
+  background: var(--ui-surface-panel);
   border-block-end: 1px solid var(--color-stroke);
   color: var(--color-content);
+}
+/* Controls hosted in the "More actions" popover sit on the raised sheet. */
+.popoverBody .tools {
+  padding: 6px 8px;
+  background: transparent;
+  border-block-end: 0;
 }
 .field {
   flex: 1 1 120px;
@@ -64,6 +71,8 @@
   overflow: clip;
 }
 
+/* One compact tool row (28px controls) on the same ground as the terminal
+   header so the dock reads as a single chrome band above the canvas. */
 .menuTrigger {
   display: flex;
   flex-wrap: wrap;
@@ -71,7 +80,24 @@
   justify-content: flex-end;
   flex-shrink: 0;
   gap: 4px;
-  padding: 4px 8px;
+  padding: 2px 4px;
+  min-block-size: 2rem;
   border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface);
+  background: var(--ui-surface-panel);
+}
+/* Visible zoom readback: shown only while the size differs from the saved one. */
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-inline-end: auto;
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: var(--ui-leading-caption);
+  font-variant-numeric: tabular-nums;
+}
+.zoomValue {
+  padding-inline: 4px;
+  white-space: nowrap;
 }

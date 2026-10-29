@@ -4,8 +4,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
-  Bot,
   Check,
+  CheckList,
   ChevronRight,
   ChevronUp,
   CircleAlert,
@@ -198,7 +198,7 @@ function DockBody({
     <section
       aria-label={t("Turn activity")}
       data-activity-dock={dock.state}
-      className={`activity-dock mb-1.5 overflow-hidden rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) font-sans text-xs ${
+      className={`activity-dock mb-1.5 overflow-hidden rounded-lg bg-(--ui-surface-panel) font-sans text-ui-caption ${
         dock.state === "done" ? "activity-dock-done" : ""
       }`}
     >
@@ -257,14 +257,14 @@ function DockBody({
               aria-expanded={open}
               aria-controls={listId}
               aria-label={t(
-                open ? "Background agents, {p0}. Hide list" : "Background agents, {p0}. Show list",
+                open ? "Background work, {p0}. Hide list" : "Background work, {p0}. Show list",
                 { p0: counts },
               )}
-              title={open ? t("Hide agents") : t("Show agents")}
+              title={open ? t("Hide background work") : t("Show background work")}
               onClick={() => setExpanded(!open)}
               className="shrink-0"
             >
-              <Bot className="size-3" strokeWidth={1.75} />
+              <CheckList className="size-3.5" strokeWidth={1.75} />
               <span className="tabular-nums">{counts}</span>
               <ChevronUp
                 className={`size-3 transition-transform duration-150 motion-reduce:transition-none ${
@@ -280,7 +280,7 @@ function DockBody({
         <div
           id={listId}
           ref={lockList}
-          className="activity-dock-list flex max-h-60 flex-col overflow-x-hidden overflow-y-auto overscroll-none border-t border-(--ui-tone-neutral-border) px-1"
+          className="activity-dock-list flex max-h-60 flex-col gap-0.5 overflow-x-hidden overflow-y-auto overscroll-none px-1 pb-1"
         >
           {/* Running rows lead, so their Stop buttons are not buried under
               finished ones. The sort is stable: transcript order otherwise. */}
@@ -325,9 +325,7 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
     <span
       aria-hidden
       className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
-        state === "working"
-          ? "shadow-[0_0_8px_var(--color-accent)] motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
-          : "activity-dock-waiting"
+        state === "working" ? "" : "activity-dock-waiting"
       }`}
     />
   );
@@ -343,16 +341,23 @@ function DockAgentRow({
   stop: DockStop;
 }) {
   const t = useT();
-  const summary = [agent.name, agent.model, agent.detail, agent.status].filter(Boolean).join(", ");
+  const statusWord = {
+    running: t("Running"),
+    done: t("Done"),
+    failed: t("Failed"),
+    stopped: t("Stopped by you"),
+    interrupted: t("Interrupted"),
+  }[agent.status];
+  const summary = [agent.name, agent.model, agent.detail, statusWord].filter(Boolean).join(", ");
   const key = agent.callId ?? agent.blockId;
   const stoppable = canStopAgent(agent, stop.perItem);
   const stopping = stop.stopping.has(key);
   return (
-    <div className="activity-dock-item flex min-w-0 items-start border-t border-(--ui-tone-neutral-border) py-1 first:border-t-0">
+    <div className="activity-dock-item flex min-w-0 items-start py-0.5">
       <Button
         variant="item"
         type="button"
-        aria-label={`${agent.kind === "agent" ? "Open" : "Show"} ${summary}`}
+        aria-label={t(agent.kind === "agent" ? "Open {p0}" : "Show {p0}", { p0: summary })}
         title={agent.name}
         data-dock-agent={agent.blockId}
         onClick={() => onOpen(agent)}
@@ -362,7 +367,7 @@ function DockAgentRow({
           <AgentStatusDot status={agent.status} />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
+          <span className="line-clamp-2 block whitespace-pre-wrap text-(--ui-tone-neutral-fg) [overflow-wrap:anywhere]">
             {agent.name}
           </span>
           <span className="flex flex-wrap items-center gap-x-2 text-(--ui-text-secondary) [overflow-wrap:anywhere]">
@@ -386,7 +391,7 @@ function DockAgentRow({
           variant="ghost"
           type="button"
           disabled={stopping}
-          aria-label={`${stopping ? "Stopping" : "Stop"} ${agent.name}`}
+          aria-label={t(stopping ? "Stopping {p0}" : "Stop {p0}", { p0: agent.name })}
           title={
             stop.failed.has(key)
               ? t("Could not stop it. Try again.")
@@ -399,7 +404,11 @@ function DockAgentRow({
           onClick={() => stop.request(key, () => stop.onAgent!(agent))}
         >
           <Square className="size-3" strokeWidth={1.75} />
-          {stopping ? t("Stopping…") : t("Stop")}
+          {stopping
+            ? t("Stopping…")
+            : stop.failed.has(key)
+              ? t("Could not stop. Retry")
+              : t("Stop")}
         </Button>
       ) : null}
     </div>
@@ -421,9 +430,7 @@ function AgentStatusDot({ status }: { status: DockAgent["status"] }) {
     <span
       aria-hidden
       className={`size-1.5 shrink-0 rounded-full ${
-        status === "running"
-          ? "bg-(--ui-tone-accent-subtle) motion-safe:animate-[pulse_2s_cubic-bezier(0.4,0,0.6,1)_3]"
-          : "bg-(--ui-tone-success-subtle)"
+        status === "running" ? "bg-(--ui-tone-accent-subtle)" : "bg-(--ui-tone-success-subtle)"
       }`}
     />
   );

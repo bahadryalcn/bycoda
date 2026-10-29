@@ -179,7 +179,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                   key={index}
                   role="row"
                   aria-rowindex={index + 2}
-                  className="absolute left-0 flex border-b border-stroke/60"
+                  className="absolute left-0 flex border-b border-stroke"
                   style={{
                     top: headerHeight + index * rowHeight,
                     height: rowHeight,
@@ -213,7 +213,7 @@ export function SheetGridView({ grid, fitContent = false }: { grid: SparseSheet;
                           scrollRef.current?.focus();
                         }}
                         title={cell}
-                        className="shrink-0 truncate border-r border-stroke/60 text-content"
+                        className="shrink-0 truncate border-r border-stroke text-content"
                         style={{
                           ...cellStyle,
                           outline:

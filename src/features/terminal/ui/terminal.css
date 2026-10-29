@@ -13,11 +13,12 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex: 0 0 30px;
+  flex: 0 0 auto;
+  min-block-size: 2rem;
   min-inline-size: 0;
-  padding-inline: 7px 4px;
+  padding: 2px 4px 2px 8px;
   border-block-end: 1px solid var(--terminal-border);
-  background: var(--bycoda-panel);
+  background: var(--ui-surface-panel);
 }
 .terminal-header-title {
   min-inline-size: 0;
@@ -25,16 +26,24 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--ui-font-caption);
-  color: var(--ui-text-muted);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
 }
 .terminal-toolbar {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   min-inline-size: 0;
-  gap: 2px;
+  gap: 4px;
 }
-.terminal-toolbar {
-  flex-shrink: 0;
+/* Dock resize handle: a transient fill only, never a persistent stripe. */
+.terminal-dock-sash:hover,
+.terminal-dock-sash[data-dragging] {
+  background: var(--ui-surface-selected);
+}
+.terminal-dock-sash:focus-visible {
+  outline: var(--ui-focus-width) solid var(--ui-focus-ring-color);
+  outline-offset: -2px;
 }
 .terminal-body {
   position: relative;
@@ -49,7 +58,7 @@
   flex: 0 0 auto;
   min-inline-size: 0;
   border-inline-end: 1px solid var(--terminal-border);
-  background: var(--bycoda-panel);
+  background: var(--ui-surface-panel);
 }
 .terminal-sidebar-sash {
   position: relative;
@@ -80,7 +89,10 @@
 .terminal-list {
   min-block-size: 0;
   overflow-y: auto;
-  padding-block: 3px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .terminal-list-row {
   position: relative;

@@ -631,7 +631,7 @@ test("search focus has one owner across shared fields and host tool overrides", 
           }
           await expect(field).toBeFocused();
           await expect(owner).toHaveCSS("outline-style", "solid");
-          await expect(owner).toHaveCSS("outline-width", "1px");
+          await expect(owner).toHaveCSS("outline-width", "2px");
           await expect(owner).toHaveCSS("outline-offset", "-1px");
           await expect(owner).toHaveCSS("box-shadow", "none");
           expect(
@@ -664,7 +664,7 @@ test("search focus has one owner across shared fields and host tool overrides", 
       const combo = region.getByRole("combobox", { name: "Focus combobox", exact: true });
       await combo.click();
       await expect(combo).toHaveCSS("outline-style", "none");
-      await expect(combo.locator("..")).toHaveCSS("outline-width", "1px");
+      await expect(combo.locator("..")).toHaveCSS("outline-width", "2px");
       await expect(combo.locator("..")).toHaveCSS("outline-offset", "-1px");
       await combo.fill("First");
       await page.keyboard.press("ArrowDown");
@@ -732,7 +732,7 @@ test("text fields keep focus on one border with pointer and keyboard", async ({ 
           });
           expect(style).toEqual({
             outline: "solid",
-            width: "1px",
+            width: "2px",
             offset: "-1px",
             color: style.border,
             border: style.border,
@@ -863,8 +863,11 @@ test("pending quiet actions preserve hierarchy, geometry and keyboard focus", as
           await expect(action).toHaveCSS("border-top-color", "rgba(0, 0, 0, 0)");
           await expect(action).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
           if (index === 1) {
-            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "1");
+            // The label keeps its width and accessible name beneath a centered spinner.
+            await expect(action.locator(":scope > span").first()).toHaveCSS("opacity", "0");
+            await expect(action.locator(':scope > span[aria-hidden="true"]')).toBeVisible();
             await expect(action).toContainText("Quiet native action");
+            await expect(action).toHaveAccessibleName("Quiet native action");
           }
           const after = await action.boundingBox();
           expect(after!.width).toBe(before[index]!.width);
@@ -909,8 +912,9 @@ test("search clearing fits compact and wide layouts, both themes and keyboard us
         await expect(clear).toBeVisible();
         const fieldBox = await input.boundingBox();
         const buttonBox = await clear.boundingBox();
-        expect(buttonBox!.width).toBe(24);
-        expect(buttonBox!.height).toBe(24);
+        // The clear action is the shared 20px inline action.
+        expect(buttonBox!.width).toBe(20);
+        expect(buttonBox!.height).toBe(20);
         expect(buttonBox!.y).toBeGreaterThanOrEqual(fieldBox!.y - 4);
         expect(buttonBox!.y + buttonBox!.height).toBeLessThanOrEqual(
           fieldBox!.y + fieldBox!.height + 4,
@@ -1225,13 +1229,13 @@ test("selection, expanding details and history keep their interactions", async (
 });
 
 // ---------------------------------------------------------------------------------------
-// Shared real-control state matrix (?view=matrix). FIXTURE evidence only: these checks run
+// Behaviour matrix inside the one ControlSpecimen reference (?matrix, alias ?view=matrix). FIXTURE evidence only: these checks run
 // against current public adapters in a browser fixture and are never installed/native acceptance.
 // ---------------------------------------------------------------------------------------
 type MatrixOptions = { layout?: "default" | "narrow" | "short"; theme?: "light" | "dark" };
 
 async function openMatrix(page: Page, { layout = "default", theme = "dark" }: MatrixOptions = {}) {
-  await page.goto(`/tests/browser/arc-controls.html?view=matrix&layout=${layout}&theme=${theme}`);
+  await page.goto(`/tests/browser/arc-controls.html?matrix&layout=${layout}&theme=${theme}`);
   await expect(page.getByTestId("control-matrix")).toBeVisible();
 }
 
@@ -1895,7 +1899,7 @@ test.describe("shared control state matrix", () => {
     await failing.click();
     const alert = page.getByRole("alert").filter({ hasText: "Could not reach the host" });
     await expect(alert).toBeVisible();
-    const retry = page.getByRole("button", { name: "Retry", exact: true });
+    const retry = page.getByRole("dialog").getByRole("button", { name: "Retry", exact: true });
     await expect(retry).toBeVisible();
     await expect(page.getByRole("option", { name: "feature/search" })).toHaveCount(0);
     // From the search field, one Tab reaches Retry; Enter loads and clears the error.
@@ -2339,6 +2343,9 @@ test.describe("inline actions and caller placement (H1, written 2026-10-28, not 
   const background = (locator: Locator) =>
     locator.evaluate((node) => getComputedStyle(node).backgroundColor);
   const alpha = (color: string) => {
+    // Computed colors serialize as `rgba(r, g, b, a)` or, for mixed tokens, `color(srgb r g b / a)`.
+    const slash = color.match(/\/\s*([\d.]+)(%?)\s*\)$/);
+    if (slash) return Number(slash[1]) / (slash[2] ? 100 : 1);
     const match = color.match(/rgba?\(([^)]+)\)/);
     const parts = match ? match[1]!.split(",").map((part) => Number(part.trim())) : [];
     return parts.length === 4 ? parts[3]! : 1;
@@ -2453,7 +2460,216 @@ test.describe("inline actions and caller placement (H1, written 2026-10-28, not 
     await expect(busy).toHaveAccessibleName("Delete");
     // With a start icon, the icon and the spinner share one slot.
     await expect(
-      page.getByTestId("matrix-loading-icon").locator("[aria-hidden='true'] svg"),
+      page.getByTestId("matrix-loading-start-icon").locator("[aria-hidden='true'] svg"),
     ).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------------------
+// The one control reference (ControlSpecimen) in matrix mode (?matrix). FIXTURE evidence only:
+// keyboard, density and theme are exercised on the same real components the product imports.
+// ---------------------------------------------------------------------------------------
+// Visible boxes that run past the reference's content edge. Boxes inside a scrolling or clipping ancestor
+// (segmented track, visually hidden data table) own their overflow, absolutely positioned hidden inputs are
+// not content, and 12px of slack covers the intentional negative-margin bleeds of the calendar, chart
+// scroller and usage legend (focus-ring room).
+async function overflowingFamilies(page: Page) {
+  return page.evaluate(() => {
+    const root = document.querySelector<HTMLElement>("[data-shared-matrix]")!;
+    const edge =
+      root.getBoundingClientRect().right - Number.parseFloat(getComputedStyle(root).paddingRight);
+    return [...root.querySelectorAll<HTMLElement>("*")]
+      .filter((node) => {
+        const box = node.getBoundingClientRect();
+        if (box.width <= 2 || box.right <= edge + 12) return false;
+        for (let up = node.parentElement; up && up !== root; up = up.parentElement) {
+          const parent = getComputedStyle(up);
+          if (
+            parent.overflowX !== "visible" ||
+            parent.clip !== "auto" ||
+            parent.visibility === "hidden"
+          )
+            return false;
+        }
+        const css = getComputedStyle(node);
+        return css.visibility !== "hidden" && css.position !== "absolute";
+      })
+      .slice(0, 8)
+      .map(
+        (node) =>
+          `${node.closest("[data-specimen-family]")?.getAttribute("data-specimen-family")} <- ${node.tagName}.${String(node.className).slice(0, 50)} (${Math.round(node.getBoundingClientRect().width)}px)`,
+      );
+  });
+}
+
+test.describe("control reference state matrix", () => {
+  const openReference = async (page: Page, theme: "light" | "dark" = "dark") => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/arc-controls.html?matrix&theme=${theme}`);
+    await expect(page.locator("[data-shared-matrix]")).toBeVisible();
+    await expect(page.getByRole("group", { name: "State matrix", exact: true })).toBeVisible();
+  };
+
+  test("mounts every family in the single reference without horizontal overflow", async ({
+    page,
+  }) => {
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const theme of ["dark", "light"] as const) {
+        await openReference(page, theme);
+        expect(await page.locator("[data-specimen-family]").count()).toBeGreaterThanOrEqual(18);
+        const overflowing = await overflowingFamilies(page);
+        expect(overflowing, `${theme} ${width}px`).toEqual([]);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+          true,
+        );
+      }
+    }
+  });
+
+  test("keyboard Tab visits controls in order with exactly one focus ring owner per stop", async ({
+    page,
+  }) => {
+    // Two themes, one evaluate and one Tab per stop: WebKit needs about 40 s for the full walk.
+    test.setTimeout(120_000);
+    for (const theme of ["dark", "light"] as const) {
+      await openReference(page, theme);
+      await page.locator("[data-specimen-family] button:not([disabled])").first().focus();
+      const doubled: string[] = [];
+      let stops = 0;
+      for (let step = 0; step < 200; step++) {
+        const stop = await page.evaluate(() => {
+          const active = document.activeElement as HTMLElement | null;
+          const root = document.querySelector("[data-shared-matrix]");
+          if (!active || !root || !root.contains(active)) return null;
+          const draws = (node: HTMLElement) => {
+            const css = getComputedStyle(node);
+            return (
+              css.outlineStyle !== "none" &&
+              Number.parseFloat(css.outlineWidth) > 0 &&
+              css.outlineColor !== "rgba(0, 0, 0, 0)"
+            );
+          };
+          // A visually hidden native input hands its keyboard focus to the visible control that wraps it.
+          const box = active.getBoundingClientRect();
+          const hidden =
+            Number.parseFloat(getComputedStyle(active).opacity) === 0 ||
+            box.width <= 2 ||
+            box.height <= 2;
+          const owners: string[] = [];
+          if (!hidden && draws(active)) owners.push(active.tagName);
+          for (let node = active.parentElement; node && node !== root; node = node.parentElement)
+            if (draws(node)) owners.push(`${node.tagName}.${node.className}`);
+          const family = active
+            .closest("[data-specimen-family]")
+            ?.getAttribute("data-specimen-family");
+          const label =
+            active.getAttribute("aria-label") ?? active.textContent?.trim().slice(0, 24);
+          const revisited = active.hasAttribute("data-tab-visited");
+          active.setAttribute("data-tab-visited", "");
+          return { revisited, owners, where: `${family} / ${active.tagName}[${label}]` };
+        });
+        if (!stop || stop.revisited) break;
+        stops++;
+        if (stop.owners.length > 1) doubled.push(`${stop.where}: ${stop.owners.join(" + ")}`);
+        await page.keyboard.press("Tab");
+      }
+      expect(stops, `${theme} tab stops`).toBeGreaterThan(30);
+      expect(doubled, `${theme} stops drawing more than one focus ring`).toEqual([]);
+    }
+  });
+
+  test("keyboard operates the selection families", async ({ page }) => {
+    await openReference(page);
+    const family = page.locator('[data-specimen-family="Segmented / radio / checkbox / switch"]');
+    const segments = family.getByRole("radiogroup", { name: "Layout", exact: true });
+    const first = segments.getByRole("radio").first();
+    await first.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await first.press("ArrowRight");
+    await expect(segments.getByRole("radio").nth(1)).toHaveAttribute("aria-checked", "true");
+    const checkbox = family.getByRole("checkbox", { name: "Selected", exact: true });
+    await checkbox.focus();
+    await page.keyboard.press("Space");
+    await expect(checkbox).not.toBeChecked();
+    await expect(family.getByRole("checkbox", { name: "Unavailable", exact: true })).toBeDisabled();
+    const enabled = family.getByRole("switch", { name: "Enabled", exact: true });
+    await expect(enabled).toHaveAttribute("aria-checked", "false");
+    await expect(family.getByRole("switch", { name: "Unavailable", exact: true })).toBeDisabled();
+  });
+
+  test("density changes control geometry and keeps the matrix inside its container", async ({
+    page,
+  }) => {
+    for (const theme of ["dark", "light"] as const) {
+      for (const width of [390, 1280]) {
+        await page.setViewportSize({ width, height: 900 });
+        await openReference(page, theme);
+        for (const density of ["compact", "comfortable", "touch"]) {
+          await page.evaluate((density) => {
+            document.documentElement.dataset.controlDensity = density;
+          }, density);
+          const save = page
+            .locator('[data-specimen-family="Button"] [data-specimen-state^="normal"] button')
+            .first();
+          const minimum = density === "touch" ? 44 : density === "comfortable" ? 32 : 28;
+          expect(
+            (await save.boundingBox())!.height,
+            `${theme} ${width}px ${density}`,
+          ).toBeGreaterThanOrEqual(minimum);
+          const overflowing = await overflowingFamilies(page);
+          expect(overflowing, `${theme} ${width}px ${density}`).toEqual([]);
+        }
+      }
+    }
+  });
+
+  test("grouped bar chart draws one patterned bar per series in each category with a series table", async ({
+    page,
+  }) => {
+    await openReference(page);
+    const single = page.locator('[data-specimen-state="bars (single series)"]');
+    await expect(single.locator("path[data-key]")).toHaveCount(5);
+    await expect(single.locator("path[data-lane]")).toHaveCount(0);
+
+    const cell = page.locator('[data-specimen-state="bars (grouped series + legend)"]');
+    await expect(cell.locator("path[data-key]")).toHaveCount(12);
+    for (const lane of [0, 1, 2])
+      await expect(cell.locator(`path[data-lane="${lane}"]`)).toHaveCount(4);
+    // The first series stays solid; later series carry a surface pattern beyond colour.
+    await expect(cell.locator("path[data-lane='0']").first()).toHaveAttribute(
+      "data-pattern",
+      "solid",
+    );
+    await expect(cell.locator("path[data-lane='1']").first()).toHaveAttribute(
+      "data-pattern",
+      "diagonal",
+    );
+    await expect(cell.locator("path[data-lane='2']").first()).toHaveAttribute(
+      "data-pattern",
+      "dots",
+    );
+    await expect(cell.locator("path[data-pattern-for]")).toHaveCount(8);
+    // The bars of one category sit side by side without overlapping.
+    const boxes = await Promise.all(
+      [0, 1, 2].map((lane) => cell.locator(`path[data-key="group-3:${lane}"]`).boundingBox()),
+    );
+    expect(boxes.every(Boolean)).toBe(true);
+    expect(boxes[0]!.x + boxes[0]!.width).toBeLessThanOrEqual(boxes[1]!.x + 0.5);
+    expect(boxes[1]!.x + boxes[1]!.width).toBeLessThanOrEqual(boxes[2]!.x + 0.5);
+    // The legend names every series; the screen-reader table has one row per category and series.
+    await expect(cell.getByRole("list", { name: "Series" }).getByRole("listitem")).toHaveCount(3);
+    const table = cell.locator("table");
+    await expect(table.locator("thead th")).toHaveText(["Time", "Preview", "Series"]);
+    await expect(table.locator("tbody tr")).toHaveCount(12);
+    await expect(table.locator("tbody tr").nth(4).locator("td").nth(1)).toHaveText("Selected");
+    // No single average line crosses grouped bars.
+    await expect(cell.locator("line[class*='mean']")).toHaveCount(0);
+    await cell.screenshot({ path: "temp/verification/2026-10-29-ui-l2/grouped-bars-dark.png" });
+    await openReference(page, "light");
+    await page
+      .locator('[data-specimen-state="bars (grouped series + legend)"]')
+      .screenshot({ path: "temp/verification/2026-10-29-ui-l2/grouped-bars-light.png" });
   });
 });

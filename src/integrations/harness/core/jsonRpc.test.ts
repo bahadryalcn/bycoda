@@ -252,64 +252,94 @@ it("asenkron server request hatasını sır içermeden yakalar", async () => {
 describe("Native response and callback causality", () => {
   it("keeps the actual async response consumer owned across client close and waiter detachment", async () => {
     const api = await import("./nativeOutputDelivery");
-    const {nativeOutputFrame} = await import("./nativeOutputDelivery.testSupport");
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
     transport.onWrite = async () => {};
     let release!: () => void;
-    const gate = new Promise<void>((resolve) => {release=resolve;});
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const event = {};
     const client = new JsonRpcClient("rpc-response-causal", {});
     const result = client.requestWithNativeOutput("session/prompt", {}, async (value, work) => {
       await gate;
-      api.nativeOutputSink(work, () => api.captureNativeOutputEvent("rpc-response-causal", event))();
+      api.nativeOutputSink(work, () =>
+        api.captureNativeOutputEvent("rpc-response-causal", event),
+      )();
       return value;
     });
-    const line = JSON.stringify({id:1,result:{ok:true}});
+    const line = JSON.stringify({ id: 1, result: { ok: true } });
     const inspect = nativeOutputFrame("rpc-response-causal", line, () => client.pushLine(line));
     await Promise.resolve();
     expect(inspect().pendingCausalWork).toBe(1);
     client.close();
     await Promise.race([result, Promise.resolve("detached waiter")]);
     expect(inspect().pendingCausalWork).toBe(1);
-    release(); await result;
+    release();
+    await result;
     expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
-    expect(inspect()).toMatchObject({pendingCausalWork:0,unavailableReason:"rpc-client-closed",applicationThrough:null});
+    expect(inspect()).toMatchObject({
+      pendingCausalWork: 0,
+      unavailableReason: "rpc-client-closed",
+      applicationThrough: null,
+    });
   });
 
   it("keeps a real pending write after its reply waiter times out", async () => {
     const api = await import("./nativeOutputDelivery");
-    const {nativeOutputFrame} = await import("./nativeOutputDelivery.testSupport");
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
     vi.useFakeTimers();
-    const warning = vi.spyOn(console,"warn").mockImplementation(() => {});
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     let release!: () => void;
-    transport.onWrite = () => new Promise<void>((resolve) => {release=resolve;});
+    transport.onWrite = () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      });
     const event = {};
-    const client = new JsonRpcClient("rpc-write-causal", {onRequest:async(id,_method,_params,work) => {
-      await Promise.resolve();
-      api.nativeOutputSink(work ?? null, () => api.captureNativeOutputEvent("rpc-write-causal", event))();
-      await api.nativeOutputSink(work ?? null, () => client.respond(id, {}))();
-    }});
+    const client = new JsonRpcClient("rpc-write-causal", {
+      onRequest: async (id, _method, _params, work) => {
+        await Promise.resolve();
+        api.nativeOutputSink(work ?? null, () =>
+          api.captureNativeOutputEvent("rpc-write-causal", event),
+        )();
+        await api.nativeOutputSink(work ?? null, () => client.respond(id, {}))();
+      },
+    });
     try {
-      const line = JSON.stringify({id:17,method:"approval",params:{}});
-      const inspect = nativeOutputFrame("rpc-write-causal",line,()=>client.pushLine(line));
+      const line = JSON.stringify({ id: 17, method: "approval", params: {} });
+      const inspect = nativeOutputFrame("rpc-write-causal", line, () => client.pushLine(line));
       await Promise.resolve();
       expect(inspect().pendingCausalWork).toBe(2);
       await vi.advanceTimersByTimeAsync(15_001);
-      expect(inspect()).toMatchObject({pendingCausalWork:1,unavailableReason:"causal-work-rejected",applicationThrough:null});
-      release(); await Promise.resolve(); await Promise.resolve();
+      expect(inspect()).toMatchObject({
+        pendingCausalWork: 1,
+        unavailableReason: "causal-work-rejected",
+        applicationThrough: null,
+      });
+      release();
+      await Promise.resolve();
+      await Promise.resolve();
       expect(inspect().pendingCausalWork).toBe(0);
       expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
-    } finally { client.close(); vi.useRealTimers(); warning.mockRestore(); }
+    } finally {
+      client.close();
+      vi.useRealTimers();
+      warning.mockRestore();
+    }
   });
 
   it("marks a bare await and unmatched late response unqualified rather than inventing continuation coverage", async () => {
-    const {nativeOutputFrame} = await import("./nativeOutputDelivery.testSupport");
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
     transport.onWrite = async () => {};
     const client = new JsonRpcClient("rpc-untracked", {});
-    const response = client.request("configuration",{});
-    const line=JSON.stringify({id:1,result:{}});
-    const inspect=nativeOutputFrame("rpc-untracked",line,()=>client.pushLine(line));
+    const response = client.request("configuration", {});
+    const line = JSON.stringify({ id: 1, result: {} });
+    const inspect = nativeOutputFrame("rpc-untracked", line, () => client.pushLine(line));
     await response;
-    expect(inspect()).toMatchObject({pendingCausalWork:0,unavailableReason:"rpc-response-consumer-untracked",applicationThrough:null});
+    expect(inspect()).toMatchObject({
+      pendingCausalWork: 0,
+      unavailableReason: "rpc-response-consumer-untracked",
+      applicationThrough: null,
+    });
     client.close();
   });
 });

@@ -39,8 +39,21 @@
   position: relative;
   flex-shrink: 0;
 }
+/* Label-less rails (compact rail, narrow container) show the corner badge; every other rail
+   shows the plain section count. */
 .recovery-rail-count {
+  display: none;
   flex-shrink: 0;
+}
+.recovery-rail-number {
+  flex-shrink: 0;
+}
+/* Same column as the other rail sections: the status block is inset 7px, section headers
+   carry their own padding. */
+@container rail (inline-size > 140px) {
+  .bycoda-rail-status .recovery-rail-row {
+    margin-inline: -7px;
+  }
 }
 
 [data-compact-project-rail] .recovery-rail-control {
@@ -56,7 +69,11 @@
   display: none;
 }
 
+[data-compact-project-rail] .recovery-rail-number {
+  display: none;
+}
 [data-compact-project-rail] .recovery-rail-count {
+  display: inline-flex;
   position: absolute;
   inset-block-start: -2px;
   inset-inline-end: -3px;
@@ -76,7 +93,11 @@
     flex: none;
     justify-content: center;
   }
+  .recovery-rail-number {
+    display: none;
+  }
   .recovery-rail-count {
+    display: inline-flex;
     position: absolute;
     inset-block-start: -2px;
     inset-inline-end: -3px;

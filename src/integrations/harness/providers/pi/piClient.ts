@@ -1,6 +1,12 @@
 import { writeChild } from "../../core/child";
 import { parseJsonLine, parseRpcResponse, stringField } from "./piProtocol";
-import { captureNativeOutputWork, nativeOutputSink, trackNativeOutputWork, invalidateNativeOutputSession, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  captureNativeOutputWork,
+  nativeOutputSink,
+  trackNativeOutputWork,
+  invalidateNativeOutputSession,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 
 type Pending = {
   resolve: (value: Record<string, unknown>) => void;
@@ -38,13 +44,19 @@ export class PiRpc {
       pending.resolve(rec);
       return;
     }
+    // Preserve normal event routing, but a late/unknown response cannot become
+    // the original for a replacement request or a binding consumer.
+    if (response?.id) captureNativeOutputWork()?.fail("pi-response-unmatched");
     this.onFrame(rec);
   }
 
   async request(
     command: Record<string, unknown>,
     timeoutMs = 15_000,
-    consume?: (value: Record<string, unknown>, work: NativeOutputWork | null) => Record<string, unknown> | Promise<Record<string, unknown>>,
+    consume?: (
+      value: Record<string, unknown>,
+      work: NativeOutputWork | null,
+    ) => Record<string, unknown> | Promise<Record<string, unknown>>,
   ): Promise<Record<string, unknown>> {
     if (this.closed) throw new Error(`${this.label} process is not running`);
     const id = stringField(command, "id") ?? `mc_${this.nextId++}`;
@@ -59,7 +71,11 @@ export class PiRpc {
       this.pending.set(id, {
         resolve: (value) => {
           clearTimeout(timer);
-          if (!consume) { captureNativeOutputWork()?.fail("pi-response-consumer-untracked"); resolve(value); return; }
+          if (!consume) {
+            captureNativeOutputWork()?.fail("pi-response-consumer-untracked");
+            resolve(value);
+            return;
+          }
           const work = captureNativeOutputWork();
           const actual = Promise.resolve().then(nativeOutputSink(work, () => consume(value, work)));
           void trackNativeOutputWork(actual, work).then(resolve, reject);

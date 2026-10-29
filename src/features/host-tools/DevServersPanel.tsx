@@ -426,7 +426,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={disabled}
           onClick={() => setDetails(undefined)}
         >
-          <X className="icon-md" aria-hidden />
+          <X className="icon-sm" aria-hidden />
         </Button>
       </div>
       <dl className="dev-server-metadata">
@@ -617,7 +617,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={unavailable(`${server.id}:open`) || !endpoint}
           onClick={() => endpoint && openLocal(server, endpoint)}
         >
-          <ExternalLink className="icon-md" aria-hidden />
+          <ExternalLink className="icon-sm" aria-hidden />
         </Button>
         <Button
           iconOnly
@@ -626,9 +626,26 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           disabled={unavailable(`${server.id}:copy`) || !endpoint}
           onClick={() => endpoint && copyUrl(server, endpoint)}
         >
-          <Copy className="icon-md" aria-hidden />
+          <Copy className="icon-sm" aria-hidden />
         </Button>
-        <span className="dev-server-actions-gap" aria-hidden="true" />
+        <Button
+          variant="ghost"
+          iconOnly
+          label={t("Actions")}
+          loading={
+            operation === `${server.id}:openHost` || operation === `${server.id}:select:kill`
+          }
+          aria-haspopup="menu"
+          aria-expanded={!!menu}
+          onClick={(event) => {
+            const button = event.currentTarget;
+            setMenu((current) => (current ? null : button));
+          }}
+        >
+          <MoreHorizontal className="icon-sm" aria-hidden />
+        </Button>
+      </div>
+      <div className="dev-server-actions dev-server-process" role="group" aria-label={t("Process")}>
         <Button
           disabled={unavailable(`${server.id}:select:details`)}
           loading={operation === `${server.id}:select:details`}
@@ -655,22 +672,6 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           onClick={() => void select(server, "restart")}
         >
           {t("Restart")}
-        </Button>
-        <Button
-          variant="ghost"
-          iconOnly
-          label={t("Actions")}
-          loading={
-            operation === `${server.id}:openHost` || operation === `${server.id}:select:kill`
-          }
-          aria-haspopup="menu"
-          aria-expanded={!!menu}
-          onClick={(event) => {
-            const button = event.currentTarget;
-            setMenu((current) => (current ? null : button));
-          }}
-        >
-          <MoreHorizontal className="icon-md" aria-hidden />
         </Button>
       </div>
       {menu ? (
@@ -739,20 +740,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       aria-busy={disabled || (!scan && scanning)}
     >
       <header className="dev-servers-header" title={cwd}>
-        <div className="dev-servers-title sr-only">
-          <h3 className="sr-only">{t("Development servers")}</h3>
-          <span className="host-tool-muted">
-            {scanning && !scan
-              ? t("Scanning servers…")
-              : scanError
-                ? t("Scan failed")
-                : t("{p0} servers", { p0: visibleServers.length })}
-            {autoRefresh ? null : ` · ${t("Paused")}`}
-          </span>
-          <span className="host-tool-location dev-servers-location" title={cwd}>
-            {cwd}
-          </span>
-        </div>
+        <h3 className="sr-only">{t("Development servers")}</h3>
         <label className="dev-server-search">
           <span className="sr-only">{t("Find server")}</span>
           <SearchInput
@@ -800,9 +788,9 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             onClick={() => setAutoRefresh((value) => !value)}
           >
             {autoRefresh ? (
-              <Pause className="icon-md" aria-hidden />
+              <Pause className="icon-sm" aria-hidden />
             ) : (
-              <Play className="icon-md" aria-hidden />
+              <Play className="icon-sm" aria-hidden />
             )}
           </Button>
           <Button
@@ -813,7 +801,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             disabled={disabled}
             onClick={() => setSharing("3000")}
           >
-            <Share className="icon-md" aria-hidden />
+            <Share className="icon-sm" aria-hidden />
           </Button>
           <Button
             variant="primary"
@@ -824,10 +812,28 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
             aria-expanded={showStart}
             onClick={() => setShowStart((value) => !value)}
           >
-            <Plus className="icon-md" aria-hidden />
+            <Plus className="icon-sm" aria-hidden />
           </Button>
         </div>
       </header>
+      <div className="dev-servers-status" role="status" data-paused={autoRefresh ? undefined : ""}>
+        <span className="dev-servers-count">
+          {scanning && !scan
+            ? t("Scanning servers…")
+            : scanError
+              ? t("Scan failed")
+              : t("{p0} servers", { p0: visibleServers.length })}
+        </span>
+        {autoRefresh ? null : (
+          <span className="dev-servers-paused">
+            <Pause className="icon-sm" aria-hidden />
+            {t("Paused")}
+          </span>
+        )}
+        <span className="host-tool-location dev-servers-location" title={cwd}>
+          {cwd}
+        </span>
+      </div>
       {scanError ? (
         <Alert tone="danger" role="alert">
           <strong>{t("Could not refresh servers.")}</strong>

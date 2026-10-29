@@ -1,6 +1,8 @@
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
+import { ChevronRight, RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { remoteRequest, useRemoteMachines } from "../../connections/model/connections";
 import { HOST_UPDATE_NOTICE } from "../../connections/model/remoteCapabilities";
@@ -10,16 +12,216 @@ import {
   effectiveProfileId,
   listTerminalProfiles,
   saveTerminalProfile,
+  syncTerminalProfileMirror,
   useTerminalProfile,
   type ShellProfiles,
 } from "../../terminal/model/terminalProfiles";
 
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
-import { AdvancedSettings, Group, Row, SettingsFeedback } from "./settingsControls";
+import { Group, RevealedSetting, SettingsFeedback, settingDomId } from "./settingsControls";
+import "./SettingsCollection.css";
 import "./TerminalSettings.css";
 
-/** Which shell new terminals open in, and `!commands` run in. */
+type HostKind = "local" | "synced" | "remote";
+
+const shellCount = (count: number) =>
+  count === 1 ? t("1 shell") : t("{p0} shells", { p0: count });
+
+/**
+ * One host in the shell list: identity, detection/connection status, the effective
+ * profile and the choice. The machine's shell inventory is its expandable detail.
+ */
+function HostShellRow({
+  settingId,
+  detailId,
+  name,
+  kind,
+  status,
+  listed,
+  chosen,
+  effectiveId,
+  missing,
+  loading,
+  disabled,
+  refreshDisabled,
+  selectLabel,
+  refreshLabel,
+  onChoose,
+  onRefresh,
+  feedback,
+}: {
+  /** Search id for the host's default-shell row. */
+  settingId?: string;
+  /** Search id that opens the shell inventory. */
+  detailId?: string;
+  name: string;
+  kind: HostKind;
+  status: { tone: BadgeTone; label: string };
+  listed: ShellProfiles | null;
+  /** Saved pick, "" for Automatic. */
+  chosen: string;
+  effectiveId: string | undefined;
+  missing: boolean;
+  loading: boolean;
+  /** Blocks choosing a shell (saving, or a read-back is required first). */
+  disabled: boolean;
+  /** Blocks re-reading the machine (saving). */
+  refreshDisabled: boolean;
+  selectLabel: string;
+  refreshLabel: string;
+  onChoose: (id: string) => void;
+  onRefresh: () => void;
+  feedback?: ReactNode;
+}) {
+  const revealed = useContext(RevealedSetting);
+  const flash = settingId != null && revealed === settingId;
+  const detailTargeted = detailId != null && revealed === detailId;
+  const [open, setOpen] = useState(detailTargeted);
+  const [wasTargeted, setWasTargeted] = useState(detailTargeted);
+  if (detailTargeted !== wasTargeted) {
+    setWasTargeted(detailTargeted);
+    if (detailTargeted) setOpen(true);
+  }
+  const detailPanel = useId();
+  // A machine with no shells keeps its install guidance in view: it is a recovery state, not detail.
+  const noShells = !!listed && listed.profiles.length === 0;
+  const expanded = open || noShells;
+  const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
+  const effective = listed?.profiles.find((profile) => profile.id === effectiveId);
+  return (
+    <div
+      id={settingId ? settingDomId(settingId) : undefined}
+      data-setting-id={settingId}
+      data-revealed={flash || undefined}
+      tabIndex={-1}
+      className="terminal-host"
+    >
+      <div className="settings-collection-row terminal-host-row">
+        <div className="settings-collection-main terminal-host-identity">
+          <p className="settings-collection-title terminal-host-name">
+            <span>{name}</span>
+            <Badge>
+              {kind === "local"
+                ? t("Local")
+                : kind === "synced"
+                  ? t("Local sync")
+                  : t("Remote server")}
+            </Badge>
+          </p>
+          <p className="settings-collection-meta">
+            {missing
+              ? t("The shell you picked is no longer installed, so the system default is used.")
+              : effective
+                ? `${effective.name} · ${effective.path}`
+                : t("No shell detected yet")}
+          </p>
+        </div>
+        <Badge tone={status.tone} role="status">
+          {status.label}
+        </Badge>
+        <div className="terminal-host-select">
+          <SearchableSelect
+            label={selectLabel}
+            disabled={disabled || loading || !listed}
+            loading={loading}
+            value={chosen && !missing ? chosen : ""}
+            options={[
+              {
+                value: "",
+                label: !listed
+                  ? t("Not checked yet")
+                  : systemDefault
+                    ? t("Automatic ({p0})", { p0: systemDefault.name })
+                    : t("Automatic"),
+              },
+              ...(listed?.profiles ?? []).map((profile) => ({
+                value: profile.id,
+                label: profile.name,
+                description: profile.path,
+              })),
+            ]}
+            onChange={onChoose}
+          />
+        </div>
+        <div className="settings-collection-actions">
+          <Button
+            variant="ghost"
+            iconOnly
+            label={refreshLabel}
+            tooltip={refreshLabel}
+            loading={loading}
+            disabled={refreshDisabled || loading}
+            onClick={onRefresh}
+          >
+            <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
+          </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Available shells on {p0}", { p0: name })}
+            tooltip={t("Available shells")}
+            aria-expanded={expanded}
+            aria-controls={detailPanel}
+            disabled={!listed || noShells}
+            onClick={() => setOpen((current) => !current)}
+          >
+            <ChevronRight
+              aria-hidden
+              className={`icon-sm ${expanded ? "rotate-90" : ""}`}
+              strokeWidth={1.75}
+            />
+          </Button>
+        </div>
+      </div>
+      {feedback ? <div className="settings-collection-feedback terminal-host-feedback">{feedback}</div> : null}
+      {detailId ? (
+        <span
+          id={settingDomId(detailId)}
+          data-setting-id={detailId}
+          tabIndex={-1}
+          className="terminal-host-detail-anchor"
+        />
+      ) : null}
+      <div id={detailPanel} className="terminal-host-detail" hidden={!expanded}>
+        {expanded && listed ? (
+          listed.profiles.length ? (
+            <ul className="terminal-shell-list" aria-label={t("Available shells on {p0}", { p0: name })}>
+              {listed.profiles.map((profile) => (
+                <li key={profile.id} className="terminal-shell-item">
+                  <div className="settings-collection-main">
+                    <p className="settings-collection-title">{profile.name}</p>
+                    <p className="settings-collection-meta">{profile.path}</p>
+                  </div>
+                  {profile.id === effectiveId ? (
+                    <Badge>{t("Default")}</Badge>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      disabled={disabled || loading}
+                      onClick={() => onChoose(profile.id)}
+                    >
+                      {t("Set as default")}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="settings-collection-empty">
+              <p>{t("No shells found")}</p>
+              <p>{t("Install PowerShell, Git for Windows or another shell, then look again.")}</p>
+            </div>
+          )
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** Which shell new terminals open in, and `!commands` run in, per machine. */
 export function TerminalPage() {
   useLocale();
   const [listed, setListed] = useState<ShellProfiles | null>(null);
@@ -27,14 +229,18 @@ export function TerminalPage() {
   const [problem, setProblem] = useState<string | null>(null);
   const [saveProblem, setSaveProblem] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  /** A saved choice this window could not copy into its own cache (TS-03). */
+  const [unmirrored, setUnmirrored] = useState<{ id: string | undefined } | null>(null);
   const savingRef = useRef(false);
   const chooseProfile = async (id: string | undefined) => {
     if (savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
     setSaveProblem(null);
+    setUnmirrored(null);
     try {
-      await saveTerminalProfile(id);
+      const result = await saveTerminalProfile(id);
+      if (!result.mirrored) setUnmirrored({ id });
     } catch (error) {
       setSaveProblem(error instanceof Error ? error.message : String(error));
     } finally {
@@ -68,145 +274,106 @@ export function TerminalPage() {
       request.current++;
     };
   }, []);
-  const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
   const missing = !!listed && !!chosen && !listed.profiles.some((profile) => profile.id === chosen);
   const current = effectiveProfileId(listed, chosen);
 
   return (
     <div className="terminal-settings settings-topics">
       <Group
-        layout="full"
-        title={t("This computer")}
-        persistence={{ mode: "automatic" }}
-        scope={t("Choose the shell for new terminals and commands on this computer, including local sync sessions.")}
-        feedback={
-          saveProblem ? (
-            <SettingsFeedback state="error">
-              {t("Could not save the terminal profile. Select it again to retry.")} {saveProblem}
-            </SettingsFeedback>
-          ) : saving ? (
-            <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
-          ) : problem ? (
-            <SettingsFeedback state="error">
-              {t("Could not discover shells. Use Look again to retry.")} {problem}
-            </SettingsFeedback>
-          ) : scanning && !listed ? (
-            <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
-          ) : null
-        }
-        action={
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            loading={scanning}
-            disabled={scanning || saving}
-            onClick={() => scan(true)}
-          >
-            {t("Look again")}
-          </Button>
-        }
-      >
-        <Row
-          id="terminal-default-profile"
-          label={t("Default terminal profile")}
-          dependency={
-            missing
-              ? t("The shell you picked is no longer installed, so the system default is used.")
-              : undefined
-          }
-        >
-          <SearchableSelect
-            label={t("Default terminal profile")}
-            disabled={scanning || saving || !listed}
-            loading={scanning}
-            value={chosen && !missing ? chosen : ""}
-            options={[
-              {
-                value: "",
-                label: systemDefault
-                  ? t("Automatic ({p0})", { p0: systemDefault.name })
-                  : t("Automatic"),
-              },
-              ...(listed?.profiles ?? []).map((profile) => ({
-                value: profile.id,
-                label: profile.name,
-                description: profile.path,
-              })),
-            ]}
-            onChange={(next) => chooseProfile(next || undefined)}
-          />
-        </Row>
-      </Group>
-      <Group
         id="host-shells"
-        layout="full"
-        title={t("Synced sessions and remote hosts")}
+        title={t("Default shell by machine")}
         description={t("Each machine uses its own shell, wherever you send the command from.")}
+        descriptionVisible
         persistence={{ mode: "automatic" }}
-      >
-        <RemoteMachineShells />
-      </Group>
-      <p className="terminal-settings-note">
-        {t(
-          "Applies to new commands on this host. Already open terminals keep their current shell.",
-        )}
-      </p>
-      <AdvancedSettings id="terminal-available-shells" defaultOpen={false} title={t("Advanced terminal settings")}>
-        <Group
-          layout="full"
-          title={t("This computer · Available shells")}
-          description={t(
-            "Found on this computer. Git Bash runs bash commands such as ls, grep and && chains on Windows. Sessions on this computer use this choice even when you type the command on another machine.",
-          )}
-        >
-          {scanning ? (
-            <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
-          ) : problem ? (
-            <Row label={t("Not checked yet")} />
-          ) : !listed?.profiles.length ? (
-            <Row
-              label={t("No shells found")}
-              description={t(
-                "Install PowerShell, Git for Windows or another shell, then look again.",
+        info={
+          <InfoPopover className="shrink-0" label={t("How it works")} width={360}>
+            <p>
+              {t(
+                "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
               )}
-            />
-          ) : (
-            listed.profiles.map((profile) => (
-              <Row key={profile.id} label={profile.name} description={profile.path}>
-                {profile.id === current ? (
-                  <Badge>{t("Default")}</Badge>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    type="button"
-                    disabled={scanning || saving}
-                    onClick={() => chooseProfile(profile.id)}
-                  >
-                    {t("Set as default")}
-                  </Button>
-                )}
-              </Row>
-            ))
-          )}
-        </Group>
-        <div className="terminal-settings-help">
-          <h3 className="text-ui-secondary font-medium">{t("How it works")}</h3>
-          <p>{t(
-              "New terminals on this computer open in this shell, and local `!commands` run in it. A terminal already open keeps the shell it started with.",
-            )}</p>
-          <p>{t(
-              "Automatic follows the system: PowerShell on Windows, your login shell elsewhere.",
-            )}</p>
-          <p>{t(
-              "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
-            )}</p>
-          <p>{t(
-              "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
-            )}</p>
+            </p>
+            <p>{t("Automatic follows the system: PowerShell on Windows, your login shell elsewhere.")}</p>
+            <p>
+              {t(
+                "`!commands` in this computer's synced sessions run on this computer, using the shell selected here.",
+              )}
+            </p>
+            <p>
+              {t(
+                "`!commands` in this server's sessions run on the remote server, using the shell selected here, even when you type them on this computer.",
+              )}
+            </p>
+            <p>
+              {t(
+                "Applies to new commands on this host. Already open terminals keep their current shell.",
+              )}
+            </p>
+          </InfoPopover>
+        }
+      >
+        <div className="settings-collection terminal-host-list">
+          <HostShellRow
+            settingId="terminal-default-profile"
+            detailId="terminal-available-shells"
+            name={t("This computer")}
+            kind="local"
+            status={
+              problem
+                ? { tone: "danger", label: t("Unavailable") }
+                : scanning
+                  ? { tone: "info", label: t("Looking for shells…") }
+                  : listed
+                    ? { tone: listed.profiles.length > 0 ? "success" : "warning", label: shellCount(listed.profiles.length) }
+                    : { tone: "neutral", label: t("Not checked yet") }
+            }
+            listed={listed}
+            chosen={chosen ?? ""}
+            effectiveId={current}
+            missing={missing}
+            loading={scanning}
+            disabled={saving}
+            refreshDisabled={saving}
+            selectLabel={t("Default terminal profile")}
+            refreshLabel={t("Look again")}
+            onChoose={(next) => void chooseProfile(next || undefined)}
+            onRefresh={() => scan(true)}
+            feedback={
+              saveProblem ? (
+                <SettingsFeedback state="error">
+                  {t("Could not save the terminal profile. Select it again to retry.")} {saveProblem}
+                </SettingsFeedback>
+              ) : unmirrored && !saving ? (
+                <SettingsFeedback
+                  state="warning"
+                  action={
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        if (syncTerminalProfileMirror(unmirrored.id)) setUnmirrored(null);
+                      }}
+                    >
+                      {t("Retry")}
+                    </Button>
+                  }
+                >
+                  {t(
+                    "The shell was saved on this computer, but this window could not remember it, so it may still show the previous choice. Retry updates only this window; the saved shell is not written again.",
+                  )}
+                </SettingsFeedback>
+              ) : saving ? (
+                <SettingsFeedback state="loading">{t("Saving…")}</SettingsFeedback>
+              ) : problem ? (
+                <SettingsFeedback state="error">
+                  {t("Could not discover shells. Use Look again to retry.")} {problem}
+                </SettingsFeedback>
+              ) : scanning && !listed ? (
+                <SettingsFeedback state="loading">{t("Looking for shells…")}</SettingsFeedback>
+              ) : null
+            }
+          />
+          <RemoteMachineShells />
         </div>
-      </AdvancedSettings>
+      </Group>
     </div>
   );
 }
@@ -218,10 +385,29 @@ export function RemoteMachineShells() {
   const remoteMachines = machines.filter((machine) => !isLocalSyncMachine(machine));
   return (
     <>
-      {error ? <SettingsFeedback state="error" action={<Button loading={loading} onClick={refresh}>{t("Retry")}</Button>}>{error}</SettingsFeedback> : null}
-      {!loaded && loading ? <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback> : null}
+      {error ? (
+        <div className="terminal-host-notice">
+          <SettingsFeedback
+            state="error"
+            action={
+              <Button loading={loading} onClick={refresh}>
+                {t("Retry")}
+              </Button>
+            }
+          >
+            {error}
+          </SettingsFeedback>
+        </div>
+      ) : null}
+      {!loaded && loading ? (
+        <div className="terminal-host-notice">
+          <SettingsFeedback state="loading">{t("Loading…")}</SettingsFeedback>
+        </div>
+      ) : null}
       {loaded && !loading && !error && remoteMachines.length === 0 ? (
-        <Row label={t("Connect a machine in Connections to configure its default shell here.")} />
+        <div className="settings-collection-empty">
+          <p>{t("Connect a machine in Connections to configure its default shell here.")}</p>
+        </div>
       ) : null}
       {remoteMachines.map((machine) => (
         <RemoteMachineShell key={machine.id} machine={machine} />
@@ -313,41 +499,67 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
         }
       });
   };
-  const systemDefault = listed?.profiles.find((profile) => profile.id === listed.defaultId);
   const chosen =
     listed?.chosenId && listed.profiles.some((profile) => profile.id === listed.chosenId)
       ? listed.chosenId
       : "";
   const missing =
     !!listed?.chosenId && !listed.profiles.some((profile) => profile.id === listed.chosenId);
+  const reread = () => {
+    setLoading(true);
+    setSaved(false);
+    setProblem(null);
+    setRetry((value) => value + 1);
+  };
   return (
-    <Row
+    <HostShellRow
+      name={machine.name}
+      kind={local ? "synced" : "remote"}
+      status={
+        problem
+          ? { tone: "danger", label: t("Unavailable") }
+          : loading
+            ? { tone: "info", label: t("Asking the machine…") }
+            : listed
+              ? { tone: listed.profiles.length > 0 ? "success" : "warning", label: shellCount(listed.profiles.length) }
+              : { tone: "neutral", label: t("Not checked yet") }
+      }
+      listed={listed}
+      chosen={chosen}
+      effectiveId={listed ? chosen || (listed.defaultId ?? undefined) : undefined}
+      missing={missing}
+      loading={loading}
+      disabled={saving || needsRead}
+      refreshDisabled={saving}
+      selectLabel={
+        local
+          ? t("Default shell on this computer (local sync)")
+          : t("Default shell on remote server {p0}", { p0: machine.name })
+      }
+      refreshLabel={t("Read current shell")}
+      onChoose={(next) => {
+        if (!saving) choose(next);
+      }}
+      onRefresh={() => setRetry((value) => value + 1)}
       feedback={
         problem ? (
           <SettingsFeedback
             state="error"
             action={
-              (
-                <Button
-                  variant="ghost"
-                  disabled={saving || loading}
-                  onClick={() => {
-                    setLoading(true);
-                    setSaved(false);
-                    setProblem(null);
-                    setRetry((value) => value + 1);
-                  }}
-                >
-                  {needsRead ? t("Read current shell") : t("Retry")}
-                </Button>
-              )
+              <Button variant="ghost" disabled={saving || loading} onClick={reread}>
+                {needsRead ? t("Read current shell") : t("Retry")}
+              </Button>
             }
           >
             {problem}
             {needsRead && requestedShell !== null ? (
-              <p>{t("Requested shell: {p0}", {
-                p0: listed?.profiles.find((profile) => profile.id === requestedShell)?.name ?? (requestedShell || t("Automatic")),
-              })}</p>
+              <p>
+                {t("Requested shell: {p0}", {
+                  p0:
+                    listed?.profiles.find((profile) => profile.id === requestedShell)?.name ??
+                    (requestedShell || t("Automatic")),
+                })}
+              </p>
             ) : null}
           </SettingsFeedback>
         ) : saving || saved ? (
@@ -356,59 +568,6 @@ function RemoteMachineShellState({ machine }: { machine: RemoteMachine }) {
           </SettingsFeedback>
         ) : null
       }
-      label={
-        <span className="terminal-settings-machine">
-          <span>{local ? t("This computer") : machine.name}</span>
-          <Badge>{local ? t("Local sync") : t("Remote server")}</Badge>
-        </span>
-      }
-      dependency={missing ? t("The shell you picked is no longer installed, so the system default is used.") : undefined}
-      description={
-        missing
-          ? t("The shell you picked is no longer installed, so the system default is used.")
-          : listed
-            ? (listed.profiles.find((profile) => profile.id === (chosen || listed.defaultId))
-                ?.path ?? undefined)
-            : undefined
-      }
-    >
-      {listed ? (
-        <SearchableSelect
-          disabled={saving || loading || needsRead}
-          loading={loading}
-          label={
-            local
-              ? t("Default shell on this computer (local sync)")
-              : t("Default shell on remote server {p0}", { p0: machine.name })
-          }
-          value={chosen}
-          options={[
-            {
-              value: "",
-              label: systemDefault
-                ? t("Automatic ({p0})", { p0: systemDefault.name })
-                : t("Automatic"),
-            },
-            ...listed.profiles.map((profile) => ({
-              value: profile.id,
-              label: profile.name,
-              description: profile.path,
-            })),
-          ]}
-          onChange={(next) => {
-            if (!saving) choose(next);
-          }}
-        />
-      ) : null}
-      <Button
-        variant="ghost"
-        size="sm"
-        loading={loading}
-        disabled={saving || loading}
-        onClick={() => setRetry((value) => value + 1)}
-      >
-        {t("Read current shell")}
-      </Button>
-    </Row>
+    />
   );
 }

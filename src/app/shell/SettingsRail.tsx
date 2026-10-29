@@ -18,9 +18,9 @@ import {
   SlidersHorizontal,
   Sparkles,
   Terminal,
+  UsageIcon,
   type IconComponent,
 } from "../../shared/ui/icons";
-import { UsageIcon } from "./WorkspaceControls";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import {
   settingsSectionsByGroup,
@@ -39,7 +39,7 @@ export const SETTINGS_SECTION_ICONS: Record<SettingsSectionId, IconComponent> = 
   chat: MessageSquare,
   providers: Bot,
   crews: Bot,
-  usage: UsageIcon as IconComponent,
+  usage: UsageIcon,
   limits: SlidersHorizontal,
   mcp: Globe,
   skills: Sparkles,
@@ -154,7 +154,7 @@ function NavRow({
     >
       <Icon
         aria-hidden="true"
-        className={`icon-md shrink-0 ${active ? "" : "text-(--ui-text-secondary)"}`}
+        className={`icon-sm shrink-0 ${active ? "" : "text-(--ui-text-secondary)"}`}
         strokeWidth={1.75}
       />
       <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">

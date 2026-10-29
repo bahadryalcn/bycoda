@@ -29,6 +29,9 @@ export type NativeSearchableSelectProps = Omit<
     | "variant"
     | "layer"
     | "align"
+    | "visibleLabel"
+    | "description"
+    | "fieldVariant"
   > & {
     value?: string;
     defaultValue?: string;
@@ -46,6 +49,9 @@ export function NativeSearchableSelect({
   variant,
   layer,
   align,
+  visibleLabel,
+  description,
+  fieldVariant,
   ref,
   className,
   onChange,
@@ -145,6 +151,9 @@ export function NativeSearchableSelect({
           variant,
           layer,
           align,
+          visibleLabel,
+          description,
+          fieldVariant,
         }}
         value={selection}
         disabled={nativeProps.disabled}

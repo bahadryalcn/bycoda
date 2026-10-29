@@ -1,37 +1,93 @@
+/* One host list: each machine is a row (identity, status, effective profile,
+   choice); its shell inventory is the row's expandable detail. */
 .terminal-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
   min-inline-size: 0;
 }
 
-.terminal-settings-note {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+.terminal-host-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  gap: 2px;
 }
 
-.terminal-settings-machine {
+.terminal-host {
+  min-inline-size: 0;
+  border-radius: var(--ui-control-radius);
+}
+
+.terminal-host[data-revealed] {
+  background: var(--ui-surface-selected);
+}
+
+.terminal-host-row {
+  flex-wrap: wrap;
+}
+
+.terminal-host-identity {
+  flex: 1 1 14rem;
+}
+
+.terminal-host-name {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 4px 8px;
+  overflow: visible;
+  white-space: normal;
 }
 
-.terminal-settings-machine > span {
+.terminal-host-name > span:first-child {
   min-inline-size: 0;
   overflow-wrap: anywhere;
 }
 
-.terminal-settings-help {
-  display: grid;
-  gap: 8px;
-  padding-block-start: 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+.terminal-host-select {
+  flex: 0 1 15rem;
+  min-inline-size: 10rem;
 }
-.terminal-settings-help p,
-.terminal-settings-help h3 {
+
+.terminal-host-feedback {
+  padding: 0 8px 8px;
+}
+
+.terminal-host-notice {
+  padding: 8px;
+}
+
+.terminal-host-detail-anchor {
+  display: block;
+  block-size: 0;
+}
+
+.terminal-host-detail[hidden] {
+  display: none;
+}
+
+.terminal-host-detail {
+  margin: 0 8px 8px;
+  padding: 4px 8px;
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface-panel);
+}
+
+.terminal-shell-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.terminal-shell-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  min-block-size: 2.25rem;
+  padding: 4px 0;
 }

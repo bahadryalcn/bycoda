@@ -21,6 +21,12 @@ type Props = {
   onChange: (value: string) => void;
   minDate?: string;
   autoFocus?: boolean;
+  /** Nothing can be chosen or typed; the calendar and time dim. */
+  disabled?: boolean;
+  /** The value is shown on the normal grid and time field but cannot change; browsing months still works. */
+  readOnly?: boolean;
+  /** The time field takes the danger frame; the owner supplies the message. */
+  invalid?: boolean;
 };
 
 function dateKey(date: Date): string {
@@ -37,7 +43,15 @@ function shiftMonth(date: Date, amount: number): Date {
   );
 }
 
-export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: Props) {
+export function DateTimePicker({
+  value,
+  onChange,
+  minDate,
+  autoFocus = false,
+  disabled = false,
+  readOnly = false,
+  invalid = false,
+}: Props) {
   const t = useT();
   const locale = useLocale();
   const today = new Date(Date.now());
@@ -98,6 +112,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
   };
   const pick = (date: Date) => {
     setFocusedDate(date);
+    if (disabled || readOnly) return;
     onChange(`${dateKey(date)}T${time}`);
   };
   const onDayKeyDown = (event: KeyboardEvent<HTMLButtonElement>, date: Date) => {
@@ -135,7 +150,12 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
       : null;
   });
   return (
-    <div className="bycoda-date-time-picker">
+    <div
+      className="bycoda-date-time-picker"
+      data-disabled={disabled || undefined}
+      data-readonly={readOnly || undefined}
+      data-invalid={invalid || undefined}
+    >
       <div className="date-time-header">
         <span id={headingId} aria-live="polite" className="date-time-title">
           {monthLabel} <span className="date-time-year">{month.getFullYear()}</span>
@@ -145,7 +165,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             variant="ghost"
             iconOnly
             label={t("Previous month")}
-            disabled={previousDisabled}
+            disabled={previousDisabled || disabled}
             onClick={() => navigate(shiftMonth(focusedDate, -1), false)}
             className="date-time-month-action"
           >
@@ -155,6 +175,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             variant="ghost"
             iconOnly
             label={t("Next month")}
+            disabled={disabled}
             onClick={() => navigate(shiftMonth(focusedDate, 1), false)}
             className="date-time-month-action"
           >
@@ -163,7 +184,13 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
         </div>
       </div>
       <div className="date-time-calendar">
-        <div ref={gridRef} role="grid" aria-labelledby={headingId}>
+        <div
+          ref={gridRef}
+          role="grid"
+          aria-labelledby={headingId}
+          aria-readonly={readOnly || undefined}
+          aria-disabled={disabled || undefined}
+        >
           <div role="row" className="date-time-row">
             {weekdays.map((label) => (
               <span
@@ -196,7 +223,7 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
                       title={date.toLocaleDateString(locale, {
                         dateStyle: "full",
                       })}
-                      disabled={!!minimum && date < minimum}
+                      disabled={disabled || (!!minimum && date < minimum)}
                       aria-current={dateKey(date) === dateKey(today) ? "date" : undefined}
                       className="date-time-day"
                       data-selected={dateKey(date) === selectedKey || undefined}
@@ -233,10 +260,15 @@ export function DateTimePicker({ value, onChange, minDate, autoFocus = false }: 
             spellCheck={false}
             placeholder={t("HH:mm")}
             value={time}
-            aria-invalid={timeInvalid || undefined}
+            aria-invalid={timeInvalid || invalid || undefined}
+            disabled={disabled}
+            readOnly={readOnly}
             onFocus={() => setTimeTouched(false)}
             onBlur={() => setTimeTouched(true)}
-            onChange={(event) => onChange(`${dateKey(selected)}T${event.target.value}`)}
+            onChange={(event) => {
+              if (disabled || readOnly) return;
+              onChange(`${dateKey(selected)}T${event.target.value}`);
+            }}
             className="date-time-time-input"
           />
         </div>

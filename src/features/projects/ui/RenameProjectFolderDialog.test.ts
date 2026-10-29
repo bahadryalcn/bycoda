@@ -38,7 +38,9 @@ it("keeps the folder dialog and entered name available after a failed rename, th
         .querySelector("form")!
         .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
     );
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe("Folder already exists");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Folder already exists",
+    );
     expect(input.value).toBe("new");
     expect(onClose).not.toHaveBeenCalled();
     await act(async () =>

@@ -49,6 +49,7 @@ pub(crate) enum BarrierError {
     UnfinishedNativeOperation,
     FailedNativeOperation,
     PendingNativeOperations,
+    CheckpointExpired,
     MissingNativeCheckpoint,
     PendingNativeWindow,
     UnexpectedWindowAdmission,
@@ -93,6 +94,12 @@ pub(crate) struct WindowToken {
 impl WindowToken {
     pub(crate) fn label(&self) -> &str {
         &self.label
+    }
+
+    pub(crate) fn same_capture(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.owner, &other.owner)
+            && self.label == other.label
+            && self.incarnation == other.incarnation
     }
 }
 
@@ -489,9 +496,16 @@ impl WindowBarrier {
 
     /// Native process work is independent of every renderer/window lifetime.
     pub(crate) fn begin_process_write(&self) -> Result<NativeOperation, BarrierError> {
+        self.begin_process_operation(None)
+    }
+
+    fn begin_process_operation(
+        &self,
+        session_id: Option<&str>,
+    ) -> Result<NativeOperation, BarrierError> {
         let mut state = self.lock()?;
         state.healthy()?;
-        state.scope_open(None)?;
+        state.scope_open(session_id)?;
         if state.operations.len() >= MAX_OPERATIONS {
             return Err(BarrierError::CapacityExceeded);
         }
@@ -505,7 +519,7 @@ impl WindowBarrier {
             Operation {
                 owner: OperationOwner::Process,
                 checkpoint: None,
-                session_id: None,
+                session_id: session_id.map(str::to_owned),
                 target_checkpoint: None,
             },
         );

@@ -349,7 +349,7 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   const group = container.querySelector<HTMLElement>('[data-project-group="clients"]')!;
   const groupRow = group.firstElementChild as HTMLElement;
   expect(groupRow.classList).toContain("project-reorder-item");
-  expect(groupRow.classList).toContain("h-8");
+  expect(groupRow.classList).toContain("h-(--ui-control-height-compact)");
   expect(groupRow.classList).toContain("px-2");
   const options = button("Client work group options");
   expect(options.getAttribute("aria-haspopup")).toBe("menu");
@@ -359,7 +359,8 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(header.getAttribute("aria-expanded")).toBe("true");
   expect(group.classList).toContain("overflow-hidden");
   expect(group.classList).toContain("rounded-md");
-  expect(group.classList).toContain("bg-content/3");
+  // The expanded group is separated by spacing, not a tinted fill.
+  expect(group.classList).not.toContain("bg-content/3");
   expect(group.getAttribute("style")).toBeNull();
   expect(group.querySelector("[data-project-group-items]")?.classList).toContain("p-1");
   expect(group.querySelector("[data-group-chevron]")).not.toBeNull();
@@ -374,7 +375,7 @@ it("renders assigned projects in persistent collapsible groups", async () => {
   expect(body.dataset.open).toBe("false");
   expect(body.getAttribute("aria-hidden")).toBe("true");
   expect(body.hasAttribute("inert")).toBe(true);
-  expect(collapsedGroup.classList).toContain("bg-content/3");
+  expect(collapsedGroup.classList).not.toContain("bg-content/3");
   const transitionEnd = new Event("transitionend", { bubbles: true });
   Object.defineProperty(transitionEnd, "propertyName", {
     value: "height",

@@ -79,9 +79,9 @@ export function CrewSessions({
   return (
     <section
       aria-label={t("Crew work")}
-      className="border-b border-(--ui-tone-neutral-border) px-2 py-2"
+      className="px-2 py-2"
     >
-      <div className="flex items-center gap-1 px-1 pb-1">
+      <div className="flex min-h-7 items-center gap-1 px-1">
         <span className="min-w-0 flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
           {t("Crew work")}
         </span>
@@ -262,7 +262,7 @@ export function CrewManagementDialog({
       }}
     >
       <div className="@container/crew-management min-w-0" aria-busy={pending}>
-        <div className="flex flex-wrap items-end gap-2 border-b border-(--ui-tone-neutral-border) px-4 pb-3 pt-2">
+        <div className="flex flex-wrap items-end gap-2 px-4 pb-3 pt-2">
           {data && crews.length > 1 ? (
             <div className="min-w-0 flex-1 basis-48">
               <SearchableSelect
@@ -326,7 +326,7 @@ export function CrewManagementDialog({
           </div>
         </div>
         {crew && !savedCrew ? (
-          <p className="border-b border-(--ui-tone-neutral-border) px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
+          <p className="px-4 pb-2 text-ui-caption text-(--ui-text-secondary)">
             {t("This crew was deleted. Its work and conversations are kept.")}
           </p>
         ) : null}

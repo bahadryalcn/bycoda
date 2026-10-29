@@ -6,6 +6,7 @@ import { TextField } from "../../../shared/ui/TextField";
 import { Alert } from "../../../shared/ui/Alert";
 import { Modal } from "../../../shared/ui/Modal";
 import { resetForgottenPassword } from "../model/groupLock";
+import { incompleteMessage } from "./PasswordPromptDialog";
 
 const PHRASE = "reset lock";
 
@@ -21,13 +22,19 @@ type Props = {
 export function ForgotLockPasswordDialog({ onClose }: Props) {
   useLocale();
   const [typed, setTyped] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const confirmed = typed.trim().toLowerCase() === PHRASE;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!confirmed) return;
-    resetForgottenPassword();
-    onClose();
+    const outcome = resetForgottenPassword();
+    if (outcome === "complete") {
+      onClose();
+      return;
+    }
+    // Keep the dialog so the real outcome stays visible; `not-saved` can be retried.
+    setError(incompleteMessage(outcome));
   };
 
   return (
@@ -58,6 +65,7 @@ export function ForgotLockPasswordDialog({ onClose }: Props) {
           autoFocus
           spellCheck={false}
         />
+        {error ? <Alert tone="danger">{error}</Alert> : null}
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={onClose} variant="ghost">
             {t("Cancel")}

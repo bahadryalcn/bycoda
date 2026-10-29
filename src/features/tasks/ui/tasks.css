@@ -346,10 +346,28 @@
 .task-session-message {
   min-inline-size: 0;
   overflow-wrap: anywhere;
-  padding-block-start: 1rem;
-  border-block-start: 1px solid var(--ui-tone-neutral-border);
 }
-.task-session-message > h3 {
+.task-session-message[data-role="user"] {
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
+}
+.task-session-activity {
+  min-inline-size: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-secondary);
+}
+.task-session-activity > summary {
+  cursor: pointer;
+  padding-block: 0.25rem;
+}
+.task-session-activity-item {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  margin-block-start: 0.75rem;
+}
+.task-session-message > h3,
+.task-session-activity-item > h3 {
   margin-block-end: 0.5rem;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-secondary);

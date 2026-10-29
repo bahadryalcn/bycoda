@@ -1,104 +1,18 @@
-/* The privacy page shares one compact layout, including app and file access. */
-.bycoda-settings-workbench .bycoda-settings-form[data-settings-section="groupLock"] {
-  max-inline-size: none;
-}
+/* The privacy page is one ordered column: this computer, password and recovery,
+   automatic locking, then the group lists. Groups come from the shared settings
+   frame; only the group collections add markup of their own. */
 .group-privacy {
-  display: grid;
-  gap: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
   min-inline-size: 0;
   container-type: inline-size;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
-  align-items: stretch;
 }
 .group-privacy-controls {
   display: contents;
 }
-.group-privacy-controls > :not(#setting-group-lock-password) {
-  grid-column: 1 / -1;
-}
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group {
-  display: block;
-  min-inline-size: 0;
-  padding: 0;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
-  background: var(--ui-surface);
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .group-privacy
-  .settings-group
-  > .settings-group-heading {
-  padding: 16px;
-  gap: 12px;
-  flex-direction: row;
-  align-items: center;
-}
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group-heading h2 {
-  font-weight: 500;
-}
-.bycoda-settings-workbench .group-privacy .settings-group-heading p {
-  max-inline-size: 76ch;
-  margin-block-start: 4px;
-}
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-group-content {
-  border: 0;
-  border-radius: 0 0 var(--radius-panel) var(--radius-panel);
-  background: transparent;
-}
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row,
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row:first-child {
-  padding: 12px 16px;
-  gap: 16px;
-  align-items: center;
-}
-.bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row-control {
-  max-inline-size: 100%;
-  max-width: 100%;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-.bycoda-settings-workbench .group-privacy .settings-row-label {
-  flex-basis: auto;
-}
-.bycoda-settings-workbench .group-privacy .settings-row-control > button {
-  flex-shrink: 0;
-}
-.bycoda-settings-workbench .group-privacy .settings-row p {
-  color: var(--ui-text-secondary);
-  line-height: 1.5;
-}
-.bycoda-settings-workbench .group-privacy .settings-row-control > [role="status"] {
-  font-size: 12px;
-  color: var(--ui-text-secondary);
-}
-.bycoda-settings-workbench .group-privacy .settings-advanced,
-.privacy-recovery {
-  margin: 0;
-  border-block-start: 1px solid var(--color-stroke);
-}
-.bycoda-settings-workbench .group-privacy .settings-advanced > h3 {
-  padding: 12px 16px;
-  cursor: pointer;
-  font-size: 12px;
-  color: var(--ui-text-secondary);
-}
-/* A static subheading: nothing opens from it, so it carries no hover or press state. */
-.privacy-recovery > h3 {
-  padding: 12px 16px 4px;
-  font-size: 12px;
-  color: var(--ui-text-secondary);
-}
-@media (hover: hover) and (pointer: fine) {
-  .bycoda-settings-workbench .group-privacy .settings-advanced > h3:hover {
-    color: var(--color-content);
-    background: var(--ui-surface-hover);
-  }
-}
 .privacy-heading,
-.privacy-gate-label,
-.privacy-status {
+.privacy-gate-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -108,18 +22,41 @@
   flex-shrink: 0;
   color: var(--ui-text-secondary);
 }
-.privacy-status::before {
-  content: "";
-  inline-size: 6px;
-  block-size: 6px;
-  border-radius: 50%;
-  background: var(--color-accent);
+.privacy-file-access-status {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* Group list: identity, current lock state and the protection preference are three
+   readable columns with a quiet header. */
+.privacy-group-summary {
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+.privacy-group-columns,
+.privacy-group-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 7rem 8rem;
+  align-items: center;
+  column-gap: 12px;
+}
+.privacy-group-columns {
+  padding: 4px 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.privacy-group-columns > :last-child,
+.privacy-group-toggle {
+  justify-self: end;
 }
 .privacy-group-name {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 1rem minmax(0, 1fr);
   column-gap: 10px;
-  row-gap: 4px;
   align-items: center;
   min-inline-size: 0;
 }
@@ -129,85 +66,59 @@
 }
 .privacy-group-title {
   overflow-wrap: anywhere;
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
 }
 .privacy-group-state {
-  justify-self: end;
+  justify-self: start;
 }
-.privacy-group-list {
-  max-block-size: 360px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+.privacy-empty {
+  display: grid;
+  gap: 2px;
+  padding: 12px 16px;
 }
-.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row-label {
-  flex: 1;
-  min-inline-size: 0;
-}
-.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row {
-  flex-direction: row;
-  flex-wrap: nowrap;
-}
-.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row-control {
-  flex: 0 0 auto;
-  align-self: center;
-}
-.bycoda-settings-workbench .group-privacy .privacy-group-list .settings-row + .settings-row {
-  border-block-start: 1px solid var(--color-stroke);
-}
-.privacy-footnote,
-.privacy-inline-note {
-  font-size: 12px;
+.privacy-footnote {
+  max-inline-size: 60ch;
+  margin: 0;
+  font-size: var(--ui-font-caption);
   line-height: 1.6;
   color: var(--ui-text-secondary);
 }
-.privacy-footnote {
-  max-inline-size: 88ch;
-  margin: 0;
-}
-.privacy-inline-note {
-  padding: 0 18px 12px;
-}
 .privacy-hidden-footer {
   display: flex;
-  padding: 10px 18px 12px;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  margin-block-start: 8px;
 }
-@container (max-width: 560px) {
-  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row,
-  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row:first-child {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
+@container (max-width: 32rem) {
+  .privacy-group-columns {
+    display: none;
   }
-  .bycoda-settings-workbench .bycoda-settings-form .group-privacy .settings-row-control {
-    justify-content: flex-start;
-    max-inline-size: 100%;
-    max-width: 100%;
-    align-self: stretch;
-  }
-  .bycoda-settings-workbench
-    .bycoda-settings-form
-    .group-privacy
-    .settings-row:has([role="switch"]) {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    align-items: center;
-  }
-  .bycoda-settings-workbench
-    .group-privacy
-    .settings-row:has([role="switch"])
-    .settings-row-control {
-    align-self: center;
-    flex-shrink: 0;
+  .privacy-group-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    row-gap: 4px;
   }
   .privacy-group-name {
-    grid-template-columns: 16px minmax(0, 1fr);
+    grid-column: 1;
+  }
+  .privacy-group-toggle {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
   .privacy-group-state {
-    grid-column: 2;
-    justify-self: start;
+    grid-column: 1;
   }
-  .privacy-hidden-footer {
-    justify-content: flex-start;
-  }
+}
+
+/* A save that did not reach storage sits under its row, not in a toast. */
+.privacy-save-feedback {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-block-start: 4px;
+}
+.privacy-save-feedback > :first-child {
+  flex: 1;
+  min-inline-size: 0;
 }

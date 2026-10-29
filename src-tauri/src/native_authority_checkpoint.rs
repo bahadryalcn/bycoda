@@ -5,6 +5,7 @@
 
 use crate::native_authority_channel::CapturedSourceBinding;
 use crate::native_window_lifecycle::{self, NativeCheckpointWindow};
+use crate::session_store::row_identity::SessionRowIdentity;
 use crate::session_store::window_barrier::target::ClosedTargetAdmission;
 use crate::session_store::window_barrier::{NativeLane, WindowBarrier};
 use serde::{Deserialize, Serialize};
@@ -194,6 +195,8 @@ pub(crate) struct NativeSqlCheckpointReceipt {
     pub(crate) transcript_sha256: String,
     pub(crate) draft_sha256: Option<String>,
     pub(crate) queue_sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) raw_capture: Option<crate::session_store::native_raw_capture::RawCaptureDescriptor>,
 }
 
 pub(crate) struct NativeCheckpointCommit<'a> {
@@ -202,6 +205,7 @@ pub(crate) struct NativeCheckpointCommit<'a> {
     pub(crate) round_id: &'a str,
     pub(crate) window_epoch: &'a str,
     pub(crate) scope: &'a NativeCheckpointScope,
+    pub(crate) row_identity: &'a SessionRowIdentity,
     pub(crate) expected: &'a NativeCheckpointExpectation,
     pub(crate) fingerprint: &'a str,
 }
@@ -224,6 +228,7 @@ struct Round {
     id: String,
     scope: NativeCheckpointScope,
     closed: ClosedTargetAdmission,
+    row_identity: SessionRowIdentity,
 }
 enum Outcome {
     Pending,
@@ -244,6 +249,7 @@ struct Entry {
     window: Arc<NativeCheckpointWindow>,
     expires: Instant,
     outcome: Outcome,
+    projection: Option<projection::ProjectionEntry>,
 }
 #[derive(Default)]
 struct Ledger {
@@ -270,6 +276,8 @@ pub(crate) struct NativeRendererCheckpoints {
     epoch: String,
     ledger: Mutex<Ledger>,
     calls: AtomicUsize,
+    #[cfg(test)]
+    lose_projection_reply: std::sync::atomic::AtomicBool,
 }
 impl NativeRendererCheckpoints {
     pub(crate) fn capture_managed(
@@ -296,6 +304,8 @@ impl NativeRendererCheckpoints {
             epoch: uuid::Uuid::new_v4().to_string(),
             ledger: Mutex::new(Ledger::default()),
             calls: AtomicUsize::new(0),
+            #[cfg(test)]
+            lose_projection_reply: std::sync::atomic::AtomicBool::new(false),
         })
     }
     fn admit_call(&self) -> Result<CallPermit<'_>, String> {
@@ -326,7 +336,7 @@ impl NativeRendererCheckpoints {
         &self,
         closed: &ClosedTargetAdmission,
         scope: &NativeCheckpointScope,
-    ) -> Result<(), String> {
+    ) -> Result<SessionRowIdentity, String> {
         let captured = self
             .source
             .checked_source()
@@ -341,19 +351,19 @@ impl NativeRendererCheckpoints {
         self.barrier
             .with_target_checkpoint_scope(closed, &closed.windows()[0], |_| {
                 self.source
-                    .with_checked_store(|store| store.renderer_checkpoint_validate_scope(scope))
+                    .with_checked_store(|store| store.renderer_checkpoint_capture_scope(scope))
             })
-            .map_err(|error| error.to_string())??;
-        Ok(())
+            .map_err(|error| error.to_string())?
     }
     pub(crate) fn start_round(
         &self,
         closed: ClosedTargetAdmission,
         scope: NativeCheckpointScope,
     ) -> Result<NativeCheckpointRound, NativeCheckpointStartError> {
-        if let Err(message) = self.validate_new_round(&closed, &scope) {
-            return Err(NativeCheckpointStartError { message, closed });
-        }
+        let row_identity = match self.validate_new_round(&closed, &scope) {
+            Ok(row) => row,
+            Err(message) => return Err(NativeCheckpointStartError { message, closed }),
+        };
         let mut ledger = match self.ledger.lock() {
             Ok(ledger) => ledger,
             Err(_) => {
@@ -376,6 +386,7 @@ impl NativeRendererCheckpoints {
                 id: id.clone(),
                 scope,
                 closed,
+                row_identity,
             }),
         );
         Ok(NativeCheckpointRound { id })
@@ -420,8 +431,15 @@ impl NativeRendererCheckpoints {
             captured.native_instance_id,
             |barrier, token| {
                 barrier
-                    .with_target_checkpoint_scope(&actual.closed, token, |_| ())
-                    .map_err(|error| error.to_string())
+                    .with_target_checkpoint_scope(&actual.closed, token, |_| {
+                        self.source.with_checked_store(|store| {
+                            store.renderer_checkpoint_validate_row(
+                                &actual.scope,
+                                &actual.row_identity,
+                            )
+                        })
+                    })
+                    .map_err(|error| error.to_string())?
             },
         )?;
         if ledger.entries.len() >= MAX_CHALLENGES {
@@ -446,6 +464,7 @@ impl NativeRendererCheckpoints {
                 window: Arc::new(owner),
                 expires: Instant::now() + lifetime,
                 outcome: Outcome::Pending,
+                projection: None,
             },
         );
         Ok(challenge)
@@ -483,6 +502,9 @@ impl NativeRendererCheckpoints {
                 .entries
                 .get(nonce)
                 .ok_or_else(|| failure("UNKNOWN_CHALLENGE"))?;
+            if entry.projection.is_some() {
+                return Err(failure("WRONG_CHALLENGE_KIND"));
+            }
             let round = ledger
                 .rounds
                 .get(&entry.round_id)
@@ -526,10 +548,19 @@ impl NativeRendererCheckpoints {
                     if Instant::now() >= entry.expires {
                         return Err(failure("EXPIRED"));
                     }
+                    self.source.with_checked_store(|store| {
+                        store.renderer_checkpoint_validate_row(&round.scope, &round.row_identity)
+                    })?;
+                    if Instant::now() >= entry.expires {
+                        return Err(failure("EXPIRED"));
+                    }
                     barrier
-                        .begin_target_checkpoint(&round.closed, token, NativeLane::Persistence)
+                        .begin_target_checkpoint_before(&round.closed, token, NativeLane::Persistence, entry.expires)
                         .map(Ok)
-                        .map_err(|error| error.to_string())
+                        .map_err(|error| match error {
+                            crate::session_store::window_barrier::BarrierError::CheckpointExpired => failure("EXPIRED"),
+                            error => error.to_string(),
+                        })
                 },
             )?;
             let operation = match admission {
@@ -558,6 +589,7 @@ impl NativeRendererCheckpoints {
                                 round_id: &round.id,
                                 window_epoch: &owner.incarnation().to_string(),
                                 scope: &round.scope,
+                                row_identity: &round.row_identity,
                                 expected: &expected,
                                 fingerprint: &fingerprint,
                             })
@@ -593,6 +625,7 @@ impl NativeRendererCheckpoints {
                 ExpectedSqlBlob::Absent => None,
                 ExpectedSqlBlob::Present { sha256 } => Some(sha256.clone()),
             },
+            raw_capture: None,
         };
         let mut ledger = self.ledger.lock().map_err(|_| failure("UNAVAILABLE"))?;
         if let Some(entry) = ledger.entries.get_mut(nonce) {
@@ -645,6 +678,9 @@ impl NativeRendererCheckpoints {
         let Some(entry) = ledger.entries.get(nonce) else {
             return Ok(NativeCheckpointStatus::Unknown);
         };
+        if entry.projection.is_some() {
+            return Err(failure("WRONG_CHALLENGE_KIND"));
+        }
         let round = ledger
             .rounds
             .get(&entry.round_id)
@@ -693,7 +729,12 @@ impl NativeRendererCheckpoints {
     ) -> Result<ClosedTargetAdmission, String> {
         let mut ledger = self.ledger.lock().map_err(|_| failure("UNAVAILABLE"))?;
         if ledger.entries.values().any(|entry| {
-            entry.round_id == round.id && matches!(entry.outcome, Outcome::Running { .. })
+            entry.round_id == round.id
+                && (matches!(entry.outcome, Outcome::Running { .. })
+                    || entry
+                        .projection
+                        .as_ref()
+                        .is_some_and(|projection| projection.running))
         }) {
             return Err(failure("PENDING"));
         }
@@ -739,3 +780,7 @@ pub(crate) fn native_renderer_checkpoint_status(
 #[cfg(all(test, windows))]
 #[path = "native_authority_checkpoint_tests.rs"]
 mod tests;
+
+#[path = "native_projection_checkpoint.rs"]
+mod projection;
+pub(crate) use projection::NativeProjectionReceipt;

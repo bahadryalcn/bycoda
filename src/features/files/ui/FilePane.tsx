@@ -384,7 +384,7 @@ function PlanSurface({
               loading={block.plan?.status === "building"}
               onClick={() => onBuildPlan(plan.sessionId, block.id)}
             >
-              <Play className="size-3" />
+              <Play className="icon-sm" />
               {buildLabel}
             </Button>
             {session && !remote ? (
@@ -420,7 +420,7 @@ function PlanSurface({
               onChange={(event) =>
                 onUpdatePlan(plan.sessionId, block.id, event.currentTarget.value)
               }
-              className="h-full w-full resize-none overflow-auto font-mono leading-6"
+              className="h-full w-full resize-none overflow-auto px-4 py-3 font-mono leading-6"
             />
           </SurfaceSelection>
         }

@@ -103,7 +103,7 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   const reads = listInboxItems.mock.calls.length;
   const nativeReads = providerReads().length;
   expect(nativeReads).toBeGreaterThan(0);
-  const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')!;
+  const input = container.querySelector<HTMLInputElement>('input[aria-label="Filter loaded items"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, "Alpha");
     input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -118,7 +118,7 @@ it("filters the cached Inbox locally and reuses fresh data when reopened", async
   // Mount rechecks the shared cache's real age; its fresh result avoids native
   // provider work even though the query facade is called again.
   expect(providerReads()).toHaveLength(nativeReads);
-  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter inbox"]')?.value).toBe(
+  expect(container.querySelector<HTMLInputElement>('input[aria-label="Filter loaded items"]')?.value).toBe(
     "Alpha",
   );
   expect(container.querySelector('button[title="Alpha issue"]')).not.toBeNull();
@@ -224,7 +224,7 @@ it.each(["single", "all"])(
       ),
     );
     const markAll = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Mark all as read"]',
+      'button[aria-label="Mark loaded GitHub items as read"]',
     )!;
     const write = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("Storage full");

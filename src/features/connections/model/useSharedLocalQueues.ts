@@ -9,6 +9,7 @@ import {
 } from "../../sessions/model/deliveryReview";
 import type { QueuedMessage, Session } from "../../sessions/model/session";
 import { isRemoteProjectPath } from "../../projects/model/recents";
+import { hostSessionBinding } from "./sessionExecutionBinding";
 import { loadRemoteCapabilities } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { RemoteMachine } from "./protocol";
@@ -209,6 +210,7 @@ const stateKeyOf = (session: Session): string =>
   `${session.busy ? 1 : 0}${session.continuingElsewhere ? 1 : 0}${session.adoptedSyncConflict ? 1 : 0}`;
 /** Sessions that never take part in shared queues. */
 const queueEligible = (session: Session): boolean =>
+  !hostSessionBinding(session) &&
   !session.inboxAsk &&
   !session.worktreeRemoved &&
   !isRemoteProjectPath(session.cwd) &&

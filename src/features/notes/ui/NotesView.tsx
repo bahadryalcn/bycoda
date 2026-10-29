@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -96,6 +97,7 @@ import {
 import { openReplacePanel } from "../../files/editor/editorSearch";
 import { NoteMarkdownEditor, NoteMarkdownToolbar } from "./NoteMarkdownEditor";
 import { NoteEditablePreview } from "./NoteEditablePreview";
+import { NoteSaveStatus } from "./NoteSaveStatus";
 import { NoteEditorPane } from "./NoteEditorPane";
 import {
   filterNoteLibrary,
@@ -474,6 +476,13 @@ export function NotesView({
     setProjectFilter(null);
     setTagFilter(null);
   };
+  // The trigger counts and resets the project/tag scope; the search box and the
+  // group/sort options keep their own controls.
+  const scopeFilterCount = (projectFilter !== null ? 1 : 0) + (tagFilter !== null ? 1 : 0);
+  const clearScopeFilters = () => {
+    setProjectFilter(null);
+    setTagFilter(null);
+  };
   const filtered = Boolean(query.trim() || projectFilter !== null || tagFilter !== null);
 
   const recovery = selectedId ? drafts.get(selectedId) : null;
@@ -624,50 +633,16 @@ export function NotesView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-stroke"
+      className="note-library-sidebar relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
     >
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center justify-between gap-2 px-3 py-1">
-        <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)" aria-live="polite">
+      <div className="flex min-h-9 shrink-0 items-center gap-1 px-2 pt-1">
+        <span className="min-w-0 flex-1 truncate ps-1 text-ui-caption tabular-nums text-(--ui-text-secondary)" aria-live="polite">
           {filtered ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length }) : t("{p0} notes", { p0: notes.length })}
         </span>
-        <Button variant="secondary" loading={creating} onClick={() => void onCreate()} startIcon={<Plus className="icon-sm" />}>
-          {t("New note")}
-        </Button>
-      </div>
-      <div className="flex h-10 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
-        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
-          <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
-          <SearchInput focusOwner="group" value={query} onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter notes")} aria-label={t("Filter notes")} aria-busy={searchingBody} spellCheck={false} autoComplete="off" />
-          {searchingBody ? <span role="status" aria-label={t("Searching note content…")}><WorkingIndicator size="xs" /></span> : null}
-        </SearchInputGroup>
-        <Button
-          iconOnly
-          label={t("Filters and options")}
-          variant="ghost"
-          size="sm"
-          selected={projectFilter !== null || tagFilter !== null}
-          ref={filtersButton}
-          type="button"
-          title={t("Filters and options")}
-          aria-label={t("Filters and options")}
-          aria-haspopup="dialog"
-          aria-expanded={filtersOpen}
-          onClick={(event) => {
-            event.currentTarget.focus();
-            setFiltersOpen((open) => !open);
-          }}
-          className="shrink-0"
-          data-active={projectFilter !== null || tagFilter !== null || undefined}
-        >
-          <SlidersHorizontal className="size-3.5" strokeWidth={1.75} />
-          {projectFilter !== null || tagFilter !== null ? (
-            <span className="note-filter-dot" />
-          ) : null}
-        </Button>
         <Button
           ref={selectionButton}
           variant="ghost"
+          size="sm"
           label={t("Select notes")}
           selected={selectionMode}
           aria-pressed={selectionMode}
@@ -679,7 +654,34 @@ export function NotesView({
         >
           <Check className="icon-sm" />{t("Select notes")}
         </Button>
-
+        <Button variant="secondary" size="sm" loading={creating} onClick={() => void onCreate()} startIcon={<Plus className="icon-sm" />}>
+          {t("New note")}
+        </Button>
+      </div>
+      <div className="flex shrink-0 items-center gap-1 px-2 py-1">
+        <SearchInputGroup appearance="field" className="min-w-0 flex-1">
+          <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
+          <SearchInput focusOwner="group" value={query} onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("Filter notes")} aria-label={t("Filter notes")} aria-busy={searchingBody} spellCheck={false} autoComplete="off" />
+          {searchingBody ? <span role="status" aria-label={t("Searching note content…")}><WorkingIndicator size="xs" /></span> : null}
+        </SearchInputGroup>
+        <FilterTrigger
+          label={t("Filters and options")}
+          icon={<SlidersHorizontal className="icon-sm" />}
+          activeCount={scopeFilterCount}
+          onReset={clearScopeFilters}
+          resetLabel={t("Reset project and tag filters")}
+          size="sm"
+          ref={filtersButton}
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={filtersOpen}
+          onClick={(event) => {
+            event.currentTarget.focus();
+            setFiltersOpen((open) => !open);
+          }}
+          className="shrink-0"
+        />
       </div>
       {filtersOpen ? (
         <Popover
@@ -689,7 +691,13 @@ export function NotesView({
           role="dialog"
           aria-label={t("Filters and options")}
           autoFocus
-          onDismiss={() => setFiltersOpen(false)}
+          flow="scroll"
+          onDismiss={(reason) => {
+            setFiltersOpen(false);
+            // The shared trigger re-renders with its count while a filter changes, so
+            // return focus to the current trigger instead of the one that opened this.
+            if (reason === "escape") filtersButton.current?.focus();
+          }}
           className="note-filters-popover"
         >
           <div className="note-library-controls">
@@ -792,7 +800,7 @@ export function NotesView({
             disabled={checkedIds.size === 0 || bulkDeleting}
             onClick={() => setDeleteTargets(notes.filter((note) => checkedIds.has(note.id)))}
           >
-            <Trash2 className="size-3.5" />
+            <Trash2 className="icon-sm" />
             {t("Delete selected")}
           </Button>
           <Button
@@ -1010,7 +1018,7 @@ export function NotesView({
         {besideRail ? null : <OverlayNav onBack={onClose} onToggleSidebar={onToggleSidebar} />}
         <ToolHeader>
           <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-            <File className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+            <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
             <span className="min-w-0 truncate text-content">{t("Notes")}</span>
           </div>
         </ToolHeader>
@@ -1231,15 +1239,15 @@ function NoteCard({ note, group, grouping, sort, query, bodyMatches, active, log
       <span className="line-clamp-1 text-ui-caption text-(--ui-text-secondary)">
         {match === "content" ? t("Match in note") : note.preview || t("No preview")}
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
+      <span className="flex min-w-0 flex-nowrap items-center gap-x-2 overflow-hidden text-ui-micro text-(--ui-text-secondary)">
         {grouping !== "project" && project && note.sourceCwd ? <span className="min-w-0 max-w-full truncate"><NoteProjectMark cwd={note.sourceCwd} logos={logos} mascots={mascots} colors={colors} customColors={customColors} /></span> : null}
         {time ? <time dateTime={new Date(date.timestamp).toISOString()} title={`${t(date.label)}: ${new Date(date.timestamp).toLocaleString()}`} className="shrink-0 tabular-nums">{t(date.label)} {time}</time> : null}
+        {note.tags.length ? <span className="flex min-w-0 items-center gap-1">
+          {note.tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-32 truncate">#{tag}</span>)}
+          {note.tags.length > 2 ? <span>+{note.tags.length - 2}</span> : null}
+        </span> : null}
         {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
       </span>
-      {note.tags.length ? <span className="flex min-w-0 flex-wrap items-center gap-1 text-ui-micro text-(--ui-text-secondary)">
-        {note.tags.slice(0, 2).map((tag) => <span key={tag} className="max-w-32 truncate">#{tag}</span>)}
-        {note.tags.length > 2 ? <span>+{note.tags.length - 2}</span> : null}
-      </span> : null}
     </Button>
   );
 }
@@ -1331,6 +1339,11 @@ function NoteEditor({
     if (narrow && mode === "split" && next !== "split") setNarrowPane(next);
     else setModeState(next);
     if (next !== "split") setToolbarTarget(next);
+    // Entering Split keeps the toolbar on the editor that is already active,
+    // so Bold works without refocusing: an active Document block stays the
+    // target, a Source selection stays on Source.
+    else if (visibleMode === "preview" && previewEditing) setToolbarTarget("preview");
+    else if (visibleMode === "source") setToolbarTarget("source");
   };
   // Narrow panels show one pane without overwriting the retained desktop mode.
   const visibleMode = narrow && mode === "split" ? narrowPane : mode;
@@ -1386,6 +1399,8 @@ function NoteEditor({
   const previewRangeRef = useRef<{ from: number; to: number } | null>(null);
   const [previewEditing, setPreviewEditing] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
+  // While the delete question is open, Escape answers it instead of closing the menu.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const actionsButton = useRef<HTMLButtonElement>(null);
   const [toolbarTarget, setToolbarTarget] = useState<"source" | "preview">("source");
   const toolbarTargetRef = useRef(toolbarTarget);
@@ -1753,7 +1768,8 @@ function NoteEditor({
         cwd={sourceCwd ?? undefined}
         contentVersion={body}
       >
-        <header className="flex min-w-0 shrink-0 flex-col gap-2">
+        <header className="note-detail-header">
+          <div className="note-detail-titlerow">
           <TextField
             label={t("Note title")}
             error={titleError}
@@ -1776,35 +1792,8 @@ function NoteEditor({
             fieldClassName="note-detail-title"
             placeholder={t("Untitled")}
           />
-          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-ui-caption text-(--ui-text-secondary)">
-            <div className="flex min-w-0 items-center gap-1" aria-label={t("Note project")}>
-            <SearchableProjectPicker
-              cwd={sourceCwd ?? "~"}
-              recents={recents}
-              mode="move"
-              railCwd={activeCwd}
-              buttonClassName="px-1.5"
-              onSelectProject={(path) => {
-                const change = { path };
-                projectChangeRef.current = change;
-                setProjectChange(change);
-                void saveNow();
-              }}
-            />            </div>
-            <div className="min-w-0 flex-1 basis-40">
-            <NoteTagsEditor
-              tags={tags}
-              onChange={(next) => {
-                editNote({ tags: next });
-                scheduleSave();
-              }}
-            />            </div>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <span role="status" className="min-w-0 text-ui-caption text-(--ui-text-secondary)">
-              {deleting ? t("Deleting…") : saveError ? t("Save failed") : titleError ? t("Title needs attention") : recovering ? t("Saving recovery copy…") : saving || saveAction ? t("Saving…") : dirty ? t("Unsaved changes") : t("Saved")}
-            </span>
-            <span className="mr-auto text-ui-micro text-(--ui-text-secondary)"><NoteWordCount body={body} /></span>
+          <div className="note-detail-actions">
+            <NoteSaveStatus state={deleting ? "deleting" : saveError ? "failed" : titleError ? "attention" : recovering ? "recovering" : saving || saveAction ? "saving" : dirty ? "unsaved" : "saved"} />
             <Button
               variant={dirty || saveError ? "secondary" : "ghost"}
               size="sm"
@@ -1820,7 +1809,7 @@ function NoteEditor({
             <Button variant="ghost" iconOnly label={t("Note actions")} ref={actionsButton} disabled={deleting} aria-haspopup="dialog" aria-expanded={actionsOpen} onClick={() => setActionsOpen((open) => !open)}>
               <MoreHorizontal className="icon-sm" />
             </Button>
-            {actionsOpen ? <Popover anchor={actionsButton} align="end" width={320} role="dialog" aria-label={t("Note actions")} onDismiss={deleting ? undefined : () => setActionsOpen(false)} autoFocus className="p-3">
+            {actionsOpen ? <Popover anchor={actionsButton} align="end" width={320} role="dialog" aria-label={t("Note actions")} onDismiss={deleting ? undefined : () => setActionsOpen(false)} dismissOnEscape={!confirmingDelete} autoFocus className="p-3">
               <div className="flex min-w-0 flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
                 <span className="wrap-anywhere">{note.title}</span>
                 {note.slug ? <span className="wrap-anywhere">{t("Note")}: {note.slug}</span> : null}
@@ -1831,9 +1820,10 @@ function NoteEditor({
               <ConfirmMorph
                 disabled={deleting}
                 label={t("Delete")}
-                icon={<Trash2 className="size-3.5" />}
+                icon={<Trash2 className="icon-sm" />}
                 prompt={t("Delete note permanently?")}
                 confirmTimeout={0}
+                onStateChange={(state) => setConfirmingDelete(state === "confirming")}
                 onConfirm={async () => {
                   setDeleting(true);
                   skipSave.current = true;
@@ -1854,6 +1844,34 @@ function NoteEditor({
             </span>
               </div>
             </Popover> : null}
+          </div>
+          </div>
+          <div className="note-detail-meta">
+            <div className="flex min-w-0 items-center gap-1" aria-label={t("Note project")}>
+              <SearchableProjectPicker
+                cwd={sourceCwd ?? "~"}
+                recents={recents}
+                mode="move"
+                railCwd={activeCwd}
+                buttonClassName="px-1.5"
+                onSelectProject={(path) => {
+                  const change = { path };
+                  projectChangeRef.current = change;
+                  setProjectChange(change);
+                  void saveNow();
+                }}
+              />
+            </div>
+            <div className="note-detail-tags">
+              <NoteTagsEditor
+                tags={tags}
+                onChange={(next) => {
+                  editNote({ tags: next });
+                  scheduleSave();
+                }}
+              />
+            </div>
+            <span className="note-detail-words"><NoteWordCount body={body} /></span>
           </div>
           {saveError ? (
             <Alert tone="danger" className="note-detail-error">
@@ -1911,7 +1929,7 @@ function NoteEditor({
             </Alert>
           ) : null}
         </header>
-        <div className="note-editor-toolbar flex flex-wrap items-center gap-x-4 border-b border-stroke">
+        <div className="note-editor-toolbar">
           <div
             role="tablist"
             aria-label={t("Note sections")}
@@ -1932,7 +1950,7 @@ function NoteEditor({
               tabs[next]?.focus();
               tabs[next]?.click();
             }}
-            className="flex shrink-0 items-stretch gap-4"
+            className="note-mode-switch"
           >
             <NoteDetailTab
               id={`${modesId}-preview`}
@@ -1972,10 +1990,10 @@ function NoteEditor({
           aria-labelledby={`${modesId}-${visibleMode}`}
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
-          className={`note-editor-body relative rounded-lg border transition-colors ${
+          className={`note-editor-body relative rounded-(--ui-radius-card) border transition-colors ${
             imageDrag
               ? "border-(--ui-border-accent) bg-(--ui-surface-selected)"
-              : "border-transparent"
+              : "border-(--ui-editor-border)"
           }`}
           onDragOver={(event: ReactDragEvent<HTMLDivElement>) => {
             if (!hasDroppedFiles(event.dataTransfer)) return;
@@ -2001,7 +2019,7 @@ function NoteEditor({
           }}
         >
           {imageDrag && !imageBusy ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-surface-raised) text-ui-caption text-(--ui-text-secondary) backdrop-blur-sm">
+            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-(--ui-radius-card) bg-(--ui-surface-raised) text-ui-caption text-(--ui-text-secondary)">
               {t("Drop images here")}
             </div>
           ) : null}
@@ -2027,7 +2045,7 @@ function NoteEditor({
                 onFocus={() => setToolbarTarget("source")}
               />
             </NoteEditorPane>
-              <NoteEditorPane label={t("Document")} scrollKey={`${note.id}:document`} hidden={visibleMode === "source"} split={visibleMode === "split"}>
+              <NoteEditorPane label={t("Document")} document scrollKey={`${note.id}:document`} hidden={visibleMode === "source"} split={visibleMode === "split"}>
                 <NoteEditablePreview
                   value={body}
                   cwd={sourceCwd}

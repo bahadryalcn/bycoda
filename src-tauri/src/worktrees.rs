@@ -1388,27 +1388,31 @@ pub fn managed_worktree_removal_plan(
         .as_str()
         .ok_or("Workspace ID is required")?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
-    let plan = host.call("workspaces.cleanup.plan", request.clone())?;
-    let token = plan["token"]
-        .as_str()
-        .ok_or("Host returned no cleanup preview token")?;
-    let path = Path::new(
-        plan["path"]
+    host.project("workspaces.cleanup.plan", request.clone(), |plan, projection| {
+        let token = plan["token"]
             .as_str()
-            .ok_or("Host returned no cleanup path")?,
-    );
-    crate::worktree_lifecycle::validate_removal_path(path)?;
-    if plan["workspaceId"] != workspace_id
-        || plan["expectedRevision"] != request["expectedRevision"]
-    {
-        return Err("Workspace cleanup identity or revision changed; preview again".into());
-    }
-    managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
-    let raw = serde_json::to_string(&plan).map_err(|e| e.to_string())?;
-    store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
+            .ok_or("Host returned no cleanup preview token")?;
+        let path = Path::new(
+            plan["path"]
+                .as_str()
+                .ok_or("Host returned no cleanup path")?,
+        );
+        crate::worktree_lifecycle::validate_removal_path(path)?;
+        if plan["workspaceId"] != workspace_id
+            || plan["expectedRevision"] != request["expectedRevision"]
+        {
+            return Err("Workspace cleanup identity or revision changed; preview again".into());
+        }
+        managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
+        let raw = serde_json::to_string(plan).map_err(|e| e.to_string())?;
+        crate::remote::NativeProjection::commit(&[projection], || {
+            store.lock_conn()?.execute("INSERT INTO native_cleanup_plans(token,workspace_id,plan_json) VALUES(?1,?2,?3)
         ON CONFLICT(token) DO UPDATE SET plan_json=excluded.plan_json WHERE native_cleanup_plans.workspace_id=excluded.workspace_id",
-        rusqlite::params![token,workspace_id,raw]).map_err(|e|e.to_string())?;
-    Ok(plan)
+            rusqlite::params![token,workspace_id,raw]).map_err(|e|e.to_string())?;
+            Ok(())
+        })?;
+        Ok(plan.clone())
+    })
 }
 
 #[tauri::command(async)]
@@ -1446,29 +1450,33 @@ pub fn managed_worktree_removal_apply(
     managed_cleanup_local_check(&store, &terminals, &agents, workspace_id, path)?;
     let host = crate::remote::NativeWorkspaceTransport::connect(&app, "workspaces.lifecycle.v1")?;
     // No native force-removal fallback. An unknown response remains the same Host operation.
-    let receipt = host.call("workspaces.cleanup.apply", request.clone())?;
-    if receipt["workspaceId"] != workspace_id
-        || receipt["retainedBranchRef"] != plan["branchRef"]
-        || !receipt["workspaceRevision"]
-            .as_i64()
-            .is_some_and(|revision| revision > 0)
-        || !receipt["operationId"]
-            .as_str()
-            .is_some_and(|id| !id.is_empty())
-        || !matches!(
-            receipt["directoryState"].as_str(),
-            Some("present" | "pendingRemoval" | "removing" | "removed" | "blocked")
-        )
-    {
-        return Err(
-            "Host returned a different cleanup receipt; reconnect and inspect status".into(),
-        );
-    }
-    if receipt["directoryState"] == "removed" {
-        store.lock_conn()?.execute("UPDATE sessions SET worktree_removed=1,workspace_revision=?2,provider_session_id=NULL,context_used=NULL,context_window=NULL WHERE workspace_id=?1",
+    host.project("workspaces.cleanup.apply", request.clone(), |receipt, projection| {
+        if receipt["workspaceId"] != workspace_id
+            || receipt["retainedBranchRef"] != plan["branchRef"]
+            || !receipt["workspaceRevision"]
+                .as_i64()
+                .is_some_and(|revision| revision > 0)
+            || !receipt["operationId"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty())
+            || !matches!(
+                receipt["directoryState"].as_str(),
+                Some("present" | "pendingRemoval" | "removing" | "removed" | "blocked")
+            )
+        {
+            return Err(
+                "Host returned a different cleanup receipt; reconnect and inspect status".into(),
+            );
+        }
+        if receipt["directoryState"] == "removed" {
+            crate::remote::NativeProjection::commit(&[projection], || {
+                store.lock_conn()?.execute("UPDATE sessions SET worktree_removed=1,workspace_revision=?2,provider_session_id=NULL,context_used=NULL,context_window=NULL WHERE workspace_id=?1",
             rusqlite::params![workspace_id,receipt["workspaceRevision"].as_i64()]).map_err(|e|e.to_string())?;
-    }
-    Ok(receipt)
+                Ok(())
+            })?;
+        }
+        Ok(receipt.clone())
+    })
 }
 
 #[tauri::command(async)]

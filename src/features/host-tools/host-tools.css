@@ -23,32 +23,66 @@
 .host-tools-docked .host-tools-section {
   block-size: 100%;
 }
+/* Chrome: tool navigation row, then one stable context header
+   (computer/target + workspace), then the stage. 28px controls, 4px gaps. */
 .host-tools-topbar {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
-  padding: 3px 6px;
+  padding: 2px 4px;
   flex: none;
-  min-block-size: var(--ui-control-height-compact);
-  border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface);
+  min-block-size: 2rem;
+  background: var(--ui-surface-panel);
 }
-.host-tools-context {
+.host-tools-nav {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  gap: 2px;
+  min-inline-size: 0;
+  overflow: hidden;
+}
+.host-tools-nav-tab {
+  flex: 0 1 auto;
+  min-inline-size: 0;
+  gap: 6px;
+}
+/* Wide panes show the tab strip; narrow panes show one named selector instead
+   (the owner's "visible tabs when wide, a menu when narrow" decision). */
+.host-tools-compact-selector {
+  display: flex;
+  flex: 1 1 0;
+  min-inline-size: 0;
+}
+.host-tools-compact-trigger {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  gap: 6px;
+}
+.host-tools-nav {
+  display: none;
+}
+@container (min-width: 36rem) {
+  .host-tools-nav {
+    display: flex;
+  }
+  .host-tools-compact-selector {
+    display: none;
+  }
+}
+.host-tools-current-tool {
   flex: 1;
+  display: block;
   min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--ui-font-caption);
-  color: var(--ui-text-secondary);
+  padding-inline: 8px;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
 }
-.host-tools-tool-picker {
-  margin-inline-start: auto;
-  max-inline-size: 50%;
-  flex: none;
-}
-.host-tools-current-tool {
+.host-tools-nav-label {
   display: block;
   min-inline-size: 0;
   overflow: hidden;
@@ -59,6 +93,7 @@
   flex: none;
   margin-inline-start: 0;
 }
+/* Stage: the active tool fills what is left under the chrome and scrolls itself. */
 .host-tools-content-devices,
 .host-tools-content-browser {
   display: flex;
@@ -100,59 +135,44 @@
   display: flex;
   flex-direction: column;
 }
-.host-tools-machine {
-  display: grid;
-  grid-template-columns: [full-start] minmax(0, 1fr) [content-start] min(
-      100%,
-      var(--host-tool-content)
-    ) [content-end] minmax(0, 1fr) [full-end];
-  gap: 6px 0;
-  padding: 10px var(--host-tool-gutter);
-  border-block-end: 1px solid var(--color-stroke);
-  background: var(--ui-surface-raised);
-}
-.host-tools-machine > * {
-  grid-column: content;
-  min-inline-size: 0;
-}
-.host-tools-topbar .host-tools-machine {
-  flex: 1 1 0;
-  grid-template-columns: [content-start] minmax(0, 1fr) [content-end];
-  min-inline-size: 0;
-  padding: 0;
-  border: 0;
-  background: none;
-}
-.host-tools-topbar .host-tools-machine-toolbar {
-  gap: 2px;
-  flex-wrap: nowrap;
-}
-.host-tools-topbar .host-tools-machine-field {
-  min-inline-size: 0;
-  flex: 1 1 0;
-}
-.host-tools-topbar .host-tools-machine-field > span {
-  display: none;
-}
-.host-tools-topbar .host-tools-machine-field > div {
-  flex-basis: 0;
-}
-.host-tools-machine .host-tools-machine-field {
+/* Context (computer + workspace) lives in the tab row's trailing slot. */
+.host-tools-contextbar {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
   align-items: center;
   gap: 8px;
-  flex: 0 1 450px;
+  min-inline-size: 0;
+  max-inline-size: 60%;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
 }
-.host-tools-machine-field > span {
-  white-space: nowrap;
+@container (max-width: 52rem) {
+  .host-tools-contextbar .host-tools-context {
+    display: none;
+  }
 }
-.host-tools-machine-field > div {
-  flex: 1 1 200px;
+.host-tools-contextbar > .host-tools-machine {
+  display: block;
   min-inline-size: 0;
 }
-.host-tools-machine-toolbar {
+.host-tools-machine .host-tools-machine-toolbar {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
+  gap: 2px;
+}
+.host-tools-machine .host-tools-machine-field {
+  display: block;
+  min-inline-size: 0;
+  flex: 1 1 0;
+  max-inline-size: 14rem;
+}
+.host-tools-machine .host-tools-machine-field > span {
+  display: none;
+}
+.host-tools-machine .host-tools-machine-field > div {
+  flex-basis: 0;
+  min-inline-size: 0;
 }
 .host-tool-intro {
   display: grid;
@@ -340,18 +360,6 @@
   --host-tool-content: 100%;
   --host-tool-gutter: clamp(12px, 1.2cqi, 20px);
 }
-.host-tools-content-browser .host-tools-machine-toolbar {
-  flex-wrap: nowrap;
-}
-.host-tools-content-browser .host-tools-machine-field {
-  flex: 1;
-}
-.host-tools-content-browser .host-tools-machine-field > span {
-  display: none;
-}
-.host-tools-content-browser .host-tools-machine-field > div {
-  flex-basis: 0;
-}
 .host-browser-panel {
   container: host-browser / inline-size;
   gap: 12px 0;
@@ -531,4 +539,26 @@
   .host-browser-disclosure summary:hover {
     color: var(--color-content);
   }
+}
+/* Host and workspace context read as one quiet inline line: icon, then name. */
+.host-tools-host,
+.host-tools-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.host-tools-context {
+  margin-inline-start: auto;
+}
+.host-tools-host-name,
+.host-tools-context-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--color-content);
+}
+.host-tools-host-role {
+  color: var(--ui-text-secondary);
 }

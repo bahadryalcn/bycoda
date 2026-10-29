@@ -1,4 +1,10 @@
-import { runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, captureNativeOutputWork, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  runNativeOutputWork,
+  nativeOutputSink,
+  retainNativeOutputEventOrigin,
+  captureNativeOutputWork,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
@@ -48,12 +54,19 @@ function clearBackgroundInputs(live: Live): void {
   for (const entry of live.background.values()) retireBackgroundInput(entry.output);
   live.background.clear();
 }
-async function readBackgroundInput<T>(entry: RetainedBackgroundDispatch, read: () => Promise<T>): Promise<T> {
+async function readBackgroundInput<T>(
+  entry: RetainedBackgroundDispatch,
+  read: () => Promise<T>,
+): Promise<T> {
   const input = entry.output;
   if (input.retired) throw new Error("Hermes background input retired");
   input.active++;
-  try { return await nativeOutputSink(input.work, read)(); }
-  finally { input.active--; if (input.retired && !input.active) input.work?.fail("hermes-background-retired"); }
+  try {
+    return await nativeOutputSink(input.work, read)();
+  } finally {
+    input.active--;
+    if (input.retired && !input.active) input.work?.fail("hermes-background-retired");
+  }
 }
 type Live = {
   subagents: AcpSubagents;
@@ -371,54 +384,66 @@ async function applyRuntimeMode(
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
-const responseScope: { work: NativeOutputWork | null } = { work: null };
-const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
-try {
-
+  const responseScope: { work: NativeOutputWork | null } = { work: null };
+  const emitNative = (event: HarnessEvent) =>
+    nativeOutputSink(responseScope.work, () => live.onEvent(event))();
   try {
-    let blocks = hermesPromptBlocks(input.text, input.attachments);
-    if (blocks.length === 0) return;
-    let accepted = false;
-    for (;;) {
-      const response = live.acp.request("session/prompt", { sessionId: live.acpSessionId, prompt: blocks }, PROMPT_TIMEOUT_MS, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
-      if (!accepted) {
-        accepted = true;
-        input.onAccepted?.();
+    try {
+      let blocks = hermesPromptBlocks(input.text, input.attachments);
+      if (blocks.length === 0) return;
+      let accepted = false;
+      for (;;) {
+        const response = live.acp.request(
+          "session/prompt",
+          { sessionId: live.acpSessionId, prompt: blocks },
+          PROMPT_TIMEOUT_MS,
+          (value, work) => {
+            responseScope.work?.finish();
+            responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
+            return value;
+          },
+        );
+        if (!accepted) {
+          accepted = true;
+          input.onAccepted?.();
+        }
+        const result = await response;
+        if (live.cancelled) return;
+        // Close this assistant bubble without ending Bycoda's busy turn. A
+        // background handoff opens a fresh assistant bubble after it arrives.
+        emitNative({ type: "message.completed" });
+        emitNative({ type: "reasoning.completed" });
+        if (reportAcpStopReason(result, emitNative)) return;
+
+        const finished = await nativeOutputSink(responseScope.work, waitForBackground)(live);
+        if (live.cancelled || finished.length === 0) {
+          for (const entry of finished) retireBackgroundInput(entry.output);
+          return;
+        }
+        try {
+          nativeOutputSink(responseScope.work, settleBackgroundRows)(live, finished);
+          blocks = hermesPromptBlocks(
+            await nativeOutputSink(responseScope.work, backgroundHandoff)(finished),
+          );
+        } catch (error) {
+          for (const entry of finished) retireBackgroundInput(entry.output);
+          throw error;
+        }
       }
-      const result = await response;
+    } catch (error) {
       if (live.cancelled) return;
-      // Close this assistant bubble without ending Bycoda's busy turn. A
-      // background handoff opens a fresh assistant bubble after it arrives.
-      emitNative({ type: "message.completed" });
-      emitNative({ type: "reasoning.completed" });
-      if (reportAcpStopReason(result, emitNative)) return;
-
-      const finished = await nativeOutputSink(responseScope.work, waitForBackground)(live);
-      if (live.cancelled || finished.length === 0) {
-        for (const entry of finished) retireBackgroundInput(entry.output);
-        return;
-      }
-      try {
-        nativeOutputSink(responseScope.work, settleBackgroundRows)(live, finished);
-        blocks = hermesPromptBlocks(await nativeOutputSink(responseScope.work, backgroundHandoff)(finished));
-      } catch (error) {
-        for (const entry of finished) retireBackgroundInput(entry.output);
-        throw error;
-      }
+      const detail = error instanceof Error ? error.message : String(error);
+      emitNative({
+        type: "session.error",
+        message: /auth|credential|api key|provider|configure/i.test(detail)
+          ? `${detail.trim()}\n\n${HERMES_AUTH_HELP}`
+          : detail,
+      });
+      throw error;
     }
-  } catch (error) {
-    if (live.cancelled) return;
-    const detail = error instanceof Error ? error.message : String(error);
-    emitNative({
-      type: "session.error",
-      message: /auth|credential|api key|provider|configure/i.test(detail)
-        ? `${detail.trim()}\n\n${HERMES_AUTH_HELP}`
-        : detail,
-    });
-    throw error;
+  } finally {
+    responseScope.work?.finish();
   }
-
-} finally { responseScope.work?.finish(); }
 }
 
 function handleNotification(live: Live, method: string, params: unknown): void {
@@ -427,9 +452,14 @@ function handleNotification(live: Live, method: string, params: unknown): void {
   if (dispatch) {
     const previous = live.background.get(dispatch.delegationId);
     if (previous) captureNativeOutputWork()?.fail("hermes-background-input-replaced");
-    live.background.set(dispatch.delegationId, { ...dispatch, output: previous?.output ?? {
-      work: captureNativeOutputWork({ additionalInput: true }), active: 0, retired: false,
-    } });
+    live.background.set(dispatch.delegationId, {
+      ...dispatch,
+      output: previous?.output ?? {
+        work: captureNativeOutputWork({ additionalInput: true }),
+        active: 0,
+        retired: false,
+      },
+    });
   }
   const events = eventsFromAcpUpdate(params).map((event) =>
     dispatch && event.type === "tool.updated" && event.callId === dispatch.callId
@@ -442,25 +472,27 @@ function handleNotification(live: Live, method: string, params: unknown): void {
 }
 
 async function waitForBackground(live: Live): Promise<RetainedBackgroundDispatch[]> {
-return runNativeOutputWork(async () => {
-  while (!live.cancelled && live.background.size > 0) {
-    const entries = [...live.background.values()];
-    const states = await Promise.all(
-      entries.map(async (entry) => ({
-        entry,
-        finished: await readBackgroundInput(entry, () => backgroundFinished(entry)),
-      })),
-    );
-    const finished = states.filter((state) => state.finished).map((state) => state.entry);
-    if (finished.length > 0) {
-      for (const entry of finished) live.background.delete(entry.delegationId);
-      return finished;
-    }
-    await delay(BACKGROUND_POLL_MS);
-  }
-  return [];
-
-}, { additionalInput: true });
+  return runNativeOutputWork(
+    async () => {
+      while (!live.cancelled && live.background.size > 0) {
+        const entries = [...live.background.values()];
+        const states = await Promise.all(
+          entries.map(async (entry) => ({
+            entry,
+            finished: await readBackgroundInput(entry, () => backgroundFinished(entry)),
+          })),
+        );
+        const finished = states.filter((state) => state.finished).map((state) => state.entry);
+        if (finished.length > 0) {
+          for (const entry of finished) live.background.delete(entry.delegationId);
+          return finished;
+        }
+        await delay(BACKGROUND_POLL_MS);
+      }
+      return [];
+    },
+    { additionalInput: true },
+  );
 }
 
 async function backgroundFinished(dispatch: HermesBackgroundDispatch): Promise<boolean> {
@@ -506,29 +538,33 @@ function manifestPath(transcript: string): string {
 
 function settleBackgroundRows(live: Live, finished: RetainedBackgroundDispatch[]): void {
   for (const dispatch of finished) {
-    nativeOutputSink(dispatch.output.work, () => live.onEvent({
-      type: "tool.updated",
-      callId: dispatch.callId,
-      kind: "agent",
-      status: "completed",
-    }))();
+    nativeOutputSink(dispatch.output.work, () =>
+      live.onEvent({
+        type: "tool.updated",
+        callId: dispatch.callId,
+        kind: "agent",
+        status: "completed",
+      }),
+    )();
   }
 }
 
 async function backgroundHandoff(finished: RetainedBackgroundDispatch[]): Promise<string> {
   const reports = await Promise.all(
     finished.flatMap((dispatch) =>
-      dispatch.transcripts.map((path) => readBackgroundInput(dispatch, async () => {
-        let tail = "";
-        try {
-          const transcript = await readHarnessTextFile(path);
-          tail = transcript.slice(-TRANSCRIPT_TAIL_CHARS);
-        } catch {
-          // Hermes can still read the path itself if the desktop file bridge
-          // briefly loses a race with the final transcript flush.
-        }
-        return { delegationId: dispatch.delegationId, path, tail };
-      })),
+      dispatch.transcripts.map((path) =>
+        readBackgroundInput(dispatch, async () => {
+          let tail = "";
+          try {
+            const transcript = await readHarnessTextFile(path);
+            tail = transcript.slice(-TRANSCRIPT_TAIL_CHARS);
+          } catch {
+            // Hermes can still read the path itself if the desktop file bridge
+            // briefly loses a race with the final transcript flush.
+          }
+          return { delegationId: dispatch.delegationId, path, tail };
+        }),
+      ),
     ),
   );
   for (const dispatch of finished) dispatch.output.work?.finish();
@@ -550,64 +586,71 @@ async function handleRequest(
   method: string,
   params: unknown,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-  if (method === "session/request_permission") {
-    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
-    return;
-  }
-  await nativeOutputSink(outputWork, () => live.acp
-    .respondError(id, { code: -32601, message: `Method not found: ${method}` }))()
-    .catch(() => undefined);
-
-});
+  return runNativeOutputWork(async (outputWork) => {
+    if (method === "session/request_permission") {
+      await nativeOutputSink(outputWork, handlePermission)(live, id, params);
+      return;
+    }
+    await nativeOutputSink(outputWork, () =>
+      live.acp.respondError(id, { code: -32601, message: `Method not found: ${method}` }),
+    )().catch(() => undefined);
+  });
 }
 
 async function handlePermission(live: Live, id: number, params: unknown): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const request = permissionRequestFromAcp(params);
-  if (request.callId) {
-    emitNative({
-      type: "tool.updated",
-      callId: request.callId,
-      title: request.title,
-      kind: request.kind,
-      preview: request.preview,
-    });
-  }
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const request = permissionRequestFromAcp(params);
+      if (request.callId) {
+        emitNative({
+          type: "tool.updated",
+          callId: request.callId,
+          title: request.title,
+          kind: request.kind,
+          preview: request.preview,
+        });
+      }
 
-  if (live.planning) {
-    const readOnly = request.kind === "read" || request.kind === "search";
-    await nativeOutputSink(outputWork, respondPermission)(
-      live,
-      id,
-      permissionOptionId(readOnly ? "allow" : "deny", request.optionIds),
-    );
-    return;
-  }
+      if (live.planning) {
+        const readOnly = request.kind === "read" || request.kind === "search";
+        await nativeOutputSink(outputWork, respondPermission)(
+          live,
+          id,
+          permissionOptionId(readOnly ? "allow" : "deny", request.optionIds),
+        );
+        return;
+      }
 
-  const automatic = pickAutoOption(live.runtimeMode, request.kind, request.optionIds);
-  if (automatic) {
-    await nativeOutputSink(outputWork, respondPermission)(live, id, automatic);
-    return;
-  }
+      const automatic = pickAutoOption(live.runtimeMode, request.kind, request.optionIds);
+      if (automatic) {
+        await nativeOutputSink(outputWork, respondPermission)(live, id, automatic);
+        return;
+      }
 
-  emitNative({
-    type: "approval.requested",
-    requestId: id,
-    title: request.title,
-    kind: request.kind,
-    callId: request.callId,
-    preview: request.preview,
-  });
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(id, resolve);
-  });
-  live.approvals.delete(id);
-  emitNative({ type: "approval.resolved", requestId: id, decision });
-  await nativeOutputSink(outputWork, respondPermission)(live, id, permissionOptionId(decision, request.optionIds));
-
-});
+      emitNative({
+        type: "approval.requested",
+        requestId: id,
+        title: request.title,
+        kind: request.kind,
+        callId: request.callId,
+        preview: request.preview,
+      });
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        live.approvals.set(id, resolve);
+      });
+      live.approvals.delete(id);
+      emitNative({ type: "approval.resolved", requestId: id, decision });
+      await nativeOutputSink(outputWork, respondPermission)(
+        live,
+        id,
+        permissionOptionId(decision, request.optionIds),
+      );
+    },
+    { additionalInput: true },
+  );
 }
 
 async function respondPermission(live: Live, id: number, optionId: string): Promise<void> {

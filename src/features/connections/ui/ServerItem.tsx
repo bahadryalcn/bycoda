@@ -64,25 +64,23 @@ export function ServerItem({
   const group = server.metadata.group ?? "";
   const tags = server.metadata.tags;
   const groupTags = [group, ...tags].filter(Boolean).join(" · ");
+  // Kind (machine vs plain SSH endpoint) is identity and always shows in the same
+  // place; the status slot only ever carries live connection state.
+  const kind = server.machine ? "Host" : "SSH";
   const status = server.machine ? (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="text-xs text-(--ui-text-muted)">Host</span>
-      <MachineStatus machine={server.machine} compact={!cards} />
-    </span>
-  ) : (
-    <span className="text-xs text-(--ui-text-muted)">SSH</span>
-  );
+    <MachineStatus machine={server.machine} compact={!cards} />
+  ) : null;
   const favorite = server.metadata.favorite ? (
     <Star aria-label={t("Favorite")} className="icon-xs shrink-0 text-(--ui-text-muted)" />
   ) : null;
-  // Color is a stripe on the leading edge of a row or the top edge of a card. No color keeps the same space.
-  const accentBar = (
+  // The group color is a small identity dot beside the name, not an edge stripe.
+  const accentDot = accent ? (
     <span
       aria-hidden
-      className={cards ? "block h-1 w-full shrink-0" : "w-0.5 shrink-0 self-stretch"}
-      style={accent ? { background: accent } : undefined}
+      className="size-2 shrink-0 rounded-full"
+      style={{ background: accent }}
     />
-  );
+  ) : null;
 
   const onContextMenu = (event: MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -113,7 +111,7 @@ export function ServerItem({
     <li
       className={
         cards
-          ? "server-card min-w-0 overflow-hidden rounded-lg border border-stroke"
+          ? "server-card min-w-0 overflow-hidden rounded-lg border border-stroke bg-(--ui-surface)"
           : "server-list-row"
       }
       data-checked={checked || undefined}
@@ -145,8 +143,8 @@ export function ServerItem({
           }
           className={
             cards
-              ? "server-identity h-auto min-w-0 basis-full flex-1 flex-col items-stretch gap-0 p-0 text-left"
-              : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-2 text-left"
+              ? "server-identity h-auto min-w-0 basis-48 flex-1 flex-col items-stretch gap-0 p-0 text-left"
+              : "server-identity h-auto min-w-0 flex-1 items-center gap-3 px-2 py-1 text-left"
           }
           onPointerDown={(event) => {
             cancelPress();
@@ -193,19 +191,20 @@ export function ServerItem({
         >
           {cards ? (
             <>
-              {accentBar}
               <span className="flex min-w-0 flex-col gap-2 p-3">
                 <span className="flex min-w-0 items-center gap-2">
-                  <Server aria-hidden className="icon-md shrink-0 text-(--ui-text-muted)" />
+                  <Server aria-hidden className="icon-sm shrink-0 text-(--ui-text-muted)" />
                   <span title={server.name} className="min-w-0 flex-1 truncate font-medium">
                     {server.name}
                   </span>
+                  {accentDot}
                   {favorite}
                 </span>
                 <span
                   title={address}
-                  className={`text-xs text-(--ui-text-muted) ${selected ? "break-all whitespace-normal" : "truncate"}`}
+                  className={`text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
                 >
+                  <span className="text-(--ui-text-muted)">{kind} · </span>
                   {address}
                 </span>
                 <span className="flex min-w-0 items-center justify-between gap-2">
@@ -220,28 +219,27 @@ export function ServerItem({
                       <Badge size="sm">+{tags.length - MAX_CARD_TAGS}</Badge>
                     ) : null}
                   </span>
-                  <span className="flex shrink-0 items-center">{status}</span>
+                  {status ? <span className="flex shrink-0 items-center">{status}</span> : null}
                 </span>
               </span>
             </>
           ) : (
             <>
-              {accentBar}
               <span className="min-w-0 flex-1">
-                <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
-                  {server.name}
+                <span className="flex min-w-0 items-center gap-2">
+                  <span title={server.name} className="block min-w-0 truncate text-sm font-medium">
+                    {server.name}
+                  </span>
+                  {accentDot}
                 </span>
                 <span
-                  title={address}
+                  title={groupTags ? `${address} · ${groupTags}` : address}
                   className={`block min-w-0 flex-1 text-xs text-(--ui-text-secondary) ${selected ? "break-all whitespace-normal" : "truncate"}`}
                 >
+                  <span className="text-(--ui-text-muted)">{kind} · </span>
                   {address}
+                  {groupTags ? <span className="text-(--ui-text-muted)"> · {groupTags}</span> : null}
                 </span>
-                {groupTags ? (
-                  <span title={groupTags} className="block truncate text-xs text-(--ui-text-muted)">
-                    {groupTags}
-                  </span>
-                ) : null}
               </span>
               <span className="server-row-status flex shrink-0 items-center gap-2">
                 {favorite}

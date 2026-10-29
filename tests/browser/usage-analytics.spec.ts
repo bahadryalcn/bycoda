@@ -27,7 +27,8 @@ test("keeps primary usage visible before optional detail at narrow widths", asyn
       await page.setViewportSize({ width, height: 900 });
       await expect(page.locator(".usage-metrics > div")).toHaveCount(3);
       const trend = page.locator('[data-usage-chart="trend"]');
-      expect((await trend.boundingBox())!.y).toBeLessThan(500);
+      // The trend starts inside the first screen (two thirds of the height) under the KPI stack.
+      expect((await trend.boundingBox())!.y).toBeLessThan(600);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );
@@ -154,7 +155,10 @@ test("uses the full settings width, distinguishes views and follows configured a
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/usage-budgets.html?page=1&analytics=1");
   await expect(page.locator(".usage-analytics")).toHaveAttribute("aria-busy", "false");
-  expect((await page.locator(".usage-analytics").boundingBox())!.width).toBeGreaterThan(1800);
+  // Usage is a wide Settings page: the 64rem column (960px of content), not the 52rem reading column.
+  const analyticsWidth = (await page.locator(".usage-analytics").boundingBox())!.width;
+  expect(analyticsWidth).toBeGreaterThan(900);
+  expect(analyticsWidth).toBeLessThanOrEqual(1024);
   const colors = () =>
     page
       .locator('[data-usage-chart="trend"]')

@@ -49,7 +49,9 @@ export function CreateWorktreeDialog({
     () => [
       {
         value: "HEAD",
-        label: t("Current commit{p0}", { p0: branches?.current ? ` (${branches.current})` : "" }),
+        label: t("Current commit{p0}", {
+          p0: branches?.current ? ` (${branches.current})` : "",
+        }),
         keywords: "HEAD current commit",
       },
       ...(branches?.branches ?? []).map((branch) => {
@@ -83,82 +85,75 @@ export function CreateWorktreeDialog({
           {prettyCwd(cwd)}
           {t(". Existing uncommitted changes stay in their current working copy.")}
         </p>
-        <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
-          <span>{t("Branch")}</span>
+        <SearchableSelect
+          label={t("Branch type")}
+          visibleLabel
+          disabled={busy}
+          value={existing ? "existing" : "new"}
+          options={[
+            {
+              value: "new",
+              get label() {
+                return t("Create a new branch");
+              },
+            },
+            {
+              value: "existing",
+              get label() {
+                return t("Use an existing local branch");
+              },
+            },
+          ]}
+          onChange={(value) => {
+            setExisting(value === "existing");
+            setName("");
+          }}
+          searchPlaceholder="Search options…"
+          layer={LAYER.dialogPopover}
+        />
+        {existing ? (
           <SearchableSelect
-            label={t("Branch type")}
+            label={t("Existing branch")}
+            visibleLabel
+            value={name}
             disabled={busy}
-            value={existing ? "existing" : "new"}
-            options={[
-              {
-                value: "new",
-                get label() {
-                  return t("Create a new branch");
-                },
-              },
-              {
-                value: "existing",
-                get label() {
-                  return t("Use an existing local branch");
-                },
-              },
-            ]}
-            onChange={(value) => {
-              setExisting(value === "existing");
-              setName("");
-            }}
-            searchPlaceholder="Search options…"
+            options={localBranches}
+            loading={branchLoading}
+            loadingLabel={t("Loading branches…")}
+            error={branchError}
+            onChange={setName}
+            placeholder={t("Choose a branch…")}
+            searchPlaceholder="Search local branches…"
+            emptyLabel="No matching local branches"
             layer={LAYER.dialogPopover}
           />
-        </div>
-        <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
-          <span>{existing ? t("Existing branch") : t("New branch name")}</span>
-          {existing ? (
-            <SearchableSelect
-              label={t("Existing branch")}
-              value={name}
-              disabled={busy}
-              options={localBranches}
-              loading={branchLoading}
-              loadingLabel={t("Loading branches…")}
-              error={branchError}
-              onChange={setName}
-              placeholder={t("Choose a branch…")}
-              searchPlaceholder="Search local branches…"
-              emptyLabel="No matching local branches"
-              layer={LAYER.dialogPopover}
-            />
-          ) : (
-            <TextField
-              hideLabel
-              label=""
-              ref={input}
-              aria-label={t("New branch name")}
-              value={name}
-              disabled={busy}
-              placeholder={t("feature/my-task")}
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(e) => setName(e.target.value)}
-            />
-          )}
-        </div>
+        ) : (
+          <TextField
+            label={t("New branch name")}
+            aria-label={t("New branch name")}
+            ref={input}
+            value={name}
+            disabled={busy}
+            placeholder={t("feature/my-task")}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(e) => setName(e.target.value)}
+          />
+        )}
         {!existing && (
-          <div className="flex flex-col gap-1.5 text-[12px] text-[var(--ui-text-secondary)]">
-            <span>{t("Start from")}</span>
-            <SearchableSelect
-              label={t("Start from")}
-              value={base}
-              disabled={busy}
-              options={baseOptions}
-              loading={branchLoading}
-              loadingLabel={t("Loading branches…")}
-              error={branchError}
-              onChange={setBase}
-              searchPlaceholder="Search branches and refs…"
-              layer={LAYER.dialogPopover}
-            />
-          </div>
+          <SearchableSelect
+            label={t("Start from")}
+            visibleLabel
+            value={base}
+            disabled={busy}
+            options={baseOptions}
+            loading={branchLoading}
+            loadingLabel={t("Loading branches…")}
+            error={branchError}
+            onChange={setBase}
+            searchPlaceholder="Search branches and refs…"
+            layer={LAYER.dialogPopover}
+          />
         )}
         {defaultRoot && (
           <p className="break-all text-[11px] text-[var(--ui-text-muted)]">

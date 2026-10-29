@@ -1,3 +1,5 @@
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
+import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import {
   useCallback,
   useRef,
@@ -75,6 +77,9 @@ export function useUsageLimitAccountActions(deps: UsageLimitAccountActionDeps): 
   /** Move one session to another account of its provider, keeping the conversation. */
   const onSwitchSessionAccount = useCallback(
     async (sessionId: string, provider: ProviderAccountProvider, accountId: string) => {
+      const owned = sessionsRef.current.find((session) => session.id === sessionId);
+      if (owned && hostSessionBinding(owned))
+        return remoteSessionActions(sessionId)?.selectAccount?.(provider, accountId) ?? false;
       const request = {};
       accountRequests.current.set(sessionId, request);
       const ownsRequest = () => accountRequests.current.get(sessionId) === request;

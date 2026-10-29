@@ -54,6 +54,15 @@ export function TaskSessionSheet({
       clearTimeout(timer);
     };
   }, [target.machineId, target.sessionId, revision]);
+  // Conversation (what was asked and answered) reads first; operational history
+  // (reasoning, tools, status) is kept behind one disclosure.
+  const visibleBlocks = session?.session.blocks.filter((block) => block.text?.trim()) ?? [];
+  const conversation = visibleBlocks.filter(
+    (block) => block.role === "user" || block.role === "assistant",
+  );
+  const operational = visibleBlocks.filter(
+    (block) => block.role !== "user" && block.role !== "assistant",
+  );
   return (
     <Modal
       placement="end"
@@ -107,26 +116,46 @@ export function TaskSessionSheet({
         {!session && !error ? (
           <LoaderCircle className="icon-md animate-spin" aria-label={t("Loading…")} />
         ) : null}
-        {session?.session.blocks
-          .filter((block) => block.text?.trim())
-          .map((block) => (
-            <section className="task-session-message" key={block.id}>
-              <h3>
-                {t(
-                  block.role === "user"
-                    ? "You"
-                    : block.role === "assistant"
-                      ? "Assistant"
-                      : "Status",
-                )}
-              </h3>
-              <AgentMarkdown text={block.text} />
-            </section>
-          ))}
-        {session && !session.session.blocks.some((block) => block.text?.trim()) ? (
+        {conversation.map((block) => (
+          <section className="task-session-message" data-role={block.role} key={block.id}>
+            <h3>{t(block.role === "user" ? "You" : "Assistant")}</h3>
+            <AgentMarkdown text={block.text} />
+          </section>
+        ))}
+        {operational.length > 0 ? (
+          <details className="task-session-activity">
+            <summary>{t("Activity ({p0})", { p0: operational.length })}</summary>
+            {operational.map((block) => (
+              <section className="task-session-activity-item" key={block.id}>
+                <h3>{t(operationalRoleLabel(block.role))}</h3>
+                <AgentMarkdown text={block.text} />
+              </section>
+            ))}
+          </details>
+        ) : null}
+        {session && visibleBlocks.length === 0 ? (
           <p>{t("No reply yet.")}</p>
         ) : null}
       </div>
     </Modal>
   );
+}
+
+function operationalRoleLabel(role: string): string {
+  switch (role) {
+    case "reasoning":
+      return "Reasoning";
+    case "tool":
+      return "Tool";
+    case "approval":
+      return "Approval";
+    case "plan":
+      return "Plan";
+    case "tasks":
+      return "Tasks";
+    case "handoff":
+      return "Handoff";
+    default:
+      return "Status";
+  }
 }

@@ -5,6 +5,34 @@ description: Platform foundation, repository/package boundaries, CI sharding, in
 
 # Platform foundation
 
+## UI redesign native remainder, 2026-10-29
+
+T2 continuation limited to UI-39/UI-40 and IR-01/IR-02; the canonical register
+and generated TODO remain under `temp/local/2026-10-27-workbench-audit/`.
+`scripts/build/dev-native.mjs --frozen-source` verifies a stable original source
+identity and per-file SHA-256 inventory before/after compilation, without fake
+Git metadata. Its own dependency links, Host build, data, ports and copied native
+executable isolate the run from the active architecture owner's Cargo lane.
+Use pinned `pnpm exec node` and a dedicated leased Cargo cache. Launcher focused
+tests passed 11/11. See the frozen-run paragraph in
+`docs/reference/testing.md` and the actual native preparation/evidence records
+under `temp/local/2026-10-29-redesign-remainder/` and
+`temp/verification/2026-10-29-redesign-remainder/`.
+
+Native integration exposed a concrete lifecycle defect: a real authenticated
+Host `/lifecycle` response with full dirty-source build identity was 52,538 bytes
+(749 dirty paths), while `bundled_host.rs` parsed only 4096 bytes. Native status
+therefore reported unknown despite successful matching Host feature RPCs.
+The source fix reads at most 1 MiB plus one sentinel byte and explicitly rejects
+oversized, truncated or failed reads as unknown, preserving the complete source
+identity. Four focused Rust lifecycle tests passed, including a large dirty
+manifest, exact size boundary, oversized stream, truncated input and read failure.
+The final native verification receipt is tracked separately as
+`native-r8-lifecycle-verification.json`; consult its actual outcome rather than
+treating source tests or earlier development runs as final runtime acceptance.
+All results remain local development evidence, separate from installation,
+publication, physical-device/reader checks and owner design acceptance.
+
 ## Purpose and keywords
 
 Improve the existing repository through explicit code, execution and release

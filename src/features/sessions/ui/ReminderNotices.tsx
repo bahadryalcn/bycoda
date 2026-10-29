@@ -73,26 +73,39 @@ export function ReminderNotices({
         ref={panelRef}
         aria-label={t("Due reminders")}
         style={{ zIndex: LAYER.popover - 1 }}
-        className="fixed top-3 right-3 w-[min(320px,calc(100vw-24px))] overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
+        className="fixed top-3 right-3 flex w-[min(320px,calc(100vw-24px))] flex-col overflow-hidden rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-raised) text-(--ui-tone-neutral-fg) shadow-(--ui-elevation-floating)"
       >
-        <div className="flex items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2.5">
-          <Clock className="size-3.5 text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
-          <span className="flex-1 text-ui-caption font-semibold">{t("Due reminders")}</span>
-          <span role="status" className="text-ui-micro text-(--ui-text-secondary)">
+        <div className="flex min-h-7 items-center gap-2 px-3 pt-2">
+          <Clock className="icon-sm shrink-0 text-(--ui-text-secondary)" aria-hidden />
+          <span className="flex-1 text-ui-caption font-medium text-(--ui-text-secondary)">
+            {t("Due reminders")}
+          </span>
+          <span
+            role="status"
+            className="text-ui-caption tabular-nums text-(--ui-text-secondary)"
+          >
             {reminders.length || ""}
           </span>
         </div>
         {error ? (
-          <Alert tone="danger" role="alert">
-            {t("Couldn’t load reminders.")}{" "}
-            <Button variant="ghost" type="submit" onClick={onRetry}>
-              {t("Retry")}
-            </Button>
-          </Alert>
+          <div className="px-2 pt-1">
+            <Alert
+              inline
+              tone="danger"
+              role="alert"
+              action={
+                <Button variant="secondary" type="submit" onClick={onRetry}>
+                  {t("Retry")}
+                </Button>
+              }
+            >
+              {t("Couldn’t load reminders.")}
+            </Alert>
+          </div>
         ) : null}
-        <div className="max-h-[min(320px,50vh)] overflow-y-auto overscroll-none divide-y divide-stroke">
+        <div className="flex max-h-[min(320px,50vh)] flex-col gap-1 overflow-y-auto overscroll-none p-1">
           {reminders.map((reminder) => (
-            <article key={reminder.sessionId} className="px-3 py-2.5">
+            <article key={reminder.sessionId} className="rounded-(--ui-control-radius) px-2 py-1.5">
               <Button
                 fullWidth
                 variant="item"
@@ -100,23 +113,18 @@ export function ReminderNotices({
                 className="block w-full text-left"
                 onClick={() => onOpen(reminder)}
               >
-                <span className="block truncate text-ui-secondary font-medium hover:underline">
+                <span className="block truncate text-ui-secondary font-medium">
                   {sessionDisplayTitle(reminder.title, reminder.harness)}
                 </span>
                 <span
-                  className="mt-1 block truncate text-ui-micro text-(--ui-text-secondary)"
+                  className="block truncate text-ui-caption text-(--ui-text-secondary)"
                   title={formatReminderTime(reminder.dueAt)}
                 >
                   {projectDisplayName(reminder.cwd)} · {formatReminderTime(reminder.dueAt)}
                 </span>
               </Button>
-              <div className="mt-2 flex items-center gap-1.5 text-ui-micro">
-                <Button
-                  variant="ghost"
-                  type="submit"
-
-                  onClick={() => onOpen(reminder)}
-                >
+              <div className="mt-1 flex items-center gap-1">
+                <Button variant="ghost" type="submit" onClick={() => onOpen(reminder)}>
                   {t("Open session")}
                 </Button>
                 <Button
@@ -124,7 +132,6 @@ export function ReminderNotices({
                   type="submit"
                   aria-haspopup="menu"
                   aria-expanded={snooze?.reminder.sessionId === reminder.sessionId}
-
                   onClick={(event) => {
                     const rect = event.currentTarget.getBoundingClientRect();
                     setSnooze({ reminder, x: rect.left, y: rect.bottom + 4 });

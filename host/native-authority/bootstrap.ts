@@ -11,6 +11,7 @@ import {
   NativeSourceRegistrationSchema,
   NativeSourceReferenceSchema,
   NativeSourceLookupSchema,
+  NativeSourceProjectionScopeSchema,
 } from "./source-registry";
 
 export const NATIVE_AUTHORITY_BOOTSTRAP_PATH = "/native-authority/bootstrap";
@@ -23,6 +24,11 @@ const RequestSchema = z.discriminatedUnion("action", [
   NativeSourceReferenceSchema.extend({
     version: z.literal(1),
     action: z.literal("source-status"),
+  }).strict(),
+  NativeSourceReferenceSchema.extend({
+    version: z.literal(1),
+    action: z.literal("source-projection-observe"),
+    ...NativeSourceProjectionScopeSchema.shape,
   }).strict(),
   NativeSourceReferenceSchema.extend({
     version: z.literal(1),
@@ -121,7 +127,7 @@ export function createNativeAuthorityBootstrap(options: {
       let operationStarted = false;
       let detached = false;
       let bytes = 0;
-      const deadline = performance.now() + timeoutMs;
+      let deadline = performance.now() + timeoutMs;
       const chunks: Buffer[] = [];
       const cleanup = () => {
         if (settled) return false;
@@ -186,6 +192,14 @@ export function createNativeAuthorityBootstrap(options: {
           reject(503);
           return;
         }
+        if (body.action === "source-projection-observe") {
+          // Bound body admission separately from the accepted Native operation.
+          // Detachment keeps the actual registry job and HTTP admission charged.
+          deadline = performance.now() + 35_000;
+          clearTimeout(timer);
+          timer = setTimeout(() => reject(408), 35_000);
+          timer.unref();
+        }
         operationStarted = true;
         let operation: unknown;
         try {
@@ -219,6 +233,19 @@ export function createNativeAuthorityBootstrap(options: {
                 associationId: body.associationId,
                 sourceEpoch: body.sourceEpoch,
               });
+              break;
+            case "source-projection-observe":
+              operation = registry!.observeProjection(
+                {
+                  associationId: body.associationId,
+                  sourceEpoch: body.sourceEpoch,
+                },
+                {
+                  sessionId: body.sessionId,
+                  migrationId: body.migrationId,
+                  generation: body.generation,
+                },
+              );
               break;
             case "unregister-source":
               operation = registry!.unregister({
@@ -264,7 +291,7 @@ export function createNativeAuthorityBootstrap(options: {
         owned.add(done);
         void done.catch(() => {});
       };
-      const timer = setTimeout(() => reject(408), timeoutMs);
+      let timer = setTimeout(() => reject(408), timeoutMs);
       timer.unref();
       pending.add(shutdown);
       request.on("data", data);

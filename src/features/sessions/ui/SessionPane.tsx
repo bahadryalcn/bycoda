@@ -8,6 +8,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -16,7 +17,17 @@ import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
+import { useTitleBarActionsSlot } from "../../../app/shell/TitleBarActionsSlot";
 import { Composer } from "./Composer";
+import {
+  retainParentInput,
+  useParentInputClosure,
+  canMutateParentInputs,
+  mutateParentInput,
+  type ParentInputHandle,
+  type ParentAdmission,
+} from "../data/parentInputClosure";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
 import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
@@ -141,6 +152,7 @@ import {
 import type { SessionFolderTarget } from "../model/sessionFolders";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
 import { RemoteSession } from "../../connections/ui/RemoteSession";
+import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { usePaneSession } from "../model/sessionsStore";
 import { isRemoteProjectPath } from "../../projects/model/recents";
 import type { HostSession } from "../../connections/model/protocol";
@@ -267,7 +279,12 @@ export type SessionPaneProps = {
 type Props = SessionPaneProps & {
   /** The session runtime is on another machine. */
   remoteSession?: boolean;
-  remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
+  remoteFeatures?: {
+    attachments: boolean;
+    plan: boolean;
+    draft: boolean;
+    steer?: boolean;
+  };
   /** An opened host conversation whose transcript has not arrived yet. */
   remoteSessionLoading?: boolean;
   remoteSessionStarted?: boolean;
@@ -364,7 +381,7 @@ export const SessionPane = memo(function SessionPane(props: SessionPaneProps) {
   const live = usePaneSession(props.session.id, props.visible) ?? props.session;
   // Sessions in a project on another machine render this same pane, backed by
   // the host instead of this computer's session runtime.
-  if (isRemoteProjectPath(props.session.cwd))
+  if (hostSessionBinding(props.session) || isRemoteProjectPath(props.session.cwd))
     return (
       <RemoteSession
         shell={props.session}
@@ -404,45 +421,45 @@ const LocalSessionPane = memo(function LocalSessionPane({
   hideProjectPicker,
   onFocus,
   onClose,
-  onCwdChange,
-  onBranchChange,
-  onWorktreeChange,
+  onCwdChange: onCwdChangeProp,
+  onBranchChange: onBranchChangeProp,
+  onWorktreeChange: onWorktreeChangeProp,
   onRefreshAdoptedSession,
-  onWorkspaceModeChange,
-  onWorktreeBaseChange,
+  onWorkspaceModeChange: onWorkspaceModeChangeProp,
+  onWorktreeBaseChange: onWorktreeBaseChangeProp,
   onManageWorktrees,
-  onModelChange,
-  onModelSettingsChange,
-  onRuntimeModeChange,
-  onSaveDraft,
-  onRemoveDraft,
-  onSubmit,
+  onModelChange: onModelChangeProp,
+  onModelSettingsChange: onModelSettingsChangeProp,
+  onRuntimeModeChange: onRuntimeModeChangeProp,
+  onSaveDraft: onSaveDraftProp,
+  onRemoveDraft: onRemoveDraftProp,
+  onSubmit: onSubmitProp,
   onStop,
-  onCompactContext,
-  onNewSession,
-  onPlaceSessionInFolder,
-  onResumeProviderSession,
-  onDeleteQueuedMessage,
-  onEditQueuedMessage,
+  onCompactContext: onCompactContextProp,
+  onNewSession: onNewSessionProp,
+  onPlaceSessionInFolder: onPlaceSessionInFolderProp,
+  onResumeProviderSession: onResumeProviderSessionProp,
+  onDeleteQueuedMessage: onDeleteQueuedMessageProp,
+  onEditQueuedMessage: onEditQueuedMessageProp,
   onQueuedMessageEditingChange,
-  onReorderQueuedMessages,
-  onSteerQueuedMessage,
-  onResumeQueue,
-  onUsageLimitResume,
-  onUsageLimitResumeAtReset,
-  onUsageLimitDismiss,
-  onSelectProviderAccount,
-  onInboxCardDismiss,
+  onReorderQueuedMessages: onReorderQueuedMessagesProp,
+  onSteerQueuedMessage: onSteerQueuedMessageProp,
+  onResumeQueue: onResumeQueueProp,
+  onUsageLimitResume: onUsageLimitResumeProp,
+  onUsageLimitResumeAtReset: onUsageLimitResumeAtResetProp,
+  onUsageLimitDismiss: onUsageLimitDismissProp,
+  onSelectProviderAccount: onSelectProviderAccountProp,
+  onInboxCardDismiss: onInboxCardDismissProp,
   onLinkedWorkItemUpdateCardDismiss,
-  onNoteCardDismiss,
-  onHandoffCardDismiss,
+  onNoteCardDismiss: onNoteCardDismissProp,
+  onHandoffCardDismiss: onHandoffCardDismissProp,
   onOpenLinkedWorkItem,
   onArchiveSession,
   onDeleteSession,
   onApproval,
-  onQuestionReply,
+  onQuestionReply: onQuestionReplyProp,
   questionDraftScope,
-  onQuestionInteraction,
+  onQuestionInteraction: onQuestionInteractionProp,
   onOpenFile,
   onOpenDiff,
   onOpenPlan,
@@ -465,6 +482,96 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onLoadRemoteHistory,
   onLoadRemoteBlock,
 }: Props) {
+  const rootParentRef = useRef<ParentInputHandle | null>(null);
+  const rootMutation = <T,>(operation: () => T, original?: ParentAdmission): T | false => {
+    const owner = rootParentRef.current;
+    if (original) return owner ? owner.continue(original, operation) : false;
+    if (owner) return mutateParentInput(owner, operation);
+    return canMutateParentInputs(session.id) ? operation() : false;
+  };
+  const onSubmit = (...args: Parameters<Props["onSubmit"]>) =>
+    rootMutation(() => onSubmitProp(...args));
+  const onSaveDraft = (...args: Parameters<Props["onSaveDraft"]>) =>
+    rootMutation(() => onSaveDraftProp(...args));
+  const onRemoveDraft = (...args: Parameters<Props["onRemoveDraft"]>) =>
+    rootMutation(() => onRemoveDraftProp(...args));
+  const onModelChange = (...args: Parameters<Props["onModelChange"]>) =>
+    rootMutation(() => onModelChangeProp(...args));
+  const onModelSettingsChange = (...args: Parameters<Props["onModelSettingsChange"]>) =>
+    rootMutation(() => onModelSettingsChangeProp(...args));
+  const onRuntimeModeChange = (...args: Parameters<Props["onRuntimeModeChange"]>) =>
+    rootMutation(() => onRuntimeModeChangeProp(...args));
+  const onCwdChange = (...args: Parameters<Props["onCwdChange"]>) =>
+    rootMutation(() => onCwdChangeProp(...args));
+  const onBranchChange = (...args: Parameters<Props["onBranchChange"]>) =>
+    rootMutation(() => onBranchChangeProp(...args));
+  const onWorkspaceModeChange = (...args: Parameters<Props["onWorkspaceModeChange"]>) =>
+    rootMutation(() => onWorkspaceModeChangeProp(...args));
+  const onWorktreeBaseChange = (...args: Parameters<Props["onWorktreeBaseChange"]>) => {
+    if (!canMutateParentInputs(session.id)) rootParentRef.current?.();
+    return onWorktreeBaseChangeProp(...args);
+  };
+  const onQuestionReply = (...args: Parameters<Props["onQuestionReply"]>) =>
+    rootMutation(() => onQuestionReplyProp(...args));
+  const onCompactContext = (...args: Parameters<Props["onCompactContext"]>) =>
+    rootMutation(() => onCompactContextProp(...args));
+  const onPlaceSessionInFolder = (...args: Parameters<Props["onPlaceSessionInFolder"]>) =>
+    rootMutation(() => onPlaceSessionInFolderProp(...args));
+  const onDeleteQueuedMessage = (...args: Parameters<Props["onDeleteQueuedMessage"]>) =>
+    rootMutation(() => onDeleteQueuedMessageProp(...args));
+  const onEditQueuedMessage = (...args: Parameters<Props["onEditQueuedMessage"]>) =>
+    rootMutation(() => onEditQueuedMessageProp(...args));
+  const onSteerQueuedMessage = (...args: Parameters<Props["onSteerQueuedMessage"]>) =>
+    rootMutation(() => onSteerQueuedMessageProp(...args));
+  const onResumeQueue = (...args: Parameters<Props["onResumeQueue"]>) =>
+    rootMutation(() => onResumeQueueProp(...args));
+  const onUsageLimitResumeAtReset = (...args: Parameters<Props["onUsageLimitResumeAtReset"]>) =>
+    rootMutation(() => onUsageLimitResumeAtResetProp(...args));
+  const onUsageLimitDismiss = (...args: Parameters<Props["onUsageLimitDismiss"]>) =>
+    rootMutation(() => onUsageLimitDismissProp(...args));
+  const onWorktreeChange = onWorktreeChangeProp
+    ? async (...args: Parameters<NonNullable<Props["onWorktreeChange"]>>) => {
+        const result = rootMutation(() => onWorktreeChangeProp(...args));
+        if (result === false) throw new Error("Session input is temporarily closed.");
+        return await result;
+      }
+    : undefined;
+  const onInboxCardDismiss = onInboxCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onInboxCardDismiss"]>>) =>
+        rootMutation(() => onInboxCardDismissProp(...args))
+    : undefined;
+  const onNoteCardDismiss = onNoteCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onNoteCardDismiss"]>>) =>
+        rootMutation(() => onNoteCardDismissProp(...args))
+    : undefined;
+  const onHandoffCardDismiss = onHandoffCardDismissProp
+    ? (...args: Parameters<NonNullable<Props["onHandoffCardDismiss"]>>) =>
+        rootMutation(() => onHandoffCardDismissProp(...args))
+    : undefined;
+  const onQuestionInteraction = onQuestionInteractionProp
+    ? (...args: Parameters<NonNullable<Props["onQuestionInteraction"]>>) =>
+        rootMutation(() => onQuestionInteractionProp(...args))
+    : undefined;
+  const onResumeProviderSession = onResumeProviderSessionProp
+    ? (...args: Parameters<NonNullable<Props["onResumeProviderSession"]>>) =>
+        rootMutation(() => onResumeProviderSessionProp(...args))
+    : undefined;
+  const onReorderQueuedMessages = onReorderQueuedMessagesProp
+    ? (...args: Parameters<NonNullable<Props["onReorderQueuedMessages"]>>) =>
+        rootMutation(() => onReorderQueuedMessagesProp(...args))
+    : undefined;
+  const onUsageLimitResume = onUsageLimitResumeProp
+    ? (...args: Parameters<NonNullable<Props["onUsageLimitResume"]>>) =>
+        rootMutation(() => onUsageLimitResumeProp(...args))
+    : undefined;
+  const onSelectProviderAccount = onSelectProviderAccountProp
+    ? (...args: Parameters<NonNullable<Props["onSelectProviderAccount"]>>) =>
+        rootMutation(() => onSelectProviderAccountProp(...args))
+    : undefined;
+  const onNewSession = onNewSessionProp
+    ? (...args: Parameters<NonNullable<Props["onNewSession"]>>) =>
+        rootMutation(() => onNewSessionProp(...args))
+    : undefined;
   const t = useT();
   const orchestrationRuns = useSyncExternalStore(
     orchestrator.subscribe,
@@ -575,6 +682,19 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const [transcriptScroller, setTranscriptScroller] = useState<HTMLDivElement | null>(null);
   const focusPane = useCallback(() => onFocus(session.id), [onFocus, session.id]);
   const quoteRequestId = useRef(0);
+  const quoteAdmissions = useRef(new Map<number, ParentAdmission>());
+  const pendingPlanAdmission = useRef<{ admission: ParentAdmission; started: boolean } | null>(
+    null,
+  );
+  useLayoutEffect(() => {
+    const quotes = quoteAdmissions.current;
+    return () => {
+      for (const admitted of quotes.values()) admitted.finish();
+      quotes.clear();
+      const pending = pendingPlanAdmission.current;
+      if (pending && !pending.started) pending.admission.finish();
+    };
+  }, []);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
   const [editingLastTurn, setEditingLastTurn] = useState(false);
   const [pendingRewind, setPendingRewind] = useState<{
@@ -584,6 +704,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     recall: LastTurnRecall;
     source: Session;
     authorityGeneration?: number;
+    planAdmission: ParentAdmission;
   } | null>(null);
   const [rewindingMessage, setRewindingMessage] = useState(false);
   const [rewindError, setRewindError] = useState<string | null>(null);
@@ -610,25 +731,43 @@ const LocalSessionPane = memo(function LocalSessionPane({
   }, [session.id]);
   useEffect(() => {
     if (!pendingRewind) return;
+    const admitted = pendingRewind.planAdmission;
+    if (admitted.settled) return;
+    if (pendingPlanAdmission.current?.admission === admitted)
+      pendingPlanAdmission.current.started = true;
     let current = true;
+    const preparation = retainParentInput({
+      kind: "session-parent",
+      sessionId: pendingRewind.sessionId,
+      snapshot: () => ({
+        source: "rewind-file-plan-preparation",
+        blockId: pendingRewind.block.id,
+        action: pendingRewind.action,
+        recall: pendingRewind.recall,
+        authorityGeneration: pendingRewind.authorityGeneration,
+      }),
+    });
     setFilePlan(null);
     setFilePlanLoading(true);
-    void planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id, {
-      authorityGeneration: pendingRewind.authorityGeneration,
-    })
-      .then((plan) => {
-        if (current) setFilePlan(plan);
+    void admitted.run(() =>
+      planSessionFilesRevert(pendingRewind.source, pendingRewind.block.id, {
+        authorityGeneration: pendingRewind.authorityGeneration,
       })
-      .catch((error: unknown) => {
-        if (!current) return;
-        const reason =
-          error instanceof Error ? error.message : t("Session file history is unavailable.");
-        setFilePlan({ files: [], unavailable: reason });
-        setRewindError(reason);
-      })
-      .finally(() => {
-        if (current) setFilePlanLoading(false);
-      });
+        .then((plan) => {
+          if (current && activeSessionIdRef.current === pendingRewind.sessionId) setFilePlan(plan);
+        })
+        .catch((error: unknown) => {
+          if (!current) return;
+          const reason =
+            error instanceof Error ? error.message : t("Session file history is unavailable.");
+          setFilePlan({ files: [], unavailable: reason });
+          setRewindError(reason);
+        })
+        .finally(() => {
+          preparation.release();
+          if (current) setFilePlanLoading(false);
+        }),
+    );
     return () => {
       current = false;
     };
@@ -649,6 +788,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   }, [remote, session.id, session.inboxAsk, session.worktreeRemoved]);
   const [quoteRequest, setQuoteRequest] = useState<QuoteRequest>();
   const btw = useBtwConversation({
+    parentSessionId: session.id,
     available:
       !remote &&
       !isEmpty &&
@@ -738,11 +878,31 @@ const LocalSessionPane = memo(function LocalSessionPane({
     return () => cancelAnimationFrame(frame);
   }, [visible, navigatorReady, jumpRequest, navigateBlock, session.id]);
   const addSelectionToChat = useCallback((text: string, mode?: QuoteRequest["mode"]) => {
+    const admitted = rootParentRef.current?.admit();
+    if (!admitted) return;
+    for (const previous of quoteAdmissions.current.values()) previous.finish();
+    quoteAdmissions.current.clear();
     quoteRequestId.current += 1;
+    quoteAdmissions.current.set(quoteRequestId.current, admitted);
     setQuoteRequest({ id: quoteRequestId.current, text, mode });
   }, []);
   const acknowledgeQuote = useCallback((handledId: number) => {
-    setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
+    const admitted = quoteAdmissions.current.get(handledId);
+    try {
+      if (admitted)
+        admitted.apply(() =>
+          setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId)),
+        );
+      else {
+        rootParentRef.current?.();
+        setQuoteRequest((current) => acknowledgeQuoteRequest(current, handledId));
+      }
+    } catch {
+      /* A replaced owner keeps the original input; never touch its new view. */
+    } finally {
+      admitted?.finish();
+      quoteAdmissions.current.delete(handledId);
+    }
   }, []);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const notesPanelOpen = useSyncExternalStore(subscribeNotesPanel, getNotesPanelOpen, () => false);
@@ -797,11 +957,54 @@ const LocalSessionPane = memo(function LocalSessionPane({
     remoteSessionLoading || (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk));
   const composerDockMotion = useComposerDockMotion(dockComposer);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
+  const parentChanged = useParentInputClosure({
+    kind: "session-parent",
+    sessionId: session.id,
+    snapshot: () => ({
+      draft: draftRef.current,
+      composerSeed: session.composerSeed,
+      inboxCard: session.inboxCard,
+      noteCard: session.noteCard,
+      handoffCard: session.handoffCard,
+      pendingQuestion: session.pendingQuestion,
+      submittedQuestions: session.submittedQuestions,
+      questionDraftScope,
+      quoteRequest,
+      quoteRequestId: quoteRequestId.current,
+      rewindDraftSignal,
+      pendingRewind: pendingRewind
+        ? {
+            sessionId: pendingRewind.sessionId,
+            blockId: pendingRewind.block.id,
+            action: pendingRewind.action,
+            recall: pendingRewind.recall,
+            authorityGeneration: pendingRewind.authorityGeneration,
+          }
+        : null,
+      editingLastTurn,
+      rewindingMessage,
+      rewindInFlight: rewindInFlight.current,
+      rewindError,
+      rewindMode,
+      filePlan,
+      filePlanLoading,
+      fileRevertNotice,
+      fileRevertResult: fileRevertResult.current,
+      harness: session.harness,
+      model: session.model,
+      modelSettings: session.modelSettings,
+      runtimeMode: session.runtimeMode,
+    }),
+  });
+  useLayoutEffect(() => {
+    rootParentRef.current = parentChanged;
+  }, [parentChanged]);
   // Composer is memoized: every handler keeps one identity and calls the
   // latest closure, so it re-renders only when something it shows changed.
   const composerDraftChange = useStableCallback((text: string) => {
     draftRef.current = text;
     setComposerDraft(session.id, text);
+    parentChanged();
   });
   const composerInboxCardDismiss = useStableCallback(() => onInboxCardDismiss?.(session.id));
   const composerNoteCardDismiss = useStableCallback(() => onNoteCardDismiss?.(session.id));
@@ -810,8 +1013,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onQuestionInteraction?.(session.id, id),
   );
   const composerFocus = useStableCallback(() => onFocus(session.id));
-  const composerNewSession = useStableCallback((options?: NewSessionOptions) =>
-    onNewSession?.(session.id, options),
+  const composerNewSession = useStableCallback(
+    (options?: NewSessionOptions, original?: ParentAdmission) =>
+      original
+        ? rootMutation(() => onNewSessionProp?.(session.id, options), original)
+        : onNewSession?.(session.id, options),
   );
   const composerCwdChange = useStableCallback((cwd: string) => onCwdChange(session.id, cwd));
   const composerBranchChange = useStableCallback(() => onBranchChange(session.id));
@@ -838,13 +1044,23 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerRuntimeModeChange = useStableCallback((mode: RuntimeMode) =>
     onRuntimeModeChange(session.id, mode),
   );
-  const composerSaveDraft = useStableCallback((text: string, attachments: Attachment[]) =>
-    onSaveDraft(session.id, text, attachments),
+  const composerSaveDraft = useStableCallback(
+    (text: string, attachments: Attachment[], original?: ParentAdmission) =>
+      original
+        ? rootMutation(() => onSaveDraftProp(session.id, text, attachments), original)
+        : onSaveDraft(session.id, text, attachments),
   );
   const composerSubmit = useStableCallback(
-    (text: string, attachments: Attachment[], options?: ComposerTurnOptions) => {
+    (
+      text: string,
+      attachments: Attachment[],
+      options?: ComposerTurnOptions,
+      original?: ParentAdmission,
+    ) => {
       if (!dockComposer) composerDockMotion.captureLaunch();
-      return onSubmit(session.id, text, attachments, options);
+      return original
+        ? rootMutation(() => onSubmitProp(session.id, text, attachments, options), original)
+        : onSubmit(session.id, text, attachments, options);
     },
   );
   const composerBtwCommand = useStableCallback(btw.openWith);
@@ -860,12 +1076,21 @@ const LocalSessionPane = memo(function LocalSessionPane({
     onSubmit: (text, options) => onSubmit(session.id, text, [], options),
   });
   const composerStop = useStableCallback(() => onStop(session.id));
-  const composerCompactContext = useStableCallback(() => onCompactContext(session.id));
+  const composerCompactContext = useStableCallback((original?: ParentAdmission) =>
+    original
+      ? rootMutation(() => onCompactContextProp(session.id), original)
+      : onCompactContext(session.id),
+  );
   const composerPlaceInFolder = useStableCallback((target: SessionFolderTarget) =>
     onPlaceSessionInFolder(session.id, target),
   );
   const composerResumeProviderSession = useStableCallback(
-    onResumeProviderSession ? () => onResumeProviderSession(session.id) : undefined,
+    onResumeProviderSession
+      ? (original?: ParentAdmission) =>
+          original
+            ? rootMutation(() => onResumeProviderSessionProp?.(session.id), original)
+            : onResumeProviderSession(session.id)
+      : undefined,
   );
   const composerDeleteQueuedMessage = useStableCallback((messageId: string) =>
     onDeleteQueuedMessage(session.id, messageId),
@@ -879,7 +1104,10 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const composerReorderQueuedMessages = useStableCallback(
     onReorderQueuedMessages
-      ? (messageIds: string[]) => onReorderQueuedMessages(session.id, messageIds)
+      ? (messageIds: string[], original?: ParentAdmission) =>
+          original
+            ? rootMutation(() => onReorderQueuedMessagesProp!(session.id, messageIds), original)
+            : onReorderQueuedMessages(session.id, messageIds)
       : undefined,
   );
   const composerSteerQueuedMessage = useStableCallback((messageId: string) =>
@@ -902,6 +1130,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const requestMessageRewind = useCallback(
     (block: Block, action: "edit" | "return", recall?: LastTurnRecall) => {
       if (!canRewindConversation(session, block.id)) return;
+      const admitted = rootParentRef.current?.admit();
+      if (!admitted) return;
+      const previous = pendingPlanAdmission.current;
+      if (previous && !previous.started) previous.admission.finish();
+      pendingPlanAdmission.current = { admission: admitted, started: false };
       setRewindError(null);
       fileRevertResult.current = null;
       setFilePlan(null);
@@ -910,6 +1143,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
         sessionId: session.id,
         source: session,
         authorityGeneration: session.adoptedAuthorityGeneration,
+        planAdmission: admitted,
         block,
         action,
         recall: recall ?? {
@@ -944,64 +1178,86 @@ const LocalSessionPane = memo(function LocalSessionPane({
         return;
       }
       if (mode === "files" && (filePlanLoading || !filePlan || filePlan.unavailable)) return;
-      rewindInFlight.current = true;
-      setRewindingMessage(true);
-      setRewindMode(mode);
-      setRewindError(null);
-      try {
-        if (mode === "files" && !fileRevertResult.current) {
-          const result = await revertSessionFiles(
-            pendingRewind.source,
-            pendingRewind.block.id,
-            filePlan?.planToken,
-            filePlan ?? undefined,
+      const admitted = parentChanged.admit();
+      if (!admitted) return;
+      return admitted.run(async () => {
+        rewindInFlight.current = true;
+        parentChanged();
+        setRewindingMessage(true);
+        setRewindMode(mode);
+        setRewindError(null);
+        const preparation = retainParentInput({
+          kind: "session-parent",
+          sessionId: requestedSessionId,
+          snapshot: () => ({
+            source: "rewind-preparation",
+            blockId: pendingRewind.block.id,
+            action: pendingRewind.action,
+            recall: pendingRewind.recall,
+            authorityGeneration: pendingRewind.authorityGeneration,
+            mode,
+            filePlan,
+          }),
+        });
+        try {
+          if (mode === "files" && !fileRevertResult.current) {
+            const result = await revertSessionFiles(
+              pendingRewind.source,
+              pendingRewind.block.id,
+              filePlan?.planToken,
+              filePlan ?? undefined,
+            );
+            if (activeSessionIdRef.current !== requestedSessionId) return;
+            fileRevertResult.current = result;
+            setFileRevertNotice(result);
+          }
+          if (
+            currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
+            currentSessionRef.current.adoptedAuthorityGeneration !==
+              pendingRewind.authorityGeneration ||
+            !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
+          ) {
+            throw new Error(t("This conversation can no longer be rewound."));
+          }
+          const accepted = await admitted.apply(() =>
+            onRewindMessage(requestedSessionId, pendingRewind.block.id),
           );
           if (activeSessionIdRef.current !== requestedSessionId) return;
-          fileRevertResult.current = result;
-          setFileRevertNotice(result);
-        }
-        if (
-          currentSessionRef.current.blocks !== pendingRewind.source.blocks ||
-          currentSessionRef.current.adoptedAuthorityGeneration !==
-            pendingRewind.authorityGeneration ||
-          !canRewindConversation(currentSessionRef.current, pendingRewind.block.id)
-        ) {
-          throw new Error(t("This conversation can no longer be rewound."));
-        }
-        const accepted = await onRewindMessage(requestedSessionId, pendingRewind.block.id);
-        if (activeSessionIdRef.current !== requestedSessionId) return;
-        if (!accepted) {
+          if (!accepted) {
+            setRewindError(
+              t(
+                fileRevertResult.current
+                  ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
+                  : "The conversation could not be rewound. Try again.",
+              ),
+            );
+            return;
+          }
+          setRewindDraftSignal({
+            sessionId: requestedSessionId,
+            id: crypto.randomUUID(),
+            value: pendingRewind.recall,
+          });
+          setPendingRewind(null);
+        } catch (error: unknown) {
+          if (activeSessionIdRef.current !== requestedSessionId) return;
           setRewindError(
-            t(
-              fileRevertResult.current
-                ? "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message."
-                : "The conversation could not be rewound. Try again.",
-            ),
+            fileRevertResult.current
+              ? t(
+                  "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
+                )
+              : error instanceof Error
+                ? error.message
+                : t("The conversation could not be rewound. Try again."),
           );
-          return;
+        } finally {
+          preparation.release();
+          rewindInFlight.current = false;
+          parentChanged();
+          setRewindingMessage(false);
+          setRewindMode(null);
         }
-        setRewindDraftSignal({
-          sessionId: requestedSessionId,
-          id: crypto.randomUUID(),
-          value: pendingRewind.recall,
-        });
-        setPendingRewind(null);
-      } catch (error: unknown) {
-        if (activeSessionIdRef.current !== requestedSessionId) return;
-        setRewindError(
-          fileRevertResult.current
-            ? t(
-                "Files were reverted, but the conversation could not be rewound. Retry to finish editing this message.",
-              )
-            : error instanceof Error
-              ? error.message
-              : t("The conversation could not be rewound. Try again."),
-        );
-      } finally {
-        rewindInFlight.current = false;
-        setRewindingMessage(false);
-        setRewindMode(null);
-      }
+      });
     },
     [
       filePlan,
@@ -1009,6 +1265,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       managed,
       onRewindMessage,
       pendingRewind,
+      parentChanged,
       sendBlockedReason,
       session,
     ],
@@ -1112,7 +1369,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerChildren = useMemo(
     () => (
       <>
-        {/* Above the queue and the input, below any question form. */}
+        {/* Stable order above the writing box: question/approval and blocker, then activity, queue, input. */}
+        <InterruptedNotice
+          session={stableSession}
+          interruptedTurn={interruptedTurn}
+          blockedReason={sendBlockedReason}
+          message={remote ? "The host stopped this turn before it finished." : undefined}
+          onContinue={continueInterruptedTurn}
+        />
+        {/* Above the queue and the input, below any blocker. */}
         <ActivityDock
           sessionId={session.id}
           blocks={stableBlocks}
@@ -1130,13 +1395,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
           perItemStop={perItemStop}
           onStopAgent={stopDockAgent}
           onStopAll={stopDockAll}
-        />
-        <InterruptedNotice
-          session={stableSession}
-          interruptedTurn={interruptedTurn}
-          blockedReason={sendBlockedReason}
-          message={remote ? "The host stopped this turn before it finished." : undefined}
-          onContinue={continueInterruptedTurn}
         />
       </>
     ),
@@ -1314,7 +1572,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
     </Composer>
   );
 
-  const hasPaneHeader = inSplit || Boolean(onPaneDragStart);
+  // A lone chat is named by its title-bar tab, so its pane carries no header of
+  // its own; only a real split needs per-pane identity, focus and a drag handle.
+  // (`onPaneDragStart` is always supplied by the pane tree, so it can't decide this.)
+  const hasPaneHeader = inSplit;
+  const titleBarSlot = useTitleBarActionsSlot();
   const workingBadge = workingMachine ? (
     <Badge
       tone="neutral"
@@ -1429,7 +1691,9 @@ const LocalSessionPane = memo(function LocalSessionPane({
               className={`size-2 shrink-0 rounded-full ${focused ? "bg-(--ui-tone-accent-subtle)" : "bg-transparent"}`}
             />
             <span
-              className="min-w-0 flex-1 truncate text-xs text-(--ui-tone-neutral-fg)"
+              className={`min-w-0 flex-1 truncate text-ui-caption ${
+                focused ? "text-content" : "text-(--ui-text-secondary)"
+              }`}
               title={title}
             >
               {title}
@@ -1444,15 +1708,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
         </div>
       ) : null}
       {!hasPaneHeader ? (
-        <div
-          data-session-toolbar
-          className="flex min-h-9 shrink-0 flex-wrap items-center justify-end gap-1.5 px-3 py-1"
-        >
-          {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
-          {headerStatus}
-          <BackgroundSessionIndicator key={session.id} session={session} />
-          {projectActions}
-        </div>
+        titleBarSlot ? (
+          // A lone chat's actions live in the title bar's chrome row beside its tab.
+          visible ? (
+            createPortal(
+              <>
+                {workingBadge ? <div className="min-w-0 max-w-56">{workingBadge}</div> : null}
+                {headerStatus}
+                <BackgroundSessionIndicator key={session.id} session={session} />
+                {projectActions}
+              </>,
+              titleBarSlot,
+            )
+          ) : null
+        ) : (
+          <div
+            data-session-toolbar
+            className="flex min-h-(--ui-control-height-compact) shrink-0 flex-wrap items-center justify-end gap-1 px-2 py-0.5"
+          >
+            {workingBadge ? <div className="me-auto min-w-0">{workingBadge}</div> : null}
+            {headerStatus}
+            <BackgroundSessionIndicator key={session.id} session={session} />
+            {projectActions}
+          </div>
+        )
       ) : null}
       <div data-session-body className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <SharedQueueRecoveryNotice key={`queue:${session.id}`} sessionId={session.id} />
@@ -1504,7 +1783,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 className="flex max-h-48 min-w-0 flex-col gap-2 overflow-auto text-sm"
                 data-session-files-revert-result
               >
-                <p>{t("Reverted files: {p0}", { p0: fileRevertNotice.reverted.length })}</p>
+                <p>
+                  {t("Reverted files: {p0}", {
+                    p0: fileRevertNotice.reverted.length,
+                  })}
+                </p>
                 {fileRevertNotice.reverted.length ? (
                   <ul>
                     {fileRevertNotice.reverted.map((path) => (
@@ -1518,7 +1801,11 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 )}
                 {fileRevertNotice.skipped.length ? (
                   <>
-                    <p>{t("Skipped files: {p0}", { p0: fileRevertNotice.skipped.length })}</p>
+                    <p>
+                      {t("Skipped files: {p0}", {
+                        p0: fileRevertNotice.skipped.length,
+                      })}
+                    </p>
                     <ul>
                       {fileRevertNotice.skipped.map(({ path, reason }) => (
                         <li key={path} className="[overflow-wrap:anywhere]">
@@ -1741,6 +2028,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           pending={rewindMode}
           error={rewindError}
           onCancel={() => {
+            parentChanged();
             if (!rewindInFlight.current) setPendingRewind(null);
           }}
           onConfirm={(mode) => void confirmMessageRewind(mode)}

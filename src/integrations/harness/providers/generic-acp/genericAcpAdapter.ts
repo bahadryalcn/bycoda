@@ -1,4 +1,10 @@
-import { nativeOutputSink, retainNativeOutputEventOrigin, captureNativeOutputWork, trackNativeOutputWork, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  nativeOutputSink,
+  retainNativeOutputEventOrigin,
+  captureNativeOutputWork,
+  trackNativeOutputWork,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { spawnChild, watchChild, killChild, invokeProviderCommand } from "../../core/child";
@@ -20,12 +26,28 @@ type Live = {
   planning: boolean;
   modes?: { currentModeId: string; availableModes: { id: string }[] };
   previousMode?: string;
-  approvals: Map<number, { options: { optionId: string; kind: string }[]; work: NativeOutputWork | null }>;
+  approvals: Map<
+    number,
+    { options: { optionId: string; kind: string }[]; work: NativeOutputWork | null }
+  >;
 };
 const lives = new Map<string, Live>();
 const resumes = new Map<string, { providerId: string; cwd: string }>();
 const starting = new Set<string>();
 const cancelled = new Set<string>();
+
+/** Map entries own only waiting decisions. Responding writes remove their entry
+ * first and retain their own actual promise through exit or cancellation. */
+function retireWaitingApprovals(live: Live, requestId?: number): void {
+  if (requestId !== undefined) {
+    const pending = live.approvals.get(requestId);
+    live.approvals.delete(requestId);
+    pending?.work?.fail("generic-acp-approval-retired");
+    return;
+  }
+  for (const pending of live.approvals.values()) pending.work?.fail("generic-acp-approval-retired");
+  live.approvals.clear();
+}
 
 async function stop(sessionId: string): Promise<void> {
   const live = lives.get(sessionId);
@@ -33,8 +55,7 @@ async function stop(sessionId: string): Promise<void> {
   if (live) {
     live.cancelled = true;
     live.client.close(new Error("ACP process stopped"));
-    for (const pending of live.approvals.values()) pending.work?.fail("generic-acp-approval-retired");
-    live.approvals.clear();
+    retireWaitingApprovals(live);
   }
   await killChild(sessionId);
 }
@@ -48,8 +69,15 @@ async function cancel(sessionId: string): Promise<void> {
     return;
   }
   live.cancelled = true;
-  for (const [id, pending] of live.approvals)
-    await trackNativeOutputWork(nativeOutputSink(pending.work, () => live.client.respond(id, { outcome: { outcome: "cancelled" } }))(), pending.work);
+  for (const [id, pending] of live.approvals) {
+    live.approvals.delete(id);
+    await trackNativeOutputWork(
+      nativeOutputSink(pending.work, () =>
+        live.client.respond(id, { outcome: { outcome: "cancelled" } }),
+      )(),
+      pending.work,
+    );
+  }
   live.approvals.clear();
   await live.client.notify("session/cancel", { sessionId: live.providerId }).catch(() => undefined);
   // A noncompliant agent must not leave the turn waiting forever.
@@ -60,229 +88,251 @@ export async function sendGenericAcpTurn(
   input: SendTurnInput,
   program?: { id: string; path: string; args: string[]; model: string },
 ): Promise<void> {
-const responseScope: { work: NativeOutputWork | null } = { work: null };
-const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => input.onEvent(event))();
-try {
-
-  const configId = program?.id ?? input.model.replace(/^acp:/, "");
-  if (!configId) throw new Error("Choose a configured ACP agent in Settings first");
-  let live = lives.get(input.sessionId);
-  if (live && (live.configId !== configId || live.cwd !== input.cwd)) {
-    await stop(input.sessionId);
-    resumes.delete(input.sessionId);
-    live = undefined;
-  }
-  if (!live) {
-    starting.add(input.sessionId);
-    const handlers: AcpHandlers = {};
-    const client = new AcpClient(input.sessionId, handlers);
-    const state: Live = {
-      client,
-      configId,
-      cwd: input.cwd,
-      providerId: "",
-      onEvent: emitNative,
-      cancelled: false,
-      replaying: false,
-      planning: input.intent === "plan",
-      approvals: new Map(),
-    };
-    handlers.onNotification = (method, params) => {
-      if (method !== "session/update" || state.cancelled || state.replaying) return;
-      const update = (params as { update?: Record<string, unknown> })?.update;
-      if (!update) return;
-      if (update.sessionUpdate === "plan" && typeof update.text === "string" && update.text.trim())
-        state.onEvent({ type: "plan", text: update.text });
-      if (
-        update.sessionUpdate === "agent_message_chunk" &&
-        (update.content as { type?: string })?.type === "text"
-      )
-        state.onEvent({
-          type: "message.delta",
-          text: String((update.content as { text?: string }).text ?? ""),
-        });
-      if (update.sessionUpdate === "tool_call")
-        state.onEvent({
-          type: "tool.started",
-          callId: String(update.toolCallId),
-          title: String(update.title ?? "ACP tool"),
-          kind: String(update.kind ?? "tool"),
-          status: String(update.status ?? "running"),
-        });
-      if (update.sessionUpdate === "tool_call_update")
-        state.onEvent({
-          type: "tool.updated",
-          callId: String(update.toolCallId),
-          status: String(update.status ?? "running"),
-          detail: toolResultDetail(update),
-        });
-    };
-    handlers.onRequest = async (id, method, params) => {
-      if (method !== "session/request_permission") {
-        await client.respondError(id, {
-          code: -32601,
-          message: "Client capability is not supported",
-        });
-        return;
-      }
-      if (state.cancelled || state.replaying) {
-        await client.respond(id, { outcome: { outcome: "cancelled" } });
-        return;
-      }
-      const permission = params as {
-        options?: { optionId: string; kind: string }[];
-        toolCall?: { title?: string; toolCallId?: string; kind?: string };
-      };
-      if (state.planning) {
-        const readOnly =
-          permission.toolCall?.kind === "read" || permission.toolCall?.kind === "search";
-        const option = permission.options?.find(
-          (entry) => entry.kind === (readOnly ? "allow_once" : "reject_once"),
-        );
-        await client.respond(id, {
-          outcome: option
-            ? { outcome: "selected", optionId: option.optionId }
-            : { outcome: "cancelled" },
-        });
-        return;
-      }
-      state.approvals.set(id, { options: permission.options ?? [], work: captureNativeOutputWork() });
-      state.onEvent({
-        type: "approval.requested",
-        requestId: id,
-        title: permission.toolCall?.title ?? "ACP permission",
-        callId: permission.toolCall?.toolCallId,
-      });
-    };
-    watchChild(
-      input.sessionId,
-      (line) => client.pushLine(line),
-      (code) => {
-        client.close(new Error("ACP agent process exited"));
-        if (lives.get(input.sessionId) === state) lives.delete(input.sessionId);
-        state.onEvent({ type: "session.ended", code });
-      },
-    );
-    try {
-      if (program)
-        await spawnChild(
-          input.sessionId,
-          program.path,
-          program.args,
-          input.cwd,
-          undefined,
-          "opencode",
-        );
-      else await spawnChild(input.sessionId, "", [], input.cwd, undefined, undefined, configId);
-      if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
-      const initialized = await client.request<{
-        agentCapabilities?: { loadSession?: boolean };
-        authMethods?: { id: string; name?: string }[];
-      }>(
-        "initialize",
-        {
-          protocolVersion: 1,
-          clientInfo: { name: "bycoda", version: "1" },
-          clientCapabilities: {
-            fs: { readTextFile: false, writeTextFile: false },
-            terminal: false,
-          },
-        },
-        20_000,
-      );
-      const configs = await invokeProviderCommand<GenericAcpSummary[]>("generic_acp_list");
-      const auth = configs.find((config) => config.id === configId)?.authMethodId;
-      if (auth) await client.request("authenticate", { methodId: auth }, 60_000);
-      const resume = resumes.get(input.sessionId);
-      if (resume && resume.cwd === input.cwd && initialized.agentCapabilities?.loadSession) {
-        state.replaying = true;
-        const loaded = await client.request<{ modes?: Live["modes"] }>(
-          "session/load",
-          { sessionId: resume.providerId, cwd: input.cwd, mcpServers: [] },
-          30_000,
-        );
-        state.modes = loaded.modes;
-        state.providerId = resume.providerId;
-        state.replaying = false;
-      } else {
-        if (resume)
-          throw new Error(
-            "This ACP agent cannot resume its stored session; start a new conversation or hand off explicitly",
-          );
-        const setup = await client.request<{ sessionId?: string; modes?: Live["modes"] }>(
-          "session/new",
-          { cwd: input.cwd, mcpServers: [] },
-          30_000,
-        );
-        if (!setup.sessionId) throw new Error("ACP agent returned no session id");
-        state.providerId = setup.sessionId;
-        state.modes = setup.modes;
-      }
-      if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
-      lives.set(input.sessionId, state);
-      live = state;
-      resumes.set(input.sessionId, { providerId: state.providerId, cwd: input.cwd });
-      emitNative({ type: "session.providerBound", providerSessionId: state.providerId });
-    } catch (error) {
-      client.close(error instanceof Error ? error : undefined);
-      await killChild(input.sessionId);
-      throw error;
-    } finally {
-      starting.delete(input.sessionId);
-      cancelled.delete(input.sessionId);
+  const responseScope: { work: NativeOutputWork | null } = { work: null };
+  const emitNative = (event: HarnessEvent) =>
+    nativeOutputSink(responseScope.work, () => input.onEvent(event))();
+  try {
+    const configId = program?.id ?? input.model.replace(/^acp:/, "");
+    if (!configId) throw new Error("Choose a configured ACP agent in Settings first");
+    let live = lives.get(input.sessionId);
+    if (live && (live.configId !== configId || live.cwd !== input.cwd)) {
+      await stop(input.sessionId);
+      resumes.delete(input.sessionId);
+      live = undefined;
     }
-  }
-  live.onEvent = input.onEvent;
-  live.cancelled = false;
-  live.planning = input.intent === "plan";
-  // A resumed agent can already be in plan mode without a prior client transition.
-  if (!live.planning && live.modes?.currentModeId === "plan" && !live.previousMode) {
-    live.previousMode = ["default", "build", "code", "ask"].find((id) =>
-      live.modes?.availableModes.some((mode) => mode.id === id),
-    );
-    if (!live.previousMode)
-      throw new Error("This ACP agent did not advertise a mode for implementing the plan.");
-  }
-  if (live.planning && live.modes?.availableModes.some((mode) => mode.id === "plan")) {
-    if (live.modes.currentModeId !== "plan") {
-      const previousMode = live.modes.currentModeId;
+    if (!live) {
+      starting.add(input.sessionId);
+      const handlers: AcpHandlers = {};
+      const client = new AcpClient(input.sessionId, handlers);
+      const state: Live = {
+        client,
+        configId,
+        cwd: input.cwd,
+        providerId: "",
+        onEvent: emitNative,
+        cancelled: false,
+        replaying: false,
+        planning: input.intent === "plan",
+        approvals: new Map(),
+      };
+      handlers.onNotification = (method, params) => {
+        if (method !== "session/update" || state.cancelled || state.replaying) return;
+        const update = (params as { update?: Record<string, unknown> })?.update;
+        if (!update) return;
+        if (
+          update.sessionUpdate === "plan" &&
+          typeof update.text === "string" &&
+          update.text.trim()
+        )
+          state.onEvent({ type: "plan", text: update.text });
+        if (
+          update.sessionUpdate === "agent_message_chunk" &&
+          (update.content as { type?: string })?.type === "text"
+        )
+          state.onEvent({
+            type: "message.delta",
+            text: String((update.content as { text?: string }).text ?? ""),
+          });
+        if (update.sessionUpdate === "tool_call")
+          state.onEvent({
+            type: "tool.started",
+            callId: String(update.toolCallId),
+            title: String(update.title ?? "ACP tool"),
+            kind: String(update.kind ?? "tool"),
+            status: String(update.status ?? "running"),
+          });
+        if (update.sessionUpdate === "tool_call_update")
+          state.onEvent({
+            type: "tool.updated",
+            callId: String(update.toolCallId),
+            status: String(update.status ?? "running"),
+            detail: toolResultDetail(update),
+          });
+      };
+      handlers.onRequest = async (id, method, params) => {
+        if (method !== "session/request_permission") {
+          await client.respondError(id, {
+            code: -32601,
+            message: "Client capability is not supported",
+          });
+          return;
+        }
+        if (state.cancelled || state.replaying) {
+          await client.respond(id, { outcome: { outcome: "cancelled" } });
+          return;
+        }
+        const permission = params as {
+          options?: { optionId: string; kind: string }[];
+          toolCall?: { title?: string; toolCallId?: string; kind?: string };
+        };
+        if (state.planning) {
+          const readOnly =
+            permission.toolCall?.kind === "read" || permission.toolCall?.kind === "search";
+          const option = permission.options?.find(
+            (entry) => entry.kind === (readOnly ? "allow_once" : "reject_once"),
+          );
+          await client.respond(id, {
+            outcome: option
+              ? { outcome: "selected", optionId: option.optionId }
+              : { outcome: "cancelled" },
+          });
+          return;
+        }
+        retireWaitingApprovals(state, id);
+        state.approvals.set(id, {
+          options: permission.options ?? [],
+          work: captureNativeOutputWork({ additionalInput: true }),
+        });
+        state.onEvent({
+          type: "approval.requested",
+          requestId: id,
+          title: permission.toolCall?.title ?? "ACP permission",
+          callId: permission.toolCall?.toolCallId,
+        });
+      };
+      watchChild(
+        input.sessionId,
+        (line) => client.pushLine(line),
+        (code) => {
+          state.cancelled = true;
+          retireWaitingApprovals(state);
+          client.close(new Error("ACP agent process exited"));
+          if (lives.get(input.sessionId) === state) lives.delete(input.sessionId);
+          state.onEvent({ type: "session.ended", code });
+        },
+      );
+      try {
+        if (program)
+          await spawnChild(
+            input.sessionId,
+            program.path,
+            program.args,
+            input.cwd,
+            undefined,
+            "opencode",
+          );
+        else await spawnChild(input.sessionId, "", [], input.cwd, undefined, undefined, configId);
+        if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
+        const initialized = await client.request<{
+          agentCapabilities?: { loadSession?: boolean };
+          authMethods?: { id: string; name?: string }[];
+        }>(
+          "initialize",
+          {
+            protocolVersion: 1,
+            clientInfo: { name: "bycoda", version: "1" },
+            clientCapabilities: {
+              fs: { readTextFile: false, writeTextFile: false },
+              terminal: false,
+            },
+          },
+          20_000,
+        );
+        const configs = await invokeProviderCommand<GenericAcpSummary[]>("generic_acp_list");
+        const auth = configs.find((config) => config.id === configId)?.authMethodId;
+        if (auth) await client.request("authenticate", { methodId: auth }, 60_000);
+        const resume = resumes.get(input.sessionId);
+        if (resume && resume.cwd === input.cwd && initialized.agentCapabilities?.loadSession) {
+          state.replaying = true;
+          const loaded = await client.request<{ modes?: Live["modes"] }>(
+            "session/load",
+            { sessionId: resume.providerId, cwd: input.cwd, mcpServers: [] },
+            30_000,
+          );
+          state.modes = loaded.modes;
+          state.providerId = resume.providerId;
+          state.replaying = false;
+        } else {
+          if (resume)
+            throw new Error(
+              "This ACP agent cannot resume its stored session; start a new conversation or hand off explicitly",
+            );
+          const setup = await client.request<{ sessionId?: string; modes?: Live["modes"] }>(
+            "session/new",
+            { cwd: input.cwd, mcpServers: [] },
+            30_000,
+          );
+          if (!setup.sessionId) throw new Error("ACP agent returned no session id");
+          state.providerId = setup.sessionId;
+          state.modes = setup.modes;
+        }
+        if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
+        lives.set(input.sessionId, state);
+        live = state;
+        resumes.set(input.sessionId, { providerId: state.providerId, cwd: input.cwd });
+        emitNative({ type: "session.providerBound", providerSessionId: state.providerId });
+      } catch (error) {
+        state.cancelled = true;
+        retireWaitingApprovals(state);
+        client.close(error instanceof Error ? error : undefined);
+        await killChild(input.sessionId);
+        throw error;
+      } finally {
+        starting.delete(input.sessionId);
+        cancelled.delete(input.sessionId);
+      }
+    }
+    live.onEvent = input.onEvent;
+    live.cancelled = false;
+    live.planning = input.intent === "plan";
+    // A resumed agent can already be in plan mode without a prior client transition.
+    if (!live.planning && live.modes?.currentModeId === "plan" && !live.previousMode) {
+      live.previousMode = ["default", "build", "code", "ask"].find((id) =>
+        live.modes?.availableModes.some((mode) => mode.id === id),
+      );
+      if (!live.previousMode)
+        throw new Error("This ACP agent did not advertise a mode for implementing the plan.");
+    }
+    if (live.planning && live.modes?.availableModes.some((mode) => mode.id === "plan")) {
+      if (live.modes.currentModeId !== "plan") {
+        const previousMode = live.modes.currentModeId;
+        await live.client.request(
+          "session/set_mode",
+          { sessionId: live.providerId, modeId: "plan" },
+          30_000,
+        );
+        live.previousMode = previousMode;
+        live.modes.currentModeId = "plan";
+      }
+    } else if (!live.planning && live.previousMode && live.modes) {
       await live.client.request(
         "session/set_mode",
-        { sessionId: live.providerId, modeId: "plan" },
+        { sessionId: live.providerId, modeId: live.previousMode },
         30_000,
       );
-      live.previousMode = previousMode;
-      live.modes.currentModeId = "plan";
+      live.modes.currentModeId = live.previousMode;
+      live.previousMode = undefined;
     }
-  } else if (!live.planning && live.previousMode && live.modes) {
-    await live.client.request(
-      "session/set_mode",
-      { sessionId: live.providerId, modeId: live.previousMode },
-      30_000,
-    );
-    live.modes.currentModeId = live.previousMode;
-    live.previousMode = undefined;
+    if (program)
+      await live.client.request(
+        "session/set_config_option",
+        { sessionId: live.providerId, configId: "model", value: program.model },
+        30_000,
+      );
+    emitNative({ type: "session.started" });
+    try {
+      const result = await live.client.request(
+        "session/prompt",
+        {
+          sessionId: live.providerId,
+          prompt: promptBlocks(input.text, input.attachments),
+        },
+        0,
+        (value, work) => {
+          responseScope.work?.finish();
+          responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
+          return value;
+        },
+      );
+      emitNative({ type: "message.completed" });
+      emitNative({ type: "reasoning.completed" });
+      if (!live.cancelled) reportAcpStopReason(result, emitNative);
+    } catch (error) {
+      if (!live.cancelled) throw error;
+    }
+  } finally {
+    responseScope.work?.finish();
   }
-  if (program)
-    await live.client.request(
-      "session/set_config_option",
-      { sessionId: live.providerId, configId: "model", value: program.model },
-      30_000,
-    );
-  emitNative({ type: "session.started" });
-  try {
-    const result = await live.client.request("session/prompt", {
-      sessionId: live.providerId,
-      prompt: promptBlocks(input.text, input.attachments),
-    }, 0, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
-    emitNative({ type: "message.completed" });
-    emitNative({ type: "reasoning.completed" });
-    if (!live.cancelled) reportAcpStopReason(result, emitNative);
-  } catch (error) {
-    if (!live.cancelled) throw error;
-  }
-
-} finally { responseScope.work?.finish(); }
 }
 
 function toolResultDetail(update: Record<string, unknown>): string | undefined {
@@ -329,11 +379,17 @@ export const genericAcpAdapter: HarnessAdapter = {
     const option = pending.options.find(
       (entry) => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"),
     );
-    const actual = nativeOutputSink(pending.work, () => live.client.respond(id, {
+    const actual = nativeOutputSink(pending.work, () =>
+      live.client.respond(id, {
         outcome: option
           ? { outcome: "selected", optionId: option.optionId }
           : { outcome: "cancelled" },
-      }))().then(nativeOutputSink(pending.work, () => live.onEvent({ type: "approval.resolved", requestId: id, decision })));
+      }),
+    )().then(
+      nativeOutputSink(pending.work, () =>
+        live.onEvent({ type: "approval.resolved", requestId: id, decision }),
+      ),
+    );
     void trackNativeOutputWork(actual, pending.work).catch(() => undefined);
   },
   refreshCatalog: refreshGenericAcpCatalog,

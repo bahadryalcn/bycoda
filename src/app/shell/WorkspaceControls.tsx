@@ -1,26 +1,12 @@
 import { Button } from "../../shared/ui/Button";
-import { useLocale, useT } from "../../shared/i18n";
-import { EyeOff, GitPullRequest, RefreshCw } from "../../shared/ui/icons";
+import { useT } from "../../shared/i18n";
+import { EyeOff, GitPullRequest, RefreshCw, UsageIcon } from "../../shared/ui/icons";
 import { FullscreenButton } from "./FullscreenButton";
 
 export const WORKSPACE_REFRESH_EVENT = "bycoda:refresh-workspace-view";
 
-export function UsageIcon({ className }: { className?: string }) {
-  useLocale();
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.65"
-      strokeLinecap="round"
-      className={className}
-      aria-hidden="true"
-    >
-      <path d="M5 20V12M12 20V4M19 20V8" />
-    </svg>
-  );
-}
+/** The Usage glyph lives with the shared icons; this re-export keeps existing imports working. */
+export { UsageIcon };
 
 export function WorkspaceControls({
   onHiddenGroups,

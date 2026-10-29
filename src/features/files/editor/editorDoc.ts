@@ -61,6 +61,7 @@ export function replaceEditorDoc(
     scrollIntoView: false,
     effects: outer ? [] : view.scrollSnapshot(),
   });
+  if (view.state.doc.toString() !== target) return false;
   if (outer) outer.scrollTop = outerTop;
   return true;
 }

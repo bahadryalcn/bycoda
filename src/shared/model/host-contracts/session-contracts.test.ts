@@ -19,18 +19,75 @@ import {
 } from "./index";
 
 const base = { commandId: "command-a", sessionId: "session-a" };
+it("lets only nested create first turns inherit an omitted session identity", () => {
+  const create = {
+    type: "create",
+    commandId: "create-inherited",
+    projectId: "project-a",
+    harness: "codex",
+    model: "model-a",
+    runtimeMode: "supervised",
+  };
+  for (const type of ["send", "draft"]) {
+    const firstTurn = { type, commandId: `first-${type}`, text: "hello" };
+    expect(CommandDispatchParamsSchema.parse({ ...create, firstTurn })).toEqual({
+      ...create,
+      firstTurn,
+    });
+    expect(
+      CommandDispatchParamsSchema.parse({
+        ...create,
+        sessionId: "allocated-a",
+        firstTurn: { ...firstTurn, sessionId: "allocated-a" },
+      }),
+    ).toBeTruthy();
+    expect(
+      CommandDispatchParamsSchema.parse({ ...create, firstTurn: { ...firstTurn, sessionId: "" } }),
+    ).toBeTruthy();
+    expect(CommandDispatchParamsSchema.safeParse(firstTurn).success).toBe(false);
+    expect(
+      CommandDispatchParamsSchema.safeParse({
+        ...create,
+        firstTurn: { ...firstTurn, sessionId: null },
+      }).success,
+    ).toBe(false);
+    expect(
+      CommandDispatchParamsSchema.safeParse({
+        ...create,
+        firstTurn: { ...firstTurn, sessionId: "a".repeat(201) },
+      }).success,
+    ).toBe(false);
+    expect(
+      CommandDispatchParamsSchema.safeParse({
+        ...create,
+        firstTurn: { ...firstTurn, unexpected: true },
+      }).success,
+    ).toBe(false);
+  }
+});
 describe("session wire contracts", () => {
   it("matches the native authority decision digest golden tuple", () => {
     const decision = HostAuthorityDecisionSchema.parse({
-      protocol: 2, environmentId: "env-golden", sessionId: "session-golden", migrationId: "migration-golden",
-      sourceProfileId: "profile-golden", sourceStoreId: "store-golden", receiptId: "receipt-golden",
-      sourceGeneration: 7, authorityGeneration: 8, sourceRevision: 42,
-      sourceDigest: "a".repeat(64), evidenceDigest: "b".repeat(64), minWriterProtocol: 2,
-      committedAt: 1_700_000_000_000, phase: "aborted",
+      protocol: 2,
+      environmentId: "env-golden",
+      sessionId: "session-golden",
+      migrationId: "migration-golden",
+      sourceProfileId: "profile-golden",
+      sourceStoreId: "store-golden",
+      receiptId: "receipt-golden",
+      sourceGeneration: 7,
+      authorityGeneration: 8,
+      sourceRevision: 42,
+      sourceDigest: "a".repeat(64),
+      evidenceDigest: "b".repeat(64),
+      minWriterProtocol: 2,
+      committedAt: 1_700_000_000_000,
+      phase: "aborted",
       decisionDigest: "a6598ffe23f231050ad53809356cef7d36ffd915da0cf540f05e28a5c3f3fc2a",
     });
-    expect(createHash("sha256").update(hostAuthorityDecisionDigestInput(decision), "utf8").digest("hex"))
-      .toBe(decision.decisionDigest);
+    expect(
+      createHash("sha256").update(hostAuthorityDecisionDigestInput(decision), "utf8").digest("hex"),
+    ).toBe(decision.decisionDigest);
   });
   it("validates the actual command type union and closed nested input", () => {
     const commands = [
@@ -38,6 +95,20 @@ describe("session wire contracts", () => {
       { type: "draft", text: "draft" },
       { type: "steer", text: "steer", runId: "run-a" },
       { type: "configure", model: "model-a", modelSettings: {}, runtimeMode: "supervised" },
+      {
+        type: "configure",
+        model: "model-a",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        providerAccountId: "host-account",
+      },
+      {
+        type: "configure",
+        model: "model-a",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        providerAccountId: null,
+      },
       { type: "compact", resumeAtReset: true },
       { type: "removeDraft", draftBlockId: "block-a" },
       { type: "rewind", blockId: "block-a", expectedRevision: 4 },
@@ -204,7 +275,9 @@ describe("session wire contracts", () => {
     expect(hostRpcSupported("projects.list", capabilities)).toBe(true);
     expect(hostRpcSupported("commands.dispatch", capabilities)).toBe(true);
     expect(hostRpcSupported("sessions.queue.get", capabilities)).toBe(false);
-    expect(hostRpcSupported("sessions.queue.get", [...capabilities, "transport.ws.queue.v2"])).toBe(true);
+    expect(hostRpcSupported("sessions.queue.get", [...capabilities, "transport.ws.queue.v2"])).toBe(
+      true,
+    );
     expect(hostRpcSupported("subscriptions.open", capabilities)).toBe(false);
     expect(hostRpcSupported("subscriptions.open", ["transport.ws.streams.v2"])).toBe(true);
     expect(hostRpcSupported("connection.hello", [])).toBe(true);

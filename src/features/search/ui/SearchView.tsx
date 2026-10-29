@@ -489,7 +489,7 @@ export function SearchView({
           </div>
           <div className="min-w-0 flex-1 px-3">
             <SearchInputGroup appearance="field" className="w-full">
-              <Search className="size-3.5 shrink-0" strokeWidth={1.75} aria-hidden="true" />
+              <Search className="icon-sm shrink-0" strokeWidth={1.75} aria-hidden="true" />
               <SearchInput
                 type="search"
                 focusOwner="group"
@@ -514,7 +514,7 @@ export function SearchView({
               />
               {loading ? (
                 <LoaderCircle
-                  className="size-3.5 shrink-0 motion-safe:animate-spin text-(--ui-text-secondary)"
+                  className="icon-sm shrink-0 motion-safe:animate-spin text-(--ui-text-secondary)"
                   strokeWidth={1.75}
                 />
               ) : null}
@@ -529,7 +529,7 @@ export function SearchView({
                 tooltip={t("Full screen")}
                 onClick={onExpand}
               >
-                <Maximize2 className="size-3.5" />
+                <Maximize2 className="icon-sm" />
               </Button>
             ) : (
               <>
@@ -541,7 +541,7 @@ export function SearchView({
                     tooltip={t("Restore")}
                     onClick={onCompact}
                   >
-                    <Minimize2 className="size-3.5" />
+                    <Minimize2 className="icon-sm" />
                   </Button>
                 ) : null}
                 {!IS_MAC ? <WindowControls /> : null}
@@ -550,7 +550,7 @@ export function SearchView({
           </div>
         </div>
 
-        <div className="col-span-3 flex min-h-9 flex-wrap items-center border-b border-stroke">
+        <div className="col-span-3 flex min-h-9 flex-wrap items-center">
           <div className="min-w-0 flex-1 overflow-x-auto px-3 py-1">
             <SegmentedControl
               label={t("Search in")}
@@ -620,7 +620,7 @@ export function SearchView({
         {empty ? (
           <EmptyState
             context="panel"
-            icon={<Search className="size-6" />}
+            icon={<Search className="icon-md" />}
             description={t("Find files, conversations, messages, and projects.")}
           />
         ) : noResults ? (
@@ -764,7 +764,7 @@ function ResultList({
             onMouseEnter={() => onRowEnter(index)}
             onClick={() => onOpen(hit)}
           >
-            <span className="grid size-4 shrink-0 place-items-center">{row.icon}</span>
+            <span className="grid size-4 shrink-0 place-items-center" aria-hidden="true">{row.icon}</span>
             <span className="app-search-result-copy">
               <span className="app-search-result-title">{row.title}</span>
               {row.preview ? (
@@ -773,7 +773,7 @@ function ResultList({
               <span className="app-search-result-meta">{row.meta}</span>
               {highlighted ? <span className="app-search-result-identity">{fullIdentity}</span> : null}
             </span>
-            <span className="app-search-result-kind">
+            <span className="app-search-result-kind sr-only">
               {t(
                 hit.kind === "conversation"
                   ? "Conversation"
@@ -798,14 +798,14 @@ function rowCopy(
 ): { icon: ReactNode; title: ReactNode; meta: string; preview?: ReactNode } {
   if (hit.kind === "conversation") {
     return {
-      icon: <HarnessIcon harness={hit.harness} className="size-3.5" />,
+      icon: <HarnessIcon harness={hit.harness} className="icon-sm" />,
       title: <MatchText text={hit.title} positions={hit.positions} active />,
       meta: projectDisplayName(hit.cwd),
     };
   }
   if (hit.kind === "message") {
     return {
-      icon: <MessageSquare className="size-3.5 text-(--ui-text-secondary)" strokeWidth={1.75} />,
+      icon: <MessageSquare className="icon-sm text-(--ui-text-secondary)" strokeWidth={1.75} />,
       title: hit.title,
       preview: <Highlight text={hit.preview || hit.title} query={query} />,
       meta: projectDisplayName(hit.cwd),
@@ -827,7 +827,7 @@ function rowCopy(
     };
   }
   return {
-    icon: <ProjectLogoIcon path={hit.path} className="size-3.5 rounded-sm" fallback={Folder} />,
+    icon: <ProjectLogoIcon path={hit.path} className="icon-sm rounded-sm" fallback={Folder} />,
     title: <MatchText text={hit.name} positions={hit.positions} active />,
     meta: prettyCwd(hit.path),
   };

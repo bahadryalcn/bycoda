@@ -26,6 +26,8 @@ type Preferences = Record<string, ProjectNotificationPreference>;
 const KEY = "bycoda.projectNotifications.v1";
 const CHANGE = "bycoda:project-notifications-change";
 let lastKnownPreferences: Preferences = {};
+/** The latest read failed, so `lastKnownPreferences` is not an authoritative record. */
+let preferencesReadFailed = false;
 
 /** `after` is the last suppressed millisecond, shared with native delivery. */
 export type ProjectNotificationRule = { enabled: boolean; after: number };
@@ -49,6 +51,23 @@ export function getProjectNotificationRule(
 
 export function loadNotificationPreferences(): Preferences {
   return readNotificationPreferences(false);
+}
+
+/**
+ * Whether project preferences could be read. When `unavailable`, the values
+ * returned by `loadNotificationPreferences` are the last known (or defaults),
+ * not the stored choices, and edits are refused until a read succeeds.
+ */
+export function notificationPreferencesStatus(): "ready" | "unavailable" {
+  readNotificationPreferences(false);
+  return preferencesReadFailed ? "unavailable" : "ready";
+}
+
+/** Re-reads storage and tells subscribers; returns the resulting status. */
+export function retryNotificationPreferencesRead(): "ready" | "unavailable" {
+  const status = notificationPreferencesStatus();
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
+  return status;
 }
 
 function readNotificationPreferences(strict: boolean): Preferences {
@@ -92,8 +111,10 @@ function readNotificationPreferences(strict: boolean): Preferences {
       ];
     });
     lastKnownPreferences = Object.fromEntries(entries);
+    preferencesReadFailed = false;
     return lastKnownPreferences;
   } catch (error) {
+    preferencesReadFailed = true;
     // Read-only consumers retain known data. Mutations must never merge into
     // defaults after a failed read and overwrite recoverable preferences.
     if (strict) throw error;
@@ -129,6 +150,7 @@ export function updateNotificationPreferences(
   }
   localStorage.setItem(KEY, JSON.stringify(preferences));
   lastKnownPreferences = preferences;
+  preferencesReadFailed = false;
   if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGE));
 }
 
@@ -165,6 +187,7 @@ export function allowsProjectNotificationIndicator(
 export function notificationPreferencesSnapshot(): string {
   const preferences = loadNotificationPreferences();
   return JSON.stringify({
+    unavailable: preferencesReadFailed,
     preferences,
     muted: Object.keys(preferences).filter((id) => isProjectMuted(preferences[id])),
   });

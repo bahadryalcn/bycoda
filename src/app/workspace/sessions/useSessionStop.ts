@@ -1,3 +1,4 @@
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import {
   useCallback,
   useEffect,
@@ -59,7 +60,7 @@ export function useSessionStop(deps: SessionStopDeps) {
   const onStop = useCallback(
     (sessionId: string, managed = false) => {
       const remote = sessionsRef.current.find((s) => s.id === sessionId);
-      if (remote && remoteProjectFor(remote.cwd)) {
+      if (remote && (hostSessionBinding(remote) || remoteProjectFor(remote.cwd))) {
         remoteSessionActions(sessionId)?.stop();
         return;
       }

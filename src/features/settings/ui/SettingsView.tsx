@@ -5,8 +5,8 @@ import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
 
-import { ArrowLeft, RotateCcw } from "../../../shared/ui/icons";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
+import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import "./BycodaSettings.css";
 
 import { McpSettings } from "./McpSettings";
@@ -26,6 +26,7 @@ import {
   settingsSectionsByGroup,
   settingsSectionDescription,
   settingsSectionLabel,
+  settingsSectionPresentation,
   type CollapsedProjectRailMode,
   type SettingsSectionId,
 } from "../model/settings";
@@ -39,7 +40,6 @@ import {
   settingDomId,
   RevealedSetting,
   PageAutomaticSaveHint,
-  PageHeader,
   SettingsPageHelp,
   Group,
   Row,
@@ -91,6 +91,15 @@ type Props = {
   onCheckWorktreeRemoval?: RemoveWorktree;
   onDeleteWorktreeSessions?: (sessionIds: readonly string[]) => Promise<boolean>;
   besideRail?: boolean;
+  /**
+   * Rendered inside an overlay that owns the window chrome: no duplicate titlebar or native
+   * window controls, and the overlay owns Escape, the close action and focus return.
+   */
+  embedded?: boolean;
+  /** Current overlay geometry. Presentation changes restyle this tree; they never remount it. */
+  maximized?: boolean;
+  /** Shows a maximize/restore action in the page header when the host can resize the surface. */
+  onToggleMaximize?: () => void;
   onClose: () => void;
   /** Lets search jump to a setting that lives on another page. */
   onSelectSection?: (section: SettingsSectionId) => void;
@@ -98,6 +107,8 @@ type Props = {
   onOpenBackgroundSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   onArchiveSession: (sessionId: string, archived: boolean) => void;
   onDeleteSession: (sessionId: string) => void;
+  /** Whether `sessions` is complete; Archive must not read loading or failed history as empty. */
+  sessionsStatus?: ComponentProps<typeof ArchivePage>["sessionsStatus"];
   onRestoreProject?: (path: string) => void;
   onDeleteProject?: (path: string) => void | Promise<void>;
   onOpenWhatsNew: (version: string) => void;
@@ -127,12 +138,16 @@ export function SettingsView({
   onCheckWorktreeRemoval,
   onDeleteWorktreeSessions,
   besideRail = false,
+  embedded = false,
+  maximized = false,
+  onToggleMaximize,
   onClose,
   onSelectSection,
   onOpenSession,
   onOpenBackgroundSession,
   onArchiveSession,
   onDeleteSession,
+  sessionsStatus,
   onRestoreProject,
   onDeleteProject,
   onOpenWhatsNew,
@@ -246,7 +261,11 @@ export function SettingsView({
       if (next !== section) onSelectSection?.(next);
       setRevealed(settingId);
       setRevealRequest((request) => request + 1);
-      if (!settingId) requestAnimationFrame(() => panelRef.current?.focus());
+      // The page title is the meaningful target; the tabpanel itself is not a keyboard stop.
+      if (!settingId)
+        requestAnimationFrame(() =>
+          panelRef.current?.querySelector<HTMLElement>(".settings-page-title")?.focus(),
+        );
     },
     [onSelectSection, section],
   );
@@ -257,6 +276,8 @@ export function SettingsView({
   };
 
   useEffect(() => {
+    // An embedding overlay already owns Escape, ordering it after inner popups and dialogs.
+    if (embedded) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || event.defaultPrevented) return;
       event.preventDefault();
@@ -266,41 +287,12 @@ export function SettingsView({
     // Let dialogs and other Settings controls handle Escape first.
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [embedded]);
 
-  return (
-    <div
-      role="region"
-      aria-label={t("Settings")}
-      data-app-settings
-      className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
-    >
-      <div
-        className="bycoda-settings-titlebar flex min-h-10 shrink-0 select-none items-center border-b border-stroke"
-        data-tauri-drag-region="deep"
-      >
-        {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
-          <Button
-            variant="ghost"
-            size="sm"
-            type="button"
-            onClick={onClose}
-            aria-label={t("Back to workspace")}
-            tooltip={t("Back to workspace")}
-            data-tauri-drag-region="false"
-          >
-            <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
-            <span className="truncate">{t("Back to workspace")}</span>
-          </Button>
-          <span className="min-w-0 truncate text-(--ui-text-secondary)">
-            {section === "usage" ? t("Usage / This machine") : t("Settings")}
-          </span>
-        </div>
-        {IS_MAC ? null : <WindowControls />}
-      </div>
-
-      <header className="bycoda-settings-toolbar">
+  // One header row per page: identity on the left, 28px ghost icon actions on the right.
+  const pageBar = (
+    <header className="settings-page-bar bycoda-settings-toolbar">
+      <div className="settings-page-bar-inner">
         <div className="bycoda-settings-category-picker">
           <SearchableSelect
             label={t("Settings categories")}
@@ -314,14 +306,12 @@ export function SettingsView({
             onChange={(value) => onReveal(value as SettingsSectionId, null)}
           />
         </div>
+        <h1 className="settings-page-title" tabIndex={-1}>
+          {settingsSectionLabel(section)}
+        </h1>
         <div className="bycoda-settings-toolbar-actions">
           <SidebarUpdateFooter />
           <SettingsSearch onReveal={onReveal} />
-          <SettingsPageHelp
-            className="bycoda-settings-mobile-help"
-            description={settingsSectionDescription(section)}
-            automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
-          />
           {section === "appearance" ? (
             <Button
               variant="ghost"
@@ -331,11 +321,72 @@ export function SettingsView({
               label={t("Restore defaults")}
               onClick={appearance.restoreDefaults}
             >
-              <RotateCcw aria-hidden="true" strokeWidth={1.75} />
+              <RotateCcw aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          ) : null}
+          <SettingsPageHelp
+            description={settingsSectionDescription(section)}
+            automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
+          />
+          {onToggleMaximize ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              iconOnly
+              label={maximized ? t("Restore size") : t("Maximize")}
+              onClick={onToggleMaximize}
+            >
+              {maximized ? (
+                <Minimize2 aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
+              ) : (
+                <Maximize2 aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
+              )}
             </Button>
           ) : null}
         </div>
-      </header>
+      </div>
+    </header>
+  );
+
+  const presentation = settingsSectionPresentation(section);
+
+  return (
+    <div
+      role="region"
+      aria-label={t("Settings")}
+      data-app-settings
+      data-settings-presentation={presentation}
+      data-settings-embedded={embedded || undefined}
+      data-settings-maximized={maximized || undefined}
+      className="bycoda-settings bycoda-settings-workbench flex min-h-0 min-w-0 flex-1 flex-col text-content"
+    >
+      {embedded ? null : (
+        <div
+          className="bycoda-settings-titlebar flex min-h-10 shrink-0 select-none items-center border-b border-stroke"
+          data-tauri-drag-region="deep"
+        >
+          {IS_MAC && !besideRail ? <div className="w-[78px] shrink-0" /> : null}
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-3 text-ui-secondary">
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={onClose}
+              aria-label={t("Back to workspace")}
+              tooltip={t("Back to workspace")}
+              data-tauri-drag-region="false"
+            >
+              <ArrowLeft aria-hidden="true" strokeWidth={1.75} />
+              <span className="truncate">{t("Back to workspace")}</span>
+            </Button>
+            <span className="min-w-0 truncate text-(--ui-text-secondary)">
+              {section === "usage" ? t("Usage / This machine") : t("Settings")}
+            </span>
+          </div>
+          {IS_MAC ? null : <WindowControls />}
+        </div>
+      )}
 
       <div className="bycoda-settings-body">
         <nav
@@ -401,7 +452,7 @@ export function SettingsView({
                         selectCategory(target.id);
                       }}
                     >
-                      <Icon aria-hidden strokeWidth={1.75} />
+                      <Icon aria-hidden className="icon-sm" strokeWidth={1.75} />
                       <span>{category.label}</span>
                     </Button>
                   );
@@ -415,21 +466,17 @@ export function SettingsView({
           ref={panelRef}
           id={panelId}
           role="tabpanel"
-          tabIndex={0}
           aria-labelledby={`${panelId}-${section}`}
+          data-settings-full={section === "skills" || undefined}
           className="bycoda-settings-panel"
         >
           {section === "skills" ? (
             <RevealedSetting.Provider value={revealed}>
+              {pageBar}
               <SkillsPage
                 key={cwd}
                 cwd={cwd}
-                header={
-                  <PageHeader
-                    title={settingsSectionLabel(section)}
-                    description={settingsSectionDescription(section)}
-                  />
-                }
+                header={<span className="sr-only">{settingsSectionLabel(section)}</span>}
               />
             </RevealedSetting.Provider>
           ) : (
@@ -438,32 +485,29 @@ export function SettingsView({
                 <div
                   key={section}
                   data-settings-scroller
+                  data-settings-width={presentation === "bounded" ? undefined : presentation}
                   ref={lockOverscroll}
                   className="@container/settings min-h-0 flex-1 overflow-y-auto overscroll-none [scrollbar-gutter:stable]"
                 >
+                  {pageBar}
                   <div
                     data-settings-section={section}
                     className="bycoda-settings-content bycoda-settings-form min-w-0 w-full"
                   >
-                    <PageHeader
-                      title={settingsSectionLabel(section)}
-                      description={settingsSectionDescription(section)}
-                      automaticSave={AUTOMATIC_SAVE_SECTIONS.includes(section)}
-                    />
                     {section === "general" ? <GeneralPage onOpenWhatsNew={onOpenWhatsNew} /> : null}
                     {section === "crews" ? (
-                      <div className="settings-topics flex min-w-0 flex-col gap-6">
-                      <CrewsSettings
-                        cwd={cwd}
-                        onOpen={
-                          onOpenBackgroundSession
-                            ? async (target) => {
-                                await onOpenBackgroundSession(target);
-                                onClose();
-                              }
-                            : undefined
-                        }
-                      />
+                      <div className="settings-topics">
+                        <CrewsSettings
+                          cwd={cwd}
+                          onOpen={
+                            onOpenBackgroundSession
+                              ? async (target) => {
+                                  await onOpenBackgroundSession(target);
+                                  onClose();
+                                }
+                              : undefined
+                          }
+                        />
                       </div>
                     ) : null}
                     {section === "connections" ? (
@@ -494,7 +538,7 @@ export function SettingsView({
                       </WorkspacePage>
                     ) : null}
                     {section === "notifications" ? (
-                      <>
+                      <div className="settings-topics">
                         <NotificationAlerts />
                         <div
                           id={settingDomId("project-notifications")}
@@ -508,7 +552,7 @@ export function SettingsView({
                             highlighted={notificationHighlight}
                           />
                         </div>
-                      </>
+                      </div>
                     ) : null}
                     {section === "chat" ? <ChatPage appearance={appearance} /> : null}
                     {section === "policies" ? <PoliciesSettings /> : null}
@@ -519,9 +563,10 @@ export function SettingsView({
                     {section === "usage" ? <UsagePage /> : null}
                     {section === "limits" ? <UsagePage limitsOnly /> : null}
                     {section === "worktrees" ? (
-                      <>
+                      <div className="settings-topics">
                         <SourceControlSettings />
                         <WorktreesPage
+                          boundary
                           cwd={cwd}
                           recents={recents}
                           liveSessions={liveSessions}
@@ -529,10 +574,10 @@ export function SettingsView({
                           onCheckRemove={onCheckWorktreeRemoval}
                           onDeleteSessions={onDeleteWorktreeSessions}
                         />
-                      </>
+                      </div>
                     ) : null}
                     {section === "groupLock" ? (
-                      <div className="group-privacy">
+                      <div className="group-privacy settings-topics">
                         <PrivacyStartupSettings />
                         <GroupLockSettings controls={{ Group, Row, Toggle, Select }} />
                       </div>
@@ -542,6 +587,7 @@ export function SettingsView({
                       <ArchivePage
                         cwd={cwd}
                         sessions={sessions}
+                        sessionsStatus={sessionsStatus}
                         onOpenSession={onOpenSession}
                         onArchiveSession={onArchiveSession}
                         onDeleteSession={onDeleteSession}

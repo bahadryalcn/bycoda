@@ -68,13 +68,16 @@ export function TranscriptSelectionMenu({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const running = useRef(new Set<string>());
   const generation = useRef(0);
+  // Operation state belongs to the text it was started for: a selection that
+  // goes away or is replaced directly by another drops pending/error state, and
+  // a late result of the old one is ignored. An already started save continues.
+  const selectionText = selection?.text ?? null;
   useEffect(() => {
-    if (selection) return;
     generation.current += 1;
     running.current.clear();
     setPending({});
     setErrors({});
-  }, [selection]);
+  }, [selectionText]);
 
   if (!selection) return null;
 
@@ -145,31 +148,37 @@ export function TranscriptSelectionMenu({
       anchor={selection.rect}
       side="top"
       align="center"
-      width={248}
+      width={232}
       onDismiss={(reason) => {
         if (reason === "escape") window.getSelection()?.removeAllRanges();
         onDismiss();
       }}
-      className="p-1.5"
+      className="p-1"
     >
-      <FloatingButtonGroup
-        label={t("Selected text actions")}
-        items={items}
-        orientation="vertical"
-        preserveSelection
-      />
-      {items.map(({ id }) =>
-        errors[id] ? (
-          <span
-            key={id}
-            role="alert"
-            className="min-w-0 px-3 py-1 text-xs text-(--ui-text-secondary) break-words"
-          >
-            {t("Could not save note. ")}
-            {errors[id]}
-          </span>
-        ) : null,
-      )}
+      {/* Raised popup family: the Popover owns surface, elevation and radius; the
+          rows are compact and calm. This wrapper is the one scroll owner on
+          short viewports. */}
+      <div className="max-h-[min(20rem,60vh)] overflow-y-auto overscroll-contain">
+        <FloatingButtonGroup
+          label={t("Selected text actions")}
+          items={items}
+          orientation="vertical"
+          size="sm"
+          preserveSelection
+        />
+        {items.map(({ id }) =>
+          errors[id] ? (
+            <span
+              key={id}
+              role="alert"
+              className="block min-w-0 px-2 py-1 text-ui-caption text-(--ui-tone-danger-fg) break-words"
+            >
+              {id === "notes" ? t("Could not save note. ") : t("Could not complete this action. ")}
+              {errors[id]}
+            </span>
+          ) : null,
+        )}
+      </div>
     </Popover>
   );
 }

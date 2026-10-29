@@ -142,10 +142,16 @@ describe("OpenCode migration and V2 updates", () => {
       expect(emit).not.toHaveBeenCalled();
 
       finishRefresh();
-      await expect(result).resolves.toEqual({ status: "updated", version: "2.1.4" });
+      // The refresh resolved without a new list, so the catalog is not claimed fresh.
+      await expect(result).resolves.toEqual({
+        status: "updated",
+        version: "2.1.4",
+        catalogRefresh: "unchanged",
+      });
       expect(getHarnessUpdateSnapshot().runs.opencode).toEqual({
         status: "updated",
         version: "2.1.4",
+        catalogRefresh: "unchanged",
       });
       expect(emit).toHaveBeenCalledExactlyOnceWith("harness-updated", {
         harness: "opencode",

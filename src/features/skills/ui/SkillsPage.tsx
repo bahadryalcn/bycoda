@@ -727,9 +727,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     machine: Machine | null = null,
   ) => (
     <>
-    {failure ? <Alert tone="danger" role="alert" action={<Button onClick={() => requestRefresh(machine?.environmentId ?? "local")}>{t("Retry")}</Button>}>{failure}</Alert> : null}
+    {failure ? <Alert inline tone="danger" role="alert" action={<Button onClick={() => requestRefresh(machine?.environmentId ?? "local")}>{t("Retry")}</Button>}>{failure}</Alert> : null}
     {all === null ? (!failure ? (
-      <Alert tone="info" role="status">
+      <Alert inline tone="info" role="status">
         {t("Loading skills…")}
       </Alert>
     ) : null) : shown.length === 0 ? (
@@ -749,21 +749,36 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   const actionFeedback = (
     <>
       {actionError ? (
-        <Alert tone="danger" role="alert">
+        <Alert inline tone="danger" role="alert">
           {actionError}
         </Alert>
       ) : null}
       {actionResult ? (
-        <Alert tone="info" role="status">
+        <Alert inline tone="info" role="status">
           {actionResult}
         </Alert>
       ) : null}
       {busy || deleting || transferring ? (
-        <Alert tone="info" role="status">
+        <Alert inline tone="info" role="status">
           {busy ? t("Creating…") : deleting ? t("Deleting…") : t("Copying…")}
         </Alert>
       ) : null}
     </>
+  );
+
+  const filterField = (
+    <TextField
+      ref={filterInput}
+      type="search"
+      label={t("Filter skills")}
+      hideLabel
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+      placeholder={t("Search skills")}
+      aria-label={t("Filter skills")}
+      spellCheck={false}
+      autoComplete="off"
+    />
   );
 
   return (
@@ -771,7 +786,9 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
       <section className={styles.library} aria-label={t("Skills")}>
         <header className={styles.libraryHeader}>
           <div className={styles.headingRow}>
-            {header ? <div className={styles.heading}>{header}</div> : <h1>{t("Skills")}</h1>}
+            {/* Embedded in Settings the frame header already names the page: no second title row. */}
+            {header ? header : <h1>{t("Skills")}</h1>}
+            {header ? <div className={styles.filter}>{filterField}</div> : null}
             <Button
               variant="ghost"
               iconOnly
@@ -804,18 +821,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           <div className={styles.count}>
             {skills === null ? "…" : t("{p0} skills shown", { p0: shownCount })}
           </div>
-          <TextField
-            ref={filterInput}
-            type="search"
-            label={t("Filter skills")}
-            hideLabel
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Search skills")}
-            aria-label={t("Filter skills")}
-            spellCheck={false}
-            autoComplete="off"
-          />
+          {header ? null : filterField}
         </header>
         {!previewSkill ? actionFeedback : null}
         <div ref={lockOverscroll} className={styles.list}>
@@ -823,7 +829,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             <summary>
               {t("This computer")} <span>{skills === null ? "…" : filtered.length}</span>
             </summary>
-            {policyErrors.local ? <Alert tone="danger" action={<Button onClick={() => requestRefresh("local")}>{t("Retry")}</Button>}>{policyErrors.local}</Alert> : null}
+            {policyErrors.local ? <Alert inline tone="danger" action={<Button onClick={() => requestRefresh("local")}>{t("Retry")}</Button>}>{policyErrors.local}</Alert> : null}
             {renderList(skills, filtered, error)}
           </details>
           {machineShown.map(({ machine, all, shown }) => (
@@ -837,7 +843,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               <summary>
                 {machine.name} <span>{all === null ? "…" : shown.length}</span>
               </summary>
-              {policyErrors[machine.environmentId] ? <Alert tone="danger" action={<Button onClick={() => requestRefresh(machine.environmentId)}>{t("Retry")}</Button>}>{policyErrors[machine.environmentId]}</Alert> : null}
+              {policyErrors[machine.environmentId] ? <Alert inline tone="danger" action={<Button onClick={() => requestRefresh(machine.environmentId)}>{t("Retry")}</Button>}>{policyErrors[machine.environmentId]}</Alert> : null}
               {renderList(all, shown, machineLists[machine.environmentId]?.error ?? null, machine)}
             </details>
           ))}
@@ -988,11 +994,11 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
             </header>
             <div key={previewSkill.path} className={styles.document}>
               {previewError ? (
-                <Alert tone="danger" role="alert" action={<Button onClick={() => setPreviewRead((value) => value + 1)}>{t("Retry")}</Button>}>
+                <Alert inline tone="danger" role="alert" action={<Button onClick={() => setPreviewRead((value) => value + 1)}>{t("Retry")}</Button>}>
                   {previewError}
                 </Alert>
               ) : draft === null ? (
-                <Alert tone="info" role="status">
+                <Alert inline tone="info" role="status">
                   {t("Loading skill…")}
                 </Alert>
               ) : (editing && editable) || split ? (

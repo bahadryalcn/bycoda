@@ -1,6 +1,7 @@
 import { useLocale, useT } from "../../../shared/i18n";
 import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { ButtonGroup } from "../../../shared/ui/ButtonGroup";
 
 export type MarkdownViewMode = "preview" | "source";
 
@@ -46,11 +47,7 @@ type ToggleProps = {
 export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
   const t = useT();
   return (
-    <div
-      role="tablist"
-      aria-label={t("Markdown view")}
-      className="flex shrink-0 rounded-md border border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] p-0.5"
-    >
+    <ButtonGroup role="tablist" aria-label={t("Markdown view")} className="shrink-0">
       <ModeTab
         label={t("Preview")}
         selected={mode === "preview"}
@@ -61,7 +58,7 @@ export function MarkdownModeToggle({ mode, onChange }: ToggleProps) {
         selected={mode === "source"}
         onSelect={() => onChange("source")}
       />
-    </div>
+    </ButtonGroup>
   );
 }
 
@@ -76,7 +73,14 @@ function ModeTab({
 }) {
   useLocale();
   return (
-    <Button variant="tab" role="tab" aria-selected={selected} onClick={onSelect}>
+    <Button
+      variant="tab"
+      size="sm"
+      role="tab"
+      selected={selected}
+      aria-selected={selected}
+      onClick={onSelect}
+    >
       {label}
     </Button>
   );
@@ -87,15 +91,28 @@ type ShellProps = {
   onModeChange: (mode: MarkdownViewMode) => void;
   preview: ReactNode;
   source: ReactNode;
+  /** Controls placed before the Preview/Source switch, on the right of the row. */
   actions?: ReactNode;
+  /** Optional start-aligned content (for example Save and status) sharing the same row. */
+  leading?: ReactNode;
 };
 
-export function MarkdownViewShell({ mode, onModeChange, preview, source, actions }: ShellProps) {
+export function MarkdownViewShell({
+  mode,
+  onModeChange,
+  preview,
+  source,
+  actions,
+  leading,
+}: ShellProps) {
   useLocale();
   return (
     <div className="markdown-view-shell flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="markdown-view-actions flex shrink-0 justify-end border-b border-(--ui-tone-neutral-border) px-2 py-1">
-        <div className="flex flex-wrap items-center justify-end gap-1.5">
+      <div className="markdown-view-actions flex shrink-0 items-center gap-2 px-2 py-1">
+        {leading ? (
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">{leading}</div>
+        ) : null}
+        <div className="ms-auto flex flex-wrap items-center justify-end gap-1">
           {actions}
           <MarkdownModeToggle mode={mode} onChange={onModeChange} />
         </div>

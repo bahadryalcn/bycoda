@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { HarnessId } from "../../sessions/model/session";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 import { GitChangesPanel } from "./GitChangesPanel";
@@ -40,32 +41,41 @@ export function SourceControl({
   onOpenCommit,
 }: Props) {
   useLocale();
+  const [discoveryDetails, setDiscoveryDetails] = useState(false);
   const { data, error, loading, refresh } = useProjectWorktrees(
     cwd,
     enabled && !repositoryPaths?.length && !!onOpenRepository,
   );
   const discoveryNotice = error ? (
-    <div className="flex shrink-0 items-start gap-2 border-b border-stroke px-2 py-1 text-ui-caption">
-      <div className="min-w-0 flex-1 text-(--ui-text-secondary)">
-        <p role="status">
-          {data
-            ? t("Could not refresh worktrees. Showing the last available list.")
-            : `${t("Worktrees")} · ${t("Unavailable")}`}
-        </p>
-        <details>
-          <summary className="cursor-pointer">{t("Details")}</summary>
-          <p className="max-h-32 overflow-y-auto break-all">{error}</p>
-        </details>
-      </div>
+    <div className="flex shrink-0 flex-wrap items-center gap-x-2 border-b border-stroke px-2 py-0.5 text-ui-caption">
+      <p role="status" className="min-w-0 text-(--ui-text-secondary)" title={error}>
+        {data
+          ? t("Could not refresh worktrees. Showing the last available list.")
+          : `${t("Worktrees")} · ${t("Unavailable")}`}
+      </p>
+      <Button
+        variant="link"
+        size="sm"
+        aria-expanded={discoveryDetails}
+        onClick={() => setDiscoveryDetails((open) => !open)}
+      >
+        {t("Details")}
+      </Button>
       <Button
         variant="ghost"
         size="sm"
+        className="ms-auto"
         loading={loading}
         disabled={!enabled}
         onClick={() => void refresh()}
       >
         {t("Retry")}
       </Button>
+      {discoveryDetails ? (
+        <p className="max-h-32 basis-full overflow-y-auto break-all text-(--ui-text-secondary)">
+          {error}
+        </p>
+      ) : null}
     </div>
   ) : null;
   const checkouts = (() => {

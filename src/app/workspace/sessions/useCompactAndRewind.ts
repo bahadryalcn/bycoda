@@ -1,3 +1,4 @@
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import { type MutableRefObject, useCallback, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "../../../shared/i18n";
@@ -77,7 +78,7 @@ export function useCompactAndRewind({
   const onCompactContext = useCallback(
     (sessionId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && remoteProjectFor(current.cwd))
+      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd)))
         return remoteSessionActions(sessionId)?.compact() ?? false;
       if (current?.busy && !current.worktreeRemoved) {
         // Keep the typed command and say why, instead of ignoring it silently.
@@ -190,7 +191,7 @@ export function useCompactAndRewind({
       if (
         !current ||
         current.workspaceId !== workspaceId ||
-        remoteProjectFor(current.cwd) ||
+        (hostSessionBinding(current) || remoteProjectFor(current.cwd)) ||
         current.busy ||
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
@@ -253,7 +254,7 @@ export function useCompactAndRewind({
         orchestrator.submissionError(sessionId)
       )
         return false;
-      if (remoteProjectFor(snapshot.cwd)) {
+      if ((hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd))) {
         return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }
       if (!editedResends.start(sessionId)) return false;

@@ -8,6 +8,10 @@ import { describe, expect, it } from "vitest";
 // operation", which unit tests that mock `remoteRequest` never see.
 
 const root = join(__dirname, "..", "..", "..", "..");
+// This module declares canonical RPC metadata; its method keys are not desktop
+// callsites. Exclude only this declaration file, so actual consumers elsewhere
+// still reveal missing native forwarding when they start calling a method.
+const methodDeclarations = join(root, "src", "shared", "model", "host-contracts", "methods.ts");
 
 function allowlist(): Set<string> {
   const rust = readFileSync(join(root, "src-tauri", "src", "remote.rs"), "utf8");
@@ -33,6 +37,7 @@ function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) return sourceFiles(path);
+    if (path === methodDeclarations) return [];
     return /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });
 }
@@ -79,6 +84,18 @@ describe("remote method allowlist", () => {
       }
     }
     expect([...missing].sort()).toEqual([]);
+  });
+
+  it("keeps raw development-server relay operations behind their dedicated native gateway", () => {
+    const allowed = allowlist();
+    const served = hostMethods();
+    for (const action of ["Check", "Open", "Read", "Write", "Close"]) {
+      const method = `devServers.bridge${action}`;
+      expect(served.has(method), `${method} must remain available to the dedicated gateway`).toBe(
+        true,
+      );
+      expect(allowed.has(method), `${method} must not pass the generic desktop bridge`).toBe(false);
+    }
   });
 
   it("forwards sprint lifecycle and source synchronization without opening arbitrary methods", () => {

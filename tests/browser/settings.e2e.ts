@@ -113,7 +113,11 @@ for (const theme of ["light", "dark"])
       await expect(general.locator('[data-setting-id="technical-language"]')).toContainText(
         "Follow application language",
       );
-      await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      // The header help states automatic saving once; groups no longer repeat it.
+      await expect(general.getByText("Changes save automatically", { exact: true })).toHaveCount(0);
+      await page.getByRole("button", { name: "About this page", exact: true }).click();
+      await expect(page.getByText("Changes save automatically", { exact: true })).toHaveCount(1);
+      await page.keyboard.press("Escape");
       await expect(general.locator(".general-detail")).toBeVisible();
       const overflows = await general.evaluate((root) =>
         [
@@ -147,7 +151,9 @@ test("appearance topics stay visible and support search into nested controls", a
   const topics = page.locator(".appearance-settings > .appearance-section");
   await expect(topics).toHaveCount(6);
   await page.screenshot({ path: testInfo.outputPath("appearance-overview-dark.png") });
-  await expect(page.locator(".appearance-save-note")).toHaveText("Changes save automatically");
+  await page.getByRole("button", { name: "About this page", exact: true }).click();
+  await expect(page.getByText("Changes save automatically", { exact: true })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.locator('[data-setting-id="code-font-size"]')).toBeVisible();
   await expect(
     page.locator(".appearance-settings details, .appearance-settings summary"),
@@ -163,9 +169,16 @@ test("appearance topics stay visible and support search into nested controls", a
   // Expanded content must stay contained at intermediate and narrow widths too.
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    // Open rows outset their hover surface into the form padding, so the padded form and the
+    // scroller are the boundaries that must stay free of horizontal overflow.
     expect(
       await page
-        .locator(".appearance-settings")
+        .locator(".bycoda-settings-form")
+        .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+    expect(
+      await page
+        .locator("[data-settings-scroller]")
         .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
     ).toBe(true);
   }
@@ -212,6 +225,10 @@ test("elastic appearance adjustments retain bounds, persistence and light-mode g
   page,
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
+  // Blur is adjustable on macOS only; present a Mac platform so the slider's bounds are exercised.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "platform", { get: () => "MacIntel" });
+  });
   await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
   await page.getByRole("button", { name: /^Olive/ }).click();
   await expect(page.locator("details.settings-advanced")).toHaveCount(0);
@@ -332,6 +349,8 @@ for (const theme of ["light", "dark"])
       await page.getByRole("button", { name: "Reset filters", exact: true }).click();
       await expect(recorder).toBeVisible();
       await expect(recorder).toContainText("I");
+      // Filters reset independently of the search text, so clear it before searching by category.
+      await search.clear();
       await page.getByRole("button", { name: "Filters", exact: true }).click();
       await filters.getByRole("button", { name: "Category: All categories", exact: true }).click();
       await page.getByRole("option", { name: "Pane", exact: true }).click();
@@ -384,7 +403,11 @@ test("shared appearance controls preserve palette persistence and provide color 
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`);
       const studio = page.getByRole("region", { name: "Theme and colors", exact: true });
-      await expect(studio.locator(".appearance-workspace-preview")).toHaveCount(9);
+      // The 9 workspace-preview galleries were replaced by named palette chips and a segmented scheme.
+      await expect(studio.locator(".appearance-workspace-preview")).toHaveCount(0);
+      await expect(
+        studio.getByRole("radiogroup", { name: "Color scheme", exact: true }).getByRole("radio"),
+      ).toHaveCount(3);
       await expect(studio.locator("details, summary")).toHaveCount(0);
       const olive = studio.getByRole("button", { name: /^Olive/ });
       const palettes = studio.getByRole("group", { name: "Theme palettes", exact: true });
@@ -404,7 +427,8 @@ test("shared appearance controls preserve palette persistence and provide color 
         "true",
       );
       await studio
-        .getByRole("button", { name: theme === "light" ? "Light" : "Dark", exact: true })
+        .getByRole("radiogroup", { name: "Color scheme", exact: true })
+        .getByRole("radio", { name: theme === "light" ? "Light" : "Dark", exact: true })
         .click();
       await expect(page.locator("html")).toHaveClass(
         theme === "light" ? /theme-light/ : /^(?!.*theme-light)/,
@@ -508,6 +532,13 @@ test("explicit template validation, save status and persistence preserve the las
   await page.getByRole("textbox", { name: "Template text", exact: true }).fill("Unsaved revision");
   await page.getByRole("button", { name: "Back to workspace" }).click();
   await page.getByRole("button", { name: "Reopen settings" }).click();
+  // The unsaved draft survives closing and reopening Settings and stays visibly unsaved;
+  // discarding it restores the last saved value.
+  await expect(page.getByRole("textbox", { name: "Template text", exact: true })).toHaveValue(
+    "Unsaved revision",
+  );
+  await expect(page.getByRole("button", { name: "Save templates", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Discard changes and reload", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Template text", exact: true })).toHaveValue(
     "Find bugs and explain their impact.",
   );

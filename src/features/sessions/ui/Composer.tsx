@@ -15,6 +15,15 @@ import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
 import type { ComposerPreparation } from "../data/composerClosure";
 import {
+  retainParentInput,
+  useParentInputClosure,
+  useParentInputsClosed,
+  canMutateParentInputs,
+  mutateParentInput,
+  type ParentInputHandle,
+  type ParentAdmission,
+} from "../data/parentInputClosure";
+import {
   useComposerTranslationSelection,
   type ComposerTranslationSelection,
 } from "../hooks/useComposerTranslationSelection";
@@ -64,6 +73,7 @@ import {
   Play,
   Plus,
   Share,
+  SlidersHorizontal,
   Square,
   StickyNote,
   Trash2,
@@ -282,6 +292,7 @@ import {
   getComposerMcpTags,
   getComposerDraftMode,
   setComposerDraftMode,
+  setComposerDraftSnapshot,
   setComposerAttachments,
   setComposerMcpTags,
   takeComposerNotice,
@@ -332,6 +343,8 @@ type Props = {
   cwd?: string;
   executionCwd: string;
   sessionId?: string;
+  /** Nested composers keep their own draft ID; null means no known logical root. */
+  parentSessionId?: string | null;
   branch?: string;
   recents?: RecentProject[];
   hideProjectPicker?: boolean;
@@ -339,7 +352,12 @@ type Props = {
   hideTopBar?: boolean;
   /** Routes discovery to the host; local-only app modes remain unavailable. */
   remoteSession?: boolean;
-  remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean; steer?: boolean };
+  remoteFeatures?: {
+    attachments: boolean;
+    plan: boolean;
+    draft: boolean;
+    steer?: boolean;
+  };
   /** Why Send cannot reach its destination right now; Send stays usable and tries again. */
   sendBlockedReason?: string;
   /** Send is refused while set (another computer is mid-turn on this session). */
@@ -402,22 +420,31 @@ type Props = {
     text: string,
     attachments: Attachment[],
     options?: ComposerTurnOptions,
+    parentAdmission?: ParentAdmission,
   ) => boolean | void;
   /** `draft` opens the side question with the text unsent, for a typed `/btw `. */
-  onBtwCommand?: (text: string, options?: { draft?: boolean }) => boolean | void;
+  onBtwCommand?: (
+    text: string,
+    options?: { draft?: boolean },
+    parentAdmission?: ParentAdmission,
+  ) => boolean | void;
   canSaveDraft?: boolean;
-  onSaveDraft?: (text: string, attachments: Attachment[]) => boolean | void;
+  onSaveDraft?: (
+    text: string,
+    attachments: Attachment[],
+    parentAdmission?: ParentAdmission,
+  ) => boolean | void;
   onStop?: () => void;
-  onCompactContext?: () => boolean;
-  onNewSession?: (options?: NewSessionOptions) => void;
+  onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
+  onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
   onPlaceInFolder?: (target: SessionFolderTarget) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
-  onResumeProviderSession?: () => void;
+  onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => void;
   onEditQueuedMessage?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onQueuedMessageEditingChange?: (messageId?: string) => void;
   /** The queue in its new order, as ids; resolved against the live queue by the owner. */
-  onReorderQueuedMessages?: (messageIds: string[]) => void;
+  onReorderQueuedMessages?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
   onSteerQueuedMessage?: (messageId: string) => QueueAction;
   onResumeQueue?: () => QueueAction;
   onUsageLimitResume?: () => void;
@@ -439,6 +466,7 @@ type Props = {
 
 function MessageQueue({
   sessionId,
+  parentSessionId,
   messages,
   status,
   onDelete,
@@ -454,6 +482,7 @@ function MessageQueue({
   onResume,
 }: {
   sessionId?: string;
+  parentSessionId?: string;
   messages: QueuedMessage[];
   status?: MessageQueueStatus;
   canAttach: boolean;
@@ -471,7 +500,7 @@ function MessageQueue({
   onDelete?: (messageId: string) => void;
   onEdit?: (messageId: string, text: string, attachments: Attachment[]) => void;
   onEditingChange?: (messageId?: string) => void;
-  onReorder?: (messageIds: string[]) => void;
+  onReorder?: (messageIds: string[], parentAdmission?: ParentAdmission) => void;
   onSteer?: (messageId: string) => QueueAction;
   onResume?: () => QueueAction;
 }) {
@@ -485,7 +514,39 @@ function MessageQueue({
   const holdDetail = holdReason && holdReason !== "stopped" ? holdReason : undefined;
   const actionRef = useRef(false);
   const [pendingAction, setPendingAction] = useState<string>();
-  const [feedback, setFeedback] = useState<{ error: boolean; text: string; actionId: string }>();
+  const dragAdmission = useRef<{
+    admission: ParentAdmission;
+    identity: object | null;
+    committed: boolean;
+    ended: boolean;
+  } | null>(null);
+  useEffect(
+    () => () => {
+      const drag = dragAdmission.current;
+      // Shared reorder cleanup cancels its own timers before this finalizer.
+      drag?.admission.finish();
+      dragAdmission.current = null;
+    },
+    [],
+  );
+  const [feedback, setFeedback] = useState<{
+    error: boolean;
+    text: string;
+    actionId: string;
+  }>();
+  const queueClosed = useParentInputsClosed(parentSessionId);
+  const queueOwner = useParentInputClosure({
+    kind: "queue-edit",
+    sessionId: parentSessionId,
+    snapshot: () => ({
+      source: "message-queue",
+      messages,
+      editingId,
+      pendingAction,
+      feedback,
+      actionPending: actionRef.current,
+    }),
+  });
   const activeFeedback =
     feedback?.error &&
     (feedback.actionId === "resume"
@@ -502,44 +563,81 @@ function MessageQueue({
   }, [feedback]);
   const perform = async (id: string, action: (() => QueueAction) | undefined) => {
     if (actionRef.current) return;
-    actionRef.current = true;
-    setPendingAction(id);
-    setFeedback(undefined);
-    try {
-      if (!action)
-        throw new Error(
-          t("This queue action is unavailable. Reopen the conversation and try again."),
-        );
-      const result = await action();
-      if (result === false)
-        throw new Error(
-          t(
-            "The message was not accepted. It remains queued. Check the conversation and try again.",
-          ),
-        );
-      setFeedback({
-        error: false,
-        actionId: id,
-        text:
-          typeof result === "object" && result?.message
-            ? t(result.message)
-            : id === "resume" && status !== "restored"
-              ? t("Queue resumed. Messages will send when this turn finishes.")
-              : t("Message accepted. Follow its progress in the conversation."),
-      });
-    } catch (error) {
-      setFeedback({ error: true, actionId: id, text: t(String(error).replace(/^Error: /, "")) });
-    } finally {
-      actionRef.current = false;
-      setPendingAction(undefined);
-    }
+    const admitted = queueOwner.admit();
+    if (!admitted) return;
+    return admitted.run(async () => {
+      actionRef.current = true;
+      setPendingAction(id);
+      setFeedback(undefined);
+      try {
+        if (!action)
+          throw new Error(
+            t("This queue action is unavailable. Reopen the conversation and try again."),
+          );
+        const result = await action();
+        if (result === false)
+          throw new Error(
+            t(
+              "The message was not accepted. It remains queued. Check the conversation and try again.",
+            ),
+          );
+        setFeedback({
+          error: false,
+          actionId: id,
+          text:
+            typeof result === "object" && result?.message
+              ? t(result.message)
+              : id === "resume" && status !== "restored"
+                ? t("Queue resumed. Messages will send when this turn finishes.")
+                : t("Message accepted. Follow its progress in the conversation."),
+        });
+      } catch (error) {
+        setFeedback({
+          error: true,
+          actionId: id,
+          text: t(String(error).replace(/^Error: /, "")),
+        });
+      } finally {
+        actionRef.current = false;
+        setPendingAction(undefined);
+      }
+    });
   };
   const sortable = useAnimatedReorder(
     messages.map((message) => message.id),
     (ids) => {
-      if (!actionRef.current) onReorder?.(ids);
+      if (actionRef.current) return;
+      const drag = dragAdmission.current;
+      if (drag && !drag.admission.settled) {
+        try {
+          if (queueOwner.identity() !== drag.identity) return;
+          drag.admission.apply(() =>
+            canMutateParentInputs(parentSessionId)
+              ? onReorder?.(ids)
+              : onReorder?.(ids, drag.admission),
+          );
+          drag.committed = true;
+        } catch {
+          queueOwner();
+        }
+      } else mutateParentInput(queueOwner, () => onReorder?.(ids));
     },
     "y",
+    undefined,
+    {
+      onEnd: () => {
+        const drag = dragAdmission.current;
+        if (!drag) return;
+        drag.ended = true;
+        // reset() precedes the shared hook's synchronous order callback. Keep
+        // the original ticket until that callback, including its settling timer.
+        queueMicrotask(() => {
+          if (!drag.committed && queueOwner.identity() === drag.identity) queueOwner();
+          drag.admission.finish();
+          if (dragAdmission.current === drag) dragAdmission.current = null;
+        });
+      },
+    },
   );
   const card = useRef<HTMLDivElement>(null);
   const refocus = useRef<string | undefined>(undefined);
@@ -550,6 +648,7 @@ function MessageQueue({
     refocus.current = undefined;
   }, [messages]);
   const moveByKey = (event: KeyboardEvent, id: string, index: number) => {
+    if (!queueOwner.canMutate()) return;
     if (
       actionRef.current ||
       !event.altKey ||
@@ -601,6 +700,7 @@ function MessageQueue({
   const leaseHeld = !paused && hold.kind === "held" && hold.reason === "lease";
   const restored = status === "restored" && messages.length > 0;
   const canSend = (message: QueuedMessage) =>
+    !queueClosed &&
     !pendingAction &&
     !pendingDelivery &&
     !message.deliveryUnknown &&
@@ -609,23 +709,28 @@ function MessageQueue({
     (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
 
   const startEdit = (message: QueuedMessage) => {
+    if (!queueOwner.canMutate()) return;
     setEditingId(message.id);
     onEditingChange?.(message.id);
   };
   const cancelEdit = () => {
+    queueOwner();
     setEditingId(undefined);
     onEditingChange?.();
   };
 
   return (
     <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
+      {queueClosed ? (
+        <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
+      ) : null}
       <div
-        className="relative z-0 rounded-t-xl border border-b-0 border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-2 py-1"
+        className="relative z-0 rounded-t-xl bg-(--ui-surface-panel) px-2 py-1"
         data-message-queue-card
         ref={card}
       >
         {paused ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption">
+          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate" title={holdDetail}>
               {hold.kind === "held" && hold.reason === "unknown"
@@ -641,7 +746,12 @@ function MessageQueue({
               variant="ghost"
               type="button"
               disabled={
-                !onResume || !!pendingAction || pendingDelivery || hasMissingAttachment(messages[0])
+                !onResume ||
+                !!pendingAction ||
+                pendingDelivery ||
+                // An unconfirmed delivery is settled in the delivery notice, never by a blind resend.
+                (hold.kind === "held" && hold.reason === "unknown") ||
+                hasMissingAttachment(messages[0])
               }
               loading={pendingAction === "resume"}
               loadingLabel={t("Resuming…")}
@@ -655,7 +765,7 @@ function MessageQueue({
         ) : null}
         {leaseHeld && sessionId ? (
           <div
-            className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption"
+            className="mb-1 flex h-7 items-center gap-2 text-ui-caption"
             data-queue-held-elsewhere
           >
             <Pause className="size-3.5" />
@@ -665,7 +775,7 @@ function MessageQueue({
             <Button
               variant="ghost"
               type="button"
-              disabled={!!pendingAction || pendingDelivery}
+              disabled={queueClosed || !!pendingAction || pendingDelivery}
               loading={pendingAction === "takeover"}
               loadingLabel={t("Taking over…")}
               onClick={() => void perform("takeover", () => takeOverSharedLocalQueue(sessionId))}
@@ -676,7 +786,7 @@ function MessageQueue({
           </div>
         ) : null}
         {restored ? (
-          <div className="flex h-7 items-center gap-2 border-b border-(--ui-tone-neutral-border) text-ui-caption">
+          <div className="mb-1 flex h-7 items-center gap-2 text-ui-caption">
             <Pause className="size-3.5" />
             <span className="min-w-0 flex-1 truncate">
               {messages.length === 1
@@ -741,15 +851,13 @@ function MessageQueue({
               <div
                 key={message.id}
                 ref={(node) => sortable.setItemRef(message.id, node)}
-                className={`reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg ${
-                  index > 0 ? "border-t border-(--ui-tone-neutral-border)" : ""
-                }`}
+                className="reorder-item grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 text-ui-caption data-[dragging]:rounded-md data-[dragging]:bg-(--ui-surface) data-[dragging]:shadow-lg"
               >
                 {messages.length > 1 ? (
                   <Button
                     iconOnly
                     label={t("Reorder queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
+                    disabled={queueClosed || !!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
                     data-queue-handle={message.id}
@@ -757,7 +865,24 @@ function MessageQueue({
                     shortcut="Alt+↑ / Alt+↓"
                     aria-label={t("Reorder queued message")}
                     aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-                    onPointerDown={(event) => sortable.onItemPointerDown(message.id, event)}
+                    onPointerDown={(event) => {
+                      if (event.button !== 0) return;
+                      if (dragAdmission.current && !dragAdmission.current.ended) return;
+                      const admitted = queueOwner.admit();
+                      if (!admitted) return;
+                      // This may synchronously finish the previous settling
+                      // drag. Its callback must still see its original ticket.
+                      if (sortable.onItemPointerDown(message.id, event) !== true) {
+                        admitted.finish();
+                        return;
+                      }
+                      dragAdmission.current = {
+                        admission: admitted,
+                        identity: queueOwner.identity(),
+                        committed: false,
+                        ended: false,
+                      };
+                    }}
                     onKeyDown={(event) => moveByKey(event, message.id, index)}
                     className="shrink-0"
                   >
@@ -832,7 +957,7 @@ function MessageQueue({
                   <Button
                     iconOnly
                     label={t("Edit queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
+                    disabled={queueClosed || !!pendingAction || pendingDelivery}
                     variant="ghost"
                     type="button"
                     title={t("Edit queued message")}
@@ -846,8 +971,10 @@ function MessageQueue({
                     label={t("Remove")}
                     icon={<Trash2 className="icon-sm" />}
                     prompt={t("Remove queued message")}
-                    disabled={!!pendingAction || pendingDelivery}
-                    onConfirm={() => onDelete?.(message.id)}
+                    disabled={queueClosed || !!pendingAction || pendingDelivery}
+                    onConfirm={() => {
+                      mutateParentInput(queueOwner, () => onDelete?.(message.id));
+                    }}
                   />
                 </div>
               </div>
@@ -870,7 +997,7 @@ function MessageQueue({
           </div>
         ) : null}
         {remote ? (
-          <div className="border-t border-(--ui-tone-neutral-border) py-1 text-ui-micro text-(--ui-text-secondary)">
+          <div className="pt-1 text-ui-micro text-(--ui-text-secondary)">
             {t("Sent one at a time when the host finishes this turn, while {p0} is open.", {
               p0: PRODUCT_IDENTITY.displayName,
             })}
@@ -880,13 +1007,15 @@ function MessageQueue({
       {editingMessage ? (
         <QueuedMessageEditDialog
           key={editingMessage.id}
+          parentSessionId={parentSessionId}
           message={editingMessage}
           canAttach={canAttach}
           onSave={(text, attachments) => {
+            if (!queueOwner.canMutate()) return;
             onEdit?.(editingMessage.id, text, attachments);
             setEditingId(undefined);
           }}
-          onRemove={() => onDelete?.(editingMessage.id)}
+          onRemove={() => mutateParentInput(queueOwner, () => onDelete?.(editingMessage.id))}
           onCancel={cancelEdit}
         />
       ) : null}
@@ -912,6 +1041,7 @@ export const Composer = memo(function Composer({
   cwd = "~",
   executionCwd,
   sessionId,
+  parentSessionId,
   branch,
   recents = [],
   hideProjectPicker = false,
@@ -1000,16 +1130,28 @@ export const Composer = memo(function Composer({
 }: Props) {
   "use memo";
   const t = useT();
+  const logicalParentSessionId =
+    parentSessionId === null ? undefined : (parentSessionId ?? sessionId);
+  const parentClosed = useParentInputsClosed(logicalParentSessionId);
+  const parentInputRef = useRef<ParentInputHandle | null>(null);
   const ref = useRef<HTMLTextAreaElement>(null);
   const draftTextRef = useRef(initialDraft ?? "");
   const mountedClosureRef = useRef<ReturnType<typeof useMountedComposerClosure> | null>(null);
   const attachmentApplyDepth = useRef(0);
   const canMutateDraft = useCallback(
-    () => attachmentApplyDepth.current > 0 || (mountedClosureRef.current?.canMutate() ?? true),
-    [],
+    () =>
+      (parentInputRef.current?.canMutate() ?? canMutateParentInputs(logicalParentSessionId)) &&
+      (attachmentApplyDepth.current > 0 || (mountedClosureRef.current?.canMutate() ?? true)),
+    [logicalParentSessionId],
   );
   const translationContext = useMemo(
-    () => ({ cwd: executionCwd, harness, model, modelSettings, providerAccountId }),
+    () => ({
+      cwd: executionCwd,
+      harness,
+      model,
+      modelSettings,
+      providerAccountId,
+    }),
     [executionCwd, harness, model, modelSettings, providerAccountId],
   );
   const translationSelection = useComposerTranslationSelection(
@@ -1031,6 +1173,7 @@ export const Composer = memo(function Composer({
   useEffect(() => () => inputResize.cancel(), [inputResize]);
   const boxRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
+  const modeRef = useRef<HTMLButtonElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
   // A remount (or a restart) starts from the attachments the draft was saved with.
   const [attachments, setAttachments] = useState<Attachment[]>(() =>
@@ -1050,6 +1193,10 @@ export const Composer = memo(function Composer({
   /** Pasted and dropped files still reading when Send is pressed. */
   const pasteFlightRef = useRef<Promise<void> | null>(null);
   const submitLockRef = useRef<symbol | null>(null);
+  const submitInputRef = useRef<{ text: string; queue: boolean } | null>(null);
+  const submitContinuationRef = useRef<
+    ((value: string, queue: boolean, original: ParentAdmission) => void) | null
+  >(null);
   const [submission, setSubmission] = useState<{
     sessionId: string | undefined;
     action: "send" | "queue";
@@ -1064,6 +1211,7 @@ export const Composer = memo(function Composer({
     previousBusyRef.current = busy;
   }, [busy]);
   const stopPendingSend = () => {
+    parentInputRef.current?.();
     // Retire submission intent without discarding a clipboard read or its result.
     sendIntentRef.current += 1;
     submitLockRef.current = null;
@@ -1157,6 +1305,7 @@ export const Composer = memo(function Composer({
   );
   const [fileDrag, setFileDrag] = useState(false);
   const [plusOpen, setPlusOpen] = useState(false);
+  const [modeOpen, setModeOpen] = useState(false);
   const [planSelected, setPlanSelected] = useState(false);
   const [operatorSelected, setOperatorSelected] = useState(false);
   const [orchestrationSelected, setOrchestrationSelected] = useState(false);
@@ -1182,7 +1331,11 @@ export const Composer = memo(function Composer({
       );
   }, [sessionId, draftSelected]);
   const [slash, setSlash] = useState<SlashToken | null>(null);
-  const [skillSelection, setSkillSelection] = useState({ query: "", cwd, index: 0 });
+  const [skillSelection, setSkillSelection] = useState({
+    query: "",
+    cwd,
+    index: 0,
+  });
   if (skillSelection.query !== (slash?.query ?? "") || skillSelection.cwd !== cwd) {
     setSkillSelection({ query: slash?.query ?? "", cwd, index: 0 });
   }
@@ -1230,7 +1383,19 @@ export const Composer = memo(function Composer({
       mcpTags: selectedMcpRef.current,
       ...(draftModeRef.current ? { mode: "save" as const } : {}),
     }),
-    reopened: () => publishDraft(ref.current?.value ?? draftTextRef.current),
+    reopened: () => {
+      const text = ref.current?.value ?? draftTextRef.current;
+      publishDraft(text);
+      if (sessionId)
+        mountedClosureRef.current?.publishCache(() =>
+          setComposerDraftSnapshot(sessionId, {
+            text,
+            attachments: attachmentsRef.current,
+            mcpTags: selectedMcpRef.current,
+            ...(draftModeRef.current ? { mode: "save" as const } : {}),
+          }),
+        );
+    },
   });
   useLayoutEffect(() => {
     mountedClosureRef.current = mountedClosure;
@@ -1253,7 +1418,11 @@ export const Composer = memo(function Composer({
   );
   const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? []);
   const [mention, setMention] = useState<MentionToken | null>(null);
-  const [mentionSelection, setMentionSelection] = useState({ query: "", cwd, index: 0 });
+  const [mentionSelection, setMentionSelection] = useState({
+    query: "",
+    cwd,
+    index: 0,
+  });
   if (mentionSelection.query !== (mention?.query ?? "") || mentionSelection.cwd !== cwd) {
     setMentionSelection({ query: mention?.query ?? "", cwd, index: 0 });
   }
@@ -1594,6 +1763,7 @@ export const Composer = memo(function Composer({
   useEffect(() => {
     if (!sessionId || !cwd || disabled) return;
     return registerBrowserComposer(cwd, sessionId, (file) => {
+      if (!canMutateDraft()) return false;
       if (!attachmentsSupported || attachmentsRef.current.length >= MAX_ATTACHMENTS) return false;
       addAttachments([file]);
       return attachmentsRef.current.some((entry) => entry.id === file.id);
@@ -1699,9 +1869,16 @@ export const Composer = memo(function Composer({
 
   const rememberAttachmentRead = useCallback(
     (read: (accepted: ComposerPreparation & { isCurrent(): boolean }) => Promise<void>) => {
+      let parentAttempt: ParentAdmission | null = parentInputRef.current?.admit() ?? null;
+      if (!parentAttempt) return;
+      const initialParentAttempt = parentAttempt;
       let generation = pasteGenerationRef.current;
       let failures = pasteFailuresRef.current;
       const work = mountedClosure.prepare((accepted) => {
+        if (parentAttempt!.settled) parentAttempt = parentAttempt!.resume();
+        const attempt = parentAttempt;
+        if (!attempt) throw new Error("Parent preparation owner changed.");
+        void accepted.whenSettled?.().then(attempt.finish, attempt.finish);
         // Another failed read still cancels ordinary pending reads/Send, but
         // cannot silently turn this retained selection into a different draft.
         // Only non-failure generation transitions invalidate explicit retry.
@@ -1713,16 +1890,19 @@ export const Composer = memo(function Composer({
           ...accepted,
           isCurrent: () => pasteGenerationRef.current === generation,
           apply: (mutation) =>
-            accepted.apply(() => {
-              attachmentApplyDepth.current++;
-              try {
-                return mutation();
-              } finally {
-                attachmentApplyDepth.current--;
-              }
-            }),
+            attempt.apply(() =>
+              accepted.apply(() => {
+                attachmentApplyDepth.current++;
+                try {
+                  return mutation();
+                } finally {
+                  attachmentApplyDepth.current--;
+                }
+              }),
+            ),
         });
       });
+      void work.then(initialParentAttempt.finish, initialParentAttempt.finish);
       const flight = work.then(
         () => undefined,
         (reason: unknown) => {
@@ -1919,15 +2099,25 @@ export const Composer = memo(function Composer({
     mountedClosure.changed();
     pasteGenerationRef.current += 1;
     draftRevisionRef.current += 1;
-    clearComposer();
-    setDraftSelected(false);
+    // This reset was accepted externally. Preserve it and invalidate the closed
+    // observation instead of silently dropping it through the user edit gate.
+    if (ref.current) {
+      ref.current.value = "";
+      ref.current.style.height = "auto";
+    }
+    setDraft("");
+    publishDraft("");
+    draftModeRef.current = false;
+    setDraftSelectedState(false);
     setPlanSelected(false);
     setOrchestrationSelected(false);
     setSessionFolderSelected(false);
     setSessionFolderOpen(false);
     setMcpPickerOpen(false);
-    setSelectedMcp([]);
+    selectedMcpRef.current = [];
+    setSelectedMcpState([]);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setCreatingSkill(false);
@@ -2322,6 +2512,7 @@ export const Composer = memo(function Composer({
   );
 
   const exitEditMode = useCallback(() => {
+    if (!canMutateDraft()) return;
     draftRevisionRef.current += 1;
     pasteGenerationRef.current += 1;
     clearComposer();
@@ -2332,6 +2523,7 @@ export const Composer = memo(function Composer({
     setResendEdited(false);
     onEditingLastTurnChange?.(false);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setMcpPickerOpen(false);
@@ -2341,6 +2533,7 @@ export const Composer = memo(function Composer({
   }, [clearComposer, onEditingLastTurnChange, syncHasValue]);
 
   const recallLastTurn = useCallback(() => {
+    if (!canMutateDraft()) return;
     if (!editLastTurnSupported || !lastTurnRecall) return;
     if (onRecallLastTurn) {
       onRecallLastTurn(lastTurnRecall);
@@ -2367,7 +2560,7 @@ export const Composer = memo(function Composer({
     restoreDraft,
   ]);
 
-  const recallMessage = useCallback(
+  const applyExternalRecall = useCallback(
     (value: LastTurnRecall) => {
       restoreDraft(
         value.text,
@@ -2382,14 +2575,21 @@ export const Composer = memo(function Composer({
     },
     [onEditingLastTurnChange, restoreDraft],
   );
+  const recallMessage = useCallback(
+    (value: LastTurnRecall) => {
+      if (!canMutateDraft()) return;
+      applyExternalRecall(value);
+    },
+    [canMutateDraft, applyExternalRecall],
+  );
 
   const appliedRecallIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!recalledMessage || appliedRecallIdRef.current === recalledMessage.id) return;
     appliedRecallIdRef.current = recalledMessage.id;
-    recallMessage(recalledMessage.value);
+    applyExternalRecall(recalledMessage.value);
     onRecalledMessageApplied?.(recalledMessage.id);
-  }, [onRecalledMessageApplied, recallMessage, recalledMessage]);
+  }, [onRecalledMessageApplied, applyExternalRecall, recalledMessage]);
 
   useEffect(() => {
     if (onRecallMessageReady) onRecallMessageReady(recallMessage);
@@ -2416,6 +2616,77 @@ export const Composer = memo(function Composer({
     onRecallLastTurnReady(recallLastTurn);
   }, [editLastTurnSupported, onRecallLastTurnReady, recallLastTurn]);
 
+  const parentChanged = useParentInputClosure(
+    {
+      kind: "composer-parent",
+      sessionId: logicalParentSessionId,
+      snapshot: () => ({
+        composerSessionId: sessionId,
+        text: ref.current?.value ?? draftTextRef.current,
+        draftText: draftTextRef.current,
+        initialDraft,
+        draftResetToken,
+        currentDraftResetToken: draftResetTokenRef.current,
+        quoteRequest,
+        consumedQuoteId: consumedQuoteId.current,
+        recalledMessage,
+        appliedRecallId: appliedRecallIdRef.current,
+        planSelected,
+        operatorSelected,
+        orchestrationSelected,
+        draftSelected,
+        sessionFolderSelected,
+        resendEdited,
+        selectedMcp: selectedMcpRef.current,
+        attachments: attachmentsRef.current,
+        borrowedAttachmentIds: [...borrowedAttachmentIdsRef.current],
+        draftRevision: draftRevisionRef.current,
+        pasteGeneration: pasteGenerationRef.current,
+        pasteFailures: pasteFailuresRef.current,
+        pastePending: !!pasteFlightRef.current,
+        sendIntent: sendIntentRef.current,
+        submitPending: !!submitLockRef.current,
+        submitInput: submitInputRef.current,
+        submission,
+        creatingSkill,
+        createBusy,
+        createError,
+        sessionFolderOpen,
+        mcpPickerOpen,
+        mcpLoading,
+        mcpError,
+        mcpInsertAt: mcpInsertAt.current,
+        mcpStatus: [...mcpStatus],
+        inboxCard,
+        noteCard,
+        handoffCard,
+        question,
+        questionDraftScope,
+        harness,
+        model,
+        modelSettings,
+        runtimeMode,
+        providerAccountId,
+        cwd,
+        executionCwd,
+        workspaceMode,
+        worktreeBase,
+        disabled,
+        sendHeldReason,
+        sendBlockedReason,
+        worktreePreparing,
+        worktreeRemoved,
+      }),
+      missingCoverage:
+        parentSessionId !== undefined && sessionId !== logicalParentSessionId
+          ? ["nested-btw-input-scope", "decision-conservation", "composer-auxiliary-inputs"]
+          : ["decision-conservation", "composer-auxiliary-inputs"],
+    },
+    ref,
+  );
+  useLayoutEffect(() => {
+    parentInputRef.current = parentChanged;
+  }, [parentChanged]);
   const submit = (value: string, queue = false) => {
     if (!canMutateDraft()) return;
     if (
@@ -2426,30 +2697,74 @@ export const Composer = memo(function Composer({
       submitLockRef.current
     )
       return;
+    const admitted = parentChanged.admit();
+    if (!admitted) return;
+    const rawAction = mountedClosure.admitAction();
+    if (!rawAction) {
+      admitted.finish();
+      setPasteError(
+        t("The message is kept. Wait for checkpoint preparation to finish before sending."),
+      );
+      return;
+    }
     const token = Symbol();
+    const originalIdentity = parentChanged.identity();
+    const intent = sendIntentRef.current;
+    const generation = pasteGenerationRef.current;
+    submitInputRef.current = { text: value, queue };
+    parentChanged();
     submitLockRef.current = token;
     setSubmission({ sessionId, action: queue ? "queue" : "send" });
-    void completeSubmit(value, queue).finally(() => {
-      if (submitLockRef.current !== token) return;
-      submitLockRef.current = null;
-      setSubmission(null);
+    void admitted.run(async () => {
+      try {
+        let pending = pasteFlightRef.current;
+        while (pending) {
+          await pending;
+          // Check the original owner before reading refs that a reused view may
+          // already have assigned to a different logical session.
+          if (parentChanged.identity() !== originalIdentity) return;
+          if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) return;
+          pending = pasteFlightRef.current;
+        }
+        if (parentChanged.identity() !== originalIdentity) return;
+        admitted.apply(() =>
+          rawAction.apply(() => submitContinuationRef.current?.(value, queue, admitted)),
+        );
+      } catch (error) {
+        if (parentChanged.identity() === originalIdentity)
+          setPasteError(error instanceof Error ? error.message : String(error));
+      } finally {
+        rawAction.finish();
+        if (parentChanged.identity() === originalIdentity && submitLockRef.current === token) {
+          submitLockRef.current = null;
+          submitInputRef.current = null;
+          parentChanged();
+          setSubmission(null);
+        }
+      }
     });
   };
-  const completeSubmit = async (submittedValue: string, queue = false) => {
-    const intent = sendIntentRef.current;
-    let pending = pasteFlightRef.current;
-    const generation = pasteGenerationRef.current;
-    while (pending) {
-      await pending;
-      // A reset or an earlier send retired this draft while the read was out.
-      if (pasteGenerationRef.current !== generation || sendIntentRef.current !== intent) return;
-      pending = pasteFlightRef.current;
-    }
+  const completeSubmit = (submittedValue: string, queue = false, original?: ParentAdmission) => {
     const value = ref.current?.value ?? submittedValue;
     if (!canMutateDraft()) return;
-    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) return;
+    // Preserve public callback arguments while open. Only an actually closed
+    // logical root needs the explicit private downstream continuation.
+    const continuation = canMutateParentInputs(logicalParentSessionId) ? undefined : original;
+    const continuationArgs: [] | [ParentAdmission] = continuation ? [continuation] : [];
+    if (disabled || worktreeRemoved || workspaceActionBlocked || sendHeldReason) {
+      setPasteError(
+        sendHeldReason ||
+          t(
+            "The message was not sent. Resolve the conversation or workspace blocker and try again.",
+          ),
+      );
+      return;
+    }
     if (isClearSessionCommand(value)) {
-      if (busy || onSubmit(value.trim(), [], { intent: "default" }) === false) {
+      if (
+        busy ||
+        onSubmit(value.trim(), [], { intent: "default" }, ...continuationArgs) === false
+      ) {
         setPasteError(t("Stop the current turn before clearing the conversation."));
         return;
       }
@@ -2478,7 +2793,8 @@ export const Composer = memo(function Composer({
       publishDraft("");
       setSlash(null);
       syncHasValue("", attachmentsRef.current);
-      onNewSession();
+      if (continuation) onNewSession(undefined, continuation);
+      else onNewSession();
       return;
     }
     if (isResumeCommand(value)) {
@@ -2492,10 +2808,11 @@ export const Composer = memo(function Composer({
       }
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       syncHasValue("", attachmentsRef.current);
-      onResumeProviderSession();
+      onResumeProviderSession(...continuationArgs);
       return;
     }
     if (isMcpCommand(value)) {
@@ -2519,17 +2836,38 @@ export const Composer = memo(function Composer({
       const files = attachmentsRef.current;
       const text = draftCommand.text;
       if (!text.trim() && files.length === 0) return;
+      const input = {
+        source: "composer-save-draft-intent",
+        composerSessionId: sessionId,
+        rawText: value,
+        text,
+        attachments: files,
+        selectedMcp,
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: logicalParentSessionId,
+        snapshot: () => input,
+      });
       const accepted = onSaveDraft(
         mcpContextText(taggedMcpServers(text, selectedMcp), text),
         files,
+        ...continuationArgs,
       );
-      if (accepted === false || !ref.current) return;
+      if (accepted === false) {
+        retained.release();
+        setPasteError(t("The draft was not accepted. Your text and files are kept."));
+        return;
+      }
+      retained.update({ ...input, disposition: "accepted-unknown" });
+      if (!ref.current) return;
       pasteGenerationRef.current += 1;
       clearComposer();
       setAttachments([]);
       setDraftSelected(false);
       setSelectedMcp([]);
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
@@ -2547,11 +2885,30 @@ export const Composer = memo(function Composer({
       !noteCard &&
       !handoffCard
     ) {
-      const accepted = onBtwCommand(btwCommand.text);
-      if (accepted === false) return;
+      const input = {
+        source: "composer-btw-intent",
+        composerSessionId: sessionId,
+        rawText: value,
+        text: btwCommand.text,
+      };
+      const retained = retainParentInput({
+        kind: "composer-parent",
+        sessionId: logicalParentSessionId,
+        snapshot: () => input,
+      });
+      const accepted = continuation
+        ? onBtwCommand(btwCommand.text, undefined, continuation)
+        : onBtwCommand(btwCommand.text);
+      if (accepted === false) {
+        retained.release();
+        setPasteError(t("The message was not accepted. Your text and files are kept."));
+        return;
+      }
+      retained.update({ ...input, disposition: "accepted-unknown" });
       pasteGenerationRef.current += 1;
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
@@ -2565,11 +2922,12 @@ export const Composer = memo(function Composer({
     }
 
     if (isCompactCommand(value)) {
-      if (!onCompactContext?.()) return;
+      if (!onCompactContext?.(...continuationArgs)) return;
       if (!ref.current) return;
       pasteGenerationRef.current += 1;
       clearComposer();
       setPlusOpen(false);
+      setModeOpen(false);
       setSlash(null);
       setMention(null);
       setCreatingSkill(false);
@@ -2615,6 +2973,34 @@ export const Composer = memo(function Composer({
     const resendDraftRevision = draftRevisionRef.current;
     const resendBorrowedAttachmentIds = new Set(borrowedAttachmentIdsRef.current);
     const resendSelectedMcp = selectedMcp;
+    const originalParentIdentity = parentChanged.identity();
+    const dispatchInput = {
+      source: "composer-dispatch-intent",
+      disposition: "dispatching",
+      composerSessionId: sessionId,
+      rawText: value,
+      text: submittedText,
+      attachments: files,
+      selectedMcp: resendSelectedMcp,
+      plan: planSelected || command.planning,
+      operator: operatorSelected,
+      orchestration: orchestrationSelected || orchestratorCommand.matched,
+      resendEdited,
+      queue,
+      busy,
+      harness,
+      model,
+      modelSettings,
+      runtimeMode,
+      providerAccountId,
+      draftRevision: resendDraftRevision,
+    };
+    const retained = retainParentInput({
+      kind: "composer-parent",
+      sessionId: logicalParentSessionId,
+      snapshot: () => dispatchInput,
+      missingCoverage: ["decision-conservation"],
+    });
     publishDraft("");
     const accepted = onSubmit(
       shellLine
@@ -2623,7 +3009,11 @@ export const Composer = memo(function Composer({
       files,
       {
         // The primary action steers; only the explicit queue action defers.
-        ...(busy ? { followUpBehavior: queue ? ("queue" as const) : ("steer" as const) } : {}),
+        ...(busy
+          ? {
+              followUpBehavior: queue ? ("queue" as const) : ("steer" as const),
+            }
+          : {}),
         intent: shellLine
           ? "default"
           : planSelected || command.planning
@@ -2634,10 +3024,16 @@ export const Composer = memo(function Composer({
         // Both project preparation and remote reconnect may reject after the
         // composer cleared. A newer draft keeps ownership of the composer.
         onSendRejected: () => {
+          retained.update({
+            ...dispatchInput,
+            disposition: "late-send-rejection",
+          });
+          if (parentChanged.identity() !== originalParentIdentity) return false;
           // Only into an empty composer: never over what was typed since.
           if (!ref.current || ref.current.value || attachmentsRef.current.length) return false;
           restoreDraft(text, files, resendBorrowedAttachmentIds);
-          setSelectedMcp(resendSelectedMcp);
+          selectedMcpRef.current = resendSelectedMcp;
+          setSelectedMcpState(resendSelectedMcp);
           setPlanSelected(planSelected || command.planning);
           setOperatorSelected(operatorSelected);
           setOrchestrationSelected(orchestrationSelected || orchestratorCommand.matched);
@@ -2647,23 +3043,34 @@ export const Composer = memo(function Composer({
           ? {
               resendEdited: true,
               onResendRejected: ({ providerRewound }) => {
+                retained.update({
+                  ...dispatchInput,
+                  disposition: "late-resend-rejection",
+                  providerRewound,
+                });
+                if (parentChanged.identity() !== originalParentIdentity) return;
                 if (draftRevisionRef.current !== resendDraftRevision) return;
                 restoreDraft(text, files, resendBorrowedAttachmentIds);
-                setSelectedMcp(resendSelectedMcp);
+                selectedMcpRef.current = resendSelectedMcp;
+                setSelectedMcpState(resendSelectedMcp);
                 setResendEdited(!providerRewound);
                 onEditingLastTurnChange?.(!providerRewound);
               },
             }
           : {}),
       },
+      ...continuationArgs,
     );
     // The app can reject a turn before it is recorded (for example while an
     // orchestration is paused). Keep the user's text, files and selected mode
     // intact so resolving the blocker never destroys their work.
     if (accepted === false) {
+      retained.release();
       restoreDraft(text, files);
+      setPasteError(t("The message was not accepted. Your text and files are kept."));
       return;
     }
+    retained.update({ ...dispatchInput, disposition: "accepted-unknown" });
     pasteGenerationRef.current += 1;
     historyRef.current = null;
     clearComposer();
@@ -2679,6 +3086,7 @@ export const Composer = memo(function Composer({
     setSessionFolderSelected(false);
     setSessionFolderOpen(false);
     setPlusOpen(false);
+    setModeOpen(false);
     setSlash(null);
     setMention(null);
     setCreatingSkill(false);
@@ -2686,6 +3094,9 @@ export const Composer = memo(function Composer({
     setPasteError(null);
     syncHasValue("", []);
   };
+  useLayoutEffect(() => {
+    submitContinuationRef.current = completeSubmit;
+  });
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (disabled) return;
     if (isImeComposition(e.nativeEvent)) return;
@@ -2955,7 +3366,10 @@ export const Composer = memo(function Composer({
     e.stopPropagation();
     const next = workspaceCreation.mode === "current" ? "worktree" : "current";
     if (next === "worktree" && !resolvedWorktreeBase) return;
-    onWorkspaceModeChange(next, next === "worktree" ? resolvedWorktreeBase : undefined);
+    if (!canMutateDraft()) return;
+    mutateParentInput(parentChanged, () =>
+      onWorkspaceModeChange(next, next === "worktree" ? resolvedWorktreeBase : undefined),
+    );
     ref.current?.focus();
   };
 
@@ -3080,10 +3494,88 @@ export const Composer = memo(function Composer({
         project={cwd ?? executionCwd}
         workingDirectory={executionCwd}
         recents={recents}
-        onProjectChange={hideProjectPicker || hideTopBar ? undefined : onCwdChange}
+        onProjectChange={
+          hideProjectPicker || hideTopBar
+            ? undefined
+            : (...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))
+        }
         enabled={enabled}
         onClose={() => ref.current?.focus()}
       />
+    ) : null;
+
+  // Operation modes are separate from adding context to the message.
+  const modeChoices = [
+    ...(!remote || remoteFeatures?.plan
+      ? [
+          {
+            kind: "item" as const,
+            id: "plan",
+            label: t("Plan mode"),
+            icon: <AiIdea />,
+            checked: planActive,
+            disabled: !!planUnavailableReason(harness),
+            title: planUnavailableReason(harness),
+            description: planUnavailableReason(harness)
+              ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
+              : t("Review a plan before building"),
+          },
+        ]
+      : []),
+    ...(!remote
+      ? [
+          {
+            kind: "item" as const,
+            id: "operator",
+            label: t("Operator"),
+            icon: <Bot />,
+            checked: operatorActive,
+            description: t("Give this thread access to") + " " + PRODUCT_IDENTITY.displayName,
+          },
+        ]
+      : []),
+    ...(!remote && !hideTopBar
+      ? [
+          {
+            kind: "item" as const,
+            id: "orchestrator",
+            label: t("Orchestrator"),
+            icon: <Share />,
+            badge: "v1",
+            checked: orchestrationActive,
+            description: t("Plan and coordinate agent work"),
+          },
+        ]
+      : []),
+    ...(canSaveDraft && onSaveDraft
+      ? [
+          {
+            kind: "item" as const,
+            id: "draft",
+            label: t("Draft"),
+            icon: <CircleDashed />,
+            checked: draftActive,
+            description: t("Save this message without starting the agent"),
+          },
+        ]
+      : []),
+  ];
+
+  // The project picker belongs to the execution context under the writing
+  // surface, beside workspace and branch, not inside the box.
+  const projectContextPicker =
+    !hideTopBar && !remote && !hideProjectPicker ? (
+      <div data-composer-context className="flex min-w-0 items-center">
+        <CwdPicker
+          cwd={cwd}
+          recents={recents}
+          projectLogoPath={projectLogoPath}
+          enabled={enabled}
+          onCwdChange={(...args) => mutateParentInput(parentChanged, () => onCwdChange(...args))}
+          onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
+          onClose={() => ref.current?.focus()}
+        />
+      </div>
     ) : null;
 
   return (
@@ -3098,10 +3590,16 @@ export const Composer = memo(function Composer({
       {question && onQuestionReply ? (
         <QuestionForm
           prompt={question}
+          parentSessionId={logicalParentSessionId}
           draftScope={questionDraftScope ?? sessionId}
           onReply={onQuestionReply}
           onInteraction={onQuestionInteraction}
         />
+      ) : null}
+      {parentClosed ? (
+        <p role="status" className="px-3 text-ui-micro text-(--ui-text-secondary)">
+          {t("Preparing session checkpoint. Your draft is kept.")}
+        </p>
       ) : null}
       {children}
       {sessionId ? <WorkspaceRewindPreviewHost sessionId={sessionId} /> : null}
@@ -3169,19 +3667,42 @@ export const Composer = memo(function Composer({
           limit={usageLimit}
           provider={accountProvider}
           accountId={providerAccountId}
-          onResume={onUsageLimitResume}
-          onResumeAtReset={onUsageLimitResumeAtReset}
+          onResume={
+            onUsageLimitResume
+              ? () => {
+                  mutateParentInput(parentChanged, onUsageLimitResume);
+                }
+              : undefined
+          }
+          onResumeAtReset={
+            onUsageLimitResumeAtReset
+              ? (...args) => {
+                  mutateParentInput(parentChanged, () => onUsageLimitResumeAtReset(...args));
+                }
+              : undefined
+          }
           onSwitchAccount={
             accountProvider && onSelectProviderAccount
-              ? (accountId) => onSelectProviderAccount(accountProvider, accountId)
+              ? (accountId) => {
+                  mutateParentInput(parentChanged, () =>
+                    onSelectProviderAccount(accountProvider, accountId),
+                  );
+                }
               : undefined
           }
           onSwitchModel={() => setModelPickerRequest((count) => count + 1)}
-          onDismiss={onUsageLimitDismiss}
+          onDismiss={
+            onUsageLimitDismiss
+              ? () => {
+                  mutateParentInput(parentChanged, onUsageLimitDismiss);
+                }
+              : undefined
+          }
         />
       ) : null}
       <DeliveryProgressNotice sessionId={sessionId} messages={queuedMessages} />
       <MessageQueue
+        parentSessionId={logicalParentSessionId}
         key={sessionId}
         sessionId={sessionId}
         messages={queuedMessages}
@@ -3284,6 +3805,7 @@ export const Composer = memo(function Composer({
         ) : skillPickerOpen ? (
           <ComposerSuggestions anchor={boxRef} below={shell}>
             <SkillPicker
+              parentSessionId={logicalParentSessionId}
               skills={rankedSkills}
               prefix={slash?.trigger ?? "/"}
               showCreate={slash?.trigger !== "$"}
@@ -3309,41 +3831,58 @@ export const Composer = memo(function Composer({
               }}
               onCreate={(name, scope) => {
                 if (!canMutateDraft()) return;
+                let parentAttempt = parentInputRef.current?.admit() ?? null;
+                if (!parentAttempt) return;
+                const initialParentAttempt = parentAttempt;
                 setCreateBusy(true);
                 setCreateError(null);
                 let createdPath: string | undefined;
                 void mountedClosure
                   .prepare(async (accepted) => {
+                    if (parentAttempt!.settled) parentAttempt = parentAttempt!.resume();
+                    const attempt = parentAttempt;
+                    if (!attempt) throw new Error("Parent preparation owner changed.");
+                    void accepted.whenSettled?.().then(attempt.finish, attempt.finish);
                     // A successful file creation is never repeated merely because
                     // its later mounted capture/Native draft ACK needs retry.
-                    createdPath ??= await createBlankSkill({ cwd: executionCwd, name, scope });
-                    const path = createdPath;
-                    accepted.apply(() => {
-                      const el = ref.current;
-                      const token = slashRef.current;
-                      if (el && token) {
-                        const rest = el.value.slice(token.end).replace(/^\s/, "");
-                        const next = `${el.value.slice(0, token.start)}${rest}`;
-                        el.value = next;
-                        resizeComposer(el);
-                        el.setSelectionRange(token.start, token.start);
-                        setDraft(next);
-                        syncHasValue(next, attachments);
-                      }
-                      setCreatingSkill(false);
-                      setSlash(null);
-                      setCreateError(null);
-                      void skillCatalog.refresh({ refresh: true }).catch((error) => {
-                        console.warn("Composer operation failed", error);
-                      });
-                      onOpenFile?.(path);
-                      el?.focus();
+                    createdPath ??= await createBlankSkill({
+                      cwd: executionCwd,
+                      name,
+                      scope,
                     });
+                    const path = createdPath;
+                    attempt.apply(() =>
+                      accepted.apply(() => {
+                        const el = ref.current;
+                        const token = slashRef.current;
+                        if (el && token) {
+                          const rest = el.value.slice(token.end).replace(/^\s/, "");
+                          const next = `${el.value.slice(0, token.start)}${rest}`;
+                          el.value = next;
+                          resizeComposer(el);
+                          el.setSelectionRange(token.start, token.start);
+                          setDraft(next);
+                          syncHasValue(next, attachments);
+                        }
+                        setCreatingSkill(false);
+                        setSlash(null);
+                        setCreateError(null);
+                        void skillCatalog.refresh({ refresh: true }).catch((error) => {
+                          console.warn("Composer operation failed", error);
+                        });
+                        onOpenFile?.(path);
+                        el?.focus();
+                      }),
+                    );
                   })
                   .catch((err: unknown) => {
+                    initialParentAttempt.finish();
                     setCreateError(err instanceof Error ? err.message : String(err));
                   })
-                  .finally(() => setCreateBusy(false));
+                  .finally(() => {
+                    initialParentAttempt.finish();
+                    setCreateBusy(false);
+                  });
               }}
             />
           </ComposerSuggestions>
@@ -3368,37 +3907,11 @@ export const Composer = memo(function Composer({
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
           data-composer-dragging={fileDrag ? "" : undefined}
-          className={`relative z-10 border bg-(--ui-surface-raised) ${
-            resendEdited
-              ? "edit-last-turn-composer rounded-lg"
-              : "rounded-lg border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
-          } ${
-            fileDrag
-              ? "border-(--ui-tone-accent-border)"
-              : resendEdited
-                ? ""
-                : "border-(--ui-tone-neutral-border) has-focus:border-(--ui-tone-neutral-border)"
-          }`}
+          className={`relative z-10 rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`}
         >
           {fileDrag ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-lg bg-(--ui-tone-accent-subtle) text-ui-caption text-(--ui-text-secondary)">
+            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-(--ui-tone-accent-subtle) text-ui-caption text-(--ui-text-secondary)">
               {t("Drop files to attach")}
-            </div>
-          ) : null}
-          {!hideTopBar && !remote && !hideProjectPicker ? (
-            <div
-              data-composer-context
-              className="flex min-w-0 flex-wrap items-center gap-2 px-3 pt-2"
-            >
-              <CwdPicker
-                cwd={cwd}
-                recents={recents}
-                projectLogoPath={projectLogoPath}
-                enabled={enabled}
-                onCwdChange={onCwdChange}
-                onNewTerminal={worktreeRemoved ? undefined : onNewTerminal}
-                onClose={() => ref.current?.focus()}
-              />
             </div>
           ) : null}
 
@@ -3422,12 +3935,37 @@ export const Composer = memo(function Composer({
             </Alert>
           ) : null}
 
-          {inboxCard ? <InboxMiniCard card={inboxCard} onDismiss={onInboxCardDismiss} /> : null}
+          {inboxCard ? (
+            <InboxMiniCard
+              card={inboxCard}
+              onDismiss={
+                onInboxCardDismiss
+                  ? () => mutateParentInput(parentChanged, onInboxCardDismiss)
+                  : undefined
+              }
+            />
+          ) : null}
 
-          {noteCard ? <NoteMiniCard card={noteCard} onDismiss={onNoteCardDismiss} /> : null}
+          {noteCard ? (
+            <NoteMiniCard
+              card={noteCard}
+              onDismiss={
+                onNoteCardDismiss
+                  ? () => mutateParentInput(parentChanged, onNoteCardDismiss)
+                  : undefined
+              }
+            />
+          ) : null}
 
           {handoffCard ? (
-            <HandoffMiniCard card={handoffCard} onDismiss={onHandoffCardDismiss} />
+            <HandoffMiniCard
+              card={handoffCard}
+              onDismiss={
+                onHandoffCardDismiss
+                  ? () => mutateParentInput(parentChanged, onHandoffCardDismiss)
+                  : undefined
+              }
+            />
           ) : null}
 
           <div className="relative">
@@ -3451,6 +3989,7 @@ export const Composer = memo(function Composer({
             ) : null}
             <textarea
               ref={ref}
+              readOnly={parentClosed}
               data-ui-focus="group"
               data-composer-empty={navigationEmpty ? "true" : undefined}
               data-composer-plain={plainDraft ? "true" : undefined}
@@ -3488,6 +4027,10 @@ export const Composer = memo(function Composer({
               onKeyUp={(e) => syncTokensFromTextarea(e.currentTarget)}
               onSelect={(e) => syncTokensFromTextarea(e.currentTarget)}
               onInput={(e) => {
+                if (!parentChanged.canMutate()) {
+                  parentChanged();
+                  return;
+                }
                 const el = e.currentTarget;
                 const history = translationHistoryRef.current;
                 if (history && el.value !== history.original && el.value !== history.translated)
@@ -3522,11 +4065,6 @@ export const Composer = memo(function Composer({
             />
           </div>
 
-          {hideTopBar || hideBranchPicker ? (
-            <div className="composer-session-meta">
-              <ComposerTips active={focused && !disabled} />
-            </div>
-          ) : null}
           <div className="composer-controls flex items-center gap-1 px-2 pb-2">
             <div
               data-composer-model-controls
@@ -3546,8 +4084,12 @@ export const Composer = memo(function Composer({
                   accountId={providerAccountId}
                   accountChoices={Boolean(onSelectProviderAccount)}
                   extrasDisabled={disabled || !onModelSettingsChange}
-                  onChange={onModelChange}
-                  onSettingsChange={(settings) => onModelSettingsChange?.(settings)}
+                  onChange={(...args) =>
+                    mutateParentInput(parentChanged, () => onModelChange(...args))
+                  }
+                  onSettingsChange={(settings) =>
+                    mutateParentInput(parentChanged, () => onModelSettingsChange?.(settings))
+                  }
                   onClose={() => ref.current?.focus()}
                 />
                 {!compact && harness !== "fx" ? (
@@ -3555,20 +4097,99 @@ export const Composer = memo(function Composer({
                     value={runtimeMode}
                     busy={busy}
                     unavailable={unavailableRuntimeModes(harness)}
-                    onChange={onRuntimeModeChange}
+                    onChange={(...args) =>
+                      mutateParentInput(parentChanged, () => onRuntimeModeChange(...args))
+                    }
                     onClose={() => ref.current?.focus()}
                   />
+                ) : null}
+                {!compact && modeChoices.length > 0 ? (
+                  <div className="relative flex shrink-0">
+                    <Button
+                      ref={modeRef}
+                      size="sm"
+                      variant="ghost"
+                      iconOnly
+                      label={t("Mode")}
+                      title={t("Mode")}
+                      selected={modeOpen}
+                      aria-haspopup="menu"
+                      aria-expanded={modeOpen}
+                      data-composer-mode-trigger
+                      onClick={() => setModeOpen((open) => !open)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowDown") {
+                          event.preventDefault();
+                          setModeOpen(true);
+                        }
+                      }}
+                    >
+                      <SlidersHorizontal className="size-3.5" strokeWidth={1.5} />
+                    </Button>
+                    {modeOpen ? (
+                      <DropdownMenu
+                        anchor={modeRef}
+                        returnFocusRef={modeRef}
+                        label={t("Mode")}
+                        side="top"
+                        align="start"
+                        width={280}
+                        onClose={() => setModeOpen(false)}
+                        data-composer-mode-menu
+                        items={[
+                          {
+                            kind: "group",
+                            id: "mode",
+                            label: t("Mode"),
+                            items: modeChoices,
+                          },
+                        ]}
+                        onPick={(id) => {
+                          if (!canMutateDraft()) return;
+                          if (id === "plan") {
+                            setPlanSelected(!planActive);
+                            if (planActive) clearLeadingMode(PLAN_COMMAND.name);
+                            setOperatorSelected(false);
+                            setOrchestrationSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "operator") {
+                            setOperatorSelected(!operatorActive);
+                            if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
+                            setPlanSelected(false);
+                            setOrchestrationSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "orchestrator") {
+                            setOrchestrationSelected(!orchestrationActive);
+                            if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
+                            setPlanSelected(false);
+                            setOperatorSelected(false);
+                            setDraftSelected(false);
+                          } else if (id === "draft") {
+                            setDraftSelected(!draftActive);
+                            if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
+                            setPlanSelected(false);
+                            setOperatorSelected(false);
+                            setOrchestrationSelected(false);
+                          }
+                          ref.current?.focus();
+                        }}
+                      />
+                    ) : null}
+                  </div>
                 ) : null}
                 {hideTopBar || hideBranchPicker ? sessionDirectoryPicker : null}
               </div>
             </div>
+            {/* Without the context row below, the tip sits with the trailing
+                actions instead of adding an extra row inside the writing surface. */}
+            {hideTopBar || hideBranchPicker ? <ComposerTips active={focused && !disabled} /> : null}
             <div className={compact ? "hidden" : "relative flex shrink-0"}>
               <Button
                 ref={plusRef}
                 variant="ghost"
                 iconOnly
-                label={t("Add files or choose a mode")}
-                title={t("Add files or choose a mode")}
+                label={t("Add files or skills")}
+                title={t("Add files or skills")}
                 selected={plusOpen}
                 aria-haspopup="menu"
                 aria-expanded={plusOpen}
@@ -3586,9 +4207,9 @@ export const Composer = memo(function Composer({
                 <DropdownMenu
                   anchor={plusRef}
                   returnFocusRef={plusRef}
-                  label={t("Add files or choose a mode")}
+                  label={t("Add files or skills")}
                   side="top"
-                  align="start"
+                  align="end"
                   width={280}
                   onClose={() => setPlusOpen(false)}
                   data-composer-plus
@@ -3628,69 +4249,6 @@ export const Composer = memo(function Composer({
                           : []),
                       ],
                     },
-                    {
-                      kind: "group",
-                      id: "mode",
-                      label: t("Mode"),
-                      items: [
-                        ...(!remote || remoteFeatures?.plan
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "plan",
-                                label: t("Plan mode"),
-                                icon: <AiIdea />,
-                                checked: planActive,
-                                disabled: !!planUnavailableReason(harness),
-                                title: planUnavailableReason(harness),
-                                description: planUnavailableReason(harness)
-                                  ? t("Unavailable: {p0}", { p0: planUnavailableReason(harness) })
-                                  : t("Review a plan before building"),
-                              },
-                            ]
-                          : []),
-                        ...(!remote
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "operator",
-                                label: t("Operator"),
-                                icon: <Bot />,
-                                checked: operatorActive,
-                                description:
-                                  t("Give this thread access to") +
-                                  " " +
-                                  PRODUCT_IDENTITY.displayName,
-                              },
-                            ]
-                          : []),
-                        ...(!remote && !hideTopBar
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "orchestrator",
-                                label: t("Orchestrator"),
-                                icon: <Share />,
-                                badge: "v1",
-                                checked: orchestrationActive,
-                                description: t("Plan and coordinate agent work"),
-                              },
-                            ]
-                          : []),
-                        ...(canSaveDraft && onSaveDraft
-                          ? [
-                              {
-                                kind: "item" as const,
-                                id: "draft",
-                                label: t("Draft"),
-                                icon: <CircleDashed />,
-                                checked: draftActive,
-                                description: t("Save this message without starting the agent"),
-                              },
-                            ]
-                          : []),
-                      ],
-                    },
                   ]}
                   onPick={(id) => {
                     if (!canMutateDraft()) return;
@@ -3720,31 +4278,6 @@ export const Composer = memo(function Composer({
                       el.focus();
                       return;
                     }
-                    if (id === "plan") {
-                      setPlanSelected(!planActive);
-                      if (planActive) clearLeadingMode(PLAN_COMMAND.name);
-                      setOperatorSelected(false);
-                      setOrchestrationSelected(false);
-                      setDraftSelected(false);
-                    } else if (id === "operator") {
-                      setOperatorSelected(!operatorActive);
-                      if (operatorActive) clearLeadingMode(OPERATOR_COMMAND.name);
-                      setPlanSelected(false);
-                      setOrchestrationSelected(false);
-                      setDraftSelected(false);
-                    } else if (id === "orchestrator") {
-                      setOrchestrationSelected(!orchestrationActive);
-                      if (orchestrationActive) clearLeadingMode(ORCHESTRATOR_COMMAND.name);
-                      setPlanSelected(false);
-                      setOperatorSelected(false);
-                      setDraftSelected(false);
-                    } else if (id === "draft") {
-                      setDraftSelected(!draftActive);
-                      if (draftActive) clearLeadingMode(DRAFT_COMMAND.name);
-                      setPlanSelected(false);
-                      setOperatorSelected(false);
-                      setOrchestrationSelected(false);
-                    }
                     ref.current?.focus();
                   }}
                 />
@@ -3754,6 +4287,7 @@ export const Composer = memo(function Composer({
               <ModeCommandPill
                 name={OPERATOR_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setOperatorSelected(false);
                   clearLeadingMode(OPERATOR_COMMAND.name);
                   ref.current?.focus();
@@ -3764,6 +4298,7 @@ export const Composer = memo(function Composer({
               <ModeCommandPill
                 name={ORCHESTRATOR_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setOrchestrationSelected(false);
                   clearLeadingMode(ORCHESTRATOR_COMMAND.name);
                   ref.current?.focus();
@@ -3774,6 +4309,7 @@ export const Composer = memo(function Composer({
               <ModeCommandPill
                 name={PLAN_COMMAND.name}
                 onClear={() => {
+                  if (!canMutateDraft()) return;
                   setPlanSelected(false);
                   clearLeadingMode(PLAN_COMMAND.name);
                   ref.current?.focus();
@@ -3834,7 +4370,11 @@ export const Composer = memo(function Composer({
                   contextBlocks={contextBlocks}
                   empty={contextEmpty}
                   sessionUsage={sessionUsage}
-                  onCompact={compactSupported && !worktreeRemoved ? onCompactContext : undefined}
+                  onCompact={
+                    compactSupported && !worktreeRemoved && onCompactContext
+                      ? () => mutateParentInput(parentChanged, onCompactContext)
+                      : undefined
+                  }
                   compactDisabled={busy}
                   working={busy && enabled}
                 />
@@ -3871,7 +4411,7 @@ export const Composer = memo(function Composer({
                 blockedReason={
                   sendHeldReason ??
                   sendBlockedReason ??
-                  (workspaceSendBlocked
+                  (workspaceActionBlocked
                     ? workspaceCreationError || t("Checking workspace policy…")
                     : undefined)
                 }
@@ -3897,19 +4437,28 @@ export const Composer = memo(function Composer({
             </div>
           </div>
         </div>
+        {!hideTopBar && hideBranchPicker && projectContextPicker ? (
+          <div
+            role="group"
+            aria-label={t("Chat workspace")}
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
+          >
+            {projectContextPicker}
+          </div>
+        ) : null}
         {!hideTopBar && !hideBranchPicker ? (
           <div
             data-composer-workspace
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}
-            className="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 pb-1.5 pt-2"
+            className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
           >
-            <ComposerTips active={focused && !disabled} />
             <div
               data-composer-workspace-controls
-              className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1"
+              className="flex min-w-0 flex-1 flex-wrap items-center justify-start gap-x-3 gap-y-1"
             >
+              {projectContextPicker}
               {draftWorkspace && onWorkspaceModeChange && onWorktreeBaseChange ? (
                 <>
                   {workspaceCreationError ? (
@@ -3921,9 +4470,24 @@ export const Composer = memo(function Composer({
                       mode={workspaceCreation.mode}
                       base={resolvedWorktreeBase}
                       enabled={enabled && !busy && !workspaceCreation.pending}
-                      onModeChange={onWorkspaceModeChange}
-                      onBaseChange={onWorktreeBaseChange}
-                      onSelectWorktree={onWorktreeChange}
+                      onModeChange={(...args) =>
+                        mutateParentInput(parentChanged, () => onWorkspaceModeChange?.(...args))
+                      }
+                      onBaseChange={(...args) =>
+                        mutateParentInput(parentChanged, () => onWorktreeBaseChange?.(...args))
+                      }
+                      onSelectWorktree={
+                        onWorktreeChange
+                          ? async (...args) => {
+                              const result = mutateParentInput(parentChanged, () =>
+                                onWorktreeChange(...args),
+                              );
+                              if (result === false)
+                                throw new Error("Session input is temporarily closed.");
+                              return await result;
+                            }
+                          : undefined
+                      }
                       onOpenSettings={onManageWorktrees}
                       onClose={() => ref.current?.focus()}
                     />
@@ -3934,7 +4498,13 @@ export const Composer = memo(function Composer({
                         cwd={executionCwd}
                         branch={branch}
                         enabled={enabled && !busy}
-                        onChange={onBranchChange}
+                        onChange={
+                          onBranchChange
+                            ? () => {
+                                mutateParentInput(parentChanged, onBranchChange);
+                              }
+                            : undefined
+                        }
                         onClose={() => ref.current?.focus()}
                       />
                     </div>
@@ -3946,9 +4516,21 @@ export const Composer = memo(function Composer({
                     cwd={cwd}
                     executionCwd={executionCwd}
                     enabled={enabled && !busy}
-                    onSelect={onWorktreeChange}
+                    onSelect={async (...args) => {
+                      const select = onWorktreeChange;
+                      if (!select) throw new Error("Worktree selection is unavailable.");
+                      const result = mutateParentInput(parentChanged, () => select(...args));
+                      if (result === false) throw new Error("Session input is temporarily closed.");
+                      return await result;
+                    }}
                     worktreeRemoved={worktreeRemoved}
-                    onBranchChange={onBranchChange}
+                    onBranchChange={
+                      onBranchChange
+                        ? () => {
+                            mutateParentInput(parentChanged, onBranchChange);
+                          }
+                        : undefined
+                    }
                     onManage={onManageWorktrees}
                     onClose={() => ref.current?.focus()}
                   />
@@ -3963,7 +4545,13 @@ export const Composer = memo(function Composer({
                       cwd={executionCwd}
                       branch={branch}
                       enabled={enabled && !busy}
-                      onChange={onBranchChange}
+                      onChange={
+                        onBranchChange
+                          ? () => {
+                              mutateParentInput(parentChanged, onBranchChange);
+                            }
+                          : undefined
+                      }
                       onClose={() => ref.current?.focus()}
                     />
                   </div>
@@ -3975,6 +4563,7 @@ export const Composer = memo(function Composer({
                 </div>
               ) : null}
             </div>
+            <ComposerTips active={focused && !disabled} />
             {draftWorkspace ? (
               <div className="basis-full pb-1">
                 <WorkspaceCreationStatus
@@ -4139,8 +4728,10 @@ export function ComposerAction({
         tone="accent"
         motion="none"
         iconOnly
-        label={label}
-        shortcut="Enter"
+        label={blockedReason ? `${label}. ${blockedReason}` : label}
+        tooltip={blockedReason ?? label}
+        shortcut={blockedReason ? null : "Enter"}
+        aria-description={blockedReason}
         disabled
       >
         <ArrowUp className="size-3.5" strokeWidth={2.25} />

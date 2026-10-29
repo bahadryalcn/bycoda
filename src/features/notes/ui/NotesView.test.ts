@@ -224,7 +224,7 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
   expect(document.activeElement).toBe(container.querySelector('[aria-current="true"]'));
   const next = [
     ...container.querySelectorAll<HTMLButtonElement>(".note-library-pages button"),
-  ].find((node) => node.textContent === "Show more")!;
+  ].find((node) => node.textContent === "Next page")!;
   next.focus();
   await act(async () => next.click());
   expect(document.activeElement).toBe(next);
@@ -404,6 +404,8 @@ it("keeps the desktop split preference and source undo state when a narrow pane 
     },
   );
   await render();
+  // Notes open in the Document view; the desktop split is an explicit preference.
+  await act(async () => tab("Split").click());
   const source = editorView();
   await act(async () =>
     source.dispatch({ changes: { from: source.state.doc.length, insert: " Draft survives." } }),
@@ -412,7 +414,7 @@ it("keeps the desktop split preference and source undo state when a narrow pane 
   expect(tab("Source").getAttribute("aria-selected")).toBe("true");
   expect(tab("Split")).toBeUndefined();
   expect(container.querySelectorAll(".note-editor-pane")).toHaveLength(1);
-  await act(async () => tab("Edit preview").click());
+  await act(async () => tab("Document").click());
   expect(container.querySelector("[data-note-preview]")?.textContent).toContain("Draft survives.");
   await act(async () => tab("Source").click());
   expect(editorView()).toBe(source);
@@ -448,9 +450,9 @@ it("moves focus and selection through mode tabs and associates the active panel"
     expect(panel.getAttribute("aria-labelledby")).toBe(selected.id);
   };
   await move("ArrowRight", "Split");
-  await move("ArrowRight", "Edit preview");
+  await move("ArrowRight", "Document");
   await move("ArrowLeft", "Split");
-  await move("Home", "Edit preview");
+  await move("Home", "Document");
   await move("End", "Split");
 });
 
@@ -492,7 +494,7 @@ it("replaces regex matches with their groups in the note source", async () => {
 it("formats the selection from the toolbar and undoes it in one step", async () => {
   stored = { ...stored, body: "make this bold" };
   await render();
-  await act(async () => tab("Edit preview").click());
+  await act(async () => tab("Document").click());
   // Preview keeps only the image button; formatting needs the source.
   expect(container.querySelector('[role="toolbar"] button[aria-label^="Bold"]')).toBeNull();
   expect(
@@ -584,15 +586,17 @@ it("updates the split preview while the source is edited", async () => {
   expect(container.querySelector("h1")?.textContent).toContain("Live title");
 });
 
-it("opens in split and edits a preview block with formatting, preserving other Markdown", async () => {
+it("opens in the Document view and edits a block with formatting, preserving other Markdown", async () => {
   stored = {
     ...stored,
     body: "# Heading\n\nKeep this text.\n\n```js\nconst unchanged = true;\n```",
   };
   await render();
-  expect(tab("Split").getAttribute("aria-selected")).toBe("true");
-  await act(async () => tab("Edit preview").click());
-  const edit = [...container.querySelectorAll<HTMLButtonElement>(".note-edit-block")][1];
+  expect(tab("Document").getAttribute("aria-selected")).toBe("true");
+  await act(async () => tab("Document").click());
+  const edit = [
+    ...container.querySelectorAll<HTMLButtonElement>('button[aria-label="Edit note block"]'),
+  ][1];
   await act(async () => edit.click());
   const view = EditorView.findFromDOM(
     container.querySelector<HTMLElement>(".note-active-block .cm-editor")!,
@@ -608,9 +612,16 @@ it("opens in split and edits a preview block with formatting, preserving other M
   expect(
     container.querySelector<HTMLElement>("[data-note-editor]")!.closest("[hidden]"),
   ).not.toBeNull();
+  // Leaving block editing only returns to reading; the edit is saved by Save/autosave.
   await act(async () =>
     [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent === "Done")!
+      .find((button) => button.textContent === "Read document")!
+      .click(),
+  );
+  expect(container.querySelector(".note-active-block")).toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Save")!
       .click(),
   );
   expect(stored.body).toBe(
@@ -624,7 +635,7 @@ it("opens in split and edits a preview block with formatting, preserving other M
 it("starts writing inside an empty preview and saves the text", async () => {
   stored = { ...stored, body: "" };
   await render();
-  await act(async () => tab("Edit preview").click());
+  await act(async () => tab("Document").click());
   await act(async () => container.querySelector<HTMLButtonElement>(".note-add-block")!.click());
   const view = EditorView.findFromDOM(
     container.querySelector<HTMLElement>(".note-active-block .cm-editor")!,
@@ -632,6 +643,12 @@ it("starts writing inside an empty preview and saves the text", async () => {
   await act(async () => view.dispatch({ changes: { from: 0, insert: "New note body" } }));
   await act(async () =>
     container.querySelector<HTMLButtonElement>(".note-active-block button")!.click(),
+  );
+  expect(container.querySelector(".note-active-block")).toBeNull();
+  await act(async () =>
+    [...container.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent === "Save")!
+      .click(),
   );
   expect(stored.body).toBe("New note body");
 });
@@ -728,9 +745,13 @@ it("moves the existing note and keeps its content when reopened", async () => {
     createdAt: 1,
   });
   expect(projectButton()?.textContent).toContain("portognjeeen");
-  expect(container.querySelector('li [aria-current="true"]')?.textContent).toContain(
-    "portognjeeen",
-  );
+  // The library names the project once, on the group heading above the active note.
+  expect(
+    container
+      .querySelector('li [aria-current="true"]')
+      ?.closest("section")
+      ?.querySelector(".note-group-heading")?.textContent,
+  ).toContain("portognjeeen");
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   root = createRoot(container);
@@ -1119,6 +1140,13 @@ function button(label: string) {
   )!;
 }
 
+// Delete lives in the "Note actions" popover next to the note's details.
+async function openNoteActions() {
+  const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Note actions"]');
+  expect(trigger).not.toBeNull();
+  if (trigger!.getAttribute("aria-expanded") !== "true") await act(async () => trigger!.click());
+}
+
 it("requires confirmation and resumes saving after a failed delete", async () => {
   vi.useFakeTimers();
   await render();
@@ -1126,18 +1154,19 @@ it("requires confirmation and resumes saving after a failed delete", async () =>
   invoke.mockImplementation((command, args) =>
     command === "notes_delete" ? Promise.reject(new Error("Delete denied")) : save(command, args),
   );
+  await openNoteActions();
   await act(async () => button("Delete").click());
   expect(invoke.mock.calls.some(([command]) => command === "notes_delete")).toBe(false);
-  expect(container.textContent).toContain("Delete note permanently?");
+  expect(document.body.textContent).toContain("Delete note permanently?");
   await act(async () => button("Cancel").click());
-  expect(container.querySelector(".bycoda-arc-confirm")?.getAttribute("data-state")).toBe("idle");
+  expect(document.querySelector(".bycoda-arc-confirm")?.getAttribute("data-state")).toBe("idle");
   await act(async () => button("Delete").click());
   await act(async () => {
     if (vi.isFakeTimers()) vi.advanceTimersByTime(300);
     else await new Promise((resolve) => setTimeout(resolve, 300));
   });
   await act(async () => button("Confirm delete").click());
-  expect(container.textContent).toContain("Delete denied");
+  expect(document.body.textContent).toContain("Delete denied");
   await editTitle("Still editable");
   await act(async () => vi.advanceTimersByTime(400));
   expect(stored.title).toBe("Still editable");
@@ -1158,6 +1187,7 @@ it("does not recreate a successfully deleted note from queued saves", async () =
     return save(command, args);
   });
   await editTitle("Pending changes");
+  await openNoteActions();
   await act(async () => button("Delete").click());
   await act(async () => {
     if (vi.isFakeTimers()) vi.advanceTimersByTime(300);
@@ -1383,7 +1413,7 @@ it("keeps failed bulk deletions selected, preserves their drafts and never recre
   expect([...deleted]).toEqual(["bulk-a"]);
   expect(all.map((note) => note.id)).toEqual(["bulk-b"]);
   expect(all[0].title).toBe("Unsaved before bulk delete");
-  expect(container.textContent).toContain("Delete denied");
+  expect(document.body.textContent).toContain("Delete denied");
   expect(container.textContent).toContain("1 selected");
   expect(
     container.querySelector<HTMLInputElement>(

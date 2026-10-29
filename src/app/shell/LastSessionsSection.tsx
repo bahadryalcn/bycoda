@@ -13,9 +13,8 @@ import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
 import { ExplorerMenu } from "../../features/files/ui/ExplorerMenu";
 import {
-  RAIL_DRAG_HANDLE,
-  RAIL_SECTION_HEADER,
-  SectionMenuButton,
+  RAIL_SECTION_BLOCK,
+  RailSectionHeader,
   type RailSectionDrag,
 } from "./useRailSections";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
@@ -146,38 +145,23 @@ export function LastSessionsSection({
   if (!hasRows) return null;
 
   return (
-    <div ref={drag?.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
-      <ActionHost
-        {...drag?.headerProps}
-        title={drag ? t("Drag to reorder") : undefined}
-        className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""}`}
-      >
-        <Button
-          variant="item"
-          motion="none"
-          type="button"
-          aria-expanded={!prefs.collapsed}
-          onClick={() => update({ ...prefs, collapsed: !prefs.collapsed })}
-          size="sm"
-          className={`min-w-0 flex-1 ${drag ? "cursor-grab" : ""}`}
-        >
-          <Clock
-            className="icon-sm shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden"
-            strokeWidth={1.75}
-          />
-          <ChevronDown
-            className={`hidden size-3.5 shrink-0 group-hover:block group-has-[button:focus-visible]:block ${
-              prefs.collapsed ? "-rotate-90" : ""
-            }`}
-            strokeWidth={1.75}
-          />
-          <span className="truncate">{t("Last sessions")}</span>
-        </Button>
-        {prefs.collapsed ? null : (
-          <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
-        )}
-        {drag ? <SectionMenuButton label={t("Last sessions")} onOpen={drag.openMenu} /> : null}
-      </ActionHost>
+    <div
+      ref={drag?.setRef}
+      className={RAIL_SECTION_BLOCK}
+      data-collapsed={prefs.collapsed || undefined}
+    >
+      <RailSectionHeader
+        label={t("Last sessions")}
+        drag={drag}
+        icon={<Clock className="icon-sm" strokeWidth={1.75} />}
+        collapsed={prefs.collapsed}
+        onToggleCollapsed={() => update({ ...prefs, collapsed: !prefs.collapsed })}
+        actions={
+          prefs.collapsed ? null : (
+            <CountPicker count={prefs.count} onChange={(count) => update({ ...prefs, count })} />
+          )
+        }
+      />
       {prefs.collapsed ? null : (
         <LastSessionsRows
           rows={rows}
@@ -391,9 +375,11 @@ function SessionRow({
     <ActionHost
       role="listitem"
       selected={selected}
-      className="group relative flex"
+      className="group relative flex min-w-0 items-center rounded-md"
       onContextMenu={openMenuAt}
     >
+      {/* One 28px row on the rail grid, like the tool and project rows: a 14px project mark,
+          the title, then quiet trailing state. Project and agent live in the tooltip and name. */}
       <Button
         variant="item"
         motion="none"
@@ -412,88 +398,80 @@ function SessionRow({
           const rect = event.currentTarget.getBoundingClientRect();
           onOpenMenu(rect.left, rect.bottom);
         }}
-        layout="stacked"
-        className="min-w-0 flex-1"
+        className="flex min-w-0 flex-1 items-center gap-1.5"
       >
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium leading-5">
-            {row.title}
-          </span>
-          {status ? (
-            <span
-              role="img"
-              aria-label={STATUS_LABEL[status]}
-              title={STATUS_LABEL[status]}
-              className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+        <span className="grid icon-sm shrink-0 place-items-center" aria-hidden="true">
+          {logoPath && status !== "working" ? (
+            <ProjectLogoIcon
+              path={logoPath}
+              className="icon-sm rounded-sm"
+              imageClassName="icon-sm"
             />
-          ) : null}
-          {time ? (
-            <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
-              {time}
-            </span>
-          ) : null}
+          ) : (
+            <ProjectMascot
+              project={seed}
+              color={color}
+              name={resolveTabGroupMascot(key, groupMascots)}
+              className="icon-sm"
+              active={status === "working"}
+            />
+          )}
         </span>
-        <span
-          className={`flex min-w-0 items-center gap-1.5 text-ui-micro leading-4 text-(--ui-text-secondary) ${row.pinnable ? "pe-7" : ""}`}
-        >
-          <span className="grid size-3 shrink-0 place-items-center" aria-hidden="true">
-            {logoPath && status !== "working" ? (
-              <ProjectLogoIcon
-                path={logoPath}
-                className="size-3 rounded-sm"
-                imageClassName="size-3"
-              />
-            ) : (
-              <ProjectMascot
-                project={seed}
-                color={color}
-                name={resolveTabGroupMascot(key, groupMascots)}
-                className="size-3"
-                active={status === "working"}
-              />
-            )}
+        <span className="min-w-0 flex-1 truncate text-ui-secondary leading-tight">{row.title}</span>
+        {row.pinned ? (
+          <Pin
+            aria-label={t("Pinned")}
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+        ) : null}
+        {row.remote ? (
+          <Internet
+            aria-label={t("On another machine")}
+            className="icon-xs shrink-0 text-(--ui-text-secondary)"
+            strokeWidth={1.75}
+          />
+        ) : null}
+        <HarnessIcon
+          harness={row.harness}
+          className="icon-xs shrink-0 @max-[200px]/rail:hidden"
+        />
+        {status ? (
+          <span
+            role="img"
+            aria-label={STATUS_LABEL[status]}
+            title={STATUS_LABEL[status]}
+            className={`size-1.5 shrink-0 rounded-full ${STATUS_DOT[status]}`}
+          />
+        ) : null}
+        {time ? (
+          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+            {time}
           </span>
-          {row.pinned ? (
-            <Pin
-              aria-label={t("Pinned")}
-              className="size-3 shrink-0 text-(--ui-text-secondary)"
-              strokeWidth={1.75}
-            />
-          ) : null}
-          {row.remote ? (
-            <Internet
-              aria-label={t("On another machine")}
-              className="size-3 shrink-0"
-              strokeWidth={1.75}
-            />
-          ) : null}
-          <span className="min-w-0 flex-1 truncate">{project}</span>
-          <span className="flex shrink-0 items-center gap-1">
-            <span aria-hidden="true">·</span>
-            <HarnessIcon harness={row.harness} className="size-3 shrink-0" />
-            <span>{agent}</span>
-          </span>
-        </span>
+        ) : null}
       </Button>
       {row.pinnable ? (
-        <InlineAction
-          motion="none"
-          type="button"
-          label={row.pinned ? t("Unpin session") : t("Pin session")}
-          title={row.pinned ? t("Unpin session") : t("Pin session")}
-          aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTogglePin();
-          }}
-          className="absolute end-1 bottom-1"
-        >
-          {row.pinned ? (
-            <PinOff className="icon-sm" strokeWidth={1.75} />
-          ) : (
-            <Pin className="icon-sm" strokeWidth={1.75} />
-          )}
-        </InlineAction>
+        // Takes no width at rest; appears on hover, focus or selection (shared collapse slot).
+        <div data-action-slot="collapse" className="flex shrink-0 items-center">
+          <InlineAction
+            motion="none"
+            type="button"
+            label={row.pinned ? t("Unpin session") : t("Pin session")}
+            title={row.pinned ? t("Unpin session") : t("Pin session")}
+            aria-label={row.pinned ? t("Unpin session") : t("Pin session")}
+            onClick={(event) => {
+              event.stopPropagation();
+              onTogglePin();
+            }}
+            className="me-1"
+          >
+            {row.pinned ? (
+              <PinOff className="icon-sm" strokeWidth={1.75} />
+            ) : (
+              <Pin className="icon-sm" strokeWidth={1.75} />
+            )}
+          </InlineAction>
+        </div>
       ) : null}
     </ActionHost>
   );

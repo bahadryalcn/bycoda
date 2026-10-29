@@ -66,7 +66,7 @@ export function LiveBackgroundPicker({
       ref={groupRef}
       role="radiogroup"
       aria-label={label}
-      className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2"
+      className="grid grid-cols-[repeat(auto-fill,minmax(80px,1fr))] gap-2"
     >
       {LIVE_BACKGROUNDS.map((option, index) => (
         <LiveBackgroundTile

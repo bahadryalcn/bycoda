@@ -112,6 +112,34 @@ export function setProjectProviderHidden(
   });
 }
 
+/**
+ * Return one provider's model to the global default without touching its
+ * effort, permissions, extras, picker visibility or the project default provider.
+ */
+export function clearProjectModelChoice(project: string, harness: HarnessId): void {
+  update(project, (current) => {
+    const models = { ...current.models };
+    delete models[harness];
+    return {
+      ...current,
+      models,
+      defaultModel: current.defaultHarness === harness ? undefined : current.defaultModel,
+    };
+  });
+}
+
+/**
+ * True when the last write reached storage. A failed write still updates the
+ * in-memory copy, so callers use this to report "not saved" honestly.
+ */
+export function projectProviderSettingsPersisted(): boolean {
+  try {
+    return localStorage.getItem(KEY) === (cacheRaw ?? localStorage.getItem(KEY));
+  } catch {
+    return false;
+  }
+}
+
 export function clearProjectProviders(project: string): void {
   const key = pathKey(project);
   const all = { ...readAll() };

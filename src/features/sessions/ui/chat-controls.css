@@ -30,18 +30,18 @@
   container: chat-composer / inline-size;
 }
 
-html [data-composer] div[data-composer-box] {
-  background: var(--color-background-base);
-}
+/* The composer box surface, edge and shadow are owned by bycoda.css
+   ([data-composer-box]); nothing here repaints it. */
 html [data-activity-dock] {
   background: var(--ui-surface);
 }
 
+/* Transcript activity is part of the reading flow: no frame, fill or stripe. */
 .transcript-activity-group {
-  margin-block: 4px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-control);
-  background: var(--ui-surface);
+  margin-block: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow: clip;
 }
 .zen-phase-body[data-open="true"] > .zen-phase-summary {
@@ -49,18 +49,6 @@ html [data-activity-dock] {
 }
 .zen-phase-body[data-open="true"] > .zen-phase-summary:has([data-tool-inspection]) {
   max-block-size: none;
-}
-
-.composer-session-meta {
-  display: flex;
-  min-inline-size: 0;
-  align-items: center;
-  gap: 0.75rem;
-  padding-inline: 0.75rem;
-  padding-block-end: 0.375rem;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  line-height: 1.5;
 }
 
 .session-header-title > [data-session-agent] {
@@ -134,8 +122,10 @@ html [data-activity-dock] {
   color: var(--ui-text-secondary);
 }
 
+/* One quiet context row under the writing surface: no fill, edge or frame. */
 [data-composer] [data-composer-workspace] {
-  background: var(--color-background-base);
+  background: none;
+  color: var(--ui-text-secondary);
 }
 
 [data-jump-to-bottom] {
@@ -213,13 +203,26 @@ html [data-activity-dock] {
   margin-block: 0.75rem;
 }
 
+/* Confirmed-empty context is telemetry, not a command: a bare ring with no
+   bolt, no hit area and no control-sized footprint beside Add and Send. */
 .context-meter-empty {
   justify-content: center;
-  inline-size: var(--ui-control-height-sm);
-  block-size: var(--ui-control-height-sm);
+  inline-size: 1rem;
+  block-size: 1rem;
+  margin-inline: 0.375rem;
   flex-shrink: 0;
-  color: var(--ui-text-secondary);
+  color: var(--ui-text-disabled);
   font-size: var(--ui-font-caption);
+}
+
+.context-meter-empty .context-speed-pulse {
+  display: none;
+}
+
+.context-meter-empty .context-signal-frame,
+.context-meter-empty .context-signal-frame > svg {
+  inline-size: 1rem;
+  block-size: 1rem;
 }
 
 .context-meter-heading,

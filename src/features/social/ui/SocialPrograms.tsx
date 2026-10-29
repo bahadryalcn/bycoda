@@ -202,7 +202,13 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
     if (next) queryClient.setQueryData([...scope, "program", next.program.id], next);
   }
   const setPrograms = (list: SocialProgram[]) => queryClient.setQueryData(listKey, list);
-  const refreshError = listQuery.error ?? detailQuery.error;
+  // List refresh errors stay with the page; a failed read of the selected record is
+  // owned by the detail region below (with its own retry), not by setup/mutation errors.
+  const refreshError = listQuery.error;
+  const detailError = detailQuery.isError ? detailQuery.error : null;
+  const selectedSummary = selectedProgram
+    ? programs.find((program) => program.id === selectedProgram)
+    : undefined;
   useEffect(() => {
     if (detail && projectId && detail.program.projectId !== projectId)
       setSelectedProgram(undefined);
@@ -1402,6 +1408,41 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
             </Button>
           ))}
         </div> : null}
+        {!detail && selectedProgram ? (
+          <section
+            className="social-program-detail social-program-detail-pending"
+            aria-label={selectedSummary?.name ?? t("Selected program")}
+            aria-busy={!detailError}
+          >
+            <header className="social-record-heading">
+              <h3>{selectedSummary?.name ?? t("Selected program")}</h3>
+              {selectedSummary ? (
+                <span className="social-muted">
+                  {selectedSummary.enabled
+                    ? t("Active")
+                    : selectedSummary.cancelled
+                      ? t("Cancelled")
+                      : t("Paused")}
+                </span>
+              ) : null}
+            </header>
+            {detailError ? (
+              <Notice kind="error" title={t("Could not load this program")}>
+                {String(detailError)}{" "}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={detailQuery.isFetching}
+                  onClick={() => void detailQuery.refetch()}
+                >
+                  {t("Retry")}
+                </Button>
+              </Notice>
+            ) : (
+              <Notice kind="loading">{t("Loading program…")}</Notice>
+            )}
+          </section>
+        ) : null}
         {detail ? (
           <section className="social-program-detail">
             <header className="social-record-heading">
@@ -1410,6 +1451,19 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
                 {detail.program.enabled ? t("Active") : t("Paused")}
               </span>
             </header>
+            {detailError ? (
+              <Notice kind="error" title={t("Could not refresh this program")}>
+                {String(detailError)}{" "}
+                <Button
+                  type="button"
+                  variant="secondary"
+                  loading={detailQuery.isFetching}
+                  onClick={() => void detailQuery.refetch()}
+                >
+                  {t("Retry")}
+                </Button>
+              </Notice>
+            ) : null}
             {detail.program.reason ? <Notice>{detail.program.reason}</Notice> : null}
             <details className="social-program-advanced">
               <summary>{t("Generation usage")}</summary>

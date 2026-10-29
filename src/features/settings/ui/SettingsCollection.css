@@ -1,0 +1,146 @@
+/* One collection language for settings pages that list repeated items (projects,
+   groups, hosts, archived items): a quiet bounded region, a single compact
+   search/filter/count band, and rows that separate by spacing and hover fill. */
+.settings-collection {
+  min-inline-size: 0;
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+  overflow: clip;
+}
+
+.settings-collection-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  min-inline-size: 0;
+}
+
+.settings-collection-search {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  max-inline-size: 22rem;
+}
+
+.settings-collection-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  min-inline-size: 0;
+}
+
+.settings-collection-count {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-block-size: clamp(15rem, 52dvh, 30rem);
+  padding: 0 4px 4px;
+  overflow-y: auto;
+  overscroll-behavior-block: contain;
+  scrollbar-gutter: stable;
+  min-inline-size: 0;
+}
+
+.settings-collection-row {
+  /* Rows keep their natural height; a bounded list scrolls instead of squeezing them together. */
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-inline-size: 0;
+  min-block-size: 2.5rem;
+  padding: 6px 8px;
+  border-radius: var(--ui-control-radius);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-collection-row:hover {
+    background: var(--ui-surface-hover);
+  }
+}
+
+.settings-collection-row:focus-visible {
+  outline: var(--ui-focus-width, 2px) solid var(--ui-focus-ring-color);
+  outline-offset: -2px;
+}
+
+.settings-collection-main {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+
+.settings-collection-title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--color-content);
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-collection-meta {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.settings-collection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 8px;
+  margin-inline-start: auto;
+  min-inline-size: 0;
+}
+
+.settings-collection-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 12px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+
+.settings-collection-empty p {
+  margin: 0;
+}
+
+.settings-collection-feedback {
+  flex-basis: 100%;
+  min-inline-size: 0;
+}
+
+/* A group header above a collection: title and optional description on the left,
+   one action on the right. No rule; spacing separates it from the collection. */
+.settings-collection-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 16px;
+  padding-block-end: 8px;
+}
+
+.settings-collection-header > :first-child {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+}

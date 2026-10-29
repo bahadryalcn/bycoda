@@ -52,6 +52,8 @@ test("pointer drag moves backlog issues to the active sprint and back", async ({
   await page.getByRole("button", { name: "Backlog & sprints", exact: true }).click();
   const backlog = page.getByRole("region", { name: "Backlog", exact: true });
   const active = page.getByRole("region", { name: "Sprint 21", exact: true });
+  // Only the first group opens by default; expand Backlog to load and show its issues.
+  await backlog.getByRole("button", { name: "Backlog", exact: true }).click();
   await expect(backlog.locator(".jira-board-card")).toHaveCount(2);
   await drag(
     page,
@@ -75,7 +77,7 @@ test("failed moves preserve the original card and remain visible", async ({ page
   );
   const source = page.locator(".jira-board-card").filter({ hasText: "ENG-1" });
   await source.getByRole("button", { name: "Move ENG-1" }).click();
-  await source.getByRole("button", { name: "In Progress", exact: true }).click();
+  await page.getByRole("menu", { name: "Move ENG-1" }).getByRole("menuitem", { name: "In Progress", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Jira permission denied");
   await expect(
     page
@@ -152,7 +154,7 @@ for (const variant of [
       document.documentElement.dataset.theme = theme;
       document.documentElement.classList.toggle("theme-light", theme === "light");
     }, variant.theme);
-    const input = page.getByRole("searchbox", { name: "Filter issues" });
+    const input = page.getByRole("searchbox", { name: "Filter loaded issues" });
     await input.focus();
     await input.pressSequentially("ENG-1");
     await expect(page.locator(".jira-board-card")).toHaveCount(1);

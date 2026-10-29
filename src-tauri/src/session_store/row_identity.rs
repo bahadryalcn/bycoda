@@ -98,6 +98,15 @@ impl SessionStore {
         session: &str,
     ) -> Result<Option<SessionRowIdentity>, String> {
         let conn = self.lock_conn()?;
+        self.capture_session_row_identity_at(&conn, session)
+    }
+
+    /// The caller owns the SQL snapshot (or transaction); never relock Store.
+    pub(super) fn capture_session_row_identity_at(
+        &self,
+        conn: &Connection,
+        session: &str,
+    ) -> Result<Option<SessionRowIdentity>, String> {
         let token: Option<Vec<u8>> = conn.query_row(
             &format!("SELECT n.incarnation FROM native_session_row_identity n JOIN sessions s ON s.id=n.session_id
              WHERE s.id=:session AND {SCHEMA_CURRENT}"),
@@ -126,6 +135,20 @@ impl SessionStore {
             return Ok(false);
         }
         let conn = self.lock_conn()?;
+        self.session_row_identity_current_at(&conn, identity, &identity.session)
+    }
+
+    /// Checks Store, exact target, schema and incarnation in the supplied SQL
+    /// snapshot. FULL checkpoints use this inside their actual transaction.
+    pub(crate) fn session_row_identity_current_at(
+        &self,
+        conn: &Connection,
+        identity: &SessionRowIdentity,
+        session: &str,
+    ) -> Result<bool, String> {
+        if self.native_instance_id() != identity.instance || session != identity.session {
+            return Ok(false);
+        }
         conn.query_row(
             &format!("SELECT EXISTS(SELECT 1 FROM native_session_row_identity n JOIN sessions s ON s.id=n.session_id
              WHERE s.id=:session AND n.incarnation=:incarnation AND {SCHEMA_CURRENT})"),

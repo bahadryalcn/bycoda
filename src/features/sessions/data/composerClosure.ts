@@ -32,6 +32,13 @@ export interface ComposerPreparation {
   /** Run result application under this still-owned admission, including after view retirement. */
   apply<T>(mutation: () => T): T;
   fail(error: unknown): void;
+  /** This original attempt, including the actual draft persistence/Native ACK. */
+  whenSettled?(): Promise<void>;
+}
+/** One original UI action; finishing it never persists or replays its effect. */
+export interface MountedComposerAction {
+  apply<T>(mutation: () => T): T;
+  finish(): void;
 }
 export interface MountedComposerAdapter {
   sessionId?: string;
@@ -41,6 +48,7 @@ export interface MountedComposerAdapter {
 }
 export interface MountedComposerLease {
   canMutate(): boolean;
+  admitAction(): MountedComposerAction | null;
   mutate<T>(mutation: () => T): T;
   /** Preserve an unexpected external mutation, but invalidate a closed observation. */
   changed(): void;
@@ -87,6 +95,7 @@ type Binding = {
   retired: boolean;
   active?: PersistenceWork;
   jobs: Map<number, Job>;
+  actions: Set<Action>;
   snapshot?: MountedComposerSnapshot;
   snapshotRevision?: number;
   charge: number;
@@ -96,6 +105,15 @@ type Binding = {
   retrying?: Promise<void>;
   cacheVersion: number;
 };
+type Action = {
+  pending?: Promise<void>;
+  settled: boolean;
+  failed: boolean;
+  error?: unknown;
+};
+const hasPending = (binding: Binding) =>
+  [...binding.jobs.values()].some((job) => !!job.pending) ||
+  [...binding.actions].some((action) => !action.settled);
 type Closure = {
   scope: PersistenceScope;
   owner: object;
@@ -188,9 +206,32 @@ function immutableSnapshot(input: ComposerDraft): {
     text: input.text,
     mcpTags: input.mcpTags,
     attachments,
-    ...(input.mode ? { mode: input.mode } : {}),
+    ...(Object.prototype.hasOwnProperty.call(input, "mode") ? { mode: input.mode } : {}),
   }) as MountedComposerSnapshot;
   return { snapshot, charge: charge + nodes * 16 };
+}
+
+/** Inputs are the bounded immutable copies above. JSON.stringify erases own
+ * undefined members, so it cannot compare the raw presence retained at a lease. */
+function sameSnapshot(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (
+    !left ||
+    !right ||
+    typeof left !== "object" ||
+    typeof right !== "object" ||
+    Array.isArray(left) !== Array.isArray(right)
+  )
+    return false;
+  if (Array.isArray(left) && Array.isArray(right) && left.length !== right.length) return false;
+  const leftKeys = Object.keys(left),
+    rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) return false;
+  return leftKeys.every(
+    (key, index) =>
+      key === rightKeys[index] &&
+      sameSnapshot((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]),
+  );
 }
 
 export function createMountedComposerRegistry(options: Options = {}) {
@@ -203,6 +244,7 @@ function implement(options: Options, state: State) {
     throw new ComposerClosureError("changed");
   if (state.registry && state.registry !== registry) state.overflow = true;
   state.registry = registry;
+  for (const binding of state.bindings.values()) binding.actions ??= new Set();
   const implementation = ++state.implementation;
   for (const closed of state.closures) {
     closed.error ??= new ComposerClosureError("changed");
@@ -255,8 +297,7 @@ function implement(options: Options, state: State) {
     try {
       return (
         !!binding.snapshot &&
-        JSON.stringify(binding.snapshot) ===
-          JSON.stringify(immutableSnapshot(adapter.snapshot()).snapshot)
+        sameSnapshot(binding.snapshot, immutableSnapshot(adapter.snapshot()).snapshot)
       );
     } catch {
       return false;
@@ -271,6 +312,7 @@ function implement(options: Options, state: State) {
       binding.retired &&
       binding.retirementSettled &&
       binding.jobs.size === 0 &&
+      binding.actions.size === 0 &&
       owner &&
       owner !== binding &&
       matches(binding, owner.adapter) &&
@@ -310,8 +352,7 @@ function implement(options: Options, state: State) {
       if (
         owner &&
         owner !== binding &&
-        JSON.stringify(immutableSnapshot(owner.adapter.snapshot()).snapshot) !==
-          JSON.stringify(snapshot)
+        !sameSnapshot(immutableSnapshot(owner.adapter.snapshot()).snapshot, snapshot)
       ) {
         throw new ComposerClosureError("changed");
       }
@@ -354,8 +395,18 @@ function implement(options: Options, state: State) {
     job.failed = false;
     job.settled = false;
     const attempt = ++job.attempt;
+    let resolveAttempt!: () => void;
+    let rejectAttempt!: (reason: unknown) => void;
+    const attemptSettled = new Promise<void>((resolve, reject) => {
+      resolveAttempt = resolve;
+      rejectAttempt = reject;
+    });
+    // Consumers can attach during the synchronous preparation callback. They
+    // must not finish accepted work merely because that callback returned.
+    void attemptSettled.catch(() => {});
     const pending = producer.run(binding.scope, `prepare:${binding.id}:${job.id}`, async (work) => {
       const accepted: ComposerPreparation = {
+        whenSettled: () => attemptSettled,
         apply<T>(mutation: () => T): T {
           if (job.settled || job.attempt !== attempt) throw new ComposerClosureError("retired");
           const previous = binding.active;
@@ -397,25 +448,32 @@ function implement(options: Options, state: State) {
         job.pending = undefined;
         job.settled = true;
         binding.jobs.delete(job.id);
+        resolveAttempt();
       },
-      () => {
+      (error: unknown) => {
         state.active--;
         job.pending = undefined;
         job.settled = true;
+        rejectAttempt(error);
       },
     );
     return pending;
   };
   const settle = async (binding: Binding) => {
     while (true) {
-      const pending = [...binding.jobs.values()].flatMap((job) =>
-        job.pending ? [job.pending] : [],
-      );
+      const pending = [
+        ...[...binding.jobs.values()].flatMap((job) => (job.pending ? [job.pending] : [])),
+        ...[...binding.actions].flatMap((action) =>
+          !action.settled && action.pending ? [action.pending] : [],
+        ),
+      ];
       if (!pending.length) break;
       await Promise.allSettled(pending);
     }
     const failed = [...binding.jobs.values()].find((job) => job.failed);
     if (failed) throw failed.error;
+    const failedAction = [...binding.actions].find((action) => action.failed);
+    if (failedAction) throw failedAction.error;
   };
   const assertClosure = (closed: Closure) => {
     if (closed.reopened) throw new ComposerClosureError("changed");
@@ -423,12 +481,15 @@ function implement(options: Options, state: State) {
     if (closed.error) throw closed.error;
     if (state.overflow) throw new ComposerClosureError("capacity");
     for (const binding of closed.roster) {
+      // A retired lease retains its own snapshot. Its adapter may now point at
+      // another view, so only a still-live original may be inspected again.
+      if (!binding.retired && binding.adapter.composing?.())
+        throw new ComposerClosureError("composition");
       if (
         !binding.retired &&
         binding.snapshot &&
         binding.snapshotRevision === binding.revision &&
-        JSON.stringify(immutableSnapshot(binding.adapter.snapshot()).snapshot) !==
-          JSON.stringify(binding.snapshot)
+        !sameSnapshot(immutableSnapshot(binding.adapter.snapshot()).snapshot, binding.snapshot)
       ) {
         closed.error = new ComposerClosureError("changed");
         closed.interrupt(closed.error);
@@ -444,6 +505,7 @@ function implement(options: Options, state: State) {
       previous.retirementSettled &&
       previous.snapshot &&
       previous.jobs.size === 0 &&
+      previous.actions.size === 0 &&
       !state.closures.size &&
       matches(previous, adapter)
     ) {
@@ -461,6 +523,7 @@ function implement(options: Options, state: State) {
       revision: 0,
       retired: false,
       jobs: new Map(),
+      actions: new Set(),
       charge: 0,
       cacheVersion: adapter.sessionId ? (state.cacheVersions.get(adapter.sessionId) ?? 0) : 0,
     };
@@ -473,11 +536,93 @@ function implement(options: Options, state: State) {
         return binding.retired;
       },
       get pending() {
-        return [...binding.jobs.values()].some((job) => !!job.pending);
+        return hasPending(binding);
       },
       canMutate: () =>
         !!binding.active ||
         (!binding.retired && implementation === state.implementation && !closedFor(binding)),
+      admitAction() {
+        if (
+          binding.retired ||
+          implementation !== state.implementation ||
+          closedFor(binding) ||
+          state.bindings.get(binding.id) !== binding ||
+          binding.jobs.size + binding.actions.size >= 16 ||
+          state.active >= 64 ||
+          !Number.isSafeInteger(state.next + 1)
+        )
+          return null;
+        const id = ++state.next;
+        const action: Action = { settled: false, failed: false };
+        binding.actions.add(action);
+        state.active++;
+        let work: PersistenceWork | undefined;
+        let finished = false;
+        let resolve!: () => void;
+        const ended = new Promise<void>((done) => {
+          resolve = done;
+        });
+        const pending = producer.run(
+          binding.scope,
+          `action:${binding.id}:${id}`,
+          async (actual) => {
+            work = actual;
+            await ended;
+            actual.confirmRecovery();
+          },
+        );
+        action.pending = pending;
+        void pending.then(
+          () => {
+            action.settled = true;
+            state.active--;
+            binding.actions.delete(action);
+          },
+          (error: unknown) => {
+            action.settled = true;
+            action.failed = true;
+            action.error = error;
+            state.active--;
+            invalidate(binding.scope, error);
+          },
+        );
+        const finish = () => {
+          if (!finished) {
+            finished = true;
+            resolve();
+          }
+        };
+        // Module replacement may queue the factory behind an older real write.
+        // Without its actual work there is no synchronous action capability.
+        if (!work) {
+          finish();
+          return null;
+        }
+        const acceptedWork = work;
+        return Object.freeze({
+          apply<T>(mutation: () => T): T {
+            if (
+              finished ||
+              binding.retired ||
+              implementation !== state.implementation ||
+              state.bindings.get(binding.id) !== binding
+            )
+              throw new ComposerClosureError("retired");
+            const previous = binding.active;
+            binding.active = acceptedWork;
+            try {
+              return mutation();
+            } finally {
+              try {
+                changed(binding, true);
+              } finally {
+                binding.active = previous;
+              }
+            }
+          },
+          finish,
+        });
+      },
       mutate<T>(mutation: () => T): T {
         if (
           !binding.active &&
@@ -507,7 +652,7 @@ function implement(options: Options, state: State) {
       prepare<T>(operation: (accepted: ComposerPreparation) => Promise<T>): Promise<T> {
         if (binding.retired || implementation !== state.implementation || closedFor(binding))
           return Promise.reject(new ComposerClosureError(binding.retired ? "retired" : "closed"));
-        if (binding.jobs.size >= 16 || state.active >= 64)
+        if (binding.jobs.size + binding.actions.size >= 16 || state.active >= 64)
           return Promise.reject(new ComposerClosureError("capacity"));
         if (!Number.isSafeInteger(state.next + 1))
           return Promise.reject(new ComposerClosureError("capacity"));
@@ -627,10 +772,7 @@ function implement(options: Options, state: State) {
         assertClosure(closed);
         if (
           !closed.completed ||
-          closed.roster.some(
-            (binding) =>
-              binding.capturing || [...binding.jobs.values()].some((job) => !!job.pending),
-          )
+          closed.roster.some((binding) => binding.capturing || hasPending(binding))
         )
           throw new ComposerClosureError("changed");
       },
@@ -678,10 +820,7 @@ function implement(options: Options, state: State) {
         }
         if (
           closed.completed &&
-          closed.roster.some(
-            (binding) =>
-              binding.capturing || [...binding.jobs.values()].some((job) => !!job.pending),
-          )
+          closed.roster.some((binding) => binding.capturing || hasPending(binding))
         ) {
           closed.completed = false;
           closed.capture = undefined;
@@ -693,7 +832,8 @@ function implement(options: Options, state: State) {
             for (const binding of closed.roster) {
               await settle(binding);
               assertClosure(closed);
-              if (binding.adapter.composing?.()) throw new ComposerClosureError("composition");
+              if (!binding.retired && binding.adapter.composing?.())
+                throw new ComposerClosureError("composition");
               await checkpoint(binding);
               assertClosure(closed);
             }
@@ -702,7 +842,7 @@ function implement(options: Options, state: State) {
                 (binding) =>
                   binding.capturing ||
                   binding.snapshotRevision !== binding.revision ||
-                  [...binding.jobs.values()].some((job) => !!job.pending),
+                  hasPending(binding),
               )
             )
               break;

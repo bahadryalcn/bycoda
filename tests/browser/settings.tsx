@@ -4,6 +4,7 @@ import { initAppearancePreferences } from "../../src/features/settings/model/app
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { SettingsView } from "../../src/features/settings/ui/SettingsView";
+import { WorkspaceSettingsSurface } from "../../src/app/workspace/layout/WorkspaceSettingsSurface";
 import {
   SETTINGS_SECTIONS,
   type SettingsSectionId,
@@ -338,6 +339,65 @@ function Fixture() {
     </main>
   );
 }
+// `?dialog=1` mounts Settings the way App does: a dialog over a workspace that stays mounted.
+function DialogFixture() {
+  const [section, setSection] = useState<SettingsSectionId>(
+    SETTINGS_SECTIONS.find((entry) => entry.id === initial)?.id ?? "general",
+  );
+  const [open, setOpen] = useState(false);
+  const [retries, setRetries] = useState(0);
+  const [draft, setDraft] = useState("");
+  const history = params.get("history");
+  return (
+    <main
+      className="flex h-screen min-w-0 bg-background-base text-content"
+      data-fixture-retries={retries}
+    >
+      <nav aria-label="Project rail" className="w-56 shrink-0 border-e border-stroke p-3">
+        <button type="button" data-testid="open-settings" onClick={() => setOpen(true)}>
+          Settings
+        </button>
+      </nav>
+      <section data-workspace-chrome aria-label="Workspace" className="min-w-0 flex-1 p-4">
+        <label>
+          Workspace draft
+          <input value={draft} onChange={(event) => setDraft(event.target.value)} />
+        </label>
+      </section>
+      <WorkspaceSettingsSurface
+        presentation="dialog"
+        worktreeManagementRequest={null}
+        worktreeManagementRevision={0}
+        setWorktreeManagementRequest={() => {}}
+        onRemoveWorktree={async () => {}}
+        settingsOpen={open}
+        settingsSection={section}
+        settingsAnchor={null}
+        notificationProjectPath={null}
+        notificationSettingsRequest={0}
+        visibleRecents={[{ path: "/fixture/settings-project", openedAt: 1 }]}
+        sidebarCwd="/fixture/settings-project"
+        sidebarHistory={[]}
+        historyFailed={history === "failed"}
+        historyPending={history === "pending"}
+        onRetryHistory={() => setRetries((count) => count + 1)}
+        sessions={[]}
+        onCheckWorktreeRemoval={async () => ({ safe: true }) as never}
+        onDeleteWorktreeSessions={async () => {}}
+        onCloseSettings={() => setOpen(false)}
+        onSelectSettingsSection={setSection}
+        onOpenArchivedSession={() => {}}
+        onArchiveHistorySession={() => {}}
+        onDeleteHistorySession={() => {}}
+        onRestoreProject={() => {}}
+        onRemoveProject={async () => {}}
+        onOpenWhatsNew={() => {}}
+        collapsedProjectRailMode="compact"
+        setCollapsedProjectRailMode={() => {}}
+      />
+    </main>
+  );
+}
 void Promise.all([
   setLanguagePreference(isLocale(language) ? language : "en"),
   setDomainLanguagePreference("git", "app"),
@@ -347,7 +407,7 @@ void Promise.all([
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <Fixture />
+      {params.get("dialog") === "1" ? <DialogFixture /> : <Fixture />}
     </QueryClientProvider>,
   ),
 );

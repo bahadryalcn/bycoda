@@ -2,6 +2,7 @@ import { EngineOperations } from "./engine-operations";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
+import { assertHostProviderAccount } from "./provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, dirname, join } from "node:path";
 import { HostCheckpoints } from "./checkpoints";
@@ -282,6 +283,19 @@ function parseCommandBody(input: unknown): HostCommand {
       commandId,
       sessionId,
       ...(v.harness !== undefined ? { harness: v.harness as RemoteProvider } : {}),
+      // With an omitted harness this is only the account ID syntax check. The
+      // actual persisted target provider/profile is checked before mutation.
+      ...(v.providerAccountId === undefined
+        ? {}
+        : {
+            providerAccountId:
+              v.providerAccountId === null
+                ? null
+                : parseProviderAccountId(
+                    v.providerAccountId,
+                    v.harness === undefined ? "codex" : String(v.harness),
+                  ),
+          }),
       model: text(v.model, "model", 200),
       modelSettings: modelSettings(v.modelSettings),
       runtimeMode: v.runtimeMode as Session["runtimeMode"],
@@ -1804,6 +1818,21 @@ export class HostEngine {
                 this.provider(harness);
                 const plan = planComposerSwitch(value.session, harness);
                 const changedHarness = value.session.harness !== harness;
+                const inheritedAccount =
+                  plan.kind === "revert"
+                    ? plan.restoreProviderAccountId
+                    : changedHarness
+                      ? undefined
+                      : value.session.providerAccountId;
+                const selectedAccount =
+                  command.providerAccountId === undefined
+                    ? inheritedAccount
+                    : command.providerAccountId === null
+                      ? undefined
+                      : await assertHostProviderAccount(harness, command.providerAccountId);
+                const changedAccount =
+                  command.providerAccountId !== undefined &&
+                  (selectedAccount ?? "default") !== (inheritedAccount ?? "default");
                 value = {
                   ...value,
                   session: {
@@ -1829,9 +1858,31 @@ export class HostEngine {
                           providerAccountId: plan.restoreProviderAccountId,
                         }
                       : {}),
+                    ...(command.providerAccountId === undefined
+                      ? {}
+                      : { providerAccountId: selectedAccount }),
+                    ...(changedAccount
+                      ? { providerSessionId: undefined, context: undefined, usageLimit: undefined }
+                      : {}),
                   },
                 };
-                if (plan.kind === "revert" && plan.restoreProviderSessionId) {
+                if (
+                  changedAccount &&
+                  !changedHarness &&
+                  !value.session.pendingSwitch &&
+                  value.session.blocks.some((block) => block.role === "user")
+                ) {
+                  value = {
+                    ...value,
+                    session: appendReadyHandoff(
+                      value.session,
+                      harness,
+                      harness,
+                      buildDeterministicHandoff(value.session),
+                    ),
+                  };
+                }
+                if (plan.kind === "revert" && plan.restoreProviderSessionId && !changedAccount) {
                   effect = (saved) =>
                     this.provider(saved.session.harness).bind(
                       saved.session.id,

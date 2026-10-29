@@ -171,3 +171,90 @@ it("does not claim success when persistence fails", async () => {
   expect(model.hideGroup("personal")).toBe(false);
   expect(model.isProjectLocked("/personal")).toBe(false);
 });
+
+function failWrites(match: (key: string) => boolean) {
+  const original = localStorage.setItem.bind(localStorage);
+  return vi.spyOn(localStorage, "setItem").mockImplementation((key, value) => {
+    if (match(key)) throw new Error("quota");
+    original(key, value);
+  });
+}
+
+it("reports whether option choices reached storage", async () => {
+  const model = await import("./groupLock");
+  expect(model.setStartInPrivacyMode(true)).toBe(true);
+  const write = failWrites((key) => key === "bycoda.groupLock");
+  try {
+    expect(model.setStartInPrivacyMode(false)).toBe(false);
+    expect(model.setRelockOnLaunch(false)).toBe(false);
+    expect(model.setAutoLockMinutes(15)).toBe(false);
+    expect(model.setUnlockAll(true)).toBe(false);
+    // This window keeps the choice it just applied; storage keeps the previous one.
+    expect(model.getGroupLockView().settings.startInPrivacyMode).toBe(false);
+    expect(JSON.parse(localStorage.getItem("bycoda.groupLock")!).startInPrivacyMode).toBe(true);
+  } finally {
+    write.mockRestore();
+  }
+});
+
+it("does not mark a group lockable or unlock it when the flag cannot be saved", async () => {
+  const model = await import("./groupLock");
+  await model.setLockPassword("correct-password");
+  const write = failWrites((key) => key === "bycoda.projectGroups");
+  try {
+    expect(model.makeGroupLockable("personal")).toBe(false);
+  } finally {
+    write.mockRestore();
+  }
+  expect(
+    JSON.parse(localStorage.getItem("bycoda.projectGroups")!).find(
+      (group: { id: string }) => group.id === "personal",
+    ).lockable,
+  ).toBeUndefined();
+  expect(model.makeGroupLockable("personal")).toBe(true);
+});
+
+it("reports a group lock removal whose flag was not saved without losing the lock", async () => {
+  const model = await import("./groupLock");
+  await model.setLockPassword("correct-password");
+  const write = failWrites((key) => key === "bycoda.projectGroups");
+  try {
+    expect(await model.removeGroupLock("work", "correct-password")).toEqual({
+      ok: true,
+      incomplete: "not-saved",
+    });
+  } finally {
+    write.mockRestore();
+  }
+  expect(model.isProjectLocked("/work")).toBe(true);
+});
+
+it("keeps the password when its removal cannot be saved and reports a partial removal", async () => {
+  const model = await import("./groupLock");
+  await model.setLockPassword("correct-password");
+  const stored = localStorage.getItem("bycoda.groupLock");
+
+  const settingsWrite = failWrites((key) => key === "bycoda.groupLock");
+  try {
+    expect(await model.removeLockPassword("correct-password")).toEqual({
+      ok: true,
+      incomplete: "not-saved",
+    });
+  } finally {
+    settingsWrite.mockRestore();
+  }
+  expect(localStorage.getItem("bycoda.groupLock")).toBe(stored);
+  expect(model.getGroupLockView().hasPassword).toBe(true);
+  expect(JSON.parse(localStorage.getItem("bycoda.projectGroups")!)[1].lockable).toBe(true);
+
+  const groupsWrite = failWrites((key) => key === "bycoda.projectGroups");
+  try {
+    expect(model.resetForgottenPassword()).toBe("partial");
+  } finally {
+    groupsWrite.mockRestore();
+  }
+  expect(model.getGroupLockView().hasPassword).toBe(false);
+  expect(JSON.parse(localStorage.getItem("bycoda.projectGroups")!)[1].lockable).toBe(true);
+  // Projects stay in their groups; only the saved lock flag is left to review.
+  expect(model.resetForgottenPassword()).toBe("complete");
+});

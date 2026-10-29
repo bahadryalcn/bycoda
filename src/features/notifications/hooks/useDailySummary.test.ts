@@ -71,3 +71,28 @@ it("does not overlap delivery while a notification is pending", async () => {
   await act(async () => vi.advanceTimersByTimeAsync(60_000));
   expect(notify).toHaveBeenCalledTimes(1);
 });
+it("retries the sent-time and cached summary writes after a dispatched summary", async () => {
+  store.mockReturnValueOnce(false);
+  const realSetItem = localStorage.setItem.bind(localStorage);
+  const setItem = vi.spyOn(localStorage, "setItem");
+  setItem.mockImplementation((key: string, value: string) => {
+    if (key.endsWith("dailySummary.lastSent")) throw new Error("quota");
+    realSetItem(key, value);
+  });
+  try {
+    await act(async () => root.render(createElement(Harness)));
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(loadDailySummarySentAt()).toBeNull();
+    expect(store).toHaveBeenCalledTimes(1);
+
+    // Storage recovers: the next poll persists what the delivery left behind
+    // without sending a second summary.
+    setItem.mockRestore();
+    await act(async () => vi.advanceTimersByTimeAsync(60_000));
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(store).toHaveBeenCalledTimes(2);
+    expect(loadDailySummarySentAt()).not.toBeNull();
+  } finally {
+    setItem.mockRestore();
+  }
+});

@@ -27,7 +27,6 @@ import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { useGitSubmodules } from "../hooks/useGitSubmodules";
-import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 
 export function WorkspaceSourceControl({
   cwd,
@@ -142,14 +141,29 @@ export function WorkspaceSourceControl({
     onOpenCommit: (commit: GitHistoryCommit, pin?: boolean) =>
       onOpen({ type: "commit", cwd: path, commit, pin }),
   });
+  const refreshAll = () => {
+    onRefresh?.();
+    refresh();
+    (active ? [active, ...(modules[active] ?? [])] : repositories).forEach((path) =>
+      notifyGitChanged(path, "checkout"),
+    );
+  };
   const plain = singleRepository && repositories.length === 1 && !pendingSelection;
+  const showHeader = !plain || !!error;
+  // Checkout, path and session ownership are stated once, in the target selector
+  // (visible label plus this tooltip), instead of a second "Reviewing" row.
+  const targetTitle = active
+    ? [name(active), !checkouts && own(active) ? t("This session") : "", active].filter(Boolean).join(" · ")
+    : `${checkouts ? t("Working copy") : t("Repository")} · ${
+        checkouts ? t("All checkouts") : t("All repositories")
+      }`;
   return (
     <div
       className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
       data-workspace-source-control={cwd}
     >
-      {!plain || error ? (
-        <div className="flex shrink-0 items-center gap-1 border-b border-stroke px-2 py-1">
+      {showHeader ? (
+        <div className="flex shrink-0 items-center gap-1 px-2 pt-1 pb-0.5">
           {!checkouts ? (
             <Button
               variant="item"
@@ -163,15 +177,12 @@ export function WorkspaceSourceControl({
               {t("Repository")}
             </Button>
           ) : null}
-          <div
-            className="min-w-0 flex-1"
-            title={checkouts ? `${t("Working copy")} · ${active || t("All checkouts")}` : undefined}
-          >
+          <div className="min-w-0 flex-1" title={targetTitle}>
             <SearchableSelect
               label={checkouts ? t("Working copy") : t("Repository")}
               value={active}
               onChange={choose}
-              variant="transparent"
+              variant="row"
               options={[
                 {
                   value: "",
@@ -207,32 +218,20 @@ export function WorkspaceSourceControl({
             disabled={!enabled}
             title={t("Refresh source control")}
             aria-label={t("Refresh source control")}
-            onClick={() => {
-              onRefresh?.();
-              refresh();
-              (active ? [active, ...(modules[active] ?? [])] : repositories).forEach((path) =>
-                notifyGitChanged(path, "checkout"),
-              );
-            }}
+            onClick={refreshAll}
           >
             <RefreshCw className="size-3.5" />
           </Button>
         </div>
       ) : null}
       {error ? (
-        <p
-          role="status"
-          className="shrink-0 px-2 py-1 text-xs text-[var(--ui-text-secondary)]"
-          title={error}
-        >
-          {t("Could not refresh submodules. Refresh source control to retry.")}
-        </p>
-      ) : null}
-      {active || plain ? (
-        <div className="flex min-w-0 shrink-0 items-center gap-2 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
-          <span className="shrink-0">{t("Reviewing")}</span>
-          <MiddleTruncate mode="path">{active || cwd}</MiddleTruncate>
-          {own(active || cwd) ? <span className="shrink-0">{t("This session")}</span> : null}
+        <div className="flex shrink-0 flex-wrap items-center gap-x-2 px-2 text-ui-caption text-(--ui-text-secondary)">
+          <p role="status" className="min-w-0" title={error}>
+            {t("Could not refresh submodules. Refresh source control to retry.")}
+          </p>
+          <Button variant="link" size="sm" disabled={!enabled} onClick={refreshAll}>
+            {t("Retry")}
+          </Button>
         </div>
       ) : null}
       <div
@@ -260,6 +259,7 @@ export function WorkspaceSourceControl({
             selectedPath={own(active || cwd) ? selectedPath : undefined}
             selectedKind={own(active || cwd) ? selectedKind : undefined}
             selectedSha={own(active || cwd) ? selectedSha : undefined}
+            refreshInTarget={showHeader}
             {...callbacks(active || cwd)}
           />
         ) : checkouts ? (

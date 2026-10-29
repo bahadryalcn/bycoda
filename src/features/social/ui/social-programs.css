@@ -64,7 +64,7 @@
 }
 .social-program-calendar > article {
   background: var(--ui-surface);
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-card);
   padding: 0.75rem;
   min-inline-size: 0;
 }
@@ -118,7 +118,7 @@
   flex: 1 1 17rem;
   min-inline-size: 0;
   background: var(--ui-surface);
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-card);
   padding: 1rem;
 }
 .social-campaign-previews .social-preview {
@@ -177,7 +177,7 @@
   margin: 0;
   padding: 1rem;
   background: var(--ui-surface);
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-card);
 }
 .social-program-review dt {
   color: var(--ui-text-secondary);
@@ -202,7 +202,7 @@
   order: 1;
   background: var(--ui-surface);
   padding: 1rem;
-  border-radius: var(--radius-panel);
+  border-radius: var(--ui-radius-card);
 }
 .social-program-step[data-program-step="0"]
   > .social-program-advanced:not(.social-program-assistant) {
@@ -291,6 +291,11 @@
   display: grid;
   gap: 0.75rem;
   min-inline-size: 0;
+}
+/* A selected record keeps its heading and a bounded area while its detail loads or fails. */
+.social-program-detail-pending {
+  min-block-size: 8rem;
+  align-content: start;
 }
 .social-program-detail > :is(h3, p),
 .social-programs .social-section-heading :is(h2, p) {

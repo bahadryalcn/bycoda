@@ -97,6 +97,121 @@ function terminal(
 }
 const load = () => import("./nativeOutputDelivery");
 
+it("joins retained original inputs atomically and preserves all constituents through alias/projection", async () => {
+  const api = await load();
+  const lines = ["first-fragment", "completing-fragment"];
+  const tokens = api.observeNativeOutputBatch("session", "stdout", lines, wire("stdout", lines))!;
+  const works = tokens.map((token) => {
+    let work!: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>;
+    api.deliverNativeOutputItem(token, () => {
+      work = api.captureNativeOutputWork()!;
+    });
+    return work;
+  });
+  const joined = api.joinNativeOutputWorks(works, "session")!;
+  expect(joined).not.toBeNull();
+  works.forEach((work) => work.finish());
+  const event = {},
+    alias = {};
+  api.captureNativeOutputWorkEvent(joined, event);
+  api.transferNativeOutputEventOrigin(event, alias);
+  const origin = api.getNativeOutputEventOrigin(alias)!;
+  expect(origin).toBe(joined.origin);
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  await vi.waitFor(() => expect(api.getNativeOutputEventOriginComparisons(origin)).toHaveLength(2));
+  const comparisons = api.getNativeOutputEventOriginComparisons(origin)!;
+  expect(comparisons.map((item) => item.itemIndex)).toEqual([0, 1]);
+  expect(Object.isFrozen(comparisons)).toBe(true);
+  api.markNativeOutputEventsApplied("session", [alias]);
+  api.markNativeOutputOriginProjectionAccepted(origin, "session");
+  joined.finish();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 0,
+    queuedEvents: 1,
+    appliedEvents: 1,
+    outcomes: [{ outcome: "accepted-projection" }, { outcome: "accepted-projection" }],
+  });
+  api.discardNativeOutputItems([tokens[0]], "late-member-retirement");
+  expect(api.getNativeOutputEventOriginComparisons(origin)).toBeNull();
+});
+
+it("retains zero-event parser outcomes after batch advance and requires an explicit supported no-effect", async () => {
+  const api = await load();
+  const lines = ["unfinished-json", "known-no-effect"];
+  const tokens = api.observeNativeOutputBatch("session", "stdout", lines, wire("stdout", lines))!;
+  api.deliverNativeOutputItem(tokens[0], () => undefined);
+  api.deliverNativeOutputItem(tokens[1], () =>
+    api.markNativeOutputSupportedNoEffect("fixture-known-control"),
+  );
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].pendingBatches).toBe(0),
+  );
+  expect(api.inspectNativeOutputDelivery("session").streams[0].outcomes).toMatchObject([
+    { outcome: "pending-parser", reason: null },
+    { outcome: "supported-no-effect", reason: "fixture-known-control" },
+  ]);
+});
+
+it.each(["forged", "finished", "recipient", "store", "session"])(
+  "rejects %s join members without minting partial lineage",
+  async (kind) => {
+    const api = await load();
+    const metadata = wire("stdout", ["original"]);
+    const [first] = api.observeNativeOutputBatch("session", "stdout", ["original"], metadata)!;
+    let a!: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>;
+    api.deliverNativeOutputItem(first, () => {
+      a = api.captureNativeOutputWork()!;
+    });
+    let b = a;
+    if (kind === "forged") b = { ...a };
+    else if (kind === "finished") a.finish();
+    else {
+      const other = wire("stdout", ["other"], {
+        streamEpoch: "66666666-6666-4666-8666-666666666666",
+        ...(kind === "recipient"
+          ? { ownerEpoch: "other-owner" }
+          : kind === "store"
+            ? { sourceStoreId: "other-store" }
+            : { sessionId: "other-session" }),
+      });
+      const [token] = api.observeNativeOutputBatch(other.sessionId, "stdout", ["other"], other)!;
+      api.deliverNativeOutputItem(token, () => {
+        b = api.captureNativeOutputWork()!;
+      });
+    }
+    expect(api.joinNativeOutputWorks([a, b], "session")).toBeNull();
+    a.finish();
+    b.finish();
+    expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(0);
+  },
+);
+
+it("invalidates a whole joined comparison when only one original stream becomes unavailable", async () => {
+  const api = await load();
+  const works = [ids.streamEpoch, "66666666-6666-4666-8666-666666666666"].map((streamEpoch) => {
+    const [item] = api.observeNativeOutputBatch(
+      "session",
+      "stdout",
+      ["part"],
+      wire("stdout", ["part"], { streamEpoch }),
+    )!;
+    let work!: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>;
+    api.deliverNativeOutputItem(item, () => {
+      work = api.captureNativeOutputWork()!;
+    });
+    return { item, work };
+  });
+  const joined = api.joinNativeOutputWorks(works.map((entry) => entry.work))!;
+  await vi.waitFor(() =>
+    expect(api.getNativeOutputEventOriginComparisons(joined.origin)).toHaveLength(2),
+  );
+  api.discardNativeOutputItems([works[1].item], "one-member-unavailable");
+  expect(api.getNativeOutputEventOriginComparisons(joined.origin)).toBeNull();
+  expect(api.getNativeOutputEventOriginComparison(works[0].work.origin)).not.toBeNull();
+  joined.finish();
+  works.forEach((entry) => entry.work.finish());
+});
+
 it("matches independent Python framing vectors including BOM, Unicode, boundaries and an empty line", async () => {
   const api = await load();
   for (const vector of vectors.cases) {
@@ -272,9 +387,16 @@ it("retains hash permits until actual work settles, even after invalidation", as
 
 it("owns deferred descendants before scheduling and keeps original event origins through awaits", async () => {
   const api = await load();
-  const [item] = api.observeNativeOutputBatch("session", "stdout", ["deferred"], wire("stdout", ["deferred"]))!;
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["deferred"],
+    wire("stdout", ["deferred"]),
+  )!;
   let release!: () => void;
-  const held = new Promise<void>((resolve) => { release = resolve; });
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   const event = {};
   let job!: Promise<void>;
   api.deliverNativeOutputItem(item, () => {
@@ -287,35 +409,57 @@ it("owns deferred descendants before scheduling and keeps original event origins
   // A detached/expired observer cannot release actual work.
   await Promise.race([job, Promise.resolve("waiter-deadline")]);
   expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
-  release(); await job;
+  release();
+  await job;
   const origin = api.getNativeOutputEventOrigin(event)!;
   expect(origin).not.toBeNull();
   expect(api.getNativeOutputEventOrigin(event)).toBe(origin);
   const write = api.retainNativeOutputEventOrigin(origin, "session")!;
   expect(write).not.toBeNull();
   expect(api.retainNativeOutputEventOrigin({ kind: "native-output-origin" }, "session")).toBeNull();
-  write.finish(); write.finish();
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,finishedCausalWork:2,applicationThrough:null});
+  write.finish();
+  write.finish();
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 0,
+    finishedCausalWork: 2,
+    applicationThrough: null,
+  });
 });
 
 it("a failed descendant stays unavailable and late use cannot acquire fresh event lineage", async () => {
   const api = await load();
-  const [item] = api.observeNativeOutputBatch("session", "stdout", ["failure"], wire("stdout", ["failure"]))!;
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["failure"],
+    wire("stdout", ["failure"]),
+  )!;
   let job!: Promise<unknown>;
   let work: ReturnType<typeof api.captureNativeOutputWork> = null;
   api.deliverNativeOutputItem(item, () => {
-    job = api.runNativeOutputWork(async (owned) => { work = owned; await Promise.resolve(); throw new Error("actual failure"); });
+    job = api.runNativeOutputWork(async (owned) => {
+      work = owned;
+      await Promise.resolve();
+      throw new Error("actual failure");
+    });
   });
   await expect(job).rejects.toThrow("actual failure");
   const event = {};
   work!.run(() => api.captureNativeOutputEvent("session", event));
   expect(api.getNativeOutputEventOrigin(event)).toBeNull();
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-work-rejected",applicationThrough:null});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 0,
+    unavailableReason: "causal-work-rejected",
+    applicationThrough: null,
+  });
 });
 
 it("keeps logical construction binding separate from opaque child routing and rejects target mismatch", async () => {
   const api = await load();
-  const metadata = wire("stdout", ["logical"], { sessionId:"session#17", logicalSessionId:"session" });
+  const metadata = wire("stdout", ["logical"], {
+    sessionId: "session#17",
+    logicalSessionId: "session",
+  });
   const [item] = api.observeNativeOutputBatch("session#17", "stdout", ["logical"], metadata)!;
   const event = {};
   api.deliverNativeOutputItem(item, () => api.captureNativeOutputEvent("session", event));
@@ -323,73 +467,370 @@ it("keeps logical construction binding separate from opaque child routing and re
   expect(api.retainNativeOutputEventOrigin(origin, "other")).toBeNull();
   expect(api.retainNativeOutputEventOrigin(origin, "session#17")).toBeNull();
   const own = api.retainNativeOutputEventOrigin(origin, "session")!;
-  expect(own).not.toBeNull(); own.finish();
+  expect(own).not.toBeNull();
+  own.finish();
   api.observeNativeOutputState("session#17", terminal(metadata));
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({unavailableReason:"causal-session-changed",nativeState:"sealed",applicationThrough:null});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    unavailableReason: "causal-session-changed",
+    nativeState: "sealed",
+    applicationThrough: null,
+  });
 });
 
 it("preserves an early queued origin across clone/requeue but rejects applied event replay", async () => {
   const api = await load();
-  const [item] = api.observeNativeOutputBatch("session", "stdout", ["clone"], wire("stdout", ["clone"]))!;
-  const original = {}, clone = {};
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["clone"],
+    wire("stdout", ["clone"]),
+  )!;
+  const original = {},
+    clone = {};
   api.deliverNativeOutputItem(item, () => api.captureNativeOutputEvent("session", original));
   const origin = api.getNativeOutputEventOrigin(original);
   api.transferNativeOutputEventOrigin(original, clone);
   api.captureNativeOutputEvent("session", clone);
   expect(api.getNativeOutputEventOrigin(clone)).toBe(origin);
   api.markNativeOutputEventsApplied("session", [clone]);
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({queuedEvents:1,appliedEvents:1});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    queuedEvents: 1,
+    appliedEvents: 1,
+  });
   api.captureNativeOutputEvent("session", clone);
-  expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe("event-requeued-after-apply");
+  expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe(
+    "event-requeued-after-apply",
+  );
 });
 
 it("bounds actual descendant leases and retains a capacity fault after successful settlements", async () => {
   const api = await load();
-  const [item] = api.observeNativeOutputBatch("session", "stdout", ["many"], wire("stdout", ["many"]))!;
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["many"],
+    wire("stdout", ["many"]),
+  )!;
   const jobs: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>[] = [];
   api.deliverNativeOutputItem(item, () => {
-    for (let n=0;n<128;n++) jobs.push(api.captureNativeOutputWork()!);
+    for (let n = 0; n < 128; n++) jobs.push(api.captureNativeOutputWork()!);
     expect(api.captureNativeOutputWork()).toBeNull();
   });
   expect(jobs.every(Boolean)).toBe(true);
   expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(128);
   for (const job of jobs) job.finish();
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-work-capacity"});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 0,
+    unavailableReason: "causal-work-capacity",
+  });
 });
 
 it("accounts descendant file/HTTP input without treating its data as Native sealed output", async () => {
   const api = await load();
-  const [item] = api.observeNativeOutputBatch("session", "stdout", ["poll"], wire("stdout", ["poll"]))!;
-  api.deliverNativeOutputItem(item, () => api.captureNativeOutputWork({additionalInput:true})!.finish());
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({additionalUnsealedInputs:1,unavailableReason:"additional-input-unsealed",applicationThrough:null});
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["poll"],
+    wire("stdout", ["poll"]),
+  )!;
+  api.deliverNativeOutputItem(item, () =>
+    api.captureNativeOutputWork({ additionalInput: true })!.finish(),
+  );
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    additionalUnsealedInputs: 1,
+    unavailableReason: "additional-input-unsealed",
+    applicationThrough: null,
+  });
 });
 
 it("owns a timer before scheduling and never releases a running callback on clear", async () => {
-  const api=await load(); vi.useFakeTimers();
-  const [item]=api.observeNativeOutputBatch("session","stdout",["timer"],wire("stdout",["timer"]))!;
-  let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});
-  const event={}; let timer!:ReturnType<typeof setTimeout>;
+  const api = await load();
+  vi.useFakeTimers();
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["timer"],
+    wire("stdout", ["timer"]),
+  )!;
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const event = {};
+  let timer!: ReturnType<typeof setTimeout>;
   try {
-    api.deliverNativeOutputItem(item,()=>{ timer=api.scheduleNativeOutputCallback(async(work)=>{
-      await gate;
-      api.nativeOutputSink(work,()=>api.captureNativeOutputEvent("session",event))();
-    },10); });
+    api.deliverNativeOutputItem(item, () => {
+      timer = api.scheduleNativeOutputCallback(async (work) => {
+        await gate;
+        api.nativeOutputSink(work, () => api.captureNativeOutputEvent("session", event))();
+      }, 10);
+    });
     expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
     await vi.advanceTimersByTimeAsync(10);
     api.cancelNativeOutputCallback(timer);
     expect(api.inspectNativeOutputDelivery("session").streams[0].pendingCausalWork).toBe(1);
-    release(); await Promise.resolve();await Promise.resolve();
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
     expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
-    expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"causal-timer-retired"});
-  } finally {vi.useRealTimers();}
+    expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+      pendingCausalWork: 0,
+      unavailableReason: "causal-timer-retired",
+    });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("retains active work when tracker ownership is invalidated for reload", async () => {
-  const api=await load();const [item]=api.observeNativeOutputBatch("session","stdout",["reload"],wire("stdout",["reload"]))!;
-  let work:ReturnType<typeof api.captureNativeOutputWork>=null;
-  api.deliverNativeOutputItem(item,()=>{work=api.captureNativeOutputWork();});
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["reload"],
+    wire("stdout", ["reload"]),
+  )!;
+  let work: ReturnType<typeof api.captureNativeOutputWork> = null;
+  api.deliverNativeOutputItem(item, () => {
+    work = api.captureNativeOutputWork();
+  });
   api.invalidateNativeOutputDelivery("tracker-reloaded");
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:1,unavailableReason:"tracker-reloaded"});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 1,
+    unavailableReason: "tracker-reloaded",
+  });
   work!.finish();
-  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({pendingCausalWork:0,unavailableReason:"tracker-reloaded",applicationThrough:null});
+  expect(api.inspectNativeOutputDelivery("session").streams[0]).toMatchObject({
+    pendingCausalWork: 0,
+    unavailableReason: "tracker-reloaded",
+    applicationThrough: null,
+  });
+});
+
+it("exposes one exact immutable original descriptor and zero-based index only after the real digest settles", async () => {
+  const api = await load();
+  const actualDigest = crypto.subtle.digest.bind(crypto.subtle);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(crypto.subtle, "digest").mockImplementation(async (algorithm, data) => {
+    await held;
+    return actualDigest(algorithm, data);
+  });
+  const items = ["\uFEFFfirst", "漢", "last"];
+  const metadata = {
+    ...wire("stdout", items, { sessionId: "route#17", logicalSessionId: "session" }),
+  };
+  const expected: Record<string, unknown> = { ...metadata };
+  delete expected.available;
+  delete expected.unavailableReason;
+  const tokens = api.observeNativeOutputBatch("route#17", "stdout", items, metadata)!;
+  const handles = tokens.map((token) => {
+    const event = {};
+    api.deliverNativeOutputItem(token, () => api.captureNativeOutputEvent("session", event));
+    return api.getNativeOutputEventOrigin(event)!;
+  });
+  expect(handles.every(Boolean)).toBe(true);
+  for (const origin of handles)
+    expect(api.getNativeOutputEventOriginComparison(origin, "session")).toBeNull();
+  // Mutating the caller's objects cannot rewrite the original accepted bytes,
+  // binding or index while the digest is still pending.
+  metadata.payloadSha256 = "0".repeat(64);
+  metadata.ownerEpoch = "replacement";
+  metadata.logicalSessionId = "different";
+  items.push("not accepted");
+  release();
+  await vi.waitFor(() =>
+    expect(api.getNativeOutputEventOriginComparison(handles[0], "session")).not.toBeNull(),
+  );
+  const claims = handles.map((origin) =>
+    api.getNativeOutputEventOriginComparison(origin, "session")!,
+  );
+  expect(claims.map((claim) => claim.itemIndex)).toEqual([0, 1, 2]);
+  expect(claims[0]).toEqual({
+    version: 1,
+    qualified: false,
+    kind: "native-output-item-comparison",
+    batch: expected,
+    itemIndex: 0,
+  });
+  expect(claims.every((claim) => claim.batch === claims[0].batch)).toBe(true);
+  expect(Object.isFrozen(claims[0])).toBe(true);
+  expect(Object.isFrozen(claims[0].batch)).toBe(true);
+  expect(Reflect.set(claims[0], "itemIndex", 99)).toBe(false);
+  expect(Reflect.set(claims[0].batch, "ownerEpoch", "forged")).toBe(false);
+  expect(api.getNativeOutputEventOriginComparison(handles[0], "session")).toBe(claims[0]);
+  expect(api.getNativeOutputEventOriginComparison(handles[0], "other")).toBeNull();
+  expect(api.getNativeOutputEventOriginComparison(handles[0], "session")).toBe(claims[0]);
+  expect(api.getNativeOutputEventOriginComparison({ kind: "native-output-origin" })).toBeNull();
+  expect(
+    api.getNativeOutputEventOriginComparison(JSON.parse(JSON.stringify(handles[0]))),
+  ).toBeNull();
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    qualified: false,
+    coverage: "unverified",
+  });
+  expect(api.inspectNativeOutputDelivery("session").streams[0].applicationThrough).toBeNull();
+});
+
+it("does not expose a comparison while the original synchronous handler is still delivering", async () => {
+  const api = await load();
+  const data = wire("stdout", ["delivered"]);
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["delivered"], data)!;
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].receivedThrough).toBe(1),
+  );
+  const event = {};
+  let origin!: NonNullable<ReturnType<typeof api.getNativeOutputEventOrigin>>;
+  api.deliverNativeOutputItem(item, () => {
+    api.captureNativeOutputEvent("session", event);
+    origin = api.getNativeOutputEventOrigin(event)!;
+    expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  });
+  expect(api.getNativeOutputEventOriginComparison(origin)).toMatchObject({
+    itemIndex: 0,
+    batch: { sequence: 1, itemCount: 1 },
+  });
+  api.markNativeOutputEventsApplied("session", [event]);
+  expect(api.getNativeOutputEventOriginComparison(origin)).not.toBeNull();
+  expect(api.inspectNativeOutputDelivery("session").streams[0].applicationThrough).toBeNull();
+});
+
+it.each(["stdout", "stderr", "sse"] as const)(
+  "preserves the exact %s descriptor without synthesizing a logical target",
+  async (channel) => {
+    const api = await load();
+    const metadata = wire(channel, ["payload"]);
+    const [item] = api.observeNativeOutputBatch("session", channel, ["payload"], metadata)!;
+    const event = {};
+    api.deliverNativeOutputItem(item, () => api.captureNativeOutputCurrentEvent(event));
+    const origin = api.getNativeOutputEventOrigin(event)!;
+    await vi.waitFor(() => expect(api.getNativeOutputEventOriginComparison(origin)).not.toBeNull());
+    const claim = api.getNativeOutputEventOriginComparison(origin)!;
+    expect(claim.batch).toMatchObject({
+      channel,
+      sessionId: "session",
+      ownerEpoch: ids.ownerEpoch,
+      processId: channel === "sse" ? null : 42,
+      streamKind: channel === "sse" ? "sse" : "process",
+    });
+    expect(claim.batch).not.toHaveProperty("logicalSessionId");
+    expect(claim.batch).not.toHaveProperty("available");
+    expect(claim.batch).not.toHaveProperty("unavailableReason");
+  },
+);
+
+it.each([
+  { ownerEpoch: "other-recipient" },
+  { sourceStoreId: "other-store" },
+  { sourceProfileId: "other-profile" },
+  { storeInstance: "55555555-5555-4555-8555-555555555555" },
+  { logicalSessionId: "other-logical" },
+  { processId: 43 },
+])("revokes comparison eligibility permanently after a real binding change %j", async (change) => {
+  const api = await load();
+  const metadata = wire("stdout", ["original"]);
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["original"], metadata)!;
+  const event = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputCurrentEvent(event));
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  await vi.waitFor(() => expect(api.getNativeOutputEventOriginComparison(origin)).not.toBeNull());
+  const earlier = api.getNativeOutputEventOriginComparison(origin)!;
+  expect(
+    api.observeNativeOutputBatch(
+      "session",
+      "stdout",
+      ["next"],
+      wire("stdout", ["next"], { sequence: 2, ...change }),
+    ),
+  ).toBeUndefined();
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["next"],
+    wire("stdout", ["next"], { sequence: 2 }),
+  );
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  expect(earlier).toMatchObject({
+    qualified: false,
+    batch: { ownerEpoch: ids.ownerEpoch, sequence: 1 },
+  });
+});
+
+it("never exposes a descriptor after digest failure even if later bytes would be correct", async () => {
+  const api = await load();
+  const metadata = wire("stdout", ["hash"], { payloadSha256: "0".repeat(64) });
+  const [item] = api.observeNativeOutputBatch("session", "stdout", ["hash"], metadata)!;
+  const event = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputCurrentEvent(event));
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].unavailableReason).toBe(
+      "payload-digest",
+    ),
+  );
+  api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["hash"],
+    wire("stdout", ["hash"], { sequence: 2 }),
+  );
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+});
+
+it("rechecks reload invalidation instead of treating a previously returned frozen claim as proof", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["reload"],
+    wire("stdout", ["reload"]),
+  )!;
+  const event = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputCurrentEvent(event));
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  await vi.waitFor(() => expect(api.getNativeOutputEventOriginComparison(origin)).not.toBeNull());
+  const comparison = api.getNativeOutputEventOriginComparison(origin)!;
+  api.invalidateNativeOutputDelivery("tracker-reloaded");
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  expect(Object.isFrozen(comparison)).toBe(true);
+  vi.resetModules();
+  const next = await load();
+  expect(next.getNativeOutputEventOriginComparison(origin)).toBeNull();
+});
+
+it("keeps existing comparison claims ineligible after the bounded stream inventory overflows", async () => {
+  const api = await load();
+  const [item] = api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["cap"],
+    wire("stdout", ["cap"]),
+  )!;
+  const event = {};
+  api.deliverNativeOutputItem(item, () => api.captureNativeOutputCurrentEvent(event));
+  const origin = api.getNativeOutputEventOrigin(event)!;
+  await vi.waitFor(() => expect(api.getNativeOutputEventOriginComparison(origin)).not.toBeNull());
+  for (let index = 0; index < 512; index++) {
+    const metadata = wire("stdout", ["other"], {
+      sessionId: `scope-${index}`,
+      streamEpoch: `${index.toString(16).padStart(8, "0")}-5555-4555-8555-555555555555`,
+    });
+    api.observeNativeOutputState(
+      metadata.sessionId,
+      terminal(metadata, { lastSequence: 0, state: "unsealed" }),
+    );
+  }
+  expect(api.inspectNativeOutputDelivery("session").retentionUnavailable).toBe(true);
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
+  api.observeNativeOutputBatch(
+    "session",
+    "stdout",
+    ["next"],
+    wire("stdout", ["next"], { sequence: 2 }),
+  );
+  expect(api.getNativeOutputEventOriginComparison(origin)).toBeNull();
 });

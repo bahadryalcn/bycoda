@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { InlineVisual } from "./InlineVisual";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
 import { useStableValue } from "../../../shared/hooks/useStableValue";
@@ -82,7 +83,8 @@ import { HandoffButton, SecondOpinionButton } from "./SecondOpinionButton";
 import { SecondOpinionCard } from "./SecondOpinionCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 
-import { TerminalSpinner } from "./TerminalSpinner";
+import { Spinner } from "../../../shared/ui/Spinner";
+import { SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
@@ -141,7 +143,6 @@ import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
 import type { TranscriptLayout } from "../../settings/model/appearance";
 import { AgentMarkdown } from "./AgentMarkdown";
-import { AgentClock } from "./AgentClock";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { parseUserMessageLink } from "../model/linkPreview";
 import { UserLinkPreview } from "./UserLinkPreview";
@@ -163,7 +164,6 @@ import {
   subagentBrief,
   subagentName,
   subagentReport,
-  subagentStatusLine,
   toolCallLabel,
   isStoppedBlock,
   toolCallState,
@@ -2475,6 +2475,7 @@ const TranscriptBlock = memo(function TranscriptBlock({
   }
 
   if (block.role === "tool") {
+    if (block.inlineVisual) return <InlineVisual snapshot={block.inlineVisual} />;
     return (
       <ToolCall
         block={block}
@@ -2597,7 +2598,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
     <div className={`${embedded ? "" : "px-4"} py-2`}>
       <div
         data-shell-run
-        className="overflow-hidden rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-tone-neutral-solid)/[0.03] font-mono text-ui-caption leading-5"
+        className="overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) font-mono text-ui-caption leading-5"
       >
         <div className="flex min-w-0 items-start gap-2 px-3 py-1.5">
           <Terminal
@@ -2609,7 +2610,7 @@ function ShellRunCard({ run, embedded }: { run: ShellRun; embedded?: boolean }) 
             {run.command}
           </span>
           {run.running ? (
-            <TerminalSpinner className="shrink-0" />
+            <Spinner size="xs" className="shrink-0" />
           ) : status ? (
             <span
               className={`shrink-0 text-ui-micro ${run.timedOut ? "text-(--ui-tone-warning-fg)" : "text-(--ui-tone-danger-fg)"}`}
@@ -3492,10 +3493,10 @@ function ActivityPhaseGroup({
         {open ? (
           <>
             {compactCommand ? (
-              <div className="flex min-w-0 items-start gap-1.5 px-2 py-1 text-ui-caption text-(--ui-text-secondary)">
+              <div className="flex min-w-0 items-start gap-1.5 px-2 pt-1 pb-1.5 text-ui-caption text-(--ui-text-secondary)">
                 <Terminal className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
                 <span
-                  className="line-clamp-2 break-all font-mono"
+                  className="line-clamp-1 break-all font-mono"
                   title={toolCallLabel(compactCommand, cwd)}
                 >
                   {toolCallLabel(compactCommand, cwd)}
@@ -3759,64 +3760,56 @@ function SubagentPanel({
   // main transcript groups the agent's own work: what it said, then the calls
   // that line introduced, folding behind it once it moves on.
   const stepBlocks = useMemo(() => steps.map(agentStepBlock), [steps]);
-  const status = subagentStatusLine(block, steps);
   const report = subagentReport(block);
-  const failed = state === "rejected";
 
-  // The name takes the room it needs and gives the rest back: a provider that
-  // names a run with its whole brief must not push the row off the pane.
-  const label = (
-    <span className="flex min-w-0 flex-1 items-baseline gap-2">
-      {active ? (
-        <Shimmer className="min-w-0 flex-1 truncate font-sans text-sm" duration={1.6}>
-          {name}
-        </Shimmer>
-      ) : (
-        <span
-          className={`min-w-0 flex-1 truncate font-sans text-sm transition-colors duration-200 ${
-            state === "rejected"
-              ? "text-(--ui-tone-danger-fg)"
-              : "text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)"
-          }`}
-        >
-          {name}
-        </span>
-      )}
-      {model || status || block.agentRun?.startedAt !== undefined ? (
-        <span className="flex min-w-0 max-w-[55%] shrink-0 items-baseline gap-2 font-sans text-ui-caption text-(--ui-text-secondary)">
-          {model ? (
-            <span className="truncate" title={t("Model: {p0}", { p0: model })}>
-              {model}
-            </span>
-          ) : null}
-          {status ? <span className="shrink-0">{status}</span> : null}
-          <AgentClock
-            startedAt={block.agentRun?.startedAt}
-            endedAt={block.agentRun?.endedAt}
-            live={active}
-          />
-        </span>
-      ) : null}
+  // Identity row: the name takes the room it needs and gives the rest back, so
+  // a provider that names a run with its whole brief cannot push the row off the
+  // pane. State, clock and model sit on the line below, as in the detached sheet.
+  const label = active ? (
+    <Shimmer className="min-w-0 flex-1 truncate text-start font-sans text-sm" duration={1.6}>
+      {name}
+    </Shimmer>
+  ) : (
+    <span
+      className={`min-w-0 flex-1 truncate text-start font-sans text-sm transition-colors duration-200 ${
+        state === "rejected"
+          ? "text-(--ui-tone-danger-fg)"
+          : "text-(--ui-text-secondary) group-hover:text-(--ui-tone-neutral-fg)"
+      }`}
+    >
+      {name}
     </span>
+  );
+  const stateLine = (
+    <SubagentStateLine
+      block={block}
+      busy={live}
+      steps={steps}
+      model={model}
+      className="pb-0.5 ps-6"
+    />
   );
 
   // A run can report its first step late (or never). Its prompt and status
   // remain inspectable in the panel even before the trail arrives.
   if (steps.length === 0 && !report) {
     return (
-      <Button
-        motion="none"
-        variant="item"
-        type="button"
-        aria-label={t("Open {p0} in its own panel", { p0: name })}
-        title={brief}
-        onClick={() => requestViewSubagent(block.id)}
-        className="-mx-1.5 min-w-0"
-      >
-        <SubagentMascot name={name} state={state} active={active} />
-        {label}
-        <span className="size-3.5 shrink-0" />
-      </Button>
+      <div className="flex min-w-0 flex-col">
+        <Button
+          motion="none"
+          variant="item"
+          type="button"
+          aria-label={t("Open {p0} in its own panel", { p0: name })}
+          title={brief}
+          onClick={() => requestViewSubagent(block.id)}
+          className="-mx-1.5 min-w-0"
+        >
+          <SubagentMascot name={name} state={state} active={active} />
+          {label}
+          <span className="icon-sm shrink-0" />
+        </Button>
+        {stateLine}
+      </div>
     );
   }
 
@@ -3841,10 +3834,10 @@ function SubagentPanel({
           <SubagentMascot name={name} state={state} active={active} />
           {label}
           <ChevronRight
-            className={`size-3.5 shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
+            className={`icon-sm shrink-0 text-(--ui-text-secondary) transition-transform duration-200 group-hover:text-(--ui-text-secondary) ${
               open ? "rotate-90" : ""
             }`}
-            strokeWidth={1.75}
+            aria-hidden
           />
         </Button>
         <Button
@@ -3858,9 +3851,10 @@ function SubagentPanel({
           onClick={() => requestViewSubagent(block.id)}
           className="shrink-0"
         >
-          <ExternalLink className="size-3" strokeWidth={1.75} />
+          <ExternalLink className="icon-sm" aria-hidden />
         </Button>
       </div>
+      {stateLine}
       <div className="zen-phase-body" data-open={open}>
         {open ? (
           /*
@@ -3878,17 +3872,13 @@ function SubagentPanel({
               onOpenFile={onOpenFile}
               onOpenDiff={onOpenDiff}
             />
-            {report ? (
-              <div className="zen-phase-step py-1">
-                {failed ? (
-                  <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
-                    {report}
-                  </pre>
-                ) : (
-                  <AgentMarkdown text={report} cwd={cwd} onOpenFile={onOpenFile} />
-                )}
-              </div>
-            ) : null}
+            <SubagentReport
+              block={block}
+              cwd={cwd}
+              onOpenFile={onOpenFile}
+              heading="h4"
+              className="mt-2 ps-5"
+            />
           </div>
         ) : null}
       </div>
@@ -4050,7 +4040,7 @@ function ActivityStatusRow({ block }: { block: Block }) {
     <div className="flex min-w-0 items-center gap-1.5 py-1">
       <span
         title={block.text}
-        className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-bold text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
+        className={`min-w-0 flex-1 truncate font-sans text-sm ${block.notice === "interrupt" ? "font-medium text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
       >
         {block.text.trim()}
       </span>
@@ -4678,7 +4668,7 @@ function ToolCallSummary({
   if (!action || !target) {
     return (
       <span
-        className={`min-w-0 flex-1 ${wrap ? "tool-command-label" : "truncate"} font-mono text-ui-secondary ${
+        className={`min-w-0 flex-1 ${wrap ? "tool-command-label line-clamp-3" : "truncate"} font-mono text-ui-secondary ${
           failed
             ? "text-(--ui-tone-danger-fg)"
             : chip
@@ -4838,7 +4828,7 @@ function HandoffDivider({ block }: { block: Block }) {
         >
           {preparing ? (
             <>
-              <TerminalSpinner className="shrink-0" />
+              <Spinner size="xs" className="shrink-0" />
               <Shimmer duration={1.4}>{label}</Shimmer>
             </>
           ) : (

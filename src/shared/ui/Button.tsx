@@ -1,5 +1,7 @@
 import {
+  useEffect,
   useId,
+  useRef,
   useState,
   type ComponentPropsWithRef,
   type FocusEvent,
@@ -48,7 +50,16 @@ type CommonButtonProps = ComponentPropsWithRef<"button"> & {
   /** Compact icon action inside a row, tab or card that owns the highlight
    *  (`ActionHost`): about 20px, transparent overlay hover/press, secondary ink.
    *  Prefer `InlineAction`, which also handles reveal and event isolation. */
-  inset?: boolean;
+  inset?: boolean | "icon" | "text";
+  /** Toggle state: sets `aria-pressed` and the selected look. Use for on/off tools;
+   *  `selected` stays visual only. An explicit `aria-pressed` still wins. */
+  pressed?: boolean;
+  /** Fires once when the primary pointer stays down for `longPressDelay` ms (touch and
+   *  mouse). The click that follows that press is suppressed. Keyboard and the plain
+   *  click are unchanged, so the long-press action needs an equivalent menu or shortcut. */
+  onLongPress?: (event: PointerEvent<HTMLButtonElement>) => void;
+  /** Hold time for `onLongPress` in milliseconds. Default 500. */
+  longPressDelay?: number;
 };
 
 export type ButtonProps = CommonButtonProps &
@@ -102,6 +113,9 @@ export function Button({
   layout,
   align,
   inset = false,
+  pressed,
+  onLongPress,
+  longPressDelay = 500,
   className,
   children,
   disabled,
@@ -119,6 +133,14 @@ export function Button({
   ...props
 }: ButtonProps) {
   const loading = loadingProp ?? false;
+  const longPress = useRef<{ timer: number; x: number; y: number; fired: boolean } | null>(null);
+  const clearLongPress = () => {
+    const current = longPress.current;
+    if (current) window.clearTimeout(current.timer);
+    return current;
+  };
+  useEffect(() => () => void clearLongPress(), []);
+  const insetText = inset === "text";
   const hintId = useId();
   const [hintAnchor, setHintAnchor] = useState<HTMLButtonElement | null>(null);
   // Keep legacy aliases at this boundary; render one hierarchy/tone implementation.
@@ -153,11 +175,12 @@ export function Button({
   const blocked = !!disabled || loading || isTrue(props["aria-disabled"]);
   const active =
     selected ??
-    (isTrue(props["aria-selected"]) ||
+    (pressed ??
+      (isTrue(props["aria-selected"]) ||
       isTrue(props["aria-pressed"]) ||
       isTrue(props["aria-checked"]) ||
       isTrue(props["aria-current"]) ||
-      props["aria-current"] === "page");
+      props["aria-current"] === "page"));
   const arcVariant: ArcButtonVariant =
     hierarchy === "link" || hierarchy === "item" || hierarchy === "tab" ? "ghost" : hierarchy;
   const classes = [
@@ -166,6 +189,7 @@ export function Button({
     styles[hierarchy],
     iconOnly ? styles.iconOnly : "",
     inset ? styles.inset : "",
+    insetText ? styles.insetText : "",
     fullWidth ? styles.fullWidth : "",
     className,
   ]
@@ -205,6 +229,7 @@ export function Button({
       undefined,
     "aria-label": loading && loadingLabel ? loadingLabel : (props["aria-label"] ?? label),
     "aria-busy": loading || props["aria-busy"] || undefined,
+    "aria-pressed": props["aria-pressed"] ?? pressed,
     "aria-disabled": blocked || props["aria-disabled"] || undefined,
     "data-button-variant": variant,
     "data-button-hierarchy": hierarchy,
@@ -224,11 +249,66 @@ export function Button({
       setHintAnchor(null);
       onClick?.(event);
     }),
-    onClickCapture: guard(onClickCapture),
+    onClickCapture: guard((event: MouseEvent<HTMLButtonElement>) => {
+      // The press that already ran its long-press action must not also activate.
+      if (longPress.current?.fired) {
+        longPress.current = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      onClickCapture?.(event);
+    }),
     onPointerDown: guard((event: PointerEvent<HTMLButtonElement>) => {
       setHintAnchor(null);
+      clearLongPress();
+      longPress.current = null;
+      if (onLongPress && event.isPrimary && event.button === 0) {
+        const target = event;
+        const state = {
+          timer: 0,
+          x: event.clientX,
+          y: event.clientY,
+          fired: false,
+        };
+        state.timer = window.setTimeout(() => {
+          state.fired = true;
+          onLongPress(target);
+        }, longPressDelay);
+        longPress.current = state;
+      }
       onPointerDown?.(event);
     }),
+    onPointerMove: (event: PointerEvent<HTMLButtonElement>) => {
+      const current = longPress.current;
+      if (
+        current &&
+        !current.fired &&
+        Math.hypot(event.clientX - current.x, event.clientY - current.y) > 8
+      ) {
+        window.clearTimeout(current.timer);
+        longPress.current = null;
+      }
+      props.onPointerMove?.(event);
+    },
+    onPointerUp: (event: PointerEvent<HTMLButtonElement>) => {
+      const current = longPress.current;
+      if (current && !current.fired) {
+        window.clearTimeout(current.timer);
+        longPress.current = null;
+      } else if (current) {
+        // Keep the fired mark just long enough to swallow the click that follows.
+        window.setTimeout(() => {
+          if (longPress.current === current) longPress.current = null;
+        }, 100);
+      }
+      props.onPointerUp?.(event);
+    },
+    onPointerCancel: (event: PointerEvent<HTMLButtonElement>) => {
+      clearLongPress();
+      longPress.current = null;
+      props.onPointerCancel?.(event);
+    },
     onFocus: (event: FocusEvent<HTMLButtonElement>) => {
       props.onFocus?.(event);
       if (
@@ -249,7 +329,14 @@ export function Button({
     onKeyDownCapture: guardKey(onKeyDownCapture),
     onKeyUp: guardKey(props.onKeyUp),
     onDoubleClick: guard(props.onDoubleClick),
-    onContextMenu: guard(props.onContextMenu),
+    onContextMenu: guard((event: MouseEvent<HTMLButtonElement>) => {
+      // Touch long-press raises the context menu; the long-press action replaces it.
+      if (longPress.current?.fired) {
+        event.preventDefault();
+        return;
+      }
+      props.onContextMenu?.(event);
+    }),
     onDragEnter: guard(props.onDragEnter),
     onDragLeave: props.onDragLeave,
     onDragOver: guard(props.onDragOver),

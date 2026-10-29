@@ -1,11 +1,13 @@
 import { t, useLocale } from "../../../shared/i18n";
 import {
+  DEFAULT_SESSION_LIST_DISPLAY,
   GROUP_DELAY_MAX_MS,
   GROUP_DELAY_MIN_MS,
   type SessionListDensity,
   updateSessionListDisplay,
   useSessionListDisplay,
 } from "../../sessions/model/sessionListDisplay";
+import { Button } from "../../../shared/ui/Button";
 import { Group, Row, Segmented, Slider, Toggle } from "./settingsControls";
 
 /** The sidebar's default session row layout; the list's view menu edits the same values. */
@@ -13,7 +15,18 @@ export function SessionListSettings() {
   useLocale();
   const display = useSessionListDisplay();
   return (
-    <Group id="session-list" title={t("Session list")}>
+    <Group
+      id="session-list"
+      title={t("Session list")}
+      action={
+        <Button
+          variant="ghost"
+          onClick={() => updateSessionListDisplay({ ...DEFAULT_SESSION_LIST_DISPLAY })}
+        >
+          {t("Reset session list")}
+        </Button>
+      }
+    >
       <Row
         label={t("Row density")}
         description={t("How many lines each session uses in the sidebar.")}

@@ -19,6 +19,9 @@ type Entry = {
   dependencyKeys: readonly string[];
   bytes: Buffer;
   touched: number;
+  authorities: readonly (() => Promise<boolean>)[];
+  users: number;
+  retained: boolean;
 };
 export class HostBulkError extends Error {
   constructor(
@@ -33,7 +36,9 @@ export class HostBulkError extends Error {
 export class HostBulkTransfers {
   private readonly entries = new Map<string, Entry>();
   private readonly leases = new Set<BulkLease>();
+  private readonly authorities = new WeakMap<BulkLease, (() => Promise<boolean>)[]>();
   private bytes = 0;
+  private chunkJobs = 0;
   private stopped = false;
   private readonly now: () => number;
   private readonly timer: ReturnType<typeof setInterval>;
@@ -89,7 +94,14 @@ export class HostBulkTransfers {
       dependencyKeys: Object.freeze([...new Set(dependencyKeys)].sort()),
     });
     this.leases.add(lease);
+    this.authorities.set(lease, []);
     return lease;
+  }
+
+  retainAuthority(lease: BulkLease, check: () => Promise<boolean>): void {
+    if (!this.leases.has(lease)) throw new HostBulkError(409, "Transfer context changed.");
+    const checks = this.authorities.get(lease)!;
+    if (!checks.includes(check)) checks.push(check);
   }
 
   release(lease: BulkLease): void {
@@ -112,10 +124,13 @@ export class HostBulkTransfers {
       );
     this.prune();
     const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const authorities = Object.freeze([...(this.authorities.get(lease) ?? [])]);
     for (const entry of this.entries.values())
       if (
         entry.principalId === lease.principalId &&
         entry.resource === lease.resource &&
+        entry.authorities.length === authorities.length &&
+        entry.authorities.every((check, index) => check === authorities[index]) &&
         entry.dependencyKeys.length === lease.dependencyKeys.length &&
         entry.dependencyKeys.every((key, index) => key === lease.dependencyKeys[index]) &&
         entry.descriptor.sha256 === sha256
@@ -149,12 +164,57 @@ export class HostBulkTransfers {
       dependencyKeys: lease.dependencyKeys,
       bytes,
       touched: this.now(),
+      authorities,
+      users: 0,
+      retained: true,
     });
     this.bytes += bytes.length;
     return { $bulk: descriptor };
   }
 
   chunk(principalId: string, transferId: string, offset: number): Buffer {
+    const entry = this.lookup(principalId, transferId, offset);
+    if (entry.authorities.length)
+      throw new HostBulkError(409, "Transfer requires its retained authority.");
+    return this.copyChunk(entry, offset);
+  }
+
+  /** The final check and write belong to this entry's original result, never a
+   * newer request or socket. No await separates the final lookup and body write. */
+  async writeAuthorizedChunk(
+    principalId: string,
+    transferId: string,
+    offset: number,
+    current: () => Promise<boolean>,
+    write: (chunk: Buffer) => unknown,
+  ): Promise<void> {
+    const entry = this.lookup(principalId, transferId, offset);
+    if (this.chunkJobs >= this.limits.maxLeases)
+      throw new HostBulkError(429, "Transfer admission is busy.");
+    this.chunkJobs++;
+    entry.users++;
+    try {
+      if (!(await current())) throw new HostBulkError(404, "Transfer is unavailable.");
+      for (const check of entry.authorities) {
+        if (!(await check())) throw new HostBulkError(404, "Transfer is unavailable.");
+      }
+      // The original check may await. Recheck the actual fetch principal afterward,
+      // then the original result (including its deadline) after that await too.
+      if (!(await current())) throw new HostBulkError(404, "Transfer is unavailable.");
+      for (const check of entry.authorities) {
+        if (!(await check())) throw new HostBulkError(404, "Transfer is unavailable.");
+      }
+      if (this.lookup(principalId, transferId, offset) !== entry)
+        throw new HostBulkError(404, "Transfer is unavailable.");
+      await write(this.copyChunk(entry, offset));
+    } finally {
+      this.chunkJobs--;
+      entry.users--;
+      if (!entry.retained && entry.users === 0) this.bytes -= entry.bytes.length;
+    }
+  }
+
+  private lookup(principalId: string, transferId: string, offset: number): Entry {
     this.prune();
     const entry = this.entries.get(transferId);
     if (!entry || entry.principalId !== principalId || this.stopped)
@@ -166,6 +226,9 @@ export class HostBulkTransfers {
       offset % entry.descriptor.chunkBytes !== 0
     )
       throw new HostBulkError(409, "Transfer offset is outside the chunk boundary.");
+    return entry;
+  }
+  private copyChunk(entry: Entry, offset: number): Buffer {
     entry.touched = this.now();
     // Never expose the retained backing buffer to callers.
     return Buffer.from(entry.bytes.subarray(offset, offset + entry.descriptor.chunkBytes));
@@ -182,13 +245,15 @@ export class HostBulkTransfers {
   close(): void {
     this.stopped = true;
     clearInterval(this.timer);
-    this.entries.clear();
+    for (const id of this.entries.keys()) this.remove(id);
     this.leases.clear();
-    this.bytes = 0;
   }
   private remove(id: string): void {
     const entry = this.entries.get(id);
-    if (entry) this.bytes -= entry.bytes.length;
+    if (entry) {
+      entry.retained = false;
+      if (entry.users === 0) this.bytes -= entry.bytes.length;
+    }
     this.entries.delete(id);
   }
   private prune(): void {
@@ -407,17 +472,40 @@ export function createHostBulkHandler(options: {
         response.writeHead(401).end();
         return true;
       }
-      // No await after the last authorization and lookup: deletion also purges the pool.
-      const chunk = options.transfers.chunk(principal, match[1], Number(rawOffset));
-      response
-        .writeHead(200, {
-          "Content-Type": "application/octet-stream",
-          "Content-Length": chunk.length,
-        })
-        .end(chunk);
+      await options.transfers.writeAuthorizedChunk(
+        principal,
+        match[1],
+        Number(rawOffset),
+        async () => (await options.authenticate(token)) === principal,
+        (chunk) =>
+          new Promise<void>((resolve, reject) => {
+            const done = (error?: Error) => {
+              response.off("close", closed);
+              response.off("error", failed);
+              if (error) reject(error);
+              else resolve();
+            };
+            const closed = () => done();
+            const failed = (error: Error) => done(error);
+            response.once("close", closed);
+            response.once("error", failed);
+            try {
+              response
+                .writeHead(200, {
+                  "Content-Type": "application/octet-stream",
+                  "Content-Length": chunk.length,
+                })
+                .end(chunk, () => done());
+            } catch (error) {
+              done(error instanceof Error ? error : new Error("Transfer write failed."));
+            }
+          }),
+      );
     } catch (error) {
-      if (!response.destroyed)
-        response.writeHead(error instanceof HostBulkError ? error.status : 503).end();
+      if (!response.destroyed) {
+        if (response.headersSent) response.destroy();
+        else response.writeHead(error instanceof HostBulkError ? error.status : 503).end();
+      }
     }
     return true;
   };

@@ -5,13 +5,25 @@ import {
   type ServerTerminalRestoreTab,
 } from "./serverTerminalRestore";
 
+/** Result of the latest workspace-snapshot write that carries the saved SSH tabs. */
+export type ServerTerminalRestoreSaveStatus = "idle" | "saving" | "failed";
+
 type RestoreState = {
   owner: boolean;
   initialized: boolean;
   loadFailed: boolean;
+  saveStatus: ServerTerminalRestoreSaveStatus;
+  saveError?: string;
+  /** True once the snapshot writer registered a retry handler. */
+  canRetrySave: boolean;
   restore?: ServerTerminalRestore;
   pending: readonly string[];
 };
+
+function saveErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return message.trim().slice(0, 200);
+}
 
 /** Window-local projection of the existing workspace snapshot. No storage or PTY. */
 export function createServerTerminalRestoreState() {
@@ -19,8 +31,12 @@ export function createServerTerminalRestoreState() {
     owner: false,
     initialized: false,
     loadFailed: false,
+    saveStatus: "idle",
+    canRetrySave: false,
     pending: [],
   };
+  let inFlightSaves = 0;
+  let retryHandler: (() => void | Promise<void>) | undefined;
   const listeners = new Set<() => void>();
   const publish = (next: RestoreState) => {
     state = next;
@@ -46,6 +62,37 @@ export function createServerTerminalRestoreState() {
     },
     beginLoad: () => publish({ ...state, owner: true, loadFailed: false }),
     loadFailed: () => publish({ ...state, loadFailed: true }),
+    // Save contract: the snapshot writer reports each real write. The latest
+    // result wins, so a later success clears an earlier failure.
+    saveStarted: () => {
+      inFlightSaves += 1;
+      publish({ ...state, saveStatus: "saving", saveError: undefined });
+    },
+    saveSucceeded: () => {
+      inFlightSaves = Math.max(0, inFlightSaves - 1);
+      publish({
+        ...state,
+        saveStatus: inFlightSaves > 0 ? "saving" : "idle",
+        saveError: undefined,
+      });
+    },
+    saveFailed: (error: unknown) => {
+      inFlightSaves = Math.max(0, inFlightSaves - 1);
+      publish({ ...state, saveStatus: "failed", saveError: saveErrorMessage(error) });
+    },
+    /** The writer registers how to request another write; `undefined` unregisters. */
+    setSaveRetry: (handler: (() => void | Promise<void>) | undefined) => {
+      retryHandler = handler;
+      publish({ ...state, canRetrySave: handler !== undefined });
+    },
+    retrySave: async () => {
+      if (!retryHandler || state.saveStatus === "saving") return;
+      try {
+        await retryHandler();
+      } catch (error) {
+        publish({ ...state, saveStatus: "failed", saveError: saveErrorMessage(error) });
+      }
+    },
     initialize: (value: unknown) => {
       const restore = sanitizeServerTerminalRestore(value);
       // Unknown/corrupt saved data is not consent to remove it on the next save.
@@ -54,6 +101,7 @@ export function createServerTerminalRestoreState() {
         return;
       }
       publish({
+        ...state,
         owner: true,
         initialized: true,
         loadFailed: false,

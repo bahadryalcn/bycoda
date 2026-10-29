@@ -1,4 +1,20 @@
+import { createNativeDevicesService } from "./domains/native-devices/service";
+import { bindNativeDevicesOwner } from "./ports/native-devices";
+import { bindNativeDeliveryOwner } from "./ports/native-delivery";
+import { createNativeDeliveryStore } from "./native-delivery-store";
+import { assertNativeDeliveryEffect } from "./native-delivery-epochs";
+import { createNativeDeliveryService } from "./domains/native-delivery/service";
+import {
+  NATIVE_DELIVERY_METHODS,
+  type NativeDeliveryMethod,
+} from "../src/shared/model/host-contracts/native-delivery";
+import {
+  NATIVE_DEVICE_METHODS,
+  DEVICE_LIFECYCLE_METHODS,
+  MOBILE_DEVICE_PREVIEW_METHODS,
+} from "../src/shared/model/host-contracts/native-devices";
 import { ModelCatalogCache } from "./model-catalog-cache";
+import { hostProviderAccounts } from "./provider-accounts";
 import { createVoiceClientSecret } from "./voice";
 import { LocalVoiceService } from "./voice-local";
 import { inspectVoiceRuntime } from "./voice-runtime";
@@ -19,6 +35,7 @@ import { inlineSessionSync } from "./inlineSessionSync";
 import { HostCrews } from "./crews";
 import { ConversationProjectTools, isProjectConversationTool } from "./conversation-project-tools";
 import { callFileConversationTool, isFileConversationTool } from "./conversation-file-tools";
+import { callVisualConversationTool, isVisualConversationTool } from "./conversation-visual-tools";
 import {
   CONVERSATION_TASK_EXECUTION_DEFAULTS,
   TASK_READ_TOOLS,
@@ -66,6 +83,29 @@ import {
   type SessionQueueAction,
 } from "./domains/sessions/queue-service";
 import { createHostDispatcher } from "./transport/dispatch";
+import { createNativeWorkspacesService } from "./domains/native-workspaces/service";
+import { createModelsService } from "./domains/models/service";
+import { createNativeServicesService } from "./domains/native-services/service";
+import { createNativeServiceUploadService } from "./domains/native-services/upload";
+import {
+  NATIVE_SERVICE_UPLOAD_METHODS,
+  type NativeServiceUploadMethod,
+} from "../src/shared/model/host-contracts/native-service-upload";
+import { bindNativeServicesOwner } from "./ports/native-services";
+import {
+  NATIVE_SERVICE_METHODS,
+  type NativeServiceMethod,
+} from "../src/shared/model/host-contracts/native-services";
+import { createNativeBufferUploadService } from "./domains/native-workspaces/buffer-upload";
+import { bindNativeWorkspaceOwner, nativeBufferUploadPlatform } from "./ports/native-workspaces";
+import {
+  NATIVE_BUFFER_UPLOAD_METHODS,
+  type NativeBufferUploadMethod,
+} from "../src/shared/model/host-contracts/native-buffer-upload";
+import {
+  NATIVE_WORKSPACE_METHODS,
+  type NativeWorkspaceMethod,
+} from "../src/shared/model/host-contracts/native-workspaces";
 import { attachHostWebSocketTransport, HOST_WS_READ_CAPABILITY } from "./transport/ws/server";
 import {
   HostBulkTransfers,
@@ -84,12 +124,7 @@ import {
   crewRunBulkDeleteKeys,
 } from "./transport/http/bulk";
 import { MobileTlsAuthority } from "./security/mobile-tls";
-import {
-  JsonValueSchema,
-  WS_LIMITS,
-  parseHostRpcParams,
-  type NativeBufferRecoveryOperation,
-} from "../src/shared/model/host-contracts";
+import { JsonValueSchema, WS_LIMITS } from "../src/shared/model/host-contracts";
 import { McpHttp } from "./mcp-http";
 import { readHarnessSkill, searchHarnessSkills } from "./harness-skills";
 import { skillInvocationTokens } from "../src/features/skills/model/skillTokens";
@@ -126,7 +161,7 @@ import { HostSprints } from "./sprints";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { HostGoals } from "./goals";
 import { HostStewards } from "./stewards";
-import { basename, dirname, join } from "node:path";
+import { dirname, join } from "node:path";
 import { DeviceHost } from "./device-host";
 import { DevicePreviews } from "./device-preview";
 import type { DeviceAction } from "../src/features/devices/types";
@@ -158,8 +193,8 @@ import { QueueDrainer, queueRowCommands } from "./queue-drainer";
 import { SessionQueues } from "./session-queue";
 import { RequestAuthorizationError } from "./store-db";
 import {
-  assertDomainAuthority,
   HostDomainAuthorizationError,
+  HostDomainOutcomeError,
   type HostDomainContext,
 } from "./domains/context";
 import { RunLeases } from "./run-lease";
@@ -456,37 +491,27 @@ export async function createHostServer(
       owner: import("./workspace-service-contracts").WorkspaceOwnerAuthorization,
     ) => Promise<T>,
   ) => managed.withOwner(await workspaceOwnerDeviceId(token), action);
-  const nativeBufferRecovery = (
-    token: string,
-    operation: NativeBufferRecoveryOperation,
-    input: unknown,
-  ) => {
-    const params = parseHostRpcParams(`native.buffers.recovery.${operation}`, input);
-    return withWorkspaceOwner(token, async (owner) => {
-      const value =
-        operation === "list"
-          ? await managed.nativeActivity.listBufferRecovery(params as never, owner)
-          : operation === "read"
-            ? await managed.nativeActivity.readBufferRecovery(params as never, owner)
-            : await managed.nativeActivity.bufferRecoveryStatus(params as never, owner);
-      if (
-        createHash("sha256")
-          .update(await workspaceOwnerDeviceId(token))
-          .digest("hex") !== owner.ownerId
-      )
-        throw new Error("Owner device authorization was revoked");
-      return value;
-    });
-  };
-  const nativeBufferOperation =
-    (operation: NativeBufferRecoveryOperation) =>
-    async (params: Record<string, unknown>, context: HostDomainContext) => {
-      await assertDomainAuthority(context);
-      if (!context.nativeBufferRecovery) throw new HostDomainAuthorizationError();
-      const value = await context.nativeBufferRecovery(operation, params);
-      await assertDomainAuthority(context);
-      return value;
-    };
+  const requestWorkspaceOwner =
+    (token: string): NonNullable<HostDomainContext["workspaceOwner"]> =>
+    (action) =>
+      withWorkspaceOwner(token, async (owner) => {
+        const result = await action(
+          bindNativeWorkspaceOwner(managed, owner, () =>
+            assertNativeDeliveryEffect(
+              engine.store,
+              createHash("sha256").update(token).digest("hex"),
+              "buffer",
+            ),
+          ),
+        );
+        if (
+          createHash("sha256")
+            .update(await workspaceOwnerDeviceId(token))
+            .digest("hex") !== owner.ownerId
+        )
+          throw new HostDomainAuthorizationError();
+        return result;
+      });
   const recordWorkspaceActivity = async (action: () => Promise<void>) => {
     try {
       await action();
@@ -1489,6 +1514,12 @@ export async function createHostServer(
     conversationWorkspace,
     projectSessions: projectSessionList,
   });
+  // The service reads this only after composition has finished. An explicit
+  // return type keeps metadata inference independent of the dispatcher that
+  // owns the same service; the catalog always comes from its actual handlers.
+  function advertisedRpcMethods(): string[] {
+    return [...domainDispatcher.methods];
+  }
   const environmentService = createEnvironmentService({
     snapshot: async () => ({
       protocolVersion: HOST_PROTOCOL_VERSION,
@@ -1501,6 +1532,7 @@ export async function createHostServer(
       mobileTls: (await mobileLan.status()).tls,
       persistence: engine.store.db.persistenceHealth(),
       gitRewindExecution: "host",
+      methods: advertisedRpcMethods(),
       ...(buildIdentity ? { buildIdentity } : {}),
       // Older clients validate this list against Codex and Claude only.
       providers: [
@@ -1542,6 +1574,18 @@ export async function createHostServer(
         "sessions.managedCreation.v1",
         "workspaces.native-activity.v1",
         "native.buffers.recovery.v1",
+        "transport.ws.models.v1",
+        "transport.ws.devices.v1",
+        "transport.ws.devices.preview.mobile.v1",
+        "native.services.v1",
+        "native.workspaces.v1",
+        "native.buffers.upload.v1",
+        "native.buffers.delivery.v1",
+        "native.services.delivery.v1",
+        "native.buffers.delivery.ack.v1",
+        "native.services.delivery.ack.v1",
+        "native.delivery.epochs.v2",
+        "transport.ws.workspaces.cleanup.v1",
         ...(buildIdentity ? ["build.identity.v1"] : []),
         "terminals.v1",
         "mobile.pairing",
@@ -1573,6 +1617,8 @@ export async function createHostServer(
         "projects.directory.v1",
         "projects.createDirectory",
         "models.list",
+        "models.providerAccounts.v1",
+        "sessions.configure.providerAccount.v1",
         "crews.v1",
         "crews.tasks.v1",
         "crews.delete.v1",
@@ -1874,14 +1920,130 @@ export async function createHostServer(
     recover: (authorized) =>
       engine.store.db.withAuthorization(authorized, () => engine.store.db.recoverPersistence()),
   });
+  const nativeWorkspacesService = createNativeWorkspacesService({
+    managed,
+    workspace: workspaceForOwnerRpc,
+    touchActivity: (id) => managedWorkspaces.touchActivity(id),
+  });
+  const modelsService = createModelsService({
+    read: models,
+    accounts: hostProviderAccounts,
+    providers,
+  });
+  const nativeDevicesService = createNativeDevicesService();
+  const nativeDevicesOwner = (token: string) =>
+    bindNativeDevicesOwner(
+      { store: engine.store, host: deviceHost, previews: devicePreviews },
+      createHash("sha256").update(token).digest("hex"),
+      () => engine.store.authenticated(token),
+    );
+  const nativeServicesService = createNativeServicesService();
+  const nativeDeliveryService = createNativeDeliveryService();
+  const nativeDeliveryJournal = createNativeDeliveryStore(engine.store);
+  const nativeServiceUploads = createNativeServiceUploadService({
+    environmentId: engine.store.environmentId,
+    platform: nativeBufferUploadPlatform,
+    execute: (target, params, context) => nativeServicesService.call(target, params, context),
+    deliver: (target, identity, paramsJson, context) =>
+      nativeDeliveryService.call(
+        "native.services.delivery.apply",
+        { ...identity, target, paramsJson },
+        context,
+      ),
+  });
+  const nativeServicesOwner = (token: string) =>
+    bindNativeServicesOwner(
+      {
+        store: engine.store,
+        social,
+        peers: socialPeers,
+        conversation: conversationAccess,
+        runtimeLogs: runtimeLogAccess,
+        terminalLogs,
+        desktop: conversationDesktop,
+        workspace,
+        inHost,
+        desktopProjectCwd: (id) => desktop.projectCwdAsync(id),
+        describe: mcpBridgeMetadata,
+      },
+      createHash("sha256").update(token).digest("hex"),
+      () => engine.store.authenticated(token),
+    );
+  const nativeDeliveryOwner = (token: string) =>
+    bindNativeDeliveryOwner(
+      {
+        store: engine.store,
+        journal: nativeDeliveryJournal,
+        workspaceOwner: requestWorkspaceOwner(token),
+        services: nativeServicesOwner(token),
+      },
+      createHash("sha256").update(token).digest("hex"),
+      () => engine.store.authenticated(token),
+    );
+  const nativeBufferUploads = createNativeBufferUploadService({
+    environmentId: engine.store.environmentId,
+    platform: nativeBufferUploadPlatform,
+    update: (params, context) =>
+      nativeWorkspacesService.call("native.buffers.update", params, context),
+    deliver: (identity, paramsJson, context) =>
+      nativeDeliveryService.call(
+        "native.buffers.delivery.apply",
+        { ...identity, paramsJson },
+        context,
+      ),
+  });
   const domainDispatcher = createHostDispatcher({
     environmentId: engine.store.environmentId,
     environment: environmentService,
     projects: projectsService,
     operations: {
-      "native.buffers.recovery.list": nativeBufferOperation("list"),
-      "native.buffers.recovery.read": nativeBufferOperation("read"),
-      "native.buffers.recovery.status": nativeBufferOperation("status"),
+      ...Object.fromEntries(
+        NATIVE_DELIVERY_METHODS.map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeDeliveryService.call(method, params, context),
+        ]),
+      ),
+      ...Object.fromEntries(
+        [
+          ...NATIVE_DEVICE_METHODS,
+          ...DEVICE_LIFECYCLE_METHODS,
+          ...MOBILE_DEVICE_PREVIEW_METHODS,
+        ].map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeDevicesService.call(method, params, context),
+        ]),
+      ),
+      ...Object.fromEntries(
+        NATIVE_SERVICE_UPLOAD_METHODS.map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeServiceUploads.call(method, params, context),
+        ]),
+      ),
+      ...Object.fromEntries(
+        NATIVE_SERVICE_METHODS.map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeServicesService.call(method, params, context),
+        ]),
+      ),
+      "models.list": modelsService.list,
+      ...Object.fromEntries(
+        NATIVE_BUFFER_UPLOAD_METHODS.map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeBufferUploads.call(method, params, context),
+        ]),
+      ),
+      ...Object.fromEntries(
+        NATIVE_WORKSPACE_METHODS.map((method) => [
+          method,
+          (params: Record<string, unknown>, context: HostDomainContext) =>
+            nativeWorkspacesService.call(method, params, context),
+        ]),
+      ),
       "crews.list": crewOperation("crews.list"),
       "crews.schema": crewOperation("crews.schema"),
       "crews.inspect": crewOperation("crews.inspect"),
@@ -2172,6 +2334,7 @@ export async function createHostServer(
         response.setHeader("X-Content-Type-Options", "nosniff");
         let dispatchStarted: number | undefined;
         let dispatchMethod: unknown;
+        let deviceEffectAdmitted = false;
         try {
           if (await bulkHandler(request, response)) return;
           if (await mobilePairing.handle(request, response)) return;
@@ -2248,7 +2411,18 @@ export async function createHostServer(
             input.params && typeof input.params === "object" && !Array.isArray(input.params)
               ? (input.params as Record<string, unknown>)
               : {};
+          const resultAuthorities: Array<() => Promise<boolean>> = [];
           const domainContext = {
+            deviceEffectAdmitted: () => {
+              deviceEffectAdmitted = true;
+            },
+            nativeDevices: nativeDevicesOwner(token),
+            nativeDelivery: nativeDeliveryOwner(token),
+            retainResultAuthority: (check: () => Promise<boolean>) => {
+              resultAuthorities.push(check);
+            },
+            nativeServices: nativeServicesOwner(token),
+            workspaceOwner: requestWorkspaceOwner(token),
             principalId: createHash("sha256").update(token).digest("hex"),
             devServerAccess: (
               method: string,
@@ -2292,6 +2466,15 @@ export async function createHostServer(
                 const action = String(params.action ?? "");
                 const args = params.input as Record<string, unknown>;
                 validateConversationTool(action, args);
+                const scopedDeviceAuthorized = async () => {
+                  const current = await conversationAccess.principalForToken(token);
+                  return (
+                    !!current &&
+                    current.sessionId === boundPrincipal.sessionId &&
+                    current.projectId === boundPrincipal.projectId
+                  );
+                };
+                const scopedDeviceEffect = { authorized: scopedDeviceAuthorized };
                 const projectId = boundPrincipal.projectId;
                 const project = await engine.store.project(projectId);
                 if (action === "sessions.list" || action === "sessions.read") {
@@ -2387,6 +2570,13 @@ export async function createHostServer(
                     boundPrincipal,
                     async () => !!(await conversationAccess.principalForToken(token)),
                   );
+                else if (isVisualConversationTool(action)) {
+                  const own = await featureSession(boundPrincipal.sessionId);
+                  if (own.projectId !== projectId)
+                    throw new Error("Conversation belongs to another project.");
+                  const root = await resolveHostWorktreeAsync(project.cwd, sessionWorkCwd(own.session));
+                  result = await callVisualConversationTool(root, action, args, scopedDeviceAuthorized, browserRuntime.load);
+                }
                 else if (isFileConversationTool(action)) {
                   const own = await featureSession(boundPrincipal.sessionId);
                   if (own.projectId !== projectId)
@@ -2467,30 +2657,38 @@ export async function createHostServer(
                   await logMonitors.stop(projectId, String(args.id));
                   result = { stopped: true };
                 } else if (action === "devices.preflight")
-                  result = await deviceHost.preflight(args.deviceId as string | undefined);
+                  result = await deviceHost.preflight(
+                    args.deviceId as string | undefined,
+                    scopedDeviceEffect,
+                  );
                 else if (action === "devices.preview")
                   result = devicePreviews.start(
                     args as any,
                     `${projectId}:${boundPrincipal.sessionId}`,
-                    async () => !!(await conversationAccess.principalForToken(token)),
+                    scopedDeviceAuthorized,
                   );
                 else if (action === "devices.preview.status")
-                  result = devicePreviews.status(
+                  result = await devicePreviews.authorizedStatus(
                     String(args.id),
                     `${projectId}:${boundPrincipal.sessionId}`,
                     args.includeFrame === true,
+                    scopedDeviceAuthorized,
                   );
-                else if (action === "devices.status") result = await deviceHost.status();
-                else if (action === "devices.list") result = await deviceHost.list();
-                else if (action === "devices.start") result = await deviceHost.start();
+                else if (action === "devices.status")
+                  result = await deviceHost.status(scopedDeviceEffect);
+                else if (action === "devices.list")
+                  result = await deviceHost.list(scopedDeviceEffect);
+                else if (action === "devices.start")
+                  result = await deviceHost.start(scopedDeviceEffect);
                 else if (action === "devices.boot")
-                  result = await deviceHost.boot(String(args.deviceId));
+                  result = await deviceHost.boot(String(args.deviceId), scopedDeviceEffect);
                 else if (action === "devices.capture")
-                  result = await deviceHost.capture(String(args.deviceId));
+                  result = await deviceHost.capture(String(args.deviceId), scopedDeviceEffect);
                 else if (action === "devices.action")
                   result = await deviceHost.action(
                     String(args.deviceId),
                     args.action as DeviceAction,
+                    scopedDeviceEffect,
                   );
                 else if (action.startsWith("browser."))
                   result = await sharedBrowser.dispatchForSession(
@@ -2761,7 +2959,17 @@ export async function createHostServer(
                   }
                 } else if (action === "resources.read")
                   result = diagnostics.read(`session:${boundPrincipal.sessionId}`);
-                response.end(JSON.stringify({ result }));
+                const scopedBody = JSON.stringify({ result });
+                if (action.startsWith("devices.") && !(await scopedDeviceAuthorized()))
+                  throw new Error("Device authority revoked.");
+                if (action === "devices.preview" || action === "devices.preview.status") {
+                  const original = devicePreviews.resultAuthority(
+                    (result as { id: string }).id,
+                    `${projectId}:${boundPrincipal.sessionId}`,
+                  );
+                  if (!(await original())) throw new Error("Preview authority expired.");
+                }
+                response.end(scopedBody);
                 return;
               },
             );
@@ -2797,55 +3005,26 @@ export async function createHostServer(
                   actorId: `device:${createHash("sha256").update(token).digest("hex")}`,
                   provider: "owner",
                 };
-                if (input.method === "social.bridge.describe") {
+                if (
+                  [
+                    "social.bridge.describe",
+                    "social.access.issue",
+                    "social.native.status",
+                    "social.native.enroll",
+                    "social.native.register",
+                    "social.native.authority",
+                    "social.native.reset",
+                  ].includes(String(input.method))
+                ) {
                   if (principal.kind !== "owner") throw new Error("Native owner device required.");
-                  result = await mcpBridgeMetadata("social");
-                } else if (input.method === "social.access.issue") {
-                  if (principal.kind !== "owner")
-                    throw new Error("Only a native owner device can issue social access.");
-                  if (params.expectedScope !== undefined && (await social.isDelegated?.()))
-                    throw new Error("Delegated social grants require an explicit reconnect.");
-                  const sessionId = String(params.sessionId ?? "");
-                  // The desktop database supplies the cwd; a tool cannot register a
-                  // project by claiming a path in its request.
-                  if (!(await inHost(sessionId))) {
-                    const cwd = await desktop.projectCwdAsync(sessionId);
-                    if (cwd) await engine.store.addProject(cwd, basename(cwd));
-                  }
-                  const grant = (await social.remoteAccess?.(sessionId)) ?? {
-                    ...(await social.issueSessionGrant(
-                      sessionId,
-                      createHash("sha256").update(token).digest("hex"),
-                      params.expectedScope,
-                    )),
-                    environmentId: engine.store.environmentId,
-                  };
-                  result = { ...grant, command: process.execPath, args: [process.argv[1]] };
+                  result = await nativeServicesService.legacy(
+                    input.method as Parameters<typeof nativeServicesService.legacy>[0],
+                    params,
+                    domainContext,
+                  );
                 } else if (String(input.method).startsWith("social.native.")) {
                   if (principal.kind !== "owner") throw new Error("Native owner device required.");
-                  const deviceHash = createHash("sha256").update(token).digest("hex");
-                  switch (input.method) {
-                    case "social.native.status":
-                      result = await socialPeers.status();
-                      break;
-                    case "social.native.enroll":
-                      result = await socialPeers.enroll(
-                        String(params.environmentId ?? ""),
-                        deviceHash,
-                      );
-                      break;
-                    case "social.native.register":
-                      result = await socialPeers.register(params, deviceHash);
-                      break;
-                    case "social.native.authority":
-                      result = await socialPeers.useAuthority(params);
-                      break;
-                    case "social.native.reset":
-                      result = await socialPeers.resetAuthority();
-                      break;
-                    default:
-                      throw new Error("Unsupported native social operation.");
-                  }
+                  throw new Error("Unsupported native social operation.");
                 } else result = await socialTransport.rpc(principal, String(input.method), params);
                 response.end(JSON.stringify({ result }));
                 return;
@@ -2904,62 +3083,65 @@ export async function createHostServer(
                   });
                   break;
                 }
-                case "native.activity.start":
-                case "native.activity.end":
-                case "native.buffers.retire":
-                case "native.buffers.reconcile":
-                case "native.buffers.update": {
-                  const action =
-                    input.method === "native.buffers.retire"
-                      ? "retireBuffers"
-                      : input.method === "native.buffers.reconcile"
-                        ? "reconcileBuffers"
-                        : input.method === "native.buffers.update"
-                          ? "updateBuffers"
-                          : input.method === "native.activity.start"
-                            ? "start"
-                            : "end";
-                  result = await withWorkspaceOwner<unknown>(token, (owner) =>
-                    managed.nativeActivity[action](params as never, owner),
-                  );
-                  break;
-                }
-                case "native.buffers.recovery.list":
-                case "native.buffers.recovery.read":
-                case "native.buffers.recovery.status": {
-                  result = await nativeBufferRecovery(
-                    token,
-                    input.method.slice(
-                      "native.buffers.recovery.".length,
-                    ) as NativeBufferRecoveryOperation,
-                    input.params ?? {},
-                  );
-                  break;
-                }
-                case "native.rewind.plan":
-                case "native.rewind.prepare":
-                case "native.rewind.lookup":
-                case "native.rewind.cancelPreparation":
-                case "native.rewind.apply":
-                case "native.rewind.status":
-                case "native.rewind.ack": {
-                  if (!(await managed.exactGitRewind.enabled()))
-                    throw new Error("Exact Git rewind is disabled on this execution host");
-                  const action = String(input.method).slice("native.rewind.".length) as
-                    | "plan"
-                    | "prepare"
-                    | "lookup"
-                    | "cancelPreparation"
-                    | "apply"
-                    | "status"
-                    | "ack";
-                  result = await withWorkspaceOwner<unknown>(token, (owner) =>
-                    managed.nativeRewind[action](params as never, owner),
-                  );
-                  break;
-                }
                 case "native.turn.begin":
                 case "native.turn.end":
+                case "native.activity.start":
+                case "native.activity.end":
+                case "native.buffers.update":
+                case "native.buffers.retire":
+                case "native.buffers.reconcile":
+                case "native.buffers.recovery.list":
+                case "native.buffers.recovery.read":
+                case "native.buffers.recovery.status":
+                case "native.rewind.plan":
+                case "native.rewind.prepare":
+                case "native.rewind.apply":
+                case "native.rewind.status":
+                case "native.rewind.lookup":
+                case "native.rewind.cancelPreparation":
+                case "native.rewind.ack":
+                case "workspaces.cleanup.plan":
+                case "workspaces.cleanup.apply":
+                case "workspaces.cleanup.status": {
+                  result = await nativeWorkspacesService.call(
+                    input.method as NativeWorkspaceMethod,
+                    params,
+                    domainContext,
+                    {
+                      legacy: !input.method.startsWith("native.buffers.recovery."),
+                    },
+                  );
+                  break;
+                }
+                case "native.buffers.delivery.apply":
+                case "native.delivery.epochs.open":
+                case "native.delivery.epochs.status":
+                case "native.delivery.epochs.compact":
+                case "native.delivery.epochs.close":
+                case "native.buffers.delivery.status":
+                case "native.buffers.delivery.ack":
+                case "native.services.delivery.apply":
+                case "native.services.delivery.status":
+                case "native.services.delivery.ack":
+                case "native.services.delivery.result.read":
+                  result = await nativeDeliveryService.call(
+                    input.method as NativeDeliveryMethod,
+                    params,
+                    domainContext,
+                  );
+                  break;
+                case "native.buffers.upload.start":
+                case "native.buffers.upload.write":
+                case "native.buffers.upload.commit":
+                case "native.buffers.upload.status":
+                case "native.buffers.upload.abort": {
+                  result = await nativeBufferUploads.call(
+                    input.method as NativeBufferUploadMethod,
+                    params,
+                    domainContext,
+                  );
+                  break;
+                }
                 case "sessions.managedTurn.begin":
                 case "sessions.managedTurn.end":
                 case "sessions.managedTurn.status": {
@@ -2973,24 +3155,13 @@ export async function createHostServer(
                   )
                     throw new Error("Session does not own this workspace");
                   result = await withWorkspaceOwner<unknown>(token, async (owner) => {
-                    if (input.method === "native.turn.begin")
-                      await managed.nativeRewind.bindTurn(
-                        params as unknown as Parameters<typeof managed.nativeRewind.bindTurn>[0],
-                        owner,
-                      );
-                    if (
-                      input.method === "sessions.managedTurn.begin" ||
-                      input.method === "native.turn.begin"
-                    )
+                    if (input.method === "sessions.managedTurn.begin")
                       return managed.nativeTurns.begin(
                         params as unknown as Parameters<typeof managed.nativeTurns.begin>[0],
                         owner,
                       );
                     return managed.nativeTurns[
-                      input.method === "sessions.managedTurn.end" ||
-                      input.method === "native.turn.end"
-                        ? "end"
-                        : "status"
+                      input.method === "sessions.managedTurn.end" ? "end" : "status"
                     ](params as unknown as Parameters<typeof managed.nativeTurns.end>[0], owner);
                   });
                   if (input.method !== "sessions.managedTurn.status")
@@ -3204,29 +3375,6 @@ export async function createHostServer(
                     });
                   break;
                 }
-                case "workspaces.cleanup.plan":
-                case "workspaces.cleanup.apply":
-                case "workspaces.cleanup.status": {
-                  if (!(await workspaceForOwnerRpc(params.workspaceId)))
-                    throw new Error("Managed workspace not found");
-                  if (input.method === "workspaces.cleanup.status")
-                    result = await managed.removal.status(
-                      params as unknown as WorkspaceRpcRequest<"workspaces.cleanup.status">,
-                    );
-                  else if (input.method === "workspaces.cleanup.plan") {
-                    await managed.assertWritable(String(params.workspaceId));
-                    result = await managed.removal.plan(
-                      params as unknown as WorkspaceRpcRequest<"workspaces.cleanup.plan">,
-                    );
-                  } else
-                    result = await withWorkspaceOwner(token, (owner) =>
-                      managed.removal.apply(
-                        params as unknown as WorkspaceRpcRequest<"workspaces.cleanup.apply">,
-                        owner,
-                      ),
-                    );
-                  break;
-                }
                 case "workspaces.storage.status":
                   await engine.store.project(String(params.projectId ?? ""));
                   result = await managed.storageStatus(
@@ -3368,92 +3516,54 @@ export async function createHostServer(
                   result = await terminalService[action](params, domainContext, { legacy: true });
                   break;
                 }
+                case "native.services.upload.begin":
+                case "native.services.upload.append":
+                case "native.services.upload.commit":
+                case "native.services.upload.status":
+                case "native.services.upload.cancel": {
+                  result = await nativeServiceUploads.call(
+                    input.method as NativeServiceUploadMethod,
+                    params,
+                    domainContext,
+                  );
+                  break;
+                }
+                case "native.services.runtimeLogs.bridge.describe":
+                case "native.services.runtimeLogs.access.issue":
+                case "native.services.runtimeLogs.terminals.append":
+                case "native.services.conversation.bridge.describe":
+                case "native.services.conversation.access.issue":
+                case "native.services.conversation.desktop.take":
+                case "native.services.conversation.desktop.finish":
+                case "native.services.conversation.desktop.authorize":
+                case "native.services.social.bridge.describe":
+                case "native.services.social.access.issue":
+                case "native.services.social.native.status":
+                case "native.services.social.native.enroll":
+                case "native.services.social.native.register":
+                case "native.services.social.native.authority":
+                case "native.services.social.native.reset":
+                case "native.services.workspace.format": {
+                  result = await nativeServicesService.call(
+                    input.method as NativeServiceMethod,
+                    params,
+                    domainContext,
+                  );
+                  break;
+                }
                 case "conversation.desktop.take":
-                  result = await conversationDesktop.take(
-                    createHash("sha256").update(token).digest("hex"),
-                  );
-                  break;
                 case "conversation.desktop.finish":
-                  result = await conversationDesktop.finish(
-                    String(params.id ?? ""),
-                    params.result,
-                    typeof params.error === "string" ? params.error : undefined,
-                    createHash("sha256").update(token).digest("hex"),
-                  );
-                  break;
                 case "conversation.desktop.authorize":
-                  if (
-                    Object.keys(params).some((key) => key !== "id" && key !== "action") ||
-                    typeof params.id !== "string" ||
-                    typeof params.action !== "string" ||
-                    ![
-                      "ssh.workspace.approve",
-                      "ssh.workspace.close.approve",
-                      "ptyMobile.create",
-                      "ptyMobile.attach",
-                      "ptyMobile.write",
-                      "ptyMobile.resize",
-                      "ptyMobile.detach",
-                      "ptyMobile.close",
-                    ].includes(params.action)
-                  )
-                    throw new Error("Invalid desktop authority check");
-                  result = await conversationDesktop.authorize(
-                    params.id,
-                    params.action,
-                    createHash("sha256").update(token).digest("hex"),
-                  );
-                  break;
                 case "conversation.bridge.describe":
-                  result = await mcpBridgeMetadata("conversation");
-                  break;
-                case "conversation.access.issue": {
-                  const sessionId = String(params.sessionId ?? "");
-                  if (!(await inHost(sessionId))) {
-                    const cwd = await desktop.projectCwdAsync(sessionId);
-                    if (cwd) await engine.store.addProject(cwd, basename(cwd));
-                  }
-                  result = {
-                    ...(await conversationAccess.issueSessionGrant(
-                      sessionId,
-                      createHash("sha256").update(token).digest("hex"),
-                      params.expectedScope,
-                    )),
-                    environmentId: engine.store.environmentId,
-                    command: process.execPath,
-                    args: [process.argv[1]],
-                  };
-                  break;
-                }
-                case "runtimeLogs.terminals.append": {
-                  const cwd = String(params.cwd ?? "");
-                  if (!cwd || cwd.length > 4096)
-                    throw new Error("Terminal project directory is required");
-                  const project =
-                    (await engine.store.projects()).find((project) => project.cwd === cwd) ??
-                    (await engine.store.addProject(cwd, basename(cwd)));
-                  result = terminalLogs.append(project.id, params);
-                  break;
-                }
+                case "conversation.access.issue":
+                case "runtimeLogs.terminals.append":
                 case "runtimeLogs.bridge.describe":
-                  result = await mcpBridgeMetadata("runtime-logs");
-                  break;
                 case "runtimeLogs.access.issue": {
-                  const sessionId = String(params.sessionId ?? "");
-                  if (!(await inHost(sessionId))) {
-                    const cwd = await desktop.projectCwdAsync(sessionId);
-                    if (cwd) await engine.store.addProject(cwd, basename(cwd));
-                  }
-                  result = {
-                    ...(await runtimeLogAccess.issueSessionGrant(
-                      sessionId,
-                      createHash("sha256").update(token).digest("hex"),
-                      params.expectedScope,
-                    )),
-                    environmentId: engine.store.environmentId,
-                    command: process.execPath,
-                    args: [process.argv[1]],
-                  };
+                  result = await nativeServicesService.legacy(
+                    input.method as Parameters<typeof nativeServicesService.legacy>[0],
+                    params,
+                    domainContext,
+                  );
                   break;
                 }
                 case "runtimeLogs.monitors.list":
@@ -3696,122 +3806,22 @@ export async function createHostServer(
                 }
                 case "devices.preview.mobile.start":
                 case "devices.preview.mobile.status":
-                case "devices.preview.impact": {
-                  const starting = input.method === "devices.preview.mobile.start";
-                  const impact = input.method === "devices.preview.impact";
-                  const allowed = [
-                    "projectId",
-                    ...(starting
-                      ? ["requestId", "deviceId", "url", "installExpoGo", "expectedText"]
-                      : impact
-                        ? []
-                        : ["id", "requestId", "includeFrame"]),
-                  ];
-                  if (
-                    Object.keys(params).some((key) => !allowed.includes(key)) ||
-                    typeof params.projectId !== "string"
-                  )
-                    throw new Error("Invalid mobile device preview scope");
-                  const project = await engine.store.project(params.projectId);
-                  const owner = `mobile:${createHash("sha256").update(token).digest("hex")}:${project.id}`;
-                  const { projectId: _projectId, ...args } = params;
-                  if (impact) result = devicePreviews.stopImpact(owner);
-                  else if (starting) {
-                    validateConversationTool("devices.preview", args);
-                    result = devicePreviews.start(
-                      args as Parameters<DevicePreviews["start"]>[0],
-                      owner,
-                      async () => {
-                        try {
-                          return (
-                            (await engine.store.authenticated(token)) &&
-                            (await engine.store.project(project.id)).cwd === project.cwd
-                          );
-                        } catch {
-                          return false;
-                        }
-                      },
-                    );
-                  } else {
-                    const id = (value: unknown) =>
-                      typeof value === "string" && /^[a-zA-Z0-9_-]{1,200}$/.test(value);
-                    if (
-                      (!id(args.id) && !id(args.requestId)) ||
-                      (args.id !== undefined && !id(args.id)) ||
-                      (args.requestId !== undefined && !id(args.requestId)) ||
-                      (args.includeFrame !== undefined && typeof args.includeFrame !== "boolean")
-                    )
-                      throw new Error("Invalid mobile device preview identity");
-                    result = devicePreviews.mobileStatus(
-                      owner,
-                      {
-                        ...(args.id === undefined ? {} : { id: args.id as string }),
-                        ...(args.requestId === undefined
-                          ? {}
-                          : { requestId: args.requestId as string }),
-                      },
-                      args.includeFrame === true,
-                    );
-                  }
-                  break;
-                }
+                case "devices.preview.impact":
+                case "devices.setup":
+                case "devices.stop":
                 case "devices.status":
                 case "devices.preflight":
                 case "devices.preview":
                 case "devices.preview.status":
-                case "devices.setup":
                 case "devices.start":
-                case "devices.stop":
                 case "devices.list":
                 case "devices.boot":
                 case "devices.capture":
-                case "devices.action": {
-                  if (params.projectId !== undefined)
-                    await engine.store.project(String(params.projectId ?? ""));
-                  if (input.method === "devices.preflight")
-                    result = await deviceHost.preflight(params.deviceId as string | undefined);
-                  else if (
-                    input.method === "devices.preview" ||
-                    input.method === "devices.preview.status"
-                  ) {
-                    const {
-                      previewOwner,
-                      previewExpiresAt,
-                      projectId: _projectId,
-                      ...args
-                    } = params;
-                    validateConversationTool(input.method, args);
-                    const owner = typeof previewOwner === "string" ? previewOwner : "native-owner";
-                    result =
-                      input.method === "devices.preview"
-                        ? devicePreviews.start(
-                            args as any,
-                            owner,
-                            () =>
-                              previewExpiresAt === undefined ||
-                              Date.now() < Number(previewExpiresAt),
-                          )
-                        : devicePreviews.status(String(args.id), owner, args.includeFrame === true);
-                  } else if (input.method === "devices.status") result = await deviceHost.status();
-                  else if (input.method === "devices.setup") {
-                    if (typeof params.agentAccess !== "boolean")
-                      throw new Error("Choose whether agents may control devices");
-                    result = await deviceHost.setup(params.agentAccess);
-                  } else if (input.method === "devices.start") result = await deviceHost.start();
-                  else if (input.method === "devices.stop")
-                    result = await devicePreviews.stopIdle(async () => await deviceHost.stop());
-                  else if (input.method === "devices.list") result = await deviceHost.list();
-                  else if (input.method === "devices.boot")
-                    result = await deviceHost.boot(String(params.deviceId ?? ""));
-                  else if (input.method === "devices.capture")
-                    result = await deviceHost.capture(String(params.deviceId ?? ""));
-                  else
-                    result = await deviceHost.action(
-                      String(params.deviceId ?? ""),
-                      params.action as DeviceAction,
-                    );
+                case "devices.action":
+                  result = await nativeDevicesService.call(input.method, params, domainContext, {
+                    legacy: true,
+                  });
                   break;
-                }
                 case "projects.list":
                   result = await projectsService.list({}, domainContext);
                   break;
@@ -3843,13 +3853,10 @@ export async function createHostServer(
                 case "shell.setProfileReviewed":
                   result = setReviewedProfile(params);
                   break;
-                case "models.list":
-                  result = await models(
-                    params.projectId,
-                    params.progressive === true,
-                    params.refresh === true,
-                  );
+                case "models.list": {
+                  result = await modelsService.list(params, domainContext, { legacy: true });
                   break;
+                }
                 case "sessions.list":
                   result = await sessionService.list(params, domainContext);
                   break;
@@ -4929,6 +4936,15 @@ export async function createHostServer(
                   result = await fileService.index(params, domainContext, { legacy: true });
                   break;
                 case "workspace.run":
+                  if (params.command === "format_text_file") {
+                    result = await nativeServicesService.call(
+                      "native.services.workspace.format",
+                      params,
+                      domainContext,
+                      { legacy: true },
+                    );
+                    break;
+                  }
                   result =
                     (await workspace.run(
                       params.command,
@@ -4963,19 +4979,31 @@ export async function createHostServer(
             },
           );
           const inline = serializedResponse(result);
-          response.end(inline === undefined ? JSON.stringify({ result }) : `{"result":${inline}}`);
+          const serializedBody =
+            inline === undefined ? JSON.stringify({ result }) : `{"result":${inline}}`;
+          for (const check of resultAuthorities)
+            if (!(await check())) throw new Error("Result authority expired.");
+          response.end(serializedBody);
         } catch (error) {
           if (!response.destroyed)
             response
               .writeHead(
                 error instanceof RequestAuthorizationError ||
-                  error instanceof HostDomainAuthorizationError
+                  error instanceof HostDomainAuthorizationError ||
+                  (error instanceof HostDomainOutcomeError &&
+                    (error.cause instanceof RequestAuthorizationError ||
+                      error.cause instanceof HostDomainAuthorizationError))
                   ? 401
                   : 400,
               )
               .end(
                 JSON.stringify({
                   error: error instanceof Error ? error.message : "Host request failed",
+                  ...(deviceEffectAdmitted
+                    ? { code: "HOST_DEVICE_OPERATION_UNCONFIRMED", delivery: "unknown" }
+                    : error instanceof HostDomainOutcomeError
+                      ? { delivery: error.delivery }
+                      : {}),
                   ...(typeof error === "object" &&
                   error !== null &&
                   "code" in error &&
@@ -5009,6 +5037,18 @@ export async function createHostServer(
     methods: domainDispatcher.methods,
     capabilities: [
       "native.buffers.recovery.v1",
+      "transport.ws.models.v1",
+      "transport.ws.devices.v1",
+      "transport.ws.devices.preview.mobile.v1",
+      "native.services.v1",
+      "native.workspaces.v1",
+      "native.buffers.upload.v1",
+      "native.buffers.delivery.v1",
+      "native.services.delivery.v1",
+      "native.buffers.delivery.ack.v1",
+      "native.services.delivery.ack.v1",
+      "native.delivery.epochs.v2",
+      "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
@@ -5041,8 +5081,10 @@ export async function createHostServer(
           id: createHash("sha256").update(token).digest("hex"),
           devServerAccess: (method, params, authorize) =>
             devServerAccess.handle(method, params, token, authorize),
-          nativeBufferRecovery: (operation, params) =>
-            nativeBufferRecovery(token, operation, params),
+          nativeDevices: nativeDevicesOwner(token),
+          nativeDelivery: nativeDeliveryOwner(token),
+          nativeServices: nativeServicesOwner(token),
+          workspaceOwner: requestWorkspaceOwner(token),
           retargetTask: (id, target, autoMerge) =>
             withWorkspaceOwner(token, (owner) => tasks.retarget(id, target, autoMerge, owner)),
           // Domain transactions already own the serialized database scope. Re-entering
@@ -5098,6 +5140,8 @@ export async function createHostServer(
       };
       drain(() => controls?.nativeAuthorityBootstrap?.close());
       drain(async () => await websocket.close());
+      drain(() => nativeBufferUploads.close());
+      drain(() => nativeServiceUploads.close());
       drain(() => {
         unsubscribeChanges();
         unsubscribeAuthority();
@@ -5142,7 +5186,7 @@ export async function createHostServer(
       drain(async () => await xBrowser.stop(social));
       // Attach rejection handlers immediately while startup is still settling.
       const drained = Promise.allSettled(pending);
-      const requested = Promise.allSettled([...requests]);
+      const requested = Promise.allSettled(requests);
       await startup.catch(() => {});
       // A start already inside an async phase must not register a late loop.
       crews.stop();

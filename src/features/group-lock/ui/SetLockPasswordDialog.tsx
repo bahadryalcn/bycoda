@@ -101,7 +101,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
 
   const message =
     cooldown.remainingMs > 0
-      ? `Too many wrong passwords. Try again in ${formatCooldown(cooldown.remainingMs)}.`
+      ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldown.remainingMs) })
       : error;
 
   return (
@@ -110,7 +110,8 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
       description={t("One password locks any number of groups.")}
       size="sm"
       fitViewport
-      onClose={onClose}
+      // The running change cannot be cancelled, so the dialog stays until it finishes.
+      onClose={busy ? () => {} : onClose}
     >
       <form onSubmit={submit} className="flex flex-col gap-3 p-4">
         {mode === "change" ? (
@@ -148,7 +149,7 @@ export function SetLockPasswordDialog({ mode, onClose, onDone }: Props) {
           </li>
         </ul>
         <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose} variant="ghost">
+          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
             {t("Cancel")}
           </Button>
           <Button

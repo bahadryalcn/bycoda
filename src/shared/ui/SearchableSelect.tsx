@@ -15,7 +15,9 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
-import { ChevronDown, LoaderCircle, Search, X } from "./icons";
+import { ChevronDown, Search, X } from "./icons";
+import { Spinner } from "./Spinner";
+import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 import { MatchText, matchPositions } from "./MatchText";
 import styles from "./SearchableSelect.module.css";
 import { LAYER } from "../lib/layers";
@@ -72,7 +74,19 @@ type AsyncOptions = {
   noOptionsLabel?: string;
 };
 
-type SelectionOptions = AsyncOptions & {
+/**
+ * Optional shared Field composition (visible label, help, validation message). Without any of these props the picker
+ * renders exactly as before. `fieldError` is the validation message; the async-load `error` stays inside the list.
+ */
+type FieldOptions = {
+  /** Show `label` above the trigger in the shared field composition (implied by description/fieldError). */
+  visibleLabel?: boolean;
+  description?: string;
+  fieldError?: string;
+  fieldVariant?: FieldVariant;
+};
+
+type SelectionOptions = AsyncOptions & FieldOptions & {
   /** Locale used for case folding, independently of the UI language. */
   searchLocale?: string;
   triggerProps?: Omit<
@@ -130,6 +144,10 @@ export function SearchableSelect(
     onRetry,
     retryLabel,
     noOptionsLabel,
+    visibleLabel,
+    description,
+    fieldError,
+    fieldVariant,
   } = props;
   return (
     <SearchableSelectMenu
@@ -155,6 +173,10 @@ export function SearchableSelect(
         onRetry,
         retryLabel,
         noOptionsLabel,
+        visibleLabel,
+        description,
+        fieldError,
+        fieldVariant,
       }}
       values={props.multiple ? props.value : [props.value]}
       multiple={!!props.multiple}
@@ -273,6 +295,10 @@ function SearchableSelectMenu({
   onRetry,
   retryLabel,
   noOptionsLabel,
+  visibleLabel = false,
+  description,
+  fieldError,
+  fieldVariant = "form",
   onRemove,
 }: {
   label: string;
@@ -303,6 +329,9 @@ function SearchableSelectMenu({
   const list = useRef<HTMLDivElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const listId = useId();
+  const generatedTriggerId = useId();
+  const triggerId = triggerProps?.id ?? generatedTriggerId;
+  const composed = visibleLabel || Boolean(description) || Boolean(fieldError);
   const optionLookup = useMemo(
     () => new Map(options.map((option) => [option.value, option])),
     [options],
@@ -453,7 +482,7 @@ function SearchableSelectMenu({
   const resultsCopy =
     options.length === 0 && !normalizedQuery ? (noOptionsLabel ?? emptyLabel) : emptyLabel;
 
-  return (
+  const picker = (
     <div
       ref={root}
       className={
@@ -464,7 +493,18 @@ function SearchableSelectMenu({
     >
       <SelectTrigger
         {...triggerProps}
+        id={composed ? triggerId : triggerProps?.id}
         ref={trigger}
+        aria-invalid={fieldError ? true : triggerProps?.["aria-invalid"]}
+        aria-describedby={
+          composed
+            ? fieldDescribedBy(
+                triggerId,
+                { description, error: fieldError },
+                triggerProps?.["aria-describedby"],
+              )
+            : triggerProps?.["aria-describedby"]
+        }
         data-select-variant={variant}
         data-state={open ? "open" : "closed"}
         data-disabled={disabled || undefined}
@@ -513,11 +553,10 @@ function SearchableSelectMenu({
         </span>
         {/* A closed picker still shows that its options are loading; the open list has its own status row. */}
         {loading && !open && !failed ? (
-          <LoaderCircle
-            aria-hidden="true"
+          <Spinner
             data-select-loading=""
-            className={`shrink-0 text-(--ui-text-secondary) motion-safe:animate-spin ${compact ? "size-3" : "size-3.5"}`}
-            strokeWidth={1.75}
+            size={compact ? "xs" : "sm"}
+            className="text-(--ui-text-secondary)"
           />
         ) : (
           <ChevronDown
@@ -680,5 +719,19 @@ function SearchableSelectMenu({
         </Popover>
       ) : null}
     </div>
+  );
+  if (!composed) return picker;
+  return (
+    <Field
+      label={label}
+      hideLabel={!visibleLabel}
+      description={description}
+      error={fieldError}
+      variant={fieldVariant}
+      id={triggerId}
+      className="min-w-0"
+    >
+      {picker}
+    </Field>
   );
 }

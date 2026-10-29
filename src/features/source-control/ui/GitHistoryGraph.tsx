@@ -366,7 +366,7 @@ export function GitHistoryGraph({
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-(length:--ui-font-caption) font-semibold text-(--ui-text-secondary)">
+          <span className="min-w-0 truncate text-(length:--ui-font-caption) font-medium text-(--ui-text-secondary)">
             {t("Graph")}
           </span>
         </Button>

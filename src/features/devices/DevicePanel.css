@@ -8,27 +8,31 @@
   min-inline-size: 0;
   overflow: hidden;
 }
+/* Identity (device + state) -> control -> content. The toolbar and its
+   feedback sit above the stage so controls stay reachable when the stage is
+   empty, stopped or failed; the stage is the last, largest block. */
 .device-panel-bar,
 .device-panel-toolbar {
   display: flex;
   align-items: center;
   flex: none;
-  gap: 2px;
-  padding: 3px 6px;
+  gap: 4px;
+  padding: 2px 4px;
+  min-block-size: 2rem;
   min-inline-size: 0;
-}
-.device-panel-bar {
-  border-block-end: 1px solid var(--color-stroke);
+  background: var(--ui-surface-panel);
 }
 .device-panel-toolbar {
-  border-block-start: 1px solid var(--color-stroke);
+  border-block-end: 1px solid var(--color-stroke);
 }
+
 .device-panel-toolbar-spacer {
   flex: 1;
 }
 .device-panel-choice {
-  flex: 1;
+  flex: 0 1 20rem;
   min-inline-size: 0;
+  max-inline-size: 20rem;
 }
 .device-panel-choice > div {
   inline-size: 100%;
@@ -110,7 +114,10 @@
   border: 1px solid var(--color-stroke);
   border-radius: var(--ui-radius-popup);
 }
-.device-panel-mark-tools > button {
+.device-panel-mark-tools > [data-media-toolbar] {
+  flex-wrap: nowrap;
+}
+.device-panel-mark-tools > [data-media-toolbar] > button {
   flex: none;
 }
 .device-panel-redo {
@@ -218,22 +225,29 @@
 }
 @media (pointer: coarse) {
   .device-panel-mark-tools {
-    flex-wrap: wrap;
     inline-size: max-content;
+  }
+  .device-panel-mark-tools > [data-media-toolbar] {
+    flex-wrap: wrap;
     justify-content: center;
   }
 }
 .device-panel-summary {
-  display: flex;
-  flex: none;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex: 0 1 auto;
   align-items: baseline;
-  gap: 2px 8px;
-  margin: 0;
-  padding: 3px 10px;
+  gap: 8px;
   min-inline-size: 0;
+  max-inline-size: 45%;
+  margin-inline-end: auto;
+  overflow: hidden;
+  white-space: nowrap;
   font-size: var(--ui-font-caption);
   color: var(--ui-text-secondary);
+}
+.device-panel-summary > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .device-panel-summary strong {
   font-weight: 500;
@@ -242,8 +256,10 @@
 .device-panel-summary[data-booted="false"] strong {
   color: var(--ui-text-secondary);
 }
-.device-panel-summary-host {
-  margin-inline-start: auto;
+@container (max-width: 32rem) {
+  .device-panel-summary > span {
+    display: none;
+  }
 }
 .device-panel-waiting-actions {
   display: flex;

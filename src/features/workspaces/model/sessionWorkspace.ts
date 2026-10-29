@@ -1,4 +1,5 @@
 import type { Session, WorkspaceMode } from "../../sessions/model/session";
+import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { t } from "../../../shared/i18n";
 import type { ManagedWorkspace, WorkspacePolicy } from "./contracts";
 import {
@@ -43,10 +44,12 @@ export async function prepareSessionWorkspace(
   managedCreationReady = true,
 ): Promise<ManagedWorkspace | null> {
   if (!needsSessionWorkspace(session)) return null;
-  const capabilities = await getWorkspaceCapabilities({ cwd: session.cwd });
+  const owner = hostSessionBinding(session);
+  const ownerContext = owner ? { cwd: session.cwd, environmentId: owner.environmentId, machineId: owner.machineId, projectId: owner.projectId, ownerProjectId: owner.projectId } : undefined;
+  const capabilities = await getWorkspaceCapabilities(ownerContext ?? { cwd: session.cwd });
   if (!capabilities.includes("workspaces.policy.v1") && session.workspaceMode !== "worktree")
     return null;
-  const context = await resolveWorkspaceContext(session.cwd);
+  const context = ownerContext ?? await resolveWorkspaceContext(session.cwd);
   await requireWorkspaceCapability("workspaces.policy.v1", context);
   const { resolved } = await workspaceRequest(
     "projects.workspacePolicy.get",

@@ -16,6 +16,32 @@ use tauri::{AppHandle, Emitter, Manager, State};
 #[path = "remote_changes.rs"]
 mod changes;
 
+#[path = "remote_native_workspace.rs"]
+mod native_workspace_transport;
+
+#[path = "remote_native_commit.rs"]
+mod native_commit;
+pub(crate) use native_commit::NativeProjection;
+
+#[path = "remote_native_upload.rs"]
+mod native_upload;
+
+#[path = "remote_native_service.rs"]
+mod native_service;
+pub(crate) use native_service::{NativeServiceChannel, NativeServiceReply};
+
+#[path = "remote_native_gateway.rs"]
+mod native_gateway;
+
+#[path = "remote_native_devices.rs"]
+mod native_devices;
+pub(crate) use native_devices::NativeDeviceReply;
+#[path = "remote_native_buffer_delivery.rs"]
+mod native_buffer_delivery;
+
+#[path = "remote_native_delivery_epochs.rs"]
+mod native_delivery_epochs;
+
 #[path = "dev_server_access.rs"]
 pub mod dev_access;
 
@@ -35,12 +61,20 @@ struct WsCapability {
 pub struct RemoteConnections {
     changes: changes::Changes,
     reads: changes::Reads,
-    pub(crate) store: Mutex<()>,
+    pub(crate) store: Arc<Mutex<()>>,
     tunnels: Tunnels,
     jobs: Mutex<HashMap<String, Arc<Job>>>,
     ws: HostWsBroker,
+    native_profile_ws: crate::host_ws::native_profile::NativeProfileBroker,
+    native_service_ws: crate::host_ws::native_profile::NativeProfileBroker,
+    native_service_channel: Mutex<Option<Arc<NativeServiceChannel>>>,
+    native_gateway_ws: crate::host_ws::native_profile::NativeProfileBroker,
+    native_device_ws: crate::host_ws::native_profile::NativeProfileBroker,
+    native_workspace_uploads: Arc<native_upload::NativeUploads>,
+    native_buffer_delivery_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
+    native_buffer_delivery_ack_cursors: Arc<native_buffer_delivery::RecoveryCursors>,
     ws_capabilities: Mutex<HashMap<String, WsCapability>>,
-    recovery_routes: RecoveryRoutes,
+    recovery_routes: Arc<RecoveryRoutes>,
 }
 
 /// Native-only retirement history. Saved-row equality cannot detect disconnect /
@@ -49,9 +83,17 @@ pub struct RemoteConnections {
 struct RecoveryRoutes {
     revision: AtomicU64,
     closed: AtomicBool,
+    commit: Mutex<()>,
 }
 impl RecoveryRoutes {
     fn retire(&self) {
+        let _guard = self
+            .commit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.retire_locked();
+    }
+    fn retire_locked(&self) {
         let _ = self
             .revision
             .try_update(Ordering::AcqRel, Ordering::Acquire, |revision| {
@@ -69,8 +111,12 @@ impl RecoveryRoutes {
         self.capture().is_ok_and(|current| current == revision)
     }
     fn close(&self) {
+        let _guard = self
+            .commit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.closed.store(true, Ordering::Release);
-        self.retire();
+        self.retire_locked();
     }
 }
 
@@ -81,6 +127,18 @@ impl RemoteConnections {
             folder_access::stop_environment(&exit.environment_id);
             if let Some(state) = app.try_state::<RemoteConnections>() {
                 state.ws.invalidate_environment(&exit.environment_id);
+                state
+                    .native_profile_ws
+                    .invalidate_environment(&exit.environment_id);
+                state
+                    .native_service_ws
+                    .invalidate_environment(&exit.environment_id);
+                state
+                    .native_gateway_ws
+                    .invalidate_environment(&exit.environment_id);
+                state
+                    .native_device_ws
+                    .invalidate_environment(&exit.environment_id);
             }
             let _ = app.emit(TUNNEL_EXIT_EVENT, exit);
         }));
@@ -88,6 +146,10 @@ impl RemoteConnections {
     pub fn shutdown(&self) {
         self.recovery_routes.close();
         self.ws.shutdown();
+        self.native_profile_ws.shutdown();
+        self.native_service_ws.shutdown();
+        self.native_gateway_ws.shutdown();
+        self.native_device_ws.shutdown();
         folder_access::shutdown();
         if let Ok(jobs) = self.jobs.lock() {
             for job in jobs.values() {
@@ -103,6 +165,18 @@ impl RemoteConnections {
     fn invalidate_ws(&self, machine_id: &str) {
         self.recovery_routes.retire();
         self.ws.invalidate_machine(machine_id);
+        self.native_profile_ws.invalidate_machine(machine_id);
+        self.native_service_ws.invalidate_machine(machine_id);
+        self.native_gateway_ws.invalidate_machine(machine_id);
+        self.native_device_ws.invalidate_machine(machine_id);
+        self.native_buffer_delivery_cursors
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(machine_id);
+        self.native_buffer_delivery_ack_cursors
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(machine_id);
         self.ws_capabilities
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
@@ -122,6 +196,10 @@ impl RemoteConnections {
             capabilities.remove(&machine.id);
             drop(capabilities);
             self.ws.invalidate_machine(&machine.id);
+            self.native_profile_ws.invalidate_machine(&machine.id);
+            self.native_service_ws.invalidate_machine(&machine.id);
+            self.native_gateway_ws.invalidate_machine(&machine.id);
+            self.native_device_ws.invalidate_machine(&machine.id);
             return false;
         }
         capabilities
@@ -151,6 +229,10 @@ impl RemoteConnections {
             );
         if !enabled {
             self.ws.invalidate_machine(&machine.id);
+            self.native_profile_ws.invalidate_machine(&machine.id);
+            self.native_service_ws.invalidate_machine(&machine.id);
+            self.native_gateway_ws.invalidate_machine(&machine.id);
+            self.native_device_ws.invalidate_machine(&machine.id);
         }
     }
 
@@ -457,11 +539,39 @@ fn rpc(
     method: &str,
     params: Value,
 ) -> Result<Value, String> {
+    let timeout = rpc_timeout(method, &params);
+    rpc_timed(endpoint, token, environment_id, method, params, timeout)
+}
+
+fn rpc_until(
+    endpoint: &str,
+    token: &str,
+    environment_id: Option<&str>,
+    method: &str,
+    params: Value,
+    deadline: std::time::Instant,
+) -> Result<Value, String> {
+    let remaining = deadline
+        .checked_duration_since(std::time::Instant::now())
+        .filter(|t| !t.is_zero())
+        .ok_or("Host operation deadline elapsed before compatibility dispatch")?;
+    let timeout = remaining.min(rpc_timeout(method, &params));
+    rpc_timed(endpoint, token, environment_id, method, params, timeout)
+}
+
+fn rpc_timed(
+    endpoint: &str,
+    token: &str,
+    environment_id: Option<&str>,
+    method: &str,
+    params: Value,
+    timeout: std::time::Duration,
+) -> Result<Value, String> {
     let agent = rpc_agent();
     let payload = json!({ "version": 1, "environmentId": environment_id, "method": method, "params": params });
     let response = agent
         .post(&format!("{endpoint}/rpc"))
-        .timeout(rpc_timeout(method, &params))
+        .timeout(timeout)
         .set("Authorization", &format!("Bearer {token}"))
         .set("Content-Type", "application/json")
         .send_string(&payload.to_string());
@@ -479,29 +589,89 @@ fn rpc(
         }
     };
     let status = response.status();
-    if status == 401 || status == 403 {
-        return Err(format!("Host rejected request [RPC_AUTHORIZATION] ({method}). Reconnect the selected machine and check its access scope."));
+    let authorization_error = || {
+        format!("Host rejected request [RPC_AUTHORIZATION] ({method}). Reconnect the selected machine and check its access scope.")
+    };
+    let device_effect = device_http_effect(method);
+    if (status == 401 || status == 403) && !device_effect {
+        return Err(authorization_error());
     }
     let mut bytes = Vec::new();
     response
         .into_reader()
         .take(MAX_RESPONSE_BYTES + 1)
         .read_to_end(&mut bytes)
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| {
+            if device_effect {
+                device_http_unknown(method)
+            } else {
+                error.to_string()
+            }
+        })?;
     if bytes.len() as u64 > MAX_RESPONSE_BYTES {
-        return Err("Host response is too large".into());
+        return Err(if device_effect {
+            device_http_unknown(method)
+        } else {
+            "Host response is too large".into()
+        });
     }
-    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid host response")?;
+    let invalid_response = || {
+        if device_effect {
+            device_http_unknown(method)
+        } else {
+            "Invalid host response".to_owned()
+        }
+    };
+    let mut value: Value = serde_json::from_slice(&bytes).map_err(|_| invalid_response())?;
     if let Some(error) = value.get("error").and_then(Value::as_str) {
+        if device_effect
+            && value.get("code").and_then(Value::as_str)
+                == Some("HOST_DEVICE_OPERATION_UNCONFIRMED")
+            && value.get("delivery").and_then(Value::as_str) == Some("unknown")
+        {
+            return Err(device_http_unknown(method));
+        }
+        if status == 401 || status == 403 {
+            return Err(authorization_error());
+        }
         return Err(format!("Host rejected request: {error}"));
     }
+    if status == 401 || status == 403 {
+        // A damaged/missing rejection envelope cannot prove a device effect
+        // was refused before admission. Valid predispatch denials above can.
+        return Err(device_http_unknown(method));
+    }
     if status != 200 {
-        return Err(format!("Host returned HTTP {status}"));
+        return Err(if device_effect {
+            device_http_unknown(method)
+        } else {
+            format!("Host returned HTTP {status}")
+        });
     }
     value
         .as_object_mut()
         .and_then(|object| object.remove("result"))
-        .ok_or_else(|| "Invalid host response".into())
+        .ok_or_else(invalid_response)
+}
+
+// Error classification only; this does not grant the narrower NativeDevice
+// caller any lifecycle/mobile methods. Canonical effect metadata is authoritative.
+fn device_http_effect(method: &str) -> bool {
+    matches!(
+        method,
+        "devices.setup"
+            | "devices.stop"
+            | "devices.start"
+            | "devices.boot"
+            | "devices.capture"
+            | "devices.action"
+            | "devices.preview"
+            | "devices.preview.mobile.start"
+    ) && HostWsBroker::method_has_effect(method)
+}
+
+fn device_http_unknown(method: &str) -> String {
+    format!("The device operation may have completed [RPC_DEVICE_OUTCOME_UNKNOWN] ({method}). Its outcome is unknown. Do not repeat the request; inspect its original device or preview status and reconnect the selected machine if access changed.")
 }
 
 // Only a refused connection proves the local forwarding listener is gone.
@@ -806,6 +976,37 @@ fn native_ws_failure(error: WsFailure) -> String {
             ""
         }
     )
+}
+
+/// A held reply proves dispatch already succeeded. Losing disclosure authority
+/// afterward cannot reclassify an effect as an operation that was never sent.
+fn check_remote_reply(guard: &crate::host_ws::ReplyGuard, method: &str) -> Result<(), String> {
+    guard.check().map_err(|mut error| {
+        error.uncertain |= HostWsBroker::method_has_effect(method);
+        error.unsupported = false;
+        native_ws_failure(error)
+    })
+}
+
+/// This adapter has already received an accepted Host reply. A final saved-route
+/// check can still fail before IPC disclosure, but it cannot make an effect safe
+/// to repeat or erase the original envelope identity.
+fn disclose_public_reply(
+    reply: WsReply,
+    method: &str,
+    request_id: Option<String>,
+    command_id: Option<String>,
+    disclose: impl FnOnce(WsReply) -> Result<WsReply, WsFailure>,
+) -> Result<WsReply, WsFailure> {
+    let generation = reply.generation;
+    disclose(reply).map_err(|mut error| {
+        error.generation = error.generation.or(Some(generation));
+        error.request_id = error.request_id.or(request_id);
+        error.command_id = error.command_id.or(command_id);
+        error.uncertain |= HostWsBroker::method_has_effect(method);
+        error.unsupported = false;
+        error
+    })
 }
 
 pub(crate) fn store_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
@@ -1136,6 +1337,7 @@ pub fn remote_request(
     params: Value,
     fresh: Option<bool>,
     allow_connect: Option<bool>,
+    expected_environment_id: Option<String>,
 ) -> Result<Value, String> {
     if !supported_remote_method(&method) {
         return Err("Unsupported remote operation".into());
@@ -1157,17 +1359,12 @@ pub fn remote_request(
                 Err("Empty subscriptions do not need a host request".into())
             });
     }
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read_shared(&store_path(&app)?)?
-            .iter()
-            .find(|m| m.id == machine_id)
-            .cloned()
-            .ok_or("Machine is no longer connected")?
-    };
+    let machine = machine_for_request(
+        &state,
+        &store_path(&app)?,
+        &machine_id,
+        expected_environment_id.as_deref(),
+    )?;
     if fresh == Some(true) && machine.ssh.is_some() {
         state.tunnels.forget_failure(&machine.id);
     }
@@ -1215,7 +1412,7 @@ pub fn remote_request(
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        let current = read_shared(&store_path(&app)?)?;
+        let current = read_uncached(&store_path(&app)?)?;
         if !current
             .iter()
             .any(|saved| same_request_route(&machine, saved))
@@ -1228,7 +1425,7 @@ pub fn remote_request(
             .map_err(|_| "Native reply disclosure is unavailable")?
             .as_ref()
         {
-            guard.check().map_err(native_ws_failure)?;
+            check_remote_reply(guard, &method)?;
         }
     }
     let result = response?;
@@ -1250,7 +1447,7 @@ fn saved_ws_machine(
         .store
         .lock()
         .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
-    read_shared(
+    read_uncached(
         &store_path(app).map_err(|_| {
             WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable")
         })?,
@@ -1274,7 +1471,7 @@ fn with_current_ws_machine<T>(
         .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
     let path = store_path(app)
         .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
-    let machines = read_shared(&path)
+    let machines = read_uncached(&path)
         .map_err(|_| WsFailure::local("RPC_WS_STORE", "Native connection store is unavailable"))?;
     if !machines
         .iter()
@@ -1409,6 +1606,7 @@ pub fn host_connection_request(
                 request_id: request_id.clone(),
                 command_id: command_id.clone(),
                 response_timeout: response_timeout_ms.map(std::time::Duration::from_millis),
+                absolute_deadline: None,
             },
         )
     });
@@ -1423,12 +1621,31 @@ pub fn host_connection_request(
             "RPC_WS_ROUTE_CHANGED",
             "Native connection changed during the request",
         );
-        error.request_id = request_id;
-        error.command_id = command_id;
-        error.uncertain = HostWsBroker::method_has_effect(&method);
+        error.generation = match &reply {
+            Ok(reply) => Some(reply.generation),
+            Err(error) => error.generation,
+        };
+        error.request_id = reply
+            .as_ref()
+            .err()
+            .and_then(|error| error.request_id.clone())
+            .or(request_id);
+        error.command_id = reply
+            .as_ref()
+            .err()
+            .and_then(|error| error.command_id.clone())
+            .or(command_id);
+        error.uncertain = match &reply {
+            Ok(_) => HostWsBroker::method_has_effect(&method),
+            Err(error) => error.uncertain,
+        };
         return Err(error);
     }
-    reply.and_then(|reply| with_current_ws_machine(&app, &state, &machine, || reply.disclose()))
+    reply.and_then(|reply| {
+        disclose_public_reply(reply, &method, request_id, command_id, |reply| {
+            with_current_ws_machine(&app, &state, &machine, || reply.disclose())
+        })
+    })
 }
 
 #[tauri::command]
@@ -1520,85 +1737,35 @@ pub(crate) fn local_social_rpc(
     if !matches!(method, "social.bridge.describe" | "social.access.issue") {
         return Err("Unsupported native social bridge operation".into());
     }
-    let state: State<'_, RemoteConnections> = app.state();
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store_path(app)?)?
-            .into_iter()
-            .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-            .ok_or("Connect the local bycoda Host for social session tools")?
-    };
-    let mut value = rpc(
-        &machine.endpoint,
-        &machine.token,
-        Some(&machine.environment_id),
-        method,
-        params,
-    )?;
-    if method == "social.access.issue" && value.get("endpoint").is_none() {
-        value["endpoint"] = Value::String(machine.endpoint);
-    }
-    Ok(value)
-}
-
-pub(crate) fn local_runtime_logs_rpc(
-    app: &AppHandle,
-    method: &str,
-    params: Value,
-) -> Result<Value, String> {
-    if !matches!(
-        method,
-        "runtimeLogs.bridge.describe" | "runtimeLogs.access.issue" | "runtimeLogs.terminals.append"
-    ) {
-        return Err("Unsupported native runtime log bridge operation".into());
-    }
-    let state: State<'_, RemoteConnections> = app.state();
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store_path(app)?)?
-            .into_iter()
-            .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-            .ok_or("Connect the local bycoda Host for runtime log tools")?
-    };
-    let mut value = rpc(
-        &machine.endpoint,
-        &machine.token,
-        Some(&machine.environment_id),
-        method,
-        params,
-    )?;
-    if method == "runtimeLogs.access.issue" {
-        value["endpoint"] = Value::String(machine.endpoint);
-    }
-    Ok(value)
+    let channel = NativeServiceChannel::connect(app)?;
+    channel.project(method, params, |value| {
+        let mut value = value.clone();
+        if method == "social.access.issue" && value.get("endpoint").is_none() {
+            value["endpoint"] = json!(channel.endpoint());
+        }
+        Ok(value)
+    })
 }
 
 pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<Value, String> {
+    // An unpaired local editor preserves its existing formatter-unavailable result.
     let state: State<'_, RemoteConnections> = app.state();
-    let machine = {
+    let paired = {
         let _guard = state
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        read(&store_path(app)?)?
-            .into_iter()
-            .find(|machine| is_local_sync(machine, "This computer (local sync)"))
+        read_uncached(&store_path(app)?)?
+            .iter()
+            .any(|m| is_local_sync(m, "This computer (local sync)"))
     };
-    let Some(machine) = machine else {
+    if !paired {
         return Ok(Value::Null);
-    };
-    rpc(
-        &machine.endpoint,
-        &machine.token,
-        Some(&machine.environment_id),
+    }
+    NativeServiceChannel::connect(app)?.project(
         "workspace.run",
-        json!({ "command": "format_text_file", "args": params }),
+        json!({"command":"format_text_file","args":params}),
+        |value| Ok(value.clone()),
     )
 }
 
@@ -1607,8 +1774,118 @@ pub(crate) fn local_editor_format_rpc(app: &AppHandle, params: Value) -> Result<
 pub(crate) struct NativeWorkspaceTransport {
     machine: StoredMachine,
     recovery: Option<RecoveryRoute>,
+    workspace: Option<Arc<native_workspace_transport::NativeWorkspaceChannel>>,
 }
 
+#[derive(Clone)]
+struct NativeRecoverySelection {
+    store: Arc<Mutex<()>>,
+    routes: Arc<RecoveryRoutes>,
+    path: PathBuf,
+    machine: StoredMachine,
+    pin: RecoveryRoute,
+}
+impl NativeRecoverySelection {
+    fn with_current<T>(&self, consume: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+        let _guard = self
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        validate_recovery_saved(&self.machine, &self.pin, &self.routes, &self.path)?;
+        consume()
+    }
+}
+fn validate_recovery_saved(
+    machine: &StoredMachine,
+    pin: &RecoveryRoute,
+    routes: &RecoveryRoutes,
+    path: &Path,
+) -> Result<(), String> {
+    if !routes.current(pin.revision)
+        || !read_uncached(path)?.iter().any(|current| {
+            same_request_route(machine, current)
+                && machine.local_host == current.local_host
+                && recovery_machine_matches(
+                    current,
+                    &pin.selected_endpoint,
+                    &machine.environment_id,
+                )
+        })
+        || !routes.current(pin.revision)
+    {
+        return Err("Native recovery connection changed or retired".into());
+    }
+    Ok(())
+}
+fn require_machine_environment(
+    machine: &StoredMachine,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    if expected.is_some_and(|expected| expected != machine.environment_id) {
+        return Err(
+            "The owning Host environment changed; reconnect this conversation before sending"
+                .into(),
+        );
+    }
+    Ok(())
+}
+fn machine_for_request(
+    state: &RemoteConnections,
+    path: &Path,
+    machine_id: &str,
+    expected_environment: Option<&str>,
+) -> Result<StoredMachine, String> {
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let machines = if expected_environment.is_some() {
+        Arc::new(read_uncached(path)?)
+    } else {
+        read_shared(path)?
+    };
+    let machine = machines
+        .iter()
+        .find(|machine| machine.id == machine_id)
+        .cloned()
+        .ok_or("Machine is no longer connected")?;
+    require_machine_environment(&machine, expected_environment)?;
+    Ok(machine)
+}
+
+pub(crate) struct NativeRecoveryReply {
+    value: Value,
+    guard: Option<crate::host_ws::native_profile::NativeProfileGuard>,
+    selection: NativeRecoverySelection,
+}
+impl NativeRecoveryReply {
+    pub(crate) fn project<T>(
+        self,
+        project: impl FnOnce(&Value) -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.inspect(project)
+    }
+    fn inspect<T>(&self, project: impl FnOnce(&Value) -> Result<T, String>) -> Result<T, String> {
+        let check = || {
+            if let Some(guard) = &self.guard {
+                guard.check().map_err(native_ws_failure)?;
+            }
+            Ok(())
+        };
+        self.selection.with_current(check)?;
+        let projected = project(&self.value)?;
+        self.selection.with_current(|| {
+            check()?;
+            Ok(projected)
+        })
+    }
+    #[cfg(test)]
+    pub(crate) fn disclose(self) -> Result<Value, String> {
+        self.project(|value| Ok(value.clone()))
+    }
+}
+
+#[derive(Clone)]
 struct RecoveryRoute {
     revision: u64,
     selected_endpoint: String,
@@ -1647,6 +1924,7 @@ impl NativeWorkspaceTransport {
         let transport = Self {
             machine,
             recovery: Some(recovery),
+            workspace: None,
         };
         transport.assert_recovery_current(app)?;
         let descriptor = rpc(
@@ -1667,6 +1945,7 @@ impl NativeWorkspaceTransport {
             return Err("The Native-selected local Host cannot inspect retained reports".into());
         }
         transport.assert_recovery_current(app)?;
+        state.observe_ws_capability(&transport.machine, &descriptor);
         Ok(transport)
     }
     pub(crate) fn assert_recovery_current(&self, app: &AppHandle) -> Result<(), String> {
@@ -1680,12 +1959,13 @@ impl NativeWorkspaceTransport {
         app: &AppHandle,
         method: &str,
         params: Value,
-    ) -> Result<Value, String> {
+    ) -> Result<NativeRecoveryReply, String> {
         let state = app
             .try_state::<RemoteConnections>()
             .ok_or("Native recovery connection unavailable")?;
-        self.call_recovery_saved(&state, &store_path(app)?, method, params)
+        self.call_recovery_guarded_saved(&state, &store_path(app)?, method, params)
     }
+    #[cfg(test)]
     fn call_recovery_saved(
         &self,
         state: &RemoteConnections,
@@ -1693,12 +1973,109 @@ impl NativeWorkspaceTransport {
         method: &str,
         params: Value,
     ) -> Result<Value, String> {
-        self.assert_recovery_saved(state, path)?;
-        let value = self.call(method, params)?;
-        self.assert_recovery_saved(state, path)?;
-        Ok(value)
+        self.call_recovery_guarded_saved(state, path, method, params)?
+            .disclose()
+    }
+    fn call_recovery_guarded_saved(
+        &self,
+        state: &RemoteConnections,
+        path: &Path,
+        method: &str,
+        params: Value,
+    ) -> Result<NativeRecoveryReply, String> {
+        use crate::host_ws::native_profile::NativeProfileBroker;
+        if !matches!(
+            method,
+            "native.buffers.recovery.list"
+                | "native.buffers.recovery.read"
+                | "native.buffers.recovery.status"
+        ) {
+            return Err("Unsupported Native profile recovery operation".into());
+        }
+        let selection = self.with_recovery_saved(state, path, || {
+            Ok(NativeRecoverySelection {
+                store: state.store.clone(),
+                routes: state.recovery_routes.clone(),
+                path: path.to_owned(),
+                machine: self.machine.clone(),
+                pin: self
+                    .recovery
+                    .as_ref()
+                    .ok_or("Native recovery connection unavailable")?
+                    .clone(),
+            })
+        })?;
+        let pending = self.with_recovery_saved(state, path, || {
+            if !state.ws_enabled(&self.machine)
+                || !NativeProfileBroker::supports_params(method, &params)
+            {
+                return Ok(None);
+            }
+            let route = NativeRoute::new(
+                &self.machine.id,
+                &self.machine.environment_id,
+                &self.machine.endpoint,
+                &self.machine.token,
+                &ws_fingerprint(&self.machine),
+            )
+            .map_err(native_ws_failure)?;
+            let caller = state
+                .native_profile_ws
+                .capture(route)
+                .map_err(native_ws_failure)?;
+            caller
+                .begin(method, params.clone(), RequestOptions::default())
+                .map(Some)
+                .map_err(native_ws_failure)
+        })?;
+        let result = match pending {
+            Some(pending) => match pending.wait() {
+                Ok(reply) => {
+                    let (value, guard) = reply.into_guarded();
+                    NativeRecoveryReply {
+                        value,
+                        guard: Some(guard),
+                        selection,
+                    }
+                }
+                // Unsupported is reported only before domain dispatch. Old Host
+                // compatibility must never resend a dispatched/uncertain call.
+                Err(error) if error.unsupported => {
+                    self.assert_recovery_saved(state, path)?;
+                    NativeRecoveryReply {
+                        value: self.rpc_compat(method, params)?,
+                        guard: None,
+                        selection,
+                    }
+                }
+                Err(error) => return Err(native_ws_failure(error)),
+            },
+            None => {
+                self.assert_recovery_saved(state, path)?;
+                NativeRecoveryReply {
+                    value: self.rpc_compat(method, params)?,
+                    guard: None,
+                    selection,
+                }
+            }
+        };
+        self.with_recovery_saved(state, path, || {
+            if let Some(guard) = &result.guard {
+                guard.check().map_err(native_ws_failure)?;
+            }
+            Ok(())
+        })?;
+        Ok(result)
     }
     fn assert_recovery_saved(&self, state: &RemoteConnections, path: &Path) -> Result<(), String> {
+        self.with_recovery_saved(state, path, || Ok(()))
+    }
+    fn with_recovery_saved<T>(
+        &self,
+        state: &RemoteConnections,
+        path: &Path,
+        consume: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
         let _guard = state
             .store
             .lock()
@@ -1707,21 +2084,8 @@ impl NativeWorkspaceTransport {
             .recovery
             .as_ref()
             .ok_or("Native recovery connection unavailable")?;
-        let current = state.recovery_routes.current(pin.revision)
-            && read_uncached(path)?.iter().any(|current| {
-                same_request_route(&self.machine, current)
-                    && self.machine.local_host == current.local_host
-                    && recovery_machine_matches(
-                        current,
-                        &pin.selected_endpoint,
-                        &self.machine.environment_id,
-                    )
-            })
-            && state.recovery_routes.current(pin.revision);
-        if !current {
-            return Err("Native recovery connection changed or retired".into());
-        }
-        Ok(())
+        validate_recovery_saved(&self.machine, pin, &state.recovery_routes, path)?;
+        consume()
     }
     #[cfg(test)]
     pub(crate) fn for_test(endpoint: String) -> Self {
@@ -1736,48 +2100,14 @@ impl NativeWorkspaceTransport {
                 local_host: true,
             },
             recovery: None,
+            workspace: None,
         }
     }
     pub(crate) fn connect(app: &AppHandle, capability: &str) -> Result<Self, String> {
-        let state: State<'_, RemoteConnections> = app.state();
-        let machine = {
-            let _guard = state
-                .store
-                .lock()
-                .map_err(|_| "Connection store is locked")?;
-            read(&store_path(app)?)?
-                .into_iter()
-                .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-                .ok_or("Connect the local bycoda Host for managed native execution")?
-        };
-        let descriptor = rpc(
-            &machine.endpoint,
-            &machine.token,
-            Some(&machine.environment_id),
-            "environment.describe",
-            json!({}),
-        )?;
-        if descriptor["environmentId"] != machine.environment_id
-            || descriptor["protocolVersion"] != 1
-        {
-            return Err(
-                "Local Host identity or protocol changed; reconnect before managed execution"
-                    .into(),
-            );
-        }
-        if !descriptor["capabilities"]
-            .as_array()
-            .is_some_and(|items| items.iter().any(|item| item.as_str() == Some(capability)))
-        {
-            return Err("Update bycoda Host to use managed native execution safely. The project checkout will not be used as a fallback.".into());
-        }
-        Ok(Self {
-            machine,
-            recovery: None,
-        })
+        native_workspace_transport::NativeWorkspaceChannel::connect(app, capability)
     }
 
-    pub(crate) fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    fn rpc_compat(&self, method: &str, params: Value) -> Result<Value, String> {
         if !matches!(
             method,
             "native.turn.begin"
@@ -1835,65 +2165,38 @@ pub(crate) fn local_conversation_environment(app: &AppHandle) -> Result<String, 
         .ok_or("Connect the local bycoda Host for history import".into())
 }
 
-pub(crate) fn local_conversation_rpc(
+pub(crate) fn conversation_machine_call(
     app: &AppHandle,
-    method: &str,
-    params: Value,
+    action: &str,
+    _input: &Value,
+    _owner: &str,
+    _expires_at: &Value,
 ) -> Result<Value, String> {
-    if !matches!(
-        method,
-        "conversation.bridge.describe"
-            | "conversation.access.issue"
-            | "conversation.desktop.take"
-            | "conversation.desktop.finish"
-            | "conversation.desktop.authorize"
-    ) {
-        return Err("Unsupported native conversation bridge operation".into());
+    if action != "machines.list" {
+        return Err("Device operations require their original desktop issuer".into());
     }
     let state: State<'_, RemoteConnections> = app.state();
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store_path(app)?)?
-            .into_iter()
-            .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-            .ok_or("Connect the local bycoda Host for Conversation Tools")?
-    };
-    let mut value = rpc(
-        &machine.endpoint,
-        &machine.token,
-        Some(&machine.environment_id),
-        method,
-        params,
-    )?;
-    if method == "conversation.access.issue" {
-        value["endpoint"] = Value::String(machine.endpoint);
-    }
-    Ok(value)
+    let _guard = state
+        .store
+        .lock()
+        .map_err(|_| "Connection store is locked")?;
+    let machines = read_uncached(&store_path(app)?)?;
+    Ok(
+        json!({"machines": machines.iter().map(|machine| json!({"id":machine.id,"name":machine.name,
+        "environmentId":machine.environment_id,"localHost":machine.local_host})).collect::<Vec<_>>() }),
+    )
 }
 
-pub(crate) fn conversation_machine_call(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn conversation_machine_call_pinned(
     app: &AppHandle,
     action: &str,
     input: &Value,
     owner: &str,
     expires_at: &Value,
-) -> Result<Value, String> {
-    let state: State<'_, RemoteConnections> = app.state();
-    let machines = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store_path(app)?)?
-    };
-    if action == "machines.list" {
-        return Ok(
-            json!({"machines": machines.iter().map(|machine| json!({"id": machine.id, "name": machine.name, "environmentId": machine.environment_id, "localHost": machine.local_host})).collect::<Vec<_>>() }),
-        );
-    }
+    issuer: &Arc<NativeServiceChannel>,
+    taken: &NativeServiceReply,
+) -> Result<NativeDeviceReply, String> {
     if !matches!(
         action,
         "devices.status"
@@ -1906,16 +2209,17 @@ pub(crate) fn conversation_machine_call(
             | "devices.capture"
             | "devices.action"
     ) {
-        return Err("Unsupported machine tool".into());
+        return Err("Unsupported paired device operation".into());
     }
+    taken.check()?;
+    if !taken.is_issued_by(issuer) || !issuer.is_current() {
+        return Err("The original desktop issuer changed".into());
+    }
+    let state: State<'_, RemoteConnections> = app.state();
     let id = input
         .get("machineId")
         .and_then(Value::as_str)
         .ok_or("Explicit machineId required")?;
-    let machine = machines
-        .iter()
-        .find(|machine| machine.id == id)
-        .ok_or("Selected machine is no longer connected")?;
     let mut params = input.clone();
     params
         .as_object_mut()
@@ -1925,14 +2229,45 @@ pub(crate) fn conversation_machine_call(
         params["previewOwner"] = json!(owner);
         params["previewExpiresAt"] = expires_at.clone();
     }
-    let value = machine_rpc(&state, machine, action, params, true)
-        .map_err(|error| error.replace(&machine.token, "[machine credential redacted]"))?;
-    serde_json::from_str(
-        &value
-            .to_string()
-            .replace(&machine.token, "[machine credential redacted]"),
-    )
-    .map_err(|_| "Invalid machine tool response".into())
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "Clock unavailable")?
+        .as_millis();
+    let remaining = expires_at
+        .as_u64()
+        .map(u128::from)
+        .and_then(|expires| expires.checked_sub(now))
+        .filter(|remaining| *remaining > 0)
+        .ok_or("The original desktop device request expired before dispatch")?;
+    let remaining = std::time::Duration::from_millis(
+        u64::try_from(remaining).map_err(|_| "Invalid desktop request deadline")?,
+    );
+    let started = std::time::Instant::now();
+    let grant_deadline = started
+        .checked_add(remaining)
+        .ok_or("Invalid desktop request deadline")?;
+    let deadline = (started + rpc_timeout(action, &params)).min(grant_deadline);
+    let environment = {
+        let _guard = state
+            .store
+            .lock()
+            .map_err(|_| "Connection store is locked")?;
+        read_uncached(&store_path(app)?)?
+            .into_iter()
+            .find(|m| m.id == id)
+            .ok_or("Selected machine is no longer connected")?
+            .environment_id
+    };
+    let channel = native_devices::NativeDeviceChannel::connect(
+        app,
+        &state,
+        id,
+        &environment,
+        taken,
+        deadline,
+        grant_deadline,
+    )?;
+    channel.request(action, params, taken, deadline)
 }
 
 #[tauri::command(async)]
@@ -1940,40 +2275,29 @@ pub fn social_authority_status(
     app: AppHandle,
     state: State<'_, RemoteConnections>,
 ) -> Result<Value, String> {
-    // Read under the store lock, but never hold it across the HTTP call (up to
-    // its timeout), which would stall every other connection command.
+    let source = NativeServiceChannel::connect(&app)?;
     let machines = {
         let _guard = state
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        read(&store_path(&app)?)?
+        read_uncached(&store_path(&app)?)?
     };
-    let source = machines
-        .iter()
-        .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-        .ok_or("Connect the local host first")?;
-    let mut value = rpc(
-        &source.endpoint,
-        &source.token,
-        Some(&source.environment_id),
-        "social.native.status",
-        json!({}),
-    )?;
-    value["sourceMachineId"] = json!(source.id);
-    let authority_id = value
-        .get("authority")
-        .and_then(|v| v.get("environmentId"))
-        .and_then(Value::as_str)
-        .map(str::to_owned);
-    if let Some(id) = authority_id {
-        value["authorityMachineId"] = machines
-            .iter()
-            .find(|m| m.environment_id == id)
-            .map(|m| json!(m.id))
-            .unwrap_or(Value::Null);
-    }
-    Ok(value)
+    source.project("social.native.status", json!({}), |value| {
+        let mut value = value.clone();
+        value["sourceMachineId"] = json!(source.machine_id());
+        if let Some(id) = value["authority"]["environmentId"]
+            .as_str()
+            .map(str::to_owned)
+        {
+            value["authorityMachineId"] = machines
+                .iter()
+                .find(|m| m.environment_id == id)
+                .map(|m| json!(m.id))
+                .unwrap_or(Value::Null);
+        }
+        Ok(value)
+    })
 }
 
 #[tauri::command(async)]
@@ -1984,59 +2308,68 @@ pub fn social_authority_connect(
     mapping: Value,
     source_endpoint: Option<String>,
 ) -> Result<Value, String> {
-    let machines = {
+    let source = NativeServiceChannel::connect(&app)?;
+    let Some(id) = machine_id else {
+        return source.project("social.native.reset", json!({}), |value| Ok(value.clone()));
+    };
+    let target = {
         let _guard = state
             .store
             .lock()
             .map_err(|_| "Connection store is locked")?;
-        read(&store_path(&app)?)?
+        read_uncached(&store_path(&app)?)?
+            .into_iter()
+            .find(|m| m.id == id && m.environment_id != source.environment_id())
+            .ok_or("Choose a different paired host")?
     };
-    let source = machines
-        .iter()
-        .find(|machine| is_local_sync(machine, "This computer (local sync)"))
-        .ok_or("Connect the local host first")?;
-    let Some(id) = machine_id else {
-        return rpc(
-            &source.endpoint,
-            &source.token,
-            Some(&source.environment_id),
-            "social.native.reset",
-            json!({}),
-        );
-    };
-    let target = machines
-        .iter()
-        .find(|machine| machine.id == id && machine.environment_id != source.environment_id)
-        .ok_or("Choose a different paired host")?;
     let source_url = source_endpoint
         .ok_or("Enter this host's HTTPS endpoint reachable from the central authority")?;
-    let enrollment = rpc(
-        &source.endpoint,
-        &source.token,
-        Some(&source.environment_id),
+    let source_url = social_peer_endpoint(&source_url)?;
+    let authority_url = social_peer_endpoint(&target.endpoint)?;
+    let peer = NativeServiceChannel::peer(&app, &target.id, &target.environment_id)?;
+    let enrollment = source.request(
         "social.native.enroll",
-        json!({"environmentId": target.environment_id}),
+        json!({"environmentId":target.environment_id}),
     )?;
-    let token = enrollment
-        .get("token")
-        .and_then(Value::as_str)
-        .ok_or("Social enrollment failed")?;
-    // Dedicated peer token stays between native code and the hosts; it never
-    // reaches the renderer and cannot perform general device operations.
-    rpc(
-        &target.endpoint,
-        &target.token,
-        Some(&target.environment_id),
+    let token = enrollment.project(|value| {
+        value["token"]
+            .as_str()
+            .map(str::to_owned)
+            .ok_or("Social enrollment failed".into())
+    })?;
+    enrollment.check()?;
+    // The dedicated enrollment token is forwarded only to its original paired
+    // authority. It is never a device/session tool principal or renderer value.
+    let registered = peer.request(
         "social.native.register",
-        json!({"environmentId": source.environment_id, "endpoint": source_url, "token": token, "mapping": mapping}),
+        json!({"environmentId":source.environment_id(),
+        "endpoint":source_url,"token":token,"mapping":mapping}),
     )?;
-    rpc(
-        &source.endpoint,
-        &source.token,
-        Some(&source.environment_id),
+    registered.check()?;
+    enrollment.check()?;
+    let result = source.request(
         "social.native.authority",
-        json!({"environmentId": target.environment_id, "endpoint": target.endpoint, "mapping": mapping}),
-    )
+        json!({"environmentId":target.environment_id,
+        "endpoint":authority_url,"mapping":mapping}),
+    )?;
+    registered.check()?;
+    result.project(|value| Ok(value.clone()))
+}
+
+fn social_peer_endpoint(value: &str) -> Result<String, String> {
+    let url = url::Url::parse(value).map_err(|_| "Use a stable HTTPS social authority endpoint")?;
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !matches!(url.path(), "" | "/")
+        || !(url.scheme() == "https"
+            || (url.scheme() == "http"
+                && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))))
+    {
+        return Err("Use a stable HTTPS social authority endpoint or loopback endpoint. An SSH tunnel address cannot be stored as peer authority.".into());
+    }
+    Ok(url.origin().ascii_serialization())
 }
 
 fn supported_remote_method(method: &str) -> bool {
@@ -2665,7 +2998,351 @@ pub fn remote_ssh_cancel(
 }
 
 #[cfg(test)]
+#[path = "remote_recovery_ws_tests.rs"]
+mod recovery_ws_tests;
+
+#[cfg(test)]
 mod tests {
+    #[test]
+    fn public_device_reply_retirement_preserves_post_effect_unknown_classification() {
+        use crate::host_ws::tests::{accept, hello, next, result, Server};
+        for (method, params, value, effect) in [
+            (
+                "devices.action",
+                serde_json::json!({"deviceId":"device","action":{"type":"home"}}),
+                serde_json::json!("accepted"),
+                true,
+            ),
+            (
+                "devices.capture",
+                serde_json::json!({"deviceId":"device"}),
+                serde_json::json!({"mime":"image/png","base64":"AAAA","capturedAt":"now"}),
+                true,
+            ),
+            (
+                "devices.setup",
+                serde_json::json!({"agentAccess":false}),
+                serde_json::json!({"running":false,"installed":true,"agentInstalled":false,"platform":"win32","platforms":[]}),
+                true,
+            ),
+            (
+                "devices.stop",
+                serde_json::json!({}),
+                serde_json::json!({"running":false,"installed":true,"agentInstalled":false,"platform":"win32","platforms":[]}),
+                true,
+            ),
+            (
+                "devices.preview.mobile.start",
+                serde_json::json!({"projectId":"project","requestId":"preview-request","deviceId":"device","url":"exp://127.0.0.1:8081"}),
+                serde_json::json!({"id":"preview","requestId":"preview-request","deviceId":"device","state":"ready","stages":[],"verification":"launch-only","updatedAt":"now"}),
+                true,
+            ),
+            (
+                "devices.preview.mobile.status",
+                serde_json::json!({"projectId":"project","requestId":"preview-request"}),
+                serde_json::json!({"id":"preview","requestId":"preview-request","deviceId":"device","state":"ready","stages":[],"verification":"launch-only","updatedAt":"now"}),
+                false,
+            ),
+            (
+                "devices.preview.impact",
+                serde_json::json!({"projectId":"project"}),
+                serde_json::json!({"activeCount":0,"owned":[],"otherActiveCount":0}),
+                false,
+            ),
+            (
+                "devices.list",
+                serde_json::json!({}),
+                serde_json::json!({"devices":[],"errors":[]}),
+                false,
+            ),
+        ] {
+            let server = Server::spawn(move |listener| async move {
+                let mut socket = accept(&listener).await;
+                hello(&mut socket, &[method], "host.1").await;
+                let request = next(&mut socket).await;
+                result(&mut socket, &request, value).await;
+                tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+            });
+            let route = super::NativeRoute::new(
+                "machine.1",
+                "host.1",
+                &server.endpoint,
+                "secret-native-token",
+                "principal",
+            )
+            .unwrap();
+            let broker = super::HostWsBroker::default();
+            let reply = broker
+                .request(
+                    &route,
+                    "device-panel",
+                    method,
+                    params,
+                    super::RequestOptions {
+                        request_id: Some("device-panel.request".into()),
+                        ..super::RequestOptions::default()
+                    },
+                )
+                .unwrap();
+            let generation = reply.generation;
+            let ipc_reply = reply.clone();
+            let route_reply = reply.clone();
+            let (_value, guard) = reply.into_guarded_result();
+            broker.detach("device-panel");
+            let error = super::check_remote_reply(&guard, method).unwrap_err();
+            assert_eq!(
+                error.contains("operation outcome is unknown"),
+                effect,
+                "{method}: {error}"
+            );
+            // Exercise the typed IPC path too. A real resource failure retains
+            // its original identity; a final saved-route failure receives only
+            // the known envelope identity, never a fabricated command receipt.
+            for (reply, route_changed) in [(ipc_reply, false), (route_reply, true)] {
+                let error = super::disclose_public_reply(
+                    reply,
+                    method,
+                    Some("device-panel.request".into()),
+                    None,
+                    |reply| {
+                        if route_changed {
+                            Err(super::WsFailure::local(
+                                "RPC_WS_ROUTE_CHANGED",
+                                "Saved route changed after the Host accepted the request",
+                            ))
+                        } else {
+                            reply.disclose()
+                        }
+                    },
+                )
+                .unwrap_err();
+                assert_eq!(error.uncertain, effect, "{method}: {error}");
+                assert!(!error.unsupported, "{method}: {error}");
+                assert_eq!(error.generation, Some(generation));
+                assert_eq!(error.request_id.as_deref(), Some("device-panel.request"));
+                assert!(error.command_id.is_none());
+            }
+            broker.shutdown();
+        }
+    }
+    #[test]
+    fn device_http_outcomes_preserve_admitted_uncertainty_without_reclassifying_denials() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::{net::TcpListener, sync::mpsc, thread, time::Duration};
+
+        let unknown = br#"{"error":"authority expired","code":"HOST_DEVICE_OPERATION_UNCONFIRMED","delivery":"unknown"}"#;
+        let denied = br#"{"error":"authorization denied"}"#;
+        let malformed = b"{broken";
+        let mut cases = vec![
+            ("devices.setup", 400, unknown.to_vec(), 0, "unknown"),
+            ("devices.stop", 401, unknown.to_vec(), 0, "unknown"),
+            (
+                "devices.preview.mobile.start",
+                403,
+                unknown.to_vec(),
+                0,
+                "unknown",
+            ),
+            ("devices.capture", 400, unknown.to_vec(), 0, "unknown"),
+            ("devices.setup", 401, denied.to_vec(), 0, "auth"),
+            ("devices.stop", 403, denied.to_vec(), 0, "auth"),
+            (
+                "devices.setup",
+                400,
+                br#"{"error":"choose agentAccess"}"#.to_vec(),
+                0,
+                "rejected",
+            ),
+            (
+                "devices.preview.mobile.start",
+                400,
+                br#"{"error":"preview busy","delivery":"not-sent"}"#.to_vec(),
+                0,
+                "rejected",
+            ),
+            ("devices.status", 401, unknown.to_vec(), 0, "auth"),
+            (
+                "devices.preview.mobile.status",
+                400,
+                unknown.to_vec(),
+                0,
+                "rejected",
+            ),
+            (
+                "devices.preview.impact",
+                400,
+                unknown.to_vec(),
+                0,
+                "rejected",
+            ),
+            (
+                "devices.setup",
+                400,
+                br#"{"error":"unconfirmed","code":"HOST_DEVICE_OPERATION_UNCONFIRMED"}"#.to_vec(),
+                0,
+                "rejected",
+            ),
+            (
+                "devices.setup",
+                400,
+                br#"{"error":"unconfirmed","delivery":"unknown"}"#.to_vec(),
+                0,
+                "rejected",
+            ),
+            ("devices.capture", 200, malformed.to_vec(), 0, "unknown"),
+            ("devices.setup", 401, malformed.to_vec(), 0, "unknown"),
+            (
+                "devices.stop",
+                200,
+                br#"{"result":true}"#.to_vec(),
+                8,
+                "unknown",
+            ),
+            ("devices.status", 200, malformed.to_vec(), 0, "invalid"),
+        ];
+        cases.push((
+            "devices.setup",
+            400,
+            vec![b'x'; super::MAX_RESPONSE_BYTES as usize + 1],
+            0,
+            "unknown",
+        ));
+
+        for (method, status, body, extra_length, expected) in cases {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let (finished, wait_finished) = mpsc::channel();
+            let server = thread::spawn(move || {
+                listener.set_nonblocking(true).unwrap();
+                let deadline = std::time::Instant::now() + Duration::from_secs(5);
+                let (mut stream, _) = loop {
+                    match listener.accept() {
+                        Ok(connection) => break connection,
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                            assert!(std::time::Instant::now() < deadline, "No HTTP request");
+                            thread::sleep(Duration::from_millis(2));
+                        }
+                        Err(error) => panic!("HTTP fixture failed: {error}"),
+                    }
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                stream
+                    .set_write_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut first = String::new();
+                reader.read_line(&mut first).unwrap();
+                assert_eq!(first.trim_end(), "POST /rpc HTTP/1.1");
+                let mut size = None;
+                loop {
+                    let mut line = String::new();
+                    assert!(reader.read_line(&mut line).unwrap() > 0);
+                    if line == "\r\n" {
+                        break;
+                    }
+                    if let Some(length) = line.to_ascii_lowercase().strip_prefix("content-length:")
+                    {
+                        size = Some(length.trim().parse::<usize>().unwrap());
+                    }
+                }
+                let mut request = vec![0; size.unwrap()];
+                reader.read_exact(&mut request).unwrap();
+                let request: serde_json::Value = serde_json::from_slice(&request).unwrap();
+                assert_eq!(request["method"], method);
+                assert_eq!(request["environmentId"], "fixture-env");
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} Fixture\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len() + extra_length
+                )
+                .unwrap();
+                // An oversized body may legitimately close at the bounded read.
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+                drop(reader);
+                drop(stream);
+                wait_finished.recv_timeout(Duration::from_secs(5)).unwrap();
+                assert_eq!(
+                    listener.accept().unwrap_err().kind(),
+                    std::io::ErrorKind::WouldBlock,
+                    "A device HTTP request was replayed"
+                );
+            });
+            let error = super::rpc_timed(
+                &endpoint,
+                "fixture-token",
+                Some("fixture-env"),
+                method,
+                serde_json::json!({}),
+                Duration::from_secs(4),
+            )
+            .unwrap_err();
+            finished.send(()).unwrap();
+            server.join().unwrap();
+            assert_eq!(
+                error.contains("[RPC_DEVICE_OUTCOME_UNKNOWN]"),
+                expected == "unknown",
+                "{method}/{status}: {error}"
+            );
+            assert_eq!(
+                error.contains("[RPC_AUTHORIZATION]"),
+                expected == "auth",
+                "{method}/{status}: {error}"
+            );
+            if expected == "rejected" {
+                assert!(error.starts_with("Host rejected request:"), "{error}");
+            }
+            if expected == "invalid" {
+                assert_eq!(error, "Invalid host response");
+            }
+            if expected == "unknown" {
+                assert!(error.contains("Do not repeat the request"));
+            }
+        }
+    }
+
+    #[test]
+    fn compatibility_deadline_expiry_rejects_before_any_http_connection() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let error = super::rpc_until(
+            &endpoint,
+            "fixture",
+            Some("env"),
+            "projects.list",
+            serde_json::json!({}),
+            std::time::Instant::now() - std::time::Duration::from_secs(1),
+        )
+        .unwrap_err();
+        assert!(error.contains("deadline"));
+        assert_eq!(
+            listener.accept().unwrap_err().kind(),
+            std::io::ErrorKind::WouldBlock
+        );
+    }
+
+    #[test]
+    fn social_peer_authority_requires_a_stable_host_reachable_endpoint_before_enrollment() {
+        for endpoint in [
+            "ssh://fixture@host:3774",
+            "http://remote-host:3774",
+            "https://user:secret@host",
+            "https://host/path",
+            "https://host?key=secret",
+        ] {
+            assert!(super::social_peer_endpoint(endpoint).is_err());
+        }
+        for endpoint in [
+            "https://host.example",
+            "http://127.0.0.1:3774",
+            "http://localhost:3774",
+        ] {
+            assert_eq!(super::social_peer_endpoint(endpoint).unwrap(), endpoint);
+        }
+    }
     #[test]
     fn oversized_canonical_writes_select_http_before_dispatch_and_keep_body_identities() {
         use std::io::{BufRead, BufReader, Read, Write};
@@ -3832,6 +4509,7 @@ mod tests {
         };
         write(&path, std::slice::from_ref(&machine)).unwrap();
         let transport = NativeWorkspaceTransport {
+            workspace: None,
             machine: machine.clone(),
             recovery: Some(RecoveryRoute {
                 revision: state.recovery_routes.capture().unwrap(),
@@ -3852,6 +4530,7 @@ mod tests {
         }
         assert!(transport.assert_recovery_saved(&state, &path).is_err());
         let fresh = NativeWorkspaceTransport {
+            workspace: None,
             machine: machine.clone(),
             recovery: Some(RecoveryRoute {
                 revision: state.recovery_routes.capture().unwrap(),
@@ -3893,6 +4572,7 @@ mod tests {
         };
         write(&path, std::slice::from_ref(&machine)).unwrap();
         let transport = NativeWorkspaceTransport {
+            workspace: None,
             machine: machine.clone(),
             recovery: Some(RecoveryRoute {
                 revision: state.recovery_routes.capture().unwrap(),

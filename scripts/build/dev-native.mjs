@@ -11,14 +11,14 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, readFile, realpath, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DevPortLeases } from "../../host/dev-port-leases.ts";
 import {
   WorkspaceBootstrapService,
   workspaceEnvironmentVariables,
 } from "../../host/workspace-bootstrap.ts";
-import { sourceIdentity } from "./build-info.mjs";
+import { sourceIdentity, fingerprintFiles, parseBuildIdentity } from "./build-info.mjs";
 import { chromium } from "@playwright/test";
 import { verifyNativeIdentity } from "./dev-shot.mjs";
 import { acceptanceControl } from "./dev-native-control.mjs";
@@ -277,8 +277,39 @@ export async function waitForNativePage(
   );
 }
 
+/** Frozen inputs retain their original repository identity without a synthetic Git checkout. */
+export async function frozenSourceIdentity(root) {
+  const canonicalRoot = await realpath(root);
+  const record = JSON.parse(await readFile(join(root, "frozen-source.json"), "utf8"));
+  const identity = parseBuildIdentity(record.identity);
+  if (record.schemaVersion !== 1 || !identity || identity.channel !== "dev" || !Array.isArray(record.files) || !record.files.length)
+    throw new Error("Invalid frozen source manifest");
+  const files = new Map();
+  for (const entry of record.files) {
+    const name = entry?.path;
+    if (typeof name !== "string" || !name || name.includes("\\") || isAbsolute(name) || name.split("/").some((part) => !part || part === "." || part === "..") || files.has(name))
+      throw new Error("Invalid frozen source path");
+    const path = join(root, name);
+    const actual = await realpath(path);
+    const rel = relative(canonicalRoot, actual);
+    if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel) || !(await lstat(path)).isFile())
+      throw new Error("Frozen source escapes its root or is not a regular file");
+    const bytes = await readFile(path);
+    if (hash(bytes) !== entry.sha256) throw new Error(`Frozen source changed: ${name}`);
+    files.set(name, bytes);
+  }
+  if (fingerprintFiles(files) !== identity.sourceFingerprint)
+    throw new Error("Frozen source fingerprint mismatch");
+  const { repositoryId, branch, head, sourceFingerprint, dirtyPaths } = identity;
+  return { repositoryId, branch, head, sourceFingerprint, dirtyPaths };
+}
+
 export async function runNativeDev(args = process.argv.slice(2)) {
-  const root = await realpath(resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
+  const frozenRoot = option(args, "--frozen-source");
+  const root = await realpath(frozenRoot ? resolve(frozenRoot) : resolve(dirname(fileURLToPath(import.meta.url)), "../.."));
+  const readSource = () => frozenRoot ? frozenSourceIdentity(root) : sourceIdentity(root);
+  // Validate the frozen receipt before installing dependencies or starting children.
+  if (frozenRoot) await readSource();
   const explicitCargoTarget = option(args, "--cargo-target", process.env.CARGO_TARGET_DIR);
   if (explicitCargoTarget && !isAbsolute(explicitCargoTarget))
     throw new Error("--cargo-target must be absolute");
@@ -358,7 +389,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         BYCODA_DEV_HOST_ENTRY: join(root, "build", "host", "bycoda-host.mjs"),
         BYCODA_DEV_NODE_EXECUTABLE: process.execPath,
       };
-      const source = await sourceIdentity(root);
+      const source = await readSource();
       const buildId = `dev-${Date.now()}-${hash(`${workspaceId}/${lease.runId}`).slice(0, 12)}`;
       const manifest = {
         schemaVersion: 1,
@@ -369,7 +400,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         ...source,
         capturedAt: Date.now(),
         components: { web: buildId, native: buildId, host: buildId },
-        includedSources: [{ repositoryId: source.repositoryId, sourceHead: source.head }],
+        includedSources: source.dirtyPaths.length ? [] : [{ repositoryId: source.repositoryId, sourceHead: source.head }],
       };
       env.BYCODA_BUILD_MANIFEST = join(dirname(environment.executableRunDir), "build-info.json");
       await writeFile(env.BYCODA_BUILD_MANIFEST, `${JSON.stringify(manifest, null, 2)}\n`, {
@@ -413,7 +444,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
             });
           },
         );
-        if (JSON.stringify(await sourceIdentity(root)) !== JSON.stringify(source))
+        if (JSON.stringify(await readSource()) !== JSON.stringify(source))
           throw new Error(
             "Source changed during native build; restart this run to capture the current source",
           );
@@ -508,6 +539,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
         }
         const record = {
           schemaVersion: 1,
+          ...(frozenRoot ? { frozenSourceRoot: root, frozenSourceManifest: join(root, "frozen-source.json") } : {}),
           ...environment,
           cargoTargetDir: explicitCargoTarget ?? environment.cargoTargetDir,
           pid: native.pid,
@@ -591,7 +623,7 @@ export async function runNativeDev(args = process.argv.slice(2)) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv.includes("--help"))
     console.log(
-      "pnpm dev:native [--bootstrap] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls] [--reuse-profile-run OWN_STOPPED_DEV_RECORD]\nBuild and supervise an isolated debug app, Host and Vite run. Ctrl+C cancels this run.",
+      "pnpm dev:native [--bootstrap] [--frozen-source ROOT] [--workspace-id ID] [--run-id ID] [--shared-target ABSOLUTE_CACHE_ROOT] [--cargo-target ABSOLUTE_TARGET] [--acceptance-controls] [--reuse-profile-run OWN_STOPPED_DEV_RECORD]\nBuild and supervise an isolated debug app, Host and Vite run. Frozen roots require frozen-source.json with original identity and per-file SHA-256 inventory. Ctrl+C cancels this run.",
     );
   else
     runNativeDev().catch((error) => {

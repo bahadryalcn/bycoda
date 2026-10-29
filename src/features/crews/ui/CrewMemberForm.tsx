@@ -84,6 +84,7 @@ export function CrewMemberForm({
   groups,
   groupSuggestions = [],
   nameError,
+  modelError,
   advancedExtra,
   autoFocus,
 }: {
@@ -95,6 +96,8 @@ export function CrewMemberForm({
   groups?: boolean;
   groupSuggestions?: string[];
   nameError?: string;
+  /** Shown under the model choice when no model is selected (save was attempted). */
+  modelError?: string;
   advancedExtra?: ReactNode;
   autoFocus?: boolean;
 }) {
@@ -233,7 +236,7 @@ export function CrewMemberForm({
             {agent.candidates.length ? (
               <ul
                 aria-label={t("Model ratings")}
-                className="flex flex-col divide-y divide-(--ui-tone-neutral-border) rounded-lg border border-(--ui-tone-neutral-border)"
+                className="flex flex-col gap-1 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-1"
               >
                 {agent.candidates.map((c) => {
                   const model = catalogModels(catalog).find(
@@ -332,9 +335,14 @@ export function CrewMemberForm({
             </p>
           </>
         )}
+        {modelError ? (
+          <p role="alert" className="text-ui-caption text-danger">
+            {modelError}
+          </p>
+        ) : null}
       </div>
       {advancedExtra ? (
-        <div className="flex flex-col gap-2 border-t border-(--ui-tone-neutral-border) pt-2">
+        <div className="flex flex-col gap-2 pt-1">
           <Button
             variant="ghost"
             motion="none"

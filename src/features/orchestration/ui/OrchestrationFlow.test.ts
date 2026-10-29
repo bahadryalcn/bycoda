@@ -181,17 +181,17 @@ describe("orchestration composer and card", () => {
         }),
       ),
     );
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     expect(button("Plan mode")).toBeTruthy();
     await click(button("Orchestrator"));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.querySelector('[aria-label="Turn off Orchestrator mode"]')).not.toBeNull();
     await click(document.querySelector('[aria-label="Turn off Orchestrator mode"]')!);
     expect(document.querySelector('[aria-label="Turn off Orchestrator mode"]')).toBeNull();
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Plan mode"));
     expect(document.querySelector('[title="Turn off Plan mode"]')).not.toBeNull();
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Orchestrator"));
     expect(document.querySelector('[title="Turn off Plan mode"]')).toBeNull();
     const textarea = container.querySelector("textarea")!;
@@ -232,7 +232,7 @@ describe("orchestration composer and card", () => {
         }),
       ),
     );
-    await click(document.querySelector('button[aria-label="Add files or choose a mode"]')!);
+    await click(document.querySelector('button[aria-label="Mode"]')!);
     await click(button("Orchestrator"));
     const textarea = container.querySelector("textarea")!;
     await press(textarea, "Enter");

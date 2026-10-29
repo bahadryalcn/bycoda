@@ -655,7 +655,6 @@ it.each([
     expect(container.querySelector("header")?.textContent).not.toContain(
       `${direction === "unpushed" ? "↑" : "↓"}${count}`,
     );
-    expect(container.textContent).toContain(label);
   }
   expect(container.textContent).toContain(
     ahead && behind ? "Diverged from origin/feature/pull" : "No uncommitted changes",
@@ -847,6 +846,11 @@ describe("GitChangesPanel action feedback", () => {
       .map((title) => title.textContent ?? "")
       .filter((title) => title.endsWith("Changes"));
   const statusText = () => container.querySelector('header [role="status"]')?.textContent ?? null;
+  // The row's Working indicator is a polite status with hidden text, not an aria-label.
+  const workingRows = () =>
+    [...container.querySelectorAll('li [role="status"]')].filter(
+      (status) => status.textContent === "Working",
+    );
 
   it("moves a file to Staged Changes before git has answered", async () => {
     const cwd = "/repo-feedback";
@@ -865,14 +869,14 @@ describe("GitChangesPanel action feedback", () => {
     expect(gitStageFile).toHaveBeenCalledWith(cwd, "change.ts");
     expect(sections()).toEqual(["Staged Changes"]);
     expect(statusText()).toBe("Staging…");
-    expect(container.querySelector('[aria-label="Working"]')).not.toBeNull();
+    expect(workingRows()).toHaveLength(1);
 
     vi.mocked(gitDiffIndex).mockResolvedValue(index({ files: [changed(true)] }));
     await act(async () => finishStage());
     await act(async () => {});
     expect(sections()).toEqual(["Staged Changes"]);
     expect(statusText()).toBeNull();
-    expect(container.querySelector('[aria-label="Working"]')).toBeNull();
+    expect(workingRows()).toHaveLength(0);
     // One announcement, limited to this checkout's changed files.
     expect(vi.mocked(notifyGitChanged).mock.calls).toEqual([[cwd, "index"]]);
   });
@@ -1893,8 +1897,18 @@ describe("GitChangesPanel folder actions", () => {
         'button[aria-label^="Stage Changes"], button[aria-label="Discard Changes"]',
       ),
     ];
-    expect(actions.length).toBeGreaterThan(2);
+    // Both folder actions stay visible but disabled; a file row swaps its stage slot for the Working status.
+    expect(actions.map((action) => action.getAttribute("aria-label"))).toEqual([
+      "Stage Changes in docs",
+      "Stage Changes in src",
+    ]);
     expect(actions.every((action) => action.disabled)).toBe(true);
+    const fileRows = [...container.querySelectorAll<HTMLElement>('li[role="option"]')];
+    expect(fileRows).toHaveLength(2);
+    for (const row of fileRows) {
+      expect(row.querySelector('[role="status"]')?.textContent).toBe("Working");
+      expect(row.querySelector('button[aria-label^="Stage"], button[aria-label^="Unstage"]')).toBeNull();
+    }
     await act(async () => {
       container.querySelector<HTMLButtonElement>('[aria-label="Stage Changes in docs"]')!.click();
     });

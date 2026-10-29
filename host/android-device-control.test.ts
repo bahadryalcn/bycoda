@@ -9,6 +9,49 @@ import {
 import { deviceCommand } from "./device-process";
 
 describe("Windows Android SDK controls", () => {
+  it("blocks launcher input if authority is revoked after package resolution", async () => {
+    let authorized = true;
+    const authorize = async () => {
+      if (!authorized) throw new Error("DEVICE_AUTHORITY_REVOKED");
+    };
+    const command = vi.fn<typeof deviceCommand>().mockImplementation(async () => {
+      authorized = false;
+      return "com.android.settings/.Settings\n";
+    });
+    await expect(
+      androidDeviceControl(
+        "adb.exe",
+        "emulator-5554",
+        { type: "openApp", app: "Settings" },
+        { command, authorize },
+      ),
+    ).rejects.toThrow("DEVICE_AUTHORITY_REVOKED");
+    expect(command).toHaveBeenCalledTimes(1);
+    expect(command.mock.calls[0][1]).toContain("resolve-activity");
+  });
+  it("cleans an owned snapshot after revocation without reading it or issuing a tap", async () => {
+    let authorized = true;
+    const authorize = async () => {
+      if (!authorized) throw new Error("DEVICE_AUTHORITY_REVOKED");
+    };
+    const command = vi.fn<typeof deviceCommand>().mockImplementation(async (_exe, args) => {
+      if (args.includes("dump")) authorized = false;
+      return "";
+    });
+    await expect(
+      androidDeviceControl(
+        "adb.exe",
+        "emulator-5554",
+        { type: "pressElement", label: "Open" },
+        { command, authorize },
+      ),
+    ).rejects.toThrow("DEVICE_AUTHORITY_REVOKED");
+    expect(command.mock.calls.map(([, args]) => args.slice(3, 5))).toEqual([
+      ["uiautomator", "dump"],
+      ["rm", "-f"],
+    ]);
+    expect(command.mock.calls[1][1].at(-1)).toBe(command.mock.calls[0][1].at(-1));
+  });
   it("presses a unique decoded label at native screen pixels and refuses duplicates", async () => {
     let duplicate = false;
     const node = '<node text="Aç &amp; git" enabled="true" bounds="[168,2305][1271,2473]" />';

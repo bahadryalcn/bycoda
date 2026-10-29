@@ -1,11 +1,14 @@
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback, Toggle } from "./settingsControls";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { InboxScopeCollection } from "./InboxScopeCollection";
 import { t, useLocale } from "../../../shared/i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { Row } from "./settingsControls";
-import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
+import {
+  InboxConnectionStatus,
+  InboxConnectionError,
+  useConnectionVerification,
+} from "./InboxConnectionStatus";
 import { TextField } from "../../../shared/ui/TextField";
 import { Button } from "../../../shared/ui/Button";
 import { PrivateEmail } from "../../../shared/ui/PrivateEmail";
@@ -41,6 +44,7 @@ function readBackgroundSync() {
 
 export function JiraSettings({ active = true }: { active?: boolean } = {}) {
   useLocale();
+  const verification = useConnectionVerification();
   const [status, setStatus] = useState<JiraStatus | null>(null);
   const [site, setSite] = useState("");
   const [email, setEmail] = useState("");
@@ -184,6 +188,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       setStatus(next);
       setEditing(false);
       setStatusError(null);
+      verification.markVerified();
       setToken("");
       clearInboxCache();
       // Reconnecting must preserve the owner's existing scope choices.
@@ -208,6 +213,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
     setError(null);
     try {
       setStatus(await disconnectJira());
+      verification.clearVerified();
       setProjects([]);
       setToken("");
       clearInboxCache();
@@ -242,6 +248,7 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={Boolean(status?.connected)}
+        verifiedAt={verification.verifiedAt}
         error={statusError}
         onCheck={() => void checkStatus()}
       />
@@ -255,7 +262,10 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
           state: operation === "save" ? "saving" : token ? "dirty" : "idle",
         }}
       >
-        <div className="w-full min-w-0">
+        <div
+          className="inbox-credential w-full min-w-0"
+          data-state={checking || (status?.connected && !editing) ? "summary" : "form"}
+        >
           {checking ? (
             <p className="text-ui-caption text-(--ui-text-muted)">
               {t("Checking Jira connection…")}
@@ -389,25 +399,15 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
       </Row>
       <InboxConnectionError error={error} />
       {status?.connected ? (
-        <Row label={t("Inbox scope")} persistence={{ mode: "automatic" }}>
-          <div className="inbox-scope">
-            <section aria-label={t("Projects")}>
-              <div className="inbox-scope-heading">
-                <span className="inline-flex items-center gap-1 text-ui-secondary font-medium text-content">
-                  {t("Projects")}
-                  <InfoPopover className="shrink-0">
-                    <p>{t("Unchecked projects stay out of the inbox.")}</p>
-                  </InfoPopover>
-                </span>
-                <Button
-                  className="shrink-0"
-                  loading={projectsLoading}
-                  disabled={busy || checking || projectsLoading}
-                  onClick={() => void loadProjects()}
-                >
-                  {projectsLoading ? t("Loading…") : t("Refresh projects")}
-                </Button>
-              </div>
+        <>
+          <Row
+            stacked
+            label={t("Projects")}
+            description={t("Unchecked projects stay out of the inbox.")}
+            descriptionVisible
+            persistence={{ mode: "automatic" }}
+          >
+            <div className="inbox-scope">
               <InboxConnectionError error={projectsError} />
               {projectScope.error ? (
                 <SettingsFeedback
@@ -418,58 +418,48 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                 </SettingsFeedback>
               ) : null}
               {projectScope.available ? (
-                <SearchableSelect
-                  multiple
+                <InboxScopeCollection
                   label={t("Projects")}
-                  options={projects.map((project) => ({
-                    value: project.id,
-                    label: `${project.name} · ${project.key}`,
-                    keywords: project.key,
+                  searchLabel={t("Search projects")}
+                  items={projects.map((project) => ({
+                    id: project.id,
+                    title: project.name,
+                    meta: project.key,
                   }))}
-                  value={projects
+                  selectedIds={projects
                     .filter((project) => !hiddenIds.includes(project.id))
                     .map((project) => project.id)}
                   onChange={setVisibleProjects}
-                  disabled={
-                    busy ||
-                    checking ||
-                    projectsLoading ||
-                    Boolean(projectsError) ||
-                    !projectScope.available
-                  }
+                  disabled={busy || checking || projectsLoading || Boolean(projectsError)}
                   loading={projectsLoading}
-                  placeholder={t("{p0} of {p1} projects selected", { p0: 0, p1: projects.length })}
-                  searchPlaceholder={t("Search projects")}
-                  emptyLabel={t("No matching projects")}
-                  selectionLabels={{
-                    summary: (count) =>
-                      t("{p0} of {p1} projects selected", { p0: count, p1: projects.length }),
-                  }}
+                  summary={(count, total) =>
+                    t("{p0} of {p1} projects selected", { p0: count, p1: total })
+                  }
+                  emptyLabel={t("No projects available. Refresh projects to try again.")}
+                  noMatchLabel={t("No matching projects")}
+                  actions={
+                    <Button
+                      className="shrink-0"
+                      size="sm"
+                      loading={projectsLoading}
+                      disabled={busy || checking || projectsLoading}
+                      onClick={() => void loadProjects()}
+                    >
+                      {projectsLoading ? t("Loading…") : t("Refresh projects")}
+                    </Button>
+                  }
                 />
               ) : null}
-              {projects.length === 0 && !projectsError && !projectsLoading ? (
-                <p className="inbox-scope-help">
-                  {t("No projects available. Refresh projects to try again.")}
-                </p>
-              ) : null}
-            </section>
-            <section aria-label={t("Boards")}>
-              <div className="inbox-scope-heading">
-                <span className="inline-flex items-center gap-1 text-ui-secondary font-medium text-content">
-                  {t("Boards")}
-                  <InfoPopover className="shrink-0">
-                    <p>{t("Only checked boards from selected projects appear in the inbox.")}</p>
-                  </InfoPopover>
-                </span>
-                <Button
-                  className="shrink-0"
-                  loading={boardsLoading}
-                  disabled={busy || checking || boardsLoading}
-                  onClick={() => setBoardsRevision((value) => value + 1)}
-                >
-                  {boardsLoading ? t("Loading…") : boardsError ? t("Retry") : t("Refresh boards")}
-                </Button>
-              </div>
+            </div>
+          </Row>
+          <Row
+            stacked
+            label={t("Boards")}
+            description={t("Only checked boards from selected projects appear in the inbox.")}
+            descriptionVisible
+            persistence={{ mode: "automatic" }}
+          >
+            <div className="inbox-scope">
               {boardsError ? (
                 <SettingsFeedback state="error">{boardsError}</SettingsFeedback>
               ) : null}
@@ -481,42 +471,46 @@ export function JiraSettings({ active = true }: { active?: boolean } = {}) {
                   {t("Saved Inbox scope is unavailable. Retry before changing it.")}
                 </SettingsFeedback>
               ) : null}
-              {boards.length > 0 && boardScope.available ? (
-                <SearchableSelect
-                  multiple
+              {boardScope.available ? (
+                <InboxScopeCollection
                   label={t("Boards")}
-                  options={boards.map((board) => ({
-                    value: String(board.id),
-                    label: `${board.name} · ${board.kind}`,
+                  searchLabel={t("Search boards")}
+                  items={boards.map((board) => ({
+                    id: String(board.id),
+                    title: board.name,
+                    meta: board.kind,
                   }))}
-                  value={boards
+                  selectedIds={boards
                     .filter((board) => allowedBoardIds.includes(board.id))
                     .map((board) => String(board.id))}
                   onChange={setAllowedBoards}
-                  disabled={
-                    busy ||
-                    checking ||
-                    boardsLoading ||
-                    Boolean(boardsError) ||
-                    !boardScope.available
-                  }
+                  disabled={busy || checking || boardsLoading || Boolean(boardsError)}
                   loading={boardsLoading}
-                  placeholder={t("{p0} of {p1} boards selected", { p0: 0, p1: boards.length })}
-                  searchPlaceholder={t("Search boards")}
-                  selectionLabels={{
-                    summary: (count) =>
-                      t("{p0} of {p1} boards selected", { p0: count, p1: boards.length }),
-                  }}
+                  summary={(count, total) =>
+                    t("{p0} of {p1} boards selected", { p0: count, p1: total })
+                  }
+                  emptyLabel={t("No boards available. Select projects and refresh boards.")}
+                  noMatchLabel={t("No matching boards")}
+                  actions={
+                    <Button
+                      className="shrink-0"
+                      size="sm"
+                      loading={boardsLoading}
+                      disabled={busy || checking || boardsLoading}
+                      onClick={() => setBoardsRevision((value) => value + 1)}
+                    >
+                      {boardsLoading
+                        ? t("Loading…")
+                        : boardsError
+                          ? t("Retry")
+                          : t("Refresh boards")}
+                    </Button>
+                  }
                 />
               ) : null}
-              {boards.length === 0 && !boardsError && !boardsLoading ? (
-                <p className="inbox-scope-help">
-                  {t("No boards available. Select projects and refresh boards.")}
-                </p>
-              ) : null}
-            </section>
-          </div>
-        </Row>
+            </div>
+          </Row>
+        </>
       ) : null}
       {status?.connected ? (
         <Row

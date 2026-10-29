@@ -86,8 +86,11 @@ it("reopens a saved Cursor placeholder as a named, expandable subagent with a st
       'button[aria-label="Show Review ACP routing\'s work"]',
     );
     expect(button).not.toBeNull();
-    expect(button!.textContent).toContain("1 step");
-    expect(button!.textContent).toContain("Grok 4.6");
+    // The run's state line sits beside the toggle and carries the step count and model.
+    const stateLine = container.querySelector<HTMLElement>("[data-subagent-state]");
+    expect(stateLine).not.toBeNull();
+    expect(stateLine!.textContent).toContain("1 step");
+    expect(stateLine!.textContent).toContain("Grok 4.6");
     expect(
       sanitizeSessionForPersist(session!).blocks.find((block) => block.tool?.callId === "call-1")
         ?.agentRun?.model,

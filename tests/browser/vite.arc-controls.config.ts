@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
 // The product stylesheet excludes tests/ from Tailwind scanning. This fixture-only build lets the
-// matrix module (tests/browser/arc-controls-matrix.tsx) generate its own utilities; src/ is untouched.
+// fixture generate its own utilities; src/ is untouched.
 const scanFixtures = {
   name: "scan-browser-fixtures",
   enforce: "pre" as const,

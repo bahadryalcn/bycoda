@@ -31,6 +31,7 @@ import { WorkspaceBootstrapService } from "./workspace-bootstrap";
 import { createManagedNativeTurns } from "./managed-native-turns";
 import { createManagedNativeRewind } from "./managed-native-rewind";
 import { createManagedNativeActivity } from "./managed-native-activity";
+import { createNativeBufferPersistenceStore } from "./native-buffer-persistence-store";
 import { createExactGitRewindPolicy } from "./exact-git-rewind";
 
 export { workspacePathKey } from "./workspace-paths";
@@ -200,6 +201,7 @@ export function createManagedWorkspaceRuntime(
   };
   const history = new GitTurnHistory({ root, workspace });
   const nativeActivity = createManagedNativeActivity({
+    bufferPersistence: createNativeBufferPersistenceStore(store),
     exactGitRewindEnabled: exactGitRewind.enabled,
     root,
     workspace,
@@ -460,6 +462,9 @@ export function createManagedWorkspaceRuntime(
     },
     async recover(reconcileDelivery?: (workspaceId: string) => Promise<unknown>) {
       const initialStartup = !started;
+      // Actual process-startup data migration completes before server admission
+      // or managed writes. It never reconstructs Native actors or freshness.
+      if (initialStartup) await nativeActivity.initializeBufferRetention();
       // Settle only unfenced prior Host turns. The AsyncLocal scope admits startup
       // normalization without exposing managed writes to any transport or caller.
       if (initialStartup) await startupRecovery.run(true, () => engine.recoverManagedStartup());

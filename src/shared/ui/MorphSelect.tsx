@@ -17,6 +17,20 @@ function OpenOverlay({
   return null;
 }
 
+const PANEL_WIDTH = 272;
+
+/**
+ * The open panel is wider than the closed trigger. It opens toward the start edge when that side has
+ * room (a control packed at the end of a wide row) and toward the end edge when it does not (a control
+ * that a narrow row left at the start), so it never opens off-screen.
+ */
+function panelAlignment(root: HTMLElement | null): "start" | "end" {
+  if (!root) return "end";
+  const bounds = root.getBoundingClientRect();
+  const panel = Math.min(PANEL_WIDTH, window.innerWidth - 32);
+  return bounds.right - panel >= 0 ? "end" : "start";
+}
+
 /** A compact, inline property picker; large/search-driven lists use SearchableSelect. */
 export function MorphSelect({
   label,
@@ -54,6 +68,7 @@ export function MorphSelect({
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [align, setAlign] = useState<"start" | "end">("end");
   const restore = useRef(false);
   useEffect(() => {
     if (!open && restore.current) {
@@ -72,7 +87,9 @@ export function MorphSelect({
       ?.focus({ preventScroll: true });
   };
   return (
-    <div ref={root} className="min-w-0">
+    // `ms-auto` packs the control at the end of a flex row; a row may override it to keep the control at
+    // the start, and `panelAlignment` then opens the panel toward the side that has room.
+    <div ref={root} className="min-w-0 ms-auto">
       <ArcMorphSelect
         label={label}
         hideLabel
@@ -82,14 +99,17 @@ export function MorphSelect({
         disabled={disabled}
         readOnly={readOnly}
         open={open}
-        onOpenChange={setOpen}
+        onOpenChange={(next) => {
+          if (next) setAlign(panelAlignment(root.current));
+          setOpen(next);
+        }}
         searchable={searchable}
         triggerProps={triggerProps}
         onClose={(restoreFocus) => {
           restore.current = restoreFocus;
         }}
-        align="end"
-        panelWidth={272}
+        align={align}
+        panelWidth={PANEL_WIDTH}
         className="bycoda-arc bycoda-arc-morph"
         placeholder={t("Choose an option…")}
         closeLabel={t("Close")}

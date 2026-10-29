@@ -869,9 +869,12 @@ async fn serve(
                     && ordinary_control_count(contracts, &pending) + subscriptions.pending.len() >= contracts.limit("maxControlJobsPerDevice") {
                     parked_controls.push_back(request); continue;
                 }
-                request.deadline = Instant::now() + request.timeout;
+                request.deadline = (Instant::now() + request.timeout).min(request.deadline);
                 let value = json!({"jsonrpc":"2.0", "id":request.wire_id,"method":request.method,"params":request.params});
-                if !time::timeout(request.timeout, send(&mut connection.socket, contracts, value)).await.unwrap_or(false) {
+                let Some(send_budget) = request.deadline.checked_duration_since(Instant::now()).filter(|budget| !budget.is_zero()) else {
+                    settle(request, generation, false, "RPC_WS_DEADLINE", "Native operation deadline elapsed before socket send"); continue;
+                };
+                if !time::timeout(send_budget, send(&mut connection.socket, contracts, value)).await.unwrap_or(false) {
                     settle(request, generation, true, "RPC_WS_INTERRUPTED", "Host connection was interrupted while sending a request");
                     break ("unavailable", false);
                 }

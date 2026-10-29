@@ -51,13 +51,18 @@ export interface ExpandingSearchProps {
   placeholder?: string;
   onSelect?: (item: ExpandingSearchItem) => void;
   onExpandedChange?: (expanded: boolean) => void;
-  /** The widest the field grows. It never grows past its container. */
+  /** The widest the field grows. It never grows past its container, except for a `ghost` search whose
+   *  slot is only the closed icon: that one opens as an overlay up to this width (viewport permitting). */
   expandedWidth?: number;
   maxResults?: number;
   /** The edge the button sits on; the field grows away from it. */
   anchor?: "start" | "end";
   /** A short tip under the empty state. */
   emptyHint?: string;
+  /** Closed-state frame. `ghost` (default) renders the waiting state exactly like a neighbouring
+   *  ghost icon button (28px, 6px radius, 14px icon, no field shell); the open field always shows
+   *  its frame. `field` keeps a framed circular shell while closed. */
+  variant?: "ghost" | "field";
   className?: string;
 }
 
@@ -67,6 +72,7 @@ type Mode = "suggestions" | "results" | "empty";
 const enter = [...motionTokens.ease.enter] as [number, number, number, number];
 const standard = [...motionTokens.ease.standard] as [number, number, number, number];
 const FALLBACK_SIZE = 44;
+const EDGE_MARGIN = 8;
 
 /** Title starts beat word starts, which beat matches inside a word, which beat keyword and meta matches. Ties keep the original order. */
 function rank(items: ExpandingSearchItem[], query: string, limit: number) {
@@ -289,6 +295,7 @@ export function ExpandingSearch({
   maxResults = 6,
   anchor = "end",
   emptyHint = "Try a shorter word or check the spelling.",
+  variant = "ghost",
   className,
 }: ExpandingSearchProps) {
   const id = useId();
@@ -331,20 +338,38 @@ export function ExpandingSearch({
     if (!root || !shell) return;
     const measure = () => {
       const collapsed = shell.offsetHeight || FALLBACK_SIZE;
-      const full = Math.max(collapsed, Math.min(expandedWidth, root.clientWidth));
+      const rootWidth = root.clientWidth;
+      // A ghost search whose slot is only the closed icon owns no room: the open field is an overlay
+      // sized by `expandedWidth` and the viewport, so neighbours never need a reserved slot.
+      const detached = variant === "ghost" && rootWidth < collapsed * 1.5;
+      let limit = rootWidth;
+      if (detached && typeof window !== "undefined") {
+        const rect = root.getBoundingClientRect();
+        const room = anchor === "end" ? rect.right : window.innerWidth - rect.left;
+        limit = Math.max(collapsed, room - EDGE_MARGIN);
+      }
+      const full = Math.max(collapsed, Math.min(expandedWidth, limit));
       size.current = { collapsed, expanded: full };
       root.style.setProperty("--es-width", `${full}px`);
+      if (detached) root.dataset.detached = "";
+      else delete root.dataset.detached;
       const goal = open.current ? full : collapsed;
       if (width.isAnimating()) animate(width, goal, motionTokens.spring.morph);
       else width.jump(goal);
       syncShape(width.get());
     };
     measure();
-    if (typeof ResizeObserver === "undefined") return;
+    window.addEventListener("resize", measure);
+    if (typeof ResizeObserver === "undefined") {
+      return () => window.removeEventListener("resize", measure);
+    }
     const observer = new ResizeObserver(measure);
     observer.observe(root);
-    return () => observer.disconnect();
-  }, [expandedWidth, width, syncShape]);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [expandedWidth, width, syncShape, variant, anchor]);
 
   // Opening grows on the morph spring with a hint of overshoot; folding back settles without one, so the circle never dips below its own size.
   const morphTo = (goal: number) => {
@@ -454,6 +479,7 @@ export function ExpandingSearch({
       ref={rootRef}
       className={[styles.root, className].filter(Boolean).join(" ")}
       data-anchor={anchor}
+      data-variant={variant}
     >
       <motion.div
         ref={shellRef}
@@ -474,8 +500,8 @@ export function ExpandingSearch({
         />
         <Search
           className={styles.icon}
-          width={18}
-          height={18}
+          width={variant === "ghost" ? 14 : 18}
+          height={variant === "ghost" ? 14 : 18}
           strokeWidth={1.75}
           aria-hidden="true"
         />

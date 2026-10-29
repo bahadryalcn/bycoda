@@ -67,6 +67,7 @@ function AcpSettingsShell({
       <Group
         id="acp-agents"
         layout="full"
+        variant="box"
         title={t("ACP agents")}
         scope={scope}
         persistence={{ mode: "explicit" }}
@@ -81,7 +82,7 @@ function AcpSettingsShell({
     <section
       id={settingDomId("acp-agents")}
       data-setting-id="acp-agents"
-      className="min-w-0"
+      className="mt-7 min-w-0 overflow-hidden rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface)"
       aria-label={t("ACP agents")}
     >
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">

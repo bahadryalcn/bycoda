@@ -1,3 +1,4 @@
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import {
   useCallback,
   type Dispatch,
@@ -42,7 +43,7 @@ export function useSessionDraftActions({
   const onSaveDraft = useCallback(
     (sessionId: string, text: string, attachments: Attachment[] = [], appRequestId?: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
-      if (current && remoteProjectFor(current.cwd))
+      if (current && (hostSessionBinding(current) || remoteProjectFor(current.cwd)))
         return !!remoteSessionActions(sessionId)?.saveDraft(text, attachments);
       if (
         !current ||
@@ -92,6 +93,7 @@ export function useSessionDraftActions({
     (sessionId: string, draftBlockId: string) => {
       const current = sessionsRef.current.find((session) => session.id === sessionId);
       if (!current) return false;
+      if (hostSessionBinding(current)) return remoteSessionActions(sessionId)?.removeDraft?.(draftBlockId) ?? false;
       const withoutDraft = removeSessionDraft(current, draftBlockId);
       if (!withoutDraft) return false;
 

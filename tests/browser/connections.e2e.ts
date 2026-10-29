@@ -39,16 +39,23 @@ for (const theme of ["light", "dark"]) {
           exact: true,
         }),
       ).toBeVisible();
-      const help = root
-        .locator("details")
-        .filter({ has: page.locator("summary").filter({ hasText: /^Connection help$/ }) });
-      await expect(help).not.toHaveAttribute("open");
+      // Help sits behind an information control; the form keeps only what is needed to proceed.
+      const help = root.getByRole("button", { name: "Connection help", exact: true });
+      await expect(help).toHaveAttribute("aria-expanded", "false");
+      await expect(page.getByRole("dialog", { name: "Connection help", exact: true })).toHaveCount(
+        0,
+      );
       await expect(
         root.getByRole("textbox", { name: "Other address (optional)", exact: true }),
       ).toBeVisible();
       const evidence = "temp/verification/2026-10-20-connections";
       mkdirSync(evidence, { recursive: true });
       await page.screenshot({ path: `${evidence}/add-${theme}-${width}.png` });
+      await help.click();
+      const helpDialog = page.getByRole("dialog", { name: "Connection help", exact: true });
+      await expect(helpDialog).toContainText("A hostname works too");
+      await page.keyboard.press("Escape");
+      await expect(helpDialog).toHaveCount(0);
       const machines = root.getByRole("radio", { name: "Your machines", exact: true });
       await machines.focus();
       await page.keyboard.press("ArrowRight");

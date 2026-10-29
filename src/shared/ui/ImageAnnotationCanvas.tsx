@@ -1,4 +1,12 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { t } from "../i18n/technical";
 import {
   fitImageAnnotation,
@@ -13,7 +21,8 @@ import {
   type ImageAnnotationTool,
 } from "../lib/imageAnnotations";
 import { Button } from "./Button";
-import { AlertCircle } from "./icons";
+import { AlertCircle, ArrowUp, Pencil, Pin, Square, Trash2, Undo2 } from "./icons";
+import { MediaToolbar, MediaToolbarButton, type MediaToolbarTone } from "./MediaToolbar";
 import "./ImageAnnotationCanvas.css";
 
 export type {
@@ -32,7 +41,98 @@ type Props = {
   tool: ImageAnnotationTool;
   disabled?: boolean;
   className?: string;
+  /** Fires when a mark starts or ends being drawn, so the owner can show a visible drafting state. */
+  onDraftingChange?: (drafting: boolean) => void;
 };
+
+const TOOL_ICON: Record<ImageAnnotationTool, (props: { className?: string }) => ReactNode> = {
+  box: (props) => <Square {...props} aria-hidden />,
+  arrow: (props) => <ArrowUp {...props} className={`${props.className ?? ""} rotate-45`} aria-hidden />,
+  pen: (props) => <Pencil {...props} aria-hidden />,
+  pin: (props) => <Pin {...props} aria-hidden />,
+};
+
+/**
+ * The annotation tools on the shared media toolbar family (28px controls, 14px glyphs). The owner keeps the tool,
+ * the marks and the undo/clear semantics; this only presents them with pressed state and a visible disabled state.
+ */
+export function ImageAnnotationToolbar({
+  tool,
+  onToolChange,
+  onUndo,
+  onClear,
+  canUndo = false,
+  canClear = false,
+  disabled = false,
+  tone = "surface",
+  labels = {},
+  children,
+}: {
+  tool: ImageAnnotationTool;
+  onToolChange: (tool: ImageAnnotationTool) => void;
+  onUndo?: () => void;
+  onClear?: () => void;
+  canUndo?: boolean;
+  canClear?: boolean;
+  disabled?: boolean;
+  tone?: MediaToolbarTone;
+  labels?: Partial<
+    Record<ImageAnnotationTool | "toolbar" | "undo" | "clear", string>
+  >;
+  /** Owner-specific actions (redo, note, finish...) placed after the standard ones in the same toolbar. */
+  children?: ReactNode;
+}) {
+  const text = {
+    toolbar: t("Annotation tools"),
+    box: t("Box"),
+    arrow: t("Arrow"),
+    pen: t("Pen"),
+    pin: t("Pin"),
+    undo: t("Undo last mark"),
+    clear: t("Clear marks"),
+    ...labels,
+  };
+  return (
+    <MediaToolbar label={text.toolbar} tone={tone}>
+      {(["box", "arrow", "pen", "pin"] as const).map((id) => {
+        const Icon = TOOL_ICON[id];
+        return (
+          <MediaToolbarButton
+            key={id}
+            tone={tone}
+            label={text[id]}
+            pressed={tool === id}
+            disabled={disabled}
+            onClick={() => onToolChange(id)}
+          >
+            <Icon className="icon-sm" />
+          </MediaToolbarButton>
+        );
+      })}
+      {onUndo ? (
+        <MediaToolbarButton
+          tone={tone}
+          label={text.undo}
+          disabled={disabled || !canUndo}
+          onClick={onUndo}
+        >
+          <Undo2 className="icon-sm" aria-hidden />
+        </MediaToolbarButton>
+      ) : null}
+      {onClear ? (
+        <MediaToolbarButton
+          tone={tone}
+          label={text.clear}
+          disabled={disabled || !canClear}
+          onClick={onClear}
+        >
+          <Trash2 className="icon-sm" aria-hidden />
+        </MediaToolbarButton>
+      ) : null}
+      {children}
+    </MediaToolbar>
+  );
+}
 
 /** Drawing is isolated from device input; the owner supplies a frozen source frame. */
 export function ImageAnnotationCanvas({
@@ -43,6 +143,7 @@ export function ImageAnnotationCanvas({
   tool,
   disabled = false,
   className,
+  onDraftingChange,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
@@ -65,8 +166,10 @@ export function ImageAnnotationCanvas({
   const fit = fitImageAnnotation(natural.width, natural.height, available.width, available.height);
 
   const updateDraft = (mark: ImageAnnotationMark | undefined) => {
+    const was = draftRef.current !== undefined;
     draftRef.current = mark;
     setDraft(mark);
+    if (was !== (mark !== undefined)) onDraftingChange?.(mark !== undefined);
   };
   useEffect(() => {
     setDraft(undefined);
@@ -182,6 +285,8 @@ export function ImageAnnotationCanvas({
     <div
       ref={container}
       className={["image-annotation-canvas", className].filter(Boolean).join(" ")}
+      data-drafting={draft ? "" : undefined}
+      aria-busy={draft ? true : undefined}
     >
       {failed ? (
         <div role="alert" className="image-annotation-canvas-fallback">

@@ -103,7 +103,7 @@
   inset-inline: 0;
   inset-block-start: 35%;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--ui-font-caption);
   opacity: 0.75;
 }
 .crew-scene__theme-title {

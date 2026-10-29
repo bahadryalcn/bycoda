@@ -1,20 +1,47 @@
+/* Spacing between the repository, policy, worktree and storage topics comes from the shared
+   .settings-topics column; the collection region and rows come from SettingsCollection.css. */
 .page {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
   min-inline-size: 0;
+  /* The two-column composition depends on the room this page gets, not on the whole workbench
+     (which includes the category rail). */
+  container: worktrees-page / inline-size;
 }
 
-.toolbar,
-.listToolbar {
+/* A named boundary between global Git preferences above and this repository's management. Spacing,
+   not a rule, separates it from the preferences. */
+.boundary {
+  display: grid;
+  gap: 2px;
+  padding-block-start: 12px;
+}
+.boundaryHint {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+/* Narrow: one track. Wide: a scope column (project, storage) beside the managed
+   workspace and worktree collections, which need the room. */
+.columns {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: var(--settings-group-gap, 28px);
+  min-inline-size: 0;
+}
+.scopeColumn,
+.mainColumn {
+  min-inline-size: 0;
+}
+@container worktrees-page (min-width: 58rem) {
+  .columns {
+    display: grid;
+    grid-template-columns: minmax(15rem, 20rem) minmax(0, 1fr);
+    align-items: start;
+    column-gap: 32px;
+  }
 }
 
 .project {
-  flex: 1 1 240px;
   min-inline-size: 0;
 }
 
@@ -30,56 +57,26 @@
 }
 
 .actions,
-.rowActions,
-.count {
+.rowActions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.actions {
-  margin-inline-start: auto;
-}
-
-.count {
-  flex: 1 1 auto;
-  font-size: var(--ui-font-secondary);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.search {
-  flex: 0 1 280px;
-  min-inline-size: min(100%, 180px);
-}
-
-.list {
-  border: 1px solid var(--color-stroke);
-  border-radius: 12px;
-  background: var(--ui-surface);
-}
-
-.row {
-  display: flex;
+/* Rows keep the top edge of their icon and actions on the first text line. */
+.page .row {
   align-items: flex-start;
-  gap: 12px;
-  padding: 16px;
-}
-
-.row + .row {
-  border-block-start: 1px solid var(--color-stroke);
 }
 
 .treeIcon {
-  inline-size: 16px;
-  block-size: 16px;
+  inline-size: var(--ui-icon-md, 16px);
+  block-size: var(--ui-icon-md, 16px);
   flex-shrink: 0;
   margin-block-start: 2px;
   color: var(--ui-text-muted);
 }
 
 .identity {
-  flex: 1;
   min-inline-size: 0;
   display: flex;
   flex-direction: column;
@@ -143,6 +140,16 @@
   font-variant-numeric: tabular-nums;
 }
 
+.revealFailure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  color: var(--ui-tone-danger-fg);
+  font-size: var(--ui-font-caption);
+  overflow-wrap: anywhere;
+}
+
 .rowActions {
   flex-shrink: 0;
   gap: 4px;
@@ -151,11 +158,13 @@
 .empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding-block: 32px;
+  align-items: flex-start;
+  gap: 4px;
+  padding-block: 8px;
   color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
+}
+.empty > p {
+  margin: 0;
 }
 
 .location {

@@ -61,7 +61,7 @@ export function ServerTerminalRestoreControls({
   return (
     <details className="shrink-0 border-t border-stroke px-3 text-ui-caption" open={expanded} onToggle={(event) => setExpanded(event.currentTarget.open)}>
       <summary className="cursor-pointer py-1 text-(--ui-text-secondary)">
-        {t("Saved SSH tabs")}{state.pending.length ? ` (${state.pending.length})` : ""}{state.loadFailed ? ` · ${t("Failed")}` : ""}
+        {t("Saved SSH tabs")}{state.pending.length ? ` (${state.pending.length})` : ""}{state.loadFailed || state.saveStatus === "failed" ? ` · ${t("Failed")}` : ""}
       </summary>
       <div className="flex flex-col gap-2 py-2">
       <div className="flex items-center gap-2 text-(--ui-text-muted)">
@@ -72,6 +72,21 @@ export function ServerTerminalRestoreControls({
           onCheckedChange={(checked) => serverTerminalRestoreState.setEnabled(checked, openTabs)}
         />
       </div>
+      {state.saveStatus === "saving" ? (
+        <p className="text-(--ui-text-muted)" role="status">{t("Saving…")}</p>
+      ) : null}
+      {state.saveStatus === "failed" ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-(--ui-tone-danger-fg)" role="alert">
+            {t("Couldn’t save SSH tabs.")}{state.saveError ? ` ${state.saveError}` : ""}
+          </p>
+          {state.canRetrySave ? (
+            <Button size="sm" variant="ghost" onClick={() => void serverTerminalRestoreState.retrySave()}>
+              {t("Retry")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
       {!state.pending.length ? <p className="text-(--ui-text-muted)">{t("Restored tabs reconnect only when you choose Connect. This opens a new shell; previous commands are not replayed.")}</p> : null}
       {state.loadFailed ? (
         <div className="flex flex-wrap items-center gap-2">

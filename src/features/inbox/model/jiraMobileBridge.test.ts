@@ -11,6 +11,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: state.invoke }));
 vi.mock("./jira", () => ({
   loadAllowedJiraBoardIds: () => state.allowed,
   loadHiddenJiraProjectIds: () => state.hidden,
+  requireHiddenJiraProjectIds: () => state.hidden,
   listJiraProjects: async () => {
     if (state.changeDuringProjects) state.allowed = [];
     return state.projects;

@@ -4,6 +4,10 @@ import { RUNTIME_MODES } from "../../sessions/model/session";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 
+type AttachmentCommand =
+  | HostCommand
+  | NonNullable<Extract<HostCommand, { type: "create" }>["firstTurn"]>;
+
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
 const CHANGE = "bycoda:remote-outbox-change";
@@ -66,7 +70,8 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
       (value.firstTurn === undefined ||
         (object(value.firstTurn) &&
           ["send", "draft"].includes(String(value.firstTurn.type)) &&
-          validCommand(value.firstTurn, true)))
+          optionalString(value.firstTurn.sessionId) &&
+          validCommand({ ...value.firstTurn, sessionId: "" }, true)))
     );
   }
   if (
@@ -92,6 +97,9 @@ function validCommand(value: unknown, followup = false): value is HostCommand {
       );
     case "configure":
       return (
+        (value.providerAccountId === undefined ||
+          value.providerAccountId === null ||
+          typeof value.providerAccountId === "string") &&
         (value.harness === undefined || isRemoteProvider(value.harness)) &&
         typeof value.model === "string" &&
         strings(value.modelSettings) &&
@@ -315,7 +323,7 @@ export function pendingRemoteAttachmentIds(
     throw new Error("Attachment ownership is held by an unreadable pending request");
   const prefix = pendingPrefix(project, environment);
   const ids = new Set<string>();
-  const collect = (command?: HostCommand) => {
+  const collect = (command?: AttachmentCommand) => {
     if (!command) return;
     if ("attachments" in command) for (const file of command.attachments ?? []) ids.add(file.id);
     if (command.type === "create") collect(command.firstTurn);
@@ -335,7 +343,7 @@ export function pendingRemoteEnvironmentAttachmentIds(environment: string): stri
   if (remoteOutboxIssues(undefined, environment).length)
     throw new Error("Attachment ownership is held by an unreadable pending request");
   const ids = new Set<string>();
-  const collect = (command?: HostCommand) => {
+  const collect = (command?: AttachmentCommand) => {
     if (!command) return;
     if ("attachments" in command) for (const file of command.attachments ?? []) ids.add(file.id);
     if (command.type === "create") collect(command.firstTurn);

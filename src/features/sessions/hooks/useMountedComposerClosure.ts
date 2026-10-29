@@ -87,6 +87,7 @@ export function useMountedComposerClosure(options: {
   return useMemo(
     () => ({
       canMutate,
+      admitAction: () => leaseRef.current?.admitAction() ?? null,
       prepare,
       changed: () => leaseRef.current?.changed(),
       publishCache: (operation: () => void) =>

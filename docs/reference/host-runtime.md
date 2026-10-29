@@ -6,6 +6,47 @@ phone does not move its provider process, workspace or history authority.
 
 ## Source implementation
 
+Checkpoint preparation closes known Parent input callbacks and the mounted
+source/merge editor roster before closing Composer and draining persistence.
+Private tickets let work accepted before closure finish through its actual
+acknowledgment. They do not admit unrelated new work. External updates are applied
+and invalidate preparation. Cancellation and deadlines retain the gates until
+the matching Native release acknowledgment; active IME is not forcibly committed.
+
+The actual Native window supplies admission for text reads, writes and formatting.
+Its blocking worker retains admission through completion even if the IPC waiter
+is dropped. These known routes do not establish complete filesystem, attachment,
+Notes, editor-alias, actor or provider conservation. Both complete Native lanes
+and default migration remain gated on those separate obligations.
+
+The Native checkpoint path now retains the exact bounded mounted Composer raw
+capture beside its existing comparison. Empty and whitespace text are preserved;
+own undefined attachment/MCP object members use separate presence paths. The
+original prepare, physical window and session bind both byte strings. Actual
+parent receipt and raw child commit in the same FULL transaction, with a private
+transaction-local parent-insertion witness and independent retained-data quotas.
+Missing initialized storage, changed payloads and conflicting receipts fail closed.
+
+The v2 raw envelope also retains explicit Parent input and actual mounted
+source/merge editor captures. Independent registry epochs and mount revisions
+invalidate stale captures; accepted work remains represented through retirement.
+Normal editing and existing draft queues continue. A callback exception preserves
+unknown disposition and cannot authorize a resend. Private question snapshots
+are separate from normal transient drafts and never restore or answer a question.
+
+Exact editor ACK claims are compared with the actual Native owner, whole stored
+metadata and exact text/EOL/baseline inside the same checked FULL transaction.
+Missing or coalesced ACKs stay unverified. This validates captured rows only;
+`rosterComplete` remains false, and Buffers/actor/FS admission proof is still open.
+
+After an uncertain reply, a bounded read of the original retained artifact can
+report data retention only. It does not replay the checkpoint, rebuild an owned
+projection receipt, refresh a window/round or prove provider application. Reopen
+inspection is a distinct historical data read preserving the old runtime identity.
+This foundation remains unqualified: parent and Buffers producer coverage,
+native attachment durability and full actor/input/writer closure are still open;
+automatic historical migration and default promotion remain disabled.
+
 The migration separates neutral contracts (`src/shared/model/host-contracts/`),
 client policy (`src/shared/lib/host-runtime/`), domain services (`host/domains/`),
 transport adapters (`host/transport/`) and native credentials/OS integration.
@@ -13,6 +54,251 @@ The current source includes environment, project/directory, session, queue, file
 pipe-terminal, Notes and nine explicit Git services plus command admission shared
 by HTTP and WS. Other domain methods retain explicit
 HTTP compatibility paths while their extraction and qualification continue.
+
+The 20 internal Native workspace operations use a shared Host domain for turns,
+activities, buffer reports, rewind and cleanup. Owner-bound ports close over the
+actual issued workspace authorization; RPC fields cannot supply it. Platform hash,
+base64, fatal UTF8 decoding and timer adapters remain outside the domain.
+
+Native consumers use a process-lifetime workspace channel and guarded projection.
+The recovery reader retains its narrower three-method scope. Local SQL consumes
+actual replies only through a commit fence covering all relevant nested replies:
+saved route, Native caller lifecycle, resource and bulk grant. Network waits remain
+outside this fence. Generic window/mobile ingress denies native.* and raw
+devServers.bridge* operations; ordinary cleanup routes retain their accessibility.
+Development preview uses its dedicated process-owned WS gateway. Its listener and
+streams retain the actual saved route, paired principal and exact SSH tunnel
+slot/generation. Raw bridge methods remain inaccessible through generic ingress.
+Response and bulk leases survive through the original browser socket write; short
+admission releases global locks before IO. Retirement stops new admissions, while
+already admitted bounded writes may settle on their original stream. Old-Host
+HTTP compatibility is selected before dispatch and shares the original deadline;
+a consuming read is never replayed after an interrupted WS result.
+
+Model discovery and 16 Native helper operations now share owner-bound Host domain
+services and canonical WS contracts (203 total methods, including private delivery
+epoch operations). Helper RPCs use the finite
+private `native.services.*` scope; scoped tools and social peer grants cannot mint
+that owner. Terminal senders, desktop relay jobs, UI authorization and provider
+grant renewal retain their original issuer. Social grants retain the returned
+authority endpoint/environment, which may differ from the local issuer. Provider
+tool forwarding keeps its scoped bearer/MCP protocol and does not become a paired
+device call. Its bounded response admission is serialized with issuer/route
+revocation, retaining the original principal through child socket settlement.
+
+Five private service-upload methods carry large desktop finish/format requests.
+They verify exact original JSON bytes, hash and target, and dispatch only those
+two existing owners. The client uses one original upload identity and deadline;
+ambiguous commits are not automatically replayed. Staging itself is in-process;
+original delivery is tracked separately in the actual managed Native Store.
+
+Nine existing public `devices.*` operations share a captured owner service over
+HTTP and WS. Keeping their existing names also migrates the actual desktop panel
+and mobile transport; no alias widens a scoped credential into an owner port.
+Device queues and each subsequent Host-admitted OS command recheck their original
+authority. An admitted third-party command may settle after waiter loss; later
+Host commands stop on revocation. Fresh frame cache publication occurs only after
+the final authority gate inside the original device lane.
+
+Preview jobs retain immutable input, actual principal/environment/owner namespace
+and original deadline. Inline disclosure and every bulk chunk recheck both current
+and original authority. Evicted snapshots and active chunk/body admissions stay
+charged until actual IO settlement. Native relays also retain both original
+desktop issuer and paired target through UI waiting and final result forwarding.
+Their original grant deadline survives decoding independently of the RPC wait
+budget. Expired/retired results are withheld; only an unknown-outcome error may
+return to the still-live original issuer. Desktop route changes preserve that
+uncertainty and the separate preview operation identity, without stale frames or
+automatic repeated input. Native raw recovery/workspace/helper methods remain
+inaccessible through generic ingress.
+
+Device setup/stop and the three existing mobile-preview operations also share
+this owner domain. Their finite method lists stay separate from the exact nine
+Native Host-tool operations. Setup retains explicit agent-control consent and
+pinned installs; authority checks reach stage writes and cache promotion, with
+rollback limited to the exact invocation's preserved cache. Stop keeps
+unconfirmed owned resources tracked for disposal, whose cleanup remains owned by
+the process. Mobile preview keeps its original token/project namespace and cwd
+continuity; it does not require a live Desktop snapshot to execute on a headless
+Host. Project registration is not proof of Desktop UI visibility; complete
+Host-owned project/privacy provenance remains separate work.
+
+HTTP and WS preserve known pre-admission rejection versus an admitted device
+operation whose outcome cannot be confirmed. The HTTP compatibility path reads a
+bounded rejection envelope before classifying device401 responses, preserves
+explicit unknown delivery and never retries capture as a read. Incomplete or
+oversized effect responses are uncertain. The Native typed IPC path also
+preserves known envelope identities and uncertainty if its final saved-route
+check fails after receiving an accepted reply. No command receipt is invented.
+Scoped tool adapters, other auxiliary domains, exhaustive original-input coverage and
+installed cross-device acceptance remain separate work.
+
+Buffer updates larger than a WS frame use five bounded private upload methods.
+The Host verifies exact original bytes/hash before dispatching the original update
+once. The Native registry retains the same upload ID across new channels, preserves
+unknown commits, and removes an intent only after successful local consumption.
+Authenticated missing staging can restart under that same ID only before any
+possible commit. A single absolute budget covers staging/admission/send with a
+reserved status window. Upload state is in-process; original identity and outcome
+are retained separately as described below. Crash/authority qualification remains
+separate work.
+
+The actual Native buffer producer and finite desktop finish/formatter client
+journal complete first request bytes in their managed SessionStore, including
+requests small enough to send inline. A private original identity binds method,
+selected route and exact bytes/hash. Physical buffer owner/nonce/version and the
+original finish job determine semantic identity; independent format invocations
+remain independent even with identical input. A restored or possibly dispatched
+original can query status only. Neither an absent receipt nor a lost connection
+authorizes resubmitting its effect.
+
+Five private delivery methods use `native.buffers.delivery.v1` and
+`native.services.delivery.v1`. The Host records critical intent before effects.
+Buffer outcomes require matching proof in the actual current/archive filesystem
+projection; status performs no writes or clock changes. Native records and ACKs
+the exact result using FULL transactions under original/current response gates.
+Current buffer confirmation and original ACK share one transaction. Recovery
+does not mark an old physical report fresh or recreate its former owner.
+
+Large requests stage the unchanged original params up to16MiB. Service outcomes
+above the inline threshold use bounded result.read chunks, preserving the32MiB
+result limit, exact hash/length and all original resource/revocation guards.
+Finish receipts prove handler-result recording, not final requester consumption;
+formatting is never rerun solely because its response was lost. Host receipt
+payload retirement now has the separate finite ACK lifecycle below; exhaustive
+writer/input coverage remains open.
+Filesystem temp-file sync/rename does not prove parent-directory power-loss
+durability. Process-restart fixtures do not qualify installed/default authority.
+
+Once Native guarded consumption and its local FULL ACK commit, a metadata-only
+outbox can send `native.buffers.delivery.ack` or `native.services.delivery.ack`.
+Separate `.delivery.ack.v1` capabilities preserve older delivery catalogs. The
+Host compares the immutable original and canonical consumed-result digest, then
+critically retires result/proof bytes and their capacity reservation. It retains
+the original/digest tombstone: a duplicate apply or ACK never repeats the effect.
+Lost ACKs and failed local completion markers retry only this idempotent cleanup.
+An unknown service original cannot be retired; buffer retirement additionally
+requires its same verified current/archive proof. Retired status carries no
+payload and changes no source freshness or execution owner.
+
+Formatting reserves up to 32 MiB before invoking its handler. The format pool is
+64 MiB globally and 32 MiB per principal; tiny fixed buffer/finish outcomes use their
+bounded metadata row allowance instead. Exhaustion rejects before the effect.
+Consumed digests are stored separately from raw chunk hashes, so ACK does not
+materialize a retained 32 MiB result. Immediate Native cleanup has a 250 ms budget and
+cannot turn successful consumption into an error. Its receipt proves guarded Rust
+handoff, not receipt or application by JavaScript. Epoch compaction below extends
+that lifecycle; unknown-outcome resolution and target-platform power-loss
+acceptance remain separate full26 work.
+
+The actual Host now retains buffer report bytes, archive parts and completion
+proofs in its critical FULL SQLite owner. These reports contain file paths,
+dirty/unknown state and Native provenance; they do not add unsaved editor text.
+Content-addressed bounded chunks preserve exact legacy BOM/whitespace. A staged
+mutation publishes its source/archive dependencies and proof in one critical
+completion before ACK; clock reservation is a separate earlier FULL commit.
+Unknown completion remains queryable without re-running the original handler.
+
+Process startup retains legacy current/hold reports and independently recoverable
+catalog metadata, validates complete clock chains including reserved gaps, then
+adopts SQL floors. A known exact current body can survive an incomplete matching
+legacy archive through an immutable raw fallback, while conflicting headers stay
+held. Once adopted, report and catalog reads use SQL only and never repair files,
+rebuild counters from snapshots or restore Native owner freshness. Directory
+metadata uses indexed bounded views, including concurrent legacy imports.
+
+Filesystem copies are preserved legacy inputs. Backups/restores must include the
+coherent Host database; copying those old JSON directories alone no longer backs
+up newly retained reports. Compatibility with an older Host binary that lacks
+this storage format is a separate downgrade/restore acceptance gate. File-backed
+SQLite rollback/reopen and cache-deletion fixtures are not physical power-loss or
+installed-platform acceptance. Actor/writer qualification remains disabled.
+
+The delivery journal also owns the single admitted effect continuation. If that
+handler or result-record await exits with failure, only its captured admission
+winner can release the now-unneeded result reservation. The exact original and
+planned buffer proof stay retained, and status remains unknown unless an actual
+recorded result or verified buffer source proves otherwise. A zero reservation
+fences every later result write for that unknown original. Failure bookkeeping
+cannot overwrite a committed recorded/retired result after a lost COMMIT reply.
+After authorization loss it uses only the existing process-owned recovery
+bookkeeping path; result disclosure and ordinary effects remain denied.
+
+An active handler, duplicate, lost admission ACK or process-crashed original has
+no observed winner-continuation exit and keeps its reservation. This does not
+resolve whether the external work happened. Metadata is not age-pruned: the
+legacy UUID originals remain retained. New complete catalogs support the v2
+epoch and semantic-origin fences below; unknown originals still cannot be
+compacted or treated as failed.
+
+### Host-issued delivery epochs and semantic retirement
+
+Four finite private methods (`native.delivery.epochs.open`, `.status`, `.compact`
+and `.close`) require `native.delivery.epochs.v2`. The authenticated Host issues
+the owner UUID and global generation. Native persists its deterministic
+Store/profile/route opening intent and allocates ordered originals as
+`nd2:<owner UUIDv4>:<generation>:<sequence>` in FULL transactions. Structural wire
+schemas are losslessly generated for both clients; owners separately validate
+counter relationships, exact identity, authority and current route.
+
+First open establishes an irreversible minimum-v2 floor for that principal.
+Fresh legacy journal inserts and deliveryless buffer, finish and format effects
+then fail before execution. Existing legacy status/results/ACKs remain readable.
+Only the actual successful v2 admission's private, live execution context passes
+the helper effect gates. A saved receipt or asynchronous callback after that
+context exits cannot obtain this authority.
+
+Compaction covers at most32 contiguous sequences across all three helper kinds.
+Every position must be genuinely retired with matching consumed metadata; missing,
+unknown and merely recorded positions stop the prefix. Host advances its permanent
+floor and deletes those receipts in one FULL transaction. Status/apply below the
+floor returns explicit `fenced`, without a result or fabricated consumption.
+Global counters commit to complete retained header/witness coverage; missing
+initialized rows cannot mint another epoch from a repeated open intent. Closed
+streams are terminal and do not automatically rotate or close another peer.
+
+Native independently requires local acknowledged originals and matching remote
+ACK sidecars. Before deleting originals it commits exact semantic retirement
+markers and its own floor in the same FULL transaction, under actual saved-route
+and response gates. A Host floor alone never proves Native consumption. Markers
+block old semantic identities before another UUID or sequence allocation; SQL
+guards also reject older writers and replacements. Marker storage is separately
+bounded to1m rows/128MiB weighted bytes, with no eviction. Exhaustion preserves
+original rows and holds cleanup. Host header limits are65,536 globally/4096 per
+principal; Native route intents are limited to1024.
+
+This does not fence an older Host binary that performs bare external effects
+without these gates, or prove arbitrary coherent two-store restoration. Retained
+marker scans and FULL writer-lock scaling require target workload acceptance.
+Qualification, history migration and default promotion remain disabled pending
+the remaining full26 requirements.
+
+Local projects now expose an explicit **New conversation on this computer's Host**
+project-menu action. It connects to the actual local profile Host, verifies its
+environment and managed-create capabilities, opens the project and journals the
+new shell's explicit Host owner before opening the tab. The first send uses the
+existing durable create-and-first-turn command. The project's real local cwd and
+selected worktree remain separate from `(environmentId, sessionId)` ownership.
+Ordinary local creation and existing Native conversations retain their current
+execution path; this opt-in does not migrate their history or change the default.
+An empty Host shell is already bound to its project. Project navigation opens a
+fresh ordinary session for another project, and Native-only directory/branch/
+workspace callbacks cannot retarget or reset the Host shell.
+
+The shared `session-execution.ts` policy is used by the owner-routed desktop
+adapter. Closing or aborting a waiter does not stop accepted Host work. Its
+binding journal stores shell metadata without Native transcript blocks; Native
+save, adoption, queue and shutdown paths exclude these Host-owned shells.
+Generation updates cannot replace a pinned owner, regress a known generation or
+reopen a deleted binding. Pinned requests also verify the actual Native saved
+environment before dispatch, independently of the renderer's machine cache.
+
+Host sessions obtain models and optional Codex/Claude account choices from their
+Host. Owner-only `models.list.accounts` contains bounded safe IDs/labels, never
+Native desktop account IDs or credential contents. Canonical configure accepts
+an omitted account to preserve it, null to clear it, or a validated Host account
+ID. Changing accounts clears the old provider thread and preserves transcript
+handoff. Scoped Conversation Tools do not receive the account catalog.
 
 `/ws` uses the `bycoda.rpc.v2` subprotocol and an authenticated paired-device
 Authorization header. Browser Origins are rejected. `connection.hello` verifies
@@ -61,6 +347,15 @@ renderer socket or bearer. Legacy calls select compatibility before sending when
 the Host capability or canonical parameters are unsupported. A sent or uncertain
 command never falls back to a second transport.
 
+The three Native-profile recovery queries use a separate Native-lifetime broker
+pool over the same WebSocket broker and wire policy. Only the actual saved local
+profile's loopback route can enter that pool; generic window and mobile callers
+remain denied. Window detach cannot retire Native recovery work. Saved-route and
+reply guards, including bulk reservations, remain held through recovery decoding
+and final projection checks. Discovery and unsupported old-Host capabilities may
+select HTTP before dispatch. A dispatched WebSocket failure never replays on HTTP;
+the HTTP compatibility reply receives the same saved-route projection guard.
+
 Mobile has a separate repository and local Expo Android/iOS module. New WSS
 traffic uses native credential handles, a paired CA's DER-SPKI pin, normal
 hostname/expiry validation and a single TypeScript reconnect supervisor. Mobile
@@ -73,6 +368,15 @@ source and autolinking discovery do not establish a successful native build.
 Mobile activity streams currently cover the first 32 mounted project demands;
 additional groups and unmigrated domains use bounded HTTP compatibility. Web
 browser tickets, CA rotation and full native lifecycle acceptance remain open.
+
+Mobile's actual session list/page/sync and command dispatch/status calls share the
+common execution client. Its wire snapshot adapter supports React Native without
+a global structuredClone, and detaching an admitted waiter preserves its receipt
+identity. Both TS policy and raw Android/Swift socket sends reject private Native
+desktop and raw development-gateway operations. Generated root android/ios outputs
+stay ignored while maintained
+socket-module source remains visible. Native compilation/physical acceptance is
+still required; source discovery and TypeScript checks are insufficient.
 
 ## Durability and authority
 
@@ -276,9 +580,72 @@ intentionally catch. Only confirmed full replacements/equivalent receipts recove
 them; partial delta success alone does not. Late target edits invalidate an
 observation while ordinary work and unrelated sessions continue. Module reload
 keeps accepted work, prior pending hooks and failure history in order.
-These observations explicitly remain unqualified. Mounted composer capture,
-provider output/application watermarks, true producer closure and native
-challenge-scoped checkpoint receipts still require integration.
+These observations explicitly remain unqualified. Original Native output items
+now retain opaque event/work ancestry across tracked asynchronous provider
+consumers, timer callbacks, questions and edited-resend replay. Actual accepted
+session-model versions bind those origins to covering ordinary transcript save
+acknowledgements. An unknown write requires a later covering full replacement;
+a delta ACK alone cannot clear it. Pending snapshots coalesce, old-lifetime ACKs
+cannot apply to a replacement session, and late submission callbacks cannot
+commit events into a newer turn.
+
+Before a persistable local desktop provider starts, its real conversation save
+must acknowledge. An optional logical-session locator then lets Native bind the
+unchanged routing ID to the actual existing row. Native retains the original
+Store instance, physical producer and private SQL row-incarnation token; a
+same-ID delete/reinsert cannot inherit the old binding. Public metadata is not
+an operation grant. Final routed events identify their actual physical recipient
+separately from the private original producer.
+
+Normal save ACKs do not establish FULL SQL durability or exhaustive provider
+input conservation. Application watermarks remain null. Initialization/config,
+exit/cancel/late unknown-delivery paths and additional or multiple-input ancestry
+still need closure. The private selected-Host source channel now initiates an
+on-demand Native prepare/challenge coordinator with actual window receivers.
+Its atomic input/write/FULL observation remains unqualified: true producer
+closure, application conservation and actor/port qualification are separate
+requirements. No execution default or support floor is promoted.
+
+Original output comparisons now include the immutable original batch and
+zero-based item index. Native independently matches actual retained recipient
+enqueue outcomes and bounded per-item commitments, returning a private
+nonserializable eligibility handle only for a sealed stream. That handle does
+not certify a reducer or a covering SQL write.
+
+Renderer candidates retain exact accepted-model versions and the same immutable
+sanitized payload actually sent to the save service. Native full/delta commands
+optionally capture a comparison receipt inside their real transaction and
+publish `nativeWriteId` only after commit. The Store-local ledger binds the ID
+to Rust-normalized input, actual ACK, private row/Store/physical owner and the
+ordered SQL transcript plus metadata. A successful later write retires the old
+locator. Limits or instrumentation failures omit the ID while ordinary saves
+continue; missing IDs cannot make a comparison candidate eligible.
+
+Native comparison data is still not authority. Its private SQL comparison uses
+the already checked physical-owner scope without reacquiring resource locks
+under the SQL lock. Checkpoint rounds now retain the original row incarnation
+from one SQL snapshot and recheck it inside their FULL transaction. Recreated
+rows cannot consume an old round; historical committed receipts remain readable
+as historical facts. Pending challenges recheck their deadline after a blocking
+row read and under the actual admission mutex, without cancelling admitted IO.
+The production coordinator now holds the actual original-producer and recipient
+captures, stable retained input states and target roster through the Store-owned
+FULL transaction and durability restoration. The same transaction checks the
+original normal write and private row lifetime and inserts the Native nonce
+receipt. The returned comparison uses the owned post-commit write, while its
+application watermark stays null. A frozen comparison DTO alone grants no
+execution ownership, migration admission or provider application watermark.
+
+Preparation first captures and flushes mounted/Quick composer state through
+window-scoped listeners. Busy providers are refused before preparation; Native
+execution reservations also register session admission before waiting for SQL.
+The idle-close decision shares that admission mutex, so a running reservation
+cannot be closed over. Unknown external work remains a blocker. Challenges keep
+the absolute preparation deadline even after blocking validation. A cancelled or
+expired waiter retains every accepted SQL operation until it actually settles;
+only then may the exact target round reopen and a renderer release its closure.
+No provider Stop or automatic resend is introduced. Raw editor/parent producers,
+multiple-input conservation and supported actor census remain open gates.
 
 Before fencing, explicit native cancellation can commit a permanent cancellation
 receipt and advance the source generation. Missing snapshots do not prove that

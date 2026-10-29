@@ -168,51 +168,47 @@ export function TaskWorkspacePicker({
       ) : null}
       {inventory ? (
         <>
-          <label>
-            {t("Base branch")}
-            <SearchableSelect
-              disabled={disabled || busy || fetching}
-              label={t("Base branch")}
-              value={value?.baseBranch ?? ""}
-              options={[
-                { value: "", label: t("Current project branch") },
-                ...inventory.branches.map((branch) => ({ value: branch, label: branch })),
-              ]}
-              onChange={(branch) =>
-                onChange({
-                  ...value,
-                  baseBranch: branch || undefined,
-                  checkoutCwd: branch
-                    ? inventory.trees.find((tree) => tree.branch === branch)?.path
-                    : undefined,
-                })
-              }
-            />
-          </label>
-          <label>
-            {t("Worktree")}
-            <SearchableSelect
-              disabled={disabled || busy || fetching}
-              label={t("Worktree")}
-              value={value?.checkoutCwd ?? ""}
-              options={[
-                { value: "", label: t("Project checkout") },
-                ...inventory.trees.map((tree) => ({
-                  value: tree.path,
-                  label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
-                })),
-              ]}
-              onChange={(path) =>
-                onChange({
-                  ...value,
-                  checkoutCwd: path || undefined,
-                  baseBranch: path
-                    ? (inventory.trees.find((tree) => tree.path === path)?.branch ?? undefined)
-                    : undefined,
-                })
-              }
-            />
-          </label>
+          <SearchableSelect
+            disabled={disabled || busy || fetching}
+            label={t("Base branch")}
+            visibleLabel
+            value={value?.baseBranch ?? ""}
+            options={[
+              { value: "", label: t("Current project branch") },
+              ...inventory.branches.map((branch) => ({ value: branch, label: branch })),
+            ]}
+            onChange={(branch) =>
+              onChange({
+                ...value,
+                baseBranch: branch || undefined,
+                checkoutCwd: branch
+                  ? inventory.trees.find((tree) => tree.branch === branch)?.path
+                  : undefined,
+              })
+            }
+          />
+          <SearchableSelect
+            disabled={disabled || busy || fetching}
+            label={t("Worktree")}
+            visibleLabel
+            value={value?.checkoutCwd ?? ""}
+            options={[
+              { value: "", label: t("Project checkout") },
+              ...inventory.trees.map((tree) => ({
+                value: tree.path,
+                label: `${tree.branch ?? t("Detached")} · ${tree.path}`,
+              })),
+            ]}
+            onChange={(path) =>
+              onChange({
+                ...value,
+                checkoutCwd: path || undefined,
+                baseBranch: path
+                  ? (inventory.trees.find((tree) => tree.path === path)?.branch ?? undefined)
+                  : undefined,
+              })
+            }
+          />
           {value?.baseBranch &&
           !inventory.trees.some((tree) => tree.branch === value.baseBranch) ? (
             <Button
@@ -225,18 +221,14 @@ export function TaskWorkspacePicker({
               {t("Create worktree for this branch")}
             </Button>
           ) : null}
-          <label>
-            {t("New integration branch")}
-            <TextField
-              hideLabel
-              label=""
-              value={newName}
-              disabled={disabled || busy || fetching}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="goal/settings"
-              spellCheck={false}
-            />
-          </label>
+          <TextField
+            label={t("New integration branch")}
+            value={newName}
+            disabled={disabled || busy || fetching}
+            onChange={(event) => setNewName(event.target.value)}
+            placeholder="goal/settings"
+            spellCheck={false}
+          />
           <Button
             variant="ghost"
             type="button"
@@ -256,20 +248,16 @@ export function TaskWorkspacePicker({
             </p>
           )}
           {branchName ? (
-            <label>
-              {t("Task branch name (optional)")}
-              <TextField
-                hideLabel
-                label=""
-                value={value?.branchName ?? ""}
-                disabled={disabled || busy || fetching}
-                onChange={(event) =>
-                  onChange({ ...value, branchName: event.target.value || undefined })
-                }
-                placeholder="mc/…"
-                spellCheck={false}
-              />
-            </label>
+            <TextField
+              label={t("Task branch name (optional)")}
+              value={value?.branchName ?? ""}
+              disabled={disabled || busy || fetching}
+              onChange={(event) =>
+                onChange({ ...value, branchName: event.target.value || undefined })
+              }
+              placeholder="mc/…"
+              spellCheck={false}
+            />
           ) : null}
         </>
       ) : supported && !error ? (

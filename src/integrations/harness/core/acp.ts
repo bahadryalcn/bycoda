@@ -12,8 +12,17 @@ import type { NativeOutputWork } from "./nativeOutputDelivery";
 export type { JsonRpcMessage };
 
 export type AcpHandlers = {
-  onNotification?: (method: string, params: unknown, work?: NativeOutputWork) => void | Promise<void>;
-  onRequest?: (id: number, method: string, params: unknown, work?: NativeOutputWork) => void | Promise<void>;
+  onNotification?: (
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
+  onRequest?: (
+    id: number,
+    method: string,
+    params: unknown,
+    work?: NativeOutputWork,
+  ) => void | Promise<void>;
 };
 
 /** ACP JSON-RPC client — thin wrapper preserving the Cursor numeric-id API. */
@@ -25,7 +34,8 @@ export class AcpClient {
     private readonly handlers: AcpHandlers,
   ) {
     const rpcHandlers: JsonRpcHandlers = {
-      onNotification: (method, params, work) => this.handlers.onNotification?.(method, params, work),
+      onNotification: (method, params, work) =>
+        this.handlers.onNotification?.(method, params, work),
       onRequest: (id, method, params, work) => {
         const numeric = typeof id === "number" ? id : Number(id);
         return this.handlers.onRequest?.(numeric, method, params, work);
@@ -49,7 +59,12 @@ export class AcpClient {
     this.rpc.rejectPending(error);
   }
 
-  request<T>(method: string, params?: unknown, timeoutMs = 0, consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>): Promise<T> {
+  request<T>(
+    method: string,
+    params?: unknown,
+    timeoutMs = 0,
+    consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+  ): Promise<T> {
     if (
       ["session/new", "session/load", "session/resume", "session/fork"].includes(method) &&
       params &&
@@ -81,14 +96,19 @@ export class AcpClient {
             ],
           },
           timeoutMs,
-          ...(consume ? [consume] as const : []),
+          ...(consume ? ([consume] as const) : []),
         );
       });
     }
-    return this.rpc.request<T>(method, params, timeoutMs, ...(consume ? [consume] as const : []));
+    return this.rpc.request<T>(method, params, timeoutMs, ...(consume ? ([consume] as const) : []));
   }
 
-  requestWithNativeOutput<T>(method: string, params: unknown, consume: (value: T, work: NativeOutputWork | null) => T | Promise<T>, timeoutMs = 0): Promise<T> {
+  requestWithNativeOutput<T>(
+    method: string,
+    params: unknown,
+    consume: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+    timeoutMs = 0,
+  ): Promise<T> {
     return this.request(method, params, timeoutMs, consume);
   }
 

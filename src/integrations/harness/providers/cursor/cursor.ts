@@ -1,4 +1,14 @@
-import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink, retainNativeOutputEventOrigin, captureNativeOutputWork, trackNativeOutputWork, scheduleNativeOutputCallback, cancelNativeOutputCallback, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  captureNativeOutputWorkEvent,
+  runNativeOutputWork,
+  nativeOutputSink,
+  retainNativeOutputEventOrigin,
+  captureNativeOutputWork,
+  trackNativeOutputWork,
+  scheduleNativeOutputCallback,
+  cancelNativeOutputCallback,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { trimAndCapText } from "../../../../shared/lib/cappedText";
 import {
   deliverQuestionReply,
@@ -480,52 +490,62 @@ async function setConfigOption(
 }
 
 async function prompt(live: Live, input: SendTurnInput): Promise<void> {
-const responseScope: { work: NativeOutputWork | null } = { work: null };
-const emitNative = (event: HarnessEvent) => nativeOutputSink(responseScope.work, () => live.onEvent(event))();
-try {
-
+  const responseScope: { work: NativeOutputWork | null } = { work: null };
+  const emitNative = (event: HarnessEvent) =>
+    nativeOutputSink(responseScope.work, () => live.onEvent(event))();
   try {
-    const blocks = promptBlocks(input.text, input.attachments);
-    if (blocks.length === 0) return;
-    live.agentTools.clear();
-    nativeOutputSink(responseScope.work, retireCursorSubagentPolling)(live);
-    live.subagentRuns.clear();
-    live.subagentRevisions = {};
-    live.backgroundAgentTools.clear();
-    live.taskListTools.clear();
-    live.promptActive = true;
-    const response = live.acp.request("session/prompt", {
-      sessionId: live.acpSessionId,
-      prompt: blocks,
-    }, 0, (value, work) => { responseScope.work?.finish(); responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null; return value; });
-    input.onAccepted?.();
-    const result = await response;
-    live.promptActive = false;
-    if (live.cancelled) {
+    try {
+      const blocks = promptBlocks(input.text, input.attachments);
+      if (blocks.length === 0) return;
+      live.agentTools.clear();
+      nativeOutputSink(responseScope.work, retireCursorSubagentPolling)(live);
+      live.subagentRuns.clear();
+      live.subagentRevisions = {};
       live.backgroundAgentTools.clear();
-      return;
+      live.taskListTools.clear();
+      live.promptActive = true;
+      const response = live.acp.request(
+        "session/prompt",
+        {
+          sessionId: live.acpSessionId,
+          prompt: blocks,
+        },
+        0,
+        (value, work) => {
+          responseScope.work?.finish();
+          responseScope.work = work ? retainNativeOutputEventOrigin(work.origin) : null;
+          return value;
+        },
+      );
+      input.onAccepted?.();
+      const result = await response;
+      live.promptActive = false;
+      if (live.cancelled) {
+        live.backgroundAgentTools.clear();
+        return;
+      }
+      nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
+      await nativeOutputSink(responseScope.work, refreshCursorSubagents)(live);
+      if (live.cancelled || live.muteUpdates) return;
+      live.subagentFinalPolls = 3;
+      nativeOutputSink(responseScope.work, scheduleCursorSubagents)(live, 500);
+      emitNative({ type: "message.completed" });
+      emitNative({ type: "reasoning.completed" });
+      reportAcpStopReason(result, emitNative);
+      nativeOutputSink(responseScope.work, wakeCursorToolEnrichment)(live);
+    } catch (error) {
+      live.promptActive = false;
+      if (live.cancelled) return;
+      nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "failed");
+      emitNative({
+        type: "session.error",
+        message: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     }
-    nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "completed");
-    await nativeOutputSink(responseScope.work, refreshCursorSubagents)(live);
-    if (live.cancelled || live.muteUpdates) return;
-    live.subagentFinalPolls = 3;
-    nativeOutputSink(responseScope.work, scheduleCursorSubagents)(live, 500);
-    emitNative({ type: "message.completed" });
-    emitNative({ type: "reasoning.completed" });
-    reportAcpStopReason(result, emitNative);
-    nativeOutputSink(responseScope.work, wakeCursorToolEnrichment)(live);
-  } catch (error) {
-    live.promptActive = false;
-    if (live.cancelled) return;
-    nativeOutputSink(responseScope.work, settleCursorBackgroundAgents)(live, "failed");
-    emitNative({
-      type: "session.error",
-      message: error instanceof Error ? error.message : String(error),
-    });
-    throw error;
+  } finally {
+    responseScope.work?.finish();
   }
-
-} finally { responseScope.work?.finish(); }
 }
 
 function handleNotification(live: Live, method: string, params: unknown) {
@@ -540,36 +560,39 @@ function handleNotification(live: Live, method: string, params: unknown) {
 }
 
 async function handleRequest(live: Live, id: number, method: string, params: unknown) {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  if (method === "session/request_permission") {
-    await nativeOutputSink(outputWork, handlePermission)(live, id, params);
-    return;
-  }
-  if (method === "cursor/ask_question") {
-    await nativeOutputSink(outputWork, handleAskQuestion)(live, id, params);
-    return;
-  }
-  if (method === "cursor/create_plan") {
-    const rec = asRecord(params);
-    const plan = typeof rec?.plan === "string" ? rec.plan : "";
-    if (plan) emitNative({ type: "plan", text: plan });
-    await nativeOutputSink(outputWork, () => live.acp.respond(id, { outcome: { outcome: "accepted" } }))();
-    return;
-  }
-  if (isCursorTodoUpdate(method)) {
-    nativeOutputSink(outputWork, emitCursorTodoUpdate)(live, params);
+  return runNativeOutputWork(async (outputWork) => {
+    const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+      live.onEvent(event),
+    );
+    if (method === "session/request_permission") {
+      await nativeOutputSink(outputWork, handlePermission)(live, id, params);
+      return;
+    }
+    if (method === "cursor/ask_question") {
+      await nativeOutputSink(outputWork, handleAskQuestion)(live, id, params);
+      return;
+    }
+    if (method === "cursor/create_plan") {
+      const rec = asRecord(params);
+      const plan = typeof rec?.plan === "string" ? rec.plan : "";
+      if (plan) emitNative({ type: "plan", text: plan });
+      await nativeOutputSink(outputWork, () =>
+        live.acp.respond(id, { outcome: { outcome: "accepted" } }),
+      )();
+      return;
+    }
+    if (isCursorTodoUpdate(method)) {
+      nativeOutputSink(outputWork, emitCursorTodoUpdate)(live, params);
+      await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
+      return;
+    }
+    if (method === "cursor/task") {
+      nativeOutputSink(outputWork, handleCursorTask)(live, params);
+      await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
+      return;
+    }
     await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
-    return;
-  }
-  if (method === "cursor/task") {
-    nativeOutputSink(outputWork, handleCursorTask)(live, params);
-    await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
-    return;
-  }
-  await nativeOutputSink(outputWork, () => live.acp.respond(id, {}))().catch(() => undefined);
-
-});
+  });
 }
 
 function isCursorTodoUpdate(method: string): boolean {
@@ -628,50 +651,56 @@ function handleCursorTask(live: Live, params: unknown): void {
 }
 
 async function handleAskQuestion(live: Live, id: number, params: unknown) {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const rec = asRecord(params);
-  const questions = questionsFromUnknown(params);
-  const title =
-    (typeof rec?.title === "string" && rec.title.trim()) || questionPromptTitle(questions);
-  const callId =
-    typeof rec?.toolCallId === "string"
-      ? rec.toolCallId
-      : typeof rec?.tool_call_id === "string"
-        ? rec.tool_call_id
-        : undefined;
-  const event: Extract<HarnessEvent, { type: "question.asked" }> = {
-    type: "question.asked",
-    requestId: id,
-    title,
-    questions,
-    dismissAction: "skip",
-    ...(callId ? { callId } : {}),
-  };
-captureNativeOutputWorkEvent(outputWork, event);
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const rec = asRecord(params);
+      const questions = questionsFromUnknown(params);
+      const title =
+        (typeof rec?.title === "string" && rec.title.trim()) || questionPromptTitle(questions);
+      const callId =
+        typeof rec?.toolCallId === "string"
+          ? rec.toolCallId
+          : typeof rec?.tool_call_id === "string"
+            ? rec.tool_call_id
+            : undefined;
+      const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+        type: "question.asked",
+        requestId: id,
+        title,
+        questions,
+        dismissAction: "skip",
+        ...(callId ? { callId } : {}),
+      };
+      captureNativeOutputWorkEvent(outputWork, event);
 
-  const replyPromise = new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(
-      id,
-      Object.assign(resolve, {
-        event,
-        deliver: (reply: UserQuestionReply) =>
-          nativeOutputSink(outputWork, () => live.acp.respond(id, cursorAskQuestionResponse(reply, questions)))(),
-      }),
-    );
-  });
-  showNextQueuedQuestion(live);
-  const reply = await replyPromise;
-  live.questions.delete(id);
-  emitNative({
-    type: "question.resolved",
-    requestId: id,
-    decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
-    ...(reply.kind === "answered" ? { reply } : {}),
-  });
-  showNextQueuedQuestion(live);
-
-});
+      const replyPromise = new Promise<UserQuestionReply>((resolve) => {
+        live.questions.set(
+          id,
+          Object.assign(resolve, {
+            event,
+            deliver: (reply: UserQuestionReply) =>
+              nativeOutputSink(outputWork, () =>
+                live.acp.respond(id, cursorAskQuestionResponse(reply, questions)),
+              )(),
+          }),
+        );
+      });
+      showNextQueuedQuestion(live);
+      const reply = await replyPromise;
+      live.questions.delete(id);
+      emitNative({
+        type: "question.resolved",
+        requestId: id,
+        decision: live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
+        ...(reply.kind === "answered" ? { reply } : {}),
+      });
+      showNextQueuedQuestion(live);
+    },
+    { additionalInput: true },
+  );
 }
 
 function cursorAskQuestionResponse(
@@ -695,106 +724,117 @@ function cursorAskQuestionResponse(
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const rec = asRecord(params);
-  const subject = asRecord(rec?.subject);
-  const tool =
-    asRecord(rec?.toolCall) ?? asRecord(subject?.toolCall) ?? asRecord(subject) ?? rec ?? {};
-  const command = stringField(subject ?? {}, "command");
-  const kind = stringField(tool, "kind") ?? stringField(subject ?? {}, "kind");
-  const preview = mergeToolPreview(
-    extractToolPreview(tool, tool),
-    subject ? extractToolPreview(subject, subject) : undefined,
-  );
-  const title =
-    composeToolTitle({
-      kind,
-      title: toolLabel(tool, subject ?? tool) ?? command ?? stringField(rec ?? {}, "title"),
-      command: command ?? extractShellCommand(tool.rawInput, tool.raw_input, tool.input, subject),
-      skill: extractSkillName(tool.rawInput, tool.raw_input, tool.input, subject),
-      path: preview?.path,
-      query: preview?.query ?? extractSearchQuery(tool) ?? extractSearchQuery(subject),
-      previewKind: preview?.kind,
-    }) || "Permission";
-  const callId =
-    stringField(tool, "toolCallId") ??
-    stringField(tool, "tool_call_id") ??
-    stringField(rec ?? {}, "toolCallId") ??
-    stringField(subject ?? {}, "toolCallId");
-  if (callId) {
-    emitNative({
-      type: "tool.updated",
-      callId,
-      title,
-      kind,
-      status: live.toolStatuses.get(callId),
-      preview,
-    });
-    if (preview?.path || preview?.query) {
-      live.enrichedTools.add(callId);
-      live.pendingToolEnrichments.delete(callId);
-    } else if (needsCursorToolEnrichment(kind, title, preview)) {
-      nativeOutputSink(outputWork, queueCursorToolEnrichment)(live, callId, kind);
-    }
-  }
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const rec = asRecord(params);
+      const subject = asRecord(rec?.subject);
+      const tool =
+        asRecord(rec?.toolCall) ?? asRecord(subject?.toolCall) ?? asRecord(subject) ?? rec ?? {};
+      const command = stringField(subject ?? {}, "command");
+      const kind = stringField(tool, "kind") ?? stringField(subject ?? {}, "kind");
+      const preview = mergeToolPreview(
+        extractToolPreview(tool, tool),
+        subject ? extractToolPreview(subject, subject) : undefined,
+      );
+      const title =
+        composeToolTitle({
+          kind,
+          title: toolLabel(tool, subject ?? tool) ?? command ?? stringField(rec ?? {}, "title"),
+          command:
+            command ?? extractShellCommand(tool.rawInput, tool.raw_input, tool.input, subject),
+          skill: extractSkillName(tool.rawInput, tool.raw_input, tool.input, subject),
+          path: preview?.path,
+          query: preview?.query ?? extractSearchQuery(tool) ?? extractSearchQuery(subject),
+          previewKind: preview?.kind,
+        }) || "Permission";
+      const callId =
+        stringField(tool, "toolCallId") ??
+        stringField(tool, "tool_call_id") ??
+        stringField(rec ?? {}, "toolCallId") ??
+        stringField(subject ?? {}, "toolCallId");
+      if (callId) {
+        emitNative({
+          type: "tool.updated",
+          callId,
+          title,
+          kind,
+          status: live.toolStatuses.get(callId),
+          preview,
+        });
+        if (preview?.path || preview?.query) {
+          live.enrichedTools.add(callId);
+          live.pendingToolEnrichments.delete(callId);
+        } else if (needsCursorToolEnrichment(kind, title, preview)) {
+          nativeOutputSink(outputWork, queueCursorToolEnrichment)(live, callId, kind);
+        }
+      }
 
-  const options = Array.isArray(rec?.options) ? rec.options : [];
-  const optionIds = options
-    .map((item) => asRecord(item)?.optionId)
-    .filter((value): value is string => typeof value === "string");
+      const options = Array.isArray(rec?.options) ? rec.options : [];
+      const optionIds = options
+        .map((item) => asRecord(item)?.optionId)
+        .filter((value): value is string => typeof value === "string");
 
-  if (live.planning) {
-    const normalized = (preview?.kind ?? kind ?? "").toLowerCase();
-    const readOnly = normalized === "read" || normalized === "search";
-    const optionId = readOnly
-      ? pickOption(optionIds, ["allow-once", "allow_once", "allow"])
-      : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
-    await nativeOutputSink(outputWork, () => live.acp.respond(id, {
-      outcome: {
-        outcome: "selected",
-        optionId: optionId ?? (readOnly ? "allow-once" : "reject-once"),
-      },
-    }))();
-    return;
-  }
+      if (live.planning) {
+        const normalized = (preview?.kind ?? kind ?? "").toLowerCase();
+        const readOnly = normalized === "read" || normalized === "search";
+        const optionId = readOnly
+          ? pickOption(optionIds, ["allow-once", "allow_once", "allow"])
+          : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
+        await nativeOutputSink(outputWork, () =>
+          live.acp.respond(id, {
+            outcome: {
+              outcome: "selected",
+              optionId: optionId ?? (readOnly ? "allow-once" : "reject-once"),
+            },
+          }),
+        )();
+        return;
+      }
 
-  const auto = pickAutoOption(live.runtimeMode, kind, optionIds);
-  if (auto) {
-    await nativeOutputSink(outputWork, () => live.acp.respond(id, {
-      outcome: { outcome: "selected", optionId: auto },
-    }))();
-    return;
-  }
+      const auto = pickAutoOption(live.runtimeMode, kind, optionIds);
+      if (auto) {
+        await nativeOutputSink(outputWork, () =>
+          live.acp.respond(id, {
+            outcome: { outcome: "selected", optionId: auto },
+          }),
+        )();
+        return;
+      }
 
-  emitNative({
-    type: "approval.requested",
-    requestId: id,
-    title,
-    kind,
-    callId,
-    preview,
-  });
+      emitNative({
+        type: "approval.requested",
+        requestId: id,
+        title,
+        kind,
+        callId,
+        preview,
+      });
 
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(id, resolve);
-  });
-  live.approvals.delete(id);
-  emitNative({ type: "approval.resolved", requestId: id, decision });
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        live.approvals.set(id, resolve);
+      });
+      live.approvals.delete(id);
+      emitNative({ type: "approval.resolved", requestId: id, decision });
 
-  const optionId =
-    decision === "allow"
-      ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
-      : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
+      const optionId =
+        decision === "allow"
+          ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
+          : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
 
-  await nativeOutputSink(outputWork, () => live.acp.respond(id, {
-    outcome: {
-      outcome: "selected",
-      optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+      await nativeOutputSink(outputWork, () =>
+        live.acp.respond(id, {
+          outcome: {
+            outcome: "selected",
+            optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+          },
+        }),
+      )();
     },
-  }))();
-
-});
+    { additionalInput: true },
+  );
 }
 
 function handleSessionUpdate(live: Live, params: unknown) {
@@ -965,10 +1005,14 @@ function retireCursorSubagentPolling(live: Live): void {
 function scheduleCursorSubagents(live: Live, delay: number): void {
   if (live.muteUpdates || live.subagentTimer || live.subagentRefresh || !live.agentTools.size)
     return;
-  live.subagentTimer = scheduleNativeOutputCallback(() => {
-    live.subagentTimer = undefined;
-    return refreshCursorSubagents(live);
-  }, delay, { additionalInput: true });
+  live.subagentTimer = scheduleNativeOutputCallback(
+    () => {
+      live.subagentTimer = undefined;
+      return refreshCursorSubagents(live);
+    },
+    delay,
+    { additionalInput: true },
+  );
 }
 
 function refreshCursorSubagents(live: Live): Promise<void> {
@@ -977,32 +1021,37 @@ function refreshCursorSubagents(live: Live): Promise<void> {
   const generation = live.subagentGeneration;
   const outputWork = captureNativeOutputWork({ additionalInput: true });
   const emitNative = nativeOutputSink(outputWork, (event: HarnessEvent) => live.onEvent(event));
-  const job = trackNativeOutputWork((async () => {
-    const runs = await readStoredCursorSubagentRuns(
-      live.acpSessionId,
-      [...live.agentTools.keys()].slice(-256),
-      live.subagentRevisions,
-    ).catch(() => []);
-    if (live.muteUpdates || live.subagentGeneration !== generation) return;
-    for (const run of runs) {
-      if (!live.agentTools.has(run.toolCallId)) continue;
-      live.subagentRevisions[run.agentId] = run.revision;
-      live.subagentRuns.set(run.toolCallId, run);
-      for (const event of cursorSubagentEvents(run, live.agentTools.get(run.toolCallId)))
-        emitNative(event);
-    }
-  })().finally(nativeOutputSink(outputWork, () => {
-    live.subagentRefresh = undefined;
-    if (live.subagentGeneration !== generation) {
-      if (live.promptActive) scheduleCursorSubagents(live, 0);
-      return;
-    }
-    if (live.promptActive) scheduleCursorSubagents(live, 1_000);
-    else if (live.subagentFinalPolls > 0) {
-      live.subagentFinalPolls -= 1;
-      scheduleCursorSubagents(live, 500);
-    }
-  })), outputWork);
+  const job = trackNativeOutputWork(
+    (async () => {
+      const runs = await readStoredCursorSubagentRuns(
+        live.acpSessionId,
+        [...live.agentTools.keys()].slice(-256),
+        live.subagentRevisions,
+      ).catch(() => []);
+      if (live.muteUpdates || live.subagentGeneration !== generation) return;
+      for (const run of runs) {
+        if (!live.agentTools.has(run.toolCallId)) continue;
+        live.subagentRevisions[run.agentId] = run.revision;
+        live.subagentRuns.set(run.toolCallId, run);
+        for (const event of cursorSubagentEvents(run, live.agentTools.get(run.toolCallId)))
+          emitNative(event);
+      }
+    })().finally(
+      nativeOutputSink(outputWork, () => {
+        live.subagentRefresh = undefined;
+        if (live.subagentGeneration !== generation) {
+          if (live.promptActive) scheduleCursorSubagents(live, 0);
+          return;
+        }
+        if (live.promptActive) scheduleCursorSubagents(live, 1_000);
+        else if (live.subagentFinalPolls > 0) {
+          live.subagentFinalPolls -= 1;
+          scheduleCursorSubagents(live, 500);
+        }
+      }),
+    ),
+    outputWork,
+  );
   live.subagentRefresh = job;
   return job;
 }
@@ -1083,10 +1132,14 @@ function scheduleCursorToolEnrichment(live: Live, delay: number): void {
   ) {
     return;
   }
-  live.toolEnrichmentTimer = scheduleNativeOutputCallback(() => {
-    live.toolEnrichmentTimer = undefined;
-    return refreshCursorToolEnrichments(live);
-  }, delay, { additionalInput: true });
+  live.toolEnrichmentTimer = scheduleNativeOutputCallback(
+    () => {
+      live.toolEnrichmentTimer = undefined;
+      return refreshCursorToolEnrichments(live);
+    },
+    delay,
+    { additionalInput: true },
+  );
 }
 
 function wakeCursorToolEnrichment(live: Live): void {
@@ -1096,40 +1149,51 @@ function wakeCursorToolEnrichment(live: Live): void {
 }
 
 async function refreshCursorToolEnrichments(live: Live): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-  if (live.muteUpdates || live.toolEnrichmentRunning || live.pendingToolEnrichments.size === 0) {
-    return;
-  }
-  live.toolEnrichmentRunning = true;
-  const callIds = [...live.pendingToolEnrichments.keys()].slice(0, 256);
-  try {
-    const storedCalls = await readStoredCursorToolCalls(live.acpSessionId, callIds).catch(() => []);
-    if (live.muteUpdates) return;
-
-    for (const stored of storedCalls) {
-      const pending = live.pendingToolEnrichments.get(stored.toolCallId);
-      if (!pending) continue;
-      if (nativeOutputSink(outputWork, applyStoredCursorToolCall)(live, stored, pending.kind)) {
-        live.pendingToolEnrichments.delete(stored.toolCallId);
+  return runNativeOutputWork(
+    async (outputWork) => {
+      if (
+        live.muteUpdates ||
+        live.toolEnrichmentRunning ||
+        live.pendingToolEnrichments.size === 0
+      ) {
+        return;
       }
-    }
+      live.toolEnrichmentRunning = true;
+      const callIds = [...live.pendingToolEnrichments.keys()].slice(0, 256);
+      try {
+        const storedCalls = await readStoredCursorToolCalls(live.acpSessionId, callIds).catch(
+          () => [],
+        );
+        if (live.muteUpdates) return;
 
-    for (const callId of callIds) {
-      const pending = live.pendingToolEnrichments.get(callId);
-      if (!pending) continue;
-      const attempts = pending.attempts + 1;
-      if (attempts >= TOOL_ENRICH_MAX_ATTEMPTS) {
-        live.pendingToolEnrichments.delete(callId);
-      } else {
-        live.pendingToolEnrichments.set(callId, { ...pending, attempts });
+        for (const stored of storedCalls) {
+          const pending = live.pendingToolEnrichments.get(stored.toolCallId);
+          if (!pending) continue;
+          if (nativeOutputSink(outputWork, applyStoredCursorToolCall)(live, stored, pending.kind)) {
+            live.pendingToolEnrichments.delete(stored.toolCallId);
+          }
+        }
+
+        for (const callId of callIds) {
+          const pending = live.pendingToolEnrichments.get(callId);
+          if (!pending) continue;
+          const attempts = pending.attempts + 1;
+          if (attempts >= TOOL_ENRICH_MAX_ATTEMPTS) {
+            live.pendingToolEnrichments.delete(callId);
+          } else {
+            live.pendingToolEnrichments.set(callId, { ...pending, attempts });
+          }
+        }
+      } finally {
+        live.toolEnrichmentRunning = false;
+        nativeOutputSink(outputWork, scheduleCursorToolEnrichment)(
+          live,
+          nativeOutputSink(outputWork, toolEnrichmentDelay)(live),
+        );
       }
-    }
-  } finally {
-    live.toolEnrichmentRunning = false;
-    nativeOutputSink(outputWork, scheduleCursorToolEnrichment)(live, nativeOutputSink(outputWork, toolEnrichmentDelay)(live));
-  }
-
-}, { additionalInput: true });
+    },
+    { additionalInput: true },
+  );
 }
 
 function applyStoredCursorToolCall(

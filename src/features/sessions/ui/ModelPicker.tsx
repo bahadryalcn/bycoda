@@ -59,6 +59,8 @@ import {
 } from "../model/accountModelChoices";
 import {
   defaultProviderAccountId,
+  providerAccountLabel,
+  providerAccounts,
   supportsProviderAccounts,
   subscribeProviderAccounts,
 } from "../../providers/model/providerAccounts";
@@ -140,8 +142,8 @@ export function ModelPicker({
   const refreshSource = useStableCallback(source.refresh);
   const accountsSnapshot = useSyncExternalStore(
     subscribeProviderAccounts,
-    accountChoicesSnapshot,
-    accountChoicesSnapshot,
+    () => source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
+    () => source.accounts === undefined ? accountChoicesSnapshot() : JSON.stringify(source.accounts),
   );
   const catalogVersion = useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const availabilityVersion = useSyncExternalStore(
@@ -184,13 +186,26 @@ export function ModelPicker({
 
   const current = source.resolve(harness, model);
   const currentAccountId = supportsProviderAccounts(harness)
-    ? (accountId ?? defaultProviderAccountId(harness))
+    ? (accountId ?? (source.accounts === undefined ? defaultProviderAccountId(harness) : "default"))
     : undefined;
   const currentChoiceKey = modelChoiceKey({
     ...current,
     accountId: accountChoices ? currentAccountId : undefined,
   });
-  const currentLabel = accountChoices ? modelAccountLabel(current, currentAccountId) : current.name;
+  const currentLabel = accountChoices ? modelAccountLabel(current, currentAccountId, source.accounts) : current.name;
+  // The account is part of the identity only while there is a choice between
+  // accounts; a lone default account stays out of the trigger.
+  const triggerAccountLabel = useMemo(() => {
+    void accountsSnapshot;
+    if (!accountChoices || !currentAccountId || !supportsProviderAccounts(harness)) return undefined;
+    if (source.accounts !== undefined) {
+      const accounts = source.accounts[harness] ?? [];
+      return accounts.length > 1 ? accounts.find((account) => account.id === currentAccountId)?.label : undefined;
+    }
+    return providerAccounts(harness).length > 1
+      ? providerAccountLabel(harness, currentAccountId)
+      : undefined;
+  }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts]);
   currentRef.current = current;
   const settings = useMemo(() => {
     void catalogVersion;
@@ -253,7 +268,7 @@ export function ModelPicker({
                 item != null && pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
             )
         : source.modelsFor(visibleTab).filter((item) => isModelEnabled(item.id));
-    const choices = accountModelChoices(pool, accountChoices);
+    const choices = accountModelChoices(pool, accountChoices, source.accounts);
     if (!needle) return choices;
     return choices.filter((item) =>
       `${item.name} ${HARNESS_TITLE[item.harness]} ${item.provider?.name ?? ""} ${item.provider?.id ?? ""}`
@@ -294,6 +309,7 @@ export function ModelPicker({
         (item) => pickerHarnesses.includes(item.harness) && isModelEnabled(item.id),
       ),
       accountChoices,
+      source.accounts,
     );
     if (!models.length) return;
     const selectedIndex = models.findIndex((item) => modelChoiceKey(item) === currentChoiceKey);
@@ -588,7 +604,7 @@ export function ModelPicker({
       <Button
         size="sm"
         className="w-auto max-w-full min-w-0 shrink-0"
-        variant="item"
+        variant="ghost"
         ref={button}
         type="button"
         shortcut={hotkeys ? switchShortcut : null}
@@ -612,7 +628,15 @@ export function ModelPicker({
         onClick={() => togglePicker()}
       >
         <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
-        <span className="min-w-0 truncate">{currentLabel}</span>
+        <span className="min-w-0 truncate">{current.name}</span>
+        {triggerAccountLabel ? (
+          <>
+            {" "}
+            <span data-model-account className="min-w-0 max-w-24 truncate text-(--ui-text-secondary)">
+              {triggerAccountLabel}
+            </span>
+          </>
+        ) : null}
         {triggerEffortLabel ? (
           <span data-model-effort className="shrink-0 text-(--ui-text-secondary)">
             {triggerEffortLabel}

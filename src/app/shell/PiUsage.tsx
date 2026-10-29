@@ -29,7 +29,7 @@ export function PiUsage({ model, now }: { model?: string; now: number }) {
             : t("Subscription usage is not supported for this Pi provider.")
         }
       >
-        <HarnessIcon harness="pi" className="size-3 shrink-0" />
+        <HarnessIcon harness="pi" className="icon-sm shrink-0" />
         <span>{t("pi · Usage unavailable")}</span>
       </span>
     );
@@ -98,14 +98,15 @@ function PiProviderUsage({ provider, now }: { provider: PiUsageProvider; now: nu
         variant="ghost"
         motion="none"
         type="button"
+        size="sm"
         aria-label={t("Refresh Pi usage")}
         title={t("Refresh Pi usage")}
         disabled={fetching}
         onClick={() => refreshRef.current(true)}
-        className="grid shrink-0 place-items-center"
+        className="size-7 shrink-0"
       >
         <RefreshCw
-          className={`size-2.5 ${fetching ? "motion-safe:animate-spin" : ""}`}
+          className={`icon-sm ${fetching ? "motion-safe:animate-spin" : ""}`}
           strokeWidth={1.75}
           aria-hidden
         />

@@ -108,6 +108,203 @@ fn retained_close(
     )
 }
 
+fn projection_request() -> Value {
+    json!({"kind":"source-projection-observe","sessionId":"logical.session","migrationId":"migration.round","generation":7})
+}
+fn observed_projection() -> Value {
+    json!({"version":1,"qualified":false,"prepareId":uuid::Uuid::new_v4().to_string(),
+        "status":"observed","receiptCount":1,"missingCoverage":["provider-application-unverified"]})
+}
+
+#[test]
+fn projection_observer_runs_only_after_hello_for_exact_monotonic_request() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let _serial = test_lock();
+    let calls = Arc::new(AtomicUsize::new(0));
+    let actual_calls = calls.clone();
+    let expected = observed_projection();
+    let result = expected.clone();
+    let endpoint = SourceEndpoint::start_with_projection(
+        binding(store()),
+        PipeCancellation::default(),
+        options(),
+        Arc::new(move |session, migration, generation, cancellation| {
+            assert_eq!(
+                (session, migration, generation),
+                ("logical.session", "migration.round", 7)
+            );
+            assert!(!cancellation.is_cancelled());
+            actual_calls.fetch_add(1, Ordering::AcqRel);
+            Ok(result.clone())
+        }),
+    )
+    .unwrap();
+    let mut pipe = client(&endpoint);
+    let initial = hello(&endpoint, &mut pipe);
+    let epoch = initial["sourceEpoch"].as_str().unwrap();
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+    status(&mut pipe, epoch, 1);
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+    let response = exchange(&mut pipe, epoch, 2, projection_request()).unwrap();
+    assert_eq!(
+        response,
+        json!({"version":1,"kind":"source-projection-observation","requestId":2,"sourceEpoch":epoch,"observation":expected})
+    );
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+    assert!(exchange(&mut pipe, epoch, 2, projection_request()).is_err());
+    assert_eq!(endpoint.join(), Ok(SourceExit::InvalidRequestId));
+    assert_eq!(calls.load(Ordering::Acquire), 1);
+}
+
+#[test]
+fn projection_missing_or_invalid_callback_is_explicit_unverified_without_error_details() {
+    let _serial = test_lock();
+    for mode in 0..4 {
+        let mut endpoint = if mode == 0 {
+            start(store())
+        } else {
+            SourceEndpoint::start_with_projection(
+                binding(store()),
+                PipeCancellation::default(),
+                options(),
+                Arc::new(move |_, _, _, _| {
+                    let mut result = observed_projection();
+                    match mode {
+                        1 => return Err("private SQL/path/token details".into()),
+                        2 => result["qualified"] = json!(true),
+                        _ => result["receiptCount"] = json!(65),
+                    }
+                    Ok(result)
+                }),
+            )
+            .unwrap()
+        };
+        let mut pipe = client(&endpoint);
+        let initial = hello(&endpoint, &mut pipe);
+        let result = exchange(
+            &mut pipe,
+            initial["sourceEpoch"].as_str().unwrap(),
+            1,
+            projection_request(),
+        )
+        .unwrap();
+        assert_eq!(result["observation"]["status"], "unverified");
+        assert_eq!(result["observation"]["qualified"], false);
+        assert_eq!(result["observation"]["receiptCount"], 0);
+        assert!(
+            uuid::Uuid::parse_str(result["observation"]["prepareId"].as_str().unwrap()).is_ok()
+        );
+        assert!(!result.to_string().contains("private SQL"));
+        drop(pipe);
+        endpoint.shutdown().unwrap();
+    }
+}
+
+#[test]
+fn projection_rejects_closed_scope_extra_fields_and_unsafe_generation_before_callback() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let _serial = test_lock();
+    let calls = Arc::new(AtomicUsize::new(0));
+    for variant in 0..5 {
+        let actual = calls.clone();
+        let endpoint = SourceEndpoint::start_with_projection(
+            binding(store()),
+            PipeCancellation::default(),
+            options(),
+            Arc::new(move |_, _, _, _| {
+                actual.fetch_add(1, Ordering::AcqRel);
+                Ok(observed_projection())
+            }),
+        )
+        .unwrap();
+        let mut pipe = client(&endpoint);
+        let initial = hello(&endpoint, &mut pipe);
+        let mut request = projection_request();
+        match variant {
+            0 => request["sessionId"] = json!("logical#routing-suffix"),
+            1 => request["generation"] = json!(MAX_REQUEST_ID + 1),
+            2 => request["qualified"] = json!(true),
+            3 => request["migrationId"] = json!("x".repeat(201)),
+            _ => request["sessionId"] = json!(".not-an-identifier"),
+        }
+        assert!(exchange(
+            &mut pipe,
+            initial["sourceEpoch"].as_str().unwrap(),
+            1,
+            request
+        )
+        .is_err());
+        assert_eq!(endpoint.join(), Ok(SourceExit::Malformed));
+    }
+    assert_eq!(calls.load(Ordering::Acquire), 0);
+}
+
+#[test]
+fn projection_cancel_keeps_callback_and_endpoint_owned_until_actual_settlement() {
+    use std::sync::mpsc;
+    let _serial = test_lock();
+    let cancellation = PipeCancellation::default();
+    let (entered, observed) = mpsc::channel();
+    let (release, held) = mpsc::channel();
+    let held = Mutex::new(held);
+    let endpoint = SourceEndpoint::start_with_projection(
+        binding(store()),
+        cancellation.clone(),
+        options(),
+        Arc::new(move |_, _, _, cancellation| {
+            entered.send(()).unwrap();
+            held.lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            assert!(cancellation.is_cancelled());
+            Ok(observed_projection())
+        }),
+    )
+    .unwrap();
+    let mut pipe = client(&endpoint);
+    let initial = hello(&endpoint, &mut pipe);
+    let mut request = projection_request();
+    request["version"] = json!(1);
+    request["requestId"] = json!(1);
+    request["sourceEpoch"] = initial["sourceEpoch"].clone();
+    pipe.send_json(&request, &budget()).unwrap();
+    observed.recv_timeout(Duration::from_secs(5)).unwrap();
+    cancellation.cancel();
+    assert!(!endpoint.observation().unwrap().thread_finished);
+    assert_eq!(endpoints().lock().unwrap().len(), 1);
+    release.send(()).unwrap();
+    assert_eq!(endpoint.join(), Ok(SourceExit::Cancelled));
+    assert!(endpoints().lock().unwrap().is_empty());
+    assert!(pipe.read_json(&budget()).is_err());
+}
+
+#[test]
+fn projection_binding_is_revalidated_after_callback_before_disclosure() {
+    let _serial = test_lock();
+    let store = store();
+    let changed = store.clone();
+    let endpoint = SourceEndpoint::start_with_projection(binding(store), PipeCancellation::default(), options(), Arc::new(move |_, _, _, _| {
+        // Inject source corruption past the immutable SQL gate so the original
+        // captured binding still has to reject before disclosing its callback.
+        changed.lock_conn().unwrap().execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_store_id='changed-during-observe' WHERE id=1",
+        ).unwrap();
+        Ok(observed_projection())
+    })).unwrap();
+    let mut pipe = client(&endpoint);
+    let initial = hello(&endpoint, &mut pipe);
+    assert!(exchange(
+        &mut pipe,
+        initial["sourceEpoch"].as_str().unwrap(),
+        1,
+        projection_request()
+    )
+    .is_err());
+    assert_eq!(endpoint.join(), Ok(SourceExit::BindingChanged));
+}
+
 #[test]
 fn retained_exact_multibyte_chunks_are_read_only_and_close_releases_actual_export() {
     let _serial = test_lock();
@@ -530,12 +727,13 @@ fn changed_actual_store_identity_is_rechecked_before_status_disclosure() {
     let endpoint = start(store.clone());
     let mut client = client(&endpoint);
     let initial = hello(&endpoint, &mut client);
+    // Deliberate source-identity corruption, below the production SQL guard.
     store
         .lock_conn()
         .unwrap()
-        .execute(
-            "UPDATE native_authority_identity SET source_profile_id='replaced-profile' WHERE id=1",
-            [],
+        .execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_profile_id='replaced-profile' WHERE id=1",
         )
         .unwrap();
     let _ = client.send_json(&json!({"version":1,"kind":"source-status","requestId":1,"sourceEpoch":initial["sourceEpoch"]}), &budget());

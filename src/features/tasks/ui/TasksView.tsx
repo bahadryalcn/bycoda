@@ -2516,7 +2516,7 @@ function TaskCardBody({
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
       data-selected={selected || undefined}
-      className="task-board-card cursor-pointer rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2 hover:bg-(--ui-surface-hover) data-[selected]:bg-(--ui-surface-selected)"
+      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2 hover:bg-(--ui-surface-hover) data-[selected]:bg-(--ui-surface-selected)"
     >
       {goal ? (
         <p
@@ -3667,7 +3667,7 @@ function TaskForm({
         <div
           data-ui-focus-group=""
           data-task-prompt=""
-          className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)"
+          className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
         >
           <SkillPromptField
             value={draft.prompt}
@@ -4451,7 +4451,7 @@ function GoalCard({
       aria-label={goal.title}
       data-goal-status={goal.status}
       aria-busy={pending || undefined}
-      className="task-goal-card rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
+      className="task-goal-card rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
       <div className="task-goal-heading flex min-w-0 flex-wrap items-center gap-2">
         <Sparkles className="icon-sm shrink-0 text-(--ui-text-secondary)" />
@@ -4994,7 +4994,7 @@ function GoalForm({
             <span>{t("Choose the projects the job may touch, all on one machine.")}</span>
           )}
         </div>
-        <div className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) has-focus:border-(--ui-tone-neutral-border)">
+        <div className="relative mt-2 rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
           <TextareaField
             hideLabel
             label=""
@@ -5295,7 +5295,7 @@ function StewardsPanel({
                 aria-label={t("Steward for {p0}", { p0: stewardProjectName(steward) })}
                 data-steward-status={steward.lastRunStatus}
                 aria-busy={pending || undefined}
-                className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
+                className="rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised) px-3 py-2"
               >
                 <div className="flex min-w-0 flex-wrap items-center gap-2">
                   <Bot className="icon-sm shrink-0 text-(--ui-text-secondary)" />
@@ -5489,7 +5489,7 @@ function StewardForm({
       aria-label={draft.id ? t("Edit steward") : t("New steward")}
       aria-busy={saving}
       onSubmit={onSubmit}
-      className="rounded-md border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
+      className="rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-3 py-2"
     >
       <fieldset disabled={saving} inert={saving} className="min-w-0">
         <div className="flex min-w-0 flex-wrap items-center gap-2 text-ui-caption text-(--ui-text-secondary)">

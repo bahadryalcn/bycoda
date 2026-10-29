@@ -13,6 +13,7 @@ import { ChevronDown } from "./icons";
 import { Popover } from "./Popover";
 import { SelectTrigger, SelectOption, SelectValue } from "./arc/select/select";
 import { ComboboxChoice } from "./arc/combobox/combobox";
+import { Field, fieldDescribedBy, type FieldVariant } from "./Field";
 
 export type SelectChoice = {
   value: string;
@@ -67,6 +68,12 @@ export type SelectProps = Omit<
   onOpen?: () => void;
   /** Opt in when the existing choice owner wraps at the first/last option. */
   loopNavigation?: boolean;
+  /** Show `label` above the trigger in the shared field composition (implied by description/error). */
+  visibleLabel?: boolean;
+  description?: string;
+  error?: string;
+  /** Only used with the field composition above. */
+  fieldVariant?: FieldVariant;
   ref?: Ref<HTMLButtonElement>;
 };
 
@@ -79,6 +86,10 @@ export function Select({
   disabled = false,
   onOpen,
   loopNavigation = false,
+  visibleLabel = false,
+  description,
+  error,
+  fieldVariant = "form",
   className,
   ref,
   onKeyDown,
@@ -92,6 +103,9 @@ export function Select({
   const trigger = useRef<HTMLButtonElement>(null);
   const activeOption = useRef<HTMLButtonElement>(null);
   const listId = useId();
+  const generatedId = useId();
+  const triggerId = triggerProps.id ?? generatedId;
+  const composed = visibleLabel || Boolean(description) || Boolean(error);
   const selected = options.find((option) => option.value === value);
   const activeId = options[active] != null ? `${listId}-opt-${active}` : undefined;
 
@@ -154,10 +168,15 @@ export function Select({
     }
   };
 
-  return (
-    <div ref={root} className="relative max-w-52">
+  const select = (
+    <div ref={root} className={composed ? "relative" : "relative max-w-52"}>
       <SelectTrigger
         {...triggerProps}
+        id={composed ? triggerId : triggerProps.id}
+        aria-invalid={error ? true : triggerProps["aria-invalid"]}
+        aria-describedby={
+          fieldDescribedBy(triggerId, { description, error }, triggerProps["aria-describedby"])
+        }
         type={triggerProps.type ?? "button"}
         ref={(node) => {
           trigger.current = node;
@@ -258,5 +277,19 @@ export function Select({
         </Popover>
       ) : null}
     </div>
+  );
+  if (!composed) return select;
+  return (
+    <Field
+      label={label}
+      hideLabel={!visibleLabel}
+      description={description}
+      error={error}
+      variant={fieldVariant}
+      id={triggerId}
+      className="max-w-52"
+    >
+      {select}
+    </Field>
   );
 }

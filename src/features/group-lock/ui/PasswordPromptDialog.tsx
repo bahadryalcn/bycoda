@@ -17,6 +17,15 @@ export function verifyFailureMessage(result: VerifyResult, cooldownMs: number): 
   return t("Wrong password.");
 }
 
+/** What to tell the user when the password was right but the change was not fully saved. */
+export function incompleteMessage(kind: "not-saved" | "partial"): string {
+  return kind === "partial"
+    ? t(
+        "The password was removed, but some group locks could not be cleared from saved data. Review Group protection.",
+      )
+    : t("The change could not be saved, so nothing was changed. Try again.");
+}
+
 /** Re-renders every half second while a cool-down runs. */
 export function useCooldown(initialMs: number): {
   remainingMs: number;
@@ -90,6 +99,10 @@ export function PasswordPromptDialog({
       if (!alive.current) return;
       if (input.current) input.current.value = "";
       if (result.ok) {
+        if (result.incomplete) {
+          setError(incompleteMessage(result.incomplete));
+          return;
+        }
         onDone();
         return;
       }
@@ -110,11 +123,12 @@ export function PasswordPromptDialog({
 
   const message =
     cooldown.remainingMs > 0
-      ? `Too many wrong passwords. Try again in ${formatCooldown(cooldown.remainingMs)}.`
+      ? t("Too many wrong passwords. Try again in {p0}.", { p0: formatCooldown(cooldown.remainingMs) })
       : error;
 
   return (
-    <Modal title={title} description={description} size="sm" onClose={onClose}>
+    // The running check cannot be cancelled, so the dialog stays until it finishes.
+    <Modal title={title} description={description} size="sm" onClose={busy ? () => {} : onClose}>
       <form onSubmit={submit} className="flex flex-col gap-3 p-4">
         <PasswordField
           label={t("Lock password")}
@@ -129,7 +143,7 @@ export function PasswordPromptDialog({
           </Alert>
         ) : null}
         <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose} variant="ghost">
+          <Button type="button" onClick={onClose} variant="ghost" disabled={busy}>
             {t("Cancel")}
           </Button>
           <Button

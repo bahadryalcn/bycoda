@@ -1,6 +1,12 @@
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
 import type { HarnessEvent } from "../core/types";
-import { getNativeOutputEventOrigin, retainNativeOutputEventOrigin, nativeOutputSink, trackNativeOutputWork } from "../core/nativeOutputDelivery";
+import {
+  getNativeOutputEventOrigin,
+  retainNativeOutputEventOrigin,
+  nativeOutputSink,
+  trackNativeOutputWork,
+  noteNativeOutputAdditionalInput,
+} from "../core/nativeOutputDelivery";
 
 export type QuestionDelivery = {
   sending?: boolean;
@@ -39,19 +45,28 @@ export function deliverQuestionReply(
   pending.sending = true;
   const origin = pending.event && getNativeOutputEventOrigin(pending.event);
   const work = origin ? retainNativeOutputEventOrigin(origin) : null;
+  noteNativeOutputAdditionalInput(work);
   const emit = nativeOutputSink(work, onEvent);
   emit({ type: "question.updated", requestId, delivery: "sending" });
   const actual = Promise.resolve()
-    .then(nativeOutputSink(work, () => {
-      if (!current()) return false;
-      return deliver(reply).then(() => true);
-    }))
-    .then(nativeOutputSink(work, (sent) => {
-      if (sent && current()) accepted();
-      else work?.fail("question-reply-retired");
-    }));
-  const handled = actual.catch(nativeOutputSink(work, (error: unknown) => {
-      if (!current()) { work?.fail("question-reply-retired"); return; }
+    .then(
+      nativeOutputSink(work, () => {
+        if (!current()) return false;
+        return deliver(reply).then(() => true);
+      }),
+    )
+    .then(
+      nativeOutputSink(work, (sent) => {
+        if (sent && current()) accepted();
+        else work?.fail("question-reply-retired");
+      }),
+    );
+  const handled = actual.catch(
+    nativeOutputSink(work, (error: unknown) => {
+      if (!current()) {
+        work?.fail("question-reply-retired");
+        return;
+      }
       const invalid = error instanceof QuestionReplyValidationError;
       if (invalid) pending.sending = false;
       emit({
@@ -63,6 +78,7 @@ export function deliverQuestionReply(
           : "Answer delivery could not be confirmed. Check the connection before continuing.",
       });
       work?.fail("question-reply-failed");
-    }));
+    }),
+  );
   void trackNativeOutputWork(handled, work).catch(() => undefined);
 }

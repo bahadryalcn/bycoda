@@ -1,3 +1,4 @@
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 import { useCallback, type MutableRefObject } from "react";
 import {
   keepHarnessQuestionOpen,
@@ -26,7 +27,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
     (sessionId: string, requestId: number, decision: ApprovalDecision) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       if (!session || session.worktreeRemoved) return;
-      if (remoteProjectFor(session.cwd)) {
+      if ((hostSessionBinding(session) || remoteProjectFor(session.cwd))) {
         remoteSessionActions(sessionId)?.approve(requestId, decision);
         return;
       }
@@ -44,7 +45,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
       )
         return;
-      if (remoteProjectFor(session.cwd)) {
+      if ((hostSessionBinding(session) || remoteProjectFor(session.cwd))) {
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
         actions.answer(requestId, reply);
@@ -57,7 +58,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
 
   const onQuestionInteraction = useCallback((sessionId: string, requestId: number) => {
     const session = sessionsRef.current.find((s) => s.id === sessionId);
-    if (session && remoteProjectFor(session.cwd)) return;
+    if (session && (hostSessionBinding(session) || remoteProjectFor(session.cwd))) return;
     if (session && !session.worktreeRemoved)
       keepHarnessQuestionOpen(session.harness, sessionId, requestId);
   }, []);

@@ -237,25 +237,66 @@ export async function jiraIssueComment(
   return url;
 }
 
-export function loadHiddenJiraProjectIds(): string[] {
+/** Distinguishes an empty saved scope from one that cannot be read: `null` means
+ * unreadable or corrupt, and callers must not treat it as "hide nothing". */
+export function readHiddenJiraProjectIds(): string[] | null {
   try {
     const raw = localStorage.getItem(PROJECT_IDS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return null;
     return parsed.filter((id): id is string => typeof id === "string" && id.length > 0);
   } catch {
-    return [];
+    return null;
   }
 }
 
-export function saveHiddenJiraProjectIds(ids: string[]) {
+/** Display fallback only; fetch paths use `requireHiddenJiraProjectIds`. */
+export function loadHiddenJiraProjectIds(): string[] {
+  return readHiddenJiraProjectIds() ?? [];
+}
+
+/** Fails closed so an unreadable saved scope never widens what Jira fetches. */
+export function requireHiddenJiraProjectIds(): string[] {
+  const ids = readHiddenJiraProjectIds();
+  if (!ids)
+    throw new Error("Saved Jira project scope is unavailable, so Jira results are paused.");
+  return ids;
+}
+
+/** Returns whether the new scope was read back from storage. */
+export function saveHiddenJiraProjectIds(ids: string[]): boolean {
+  let persisted = false;
   try {
     localStorage.setItem(PROJECT_IDS_KEY, JSON.stringify(ids));
+    const stored = readHiddenJiraProjectIds();
+    persisted = !!stored && stored.length === ids.length && ids.every((id) => stored.includes(id));
   } catch {
     // private mode / quota
   }
   notifyJiraChange();
+  return persisted;
+}
+
+/** Same-window changes and sibling-window storage changes to Jira scope. */
+export function subscribeJiraScope(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const onStorage = (event: StorageEvent) => {
+    if (event.storageArea && event.storageArea !== localStorage) return;
+    if (
+      event.key === null ||
+      event.key === PROJECT_IDS_KEY ||
+      event.key === "bycoda.jiraAllowedBoards" ||
+      event.key === "bycoda.jiraBackgroundSync"
+    )
+      onChange();
+  };
+  window.addEventListener(JIRA_CHANGE_EVENT, onChange);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(JIRA_CHANGE_EVENT, onChange);
+    window.removeEventListener("storage", onStorage);
+  };
 }
 
 export function notifyJiraChange() {

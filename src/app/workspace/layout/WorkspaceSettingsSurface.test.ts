@@ -7,7 +7,11 @@ import {
   type WorkspaceSettingsSurfaceProps,
 } from "./WorkspaceSettingsSurface";
 
-const { manage, remove } = vi.hoisted(() => ({ manage: vi.fn(), remove: vi.fn() }));
+const { manage, remove, view } = vi.hoisted(() => ({
+  manage: vi.fn(),
+  remove: vi.fn(),
+  view: vi.fn(),
+}));
 vi.mock("../../../features/source-control/ui/WorktreesPage", () => ({
   WorktreesPage: (props: unknown) => {
     manage(props);
@@ -21,11 +25,22 @@ vi.mock("../../../features/source-control/ui/QuickDeleteWorktreeDialog", () => (
   },
 }));
 vi.mock("../../../shared/ui/Modal", () => ({
-  Modal: ({ children }: { children: React.ReactNode }) => children,
+  Modal: ({
+    children,
+    className,
+    title,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+    title?: string;
+  }) => createElement("div", { "data-modal": title, className }, children),
 }));
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
 vi.mock("../surfaces/lazySurfaces", () => ({
-  SettingsView: () => null,
+  SettingsView: (props: unknown) => {
+    view(props);
+    return null;
+  },
   preloadToolSurface: vi.fn(),
 }));
 
@@ -80,4 +95,37 @@ it("keeps targeted deletion in the quick confirmation", () => {
   const forwarded = remove.mock.calls[0][0] as { onRemove: (...args: unknown[]) => unknown };
   forwarded.onRemove("feature");
   expect(input.onRemoveWorktree).toHaveBeenCalledWith("feature");
+});
+
+function settingsProps(presentation?: "page" | "dialog"): WorkspaceSettingsSurfaceProps {
+  return {
+    ...props(),
+    presentation,
+    worktreeManagementRequest: null,
+    settingsOpen: true,
+    settingsSection: "skills",
+    onCloseSettings: vi.fn(),
+  } as unknown as WorkspaceSettingsSurfaceProps;
+}
+
+it("keeps the full-window page presentation by default, with its own chrome", () => {
+  const html = renderToStaticMarkup(createElement(WorkspaceSettingsSurface, settingsProps()));
+  expect(html).not.toContain("data-modal");
+  const shown = view.mock.calls[0][0] as Record<string, unknown>;
+  expect(shown.embedded).toBe(false);
+  expect(shown.onToggleMaximize).toBeUndefined();
+});
+
+it("shows Settings in the shared Modal with maximize and no duplicate window chrome", () => {
+  const html = renderToStaticMarkup(
+    createElement(WorkspaceSettingsSurface, settingsProps("dialog")),
+  );
+  expect(html).toContain('data-modal="Settings"');
+  expect(html).toContain("bycoda-settings-dialog");
+  // Skills is a list/detail library, so the dialog sizes it as a workspace.
+  expect(html).toContain('data-settings-dialog-mode="workspace"');
+  const shown = view.mock.calls[0][0] as Record<string, unknown>;
+  expect(shown.embedded).toBe(true);
+  expect(shown.maximized).toBe(false);
+  expect(typeof shown.onToggleMaximize).toBe("function");
 });

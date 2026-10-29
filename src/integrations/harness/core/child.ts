@@ -570,8 +570,14 @@ export function writeChild(
 ): Promise<void> {
   const work = captureNativeOutputWork();
   try {
-    return trackNativeOutputWork(invoke<void>("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) }), work);
-  } catch (error) { work?.fail("child-write-rejected"); throw error; }
+    return trackNativeOutputWork(
+      invoke<void>("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) }),
+      work,
+    );
+  } catch (error) {
+    work?.fail("child-write-rejected");
+    throw error;
+  }
 }
 
 export function killChild(sessionId: string): Promise<void> {
@@ -702,8 +708,15 @@ export function harnessHttp(input: {
   authorityGeneration?: number;
 }): Promise<{ status: number; body: string }> {
   const work = captureNativeOutputWork({ additionalInput: true });
-  try { return trackNativeOutputWork(invoke<{status:number;body:string}>("harness_http", input), work); }
-  catch (error) { work?.fail("child-http-rejected"); throw error; }
+  try {
+    return trackNativeOutputWork(
+      invoke<{ status: number; body: string }>("harness_http", input),
+      work,
+    );
+  } catch (error) {
+    work?.fail("child-http-rejected");
+    throw error;
+  }
 }
 
 export function openHarnessSse(
@@ -714,7 +727,13 @@ export function openHarnessSse(
   logicalSessionId?: string,
 ): Promise<void> {
   ownedSse.add(sessionId);
-  return invoke("harness_sse_open", { sessionId, url, headers, ...nativeAuthorityArgs(authority), ...(logicalSessionId === undefined ? {} : { logicalSessionId }) });
+  return invoke("harness_sse_open", {
+    sessionId,
+    url,
+    headers,
+    ...nativeAuthorityArgs(authority),
+    ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
+  });
 }
 
 export function closeHarnessSse(sessionId: string): Promise<void> {

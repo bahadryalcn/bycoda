@@ -8,8 +8,15 @@ let appliedRevision = 0;
 let activeObjectUrl: string | null = null;
 const pending = new Map<
   number,
-  { resolve: (result?: Blob) => void; reject: (error: Error) => void }
+  {
+    resolve: (result?: Blob) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+    owner: Worker;
+  }
 >();
+/** A decode or render that outlives this is treated as a hung worker and recreated. */
+const REQUEST_TIMEOUT_MS = 20_000;
 const loadedSources = new Map<string, Promise<void>>();
 const effectCache = new Map<string, Promise<Blob>>();
 const MAX_CACHED_REVISIONS = 3;
@@ -38,26 +45,71 @@ function forgetOnReject<K>(map: Map<K, Promise<unknown>>, key: K) {
   });
 }
 
+/**
+ * Settle every request the dead worker owned and drop it, so the next request
+ * starts a fresh worker. Sources it held are gone with it and reload on demand;
+ * the rejection reaches the caller's existing fallback to the original image.
+ */
+function failWorker(failed: Worker, reason: string) {
+  if (worker === failed) {
+    worker = null;
+    loadedSources.clear();
+  }
+  try {
+    failed.terminate();
+  } catch {
+    // Already gone.
+  }
+  for (const [id, request] of [...pending]) {
+    if (request.owner !== failed) continue;
+    pending.delete(id);
+    clearTimeout(request.timer);
+    request.reject(new Error(reason));
+  }
+}
+
 function backgroundWorker() {
   if (worker) return worker;
-  worker = new Worker(new URL("./newThreadBackgroundEffects.worker.ts", import.meta.url), {
+  const created = new Worker(new URL("./newThreadBackgroundEffects.worker.ts", import.meta.url), {
     type: "module",
   });
-  worker.onmessage = ({ data }: MessageEvent<WorkerResponse>) => {
+  worker = created;
+  created.onmessage = ({ data }: MessageEvent<WorkerResponse>) => {
     const request = pending.get(data.id);
     if (!request) return;
     pending.delete(data.id);
+    clearTimeout(request.timer);
     if (data.error) request.reject(new Error(data.error));
     else request.resolve(data.result);
   };
-  return worker;
+  created.onerror = () => failWorker(created, "The background effect worker stopped unexpectedly.");
+  created.onmessageerror = () =>
+    failWorker(created, "The background effect worker returned an unreadable message.");
+  return created;
 }
 
 function request(message: object, transfer?: Transferable[]) {
   const id = ++nextRequestId;
   return new Promise<Blob | undefined>((resolve, reject) => {
-    pending.set(id, { resolve, reject });
-    backgroundWorker().postMessage({ ...message, id }, transfer ?? []);
+    let target: Worker;
+    try {
+      target = backgroundWorker();
+    } catch (cause) {
+      reject(cause instanceof Error ? cause : new Error(String(cause)));
+      return;
+    }
+    const timer = setTimeout(
+      () => failWorker(target, "The background effect worker did not respond."),
+      REQUEST_TIMEOUT_MS,
+    );
+    pending.set(id, { resolve, reject, timer, owner: target });
+    try {
+      target.postMessage({ ...message, id }, transfer ?? []);
+    } catch (cause) {
+      pending.delete(id);
+      clearTimeout(timer);
+      reject(cause instanceof Error ? cause : new Error(String(cause)));
+    }
   });
 }
 

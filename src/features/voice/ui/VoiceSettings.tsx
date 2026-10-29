@@ -68,6 +68,9 @@ export function VoiceSettings() {
   const [locating, setLocating] = useState(false);
   const [browsing, setBrowsing] = useState<PathKey | null>(null);
   const browsePending = useRef(false);
+  // Bumped when the Locate dialog closes or voice is turned off, so a picker that
+  // resolves later cannot write into a surface the user already left.
+  const browseOwner = useRef(0);
   const [job, setJob] = useState<VoiceSetupStatus>({ state: "idle" });
   const request = useRef(0);
   const mounted = useRef(true);
@@ -136,7 +139,10 @@ export function VoiceSettings() {
     }
   }, []);
   useEffect(() => {
-    if (!settings.enabled) return;
+    if (!settings.enabled) {
+      browseOwner.current++;
+      return;
+    }
     let active = true;
     const attempt = setupAttempt.current;
     void localVoiceBackend
@@ -145,7 +151,7 @@ export function VoiceSettings() {
         if (
           active &&
           attempt === setupAttempt.current &&
-          (status.state === "installing" || status.state === "ready")
+          (status.state === "installing" || status.state === "ready" || status.state === "error")
         )
           acceptJob(status);
       })
@@ -206,24 +212,34 @@ export function VoiceSettings() {
     browsePending.current = true;
     setBrowsing(key);
     const before = currentKey.current;
+    const owner = browseOwner.current;
     try {
       const path = await open({
         directory: key !== "python",
         multiple: false,
         title: t(key === "python" ? "Choose Python executable" : "Choose model folder"),
       });
-      if (mounted.current && currentKey.current === before && typeof path === "string") {
+      if (
+        mounted.current &&
+        browseOwner.current === owner &&
+        currentKey.current === before &&
+        typeof path === "string"
+      ) {
         setJob({ state: "idle" });
         change({ [key]: path });
       }
     } catch (cause) {
-      if (mounted.current)
+      if (mounted.current && browseOwner.current === owner)
         setError({ message: t("Enter the location below."), detail: String(cause) });
     } finally {
       browsePending.current = false;
       if (mounted.current) setBrowsing(null);
     }
   }
+  const closeLocate = () => {
+    browseOwner.current++;
+    setLocating(false);
+  };
   const checked = checkedKey === configKey;
   const ready = checked && result?.ready && !installing;
   const visibleError = installing || checked ? error : undefined;
@@ -379,9 +395,9 @@ export function VoiceSettings() {
             <Modal
               title={t("Locate voice files")}
               size="md"
-              onClose={() => setLocating(false)}
+              onClose={closeLocate}
               footer={
-                <Button variant="primary" onClick={() => setLocating(false)}>
+                <Button variant="primary" onClick={closeLocate}>
                   {t("Done")}
                 </Button>
               }

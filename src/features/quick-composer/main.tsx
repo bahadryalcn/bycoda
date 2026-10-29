@@ -32,9 +32,21 @@ import { PrivacyLaunchGate } from "../group-lock/ui/PrivacyLaunchGate";
 import { getGroupLockView } from "../group-lock/model/groupLock";
 import "../../styles/index.css";
 import { installNativeContextMenuGuard } from "../../shared/lib/nativeContextMenu";
+import { installNativeProjectionCheckpointReceiver } from "../sessions/data/nativeProjectionCheckpoint";
+import { quickComposerClosure } from "./model/quickComposerClosure";
 
 const removeContextMenuGuard = installNativeContextMenuGuard();
 if (import.meta.hot) import.meta.hot.dispose(removeContextMenuGuard);
+const nativeProjectionReceiver = installNativeProjectionCheckpointReceiver(
+  new URLSearchParams(window.location.search).get("popup") === "git"
+    ? {}
+    : { quickBegin: (options) => quickComposerClosure.begin(options) },
+);
+void nativeProjectionReceiver.ready.catch(() => undefined);
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    void nativeProjectionReceiver.dispose();
+  });
 
 /**
  * Theme, shared control geometry and typography, without workspace glass, backgrounds or scale: the panel

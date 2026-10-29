@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { inlineVisualSnapshot } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
 import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
+import { hostSessionBinding, restoreHostSessionShell, hostSessionShellSummaries, patchHostSessionShellMetadata, forgetHostSessionShell, saveHostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import {
   captureSessionOutputWrite,
   acknowledgeSessionOutputWrite,
@@ -12,6 +14,7 @@ import {
   pendingSessionOutputSnapshots,
   sessionOutputNeedsReplacement,
   installSessionOutputMutationAccounting,
+  prepareSessionOutputWritePayload,
   type SessionOutputWrite,
 } from "./sessionOutputProjection";
 import {
@@ -89,6 +92,8 @@ import {
 import type { OrchestrationSummary } from "../../orchestration/model/orchestrationSummary";
 
 export type SessionSummary = {
+  /** Optional actual Native write locator, never a FULL/application receipt. */
+  nativeWriteId?: string;
   issue?: "retrying" | "failed";
   transcriptRevision?: number;
   orchestrationLeadId?: string;
@@ -179,6 +184,7 @@ type SessionUpsertPayload = {
 /** Only real chats belong in project history — blank tabs stay ephemeral. */
 export function shouldPersistSession(session: Session): boolean {
   return (
+    !hostSessionBinding(session) &&
     !session.historyPartial &&
     !session.historyLoading &&
     !session.inboxAsk &&
@@ -506,16 +512,24 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
             !sessionOutputNeedsReplacement(latest)
           ) {
             const delta = buildSessionBlockDelta(baseline.blocks, blocks);
-            const ack = await invoke<{ updatedAt: number; revision: number } | null>(
+            const ack = await invoke<{
+              updatedAt: number;
+              revision: number;
+              nativeWriteId?: string;
+            } | null>(
               "session_apply_delta",
-              {
-                delta: {
-                  session: { ...persistableMeta(latest), blocks: [] },
-                  expectedUpdatedAt: baseline.updatedAt,
-                  expectedRevision: baseline.revision,
-                  ...delta,
+              prepareSessionOutputWritePayload(
+                slot.outputWrite,
+                {
+                  delta: {
+                    session: { ...persistableMeta(latest), blocks: [] },
+                    expectedUpdatedAt: baseline.updatedAt,
+                    expectedRevision: baseline.revision,
+                    ...delta,
+                  },
                 },
-              },
+                "delta",
+              ),
             );
             if (!ack) throw new Error("Session changed in another window; reload before saving");
             persistenceBaselines.set(id, {
@@ -529,15 +543,23 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
               kind: "delta",
               revision: ack.revision,
               updatedAt: ack.updatedAt,
+              ...(ack.nativeWriteId === undefined ? {} : { nativeWriteId: ack.nativeWriteId }),
             });
             finish({ blocks: delta.changes.length, revision: ack.revision });
           } else {
-            const summary = await invoke<SessionSummary | null>("session_upsert", {
-              session: { ...persistableMeta(latest), blocks: blocks.map((item) => item.value) },
-              ...(baseline
-                ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
-                : {}),
-            });
+            const summary = await invoke<SessionSummary | null>(
+              "session_upsert",
+              prepareSessionOutputWritePayload(
+                slot.outputWrite,
+                {
+                  session: { ...persistableMeta(latest), blocks: blocks.map((item) => item.value) },
+                  ...(baseline
+                    ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+                    : {}),
+                },
+                "replace",
+              ),
+            );
             if (!summary)
               throw new Error("Session changed in another window; reload before saving");
             persistenceBaselines.set(id, {
@@ -552,6 +574,9 @@ export function upsertSessionLive(session: Session, options: LiveWriteOptions = 
                 kind: "replace",
                 revision: summary.transcriptRevision!,
                 updatedAt: summary.updatedAt,
+                ...(summary.nativeWriteId === undefined
+                  ? {}
+                  : { nativeWriteId: summary.nativeWriteId }),
               });
             else failSessionOutputWrite(slot.outputWrite);
             work.confirmRecovery();
@@ -610,7 +635,7 @@ async function persistSession(
   initialTimes?: { createdAt: number; updatedAt: number },
   parent?: PersistenceWork,
 ): Promise<SessionSummary | null> {
-  if ((!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
+  if (hostSessionBinding(session) || (!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
     return null;
   }
   const payload = sanitizeSessionForPersist(session);
@@ -629,27 +654,37 @@ async function persistSession(
         return null;
       }
       const baseline = persistenceBaselines.get(session.id);
-      const summary = await invoke<SessionSummary | null>("session_upsert", {
-        session: {
-          ...payload,
-          ...initialTimes,
-          blocks: payload.blocks.map((block) =>
-            block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
-              ? { ...block, orchestrationLeadId: undefined }
-              : block,
-          ),
-        },
-        ...(guard ??
-          (baseline
-            ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
-            : {})),
-      });
+      const summary = await invoke<SessionSummary | null>(
+        "session_upsert",
+        prepareSessionOutputWritePayload(
+          outputWrite,
+          {
+            session: {
+              ...payload,
+              ...initialTimes,
+              blocks: payload.blocks.map((block) =>
+                block.orchestrationLeadId && deletedSessionIds.has(block.orchestrationLeadId)
+                  ? { ...block, orchestrationLeadId: undefined }
+                  : block,
+              ),
+            },
+            ...(guard ??
+              (baseline
+                ? { expectedUpdatedAt: baseline.updatedAt, expectedRevision: baseline.revision }
+                : {})),
+          },
+          "replace",
+        ),
+      );
       if (summary) {
         if (summary.id === session.id)
           acknowledgeSessionOutputWrite(outputWrite, {
             kind: "replace",
             revision: summary.transcriptRevision!,
             updatedAt: summary.updatedAt,
+            ...(summary.nativeWriteId === undefined
+              ? {}
+              : { nativeWriteId: summary.nativeWriteId }),
           });
         else failSessionOutputWrite(outputWrite);
         persistenceBaselines.set(session.id, {
@@ -737,7 +772,10 @@ export async function listSessionsByProject(cwd: string): Promise<SessionSummary
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
     cwd: normalizeProjectPath(cwd),
   });
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries().filter((entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd));
+  if (!owned.length) return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
+  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned]
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt).map(normalizeSummary);
 }
 
 export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<void> {
@@ -751,13 +789,18 @@ export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<v
 
 export async function listLinkedSessions(): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_linked");
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries().filter((entry) => entry.linkedWorkItem);
+  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned].map(normalizeSummary);
 }
 
 /** Newest sessions across every project, plus all pinned ones. No transcripts. */
 export async function listRecentSessions(limit: number): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
-  return rows.map(normalizeSummary);
+  const owned = hostSessionShellSummaries();
+  const native = rows.filter((row) => !hostSessionBinding({ id: row.id }));
+  if (!owned.length) return native.map(normalizeSummary);
+  const combined = [...native, ...owned].sort((a, b) => b.updatedAt - a.updatedAt);
+  return [...combined.filter((entry) => entry.pinned), ...combined.filter((entry) => !entry.pinned).slice(0, limit)].map(normalizeSummary);
 }
 
 export type SessionSearchHit = {
@@ -885,6 +928,8 @@ export function getSession(
   sessionId: string,
   options: SessionHydrationOptions = {},
 ): Promise<Session | null> {
+  const hostShell = restoreHostSessionShell(sessionId);
+  if (hostShell) return Promise.resolve(hostShell);
   return sessionPersistence.run([sessionId], "hydration", async (work) => {
     const result = await loadStoredSession(sessionId, options, work);
     work.confirmRecovery();
@@ -1220,6 +1265,15 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 }
 
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
+  const owner = hostSessionBinding({ id: sessionId });
+  if (owner) {
+    if (!owner.created) throw new Error("Verify this conversation's pending creation before deleting it.");
+    const { sessionAccessForMachine } = await import("../../connections/model/connections");
+    await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(owner.sessionId, owner.projectId, owner.authorityGeneration ?? undefined);
+    forgetHostSessionShell(sessionId);
+    clearComposerDraft(sessionId);
+    return;
+  }
   // Native deletion can also strip a lead's ownership from stored worker rows.
   return sessionPersistence.run("profile", `delete:${sessionId}`, async (work) => {
     deletedSessionIds.add(sessionId);
@@ -1260,6 +1314,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
 
 /** Delete a draft-only record while allowing its still-open blank session id to be saved later. */
 export async function discardDraftSessionRecord(sessionId: string): Promise<void> {
+  if (hostSessionBinding({ id: sessionId })) return;
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
@@ -1274,6 +1329,7 @@ export async function discardDraftSessionRecord(sessionId: string): Promise<void
 }
 
 export async function setSessionArchived(sessionId: string, archived: boolean): Promise<void> {
+  if (await updateOwnedSessionMetadata(sessionId, { archived })) return;
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
@@ -1286,7 +1342,30 @@ export async function setSessionArchived(sessionId: string, archived: boolean): 
   );
 }
 
+export async function updateOwnedSessionMetadata(sessionId: string, patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null }): Promise<boolean> {
+  const owner = hostSessionBinding({ id: sessionId });
+  if (!owner) return false;
+  if (!owner.created) throw new Error("Verify this conversation's pending creation before changing it.");
+  const { sessionAccessForMachine } = await import("../../connections/model/connections");
+  await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(owner.sessionId, {
+    ...patch, projectId: owner.projectId,
+    ...(owner.authorityGeneration === null ? {} : { authorityGeneration: owner.authorityGeneration }),
+  });
+  patchHostSessionShellMetadata(sessionId, {
+    ...(patch.archived !== undefined ? { archived: patch.archived } : {}),
+    ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
+  });
+  const cached = restoreHostSessionShell(sessionId);
+  if (cached && (patch.title !== undefined || patch.linkedWorkItem !== undefined))
+    saveHostSessionBinding({ ...cached,
+      ...(patch.title === undefined ? {} : { title: patch.title }),
+      ...(patch.linkedWorkItem === undefined ? {} : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
+    }, owner);
+  return true;
+}
+
 export async function setSessionPinned(sessionId: string, pinned: boolean): Promise<void> {
+  if (await updateOwnedSessionMetadata(sessionId, { pinned })) return;
   await sessionPersistence.run([sessionId], "pinned", async (work) => {
     await invoke<void>("session_set_pinned", { sessionId, pinned });
     work.confirmRecovery();
@@ -1298,6 +1377,7 @@ export async function setSessionLinkedWorkItem(
   value: LinkedWorkItem | undefined,
 ): Promise<void> {
   const linkedWorkItem = sanitizeLinkedWorkItem(value);
+  if (await updateOwnedSessionMetadata(sessionId, { linkedWorkItem: linkedWorkItem ?? null })) return;
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
@@ -1433,6 +1513,8 @@ function sanitizeBlock(block: Block, options?: { hydrate?: boolean }): Block | n
     next.attachments = block.attachments.map(persistableAttachment);
   }
   const image = sanitizeGeneratedImage(block.image);
+  const inlineVisual = block.role === "tool" ? inlineVisualSnapshot(block.inlineVisual) : undefined;
+  if (inlineVisual) next.inlineVisual = inlineVisual;
   if (block.role === "image" && !image) return null;
   if (image) next.image = image;
   if (block.startedAt != null) next.startedAt = block.startedAt;

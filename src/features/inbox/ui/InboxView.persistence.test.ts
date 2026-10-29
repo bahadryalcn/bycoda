@@ -70,6 +70,7 @@ beforeEach(async () => {
         revealMore = () => callback([{ isIntersecting: true }]);
       }
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );

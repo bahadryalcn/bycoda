@@ -258,29 +258,26 @@ export function stepConflict(view: EditorView, delta: 1 | -1): boolean {
 }
 
 const conflictTheme = EditorView.theme({
+  // Sides are tinted regions (no edge stripes); marker lines carry the stronger tint.
   ".cm-conflictOurs, .cm-line.cm-gitInsertedLine.cm-conflictOurs": {
-    backgroundColor: "color-mix(in srgb, var(--color-conflict-ours) 17%, transparent)",
-    boxShadow: "inset 3px 0 0 var(--color-conflict-ours)",
+    backgroundColor: "var(--ui-conflict-current-surface)",
   },
   ".cm-conflictTheirs, .cm-line.cm-gitInsertedLine.cm-conflictTheirs": {
-    backgroundColor: "color-mix(in srgb, var(--color-conflict-theirs) 17%, transparent)",
-    boxShadow: "inset 3px 0 0 var(--color-conflict-theirs)",
+    backgroundColor: "var(--ui-conflict-incoming-surface)",
   },
   ".cm-conflictBase, .cm-line.cm-gitInsertedLine.cm-conflictBase": {
-    backgroundColor: "color-mix(in srgb, var(--color-content) 5%, transparent)",
-    boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--color-content) 25%, transparent)",
-    color: "color-mix(in srgb, var(--color-content) 60%, transparent)",
+    backgroundColor: "var(--ui-editor-active-line)",
+    color: "var(--ui-text-secondary)",
   },
   ".cm-conflictMarker, .cm-line.cm-gitInsertedLine.cm-conflictMarker": {
-    color: "color-mix(in srgb, var(--color-content) 45%, transparent)",
-    backgroundColor: "color-mix(in srgb, var(--color-content) 7%, transparent)",
-    boxShadow: "inset 3px 0 0 color-mix(in srgb, var(--color-content) 25%, transparent)",
+    color: "var(--ui-text-muted)",
+    backgroundColor: "var(--ui-surface-hover)",
   },
   ".cm-conflictOursMarker, .cm-line.cm-gitInsertedLine.cm-conflictOursMarker": {
-    boxShadow: "inset 3px 0 0 var(--color-conflict-ours)",
+    backgroundColor: "var(--ui-conflict-current-marker)",
   },
   ".cm-conflictTheirsMarker, .cm-line.cm-gitInsertedLine.cm-conflictTheirsMarker": {
-    boxShadow: "inset 3px 0 0 var(--color-conflict-theirs)",
+    backgroundColor: "var(--ui-conflict-incoming-marker)",
   },
   ".cm-conflictActions": {
     display: "flex",
@@ -295,23 +292,23 @@ const conflictTheme = EditorView.theme({
     cursor: "pointer",
     padding: "1px 7px",
     borderRadius: "4px",
-    border: "1px solid color-mix(in srgb, var(--color-content) 14%, transparent)",
-    backgroundColor: "color-mix(in srgb, var(--color-content) 6%, transparent)",
-    color: "color-mix(in srgb, var(--color-content) 80%, transparent)",
+    border: "1px solid var(--ui-pane-border)",
+    backgroundColor: "var(--ui-surface)",
+    color: "var(--ui-text-secondary)",
     font: "inherit",
   },
   ".cm-conflictAction:hover": {
-    backgroundColor: "color-mix(in srgb, var(--color-content) 14%, transparent)",
+    backgroundColor: "var(--ui-surface-hover)",
     color: "var(--color-content)",
   },
   ".cm-conflictAction:focus-visible": {
     outline: "1px solid var(--color-accent)",
   },
   ".cm-conflictAction-ours": {
-    borderColor: "color-mix(in srgb, var(--color-conflict-ours) 55%, transparent)",
+    borderColor: "var(--color-conflict-ours)",
   },
   ".cm-conflictAction-theirs": {
-    borderColor: "color-mix(in srgb, var(--color-conflict-theirs) 55%, transparent)",
+    borderColor: "var(--color-conflict-theirs)",
   },
 });
 

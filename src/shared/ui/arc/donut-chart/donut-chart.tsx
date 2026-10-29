@@ -71,6 +71,8 @@ export interface DonutChartProps {
   legendAction?: "toggle" | "select";
   /** The synced legend beside or below the ring. */
   legend?: boolean;
+  /** Segments also carry a surface pattern (solid, diagonal, dots, cross-hatch) in ring and legend, so they differ by more than color. On by default. */
+  patterns?: boolean;
   emptyLabel?: string;
   ref?: Ref<HTMLElement>;
   className?: string;
@@ -120,6 +122,8 @@ const NEUTRAL = [
 const seriesColor = (index: number) =>
   index < 4 ? `var(--series-${index + 1})` : NEUTRAL[(index - 4) % NEUTRAL.length];
 const OTHER_COLOR = "var(--ui-text-secondary)";
+/** Non-color series cue: the first segments keep a plain fill, the next ones add marks of the surface tone. */
+const PATTERNS = ["solid", "diagonal", "dots", "cross"] as const;
 /** Room left outside the ring for the lift; the gap between segments and their corner radius, in pixels. */
 const LIFT = 4,
   GROW = 2,
@@ -334,6 +338,7 @@ export function DonutChart({
   onHiddenKeysChange,
   legendAction = "toggle",
   legend = true,
+  patterns = true,
   emptyLabel = "No data yet",
   ref,
   className,
@@ -367,6 +372,13 @@ export function DonutChart({
   }
   const colorFor = (item: Slice) =>
     item.color ?? (item.key === OTHER ? OTHER_COLOR : seriesColor(palette.get(item.key) ?? 0));
+  const patternFor = (item: Slice) =>
+    !patterns
+      ? "solid"
+      : item.key === OTHER
+        ? "cross"
+        : PATTERNS[(palette.get(item.key) ?? 0) % PATTERNS.length]!;
+  const patternBase = useId().replace(/:/g, "");
 
   // Leaving segments stay drawn in their old place while they close, then drop out once they have.
   const [drawn, setDrawn] = useState<Slice[]>(slices);
@@ -733,15 +745,54 @@ export function DonutChart({
             strokeWidth={outer - inner}
             data-idle={!shown || !total || undefined}
           />
-          {drawn.map((item) => (
+          <defs>
+            {drawn.map((item, index) => {
+              const pattern = patternFor(item);
+              if (pattern === "solid") return null;
+              return (
+                <pattern
+                  key={item.key}
+                  id={`${patternBase}-${index}`}
+                  className={styles.pattern}
+                  data-pattern={pattern}
+                  width={6}
+                  height={6}
+                  patternUnits="userSpaceOnUse"
+                  patternTransform={pattern === "dots" ? undefined : "rotate(45)"}
+                  style={{ "--slice": colorFor(item) } as CSSProperties}
+                >
+                  <rect className={styles.patternBase} width={6} height={6} />
+                  {pattern === "dots" ? (
+                    <circle className={styles.patternMark} cx={3} cy={3} r={1.1} />
+                  ) : (
+                    <>
+                      <line className={styles.patternMark} x1={3} y1={0} x2={3} y2={6} />
+                      {pattern === "cross" && (
+                        <line className={styles.patternMark} x1={0} y1={3} x2={6} y2={3} />
+                      )}
+                    </>
+                  )}
+                </pattern>
+              );
+            })}
+          </defs>
+          {drawn.map((item, index) => (
             <path
               key={item.key}
               ref={registerPath}
               data-key={item.key}
               className={styles.segment}
+              data-pattern={patternFor(item)}
               data-active={item.key === current || undefined}
               data-dim={(current !== null && item.key !== current) || undefined}
-              style={{ "--slice": colorFor(item) } as CSSProperties}
+              style={
+                {
+                  "--slice": colorFor(item),
+                  ...(patternFor(item) !== "solid"
+                    ? { fill: `url(#${patternBase}-${index})` }
+                    : null),
+                } as CSSProperties
+              }
             />
           ))}
         </svg>
@@ -826,7 +877,11 @@ export function DonutChart({
                     onBlur={onLegendBlur}
                     onKeyDown={(event) => onLegendKey(event, index)}
                   >
-                    <span className={styles.dot} aria-hidden="true" />
+                    <span
+                      className={styles.dot}
+                      data-pattern={patternFor(item)}
+                      aria-hidden="true"
+                    />
                     <span className={styles.rowText}>
                       <span className={styles.rowLabel}>{item.label}</span>
                       {item.members && <span className={styles.rowMembers}>{members(item)}</span>}

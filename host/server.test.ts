@@ -37,8 +37,17 @@ import { RUN_LEASE_TTL_MS } from "../src/features/sync/model/runLease";
 import { CLAIM_GRACE_MS, SessionQueues } from "./session-queue";
 import { AttachmentOwnership } from "./attachment-ownership";
 import { SocialService } from "./social";
+import * as accountCatalog from "./provider-accounts";
 
 const modelProbe = vi.hoisted(() => vi.fn());
+// Model-discovery fixtures never inspect the developer's real account profiles.
+vi.mock("./provider-accounts", async (original) => {
+  const module = await original<typeof import("./provider-accounts")>();
+  return {
+    ...module,
+    hostProviderAccounts: (roots?: string[]) => module.hostProviderAccounts(roots ?? []),
+  };
+});
 vi.mock("../src/integrations/harness/providers/codex/codexCatalog", () => ({
   discoverCodexModels: modelProbe,
   refreshCodexCatalog: async () => {},
@@ -48,6 +57,86 @@ const binaries: { codex?: string } = {};
 configureChildBackend(new HostChildBackend(binaries));
 
 const cleanups: Array<() => Promise<void>> = [];
+
+it("exposes safe Host account catalog only to owner model discovery, preserving scoped tool inventory", async () => {
+  const actual = accountCatalog.hostProviderAccounts;
+  let roots: string[] = [];
+  // Composition captures this port, so install the fixture before creating it.
+  const catalog = vi
+    .spyOn(accountCatalog, "hostProviderAccounts")
+    .mockImplementation(() => actual(roots));
+  const s = await setup();
+  roots = [s.directory];
+  mkdirSync(join(s.directory, "provider-accounts", "codex", "account-host"), { recursive: true });
+  mkdirSync(join(s.directory, "provider-accounts", "claude", "not-configured"), {
+    recursive: true,
+  });
+  modelProbe.mockResolvedValue([{ id: "codex:test", name: "Fixture model" }]);
+  try {
+    const owner = await s.call("models.list", { projectId: s.project.id });
+    expect(owner.value.result.accounts).toEqual({
+      codex: [
+        { id: "default", label: "Host default" },
+        { id: "account-host", label: "Codex account 1" },
+      ],
+    });
+    expect(JSON.stringify(owner.value.result.accounts)).not.toContain(
+      s.directory.replaceAll("\\", "\\\\"),
+    );
+    const capabilities = (await s.call("environment.describe")).value.result.capabilities;
+    expect(capabilities).toContain("sessions.configure.providerAccount.v1");
+    expect(capabilities).toContain("models.providerAccounts.v1");
+    const created = await s.engine.command({
+      type: "create",
+      workspaceMode: "current",
+      commandId: crypto.randomUUID(),
+      projectId: s.project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
+    const grant = (await s.call("conversation.access.issue", { sessionId: created.sessionId }))
+      .value.result;
+    catalog.mockClear();
+    expect((await s.call("models.list", {}, grant.token)).value.error).toContain(
+      "Conversation Tools",
+    );
+    expect((await s.call("models.list", {}, "invalid")).status).toBe(401);
+    const scoped = await s.call(
+      "conversation.tools.call",
+      { action: "models.list", input: {} },
+      grant.token,
+    );
+    expect(scoped.value.error).toBeUndefined();
+    expect(JSON.stringify(scoped.value)).not.toContain("account-host");
+    expect(catalog).not.toHaveBeenCalled();
+  } finally {
+    catalog.mockRestore();
+  }
+});
+
+it("rejects Host account catalog disclosure when its owner is revoked during discovery", async () => {
+  let release!: (catalog: accountCatalog.HostProviderAccountCatalog) => void;
+  const catalog = vi.spyOn(accountCatalog, "hostProviderAccounts").mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const s = await setup();
+  try {
+    const pending = s.call("models.list", { projectId: s.project.id });
+    await vi.waitFor(() => expect(release).toBeDefined());
+    await s.store.revokeToken(s.first.token);
+    release({ codex: [{ id: "private-account", label: "Private" }] });
+    const response = await pending;
+    expect(response.value.result).toBeUndefined();
+    expect(response.value.error).toMatch(/revoked|credential/i);
+    expect(JSON.stringify(response.value)).not.toContain("private-account");
+  } finally {
+    catalog.mockRestore();
+  }
+});
 
 async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
   expect(
@@ -518,28 +607,24 @@ it("requires a dedicated owner confirmation and derives project identity for Jir
 
 it("derives mobile preview ownership from the paired credential and project and guards service stop", async () => {
   const s = await setup([]);
-  const job = {
-    id: "job-id",
-    requestId: "attempt",
-    deviceId: "device",
-    state: "running" as const,
-    stages: [],
-    verification: "launch-only" as const,
-    updatedAt: new Date().toISOString(),
-  };
+  let job!: ReturnType<DevicePreviews["start"]>;
   let owner = "";
-  const start = vi
-    .spyOn(DevicePreviews.prototype, "start")
-    .mockImplementation((_input, currentOwner) => {
-      owner = currentOwner;
-      return job;
-    });
-  const status = vi
-    .spyOn(DevicePreviews.prototype, "mobileStatus")
-    .mockImplementation((currentOwner) => {
-      if (currentOwner !== owner) throw new Error("PREVIEW_NOT_FOUND");
-      return job;
-    });
+  // Keep actual job registration and retained authority. Only the SDK worker
+  // body is a fixture; a fabricated job has no original result grant.
+  const run = vi
+    .spyOn(DevicePreviews.prototype as unknown as { run: () => Promise<void> }, "run")
+    .mockResolvedValue();
+  const actualStart = DevicePreviews.prototype.start;
+  const start = vi.spyOn(DevicePreviews.prototype, "start").mockImplementation(function (
+    this: DevicePreviews,
+    input,
+    currentOwner,
+    authorized,
+  ) {
+    owner = currentOwner;
+    job = actualStart.call(this, input, currentOwner, authorized);
+    return job;
+  });
   const impact = vi
     .spyOn(DevicePreviews.prototype, "stopImpact")
     .mockReturnValue({ activeCount: 1, owned: [], otherActiveCount: 1 });
@@ -598,7 +683,7 @@ it("derives mobile preview ownership from the paired credential and project and 
     expect(s.send).not.toHaveBeenCalled();
   } finally {
     start.mockRestore();
-    status.mockRestore();
+    run.mockRestore();
     impact.mockRestore();
     stop.mockRestore();
     idle.mockRestore();
@@ -3143,7 +3228,9 @@ describe("shared queued messages", () => {
     const queue = (await s.call("sessions.queue.get", { sessionId, clientId })).value.result;
     expect(queue.messages.map((row: { id: string }) => row.id)).toEqual(["a"]);
     expect(queue.status).toBe("paused");
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledOnce());
+    // The committed send also awaits its actual file-history checkpoint.
+    await s.started;
+    expect(s.send).toHaveBeenCalledOnce();
   });
 
   it("tells the owning desktop which shared queues another computer changed through its heartbeat", async () => {

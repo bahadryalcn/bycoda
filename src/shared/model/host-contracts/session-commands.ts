@@ -115,6 +115,13 @@ export const DraftCommandSchema = z.strictObject({
   type: z.literal("draft"),
   ...prompt,
 });
+/** A nested first turn inherits the outer reserved session ID or Host allocation.
+ * Its deprecated sessionId field is a legacy placeholder and never selects the
+ * target. Standalone send/draft commands require their own explicit identity. */
+export const CreateFirstTurnSchema = z.discriminatedUnion("type", [
+  SendCommandSchema.extend({ sessionId: z.union([IdentifierSchema, z.literal("")]).optional() }),
+  DraftCommandSchema.extend({ sessionId: z.union([IdentifierSchema, z.literal("")]).optional() }),
+]);
 export const ContextualSessionInputSchema = z.strictObject({
   sessionId: IdentifierSchema,
   sourceBlockId: IdentifierSchema,
@@ -150,13 +157,14 @@ export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
     model: text,
     modelSettings: ModelSettingsSchema.optional(),
     runtimeMode: SessionRuntimeModeSchema,
-    firstTurn: z.discriminatedUnion("type", [SendCommandSchema, DraftCommandSchema]).optional(),
+    firstTurn: CreateFirstTurnSchema.optional(),
   }),
   z.strictObject({
     ...commandBase,
     ...queued,
     type: z.literal("configure"),
     harness: SessionProviderSchema.optional(),
+    providerAccountId: text.nullable().optional(),
     model: text,
     modelSettings: ModelSettingsSchema,
     runtimeMode: SessionRuntimeModeSchema,

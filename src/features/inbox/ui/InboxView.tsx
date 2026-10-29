@@ -1,7 +1,7 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
-import { Badge } from "../../../shared/ui/Badge";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -24,7 +24,6 @@ import {
   CircleX,
   ExternalLink,
   Inbox,
-  ListFilter,
   LoaderCircle,
   MessageMultiple,
   Plus,
@@ -118,7 +117,8 @@ import {
   LINEAR_CHANGE_EVENT,
   linearConnected,
   listLinearTeams,
-  loadHiddenLinearTeamIds,
+  readHiddenLinearTeamIds,
+  subscribeLinearScope,
   saveHiddenLinearTeamIds,
   type LinearTeam,
 } from "../model/linear";
@@ -127,7 +127,8 @@ import {
   jiraConnected,
   jiraBackgroundSyncEnabled,
   listJiraProjects,
-  loadHiddenJiraProjectIds,
+  readHiddenJiraProjectIds,
+  subscribeJiraScope,
   saveHiddenJiraProjectIds,
   type JiraProject,
 } from "../model/jira";
@@ -175,12 +176,16 @@ function peekInboxForRail(recents: RecentProject[], cwd: string) {
     loadInboxFilters(),
     projects.map((project) => project.path),
   );
+  const linearHidden = readHiddenLinearTeamIds();
+  const jiraHidden = readHiddenJiraProjectIds();
+  // An unreadable saved scope must not surface a cached unscoped list.
+  if (!linearHidden || !jiraHidden) return null;
   return peekInboxList(projects, {
     assignedToMe: filters.assignedToMe,
     state: inboxFetchState(filters),
     search: "",
-    linearHiddenTeamIds: loadHiddenLinearTeamIds(),
-    jiraHiddenProjectIds: loadHiddenJiraProjectIds(),
+    linearHiddenTeamIds: linearHidden,
+    jiraHiddenProjectIds: jiraHidden,
   });
 }
 
@@ -336,9 +341,12 @@ export function InboxView({
   const [connectMenuOpen, setConnectMenuOpen] = useState(false);
   const connectButtonRef = useRef<HTMLButtonElement | null>(null);
   const [filterMenu, setFilterMenu] = useState<{ x: number; y: number } | null>(null);
-  const [linearHiddenTeamIds, setLinearHiddenTeamIds] = useState(loadHiddenLinearTeamIds);
+  // `null` means the saved scope cannot be read; fetches then fail closed.
+  const [linearScope, setLinearScope] = useState(readHiddenLinearTeamIds);
+  const linearHiddenTeamIds = useMemo(() => linearScope ?? [], [linearScope]);
   const [linearTeams, setLinearTeams] = useState<LinearTeam[]>([]);
-  const [jiraHiddenProjectIds, setJiraHiddenProjectIds] = useState(loadHiddenJiraProjectIds);
+  const [jiraScope, setJiraScope] = useState(readHiddenJiraProjectIds);
+  const jiraHiddenProjectIds = useMemo(() => jiraScope ?? [], [jiraScope]);
   const [jiraProjects, setJiraProjects] = useState<JiraProject[]>([]);
   const prevRefresh = useRef(refresh);
 
@@ -353,11 +361,37 @@ export function InboxView({
       ),
     [filters, projects],
   );
-  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraHiddenProjectIds, linearHiddenTeamIds, searchInput])}`;
+  const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope, searchInput])}`;
   const [listLimit, setListLimit] = useRetainedState(`${listScope}:list-limit`, LIST_PAGE_SIZE);
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
+  // One count per narrowed dimension (assignment, scope, kind, time, status); the same
+  // dimensions the filter menu's own "Clear filters" resets.
+  const statusFiltered = isTrackerSource(source)
+    ? activeFilters.status.open || activeFilters.status.closed
+    : Object.values(activeFilters.status).some(Boolean);
+  const filterCount =
+    (activeFilters.assignedToMe ? 1 : 0) +
+    (source === "linear" && linearHiddenTeamIds.length > 0 ? 1 : 0) +
+    (source === "jira" && jiraHiddenProjectIds.length > 0 ? 1 : 0) +
+    ((source === "linear"
+      ? activeFilters.hiddenLinearProjects.length
+      : source === "jira"
+        ? 0
+        : activeFilters.hiddenProjects.length) > 0
+      ? 1
+      : 0) +
+    (codeScopes.hidden.length > 0 ? 1 : 0) +
+    (!isTrackerSource(source) && activeFilters.hiddenKinds.length > 0 ? 1 : 0) +
+    (activeFilters.time !== "all" ? 1 : 0) +
+    (statusFiltered ? 1 : 0);
+  const resetFilters = () => {
+    onFiltersChange(DEFAULT_INBOX_FILTERS);
+    if (source === "linear" && linearHiddenTeamIds.length > 0) saveHiddenLinearTeamIds([]);
+    if (source === "jira" && jiraHiddenProjectIds.length > 0) saveHiddenJiraProjectIds([]);
+    if (codeScopes.hidden.length > 0) codeScopes.save([]);
+  };
   const fetchState = inboxFetchState(activeFilters);
   const fetchQuery = useMemo<InboxQuery>(
     () => ({
@@ -365,8 +399,8 @@ export function InboxView({
       state: fetchState,
       search: "",
       githubKinds: source !== "github" ? [] : pullRequestsOnly ? ["pr"] : undefined,
-      linearHiddenTeamIds,
-      jiraHiddenProjectIds,
+      linearHiddenTeamIds: linearScope ?? undefined,
+      jiraHiddenProjectIds: jiraScope ?? undefined,
       jiraEnabled: source === "jira" && jiraView === "list",
     }),
     [
@@ -375,8 +409,8 @@ export function InboxView({
       source,
       jiraView,
       fetchState,
-      linearHiddenTeamIds,
-      jiraHiddenProjectIds,
+      linearScope,
+      jiraScope,
     ],
   );
 
@@ -418,22 +452,18 @@ export function InboxView({
   }, [connectMenuOpen, filterMenu]);
 
   useEffect(() => {
-    const onChange = () => {
-      setLinearHiddenTeamIds(loadHiddenLinearTeamIds());
+    return subscribeLinearScope(() => {
+      setLinearScope(readHiddenLinearTeamIds());
       setRefresh((value) => value + 1);
-    };
-    window.addEventListener(LINEAR_CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(LINEAR_CHANGE_EVENT, onChange);
+    });
   }, []);
 
   useEffect(() => {
-    const onChange = () => {
-      setJiraHiddenProjectIds(loadHiddenJiraProjectIds());
+    return subscribeJiraScope(() => {
+      setJiraScope(readHiddenJiraProjectIds());
       setJiraAutomaticSync(jiraBackgroundSyncEnabled());
       setRefresh((value) => value + 1);
-    };
-    window.addEventListener(JIRA_CHANGE_EVENT, onChange);
-    return () => window.removeEventListener(JIRA_CHANGE_EVENT, onChange);
+    });
   }, []);
 
   useEffect(() => {
@@ -735,6 +765,8 @@ export function InboxView({
   );
 
   const sourceError = providerErrors[source] ?? null;
+  // Full pages mean older items may not be loaded; the list reads have no total.
+  const sourceLimited = inboxQuery.data?.limited?.includes(source) ?? false;
 
   // Local filters cannot retarget an open public-comment composer. Resolve the
   // selected identity from allowed loaded data before considering a default.
@@ -835,62 +867,68 @@ export function InboxView({
     });
   };
 
+  const sourceRow = (
+    <div className="flex h-9 shrink-0 items-center gap-px px-2">
+      {visibleSources.length > 0 ? (
+        <div
+          role="tablist"
+          aria-label={t("Inbox source")}
+          className="flex min-w-0 basis-0 items-center gap-px"
+          style={{ flexGrow: visibleSources.length }}
+        >
+          {visibleSources.map((option) => (
+            <InboxSourceTab
+              key={option}
+              source={option}
+              selected={source === option}
+              onSelect={onSourceChange}
+            />
+          ))}
+        </div>
+      ) : null}
+      {connectableSources.length > 0 ? (
+        <Button
+          iconOnly
+          label={t("Connect an inbox source")}
+          variant="ghost"
+          ref={connectButtonRef}
+          type="button"
+          aria-label={t("Connect an inbox source")}
+          aria-haspopup="menu"
+          aria-expanded={connectMenuOpen}
+          title={t("Connect an inbox source")}
+          onClick={() => setConnectMenuOpen((open) => !open)}
+        >
+          <Plus className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
+        </Button>
+      ) : null}
+    </div>
+  );
+
+  const viewRow =
+    source === "jira" ? (
+      <div className="flex shrink-0 items-center gap-2 px-2 py-1">
+        <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
+          onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
+          options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
+      </div>
+    ) : !pullRequestsOnly && source === "github" ? (
+      <div className="flex shrink-0 items-center px-2 py-1">
+        <SegmentedControl label={t("Type")} value={activeFilters.hiddenKinds.length >= 2 ? "" : activeFilters.hiddenKinds.length === 0 ? "all" : activeFilters.hiddenKinds.includes("issue") ? "pr" : "issue"}
+          onValueChange={(next) => onFiltersChange({ ...activeFilters, hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"] })}
+          options={[{ value: "all", label: t("All") }, { value: "pr", label: t("Pull requests") }, { value: "issue", label: t("Issues") }]} />
+      </div>
+    ) : null;
+
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-tone-neutral-border)"
+      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-surface-panel)"
     >
-      <div className="flex h-9 shrink-0 items-center gap-px border-b border-(--ui-tone-neutral-border) px-2">
-        {visibleSources.length > 0 ? (
-          <div
-            role="tablist"
-            aria-label={t("Inbox source")}
-            className="flex min-w-0 basis-0 items-center gap-px"
-            style={{ flexGrow: visibleSources.length }}
-          >
-            {visibleSources.map((option) => (
-              <InboxSourceTab
-                key={option}
-                source={option}
-                selected={source === option}
-                onSelect={onSourceChange}
-              />
-            ))}
-          </div>
-        ) : null}
-        {connectableSources.length > 0 ? (
-          <Button
-            iconOnly
-            label={t("Connect an inbox source")}
-            variant="ghost"
-            ref={connectButtonRef}
-            type="button"
-            aria-label={t("Connect an inbox source")}
-            aria-haspopup="menu"
-            aria-expanded={connectMenuOpen}
-            title={t("Connect an inbox source")}
-            onClick={() => setConnectMenuOpen((open) => !open)}
-          >
-            <Plus className="icon-sm" strokeWidth={1.75} aria-hidden="true" />
-          </Button>
-        ) : null}
-      </div>
-      {source === "jira" ? (
-        <div className="flex shrink-0 items-center justify-between gap-2 px-2 py-1">
-          <span className="text-ui-caption text-(--ui-text-secondary)">{t("Jira view")}</span>
-          <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
-            onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
-            options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
-        </div>
-      ) : !pullRequestsOnly && source === "github" ? (
-        <div className="flex shrink-0 items-center px-2 py-1">
-          <SegmentedControl label={t("Type")} value={activeFilters.hiddenKinds.length >= 2 ? "" : activeFilters.hiddenKinds.length === 0 ? "all" : activeFilters.hiddenKinds.includes("issue") ? "pr" : "issue"}
-            onValueChange={(next) => onFiltersChange({ ...activeFilters, hiddenKinds: next === "all" ? [] : next === "pr" ? ["issue"] : ["pr"] })}
-            options={[{ value: "all", label: t("All") }, { value: "pr", label: t("Pull requests") }, { value: "issue", label: t("Issues") }]} />
-        </div>
-      ) : null}
+      {sourceRow}
+      {viewRow}
       {noSourcesConnected ? null : (
-        <div className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-2">
+        <div className="flex h-9 shrink-0 items-center gap-1 px-2">
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
             <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
             <SearchInput
@@ -903,12 +941,6 @@ export function InboxView({
               autoComplete="off"
             />
           </SearchInputGroup>
-          <span
-            className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)"
-            title={t("{p0} loaded", { p0: visibleItems.length })}
-          >
-            {t("{p0} loaded", { p0: visibleItems.length })}
-          </span>
           {pullRequestsOnly ? (
             <>
               <Button
@@ -954,21 +986,15 @@ export function InboxView({
               ) : null}
             </>
           ) : null}
-          <Button
-            iconOnly
-            label={t("Filter inbox")}
-            variant="ghost"
-            type="button"
-            title={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
-            aria-label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
+          <FilterTrigger
+            label={filtersActive ? t("Filter inbox (filters active)") : t("Filter inbox")}
+            activeCount={filterCount}
+            onReset={resetFilters}
+            resetLabel={t("Clear filters")}
             aria-expanded={!!filterMenu}
             aria-haspopup="menu"
-            data-filters-active={filtersActive ? "" : undefined}
             onClick={onFilterButtonClick}
-          >
-            <ListFilter className="icon-xs" strokeWidth={1.75} />
-            {filtersActive ? <Badge variant="dot" tone="info" label={t("Filters active")} /> : null}
-          </Button>
+          />
           <Button
             iconOnly
             label={t("Mark loaded {p0} items as read", { p0: INBOX_SOURCE_LABELS[source] })}
@@ -1113,11 +1139,32 @@ export function InboxView({
           </ul>
         )}
       </div>
+      {noSourcesConnected || visibleItems.length === 0 ? null : (
+        <div
+          role="status"
+          data-inbox-list-status
+          className="flex shrink-0 items-center justify-between gap-2 px-3 py-1.5 text-ui-micro tabular-nums text-(--ui-text-secondary)"
+        >
+          <span title={t("{p0} loaded", { p0: visibleItems.length })}>
+            {t("{p0} loaded", { p0: visibleItems.length })}
+            {hasMoreItems ? ` · ${t("{p0} shown", { p0: shownItems.length })}` : ""}
+            {sourceLimited ? (
+              <span
+                data-inbox-list-limit
+                title={t("The provider returned a full page. Older items may not be loaded, and no total is available.")}
+              >
+                {` · ${t("Limit reached")}`}
+              </span>
+            ) : null}
+          </span>
+          {sourceError ? <span className="text-(--ui-tone-warning-fg)">{t("Partial")}</span> : null}
+        </div>
+      )}
       <div
         {...resize.separatorProps}
         aria-label={t("Resize inbox list")}
         className={`absolute inset-y-0 -right-px z-10 w-1.5 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-raised)" : "hover:bg-(--ui-surface-raised)"
+          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
         }`}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
@@ -1195,25 +1242,9 @@ export function InboxView({
 
       {source === "jira" && jiraView === "board" ? (
         <>
-          <div
-            className="flex h-9 shrink-0 items-center gap-1 border-b border-(--ui-tone-neutral-border) px-3"
-            role="tablist"
-            aria-label={t("Inbox source")}
-          >
-            {visibleSources.map((option) => (
-              <InboxSourceTab
-                key={option}
-                source={option}
-                selected={source === option}
-                onSelect={onSourceChange}
-              />
-            ))}
-          </div>
-          <div className="flex shrink-0 items-center gap-2 px-3 py-1">
-            <span className="text-ui-caption text-(--ui-text-secondary)">{t("Jira view")}</span>
-            <SegmentedControl label={t("Jira view")} selectionRole="pressed" value={jiraView}
-              onValueChange={(next) => setJiraView(next === "board" ? "board" : "list")}
-              options={[{ value: "list", label: t("List") }, { value: "board", label: t("Board") }]} />
+          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-(--ui-surface-panel)">
+            <div className="min-w-0 max-w-sm flex-1 basis-72">{sourceRow}</div>
+            {viewRow}
           </div>
           <div className="inbox-jira-layout flex min-h-0 min-w-0 flex-1" data-detail-open={!!boardIssue}>
             <JiraBoardView
@@ -1408,7 +1439,7 @@ export function LinkedWorkItemPanel({
       aria-hidden={!visible}
       inert={!visible || undefined}
       data-linked-work-item-panel
-      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-tone-neutral-border) text-(--ui-tone-neutral-fg) max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-(--ui-elevation-floating) ${
+      className={`@container/linked relative min-h-0 max-w-full shrink-0 flex-col border-l border-(--ui-pane-border) text-(--ui-tone-neutral-fg) max-[950px]:absolute max-[950px]:inset-y-0 max-[950px]:right-0 max-[950px]:z-30 max-[950px]:shadow-(--ui-elevation-floating) ${
         visible ? "flex linked-work-item-enter" : "hidden"
       }`}
     >
@@ -1418,19 +1449,24 @@ export function LinkedWorkItemPanel({
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
         className={`absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize touch-none ${
-          resize.dragging ? "bg-(--ui-surface-raised)" : "hover:bg-(--ui-surface-raised)"
+          resize.dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
         }`}
       />
-      <div className="absolute top-[5px] right-2 z-30">
+      <header className="flex shrink-0 items-center gap-2 px-3 py-1">
+        <span className="min-w-0 flex-1 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
+          {t("Linked {p0} #{p1}", { p0: kindLabel.toLowerCase(), p1: target.number })}
+        </span>
         <Button
           variant="ghost"
+          size="sm"
           iconOnly
           label={t("Close {p0} panel", { p0: kindLabel.toLowerCase() })}
           onClick={onClose}
+          className="shrink-0"
         >
           <X className="icon-sm" strokeWidth={1.75} />
         </Button>
-      </div>
+      </header>
       <div className="min-h-0 min-w-0 flex-1">
         {item ? (
           <InboxDetail

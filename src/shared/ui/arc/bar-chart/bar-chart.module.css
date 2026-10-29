@@ -1,5 +1,7 @@
 .figure {
   display: grid;
+  /* A long series name ellipsizes in the legend instead of widening the whole chart. */
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: var(--space-5);
   margin: 0;
@@ -31,7 +33,7 @@
   align-items: baseline;
   gap: 6px;
   font-family: var(--font-display);
-  font-size: var(--text-3xl);
+  font-size: var(--ui-font-title);
   font-weight: 500;
   letter-spacing: var(--tracking-display);
   line-height: var(--leading-display);
@@ -141,6 +143,71 @@
 }
 .chart .bar[data-active] {
   fill: var(--accent);
+}
+
+/* A pattern overlay marks every category after the first with more than colour; it follows the bar path. */
+.barPattern {
+  pointer-events: none;
+}
+.patternMark {
+  fill: var(--surface);
+  stroke: var(--surface);
+  stroke-width: 1.4;
+  stroke-opacity: 0.7;
+  fill-opacity: 0.7;
+}
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+.legendItem {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.legendName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background-color: var(--ui-chart-bar);
+}
+.swatch[data-pattern="diagonal"] {
+  background-image: repeating-linear-gradient(45deg, transparent 0 2px, var(--surface) 2px 3px);
+}
+.swatch[data-pattern="dots"] {
+  background-image: radial-gradient(circle at center, var(--surface) 0 1.2px, transparent 1.6px);
+  background-size: 5px 5px;
+}
+.swatch[data-pattern="cross"] {
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 2px, var(--surface) 2px 3px),
+    repeating-linear-gradient(-45deg, transparent 0 2px, var(--surface) 2px 3px);
+}
+@media (forced-colors: active) {
+  .bar {
+    fill: CanvasText;
+  }
+  .chart .bar[data-active] {
+    fill: Highlight;
+  }
+  .swatch {
+    background-color: CanvasText;
+    forced-color-adjust: none;
+  }
 }
 
 .gutter {

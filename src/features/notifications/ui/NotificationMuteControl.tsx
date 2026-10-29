@@ -33,7 +33,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
     muted.length === 0
       ? null
       : projectIds.length > 1
-        ? `${muted.length} of ${projectIds.length} projects muted`
+        ? t("{p0} of {p1} projects muted", { p0: muted.length, p1: projectIds.length })
         : notificationMuteStatus(preferences[projectIds[0]]);
 
   const close = (restoreFocus = true) => {
@@ -48,7 +48,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
       close();
       onChanged?.();
     } catch {
-      setError("Could not save notification preferences. Please try again.");
+      setError(t("Could not save notification preferences. Please try again."));
     }
   };
 
@@ -72,7 +72,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
       <Button
         ref={trigger}
         type="button"
-        variant="secondary"
+        variant={compact ? "ghost" : "secondary"}
         iconOnly={compact}
         label={muted.length ? t("Change mute duration") : t("Mute notifications")}
         tooltip={compact && status ? status : undefined}
@@ -99,7 +99,7 @@ export function NotificationMuteControl({ projectIds, onChanged, compact = false
         <ExplorerMenu
           x={trigger.current.getBoundingClientRect().right - 244}
           y={trigger.current.getBoundingClientRect().bottom + 4}
-          ariaLabel="Mute notifications"
+          ariaLabel={t("Mute notifications")}
           width={244}
           header={
             <p className="px-2 py-1.5 text-ui-micro text-(--ui-text-secondary)">

@@ -1,7 +1,7 @@
 import { themePalette } from "../../../shared/theme/palette";
 import { t, useLocale } from "../../../shared/i18n";
 import { useState, type CSSProperties } from "react";
-import { Group, Row, Select, Slider } from "./settingsControls";
+import { Group, Row, Segmented, Select, Slider } from "./settingsControls";
 import type { AppearanceSettings } from "./useAppearanceSettings";
 import { APPEARANCE_DEFAULTS, CODE_FONTS, INTERFACE_FONTS } from "../model/appearancePreferences";
 import {
@@ -11,11 +11,13 @@ import {
   THEME_SATURATION_DEFAULT,
   THEME_DARK_LIGHTNESS_DEFAULT,
   THEME_PREFERENCE_DEFAULT,
+  type ThemePreference,
 } from "../model/appearance";
 import { UI_SCALE_DEFAULT, UI_SCALE_PERCENTS } from "../model/uiScale";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useCodeTheme } from "../../../shared/hooks/useCodeTheme";
 import { Button } from "../../../shared/ui/Button";
+import { Check, RotateCcw } from "../../../shared/ui/icons";
 import { TextField } from "../../../shared/ui/TextField";
 import "./AppearancePreviews.css";
 
@@ -70,81 +72,70 @@ const presets = [
   },
 ];
 
-/** A small workspace, rather than a color strip, shows the relationship between surfaces. */
-function WorkspacePreview({ scheme }: { scheme?: "system" | "light" | "dark" }) {
-  return (
-    <span className="appearance-workspace-preview" data-preview-scheme={scheme} aria-hidden="true">
-      <span className="appearance-preview-rail">
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="appearance-preview-sidebar">
-        <i />
-        <i />
-        <i />
-        <i />
-      </span>
-      <span className="appearance-preview-conversation">
-        <span className="appearance-preview-message">
-          <i />
-          <i />
-        </span>
-        <span className="appearance-preview-reply">
-          <i />
-          <i />
-          <i />
-        </span>
-        <span className="appearance-preview-composer">
-          <i />
-          <b />
-        </span>
-      </span>
-    </span>
+/**
+ * The palette whose surface tint matches. Only surface values count: an accent override never
+ * unselects a palette, and hue is meaningless at zero saturation (Ink is the neutral palette).
+ */
+export function matchThemePalette(a: {
+  themeHue: number;
+  themeSaturation: number;
+  themeDarkLightness: number;
+}) {
+  return presets.find(
+    (p) =>
+      p.saturation === a.themeSaturation &&
+      p.lightness === a.themeDarkLightness &&
+      (p.saturation === 0 || p.hue === a.themeHue),
   );
+}
+
+/** Where the accent comes from, stated apart from the surface palette. */
+export function accentSourceLabel(a: { accentColor: string | null }) {
+  const accent = a.accentColor?.toLowerCase();
+  if (!accent || accent === ACCENT_COLOR_DEFAULT.toLowerCase()) return t("Accent: default");
+  const palette = presets.find((p) => p.accent.toLowerCase() === accent);
+  return palette ? t("Accent: {p0} palette", { p0: palette.name }) : t("Accent: custom");
 }
 
 /** Uses the real action, selection and bubble roles; clicks affect only this sample. */
 export function AccentUsagePreview() {
+  useLocale();
   const [sent, setSent] = useState(false);
   const [selected, setSelected] = useState(true);
   return (
-    <div className="grid min-w-0 gap-3 p-4" role="group" aria-label={t("Preview")}>
-      <span className="text-ui-caption text-(--ui-text-secondary)">{t("Preview")}</span>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button variant="primary" tone="accent" aria-pressed={sent} onClick={() => setSent(!sent)}>
-          {t("Send")}
-        </Button>
-        <Button
-          variant="item"
-          selected={selected}
-          aria-pressed={selected}
-          onClick={() => setSelected(!selected)}
-        >
-          {t("Selection")}
-        </Button>
-      </div>
-      <div className="min-h-10" aria-live="polite">
-        {sent ? (
-          <p className="user-message-bubble m-0 w-fit max-w-full rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-content">
+    <Row
+      label={t("Preview")}
+      feedback={
+        sent ? (
+          <p
+            role="status"
+            className="user-message-bubble m-0 w-fit max-w-full rounded-md bg-(--ui-surface) px-3 py-2 text-ui-secondary text-content"
+          >
             {t("Message")}
           </p>
-        ) : null}
-      </div>
-    </div>
+        ) : undefined
+      }
+    >
+      <Button variant="primary" tone="accent" aria-pressed={sent} onClick={() => setSent(!sent)}>
+        {t("Send")}
+      </Button>
+      <Button
+        variant="item"
+        selected={selected}
+        aria-pressed={selected}
+        onClick={() => setSelected(!selected)}
+      >
+        {t("Selection")}
+      </Button>
+    </Row>
   );
 }
 
+/** Mode and palette. Accent has its own topic because it is an override on top of the palette. */
 export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSettings }) {
   useLocale();
   const light = useColorScheme() === "light";
-  const selected = presets.find(
-    (p) =>
-      p.hue === a.themeHue &&
-      p.saturation === a.themeSaturation &&
-      p.lightness === a.themeDarkLightness &&
-      p.accent.toLowerCase() === a.accentColor?.toLowerCase(),
-  );
+  const selected = matchThemePalette(a);
   const resetColors = () => {
     a.onThemePreference(THEME_PREFERENCE_DEFAULT);
     a.onTint(THEME_HUE_DEFAULT, THEME_SATURATION_DEFAULT);
@@ -152,96 +143,101 @@ export function AppearanceStudio({ appearance: a }: { appearance: AppearanceSett
     a.onAccentColor(ACCENT_COLOR_DEFAULT);
   };
   return (
-    <section className="appearance-studio" aria-label={t("Theme and colors")}>
-      <div className="appearance-studio-heading">
-        <h2>{t("Color scheme")}</h2>
-        <Button variant="ghost" onClick={resetColors}>
+    <Group
+      title={t("Color scheme")}
+      action={
+        <Button
+          variant="ghost"
+          tooltip={t("Resets the color scheme, palette tint and accent. Other appearance settings stay.")}
+          startIcon={<RotateCcw aria-hidden className="icon-sm" />}
+          onClick={resetColors}
+        >
           {t("Reset colors")}
         </Button>
-      </div>
-      <div id="setting-theme" data-setting-id="theme" className="appearance-scheme-control">
-        <div className="appearance-scheme-options" role="group" aria-label={t("Color scheme")}>
-          {(["system", "light", "dark"] as const).map((scheme) => (
-            <Button
-              key={scheme}
-              variant="item"
-              layout="stacked"
-              className="appearance-scheme-option"
-              selected={a.themePreference === scheme}
-              aria-pressed={a.themePreference === scheme}
-              onClick={() => a.onThemePreference(scheme)}
-            >
-              <WorkspacePreview scheme={scheme} />
-              <span className="appearance-choice-label">
-                <span>
-                  {t(scheme === "system" ? "System" : scheme === "light" ? "Light" : "Dark")}
-                </span>
-                <span aria-hidden="true">{a.themePreference === scheme ? "✓" : ""}</span>
-              </span>
-            </Button>
-          ))}
-        </div>
-        <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
-      </div>
-      <div className="appearance-studio-body">
-        <div className="appearance-material-library">
-          <div className="appearance-library-heading">
-            <h3>{t("Theme palettes")}</h3>
-          </div>
-          <div
-            id="setting-theme-palettes"
-            data-setting-id="theme-palettes"
-            role="group"
-            aria-label={t("Theme palettes")}
-          >
-            {presets.map((p) => (
+      }
+    >
+      <Row
+        id="theme"
+        label={t("Mode")}
+        scope={
+          <span role="status">{t("Active mode: {p0}", { p0: light ? t("Light") : t("Dark") })}</span>
+        }
+      >
+        <Segmented<ThemePreference>
+          label={t("Color scheme")}
+          value={a.themePreference}
+          options={[
+            {
+              value: "system",
+              get label() {
+                return t("System");
+              },
+            },
+            {
+              value: "light",
+              get label() {
+                return t("Light");
+              },
+            },
+            {
+              value: "dark",
+              get label() {
+                return t("Dark");
+              },
+            },
+          ]}
+          onChange={a.onThemePreference}
+        />
+      </Row>
+      <Row
+        id="theme-palettes"
+        stacked
+        label={t("Theme palettes")}
+        scope={
+          selected
+            ? t("{p0} is selected. One palette, in daylight or after hours.", { p0: selected.name })
+            : t("Your custom colors are active. Adjust them in Custom surface colors.")
+        }
+      >
+        <div className="appearance-palettes">
+          {presets.map((p) => {
+            const on = selected?.name === p.name;
+            return (
               <Button
                 variant="item"
-                layout="stacked"
-                selected={selected?.name === p.name}
+                selected={on}
                 key={p.name}
                 className="appearance-palette"
                 tooltip={t(p.note)}
-                aria-pressed={selected?.name === p.name}
+                aria-pressed={on}
                 onClick={() => {
                   a.onTint(p.hue, p.saturation);
                   a.onDarkLightness(p.lightness);
                   a.onAccentColor(p.accent);
                 }}
               >
-                {/* Swatches display the selectable palette data; control colors remain semantic. */}
+                {/* The dot shows the selectable palette's own data; control colors remain semantic. */}
                 <span
-                  className="appearance-palette-preview"
+                  className="appearance-palette-dot"
+                  aria-hidden="true"
                   style={
                     {
-                      "--material-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
-                      "--material-ink": `hsl(${p.hue} ${p.saturation}% ${light ? 24 : 82}%)`,
-                      "--material-accent": p.accent,
+                      "--palette-base": `hsl(${p.hue} ${p.saturation}% ${light ? 94 : p.lightness + 5}%)`,
+                      "--palette-accent": p.accent,
                     } as CSSProperties
                   }
                 >
-                  <WorkspacePreview />
+                  <i />
+                  <i />
                 </span>
-                <span className="appearance-choice-label">
-                  <span className="appearance-material-name">
-                    <strong>{p.name}</strong>
-                  </span>
-                  <span aria-hidden="true">{selected?.name === p.name ? "✓" : ""}</span>
-                </span>
-                <span className="appearance-palette-note">{t(p.note)}</span>
+                <span className="appearance-palette-name">{p.name}</span>
+                {on ? <Check aria-hidden className="icon-xs" strokeWidth={2} /> : null}
               </Button>
-            ))}
-          </div>
-          <p className="appearance-library-note">
-            {selected
-              ? t("{p0} is selected. One palette, in daylight or after hours.", {
-                  p0: selected.name,
-                })
-              : t("Your custom colors are active. Adjust them in Custom surface colors.")}
-          </p>
+            );
+          })}
         </div>
-      </div>
-    </section>
+      </Row>
+    </Group>
   );
 }
 
@@ -251,7 +247,6 @@ export function AppearanceInterface({ appearance: a }: { appearance: AppearanceS
   return (
     <Group
       title={t("Scale and accessibility")}
-      layout="full"
       action={
         <Button
           variant="ghost"
@@ -366,7 +361,6 @@ export function AppearanceTypography({ appearance: a }: { appearance: Appearance
   return (
     <Group
       title={t("Fonts and code")}
-      layout="full"
       action={
         <Button
           variant="ghost"

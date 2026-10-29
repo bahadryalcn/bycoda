@@ -244,7 +244,7 @@ export function UsageProviderChip({
         }
         onClick={() => setOpen((value) => !value)}
       >
-        <HarnessIcon harness={iconHarness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={iconHarness} className="icon-sm shrink-0" />
         {accounts.length > 1 && activeAccount ? (
           <span className="inline-flex min-w-0 items-center gap-1">
             <AccountColorDot account={activeAccount} className="size-1.5" />
@@ -1150,7 +1150,10 @@ function UsageWindowStat({ window, now }: { window: RateLimitWindow; now: number
         } as CSSProperties)
       : undefined;
   return (
-    <span className="inline-flex items-center gap-1.5" title={label}>
+    <span className="inline-flex items-center gap-1.5 tabular-nums" title={label}>
+      <span aria-hidden="true" className="text-ui-micro text-(--ui-text-secondary)">
+        {formatWindowLabel(window.windowMinutes)}
+      </span>
       <Progress
         compact
         showValue

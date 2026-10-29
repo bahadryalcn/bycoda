@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { EyeOff, Lock } from "../../../shared/ui/icons";
@@ -11,6 +12,7 @@ import {
 } from "../model/groupLock";
 import type { GroupLockControls } from "./GroupLockSettings";
 import { PasswordPromptDialog } from "./PasswordPromptDialog";
+import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 
 export function HiddenGroupsSettings({
   controls: { Group, Row },
@@ -21,11 +23,17 @@ export function HiddenGroupsSettings({
   const privacy = useGroupLock();
   const [prompt, setPrompt] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   useEffect(() => closeHiddenGroups, []);
   const authorized = !privacy.hasPassword || privacy.hiddenGroupsAuthorized;
   const groups = authorized
     ? privacy.groups.filter((group) => privacy.savedHiddenGroupIds.has(group.id))
     : [];
+  const search = query.trim().toLocaleLowerCase();
+  const visibleGroups = search
+    ? groups.filter((group) => group.name.toLocaleLowerCase().includes(search))
+    : groups;
+  const searchable = groups.length >= 6;
   const restore = (id: string, temporary: boolean) => {
     setError(
       restoreHiddenGroup(id, temporary) ? null : t("Could not save visibility. Please try again."),
@@ -40,6 +48,9 @@ export function HiddenGroupsSettings({
           {t("Hidden groups")}
         </span>
       }
+      description={t(
+        "Right-click a project group and choose Hide group to hide it on this device. Temporary visibility ends on restart. Make visible restores the group permanently.",
+      )}
     >
       {!authorized ? (
         <Row
@@ -55,44 +66,74 @@ export function HiddenGroupsSettings({
           </Button>
         </Row>
       ) : groups.length === 0 ? (
-        <Row label={t("No hidden groups")} />
+        <div className="settings-collection settings-collection-empty privacy-empty">
+          <p>{t("No hidden groups")}</p>
+        </div>
       ) : (
-        groups.map((group) => (
-          <Row
-            key={group.id}
-            label={group.name}
-            description={
-              privacy.hiddenGroupIds.has(group.id)
-                ? t("Hidden on this device")
-                : t("Visible until restart or Lock all groups")
-            }
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              {privacy.hiddenGroupIds.has(group.id) ? (
-                <Button className="shrink-0" onClick={() => restore(group.id, true)}>
-                  {t("Show temporarily")}
+        <div className="settings-collection privacy-hidden-collection">
+          {searchable ? (
+            <CollectionToolbar
+              label={t("Search hidden groups")}
+              query={query}
+              onQueryChange={setQuery}
+              count={t("Showing {p0} of {p1} groups", {
+                p0: visibleGroups.length,
+                p1: groups.length,
+              })}
+            />
+          ) : null}
+          <div className="settings-collection-list privacy-hidden-list" role="list">
+            {visibleGroups.length === 0 ? (
+              <div className="settings-collection-empty">
+                <p role="status">{t("No groups found")}</p>
+                <Button variant="ghost" onClick={() => setQuery("")}>
+                  {t("Clear search")}
                 </Button>
-              ) : (
-                <Button
-                  className="shrink-0"
-                  onClick={() =>
-                    setError(
-                      hideGroup(group.id)
-                        ? null
-                        : t("Could not save visibility. Please try again."),
-                    )
-                  }
-                >
-                  {t("Hide again")}
-                </Button>
-              )}
-              <Button className="shrink-0" onClick={() => restore(group.id, false)}>
-                {t("Make visible")}
-              </Button>
-            </div>
-          </Row>
-        ))
+              </div>
+            ) : null}
+            {visibleGroups.map((group) => (
+              <div key={group.id} role="listitem" className="settings-collection-row">
+                <div className="settings-collection-main">
+                  <p className="settings-collection-title">{group.name}</p>
+                  <p className="settings-collection-meta">
+                    {privacy.hiddenGroupIds.has(group.id)
+                      ? t("Hidden on this device")
+                      : t("Visible until restart or Lock all groups")}
+                  </p>
+                </div>
+                <div className="settings-collection-actions">
+                  {privacy.hiddenGroupIds.has(group.id) ? (
+                    <Button className="shrink-0" onClick={() => restore(group.id, true)}>
+                      {t("Show temporarily")}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="shrink-0"
+                      onClick={() =>
+                        setError(
+                          hideGroup(group.id)
+                            ? null
+                            : t("Could not save visibility. Please try again."),
+                        )
+                      }
+                    >
+                      {t("Hide again")}
+                    </Button>
+                  )}
+                  <Button className="shrink-0" onClick={() => restore(group.id, false)}>
+                    {t("Make visible")}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
+      {error ? (
+        <Alert tone="danger" role="alert">
+          {error}
+        </Alert>
+      ) : null}
       {authorized && privacy.hasPassword ? (
         <div className="privacy-hidden-footer">
           <Button className="shrink-0" onClick={closeHiddenGroups}>
@@ -100,22 +141,6 @@ export function HiddenGroupsSettings({
           </Button>
         </div>
       ) : null}
-      {authorized && groups.length > 0 ? (
-        <p className="privacy-inline-note">
-          {t("Temporary visibility ends on restart. Make visible restores the group permanently.")}
-        </p>
-      ) : null}
-      {error ? (
-        <p role="alert" className="text-ui-body text-danger">
-          {error}
-        </p>
-      ) : null}
-      <section className="privacy-recovery">
-        <h3>{t("How to hide a group")}</h3>
-        <p className="privacy-inline-note">
-          {t("Right-click a project group and choose Hide group to hide it on this device.")}
-        </p>
-      </section>
       {prompt ? (
         <PasswordPromptDialog
           title={t("Manage hidden groups")}

@@ -112,7 +112,7 @@
   content: "";
   position: absolute;
   inset: 0;
-  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+  border: 1px solid var(--ui-tone-neutral-border);
   border-radius: inherit;
   pointer-events: none;
 }
@@ -120,11 +120,11 @@
   background: var(--surface);
 }
 .marker[data-tone="success"] {
-  background: color-mix(in oklab, var(--success) 12%, var(--surface));
+  background: var(--ui-tone-success-subtle);
   color: var(--success);
 }
 .marker[data-tone="danger"] {
-  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
+  background: var(--ui-tone-danger-subtle);
   color: var(--danger);
 }
 .marker svg {

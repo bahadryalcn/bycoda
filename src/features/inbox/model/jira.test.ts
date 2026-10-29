@@ -10,7 +10,11 @@ import {
   jiraProjectIdsForFetch,
   peekJiraIssueDetails,
   peekJiraIssueThread,
+  readHiddenJiraProjectIds,
+  requireHiddenJiraProjectIds,
+  saveHiddenJiraProjectIds,
   saveJiraConfig,
+  subscribeJiraScope,
   type JiraIssue,
 } from "./jira";
 import { clearInboxCache, listInboxItems, inboxItemStatus, inboxStartDraft } from "./githubTasks";
@@ -202,5 +206,46 @@ describe("jira issue details cache", () => {
     expect(peekJiraIssueDetails("LRU-0")).not.toBeNull();
     expect(peekJiraIssueDetails("LRU-1")).toBeNull();
     expect(peekJiraIssueDetails("LRU-128")).not.toBeNull();
+  });
+});
+
+describe("jira saved project scope", () => {
+  it("separates an empty scope from an unreadable one and fails closed", () => {
+    localStorage.removeItem("bycoda.jiraHiddenProjects");
+    expect(readHiddenJiraProjectIds()).toEqual([]);
+    localStorage.setItem("bycoda.jiraHiddenProjects", "{not json");
+    expect(readHiddenJiraProjectIds()).toBeNull();
+    expect(() => requireHiddenJiraProjectIds()).toThrow("scope is unavailable");
+    localStorage.setItem("bycoda.jiraHiddenProjects", '{"a":1}');
+    expect(readHiddenJiraProjectIds()).toBeNull();
+    localStorage.removeItem("bycoda.jiraHiddenProjects");
+  });
+
+  it("pauses Jira results instead of widening them when the saved scope is unreadable", async () => {
+    localStorage.setItem("bycoda.jiraHiddenProjects", "{not json");
+    vi.mocked(invoke).mockClear();
+    const result = await listInboxItems([], query);
+    expect(result.items).toEqual([]);
+    expect(result.errors.jira).toContain("scope is unavailable");
+    expect(invoke).not.toHaveBeenCalledWith("jira_list_issues", expect.anything());
+    localStorage.removeItem("bycoda.jiraHiddenProjects");
+  });
+
+  it("reports whether a save was read back and tells sibling windows", () => {
+    const changed = vi.fn();
+    const stop = subscribeJiraScope(changed);
+    expect(saveHiddenJiraProjectIds(["10001"])).toBe(true);
+    expect(changed).toHaveBeenCalledTimes(1);
+    window.dispatchEvent(new StorageEvent("storage", { key: "bycoda.jiraHiddenProjects" }));
+    window.dispatchEvent(new StorageEvent("storage", { key: "unrelated" }));
+    expect(changed).toHaveBeenCalledTimes(2);
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new Error("quota");
+    });
+    expect(saveHiddenJiraProjectIds(["10002"])).toBe(false);
+    setItem.mockRestore();
+    expect(readHiddenJiraProjectIds()).toEqual(["10001"]);
+    stop();
+    localStorage.removeItem("bycoda.jiraHiddenProjects");
   });
 });

@@ -566,7 +566,7 @@ export function SocialView({
       data-app-social
     >
       <div
-        className="flex h-10 shrink-0 select-none items-center border-b border-stroke"
+        className="flex h-10 shrink-0 select-none items-center"
         data-tauri-drag-region="deep"
       >
         {IS_MAC && compactRail ? <div className="w-4 shrink-0" /> : null}
@@ -770,10 +770,9 @@ export function SocialView({
               >
                 <Icon className="social-nav-icon" aria-hidden="true" />
                 <span className="social-nav-label">{tabLabel(item)}</span>
-                {item !== "Settings" && scoped ? (
-                  <span aria-hidden="true" className="social-nav-count">
-                    {
-                      {
+                {item !== "Settings" && scoped
+                  ? (() => {
+                      const count = {
                         Activity: scoped.pages?.jobs?.total ?? scoped.jobs.length,
                         Accounts: scoped.accounts.length,
                         Campaigns: scoped.pages?.campaigns?.total ?? scoped.campaigns.length,
@@ -785,10 +784,18 @@ export function SocialView({
                             scoped.publishingPlans?.length ??
                             0),
                         Settings: 0,
-                      }[item]
-                    }
-                  </span>
-                ) : null}
+                      }[item];
+                      return (
+                        <span
+                          aria-hidden="true"
+                          className="social-nav-count"
+                          data-empty={count === 0 ? "" : undefined}
+                        >
+                          {count}
+                        </span>
+                      );
+                    })()
+                  : null}
               </Button>
             );
           })}

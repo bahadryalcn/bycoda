@@ -18,6 +18,7 @@ import {
   WS_WIRE_VERSION,
   getHostRpcMethod,
   hostRpcCost,
+  hostRpcHasEffect,
   parseRpcRequest,
   type RpcRequest,
   type RpcError,
@@ -46,7 +47,10 @@ export type HostWsPrincipal = {
   exposeQueueAttachments?: HostDispatchContext["exposeQueueAttachments"];
   retargetTask?: HostDispatchContext["retargetTask"];
   devServerAccess?: HostDispatchContext["devServerAccess"];
-  nativeBufferRecovery?: HostDispatchContext["nativeBufferRecovery"];
+  workspaceOwner?: HostDispatchContext["workspaceOwner"];
+  nativeServices?: HostDispatchContext["nativeServices"];
+  nativeDevices?: HostDispatchContext["nativeDevices"];
+  nativeDelivery?: HostDispatchContext["nativeDelivery"];
 };
 
 export type HostWebSocketOptions = {
@@ -316,9 +320,13 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     const definition = getHostRpcMethod(request.method)!;
     const deadline = setTimeout(
       () => controller.abort(new RequestExpired()),
-      Math.min(limits.defaultResponseTimeoutMs, definition.responseTimeoutMs),
+      Math.min(
+        options.limits?.defaultResponseTimeoutMs ?? definition.responseTimeoutMs,
+        definition.responseTimeoutMs,
+      ),
     );
     deadline.unref();
+    let dispatchStarted = false;
     try {
       if (!(await waitFor(authorized(peer), controller.signal))) {
         failure(
@@ -386,6 +394,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           : typeof request.params.projectId === "string"
             ? `project:${request.params.projectId}`
             : "environment";
+      const resultAuthorities: Array<() => Promise<boolean>> = [];
       const action = async () => {
         const dependencies = options.bulk
           ? await (options.bulkDependencies?.(request.method, request.params) ??
@@ -393,6 +402,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           : [];
         const lease = options.bulk?.begin(peer.principal.id, resource, dependencies);
         try {
+          dispatchStarted = true;
           const result = await options.dispatch(request.method, request.params, {
             environmentId: options.environmentId,
             principal: { kind: "device", id: peer.principal.id },
@@ -403,9 +413,18 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
             exposeQueueAttachments: peer.principal.exposeQueueAttachments,
             retargetTask: peer.principal.retargetTask,
             devServerAccess: peer.principal.devServerAccess,
-            nativeBufferRecovery: peer.principal.nativeBufferRecovery,
+            workspaceOwner: peer.principal.workspaceOwner,
+            nativeServices: peer.principal.nativeServices,
+            nativeDevices: peer.principal.nativeDevices,
+            nativeDelivery: peer.principal.nativeDelivery,
+            retainResultAuthority: (check) => {
+              resultAuthorities.push(check);
+              if (lease) options.bulk!.retainAuthority(lease, check);
+            },
             signal: definition.cancellation === "query" ? controller.signal : undefined,
           });
+          for (const check of resultAuthorities)
+            if (!(await check())) throw new HostBulkError(409, "Result authority expired.");
           const validated = definition.resultSchema.parse(JSON.parse(JSON.stringify(result)));
           return lease
             ? options.bulk!.encode(
@@ -428,29 +447,54 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           RPC_ERROR_CODES.unauthorized,
           "Device authorization was revoked.",
+          dispatchStarted && hostRpcHasEffect(request.method, definition.kind)
+            ? { category: "authentication", retryable: false, delivery: "unknown" }
+            : undefined,
         );
         closePeer(peer);
-      } else if (!controller.signal.aborted) send(peer, { jsonrpc: "2.0", id: request.id, result });
+      } else if (!controller.signal.aborted) {
+        for (const check of resultAuthorities)
+          if (!(await waitFor(check(), controller.signal)))
+            throw new HostBulkError(409, "Result authority expired.");
+        if (!controller.signal.aborted) send(peer, { jsonrpc: "2.0", id: request.id, result });
+      }
     } catch (error) {
       if (peer.closed) return;
       if (controller.signal.reason instanceof RequestExpired)
         failure(peer, request.id, RPC_ERROR_CODES.deadlineExceeded, "Request deadline exceeded.", {
           category: "deadline",
           retryable: definition.kind === "query",
-          ...(definition.kind === "command"
-            ? { commandId: String(request.params.commandId), delivery: "unknown" as const }
+          ...(hostRpcHasEffect(request.method, definition.kind)
+            ? { delivery: "unknown" as const }
             : {}),
+          ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
       else if (controller.signal.aborted)
         failure(peer, request.id, RPC_ERROR_CODES.cancelled, "Request cancelled.", {
           category: "cancelled",
           retryable: definition.kind === "query",
-          ...(definition.kind === "command"
-            ? { commandId: String(request.params.commandId), delivery: "unknown" as const }
+          ...(hostRpcHasEffect(request.method, definition.kind)
+            ? { delivery: "unknown" as const }
             : {}),
+          ...(definition.kind === "command" ? { commandId: String(request.params.commandId) } : {}),
         });
       else if (error instanceof HostDispatchError) {
-        failure(peer, request.id, DISPATCH_ERROR_CODES[error.code], error.message, error.details);
+        failure(
+          peer,
+          request.id,
+          DISPATCH_ERROR_CODES[error.code],
+          error.message,
+          error.code === "unauthorized" &&
+            dispatchStarted &&
+            hostRpcHasEffect(request.method, definition.kind)
+            ? {
+                category: "authentication",
+                ...error.details,
+                retryable: false,
+                delivery: "unknown",
+              }
+            : error.details,
+        );
         if (error.code === "unauthorized") closePeer(peer);
       } else if (error instanceof HostStreamError)
         failure(
@@ -465,8 +509,20 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           request.id,
           error.status === 429 ? RPC_ERROR_CODES.overloaded : RPC_ERROR_CODES.resyncRequired,
           error.message,
+          hostRpcHasEffect(request.method, definition.kind)
+            ? { category: "unavailable", retryable: false, delivery: "unknown" }
+            : undefined,
         );
-      else failure(peer, request.id, RPC_ERROR_CODES.internalError, "Host read failed.");
+      else
+        failure(
+          peer,
+          request.id,
+          RPC_ERROR_CODES.internalError,
+          "Host read failed.",
+          hostRpcHasEffect(request.method, definition.kind)
+            ? { category: "unavailable", retryable: false, delivery: "unknown" }
+            : undefined,
+        );
     } finally {
       clearTimeout(deadline);
       peer.pending.delete(request.id);

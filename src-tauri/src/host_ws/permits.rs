@@ -3,7 +3,7 @@
 use super::{bulk, schema::Contracts};
 use serde_json::Value;
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex, Weak,
@@ -14,6 +14,24 @@ use std::{
 const MAX_GRANTS: usize = 256;
 const MAX_METADATA_BYTES: usize = 256 * 1024;
 const MAX_RETENTION: Duration = Duration::from_secs(120);
+// Private service result reconstruction has a separate, finite budget. Keeping
+// every real chunk guard must not consume the general unary/subscription pool.
+const MAX_SERVICE_RESULT_GROUPS: usize = 4;
+const SERVICE_RESULT_CHUNK_BYTES: u64 = 65_536;
+const MAX_SERVICE_RESULT_BYTES: u64 = 32 * 1024 * 1024;
+const MAX_SERVICE_RESULT_SCOPES: usize =
+    (MAX_SERVICE_RESULT_BYTES / SERVICE_RESULT_CHUNK_BYTES) as usize;
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct ServiceResult {
+    owner: String,
+    original_id: String,
+    payload_sha256: String,
+    payload_bytes: u64,
+    target: String,
+    result_sha256: String,
+    result_bytes: u64,
+}
 
 #[derive(Clone, PartialEq, Eq)]
 enum Source {
@@ -50,29 +68,38 @@ impl Resource {
     }
 }
 pub(super) struct ResourceScope {
+    pub(super) commit: Mutex<()>,
     owner: String,
     request_id: String,
     resource: Resource,
     revoked: AtomicBool,
+    service_result: Option<ServiceResult>,
 }
 impl ResourceScope {
     fn new(owner: &str, request_id: &str, resource: Resource) -> Self {
         Self {
+            commit: Mutex::new(()),
             owner: owner.into(),
             request_id: request_id.into(),
             resource,
             revoked: AtomicBool::new(false),
+            service_result: None,
         }
     }
     pub fn live(&self) -> bool {
         !self.revoked.load(Ordering::Acquire)
     }
     fn revoke(&self) {
+        let _commit = self
+            .commit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.revoked.store(true, Ordering::Release);
     }
 }
 
 pub(super) struct Grant {
+    pub(super) commit: Mutex<()>,
     owner: String,
     generation: u64,
     source: Source,
@@ -86,13 +113,20 @@ pub(super) struct Grant {
 }
 impl Grant {
     pub fn revoke(&self) {
+        let _commit = self
+            .commit
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         self.revoked.store(true, Ordering::Release);
     }
-    fn live(&self) -> bool {
+    pub(super) fn live(&self) -> bool {
         !self.revoked.load(Ordering::Acquire)
             && self.resource.live()
             && self.expires_at > bulk::millis()
             && Instant::now() < self.retained_until
+    }
+    pub(super) fn resource(&self) -> Arc<ResourceScope> {
+        self.resource.clone()
     }
 }
 
@@ -129,6 +163,14 @@ impl Permits {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+    #[cfg(test)]
+    pub(super) fn with_state_lock_for_test<T>(
+        &self,
+        action: impl FnOnce(&mut dyn FnMut(&Value)) -> T,
+    ) -> T {
+        let mut state = self.lock();
+        action(&mut |target| Self::revoke_resource(&mut state, target))
     }
     fn prune(state: &mut State) {
         state.grants.retain(|_, grant| grant.live());
@@ -281,7 +323,14 @@ impl Permits {
     ) -> Result<Arc<ResourceScope>, &'static str> {
         let mut state = self.lock();
         Self::prune(&mut state);
-        if state.scopes.len() >= MAX_GRANTS {
+        if state
+            .scopes
+            .iter()
+            .filter_map(Weak::upgrade)
+            .filter(|scope| scope.service_result.is_none())
+            .count()
+            >= MAX_GRANTS
+        {
             return Err("overload");
         }
         let scope = Arc::new(ResourceScope::new(
@@ -289,6 +338,71 @@ impl Permits {
             request_id,
             Resource::params(params),
         ));
+        state.scopes.push(Arc::downgrade(&scope));
+        Ok(scope)
+    }
+    /// Called only for the validated private NativeService result.read route.
+    /// Each chunk keeps its own request/revocation gate; only admission accounting
+    /// is grouped by the complete immutable original and result identity.
+    pub(super) fn service_result_scope(
+        &self,
+        owner: &str,
+        request_id: &str,
+        params: &Value,
+    ) -> Result<Arc<ResourceScope>, &'static str> {
+        let text = |value: &Value, max: usize| {
+            value
+                .as_str()
+                .filter(|text| !text.is_empty() && text.len() <= max)
+                .map(str::to_owned)
+                .ok_or("identity")
+        };
+        let result_bytes = params["resultSource"]["byteLength"]
+            .as_u64()
+            .filter(|bytes| *bytes > 0 && *bytes <= MAX_SERVICE_RESULT_BYTES)
+            .ok_or("identity")?;
+        let offset = params["offset"].as_u64().ok_or("identity")?;
+        if owner.is_empty()
+            || owner.len() > 512
+            || offset >= result_bytes
+            || offset % SERVICE_RESULT_CHUNK_BYTES != 0
+            || params["limit"].as_u64()
+                != Some((result_bytes - offset).min(SERVICE_RESULT_CHUNK_BYTES))
+        {
+            return Err("identity");
+        }
+        let key = ServiceResult {
+            owner: owner.into(),
+            original_id: text(&params["originalId"], 128)?,
+            payload_sha256: text(&params["sha256"], 64)?,
+            payload_bytes: params["byteLength"].as_u64().ok_or("identity")?,
+            target: text(&params["target"], 128)?,
+            result_sha256: text(&params["resultSource"]["sha256"], 64)?,
+            result_bytes,
+        };
+        let mut state = self.lock();
+        Self::prune(&mut state);
+        let scopes = state
+            .scopes
+            .iter()
+            .filter_map(Weak::upgrade)
+            .collect::<Vec<_>>();
+        let groups = scopes
+            .iter()
+            .filter_map(|scope| scope.service_result.as_ref())
+            .collect::<HashSet<_>>();
+        if (!groups.contains(&key) && groups.len() >= MAX_SERVICE_RESULT_GROUPS)
+            || scopes
+                .iter()
+                .filter(|scope| scope.service_result.as_ref() == Some(&key))
+                .count()
+                >= MAX_SERVICE_RESULT_SCOPES
+        {
+            return Err("overload");
+        }
+        let mut scope = ResourceScope::new(owner, request_id, Resource::params(params));
+        scope.service_result = Some(key);
+        let scope = Arc::new(scope);
         state.scopes.push(Arc::downgrade(&scope));
         Ok(scope)
     }
@@ -373,6 +487,7 @@ impl Permits {
             return Err("overload");
         }
         let grant = Arc::new(Grant {
+            commit: Mutex::new(()),
             owner: owner.into(),
             generation,
             source,
@@ -570,3 +685,38 @@ impl Drop for Lease {
 #[cfg(test)]
 #[path = "permits_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod commit_tests {
+    use super::*;
+
+    #[test]
+    fn native_commit_bulk_grant_revoke_waits_for_commit_gate() {
+        let grant = Arc::new(Grant {
+            commit: Mutex::new(()),
+            owner: "native".into(),
+            generation: 1,
+            source: Source::Unary("request".into()),
+            descriptor: serde_json::json!({}),
+            expires_at: bulk::millis() + 60_000,
+            retained_until: Instant::now() + MAX_RETENTION,
+            revoked: AtomicBool::new(false),
+            claimed: AtomicBool::new(true),
+            metadata_bytes: 0,
+            resource: Arc::new(ResourceScope::new("native", "request", Resource::default())),
+        });
+        let gate = grant.commit.lock().unwrap();
+        let retired = grant.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        let task = std::thread::spawn(move || {
+            retired.revoke();
+            done_tx.send(()).unwrap();
+        });
+        let blocked = done_rx.recv_timeout(Duration::from_millis(40)).is_err();
+        assert!(grant.live());
+        drop(gate);
+        task.join().unwrap();
+        assert!(blocked);
+        assert!(!grant.live());
+    }
+}

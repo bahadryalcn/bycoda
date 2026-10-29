@@ -1,4 +1,5 @@
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { useState, type ReactNode } from "react";
@@ -20,7 +21,7 @@ import { ForgotLockPasswordDialog } from "./ForgotLockPasswordDialog";
 import { PasswordPromptDialog } from "./PasswordPromptDialog";
 import { SetLockPasswordDialog } from "./SetLockPasswordDialog";
 import { HiddenGroupsSettings } from "./HiddenGroupsSettings";
-import { AdvancedSettings } from "../../settings/ui/settingsControls";
+import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 
 /** The Settings building blocks, passed in so this page matches the others. */
 export type GroupLockControls = {
@@ -29,12 +30,17 @@ export type GroupLockControls = {
     title: ReactNode;
     description?: string;
     action?: ReactNode;
+    scope?: ReactNode;
+    /** Open by default; only a real editing or ownership unit (a danger zone) is boxed. */
+    variant?: "open" | "box";
     children: ReactNode;
   }) => ReactNode;
   Row: (props: {
     id?: string;
     label: ReactNode;
     description?: string;
+    /** Local save result shown with the row. */
+    feedback?: ReactNode;
     children?: ReactNode;
   }) => ReactNode;
   Toggle: (props: {
@@ -67,15 +73,54 @@ export function GroupLockSettings({
   useLocale();
   const lock = useGroupLock();
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [groupQuery, setGroupQuery] = useState("");
+  // Choices apply to this window at once; a save that did not reach storage stays visible with a retry.
+  const [unsaved, setUnsaved] = useState<Record<string, () => void>>({});
+  const commit = (id: string, write: () => boolean) => {
+    const saved = write();
+    setUnsaved((current) => {
+      const next = { ...current };
+      if (saved) delete next[id];
+      else next[id] = () => commit(id, write);
+      return next;
+    });
+  };
+  const unsavedNote = (id: string, applied = true) =>
+    unsaved[id] ? (
+      <div className="privacy-save-feedback">
+        <Alert tone="danger">
+          {applied
+            ? t("Applied in this window, but not saved. The next launch may use the previous choice.")
+            : t("Could not save this change. It was not applied.")}
+        </Alert>
+        <Button size="sm" variant="ghost" onClick={unsaved[id]}>
+          {t("Retry")}
+        </Button>
+      </div>
+    ) : undefined;
   const close = () => setDialog(null);
   const hasLockable =
     lock.groups.some((group) => group.lockable) || lock.savedHiddenGroupIds.size > 0;
   const listedGroups = lock.groups.filter((group) => !lock.savedHiddenGroupIds.has(group.id));
+  // Three separate facts: how many groups are listed, how many ask for the password,
+  // and how many are locked right now.
+  const protectedCount = listedGroups.filter((group) => group.lockable).length;
+  const lockedCount = listedGroups.filter((group) => lock.lock.lockedGroupIds.has(group.id)).length;
+  const groupSearch = groupQuery.trim().toLocaleLowerCase();
+  const visibleGroups = groupSearch
+    ? listedGroups.filter((group) => group.name.toLocaleLowerCase().includes(groupSearch))
+    : listedGroups;
+  const searchable = listedGroups.length >= 6;
+  const groupSummary = t("{p0} groups · {p1} protected · {p2} locked", {
+    p0: listedGroups.length,
+    p1: protectedCount,
+    p2: lockedCount,
+  });
 
   const toggleLockable = (id: string, name: string, on: boolean) => {
     if (!on) setDialog({ kind: "remove-lock", id, name });
     else if (!lock.hasPassword) setDialog({ kind: "set", thenLockable: id });
-    else makeGroupLockable(id);
+    else commit(`lockable:${id}`, () => makeGroupLockable(id));
   };
 
   return (
@@ -90,42 +135,11 @@ export function GroupLockSettings({
         }
       >
         {lock.hasPassword ? (
-          <>
-            <Row label={<span className="privacy-status">{t("Password is set")}</span>}>
-              <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
-                {t("Change password…")}
-              </Button>
-            </Row>
-            <section className="privacy-recovery">
-              <h3>{t("Password recovery & removal")}</h3>
-              <Row
-                label={t("Remove protection")}
-                description={t("Removes the password and all group locks.")}
-              >
-                <Button
-                  variant="danger"
-                  className="shrink-0"
-                  onClick={() => setDialog({ kind: "remove" })}
-                >
-                  {t("Remove password…")}
-                </Button>
-              </Row>
-              <Row
-                label={t("Forgot the password?")}
-                description={t(
-                  "Reset protection. Your projects and hidden preferences stay saved.",
-                )}
-              >
-                <Button
-                  variant="danger"
-                  className="shrink-0"
-                  onClick={() => setDialog({ kind: "forgot" })}
-                >
-                  {t("Forgot password…")}
-                </Button>
-              </Row>
-            </section>
-          </>
+          <Row label={t("Password is set")}>
+            <Button className="shrink-0" onClick={() => setDialog({ kind: "change" })}>
+              {t("Change password…")}
+            </Button>
+          </Row>
         ) : (
           <Row
             label={t("No password set")}
@@ -136,69 +150,89 @@ export function GroupLockSettings({
             </Button>
           </Row>
         )}
-        <AdvancedSettings
-          title={t("Automatic locking")}
-          settingIds={[
-            "group-lock-options",
-            "group-lock-startup",
-            "group-lock-idle",
-            "group-unlock-together",
-          ]}
+      </Group>
+
+      {lock.hasPassword ? (
+        <Group title={t("Password recovery & removal")} variant="box">
+          <Row
+            label={t("Remove protection")}
+            description={t("Removes the password and all group locks.")}
+          >
+            <Button
+              variant="danger"
+              className="shrink-0"
+              onClick={() => setDialog({ kind: "remove" })}
+            >
+              {t("Remove password…")}
+            </Button>
+          </Row>
+          <Row
+            label={t("Forgot the password?")}
+            description={t("Reset protection. Your projects and hidden preferences stay saved.")}
+          >
+            <Button
+              variant="danger"
+              className="shrink-0"
+              onClick={() => setDialog({ kind: "forgot" })}
+            >
+              {t("Forgot password…")}
+            </Button>
+          </Row>
+        </Group>
+      ) : null}
+
+      <Group id="group-lock-options" title={t("Automatic locking")}>
+        <Row
+          label={t("Lock on startup")}
+          id="group-lock-startup"
+          description={t("Relock protected groups when {p0} opens.", {
+            p0: PRODUCT_IDENTITY.displayName,
+          })}
+          feedback={unsavedNote("relock")}
         >
-          <div id="setting-group-lock-options" data-setting-id="group-lock-options" tabIndex={-1}>
-            <Row
-              label={t("Lock on startup")}
-              id="group-lock-startup"
-              description={t("Relock protected groups when {p0} opens.", {
-                p0: PRODUCT_IDENTITY.displayName,
-              })}
-            >
-              <Toggle
-                label={t("Lock groups again when {p0} starts", {
-                  p0: PRODUCT_IDENTITY.displayName,
-                })}
-                on={lock.settings.relockOnLaunch}
-                onChange={setRelockOnLaunch}
-              />
-            </Row>
-            <Row
-              label={t("Lock when idle")}
-              id="group-lock-idle"
-              description={t("Lock after a period without mouse or keyboard activity.")}
-            >
-              <Select
-                label={t("Auto-lock after inactivity")}
-                value={String(lock.settings.autoLockMinutes)}
-                options={AUTO_LOCK_MINUTES.map((minutes) => ({
-                  value: String(minutes),
-                  label: autoLockLabel(minutes),
-                }))}
-                onChange={(value) => setAutoLockMinutes(parseAutoLockMinutes(Number(value)))}
-              />
-            </Row>
-            <Row
-              label={t("Unlock groups together")}
-              id="group-unlock-together"
-              description={t("One password entry opens all locked groups.")}
-            >
-              <Toggle
-                label={t("Unlocking one group unlocks all")}
-                on={lock.settings.unlockAll}
-                onChange={setUnlockAll}
-              />
-            </Row>
-          </div>
-        </AdvancedSettings>
+          <Toggle
+            label={t("Lock groups again when {p0} starts", {
+              p0: PRODUCT_IDENTITY.displayName,
+            })}
+            on={lock.settings.relockOnLaunch}
+            onChange={(on) => commit("relock", () => setRelockOnLaunch(on))}
+          />
+        </Row>
+        <Row
+          label={t("Lock when idle")}
+          id="group-lock-idle"
+          description={t("Lock after a period without mouse or keyboard activity.")}
+          feedback={unsavedNote("idle")}
+        >
+          <Select
+            label={t("Auto-lock after inactivity")}
+            value={String(lock.settings.autoLockMinutes)}
+            options={AUTO_LOCK_MINUTES.map((minutes) => ({
+              value: String(minutes),
+              label: autoLockLabel(minutes),
+            }))}
+            onChange={(value) =>
+              commit("idle", () => setAutoLockMinutes(parseAutoLockMinutes(Number(value))))
+            }
+          />
+        </Row>
+        <Row
+          label={t("Unlock groups together")}
+          id="group-unlock-together"
+          description={t("One password entry opens all locked groups.")}
+          feedback={unsavedNote("together")}
+        >
+          <Toggle
+            label={t("Unlocking one group unlocks all")}
+            on={lock.settings.unlockAll}
+            onChange={(on) => commit("together", () => setUnlockAll(on))}
+          />
+        </Row>
       </Group>
 
       <Group
         id="group-lock-groups"
-        title={
-          <span className="privacy-heading">
-            {t("Group protection")}
-            <Badge>{listedGroups.length}</Badge>
-          </span>
-        }
+        title={<span className="privacy-heading">{t("Group protection")}</span>}
         description={t("Choose which groups require your password.")}
         action={
           <Button
@@ -216,23 +250,60 @@ export function GroupLockSettings({
           </Button>
         }
       >
-        <div className="privacy-group-list">
-          {listedGroups.length === 0 ? (
-            <Row
-              label={lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
-              description={
-                lock.groups.length === 0
-                  ? t("Create a group in the project list to configure protection.")
-                  : t("Manage them in Hidden groups.")
-              }
-            />
-          ) : (
-            listedGroups.map((group) => {
-              const locked = lock.lock.lockedGroupIds.has(group.id);
-              return (
-                <Row
-                  key={group.id}
-                  label={
+        {listedGroups.length === 0 ? (
+          <div className="settings-collection settings-collection-empty privacy-empty">
+            <p className="font-medium text-content">
+              {lock.groups.length === 0 ? t("No groups yet") : t("All groups are hidden")}
+            </p>
+            <p>
+              {lock.groups.length === 0
+                ? t("Create a group in the project list to configure protection.")
+                : t("Manage them in Hidden groups.")}
+            </p>
+          </div>
+        ) : (
+          <div className="settings-collection privacy-group-collection">
+            {searchable ? (
+              <CollectionToolbar
+                label={t("Search groups")}
+                query={groupQuery}
+                onQueryChange={setGroupQuery}
+                count={
+                  groupSearch
+                    ? t("Showing {p0} of {p1} groups", {
+                        p0: visibleGroups.length,
+                        p1: listedGroups.length,
+                      })
+                    : groupSummary
+                }
+              />
+            ) : (
+              <p className="privacy-group-summary" role="status">
+                {groupSummary}
+              </p>
+            )}
+            <div className="privacy-group-columns" aria-hidden="true">
+              <span>{t("Group")}</span>
+              <span>{t("Lock state")}</span>
+              <span>{t("Requires password")}</span>
+            </div>
+            <div className="settings-collection-list privacy-group-list" role="list">
+              {visibleGroups.length === 0 ? (
+                <div className="settings-collection-empty">
+                  <p role="status">{t("No groups found")}</p>
+                  <Button variant="ghost" onClick={() => setGroupQuery("")}>
+                    {t("Clear search")}
+                  </Button>
+                </div>
+              ) : null}
+              {visibleGroups.map((group) => {
+                const locked = lock.lock.lockedGroupIds.has(group.id);
+                return (
+                  <div
+                    key={group.id}
+                    role="listitem"
+                    className="settings-collection-row privacy-group-row"
+                  >
                     <span className="privacy-group-name">
                       <span className="privacy-group-icon" aria-hidden>
                         {locked ? (
@@ -244,22 +315,24 @@ export function GroupLockSettings({
                         )}
                       </span>
                       <span className="privacy-group-title">{group.name}</span>
-                      <Badge className="privacy-group-state">
-                        {locked ? t("Locked") : group.lockable ? t("Unlocked") : t("Not protected")}
-                      </Badge>
                     </span>
-                  }
-                >
-                  <Toggle
-                    label={t("{p0} is lockable", { p0: group.name })}
-                    on={group.lockable === true}
-                    onChange={(on) => toggleLockable(group.id, group.name, on)}
-                  />
-                </Row>
-              );
-            })
-          )}
-        </div>
+                    <Badge className="privacy-group-state">
+                      {locked ? t("Locked") : group.lockable ? t("Unlocked") : t("Not protected")}
+                    </Badge>
+                    <span className="privacy-group-toggle">
+                      <Toggle
+                        label={t("{p0} is lockable", { p0: group.name })}
+                        on={group.lockable === true}
+                        onChange={(on) => toggleLockable(group.id, group.name, on)}
+                      />
+                    </span>
+                    {unsavedNote(`lockable:${group.id}`, false)}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Group>
       <HiddenGroupsSettings controls={{ Group, Row }} />
       <p className="privacy-footnote">
@@ -273,7 +346,10 @@ export function GroupLockSettings({
           mode="set"
           onClose={close}
           onDone={() => {
-            if (dialog.thenLockable) makeGroupLockable(dialog.thenLockable);
+            if (dialog.thenLockable) {
+              const id = dialog.thenLockable;
+              commit(`lockable:${id}`, () => makeGroupLockable(id));
+            }
           }}
         />
       ) : null}

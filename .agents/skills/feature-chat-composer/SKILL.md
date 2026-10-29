@@ -5,6 +5,65 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Owned Parent input admission, 2026-10-29
+
+`beginParentInputClosure` gates the actual QuestionForm/cache, SessionPane,
+Composer, queue-edit, Btw and skill-create owners before checkpoint draining.
+Private tickets distinguish previously accepted continuations from new actions.
+The Raw Composer per-attempt `whenSettled` signal includes the real persistence
+acknowledgment; returning from a preparation callback does not finish its Parent
+work. An explicit retry keeps the original intent rather than creating a resend.
+
+Pending React or external model changes invalidate conservatively. IME is never
+committed or blurred to obtain a capture. Native release acknowledgment controls
+reopening after cancellation; observation timeout alone does not authorize it.
+Known UI route closure does not establish provider decisions or complete actor
+coverage. Current verification is recorded in
+`temp/verification/2026-10-29-input-admission-root/`.
+
+## Parent input checkpoint capture, 2026-10-29
+
+The passive `parentInputClosure.ts` registry connects real QuestionForm/cache,
+SessionPane, Composer, queue-edit, Btw and nested skill-create state to the
+private checkpoint. Captures preserve unsent text/options, original queue,
+question/child identities and accepted-unknown dispatch input through remounts.
+Throws from a callback do not prove rejection. Normal drafts, question discard,
+editing, send callbacks and provider/permission authority remain unchanged.
+
+Question cache remains renderer-local in its normal path. A separate private
+checkpoint may retain earlier state; no public raw-body read, automatic question
+restore or decision grant is added. Passive capture alone does not close input;
+the owned gates above are separate. Actual decision conservation and auxiliary
+actors outside this phase remain missing coverage.
+
+`nativeProjectionCheckpoint.ts` captures Parent/editor leases after the existing
+strict drain, checks both at prepare/verify/status, and carries identical v2 bytes
+into the original Native FULL artifact. Cancellation keeps actual late capture
+work charged and releases its eventual lease. Unknown verification stays unknown.
+Evidence: `temp/verification/2026-10-29-parent-buffers-root/` and the Parent packet.
+
+## Exact raw checkpoint data, 2026-10-29
+
+The Host migration checkpoint path retains actual mounted Composer captures
+instead of dropping their snapshots. Exact text, including empty/whitespace,
+opaque attachment/MCP JSON and own undefined object members are represented in
+the bounded `nativeRawCapture.ts` codec. The ordinary saved-draft serializer and
+its empty-clear semantics stay separate. IME, revision, retirement and prepare
+lease checks still control acceptance.
+
+`nativeProjectionCheckpoint.ts` sends the same immutable raw bytes at prepare and
+verification. After a rejected verification IPC, it may issue one bounded
+read-only query for the original retained raw artifact; this diagnostic never
+converts the failed verification to success or resends the operation. Native
+stores raw data with the actual parent in one FULL transaction. Unassigned
+mounts remain explicitly unsupported coverage, including Quick composer cases.
+
+No frame, action, draft-default or provider authority change is introduced.
+Parent/Buffers coverage and automatic historical migration remain unqualified.
+Current evidence: `temp/verification/2026-10-29-raw-composer-renderer/` and
+`temp/verification/2026-10-29-raw-composer-full-root/`. Uncommitted source; native,
+installed and physical durability acceptance must be reported separately.
+
 ## Composer frame correction, 2026-10-28
 
 Owner, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:

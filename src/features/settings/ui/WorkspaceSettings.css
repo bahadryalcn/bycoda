@@ -1,19 +1,17 @@
+/* Files and navigation, tools, session access, Explorer and Editor read as one
+   ordered column of open groups. */
 .workspace-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
   min-inline-size: 0;
 }
 
 .workspace-tools-help {
-  padding: 16px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
-}
-
-.workspace-tools-help dl {
   display: grid;
   gap: 12px;
-  margin-block: 12px;
+  margin-block: 4px;
+  overflow-wrap: anywhere;
 }
 
 .workspace-tools-help dt {

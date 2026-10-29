@@ -1,4 +1,9 @@
+/* Shared settings frame: one header row, a 52rem reading column, open topics.
+   Pages compose Group / Row / PageHeader from settingsControls.tsx and never reskin them. */
 .bycoda-settings-workbench {
+  /* Collection-heavy pages opt into 64rem through data-settings-width="wide" on the scroller. */
+  --settings-column: 52rem;
+  --settings-group-gap: 28px;
   background: var(--color-background-base);
   container-type: inline-size;
   container-name: settings-workbench;
@@ -6,47 +11,65 @@
 .bycoda-settings-titlebar {
   min-block-size: max(40px, var(--ui-control-height-compact));
 }
-.bycoda-settings-toolbar {
-  display: flex;
-  flex-shrink: 0;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 20px;
-  border-block-end: 1px solid var(--color-stroke);
-}
-.bycoda-settings-toolbar-actions {
-  margin-inline-start: auto;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.bycoda-settings-toolbar-actions label {
-  inline-size: clamp(180px, 25cqw, 360px);
-  max-inline-size: 100%;
-}
 .bycoda-settings-body {
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
 }
-/* Wide: grouped tabs. Narrow: one searchable category picker. */
-.bycoda-settings-category-picker {
-  display: none;
+
+/* One header row per page: title on the left, 28px ghost icon actions on the right.
+   It sits inside the scroller so it shares the content column's width and scrollbar gutter. */
+.settings-page-bar {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  background: var(--color-background-base);
 }
-.bycoda-settings-toolbar .bycoda-settings-mobile-help {
+.settings-page-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-inline-size: var(--settings-column);
+  margin-inline: auto;
+  padding: 16px 32px 4px;
+  min-inline-size: 0;
+}
+.settings-page-bar .settings-page-title {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: var(--ui-control-height-compact);
+}
+.bycoda-settings-toolbar-actions {
+  margin-inline-start: auto;
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+/* The closed search is a ghost icon button like its neighbours; the shared
+   control opens its field as an overlay sized by expandedWidth. */
+.settings-page-bar .settings-search {
+  flex: none;
+  inline-size: var(--ui-control-height-compact);
+}
+
+/* Wide: grouped tabs. Narrow: one searchable category picker in the header row. */
+.bycoda-settings-category-picker {
   display: none;
 }
 .bycoda-settings-categories {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 16px;
   flex-shrink: 0;
-  width: 212px;
-  padding: 18px 10px 24px;
+  width: 200px;
+  padding: 12px 8px 24px;
   background: var(--ui-surface-panel);
   border-inline-end: 1px solid var(--ui-pane-border);
   overflow-y: auto;
@@ -60,7 +83,7 @@
 }
 .bycoda-settings-category-label {
   display: block;
-  padding: 0 10px 6px;
+  padding: 0 8px 4px;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   font-weight: 500;
@@ -71,8 +94,11 @@
   gap: 1px;
   min-width: 0;
 }
-.bycoda-settings-category-tabs > button > svg {
+/* Category glyphs are 14px optical slots; no glyph can grow a navigation row. */
+.bycoda-settings-category-tabs > button svg {
   flex: none;
+  inline-size: var(--ui-icon-sm);
+  block-size: var(--ui-icon-sm);
 }
 .bycoda-settings-category-tabs > button > span {
   min-width: 0;
@@ -83,8 +109,8 @@
 @container settings-workbench (max-width: 760px) {
   .bycoda-settings-category-picker {
     display: block;
+    flex: 1 1 8rem;
     min-inline-size: 0;
-    padding: 8px 16px;
   }
   .bycoda-settings-body {
     flex-direction: column;
@@ -124,7 +150,23 @@
     max-inline-size: 18rem;
     white-space: nowrap;
   }
+  /* The picker supplies the visible identity; the heading stays for navigation by heading. */
+  .settings-page-bar .settings-page-title {
+    position: absolute;
+    flex: none;
+    inline-size: 1px;
+    block-size: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .settings-page-bar-inner {
+    padding: 12px 16px 4px;
+  }
 }
+
 .bycoda-settings-panel {
   display: flex;
   flex-direction: column;
@@ -132,23 +174,67 @@
   min-height: 0;
   min-width: 0;
 }
-.bycoda-settings-panel:focus-visible {
-  outline: 1px solid var(--color-stroke);
-  outline-offset: -2px;
+/* Keyboard focus lives on the focused control, never on a container frame. The tabpanel is
+   not a keyboard stop; programmatic reveal targets (groups, rows) take focus without a frame. */
+.settings-group:focus-visible,
+.settings-row:focus-visible,
+.settings-advanced:focus-visible {
+  outline: none;
 }
-.bycoda-settings-workbench .bycoda-settings-form {
+/* Page presentation sets how much of the track a page may use. Forms keep the readable 52rem
+   column; collections and analytics use 64rem; list/detail libraries use the room they are given. */
+[data-settings-scroller][data-settings-width="wide"] {
+  --settings-column: 64rem;
+}
+[data-settings-scroller][data-settings-width="workspace"] {
+  --settings-column: 80rem;
+}
+[data-settings-maximized] [data-settings-scroller][data-settings-width="wide"] {
+  --settings-column: 80rem;
+}
+[data-settings-maximized] [data-settings-scroller][data-settings-width="workspace"] {
+  --settings-column: 96rem;
+}
+
+/* A list/detail library owns the whole panel; its header row spans the same edges as the library. */
+.bycoda-settings-panel[data-settings-full] > .settings-page-bar > .settings-page-bar-inner {
   max-inline-size: none;
-  margin-inline: auto;
-  padding: 20px clamp(16px, 3cqw, 40px) 48px;
+  margin-inline: 0;
+  padding-inline-start: 16px;
 }
-.bycoda-settings-workbench .settings-page-header,
+.bycoda-settings-panel[data-settings-full]:not([data-settings-embedded] *)
+  > .settings-page-bar
+  > .settings-page-bar-inner {
+  padding-inline-end: 16px;
+}
+
+/* Inside an overlay the shared close action sits at the top-right corner; keep the page actions clear of it. */
+[data-settings-embedded] .settings-page-bar-inner {
+  padding-inline-end: 3rem;
+}
+/* The page bar is sticky at z-index 2, the same layer as the overlay's close action, and comes
+   later in the DOM, so it would paint over and intercept clicks on that action. */
+[data-settings-embedded] .settings-page-bar {
+  z-index: 1;
+}
+.bycoda-settings-form {
+  max-inline-size: var(--settings-column);
+  margin-inline: auto;
+  padding: 8px 32px 48px;
+}
+@container settings-workbench (max-width: 760px) {
+  .bycoda-settings-form {
+    padding: 8px 16px 60px;
+  }
+}
+
+/* The header row replaces PageHeader on the settings pages; the standalone form stays supported. */
 .settings-page-header {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-block-end: 20px;
 }
-.bycoda-settings-workbench .settings-page-title,
 .settings-page-title {
   margin: 0;
   font-size: var(--ui-font-title);
@@ -156,25 +242,38 @@
   line-height: 1.5;
   color: var(--color-content);
 }
+
+/* Topics are open: spacing separates them, never a frame, row divider or heading rule. */
 .settings-group {
   display: block;
   min-inline-size: 0;
-  padding-block: 24px 0;
+  padding-block: var(--settings-group-gap, 28px) 0;
   border: 0;
+  border-radius: var(--ui-radius-card);
 }
 .settings-group:first-child {
   padding-block-start: 0;
 }
-/* Topic collections supply their own gap; the shared Group owns this spacing
-   contract so individual settings pages never need to reskin its padding. */
+/* Open topics bleed 12px so a search-revealed fill has breathing room while text stays aligned. */
+.bycoda-settings-workbench .settings-group[data-settings-variant="open"] {
+  margin-inline: -12px;
+  padding-inline: 12px;
+}
+/* Topic collections own the 28px rhythm between groups, wherever the wrapper sits. */
+.settings-topics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--settings-group-gap, 28px);
+  min-inline-size: 0;
+}
 .settings-topics > .settings-group {
   padding-block: 0;
 }
 .settings-group > .settings-group-heading {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 16px;
+  align-items: center;
+  gap: 4px 16px;
   padding-block-end: 8px;
 }
 .settings-group-title,
@@ -189,12 +288,20 @@
   gap: 4px;
   min-inline-size: 0;
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-heading h2,
-.settings-section-title,
 .settings-row-title {
   margin: 0;
   font-size: var(--ui-font-secondary);
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-content);
+}
+/* Group headings: secondary, 13px, 500. The class-qualified selector outranks the legacy
+   `.bycoda-settings-content` heading rule in styles/bycoda.css. */
+.settings-group[data-settings-variant] > .settings-group-heading .settings-section-title,
+.settings-section-title {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  font-weight: 600;
   line-height: 1.5;
   color: var(--color-content);
 }
@@ -202,30 +309,45 @@
   flex-shrink: 0;
   max-inline-size: 100%;
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group > .settings-group-content,
-.settings-group > .settings-group-content {
+.settings-group[data-settings-variant][data-settings-layout] > .settings-group-content {
   align-self: start;
   min-inline-size: 0;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--ui-control-radius);
-  background: var(--ui-surface);
+  border: 0;
+  border-radius: 0;
+  background: none;
   overflow: visible;
   container: settings-group / inline-size;
 }
+/* Boxed topics are for ownership and editing units: credential forms, list editors, danger zones. */
+.settings-group[data-settings-variant="box"][data-settings-layout] > .settings-group-content {
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
+}
+
 .settings-row {
   display: flex;
   align-items: center;
   min-inline-size: 0;
-  padding: 16px;
+  padding-block: 10px;
   gap: 12px 24px;
-  border-block-end: 1px solid var(--color-stroke);
+  border-radius: var(--ui-control-radius);
 }
-.settings-row:last-child {
-  border-block-end: 0;
+.bycoda-settings-workbench .settings-group[data-settings-variant="open"] .settings-row {
+  margin-inline: -12px;
+  padding-inline: 12px;
+}
+.settings-group[data-settings-variant="box"] .settings-row {
+  padding: 12px 16px;
+  border-radius: 0;
+}
+.settings-group[data-settings-variant="box"] .settings-row:not(:first-child) {
+  border-block-start: 1px solid var(--color-stroke);
 }
 .settings-description {
   color: var(--ui-text-secondary);
 }
+.settings-help-text,
 .settings-scope,
 .settings-dependency {
   margin: 4px 0 0;
@@ -234,25 +356,57 @@
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .bycoda-settings-form .settings-group[data-revealed] > .settings-group-content,
-.settings-group[data-revealed] > .settings-group-content {
-  border-color: var(--ui-border-accent);
+
+/* A search hit lands as a calm selected fill that settles; no accent frame. */
+@keyframes settings-reveal-flash {
+  0%,
+  60% {
+    background-color: var(--ui-surface-selected);
+  }
+  100% {
+    background-color: transparent;
+  }
 }
-.settings-group[data-revealed] {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 4px;
-}
+.settings-group[data-revealed],
 .settings-row[data-revealed] {
-  background: var(--ui-surface-selected);
+  background-color: var(--ui-surface-selected);
+  animation: settings-reveal-flash 2.4s var(--motion-ease-out, ease-out) forwards;
 }
+@keyframes settings-reveal-flash-box {
+  0%,
+  60% {
+    background-color: var(--ui-surface-selected);
+  }
+  100% {
+    background-color: var(--ui-surface);
+  }
+}
+/* A boxed topic keeps its surface and settles the fill inside the box instead. */
+.settings-group[data-settings-variant="box"][data-revealed] {
+  background: none;
+  animation: none;
+}
+.settings-group[data-settings-variant="box"][data-revealed][data-settings-layout] > .settings-group-content {
+  background-color: var(--ui-surface-selected);
+  animation: settings-reveal-flash-box 2.4s var(--motion-ease-out, ease-out) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-group[data-revealed],
+  .settings-row[data-revealed],
+  .settings-group[data-settings-variant="box"][data-revealed][data-settings-layout] > .settings-group-content {
+    animation: none;
+  }
+}
+
+/* Label block flexes; the control column holds 12-18rem, right aligned, and wraps below it. */
 .settings-row-control {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  min-inline-size: 0;
-  max-inline-size: min(52%, 28rem);
-  flex-shrink: 1;
+  min-inline-size: min(12rem, 100%);
+  max-inline-size: 18rem;
+  flex: 0 1 auto;
   align-self: center;
   gap: 8px;
   overflow-wrap: anywhere;
@@ -260,8 +414,30 @@
 .settings-row-control > * {
   max-width: 100%;
 }
+/* Controls beside a label use the density-aware compact height (28px at the default density), so a
+   row is label height + 20px instead of a 36px form control + padding. Stacked rows keep the form
+   height for wide editors. */
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc {
+  --control-height-md: var(--ui-control-height-compact);
+}
+.settings-row:not([data-stacked]) > .settings-row-control .bycoda-arc.bycoda-arc-select {
+  min-block-size: var(--ui-control-height-compact);
+  padding-block: 0;
+}
 .settings-row-control:empty {
   display: none;
+}
+/* Wide controls (fields, editors, lists) sit under their label at full width. */
+.settings-row[data-stacked] {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.settings-row[data-stacked] > .settings-row-control {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  align-self: stretch;
+  justify-content: flex-start;
 }
 
 /* Feedback follows the operation and never competes with its input or card. */
@@ -285,10 +461,20 @@
 .settings-feedback > button {
   justify-self: start;
 }
+/* Quiet feedback is a caption line, not a card: no fill, border or box padding. */
+.settings-feedback[data-presentation="quiet"] {
+  padding-block: 2px;
+}
 .settings-group-content > .settings-feedback {
-  padding: 12px 16px;
+  padding-block: 10px;
 }
 .settings-group-feedback {
+  padding-block: 10px;
+}
+.settings-group[data-settings-variant="box"] .settings-group-content > .settings-feedback {
+  padding: 12px 16px;
+}
+.settings-group[data-settings-variant="box"] .settings-group-feedback {
   padding: 12px 16px;
   border-block-start: 1px solid var(--color-stroke);
 }
@@ -299,77 +485,6 @@
   max-inline-size: 100%;
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .bycoda-settings-form .appearance-tuning .settings-row-control {
-  max-width: 100%;
-  align-self: flex-start;
-  justify-content: flex-start;
-}
-.bycoda-settings-workbench
-  .bycoda-settings-form
-  .appearance-tuning
-  .settings-row:has([role="switch"])
-  .settings-row-control {
-  align-self: center;
-}
-@container settings-workbench (max-width: 760px) {
-  .bycoda-settings-toolbar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 16px;
-  }
-  .bycoda-settings-toolbar .bycoda-settings-category-picker {
-    padding: 0;
-  }
-  .bycoda-settings-toolbar-actions {
-    min-inline-size: 0;
-    gap: 8px;
-    margin-inline-start: auto;
-  }
-  .bycoda-settings-toolbar-actions label {
-    inline-size: min(360px, 100%);
-  }
-  .bycoda-settings-workbench .bycoda-settings-form {
-    padding: 12px 20px 60px;
-  }
-  .bycoda-settings-workbench .bycoda-settings-form > header {
-    margin-block-end: 0;
-    padding-block-end: 0;
-    border-block-end: 0;
-  }
-  .bycoda-settings-toolbar .bycoda-settings-mobile-help {
-    display: inline-flex;
-  }
-  .bycoda-settings-workbench .bycoda-settings-form > header .settings-page-help {
-    display: none;
-  }
-  /* The category picker supplies the visible identity. Keep the page heading
-     for navigation by heading without repeating a large title below it. */
-  .bycoda-settings-workbench .bycoda-settings-form > header h1 {
-    position: absolute;
-    inline-size: 1px;
-    block-size: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-}
-@container settings-workbench (max-width: 520px) {
-  .bycoda-settings-toolbar {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .bycoda-settings-toolbar-actions {
-    inline-size: 100%;
-  }
-  .bycoda-settings-workbench .settings-search {
-    flex: 1;
-    inline-size: auto;
-    min-inline-size: min(100%, 10rem);
-  }
-}
 
 /* A row responds to its nearest topic container, or the caller's container for
    standalone rows. This owns the former index.css settings behavior as well. */
@@ -377,18 +492,25 @@
   .settings-row {
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
+    gap: 8px;
   }
   .settings-row-control {
+    min-inline-size: 0;
     max-inline-size: 100%;
     align-self: stretch;
     justify-content: flex-start;
+  }
+  /* One wrapped alignment for every control: under the label, start aligned (a shared
+     MorphSelect would otherwise push itself to the end with its own auto margin). */
+  .settings-row-control > .ms-auto {
+    margin-inline-start: 0;
   }
   .settings-row:has(> .settings-row-control > [role="switch"]:only-child) {
     flex-direction: row;
     align-items: center;
   }
   .settings-row-control:has(> [role="switch"]:only-child) {
+    min-inline-size: 0;
     align-self: center;
     flex-shrink: 0;
   }
@@ -396,6 +518,10 @@
 
 /* Shared metadata wraps with its control instead of competing for its space. */
 .settings-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
   margin-block-start: 6px;
   font-size: var(--ui-font-caption);
   line-height: 1.5;
@@ -403,20 +529,13 @@
   overflow-wrap: anywhere;
 }
 .settings-group-title,
-.settings-group-heading,
-.bycoda-settings-toolbar-actions,
-.bycoda-settings-workbench .settings-search {
+.settings-group-heading {
   min-inline-size: 0;
   max-inline-size: 100%;
 }
-/* Reserve the expanded field's space in the intrinsically sized toolbar. */
-.bycoda-settings-workbench .settings-search {
-  inline-size: clamp(10rem, 20cqw, 12rem);
-  flex: none;
-}
 /* Group actions wrap before descriptions become an unreadable column. */
 .settings-group > .settings-group-heading > .settings-group-title {
-  flex-basis: min(100%, 20rem);
+  flex-basis: min(100%, 16rem);
 }
 .settings-group-heading > :last-child {
   max-inline-size: 100%;
@@ -424,49 +543,46 @@
 .settings-row-control > :is(input, textarea, select) {
   min-inline-size: 0;
 }
-.bycoda-settings-workbench .settings-advanced > .settings-subheading {
+.settings-advanced > .settings-subheading {
   padding-block: 10px;
   font-size: var(--ui-font-secondary);
   color: var(--ui-text-secondary);
   overflow-wrap: anywhere;
 }
-.bycoda-settings-workbench .settings-advanced-toggle svg {
+.settings-advanced-toggle svg {
   flex-shrink: 0;
   transition: transform var(--motion-feedback-duration) var(--motion-ease-out);
 }
-.bycoda-settings-workbench .settings-advanced-toggle svg[data-open] {
+.settings-advanced-toggle svg[data-open] {
   transform: rotate(90deg);
 }
 @media (prefers-reduced-motion: reduce) {
-  .bycoda-settings-workbench .settings-advanced-toggle svg {
+  .settings-advanced-toggle svg {
     transition: none;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
   .bycoda-settings-workbench
     :is(.settings-toggle, .settings-toggle > span, .settings-select > svg) {
     transition: none;
   }
 }
 
-/* All settings use the same open hierarchy, with controls aligned within each topic. */
-.bycoda-settings-workbench .settings-advanced {
+/* Secondary settings use the same open hierarchy as their topic. */
+.settings-advanced {
   min-inline-size: 0;
-  margin-block: 16px;
+  margin-block: 12px;
 }
-.bycoda-settings-workbench .settings-subheading {
+.settings-subheading {
   margin: 0;
   font-weight: 500;
   line-height: 1.5;
 }
-.bycoda-settings-workbench .settings-advanced > .settings-subheading {
-  color: var(--ui-text-secondary);
-}
-.bycoda-settings-workbench .settings-group-content > .settings-advanced {
+.settings-group[data-settings-variant="box"] .settings-group-content > .settings-advanced {
   margin-inline: 16px;
 }
-.bycoda-settings-workbench .settings-group-content > .settings-advanced > .settings-row {
+.settings-group[data-settings-variant="box"]
+  .settings-group-content
+  > .settings-advanced
+  > .settings-row {
   padding-inline: 0;
 }
 .bycoda-settings-workbench .provider-cli-header > .settings-advanced {
@@ -489,14 +605,18 @@
 /* This reader owns the remaining viewport and scrolls only its document. */
 .bycoda-settings-workbench [data-settings-scroller]:has([data-settings-section="policies"]) {
   display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 .bycoda-settings-workbench .bycoda-settings-form[data-settings-section="policies"] {
   display: flex;
+  flex: 1 1 0;
   flex-direction: column;
+  inline-size: 100%;
   min-block-size: 0;
   padding-block-end: 24px;
 }
-.bycoda-settings-workbench .bycoda-settings-form[data-settings-section="policies"] > header {
-  flex: none;
+
+.settings-topics > .settings-advanced {
+  margin-block: 0;
 }

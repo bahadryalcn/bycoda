@@ -114,15 +114,37 @@ export function placePopover(
       options.minHeight ?? 0,
     );
     const maxHeight = Math.min(options.maxHeight ?? Infinity, available);
+    // An anchor scrolled out of view must not carry the surface with it: keep the
+    // near edge inside the viewport and size the surface to the room that remains.
     if (side === "bottom") {
-      return { side, left, top: anchor.bottom + gap, width, maxHeight };
+      const top = Math.max(anchor.bottom + gap, padding);
+      return {
+        side,
+        left,
+        top,
+        width,
+        maxHeight:
+          top === anchor.bottom + gap
+            ? maxHeight
+            : Math.min(
+                options.maxHeight ?? Infinity,
+                Math.max(viewport.height - top - padding, options.minHeight ?? 0),
+              ),
+      };
     }
+    const bottom = Math.max(viewport.height - anchor.top + gap, padding);
     return {
       side,
       left,
-      bottom: viewport.height - anchor.top + gap,
+      bottom,
       width,
-      maxHeight,
+      maxHeight:
+        bottom === viewport.height - anchor.top + gap
+          ? maxHeight
+          : Math.min(
+              options.maxHeight ?? Infinity,
+              Math.max(viewport.height - bottom - padding, options.minHeight ?? 0),
+            ),
     };
   }
 

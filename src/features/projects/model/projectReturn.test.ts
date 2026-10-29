@@ -39,12 +39,18 @@ function workspace() {
 
 describe("project return memory", () => {
   it("does not treat a rewound archive-only session as an empty tab", () => {
-    const session = { ...newSession("cursor", "/alpha"), blocks: [], rewindHistory: [{
-      id: "rewind-1",
-      createdAt: 1,
-      fromBlockId: "u1",
-      blocks: [{ id: "u1", role: "user" as const, text: "archived" }],
-    }] };
+    const session = {
+      ...newSession("cursor", "/alpha"),
+      blocks: [],
+      rewindHistory: [
+        {
+          id: "rewind-1",
+          createdAt: 1,
+          fromBlockId: "u1",
+          blocks: [{ id: "u1", role: "user" as const, text: "archived" }],
+        },
+      ],
+    };
     expect(isBlankSession(session)).toBe(false);
   });
 
@@ -289,6 +295,32 @@ describe("project selection", () => {
       action: "reuse-blank",
       sessionId: "b2",
     });
+  });
+
+  it.each([false, true])("keeps an empty Host-owned session pinned when created=%s", (created) => {
+    const state = workspace();
+    const current = state.sessions[3];
+    current.blocks = [];
+    current.worktreeCwd = "/beta-worktree";
+    current.hostBinding = {
+      kind: "local-host",
+      machineId: "local",
+      environmentId: "home",
+      projectId: "host-beta",
+      sessionId: current.id,
+      authorityGeneration: null,
+      created,
+    };
+    expect(isBlankSession(current)).toBe(true);
+    expect(planProjectReturn({ ...state, projectPath: "/gamma" })).toEqual({ action: "create" });
+    expect(planProjectReturn({ ...state, projectPath: "/beta" })).toEqual({ action: "keep" });
+    expect(planProjectReturn({ ...state, projectPath: "/alpha" })).toEqual({
+      action: "activate",
+      tabId: "tab-a1",
+      paneId: "a1",
+    });
+    expect(current.cwd).toBe("/beta");
+    expect(current.worktreeCwd).toBe("/beta-worktree");
   });
 
   it("never reuses a busy session even when it has no user blocks", () => {

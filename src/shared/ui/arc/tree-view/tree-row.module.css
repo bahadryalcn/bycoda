@@ -15,7 +15,7 @@
   position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.5rem;
   block-size: var(--ui-control-height-compact);
   padding-block: 0;
   padding-inline: calc(8px + var(--tree-row-depth, 0) * 12px) 8px;
@@ -83,6 +83,11 @@
   block-size: var(--ui-icon-md);
   color: var(--ui-text-secondary);
 }
+/* Disclosure chevrons are 12px in the 16px slot, whatever size the feature passes. */
+.toggle > svg {
+  inline-size: var(--ui-icon-xs, 12px);
+  block-size: var(--ui-icon-xs, 12px);
+}
 .icon {
   display: grid;
   flex: none;
@@ -103,7 +108,7 @@
   flex: none;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: 0.5rem;
   margin-inline-start: auto;
   min-inline-size: 1.25rem;
   padding-inline-start: 4px;

@@ -17,6 +17,7 @@ import {
 } from "../../providers/model/providerAccounts";
 import { AccountColorDot } from "../../providers/ui/AccountColorDot";
 import { AccountStatusLabel } from "../../providers/ui/ProviderAccountUsage";
+import { useModelSource } from "./modelSource";
 
 /**
  * Accounts of one provider with their cached limit state. `pill` is the
@@ -38,14 +39,16 @@ export function ProviderAccountMenu({
   onClose?: () => void;
 }) {
   const t = useT();
+  const source = useModelSource();
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => subscribeProviderAccounts(() => setVersion((value) => value + 1)), []);
-  const accounts = providerAccounts(provider);
+  const localAccounts = source.accounts === undefined ? providerAccounts(provider) : [];
+  const accounts = source.accounts === undefined ? localAccounts : source.accounts[provider] ?? [];
   const usage = useProviderAccountUsage(version, {
     provider,
-    enabled: open && accounts.length > 1,
+    enabled: source.accounts === undefined && open && accounts.length > 1,
   });
   // A replacement may be the only account left after deleting the old one.
   if (
@@ -55,7 +58,9 @@ export function ProviderAccountMenu({
     return null;
   if (accounts.length === 0) return null;
 
-  const label = providerAccountLabel(provider, accountId);
+  const label = source.accounts === undefined
+    ? providerAccountLabel(provider, accountId)
+    : accounts.find((account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID))?.label ?? t("Unavailable Host account");
   const current = accounts.find(
     (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
   );
@@ -83,7 +88,7 @@ export function ProviderAccountMenu({
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => setOpen((value) => !value)}
       >
-        {current ? <AccountColorDot account={current} /> : null}
+        {current && localAccounts.find((account) => account.id === current.id) ? <AccountColorDot account={localAccounts.find((account) => account.id === current.id)!} /> : null}
         <span className={variant === "pill" ? "min-w-0 truncate text-ui-micro" : ""}>
           {variant === "pill" ? label : t("Switch account")}
         </span>
@@ -108,7 +113,8 @@ export function ProviderAccountMenu({
         >
           {accounts.map((account) => {
             const selected = account.id === accountId;
-            const status = accountStatus(usage.usage[accountUsageKey(account)], usage.now);
+            const local = localAccounts.find((entry) => entry.id === account.id);
+            const status = local ? accountStatus(usage.usage[accountUsageKey(local)], usage.now) : undefined;
             return (
               <Button
                 fullWidth
@@ -124,12 +130,12 @@ export function ProviderAccountMenu({
                 }}
                 className="w-full text-left"
               >
-                <AccountColorDot account={account} />
+                {local ? <AccountColorDot account={local} /> : null}
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                   <span className="truncate">{account.label}</span>
-                  <span className="text-(length:--ui-font-caption)">
+                  {status ? <span className="text-(length:--ui-font-caption)">
                     <AccountStatusLabel status={status} />
-                  </span>
+                  </span> : null}
                 </span>
                 {selected ? (
                   <Check className="size-3.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={2} />

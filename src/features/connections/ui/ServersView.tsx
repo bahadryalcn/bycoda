@@ -11,6 +11,7 @@ import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Modal } from "../../../shared/ui/Modal";
+import { hasActiveModalOverlay } from "../../../shared/ui/overlay";
 import "./ServersView.css";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { EmptyState } from "../../../shared/ui/EmptyState";
@@ -399,7 +400,7 @@ export function ServersView({
         <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
           <SearchInput
             appearance="field"
-            containerClassName="servers-search min-w-0 flex-1"
+            containerClassName="servers-search min-w-0 max-w-96 flex-1"
             aria-label={t("Search servers")}
             placeholder={t("Search by name or address")}
             value={search}
@@ -720,7 +721,12 @@ export function ServersView({
               autoFocus={false}
               solid
               ignore="[data-server-row]"
-              onDismiss={() => setSelectedId(undefined)}
+              onDismiss={(reason) => {
+                // A modal opened from these details (proxy approval, files, runbooks) owns
+                // the pointer; pressing inside it must not drop the details and their drafts.
+                if (reason === "outside" && hasActiveModalOverlay()) return;
+                setSelectedId(undefined);
+              }}
               role="region"
               aria-label={t("Server details")}
               className="flex min-h-0 min-w-0 flex-col"

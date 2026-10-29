@@ -51,8 +51,9 @@
   margin-inline: 12px;
   margin-block-end: 8px;
   padding: 8px;
-  border: 1px solid var(--ui-tone-neutral-border);
-  border-radius: var(--radius-control);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface);
 }
 .jira-board-transition strong {
   flex-basis: 100%;
@@ -68,7 +69,7 @@
   flex: 0 1 480px;
   min-inline-size: 260px;
   min-block-size: 0;
-  border-inline-start: 1px solid var(--ui-tone-neutral-border);
+  border-inline-start: 1px solid var(--ui-pane-border);
 }
 .jira-board-detail-close {
   align-self: end;

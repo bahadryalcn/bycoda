@@ -32,6 +32,26 @@ boundary; other app CLI operations retain their `/operator` requirement.
 
 ## Conversation Tools presentation
 
+`visuals.preview` renders a self-contained HTML/CSS/SVG/JavaScript explanation
+and returns an agent-readable screenshot;
+`visuals.render` returns an immutable snapshot displayed inside the desktop
+conversation. Supply `title` and exactly one of `html` or a workspace-relative HTML
+`path`; optional `height` is 160–720 pixels. The serialized snapshot is limited to
+4000 characters so provider tool-output retention cannot silently cut it. Use small
+data-URL images within that limit; relative files and network resources are blocked.
+Preview uses an ephemeral offline browser context through the Host's existing
+optional Playwright/Chromium setup, aborting network and WebSocket traffic and
+exposing no app/file bridge. Missing setup returns a concrete retryable error;
+the tool does not install a browser. Preview does not publish to the transcript.
+Render is conversation output, never external
+publication, and retains the scoped session's existing authority checks.
+
+The desktop uses the existing opaque HTML preview sandbox, source disclosure,
+failure/reload controls and expansion dialog. Reopening uses the saved content,
+not the current file. Unsupported clients (including the current mobile renderer)
+and providers that do not relay tool results retain the tool/source fallback;
+desktop support does not imply mobile or connected-machine acceptance.
+
 For Expo previews, call `devices.preflight` on the exact machine to discover its
 SDK, devices and owner-enabled control setup. Start Metro with the existing
 `devServers.start` tool, then call `devices.preview` with `machineId`, `deviceId`,

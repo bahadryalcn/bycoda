@@ -337,6 +337,7 @@ export function Stepper({
     <Root className={classes} aria-label={label} role={interactive ? undefined : "group"}>
       <ol
         className={styles.list}
+        data-step-density={count > 6 ? "dense" : count > 4 ? "many" : undefined}
         style={
           vertical
             ? undefined

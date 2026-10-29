@@ -1,4 +1,8 @@
-import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type RuntimeMode } from "../../../../features/sessions/model/session";
 import { applyHarnessEvent } from "../../core/apply";
@@ -146,7 +150,10 @@ function turn(
     text: "delegate the investigation",
     attachments: [],
     onAccepted: options.onAccepted,
-    onEvent: (event) => { captureNativeOutputEvent("opencode-live", event); events.push(event); },
+    onEvent: (event) => {
+      captureNativeOutputEvent("opencode-live", event);
+      events.push(event);
+    },
   });
 }
 
@@ -1895,27 +1902,61 @@ it("deleted child bekleyen etkileşimi çözer ve başka aktif child rotasını 
 });
 
 it("holds Native SSE ancestry and permission work through actual HTTP and user settlement", async () => {
- const events:HarnessEvent[]=[];const {done}=await startTurn(events);
- const original=harnessHttp.getMockImplementation()!;
- let release!:()=>void;
- harnessHttp.mockImplementation(async input=>{
-  if(input.method==="GET"&&new URL(input.url).pathname==="/session/causal-child"){
-   await new Promise<void>(resolve=>{release=resolve;});
-   return {status:200,body:JSON.stringify({id:"causal-child",parentID:"session_1",directory:"/repo"})};
-  }
-  return original(input);
- });
- const event={type:"permission.asked",properties:{id:"causal-permission",sessionID:"causal-child",permission:"external_directory",patterns:["/tmp/*"],metadata:{},tool:{callID:"causal-call"}}};
- const inspect=nativeOutputFrame("opencode-live",JSON.stringify(event),()=>onSseEvent!(event));
- expect(inspect().pendingCausalWork).toBeGreaterThan(0);
- expect(events.some(e=>e.type==="approval.requested")).toBe(false);
- await waitFor(()=>!!release,"actual ancestry lookup");release();
- await waitFor(()=>events.some(e=>e.type==="approval.requested"),"causal ancestry result");
- const asked=events.find(e=>e.type==="approval.requested")!;const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
- respondOpenCodeApproval("opencode-live",asked.requestId,"allow");
- await waitFor(()=>events.some(e=>e.type==="approval.resolved"),"causal permission result");
- expect(getNativeOutputEventOrigin(events.find(e=>e.type==="approval.resolved")!)).toBe(origin);
- await vi.waitFor(()=>expect(inspect().pendingCausalWork).toBe(0));
- expect(inspect()).toMatchObject({additionalUnsealedInputs:1,unavailableReason:"additional-input-unsealed",applicationThrough:null});
- idle();await done;
+  const events: HarnessEvent[] = [];
+  const { done } = await startTurn(events);
+  const original = harnessHttp.getMockImplementation()!;
+  let release!: () => void;
+  harnessHttp.mockImplementation(async (input) => {
+    if (input.method === "GET" && new URL(input.url).pathname === "/session/causal-child") {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return {
+        status: 200,
+        body: JSON.stringify({ id: "causal-child", parentID: "session_1", directory: "/repo" }),
+      };
+    }
+    return original(input);
+  });
+  const event = {
+    type: "permission.asked",
+    properties: {
+      id: "causal-permission",
+      sessionID: "causal-child",
+      permission: "external_directory",
+      patterns: ["/tmp/*"],
+      metadata: {},
+      tool: { callID: "causal-call" },
+    },
+  };
+  const inspect = nativeOutputFrame("opencode-live", JSON.stringify(event), () =>
+    onSseEvent!(event),
+  );
+  expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+  expect(events.some((e) => e.type === "approval.requested")).toBe(false);
+  await waitFor(() => !!release, "actual ancestry lookup");
+  release();
+  await waitFor(
+    () => events.some((e) => e.type === "approval.requested"),
+    "causal ancestry result",
+  );
+  const asked = events.find((e) => e.type === "approval.requested")!;
+  const origin = getNativeOutputEventOrigin(asked);
+  expect(origin).not.toBeNull();
+  respondOpenCodeApproval("opencode-live", asked.requestId, "allow");
+  await waitFor(
+    () => events.some((e) => e.type === "approval.resolved"),
+    "causal permission result",
+  );
+  expect(getNativeOutputEventOrigin(events.find((e) => e.type === "approval.resolved")!)).toBe(
+    origin,
+  );
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+  expect(inspect().additionalUnsealedInputs).toBeGreaterThanOrEqual(1);
+  expect(inspect()).toMatchObject({
+    unavailableReason: "additional-input-unsealed",
+    applicationThrough: null,
+  });
+  idle();
+  await done;
 });

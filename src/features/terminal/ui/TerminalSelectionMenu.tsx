@@ -31,9 +31,11 @@ export function TerminalSelectionMenu({
     const report = () => {
       frame = 0;
       if (selecting) return;
-      const text = term.getSelection().trim();
+      // The payload keeps the exact selected text (indentation matters for code and
+      // YAML); trimming is only the emptiness check.
+      const text = term.getSelection();
       const bounds = element.getBoundingClientRect();
-      if (!text || bounds.width <= 0 || bounds.height <= 0) {
+      if (!text.trim() || bounds.width <= 0 || bounds.height <= 0) {
         setSelection(null);
         return;
       }

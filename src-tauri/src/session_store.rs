@@ -13,11 +13,16 @@ pub(crate) mod authority;
 pub(crate) mod cohort;
 mod content_search;
 pub(crate) mod incremental;
+pub(crate) mod native_delivery;
+#[cfg(all(test, windows))]
+mod native_projection_join_tests;
+pub(crate) mod native_raw_capture;
 #[path = "session_rewind.rs"]
 pub(crate) mod rewind;
 pub(crate) mod row_identity;
 pub mod usage;
 pub(crate) mod window_barrier;
+pub(crate) mod write_receipts;
 pub use content_search::{ContentSearchOptions, ContentSearchResult};
 
 const MIGRATION_V1: &str = r#"
@@ -57,6 +62,7 @@ pub struct SessionStore {
     search_background_query: Mutex<String>,
     search_background_error: Mutex<Option<content_search::IndexFailure>>,
     legacy_page_cache: Mutex<incremental::LegacyPageCache>,
+    output_write_receipts: Mutex<write_receipts::Ledger>,
 }
 
 impl SessionStore {
@@ -112,6 +118,7 @@ impl SessionStore {
             search_background_query: Mutex::new(String::new()),
             search_background_error: Mutex::new(None),
             legacy_page_cache: Mutex::new(Default::default()),
+            output_write_receipts: Mutex::new(Default::default()),
         })
     }
 
@@ -134,6 +141,7 @@ impl SessionStore {
             search_background_query: Mutex::new(String::new()),
             search_background_error: Mutex::new(None),
             legacy_page_cache: Mutex::new(Default::default()),
+            output_write_receipts: Mutex::new(Default::default()),
         })
     }
 
@@ -498,35 +506,27 @@ pub fn session_upsert(
     expected_updated_at: Option<i64>,
     expected_revision: Option<i64>,
     expect_missing: Option<bool>,
-) -> Result<Option<SessionSummary>, String> {
+    capture_output_receipt: Option<bool>,
+) -> Result<Option<write_receipts::NativeWriteAck<SessionSummary>>, String> {
+    // Capture before admission/effects. A reload must never rebind old work to
+    // the replacement physical owner after the SQL write has already started.
+    let owner = write_receipts::capture_owner(&window, &store, capture_output_receipt);
     crate::native_window_lifecycle::session_persistence_write(&window, &session.id, || {
         validate_upsert(&session)?;
         // Git lookups can spawn processes; never do that while holding the
         // connection every other store command waits on.
         let git = upsert_git_info(&session);
-        // `expectMissing` means "the row must not exist"; `expectedUpdatedAt` means
-        // "the row must still carry this stamp". Neither is the unguarded write.
-        let expected = if expect_missing == Some(true) {
-            Some(None)
-        } else {
-            expected_updated_at.map(Some)
-        };
         let conn = store.conn.lock().map_err(|_| "Session store is locked")?;
-        if let Some(expected_revision) = expected_revision {
-            let revision: Option<i64> = conn
-                .query_row(
-                    "SELECT revision FROM session_block_state WHERE session_id=?1",
-                    [&session.id],
-                    |r| r.get(0),
-                )
-                .optional()
-                .map_err(|e| e.to_string())?;
-            if revision != Some(expected_revision) {
-                return Ok(None);
-            }
-        }
-        // `None` back means the precondition failed and nothing was written.
-        upsert_session_with_git(&conn, &session, git, expected).map_err(|e| e.to_string())
+        write_receipts::upsert(
+            &store,
+            &conn,
+            &session,
+            git,
+            expected_updated_at,
+            expected_revision,
+            expect_missing,
+            owner,
+        )
     })
 }
 
@@ -1837,6 +1837,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     // Only metadata is reconciled here; transcripts remain lazily indexed.
     content_search::ensure_schema(conn)?;
     authority::ensure_schema(conn)?;
+    native_raw_capture::ensure_schema(conn)?;
     row_identity::ensure_schema(conn)?;
     Ok(())
 }
@@ -1975,11 +1976,39 @@ fn upsert_session_with_git(
     git: crate::fs::GitInfo,
     expected: Option<Option<i64>>,
 ) -> rusqlite::Result<Option<SessionSummary>> {
+    upsert_session_with_git_observed(conn, session, git, expected, None, |_, _| None)
+        .map(|write| write.ack)
+}
+
+fn upsert_session_with_git_observed(
+    conn: &Connection,
+    session: &SessionUpsert,
+    git: crate::fs::GitInfo,
+    expected: Option<Option<i64>>,
+    expected_revision: Option<i64>,
+    observe: impl FnOnce(&Connection, &SessionSummary) -> Option<write_receipts::Pending>,
+) -> rusqlite::Result<write_receipts::ObservedWrite<SessionSummary>> {
     authority::assert_checkpoint_sql(conn, &session.id)?;
     let tx = conn.unchecked_transaction()?;
+    if let Some(expected_revision) = expected_revision {
+        let revision: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM session_block_state WHERE session_id=?1",
+                [&session.id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if revision != Some(expected_revision) {
+            return Ok(write_receipts::ObservedWrite::absent());
+        }
+    }
     let result = upsert_session_in_transaction(&tx, session, git, expected)?;
+    let pending = result.as_ref().and_then(|ack| observe(&tx, ack));
     tx.commit()?;
-    Ok(result)
+    Ok(write_receipts::ObservedWrite {
+        ack: result,
+        pending,
+    })
 }
 
 fn upsert_session_in_transaction(

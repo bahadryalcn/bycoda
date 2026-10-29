@@ -263,7 +263,7 @@ const blameTheme = EditorView.theme({
     whiteSpace: "nowrap",
     paddingLeft: "6px",
     borderLeft: "2px solid transparent",
-    color: "color-mix(in srgb, var(--color-content) 50%, transparent)",
+    color: "var(--ui-text-secondary)",
   },
   ".cm-blameCommit": {
     cursor: "pointer",
@@ -279,7 +279,7 @@ const blameTheme = EditorView.theme({
   },
   ".cm-blameNone": {
     fontStyle: "italic",
-    color: "color-mix(in srgb, var(--color-content) 32%, transparent)",
+    color: "var(--ui-text-muted)",
   },
 });
 

@@ -101,25 +101,36 @@ export function TemplatesSettings() {
         <p className="chat-detail">{t("Name and text are required. The trigger is optional. Up to {p0} templates, with {p1} characters each.", { p0: String(MAX_TEMPLATES), p1: String(MAX_TEMPLATE_BODY) })}</p>
       </AdvancedSettings>
       <div className="template-manager">
-        <div className="flex min-w-0 flex-col gap-2">
+        <div className="template-manager-nav">
           <SearchInput appearance="field" aria-label={t("Search prompt templates")} placeholder={t("Search prompt templates")} value={query} onChange={(event) => setQuery(event.target.value)} />
+          <p className="template-manager-count" aria-live="polite">
+            {query.trim()
+              ? t("{p0} of {p1} templates", { p0: String(matches.length), p1: String(rows.length) })
+              : t("{p0} templates (up to {p1})", { p0: String(rows.length), p1: String(MAX_TEMPLATES) })}
+          </p>
           <div className="template-manager-list flex flex-col gap-1" role="group" aria-label={t("Prompt templates")}>
-            {matches.map((row) => <Button key={row.id} variant="item" align="start" fullWidth selected={row.id === selected?.id} aria-pressed={row.id === selected?.id} onClick={() => setSelectedId(row.id)}>{row.name || t("New template")}</Button>)}
+            {matches.map((row) => <Button key={row.id} variant="item" align="start" fullWidth selected={row.id === selected?.id} aria-pressed={row.id === selected?.id} onClick={() => setSelectedId(row.id)}>
+              <span className="template-manager-item">
+                <span className="template-manager-item-name">{row.name || t("New template")}</span>
+                {row.trigger ? <span className="template-manager-item-trigger">{TRIGGER_PREFIX}{normalizeTrigger(row.trigger)}</span> : null}
+              </span>
+            </Button>)}
             {!matches.length && available ? <SettingsFeedback state="empty" presentation="inset">{rows.length ? t("No matching templates") : t("No templates yet")}</SettingsFeedback> : null}
           </div>
         </div>
-        {selected ? <div className="flex min-w-0 flex-col gap-3">
+        {selected ? <div className="template-manager-editor">
           <TextField ref={nameRef} label={t("Template name")} aria-label={t("Template name")} error={fieldError?.id === selected.id && fieldError.field === "name" ? error ?? undefined : undefined} value={selected.name} onChange={(event) => update(selected.id, { name: event.target.value })} spellCheck={false} autoComplete="off" />
           <TextField ref={triggerRef} label={t("Template trigger")} aria-label={t("Template trigger")} error={fieldError?.id === selected.id && fieldError.field === "trigger" ? error ?? undefined : undefined} value={selected.trigger ?? ""} onChange={(event) => update(selected.id, { trigger: event.target.value })} placeholder={t("trigger (optional)")} spellCheck={false} autoComplete="off" />
           <TextareaField ref={bodyRef} label={t("Template text")} aria-label={t("Template text")} error={fieldError?.id === selected.id && fieldError.field === "body" ? error ?? undefined : undefined} value={selected.body} onChange={(event) => update(selected.id, { body: event.target.value })} rows={8} maxLength={MAX_TEMPLATE_BODY} spellCheck={false} />
           <Button variant="ghost" tone="danger" onClick={() => { setRows((current) => current.filter((row) => row.id !== selected.id)); setError(null); setSavedMessage(false); }}>{t("Delete template")}</Button>
         </div> : null}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="template-manager-actions">
         <Button variant="primary" disabled={!available || !dirty || changedElsewhere} onClick={save}>{t("Save templates")}</Button>
         {dirty || changedElsewhere ? <Button onClick={reload}>{t("Discard changes and reload")}</Button> : null}
       </div>
-      {error ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
+      {/* A validation error is already announced on its field; do not announce it twice. */}
+      {error && !(selected && fieldError?.id === selected.id) ? <SettingsFeedback state="error">{error}</SettingsFeedback> : null}
       {changedElsewhere && dirty ? <SettingsFeedback state="warning">{t("Templates changed in another window. Reload before saving to avoid overwriting those changes.")}</SettingsFeedback> : null}
     </div>
   </Group>;

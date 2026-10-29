@@ -26,12 +26,32 @@ struct Pending {
     reply: mpsc::Sender<Value>,
     authority: Option<DesktopAuthority>,
 }
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone)]
 pub(crate) struct DesktopAuthority {
     pub relay_id: String,
     pub action: String,
     pub deadline: u64,
+    pub issuer: Arc<crate::remote::NativeServiceChannel>,
 }
+impl std::fmt::Debug for DesktopAuthority {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("DesktopAuthority")
+            .field("relay_id", &self.relay_id)
+            .field("action", &self.action)
+            .field("deadline", &self.deadline)
+            .finish_non_exhaustive()
+    }
+}
+impl PartialEq for DesktopAuthority {
+    fn eq(&self, other: &Self) -> bool {
+        self.relay_id == other.relay_id
+            && self.action == other.action
+            && self.deadline == other.deadline
+            && Arc::ptr_eq(&self.issuer, &other.issuer)
+    }
+}
+impl Eq for DesktopAuthority {}
 pub(crate) fn desktop_effect_action(action: &str) -> bool {
     matches!(
         action,
@@ -630,19 +650,9 @@ pub fn control_history_sources(
     Ok(())
 }
 
-/// Host-granted UI and project session reads; never enables general /operator access.
-pub(crate) fn conversation_ui_request(
-    app: &AppHandle,
-    session: &str,
-    cwd: &str,
-    environment: &str,
-    action: &str,
-    input: Value,
-) -> Result<Value, String> {
-    conversation_ui_request_with_authority(app, session, cwd, environment, action, input, None)
-}
-
-pub(crate) fn conversation_ui_request_with_authority(
+/// Host-granted UI/project reads retain the actual issuer; no general operator access.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn conversation_ui_request_pinned(
     app: &AppHandle,
     session: &str,
     cwd: &str,
@@ -650,12 +660,65 @@ pub(crate) fn conversation_ui_request_with_authority(
     action: &str,
     input: Value,
     authority: Option<DesktopAuthority>,
+    source: &crate::remote::NativeServiceReply,
+) -> Result<Value, String> {
+    conversation_ui_request_inner(
+        app,
+        session,
+        cwd,
+        environment,
+        action,
+        input,
+        authority,
+        source,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn conversation_ui_request_device_pinned(
+    app: &AppHandle,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+    action: &str,
+    input: Value,
+    authority: Option<DesktopAuthority>,
+    source: &crate::remote::NativeServiceReply,
+    target: &crate::remote::NativeDeviceReply,
+) -> Result<Value, String> {
+    conversation_ui_request_inner(
+        app,
+        session,
+        cwd,
+        environment,
+        action,
+        input,
+        authority,
+        source,
+        Some(target),
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn conversation_ui_request_inner(
+    app: &AppHandle,
+    session: &str,
+    cwd: &str,
+    environment: &str,
+    action: &str,
+    input: Value,
+    authority: Option<DesktopAuthority>,
+    source: &crate::remote::NativeServiceReply,
+    target: Option<&crate::remote::NativeDeviceReply>,
 ) -> Result<Value, String> {
     if let Some(authority) = authority.as_ref() {
         if authority.action != action
             || !desktop_effect_action(action)
             || uuid::Uuid::parse_str(&authority.relay_id).is_err()
             || authority.deadline <= clock_millis()?
+            || authority.issuer.environment_id() != environment
+            || !authority.issuer.is_current()
         {
             return Err("Invalid desktop effect authority".into());
         }
@@ -733,7 +796,7 @@ pub(crate) fn conversation_ui_request_with_authority(
     let state = app.state::<ControlHost>();
     let id = uuid::Uuid::new_v4().to_string();
     let (tx, rx) = mpsc::channel();
-    let window = {
+    let prepare = || {
         let mut host = state
             .inner
             .lock()
@@ -754,7 +817,20 @@ pub(crate) fn conversation_ui_request_with_authority(
                 authority,
             },
         );
-        window
+        Ok(window)
+    };
+    let prepared = match target {
+        Some(target) => source.with_device_projection(target, |_| prepare()),
+        None => source.project(|_| prepare()),
+    };
+    let window = match prepared {
+        Ok(window) => window,
+        Err(error) => {
+            if let Ok(mut host) = state.inner.lock() {
+                host.pending.remove(&id);
+            }
+            return Err(error);
+        }
     };
     let event = Event {
         id: id.clone(),
@@ -764,48 +840,60 @@ pub(crate) fn conversation_ui_request_with_authority(
         action: action.into(),
         input,
     };
-    if matches!(
-        action,
-        "ui.tools.open" | "ui.tools.place" | "ui.workspace.open"
-    ) {
-        if let Some(view) = app.get_webview_window(&window) {
-            let _ = view.show();
-            let _ = view.unminimize();
+    let result = (|| {
+        match target {
+            Some(target) => source.with_device_projection(target, |_| Ok(()))?,
+            None => source.check()?,
         }
-    }
-    let result = if app
-        .emit_to(window.as_str(), "bycoda-control-request", event)
-        .is_err()
-    {
-        Err("Conversation window is unavailable".into())
-    } else {
-        // Terminal close retains the existing native foreground-process confirmation.
-        // Its renderer deadline expires before this wait, so a late approval cannot kill work.
-        let timeout = if matches!(
+        if matches!(
             action,
-            "ssh.workspace.approve" | "ssh.workspace.close.approve"
+            "ui.tools.open" | "ui.tools.place" | "ui.workspace.open"
         ) {
-            240
-        } else if action == "terminals.close" {
-            120
+            if let Some(view) = app.get_webview_window(&window) {
+                let _ = view.show();
+                let _ = view.unminimize();
+            }
+        }
+        if app
+            .emit_to(window.as_str(), "bycoda-control-request", event)
+            .is_err()
+        {
+            Err("Conversation window is unavailable".into())
         } else {
-            15
-        };
-        rx.recv_timeout(Duration::from_secs(timeout)).map_err(|_| {
-            "Conversation UI request timed out; read ui.tools.status before retrying".to_owned()
-        })
-    };
+            // Terminal close retains the existing native foreground-process confirmation.
+            // Its renderer deadline expires before this wait, so a late approval cannot kill work.
+            let timeout = if matches!(
+                action,
+                "ssh.workspace.approve" | "ssh.workspace.close.approve"
+            ) {
+                240
+            } else if action == "terminals.close" {
+                120
+            } else {
+                15
+            };
+            rx.recv_timeout(Duration::from_secs(timeout)).map_err(|_| {
+                "Conversation UI request timed out; read ui.tools.status before retrying".to_owned()
+            })
+        }
+    })();
     if let Ok(mut host) = state.inner.lock() {
         host.pending.remove(&id);
     }
     let value = result?;
-    if value["ok"] != true {
-        return Err(value["error"]
-            .as_str()
-            .unwrap_or("Conversation UI action failed")
-            .to_owned());
+    let consume = || {
+        if value["ok"] != true {
+            return Err(value["error"]
+                .as_str()
+                .unwrap_or("Conversation UI action failed")
+                .to_owned());
+        }
+        Ok(value["result"].clone())
+    };
+    match target {
+        Some(target) => source.with_device_projection(target, |_| consume()),
+        None => source.project(|_| consume()),
     }
-    Ok(value["result"].clone())
 }
 
 #[tauri::command]
@@ -1081,6 +1169,9 @@ fn authorize_desktop_effect_with(
         let guard = inner.lock().map_err(|_| "Control service unavailable")?;
         pending_desktop_authority(&guard, window, id, action, now()?)?
     };
+    if !authority.issuer.is_current() {
+        return Err("Desktop effect issuer changed during authorization".into());
+    }
     if !query(&authority)? {
         return Ok(false);
     }
@@ -1091,13 +1182,16 @@ fn authorize_desktop_effect_with(
     if current != authority {
         return Err("Desktop effect authority changed during authorization".into());
     }
+    if !authority.issuer.is_current() {
+        return Err("Desktop effect issuer changed during authorization".into());
+    }
     Ok(true)
 }
 
 /// Live pre-effect check. The original upstream ID is retained only in native memory.
 #[tauri::command(async)]
 pub fn control_desktop_authorize_effect(
-    app: AppHandle,
+    _app: AppHandle,
     window: WebviewWindow,
     host: State<'_, ControlHost>,
     id: String,
@@ -1110,15 +1204,18 @@ pub fn control_desktop_authorize_effect(
         &action,
         clock_millis,
         |authority| {
-            let result = crate::remote::local_conversation_rpc(
-                &app,
-                "conversation.desktop.authorize",
-                json!({"id": authority.relay_id, "action": authority.action}),
-            )
-            .map_err(|_| "Desktop effect authorization is unavailable".to_string())?;
-            Ok(result.as_object().is_some_and(|value| {
-                value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true))
-            }))
+            authority
+                .issuer
+                .project(
+                    "conversation.desktop.authorize",
+                    json!({"id": authority.relay_id, "action": authority.action}),
+                    |result| {
+                        Ok(result.as_object().is_some_and(|value| {
+                            value.len() == 1 && value.get("authorized") == Some(&Value::Bool(true))
+                        }))
+                    },
+                )
+                .map_err(|_| "Desktop effect authorization is unavailable".to_string())
         },
     )
 }
@@ -1242,6 +1339,7 @@ mod tests {
                     relay_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".into(),
                     action: "ssh.workspace.approve".into(),
                     deadline: 200,
+                    issuer: crate::remote::NativeServiceChannel::for_test(),
                 }),
             },
         );
@@ -1368,6 +1466,33 @@ mod tests {
             |_| Err("host unavailable".into())
         )
         .is_err());
+    }
+
+    #[test]
+    fn desktop_effect_authority_refuses_equal_metadata_from_a_replaced_issuer() {
+        let inner = effect_fixture();
+        assert!(super::authorize_desktop_effect_with(
+            &inner,
+            "source-window",
+            "native-request",
+            "ssh.workspace.approve",
+            || Ok(100),
+            |original| {
+                let mut state = inner.lock().unwrap();
+                let authority = state
+                    .pending
+                    .get_mut("native-request")
+                    .unwrap()
+                    .authority
+                    .as_mut()
+                    .unwrap();
+                assert_eq!(authority.relay_id, original.relay_id);
+                authority.issuer = crate::remote::NativeServiceChannel::for_test();
+                Ok(true)
+            },
+        )
+        .unwrap_err()
+        .contains("authority changed"));
     }
     #[test]
     fn history_import_exact_inputs_pin_native_identity() {

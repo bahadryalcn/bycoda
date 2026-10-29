@@ -49,16 +49,16 @@ export function EditorConflictBar({
   if (count === 0 && !canMarkResolved) return null;
   return (
     <header
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-stroke px-3 pr-1 text-[11px]"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2 text-ui-caption"
       role="toolbar"
       aria-label={t("Merge conflicts")}
     >
       {count > 0 ? (
         <>
-          <span className="font-semibold tabular-nums text-warning" role="status">
+          <span className="font-medium tabular-nums text-warning" role="status">
             {count === 1 ? t("1 conflict") : t("{p0} conflicts", { p0: count })}
           </span>
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             {fileNote ? (
               <span
                 className="mr-1 truncate text-[var(--ui-text-secondary)]"
@@ -82,7 +82,7 @@ export function EditorConflictBar({
               onClick={onPrev}
               className={iconButton}
             >
-              <ChevronUp className="size-3.5" strokeWidth={1.75} />
+              <ChevronUp className="icon-sm" strokeWidth={1.75} />
             </Button>
             <Button
               size="sm"
@@ -97,7 +97,7 @@ export function EditorConflictBar({
               onClick={onNext}
               className={iconButton}
             >
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
+              <ChevronDown className="icon-sm" strokeWidth={1.75} />
             </Button>
           </div>
         </>
@@ -132,7 +132,7 @@ export function EditorConflictBar({
               onMouseDown={(event) => event.preventDefault()}
               onClick={onMarkResolved}
               title={t("Save the file and stage it")}
-              className="mr-2 shrink-0"
+              className="shrink-0"
             >
               {marking ? t("Staging…") : t("Mark resolved")}
             </Button>

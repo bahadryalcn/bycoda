@@ -33,14 +33,14 @@ export function useAnimatedReorder<T extends string>(
   onReorder: (ids: T[], movedId: T) => void,
   axis: "x" | "y" = "x",
   externalDrop?: ReorderExternalDrop<T>,
-  { foldOnDrag = false }: { foldOnDrag?: boolean } = {},
+  { foldOnDrag = false, onEnd }: { foldOnDrag?: boolean; onEnd?: () => void } = {},
 ) {
   const nodes = useRef(new Map<T, HTMLElement>());
   const [draggingId, setDraggingId] = useState<T | null>(null);
-  const latest = useRef({ ids, onReorder, externalDrop });
+  const latest = useRef({ ids, onReorder, externalDrop, onEnd });
   useLayoutEffect(() => {
-    latest.current = { ids, onReorder, externalDrop };
-  }, [ids, onReorder, externalDrop]);
+    latest.current = { ids, onReorder, externalDrop, onEnd };
+  }, [ids, onReorder, externalDrop, onEnd]);
   const cleanup = useRef<(() => void) | null>(null);
   const finishSettling = useRef<(() => void) | null>(null);
   const suppressClickUntil = useRef(0);
@@ -106,7 +106,11 @@ export function useAnimatedReorder<T extends string>(
       function endExternalDrop() {
         if (externalEnded) return;
         externalEnded = true;
-        latest.current.externalDrop?.onEnd?.(id);
+        try {
+          latest.current.externalDrop?.onEnd?.(id);
+        } finally {
+          latest.current.onEnd?.();
+        }
       }
 
       function releasePointer() {
@@ -303,6 +307,7 @@ export function useAnimatedReorder<T extends string>(
       window.addEventListener("keydown", onKey);
       window.addEventListener("blur", onCancel);
       window.addEventListener("scroll", onScroll, true);
+      return true;
     },
     [axis, foldOnDrag],
   );

@@ -75,6 +75,12 @@
 .swatch[data-dashed]::before {
   background: repeating-linear-gradient(to right, var(--series) 0 4px, transparent 4px 7px);
 }
+.swatch[data-pattern="dash"]::before {
+  background: repeating-linear-gradient(to right, var(--series) 0 4px, transparent 4px 7px);
+}
+.swatch[data-pattern="dot"]::before {
+  background: repeating-linear-gradient(to right, var(--series) 0 2px, transparent 2px 5px);
+}
 .toggle[aria-pressed="false"] .swatch::before {
   opacity: 0.45;
   transform: translateY(-50%) scaleX(0.35);
@@ -148,6 +154,14 @@
   stroke-dasharray: 4 5;
   stroke-width: 1.75;
 }
+.line[data-pattern="dash"] {
+  stroke-dasharray: 4 5;
+  stroke-width: 1.75;
+}
+.line[data-pattern="dot"] {
+  stroke-dasharray: 0.1 5;
+  stroke-width: 2.25;
+}
 .area {
   fill: var(--ui-chart-area-fill);
   stroke: none;
@@ -215,6 +229,12 @@
 }
 .tipSwatch[data-dashed] {
   background: repeating-linear-gradient(to right, var(--series) 0 3px, transparent 3px 5px);
+}
+.tipSwatch[data-pattern="dash"] {
+  background: repeating-linear-gradient(to right, var(--series) 0 3px, transparent 3px 5px);
+}
+.tipSwatch[data-pattern="dot"] {
+  background: repeating-linear-gradient(to right, var(--series) 0 1.5px, transparent 1.5px 3.5px);
 }
 .tipName {
   min-width: 0;

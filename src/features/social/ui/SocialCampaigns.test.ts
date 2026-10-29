@@ -196,7 +196,7 @@ async function mount(
     ),
   );
   const open = [...element.querySelectorAll("button")].find(
-    (button) => button.textContent?.trim() === "New campaign",
+    (button) => button.textContent?.trim() === "Prepare content",
   )!;
   await act(async () => open.click());
   await act(async () =>
@@ -204,7 +204,7 @@ async function mount(
   );
   await act(async () => document.body.querySelector<HTMLElement>('[role="option"]')!.click());
   return document.body.querySelector<HTMLElement>(
-    '[data-social-composer][aria-label="New campaign"]',
+    '[data-social-composer][aria-label="Prepare content"]',
   )!;
 }
 

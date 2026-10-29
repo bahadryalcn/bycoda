@@ -164,6 +164,26 @@ export function InboxFiltersMenu({
       onContextMenu={(event) => event.preventDefault()}
       className="overflow-y-auto overscroll-none p-1"
     >
+      <div className="flex h-8 items-center justify-between gap-2 ps-2">
+        <span className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Filter inbox")}</span>
+        {hasActiveInboxFilters(filters, source, hiddenLinearTeamIds, hiddenJiraProjectIds) ||
+        codeHostProjectsActive ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onChange(DEFAULT_INBOX_FILTERS);
+              if (teamsActive) onLinearTeamsChange([]);
+              if (jiraProjectsActive) onJiraProjectsChange([]);
+              if (codeHostProjectsActive) onCodeHostProjectsChange?.([]);
+            }}
+          >
+            {t("Clear filters")}
+          </Button>
+        ) : null}
+      </div>
       <FilterItem
         label={
           source === "gitlab" || source === "azuredevops"
@@ -350,26 +370,6 @@ export function InboxFiltersMenu({
         </>
       ) : null}
 
-      {hasActiveInboxFilters(filters, source, hiddenLinearTeamIds, hiddenJiraProjectIds) ||
-      codeHostProjectsActive ? (
-        <>
-          <div role="separator" className="my-1 h-px bg-(--ui-surface-raised)" />
-          <Button
-            variant="item"
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => {
-              onChange(DEFAULT_INBOX_FILTERS);
-              if (teamsActive) onLinearTeamsChange([]);
-              if (jiraProjectsActive) onJiraProjectsChange([]);
-              if (codeHostProjectsActive) onCodeHostProjectsChange?.([]);
-            }}
-            className="w-full text-left"
-          >
-            {t("Clear filters")}
-          </Button>
-        </>
-      ) : null}
     </Popover>
   );
 }

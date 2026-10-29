@@ -1,4 +1,5 @@
 import { t } from "../../../shared/i18n/core";
+import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
 import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
 import { isRemoteProjectPath } from "../../projects/model/recents";
@@ -37,6 +38,7 @@ export type ResumedWorkspace = {
  */
 export function isInFlightSession(session: Session): boolean {
   return (
+    !hostSessionBinding(session) &&
     !isRemoteProjectPath(session.cwd) &&
     !session.worktreeRemoved &&
     (!!session.busy || sessionNeedsInput(session))

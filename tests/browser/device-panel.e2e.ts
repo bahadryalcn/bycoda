@@ -71,7 +71,7 @@ test("frozen-frame drawing supports all tools and history without sending device
   await ready(page);
   await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
   await page.getByRole("button", { name: "Mark device screen", exact: true }).click();
-  await expect(page.getByText("Marking · Frozen frame", { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Marking · Frozen frame( · .+)?$/)).toBeVisible();
   const frozenAt = await page.locator(".device-panel-frame-state").getAttribute("title");
   const image = page.getByRole("img", { name: "Current device screen", exact: true });
   const source = await image.getAttribute("src");

@@ -384,20 +384,13 @@
 .control.tab {
   position: relative;
 }
+/* Selected tabs use the shared calm fill and full-strength text; no underline
+   or edge stripe. */
 .control.tab[data-button-hierarchy="tab"][data-button-selected][data-button-tone="neutral"] {
   background: var(--ui-surface-selected);
   color: var(--foreground);
-  border-color: var(--ui-text-secondary);
-}
-.control[data-button-hierarchy="tab"][data-button-selected][data-button-tone="neutral"]::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  inset-inline: var(--space-2);
-  inset-block-end: 0;
-  block-size: 2px;
-  border-radius: var(--ui-control-radius);
-  background: var(--foreground);
+  border-color: transparent;
+  font-weight: 500;
 }
 
 /* Press is one layer. Scaling controls (Arc renderer) answer with the scale alone;
@@ -508,6 +501,18 @@
 .control.inset {
   --button-icon-size: var(--ui-icon-sm);
   border-radius: calc(var(--ui-control-radius) - 2px);
+}
+/* Text inset action ("Undo", "Retry", "Show") inside a row or card: same 20px height and
+   overlay states as the icon form, content-sized, caption type, never a bordered button. */
+@layer components {
+  .control.inset.insetText {
+    inline-size: auto;
+    padding-inline: var(--space-2);
+    aspect-ratio: auto;
+    font-size: var(--ui-font-caption);
+    font-weight: 500;
+    white-space: nowrap;
+  }
 }
 .control.inset[data-button-hierarchy][data-button-tone] {
   border-color: transparent;

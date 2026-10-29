@@ -89,54 +89,62 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
     }
     return items;
   }, [block]);
-  const copyText = sections.map((section) => section.text).join("\n\n");
+  // Copy states its own scope: shortened or summary-only text carries a notice so
+  // the clipboard never presents an incomplete body as the full result.
+  const copyNotices = [
+    sections.some((section) => section.truncated)
+      ? t("[Shortened: some text was left out to keep this conversation responsive.]")
+      : null,
+    sections.some((section) => section.legacy)
+      ? t("[Only a shortened preview was saved for this older tool call.]")
+      : null,
+    block.remoteContent ? t("[Only a summary of the output is kept here.]") : null,
+  ].filter((notice): notice is string => !!notice);
+  const bodyText = sections.map((section) => section.text).join("\n\n");
+  const copyText = bodyText ? [bodyText, ...copyNotices].join("\n\n") : "";
+  const resetTimer = useRef<number | null>(null);
+  const clearResetTimer = () => {
+    if (resetTimer.current != null) window.clearTimeout(resetTimer.current);
+    resetTimer.current = null;
+  };
   useEffect(() => {
     copyGeneration.current += 1;
     copying.current = false;
+    clearResetTimer();
     setCopyState("idle");
     return () => {
       copyGeneration.current += 1;
+      clearResetTimer();
     };
   }, [block.id, copyText]);
+  const copy = () => {
+    if (copying.current) return;
+    copying.current = true;
+    const generation = copyGeneration.current;
+    setCopyState("pending");
+    void copyMessage(copyText).then(
+      () => {
+        if (copyGeneration.current !== generation) return;
+        copying.current = false;
+        setCopyState("copied");
+        clearResetTimer();
+        resetTimer.current = window.setTimeout(() => setCopyState("idle"), 2000);
+      },
+      () => {
+        if (copyGeneration.current !== generation) return;
+        copying.current = false;
+        setCopyState("failed");
+      },
+    );
+  };
 
+  // One quiet code-block surface: the sections are spaced, not ruled, and the
+  // single Copy lives on the first heading instead of a bar of its own.
   return (
     <div
       data-tool-inspection
-      className="min-w-0 overflow-clip rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+      className="flex min-w-0 flex-col gap-2 overflow-clip rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) pb-2"
     >
-      <div className="flex items-center justify-end gap-2 border-b border-(--ui-tone-neutral-border) px-2 py-1">
-        {copyState === "failed" ? (
-          <span role="status" className="text-xs text-(--ui-tone-danger-fg)">
-            {t("Copy failed")}
-          </span>
-        ) : null}
-        <Button
-          variant="ghost"
-          type="button"
-          disabled={!copyText}
-          loading={copyState === "pending"}
-          onClick={() => {
-            if (copying.current) return;
-            copying.current = true;
-            const generation = copyGeneration.current;
-            setCopyState("pending");
-            void copyMessage(copyText).then(
-              () => {
-                if (copyGeneration.current !== generation) return;
-                copying.current = false;
-                setCopyState("copied");
-              },
-              () => {
-                if (copyGeneration.current !== generation) return;
-                copying.current = false;
-                setCopyState("failed");
-              },
-            );
-          }}
-        >
-          {t(copyState === "copied" ? "Copied" : "Copy")}
-        </Button>
-      </div>
       {sections.map((section, index) => {
         const json =
           !section.diff &&
@@ -147,19 +155,36 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             ? inspectionJson(section.text)
             : null;
         return (
-          <section
-            key={index}
-            className="min-w-0 border-b border-(--ui-tone-neutral-border) last:border-b-0"
-          >
-            <h4 className="px-3 py-1.5 text-xs font-medium text-(--ui-text-secondary)">
-              {t(section.title)}
-            </h4>
+          <section key={index} className="min-w-0">
+            <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">
+              <h4 className="text-ui-caption font-medium text-(--ui-text-secondary)">
+                {t(section.title)}
+              </h4>
+              {index === 0 ? (
+                <div className="flex items-center gap-2">
+                  {copyState === "failed" ? (
+                    <span role="status" className="text-ui-caption text-(--ui-tone-danger-fg)">
+                      {t("Copy failed")}
+                    </span>
+                  ) : null}
+                  <Button
+                    variant="ghost"
+                    type="button"
+                    disabled={!copyText}
+                    loading={copyState === "pending"}
+                    onClick={copy}
+                  >
+                    {t(copyState === "copied" ? "Copied" : "Copy")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
             {json ? (
               <JsonViewer data={json.data} label={t(section.title)} maxHeight={320} pageSize={50} />
             ) : (
               <pre
                 tabIndex={0}
-                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain px-3 py-2 font-mono text-xs leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color)`}
+                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain px-3 py-1 font-mono text-ui-caption leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)`}
               >
                 {section.diff
                   ? section.text.split("\n").map((line, lineIndex) => (
@@ -182,7 +207,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
               </pre>
             )}
             {section.truncated || section.legacy ? (
-              <p className="px-3 py-2 text-xs text-(--ui-text-secondary)">
+              <p className="px-3 pt-1 text-ui-caption text-(--ui-text-secondary)">
                 {t(
                   section.legacy
                     ? "Only a shortened preview was saved for this older tool call."
@@ -194,7 +219,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
         );
       })}
       {!sections.length && block.tool?.outputTruncated ? (
-        <p className="px-3 py-2 text-xs text-(--ui-text-secondary)">
+        <p className="px-3 pt-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Output left out to keep this run small.")}
         </p>
       ) : null}

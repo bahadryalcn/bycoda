@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { CONVERSATION_VISUAL_TOOLS, describeVisualConversationTool } from "./conversation-visual-tools";
 import { AsyncResource } from "node:async_hooks";
 import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
@@ -100,6 +101,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 export const CONVERSATION_TOOLS = {
+  ...CONVERSATION_VISUAL_TOOLS,
   ...CONVERSATION_CREW_READ_TOOLS,
   ...CONVERSATION_FILE_TOOLS,
   ...PROJECT_CONVERSATION_TOOLS,
@@ -550,6 +552,8 @@ export const CONVERSATION_TOOLS = {
 } as const;
 export type ConversationTool = keyof typeof CONVERSATION_TOOLS;
 const reads = new Set([
+  "visuals.preview",
+  "visuals.render",
   ...Object.keys(CONVERSATION_CREW_READ_TOOLS),
   ...FILE_CONVERSATION_READS,
   ...PROJECT_READ_ACTIONS,
@@ -606,6 +610,7 @@ export const conversationToolName = (action: string) =>
   `conversation_${action.replaceAll(".", "_")}`;
 function conversationToolDescription(action: string) {
   const extension =
+    describeVisualConversationTool(action) ??
     describeRuntimeReadConversationTool(action) ??
     describeStewardConversationTool(action) ??
     describeBrowserAnnotationTool(action) ??

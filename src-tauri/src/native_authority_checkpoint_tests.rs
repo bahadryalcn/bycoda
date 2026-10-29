@@ -79,6 +79,236 @@ impl Fixture {
     }
 }
 
+fn replace_same_row(f: &Fixture, mode: &str) {
+    let conn = f.store.lock_conn().unwrap();
+    if mode == "rename" {
+        conn.execute("UPDATE sessions SET id='temporary' WHERE id='A'", [])
+            .unwrap();
+        conn.execute("UPDATE sessions SET id='A' WHERE id='temporary'", [])
+            .unwrap();
+        return;
+    }
+    if mode == "delete" {
+        conn.execute("DELETE FROM sessions WHERE id='A'", [])
+            .unwrap();
+    }
+    conn.execute("INSERT OR REPLACE INTO sessions(id,cwd,harness,model,runtime_mode,title,created_at,updated_at,blocks_json) VALUES('A','.','codex','fixture','approve','A',1,1,'[]')", []).unwrap();
+}
+
+#[test]
+fn same_id_row_recreation_cannot_issue_or_consume_an_old_round() {
+    for before_issue in [true, false] {
+        for mode in ["delete", "replace", "rename"] {
+            let f = Fixture::new();
+            let original = f.expected();
+            let round = f.round();
+            let challenge = (!before_issue).then(|| f.issue(&round));
+            replace_same_row(&f, mode);
+            assert_eq!(f.expected(), original); // revision/content cannot detect this ABA
+            let error = if let Some(challenge) = challenge {
+                f.service
+                    .checkpoint_resources(&f.resources, &challenge.nonce, f.expected())
+                    .unwrap_err()
+            } else {
+                f.service
+                    .issue_resources(&round, &f.resources, Duration::from_secs(10))
+                    .unwrap_err()
+            };
+            assert!(error.contains("ROW_CHANGED"), "{mode}: {error}");
+            assert_eq!(f.receipts(), 0);
+        }
+    }
+}
+
+#[test]
+fn pending_challenge_expiring_during_row_validation_never_admits_checkpoint_work() {
+    let f = Fixture::new();
+    let round = f.round();
+    let challenge = f
+        .service
+        .issue_resources(&round, &f.resources, Duration::from_secs(1))
+        .unwrap();
+    let expected = f.expected();
+    let expires = f.service.ledger.lock().unwrap().entries[&challenge.nonce].expires;
+    let (entered_tx, entered_rx) = mpsc::channel();
+    let (release_tx, release_rx) = mpsc::channel();
+    let first = std::sync::atomic::AtomicBool::new(true);
+    f.store
+        .lock_conn()
+        .unwrap()
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            if matches!(
+                context.action,
+                AuthAction::Read {
+                    table_name: "native_session_row_identity",
+                    ..
+                }
+            ) && first.swap(false, Ordering::SeqCst)
+            {
+                entered_tx.send(()).unwrap();
+                release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+    let service = f.service.clone();
+    let resources = f.resources.clone();
+    let nonce = challenge.nonce.clone();
+    let job =
+        std::thread::spawn(move || service.checkpoint_resources(&resources, &nonce, expected));
+    entered_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    std::thread::sleep(
+        expires.saturating_duration_since(Instant::now()) + Duration::from_millis(10),
+    );
+    release_tx.send(()).unwrap();
+    let error = job.join().unwrap().unwrap_err();
+    assert!(error.contains("EXPIRED"), "{error}");
+    assert_eq!(f.receipts(), 0);
+    assert!(matches!(
+        f.service
+            .status_resources(&f.resources, &challenge.nonce)
+            .unwrap(),
+        NativeCheckpointStatus::Expired
+    ));
+}
+
+#[test]
+fn scoped_checked_owner_matches_only_the_same_physical_capture() {
+    let f = Fixture::new();
+    let instance = f.store.native_instance_id();
+    let original =
+        native_window_lifecycle::capture_checkpoint_resources(&f.resources, instance).unwrap();
+    let second_capture =
+        native_window_lifecycle::capture_checkpoint_resources(&f.resources, instance).unwrap();
+    let same_label_resources = native_window_lifecycle::test_buffer_resources(&f.barrier, "main");
+    let same_label =
+        native_window_lifecycle::capture_checkpoint_resources(&same_label_resources, instance)
+            .unwrap();
+    native_window_lifecycle::with_checked_checkpoint_resources(
+        &original,
+        &f.resources,
+        instance,
+        |_, _, checked| {
+            assert!(checked.matches_store_instance(instance));
+            assert!(!checked.matches_store_instance(uuid::Uuid::new_v4()));
+            assert!(checked.matches(&original));
+            assert!(checked.matches(&second_capture));
+            assert!(!checked.matches(&same_label));
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(native_window_lifecycle::with_checked_checkpoint_resources(
+        &original,
+        &same_label_resources,
+        instance,
+        |_, _, _| Ok(())
+    )
+    .is_err());
+    // A same-label replacement above retires the old barrier token. Exercise
+    // reload on a separate current physical owner, not on that retired token.
+    let reload = Fixture::new();
+    let reload_instance = reload.store.native_instance_id();
+    let reload_owner =
+        native_window_lifecycle::capture_checkpoint_resources(&reload.resources, reload_instance)
+            .unwrap();
+    native_window_lifecycle::test_reload_buffer_resources(&reload.resources);
+    assert!(native_window_lifecycle::with_checked_checkpoint_resources(
+        &reload_owner,
+        &reload.resources,
+        reload_instance,
+        |_, _, _| Ok(())
+    )
+    .is_err());
+}
+
+#[test]
+fn full_sql_transaction_rejects_foreign_target_store_and_replaced_row_tokens() {
+    for mode in ["target", "store", "replace"] {
+        let f = Fixture::new();
+        let other = Fixture::new();
+        let round = f.round();
+        let challenge = f.issue(&round);
+        let actual = f.service.ledger.lock().unwrap().rounds[&round.id].clone();
+        let row = if mode == "target" {
+            f.store.capture_session_row_identity("B").unwrap().unwrap()
+        } else if mode == "store" {
+            other
+                .store
+                .capture_session_row_identity("A")
+                .unwrap()
+                .unwrap()
+        } else {
+            let row = f.store.capture_session_row_identity("A").unwrap().unwrap();
+            replace_same_row(&f, "replace");
+            row
+        };
+        let expected = f.expected();
+        let fingerprint = expected.fingerprint().unwrap();
+        let error = f
+            .store
+            .renderer_checkpoint_commit(NativeCheckpointCommit {
+                nonce: &challenge.nonce,
+                service_epoch: &f.service.epoch,
+                round_id: &round.id,
+                window_epoch: &challenge.window_epoch,
+                scope: &actual.scope,
+                row_identity: &row,
+                expected: &expected,
+                fingerprint: &fingerprint,
+            })
+            .unwrap_err();
+        assert!(error.contains("ROW_CHANGED"), "{mode}: {error}");
+        assert_eq!(f.receipts(), 0);
+    }
+}
+
+#[test]
+fn ordinary_upsert_preserves_the_round_and_its_real_full_sql_receipt() {
+    let f = Fixture::new();
+    let round = f.round();
+    f.store.lock_conn().unwrap().execute("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,created_at,updated_at,blocks_json) VALUES('A','.','codex','fixture','approve','renamed title',1,2,'[]') ON CONFLICT(id) DO UPDATE SET title=excluded.title,updated_at=excluded.updated_at", []).unwrap();
+    let challenge = f.issue(&round);
+    let receipt = f
+        .service
+        .checkpoint_resources(&f.resources, &challenge.nonce, f.expected())
+        .unwrap();
+    assert_eq!(receipt.updated_at, 2);
+    assert_eq!(receipt.provider_output, ProviderOutputCheckpoint::Unsealed);
+    assert_eq!(f.receipts(), 1);
+}
+
+#[test]
+fn historical_receipt_remains_readable_but_does_not_validate_a_recreated_row() {
+    let f = Fixture::new();
+    let round = f.round();
+    let challenge = f.issue(&round);
+    let expected = f.expected();
+    let receipt = f
+        .service
+        .checkpoint_resources(&f.resources, &challenge.nonce, expected.clone())
+        .unwrap();
+    replace_same_row(&f, "replace");
+    let actual = f.service.ledger.lock().unwrap().rounds[&round.id].clone();
+    assert!(f
+        .store
+        .renderer_checkpoint_validate_row(&actual.scope, &actual.row_identity)
+        .unwrap_err()
+        .contains("ROW_CHANGED"));
+    assert_eq!(
+        f.service
+            .checkpoint_resources(&f.resources, &challenge.nonce, expected)
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(f.receipts(), 1);
+    assert!(f
+        .service
+        .issue_resources(&round, &f.resources, Duration::from_secs(10))
+        .unwrap_err()
+        .contains("ROW_CHANGED"));
+}
+
 #[test]
 fn actual_sql_receipt_reads_exact_rows_without_creating_floor_or_rewriting_them() {
     let f = Fixture::new();
@@ -715,12 +945,14 @@ fn native_identity_change_and_wrong_generation_reject_before_any_receipt() {
     f.barrier.reopen_target_admission(error.closed).unwrap();
     let round = f.round();
     let challenge = f.issue(&round);
+    // Deliberately corrupt the identity below the production immutability gate.
+    // Only this fixture bypasses the guard; the original reader must still reject.
     f.store
         .lock_conn()
         .unwrap()
-        .execute(
-            "UPDATE native_authority_identity SET source_profile_id='changed'",
-            [],
+        .execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_profile_id='changed'",
         )
         .unwrap();
     assert!(f

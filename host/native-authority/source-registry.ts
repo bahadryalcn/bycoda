@@ -52,6 +52,46 @@ export const NativeSourceReferenceSchema = z
     sourceEpoch: NativeSourceUuidSchema,
   })
   .strict();
+export const NativeSourceProjectionScopeSchema = z
+  .object({
+    sessionId: IdentifierSchema,
+    migrationId: IdentifierSchema,
+    generation: SafeCounterSchema,
+  })
+  .strict();
+const ProjectionObservationSchema = z
+  .object({
+    version: z.literal(1),
+    qualified: z.literal(false),
+    prepareId: NativeSourceUuidSchema,
+    status: z.enum(["observed", "cancelled", "unverified"]),
+    receiptCount: z.number().int().min(0).max(64),
+    missingCoverage: z.array(z.string().refine(validProjectionReason)).max(32),
+  })
+  .strict();
+const ProjectionResponseSchema = z
+  .object({
+    version: z.literal(1),
+    kind: z.literal("source-projection-observation"),
+    requestId: SafeCounterSchema.refine((value) => value > 0),
+    sourceEpoch: NativeSourceUuidSchema,
+    observation: ProjectionObservationSchema,
+  })
+  .strict();
+export type NativeSourceProjectionObservation = Readonly<
+  Omit<z.infer<typeof ProjectionObservationSchema>, "missingCoverage"> & {
+    missingCoverage: readonly string[];
+  }
+>;
+function validProjectionReason(value: string): boolean {
+  if (!value || Buffer.byteLength(value, "utf8") > 512) return false;
+  for (const character of value) {
+    const code = character.codePointAt(0)!;
+    if (code < 32 || (code >= 127 && code <= 159) || (code >= 0xd800 && code <= 0xdfff))
+      return false;
+  }
+  return true;
+}
 type RegistrationInput = z.infer<typeof NativeSourceRegistrationSchema>;
 type Reference = z.infer<typeof NativeSourceReferenceSchema>;
 const ActualScopeSchema = z.object({
@@ -290,6 +330,88 @@ export class NativeSourceRegistry {
           throw new NativeSourceRegistryError("SCOPE_CHANGED");
         }
         return Object.freeze({ ...source.association });
+      } catch (error) {
+        const failure = this.classify(error);
+        this.fail(record, failure);
+        source.state = "closed";
+        await this.closeClient(source.client);
+        throw failure;
+      }
+    });
+    source.tail = task.then(
+      () => {},
+      () => {},
+    );
+    const tracked = this.track(
+      task.finally(() => {
+        source.queued -= 1;
+        if (source.queued === 0) this.armHeartbeat(record);
+      }),
+    );
+    void tracked.catch(() => {
+      void this.retire(record).catch(() => {});
+    });
+    return tracked;
+  }
+
+  /** Private authenticated bootstrap composition. This observes, never retries
+   * or activates a migration. Queue and child budgets survive detached waits. */
+  observeProjection(
+    raw: Reference,
+    rawScope: z.infer<typeof NativeSourceProjectionScopeSchema>,
+  ): Promise<NativeSourceProjectionObservation> {
+    let record: Registration;
+    let scope: z.infer<typeof NativeSourceProjectionScopeSchema>;
+    try {
+      record = this.reference(raw);
+      scope = NativeSourceProjectionScopeSchema.parse(rawScope);
+    } catch (error) {
+      return Promise.reject(this.classify(error));
+    }
+    const source = record.source!;
+    if (this.closed || source.state !== "active")
+      return Promise.reject(new NativeSourceRegistryError("SOURCE_CLOSED"));
+    if (source.queued >= this.statusLimit)
+      return Promise.reject(new NativeSourceRegistryError("CAPACITY"));
+    // The operation has one total budget, including time queued behind status
+    // or retained reads. A lost reply closes this association without resend.
+    const deadline = performance.now() + 35_000;
+    clearTimeout(source.heartbeat);
+    source.queued += 1;
+    const task = source.tail.then(async () => {
+      try {
+        if (source.state === "closed") throw new NativeSourceRegistryError("SOURCE_CLOSED");
+        const requestId = source.nextRequestId++;
+        if (!Number.isSafeInteger(requestId)) throw new NativeSourceRegistryError("CAPACITY");
+        await source.client.send(
+          {
+            version: 1,
+            kind: "source-projection-observe",
+            requestId,
+            sourceEpoch: source.association.sourceEpoch,
+            ...scope,
+          },
+          this.wait(deadline),
+        );
+        let reply: z.infer<typeof ProjectionResponseSchema>;
+        try {
+          reply = ProjectionResponseSchema.parse(await source.client.receive(this.wait(deadline)));
+        } catch (error) {
+          throw error instanceof z.ZodError
+            ? new NativeSourceRegistryError("SCOPE_CHANGED")
+            : error;
+        }
+        this.wait(deadline);
+        if (
+          reply.requestId !== requestId ||
+          reply.sourceEpoch !== source.association.sourceEpoch ||
+          source.client.observation().exited
+        )
+          throw new NativeSourceRegistryError("SCOPE_CHANGED");
+        return Object.freeze({
+          ...reply.observation,
+          missingCoverage: Object.freeze([...reply.observation.missingCoverage]),
+        });
       } catch (error) {
         const failure = this.classify(error);
         this.fail(record, failure);

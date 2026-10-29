@@ -1,6 +1,6 @@
 "use client";
 
-import { useT } from "../../../i18n";
+import { t as translate, useT } from "../../../i18n";
 
 import {
   forwardRef,
@@ -180,23 +180,23 @@ export function shortcutTokens(shortcut: string, platform: Platform): ShortcutTo
   const { mods, key } = splitShortcut(normalizeShortcut(shortcut, platform));
   const tokens: ShortcutToken[] = [];
   if (platform === "mac") {
-    if (mods.has("ctrl")) tokens.push({ label: "⌃", id: "ctrl", spoken: "Control" });
-    if (mods.has("alt")) tokens.push({ label: "⌥", id: "alt", spoken: "Option" });
-    if (mods.has("shift")) tokens.push({ label: "⇧", id: "shift", spoken: "Shift" });
+    if (mods.has("ctrl")) tokens.push({ label: "⌃", id: "ctrl", spoken: translate("Control") });
+    if (mods.has("alt")) tokens.push({ label: "⌥", id: "alt", spoken: translate("Option") });
+    if (mods.has("shift")) tokens.push({ label: "⇧", id: "shift", spoken: translate("Shift") });
     if (mods.has("mod") || mods.has("meta"))
-      tokens.push({ label: "⌘", id: "meta", spoken: "Command" });
+      tokens.push({ label: "⌘", id: "meta", spoken: translate("Command") });
   } else {
     if (mods.has("mod") || mods.has("ctrl"))
-      tokens.push({ label: "Ctrl", id: "ctrl", spoken: "Control" });
-    if (mods.has("alt")) tokens.push({ label: "Alt", id: "alt", spoken: "Alt" });
-    if (mods.has("shift")) tokens.push({ label: "Shift", id: "shift", spoken: "Shift" });
-    if (mods.has("meta")) tokens.push({ label: "Win", id: "meta", spoken: "Windows" });
+      tokens.push({ label: "Ctrl", id: "ctrl", spoken: translate("Control") });
+    if (mods.has("alt")) tokens.push({ label: "Alt", id: "alt", spoken: translate("Alt") });
+    if (mods.has("shift")) tokens.push({ label: "Shift", id: "shift", spoken: translate("Shift") });
+    if (mods.has("meta")) tokens.push({ label: "Win", id: "meta", spoken: translate("Windows") });
   }
   if (key) {
     const named = (platform === "mac" ? MAC_KEYS[key] : undefined) ?? SHARED_KEYS[key];
     tokens.push(
       named
-        ? { label: named[0], id: key, spoken: named[1] }
+        ? { label: named[0], id: key, spoken: translate(named[1]) }
         : { label: key.toUpperCase(), id: key, spoken: key.toUpperCase() },
     );
   }
@@ -438,6 +438,8 @@ const chipFade: Variants = {
  * A field that records a keyboard shortcut. Press it, then press the combination: held modifiers light up as caps while you
  * build the chord, the finished shortcut settles into place, and a combination that is already taken asks before it is used.
  * Escape cancels, Backspace clears, and the reset button restores the default. Caps follow the platform: ⌘ on a Mac, Ctrl elsewhere.
+ * Capture never starts from focus alone, controlled or not: only a pointer press or Enter/Space starts it, and a visible Cancel
+ * ends it (hidden with `hideActions`, whose owner then supplies its own Cancel).
  */
 export function ShortcutRecorder({
   label,
@@ -671,9 +673,7 @@ export function ShortcutRecorder({
           aria-describedby={message ? messageId : undefined}
           aria-label={label}
           aria-pressed={recording}
-          onFocus={() => {
-            if (externalRecording !== undefined && !disabled) start();
-          }}
+          data-capturing={recording || undefined}
           onClick={(event) => {
             if (externalRecording !== undefined) {
               if (!recording) start();
@@ -753,6 +753,31 @@ export function ShortcutRecorder({
         {!hideActions && (
           <span className={styles.actions}>
             <AnimatePresence initial={false}>
+              {recording && (
+                <motion.span
+                  key="cancel"
+                  className={styles.actionSlot}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.1 } }}
+                  transition={reduced ? { duration: 0 } : motionTokens.spring.snappy}
+                >
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    motion="none"
+                    // Keep focus on the recorder so pressing Cancel does not blur-stop first and lose the click.
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => {
+                      stop();
+                      setAnnouncement(t("Recording canceled"));
+                      buttonRef.current?.focus();
+                    }}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                </motion.span>
+              )}
               {canReset && (
                 <motion.span
                   key="reset"

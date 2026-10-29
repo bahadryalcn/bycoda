@@ -2,7 +2,6 @@
   display: flex;
   align-items: center;
   min-width: 0;
-  border-bottom: 1px solid var(--color-stroke);
   border-radius: var(--control-radius, 6px);
 }
 .server-selection {
@@ -27,9 +26,12 @@
 .server-card[data-selection-mode] .server-identity {
   flex-basis: calc(100% - 36px);
 }
+/* Connect and overflow sit beside the identity (top-right of the card), not in a footer. */
 .server-card .server-row-actions {
+  align-self: flex-start;
   justify-content: flex-end;
   margin-inline-start: auto;
+  padding: 8px 8px 8px 0;
 }
 .servers-selection-bar {
   display: flex;
@@ -61,11 +63,8 @@
   }
   .server-list-row .server-identity {
     display: grid;
-    grid-template-columns: 2px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 3px 8px;
-  }
-  .server-row-status {
-    grid-column: 2;
   }
   .server-selection {
     flex-basis: 32px;

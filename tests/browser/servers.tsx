@@ -621,6 +621,8 @@ Object.assign(window, {
       }
       if (command === "remote_request")
         throw new Error("Machine is unreachable: connection refused");
+      // Closing a terminal asks the PTY for its foreground process; an idle shell closes without a prompt.
+      if (command === "pty_status") return { foreground: null, supported: true };
       if (command.includes("is_maximized") || command.includes("is_fullscreen")) return false;
       return null;
     },

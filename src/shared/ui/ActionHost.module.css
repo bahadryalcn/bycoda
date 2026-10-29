@@ -15,20 +15,35 @@
 }
 
 .host {
+  --action-host-hover: linear-gradient(var(--ui-surface-hover), var(--ui-surface-hover));
+  --action-host-pressed: linear-gradient(var(--ui-surface-pressed), var(--ui-surface-pressed));
+  --action-host-selected: linear-gradient(var(--ui-surface-selected), var(--ui-surface-selected));
   transition: background-color var(--duration-fast) var(--ease-standard);
+}
+/* A saved custom colour is the resting ground. States are solid layers painted above
+   it as background images, so neither an inline colour nor the ground can mask them. */
+.host[data-ground] {
+  background-color: var(--action-host-ground);
 }
 /* One highlight for the whole item: it stays while the pointer is over an inline
    action, and keyboard focus anywhere inside reads the same as hover. */
 @media (hover: hover) and (pointer: fine) {
   .host:hover {
-    background: var(--ui-surface-hover);
+    background-image: var(--action-host-hover);
   }
 }
 .host:has(:focus-visible) {
-  background: var(--ui-surface-hover);
+  background-image: var(--action-host-hover);
 }
 .host[data-selected] {
-  background: var(--ui-surface-selected);
+  background-image: var(--action-host-selected);
+}
+/* The host owns the press of the main row, selected or not. A press that lands on an
+   inline action, or on a control that opts out of the row (data-no-drag), belongs to
+   that control and leaves the row as it was. Touch and keyboard activation set :active
+   on the pressed control, so they follow the same rule. */
+.host:active:not(:has([data-action-inline]:active, [data-no-drag]:active)) {
+  background-image: var(--action-host-pressed);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -40,5 +55,24 @@
   .host[data-selected] {
     outline: 1px solid Highlight;
     outline-offset: -1px;
+  }
+}
+
+/* An optional trailing slot that reserves no width at rest: row actions appear on
+   hover, keyboard focus, selection or while one of their popups is open, so a
+   narrow row keeps its title readable. Touch devices always show them. */
+:global([data-action-host]) :global([data-action-slot="collapse"]) {
+  max-inline-size: 0;
+  overflow: hidden;
+}
+:global([data-action-host]):is(:hover, :focus-within, [data-selected], :has([data-action-slot="collapse"] [aria-expanded="true"]))
+  :global([data-action-slot="collapse"]) {
+  max-inline-size: none;
+  overflow: visible;
+}
+@media (hover: none), (pointer: coarse) {
+  :global([data-action-host]) :global([data-action-slot="collapse"]) {
+    max-inline-size: none;
+    overflow: visible;
   }
 }

@@ -63,6 +63,14 @@ it("opens from a plain click (touch tap or Enter/Space on the native button) and
   expect(trigger().getAttribute("aria-expanded")).toBe("false");
 });
 
+it("scrolls long help inside the available height instead of clipping its last lines", async () => {
+  await render({ label: "About limits" });
+  await act(async () => trigger().click());
+  const popup = dialog()!;
+  expect(popup.getAttribute("data-popover-flow")).toBe("scroll");
+  expect(popup.style.overflowY).toBe("auto");
+});
+
 it("moves focus into the help dialog and returns it to the trigger on Escape", async () => {
   await render({ label: "About limits" });
   trigger().focus();

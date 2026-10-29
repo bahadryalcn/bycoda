@@ -2,7 +2,7 @@
   container: chat-settings / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: 28px;
   min-inline-size: 0;
 }
 .chat-detail {
@@ -13,10 +13,34 @@
   overflow-wrap: anywhere;
 }
 .chat-settings > .settings-advanced { margin-block: 0; }
+.settings-templates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-inline-size: 0;
+}
+/* One editing unit: template list and editor share a single quiet box. */
 .template-manager {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  min-inline-size: 0;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  overflow: hidden;
+}
+.template-manager-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+  padding: 12px;
+}
+.template-manager-count {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
 }
 .template-manager-list {
   max-block-size: 24rem;
@@ -24,6 +48,42 @@
   min-inline-size: 0;
   overscroll-behavior: contain;
 }
+.template-manager-item {
+  display: flex;
+  min-inline-size: 0;
+  flex: 1;
+  align-items: baseline;
+  gap: 8px;
+}
+.template-manager-item-name {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.template-manager-item-trigger {
+  flex: none;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.template-manager-editor {
+  display: flex;
+  min-inline-size: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+  border-block-start: 1px solid var(--color-stroke);
+}
+.template-manager-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 @container chat-settings (min-width: 48rem) {
   .template-manager { grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr); }
+  .template-manager-editor {
+    border-block-start: 0;
+    border-inline-start: 1px solid var(--color-stroke);
+  }
 }

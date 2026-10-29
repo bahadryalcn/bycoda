@@ -1291,9 +1291,10 @@ export const MarkdownPreview = memo(function MarkdownPreview({
       data-markdown-region="preview"
       className="markdown-preview h-full overflow-y-auto overscroll-none [overflow-anchor:none]"
     >
-      <div className="px-6 py-8">
+      <div className="mx-auto w-full max-w-[46rem] px-6 py-8">
         {header}
         <AgentMarkdown
+          className="text-ui-body! leading-[1.6]!"
           text={text}
           streaming={streaming}
           cwd={cwd}

@@ -540,7 +540,8 @@ it("marks kept results as out of date after a failed refresh", () => {
       onRefresh: () => {},
     }),
   );
-  expect(kept.querySelector('[role="status"]')?.textContent).toContain("out of date");
+  expect(kept.querySelector('[role="alert"]')?.textContent).toContain("rate limited");
+  expect(kept.querySelector('[role="alert"]')?.textContent).toContain("out of date");
   expect(kept.textContent).toContain("ci/build");
 });
 

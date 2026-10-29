@@ -17,6 +17,10 @@ import {
 // Keep native services out of these menu/input interaction tests.
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: vi.fn(() => null),
+  useProjectsDiffStats: vi.fn(() => []),
+}));
+vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),
@@ -1245,8 +1249,8 @@ describe("sidebar orchestration card", () => {
     act(() => render());
     expect(container.querySelectorAll("[data-session-card]")).toHaveLength(2);
     expect(card().dataset.orchestrationCard).toBe("true");
-    // The lead card carries the sidebar's ordinary active treatment.
-    expect(card().className).toContain("bg-selection");
+    // The lead card carries the sidebar's ordinary active treatment (the shared ActionHost selected fill).
+    expect(card().hasAttribute("data-selected")).toBe(true);
     // The lead names its own model, like every agent row beneath it.
     expect(card().textContent).toContain("GPT-5.6-Sol");
     expect(card().textContent).not.toContain("Orchestrator");
@@ -1840,8 +1844,10 @@ describe("collapsed rail Inbox actions", () => {
       Array.from(workspaceTabs.querySelectorAll('[role="tab"]'), (button) =>
         button.getAttribute("aria-label"),
       ),
-    ).toEqual(["Sessions", "Explorer", "Changes"]);
-    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>('[aria-label="Sessions"]')!;
+    ).toEqual(["Sessions, 1 working session", "Explorer", "Changes"]);
+    const sessionsTab = workspaceTabs.querySelector<HTMLButtonElement>(
+      '[aria-label^="Sessions"]',
+    )!;
     expect(sessionsTab.getAttribute("aria-selected")).toBe("true");
     expect(sessionsTab.textContent).toContain("Sessions");
     expect(sessionsTab.querySelector("[data-workspace-working-count]")?.textContent).toBe("1");
@@ -1895,7 +1901,7 @@ describe("collapsed rail Inbox actions", () => {
         '[data-compact-project-rail] button[aria-label="Workspace"]',
       )!;
     const drawerTab = (label: string) =>
-      drawer()!.querySelector<HTMLButtonElement>(`[role="tab"][aria-label="${label}"]`)!;
+      drawer()!.querySelector<HTMLButtonElement>(`[role="tab"][aria-label^="${label}"]`)!;
     const expectDrawerDismissed = () => {
       expect(drawer()?.dataset.sidebarDrawer).toBe("closing");
       expect(drawer()?.inert).toBe(true);
@@ -2070,14 +2076,19 @@ describe("collapsed rail Inbox actions", () => {
     props.onOpenProject = vi.fn();
     await act(async () => render());
 
-    const changes = container.querySelector<HTMLButtonElement>('button[aria-label="Changes +3"]')!;
+    // The tab name states the changed-file count and the line churn separately.
+    const changesLabel = "Changes, 1 changed file, 3 lines added";
+    const changes = container.querySelector<HTMLButtonElement>(
+      `button[aria-label="${changesLabel}"]`,
+    )!;
     expect(changes).not.toBeNull();
     expect(changes.closest('[role="tablist"]')?.closest("aside")).not.toBeNull();
     expect(changes.textContent).toContain("Changes");
-    expect(changes.title).toBe("Changes +3");
+    expect(changes.title).toBe(changesLabel);
     expect(changes.getAttribute("role")).toBe("tab");
+    expect(changes.querySelector('[role="img"][aria-label="1 changed file"]')).not.toBeNull();
     expect(
-      container.querySelector('[data-compact-project-rail] button[aria-label="Changes +3"]'),
+      container.querySelector(`[data-compact-project-rail] button[aria-label="${changesLabel}"]`),
     ).toBeNull();
   });
 

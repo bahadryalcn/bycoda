@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Attachment } from "../../sessions/model/session";
 import type { RemoteAttachment } from "./protocol";
-import { remoteRequest } from "./connections";
+import { remoteRequest as requestHost } from "./connections";
 import {
   ATTACHMENT_CHUNK_BYTES,
   MAX_ATTACHMENT_BYTES,
@@ -26,6 +26,9 @@ export async function uploadRemoteAttachments(
     onProgress?: (id: string, offset: number, size: number) => void;
   } = {},
 ): Promise<RemoteAttachment[]> {
+  const remoteRequest = <T>(id: string, method: string, params: unknown): Promise<T> => options.environmentId
+    ? requestHost<T>(id, method, params, false, false, options.environmentId)
+    : requestHost<T>(id, method, params);
   if (attachments.length > 20) throw new Error("Too many attachments");
   if (options.ownership) {
     if (!options.ownershipSource) throw new Error("Missing attachment ownership source");

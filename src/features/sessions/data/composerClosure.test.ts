@@ -36,6 +36,160 @@ function fixture() {
 }
 afterEach(() => vi.useRealTimers());
 
+it("keeps an original non-replayable action charged through finish and the later capture ACK", async () => {
+  const f = fixture();
+  const ack = deferred();
+  f.publish.mockImplementation(async () => ack.promise);
+  const action = f.lease.admitAction()!;
+  expect(action).not.toBeNull();
+  expect(f.lease.pending).toBe(true);
+  const closure = f.beginComposerClosure(["a"], { owner: f.owner });
+  expect(f.lease.admitAction()).toBeNull();
+  let complete = false;
+  const capture = closure.captureAndFlush().then((value) => {
+    complete = true;
+    return value;
+  });
+  action.apply(() => f.lease.mutate(() => f.set({ ...empty(), text: "original action" })));
+  expect(f.publish).not.toHaveBeenCalled();
+  expect(complete).toBe(false);
+  action.finish();
+  action.finish();
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
+  expect(complete).toBe(false);
+  expect(() => action.apply(() => f.set(empty()))).toThrow("retired");
+  ack.resolve();
+  expect((await capture).snapshots[0].snapshot.text).toBe("original action");
+  expect(f.observation().active).toBe(0);
+  closure.reopen(f.owner);
+});
+
+it("never puts an action effect or its unknown exception into draft preparation retries", async () => {
+  const f = fixture();
+  const action = f.lease.admitAction()!;
+  const effect = vi.fn(() => {
+    throw new Error("effect outcome unknown");
+  });
+  expect(() => action.apply(effect)).toThrow("effect outcome unknown");
+  action.finish();
+  await vi.waitFor(() => expect(f.observation().active).toBe(0));
+  expect(f.publish).not.toHaveBeenCalled();
+  f.publish.mockRejectedValueOnce(new Error("draft ACK unknown"));
+  await expect(f.lease.prepare(async () => {})).rejects.toThrow("draft ACK unknown");
+  await f.lease.retryFailed();
+  await f.lease.retryFailed();
+  expect(effect).toHaveBeenCalledOnce();
+  expect(f.publish).toHaveBeenCalledTimes(2);
+});
+
+it("restricts action lineage to its original binding and synchronous application", async () => {
+  const f = fixture();
+  const other = f.registerMountedComposer({ sessionId: "b", snapshot: empty });
+  const action = f.lease.admitAction()!;
+  const closure = f.beginComposerClosure("profile", { owner: f.owner });
+  const afterAwait = action.apply(() => {
+    expect(f.lease.canMutate()).toBe(true);
+    expect(f.lease.publishCache(() => {})).toBe(true);
+    expect(other.canMutate()).toBe(false);
+    return Promise.resolve().then(() => {
+      expect(f.lease.canMutate()).toBe(false);
+      expect(f.lease.publishCache(() => {})).toBe(false);
+      expect(() => f.lease.mutate(() => {})).toThrow("closed");
+    });
+  });
+  await afterAwait;
+  expect(f.lease.pending).toBe(true);
+  action.finish();
+  await vi.waitFor(() => expect(f.observation().active).toBe(0));
+  closure.reopen(f.owner);
+});
+
+it("shares bounded preparation slots with actions and releases only actual settled capacity", async () => {
+  const f = fixture();
+  const actions = Array.from({ length: 16 }, () => f.lease.admitAction()!);
+  expect(actions.every(Boolean)).toBe(true);
+  expect(f.lease.admitAction()).toBeNull();
+  const refused = vi.fn(async () => {});
+  await expect(f.lease.prepare(refused)).rejects.toMatchObject({ code: "capacity" });
+  expect(refused).not.toHaveBeenCalled();
+  actions[0].finish();
+  await vi.waitFor(() => expect(f.observation().active).toBe(15));
+  await f.lease.prepare(refused);
+  expect(refused).toHaveBeenCalledOnce();
+  for (const action of actions) action.finish();
+  await vi.waitFor(() => expect(f.observation().active).toBe(0));
+});
+
+it("retains actual action work through retirement without granting a disposed view mutation", async () => {
+  const f = fixture();
+  const action = f.lease.admitAction()!;
+  let retired = false;
+  const retirement = f.lease.retire().then(() => {
+    retired = true;
+  });
+  expect(f.lease.admitAction()).toBeNull();
+  expect(() => action.apply(() => f.set(empty()))).toThrow("retired");
+  await Promise.resolve();
+  expect(retired).toBe(false);
+  expect(f.publish).not.toHaveBeenCalled();
+  action.finish();
+  await retirement;
+  expect(f.observation().active).toBe(0);
+});
+
+it("keeps original attempt settlement pending through its real Native draft acknowledgement", async () => {
+  const f = fixture();
+  const ack = deferred();
+  f.publish.mockImplementation(async () => ack.promise);
+  let settled!: Promise<void>;
+  let complete = false;
+  const work = f.lease.prepare(async (accepted) => {
+    settled = accepted.whenSettled!();
+    void settled.then(() => {
+      complete = true;
+    });
+    accepted.apply(() => f.set({ ...empty(), text: "accepted original" }));
+  });
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
+  expect(complete).toBe(false);
+  expect(f.lease.pending).toBe(true);
+  ack.resolve();
+  await work;
+  await settled;
+  expect(complete).toBe(true);
+  expect(f.lease.pending).toBe(false);
+});
+
+it("binds explicit preparation retries to separate actual per-attempt settlement", async () => {
+  const f = fixture();
+  const ack = deferred();
+  f.publish.mockImplementation(async () => ack.promise);
+  const completions: Promise<void>[] = [];
+  let attempts = 0;
+  await expect(
+    f.lease.prepare(async (accepted) => {
+      completions.push(accepted.whenSettled!());
+      if (++attempts === 1) throw new Error("actual preparation failed");
+      accepted.apply(() => f.set({ ...empty(), text: "original retry" }));
+    }),
+  ).rejects.toThrow("actual preparation failed");
+  await expect(completions[0]).rejects.toThrow("actual preparation failed");
+  const retry = f.lease.retryFailed();
+  await vi.waitFor(() => expect(f.publish).toHaveBeenCalledOnce());
+  expect(completions).toHaveLength(2);
+  expect(completions[1]).not.toBe(completions[0]);
+  let retrySettled = false;
+  void completions[1]!.then(() => {
+    retrySettled = true;
+  });
+  await Promise.resolve();
+  expect(retrySettled).toBe(false);
+  ack.resolve();
+  await retry;
+  await completions[1];
+  expect(retrySettled).toBe(true);
+});
+
 it("retains exact immutable whitespace, tags and mode independently of legacy empty serialization", async () => {
   const f = fixture();
   const value = {
@@ -258,6 +412,7 @@ it("a genuinely new module implementation retains old jobs while retiring old ad
   const held = deferred();
   let value = empty();
   const before = original.registerMountedComposer({ snapshot: () => value });
+  const action = before.admitAction()!;
   const operation = before.prepare(async (accepted) => {
     await held.promise;
     accepted.apply(() => {
@@ -266,17 +421,59 @@ it("a genuinely new module implementation retains old jobs while retiring old ad
   });
   const reloaded = await import("./composerClosure?mounted-implementation-reload");
   expect(before.canMutate()).toBe(false);
-  expect(reloaded.mountedComposerObservation().active).toBe(1);
+  expect(reloaded.mountedComposerObservation().active).toBe(2);
+  expect(() => action.apply(() => {})).toThrow("retired");
   const after = reloaded.registerMountedComposer({ snapshot: () => value });
+  expect(after.admitAction()).toBeNull();
   held.resolve();
   await operation;
   expect(after.canMutate()).toBe(true);
   const owner = {};
   const closure = reloaded.beginComposerClosure("profile", { owner });
-  expect(
-    (await closure.captureAndFlush()).snapshots.some((entry) => entry.snapshot.text === value.text),
-  ).toBe(true);
+  const capture = closure.captureAndFlush();
+  action.finish();
+  expect((await capture).snapshots.some((entry) => entry.snapshot.text === value.text)).toBe(true);
   closure.reopen(owner);
   await before.retire();
   await after.retire();
+});
+
+it("does not inspect a reused adapter's DOM or IME state after the original lease retired", async () => {
+  const registry = new PersistenceDrainRegistry();
+  const mounted = createMountedComposerRegistry({ registry, publish: async () => {} });
+  const snapshot = vi.fn(() => ({ ...empty(), text: "retired original raw" }));
+  const composing = vi.fn(() => false);
+  const lease = mounted.registerMountedComposer({ sessionId: "retired", snapshot, composing });
+  await lease.retire();
+  snapshot.mockClear().mockImplementation(() => {
+    throw new Error("foreign reused DOM read");
+  });
+  composing.mockClear().mockImplementation(() => {
+    throw new Error("foreign reused IME read");
+  });
+  const owner = {},
+    closure = mounted.beginComposerClosure(["retired"], { owner });
+  try {
+    expect((await closure.captureAndFlush()).snapshots[0].snapshot.text).toBe(
+      "retired original raw",
+    );
+    expect(() => closure.assertCurrent()).not.toThrow();
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(composing).not.toHaveBeenCalled();
+  } finally {
+    closure.reopen(owner);
+  }
+});
+
+it("does not erase a sparse-array length change while comparing retained immutable draft data", async () => {
+  const f = fixture();
+  f.set({ ...empty(), mcpTags: Array(1) });
+  const closure = f.beginComposerClosure(["a"], { owner: f.owner });
+  try {
+    await closure.captureAndFlush();
+    f.set(empty());
+    expect(() => closure.assertCurrent()).toThrow("changed");
+  } finally {
+    closure.reopen(f.owner);
+  }
 });

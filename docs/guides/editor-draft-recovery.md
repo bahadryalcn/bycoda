@@ -5,6 +5,12 @@ edited in a local file. This is separate from saving the file. A failed recovery
 copy does not repeat a filesystem write, and retrying the copy does not save the
 file. Keep the editor open when it says that the copy could not be confirmed.
 
+During Native checkpoint preparation, affected file editors can temporarily
+become read-only. An already accepted format or save can finish. Preparation does
+not force-save your edits or commit unfinished IME input; external file changes
+still arrive and can prevent that preparation from completing. Cancelling waits
+for Native to release the preparation before input reopens.
+
 If a saved copy already belongs to the current native window incarnation and
 document, choose **Restore draft** or **Use current document**. Restoring opens
 the recovered text as unsaved edits and retains the disk baseline from the copy.

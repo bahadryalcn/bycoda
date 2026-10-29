@@ -105,34 +105,44 @@ pub fn configure_child(
         .filter(|(_, suffix)| suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(grant) =
-        crate::remote::local_social_rpc(app, "social.access.issue", json!({"sessionId": primary}))
-    else {
+    let Ok(issuer) = crate::remote::NativeServiceChannel::connect(app) else {
         return;
     };
-    let Ok(grant) = crate::session_tools_bridge::register(
-        app,
-        session_id,
-        stamp,
-        crate::session_tools_bridge::Group::Social,
-        grant,
-    ) else {
+    let Ok(reply) = issuer.request("social.access.issue", json!({"sessionId":primary})) else {
         return;
     };
-    let Some(token) = grant.get("token").and_then(Value::as_str) else {
-        return;
-    };
-    let Some(endpoint) = grant.get("endpoint").and_then(Value::as_str) else {
-        return;
-    };
-    let Some(environment) = grant.get("environmentId").and_then(Value::as_str) else {
-        return;
-    };
-    command
-        .env("BYCODA_SOCIAL_TOKEN", token)
-        .env("BYCODA_SOCIAL_ENDPOINT", endpoint)
-        .env("BYCODA_SOCIAL_ENVIRONMENT", environment);
-    crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+    let _ = reply.project(|value| {
+        let mut grant = value.clone();
+        if grant.get("endpoint").is_none() {
+            grant["endpoint"] = json!(issuer.endpoint());
+        }
+        let grant = crate::session_tools_bridge::register_pinned(
+            app,
+            session_id,
+            stamp,
+            crate::session_tools_bridge::Group::Social,
+            grant,
+            issuer.clone(),
+        )?;
+        let token = grant
+            .get("token")
+            .and_then(Value::as_str)
+            .ok_or("Scoped tool token required")?;
+        let endpoint = grant
+            .get("endpoint")
+            .and_then(Value::as_str)
+            .ok_or("Scoped tool endpoint required")?;
+        let environment = grant
+            .get("environmentId")
+            .and_then(Value::as_str)
+            .ok_or("Scoped tool environment required")?;
+        command
+            .env("BYCODA_SOCIAL_TOKEN", token)
+            .env("BYCODA_SOCIAL_ENDPOINT", endpoint)
+            .env("BYCODA_SOCIAL_ENVIRONMENT", environment);
+        crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+        Ok(())
+    });
 }
 
 #[cfg(test)]

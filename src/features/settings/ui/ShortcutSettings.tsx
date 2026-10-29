@@ -1,4 +1,5 @@
-import { TextField } from "../../../shared/ui/TextField";
+import { SearchInput } from "../../../shared/ui/SearchInput";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { Button } from "../../../shared/ui/Button";
 import { Popover } from "../../../shared/ui/Popover";
@@ -6,7 +7,7 @@ import styles from "./ShortcutSettings.module.css";
 import { t, useLocale } from "../../../shared/i18n";
 import { invoke } from "@tauri-apps/api/core";
 
-import { RotateCcw, CircleHelp, ListFilter } from "../../../shared/ui/icons";
+import { RotateCcw, ListFilter } from "../../../shared/ui/icons";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -78,6 +79,10 @@ export function ShortcutEditor({
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const pending = useRef(false);
+  // Focus alone (Tab, programmatic focus) never starts capture; only a pointer press
+  // or Enter/Space on the recorder is an intentional start.
+  const intent = useRef(false);
+  const focusing = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState("");
   const held = useRef({
@@ -192,39 +197,65 @@ export function ShortcutEditor({
   }, [onApply, onDisable, recording]);
 
   return (
-    <div className={styles.editor} aria-busy={busy}>
-      <div className="flex items-center gap-0.5">
-        <ShortcutRecorder
-          label={t("Change {p0} shortcut", { p0: name })}
-          hideLabel
-          hideActions
-          platform={IS_MAC ? "mac" : "other"}
-          disabled={busy || disabled}
-          recording={recording}
-          displayKeys={
-            !recording && !busy && display && display !== t("Unassigned")
-              ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
-                  (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
-                )
-              : undefined
-          }
-          onRecordingChange={(next) => {
-            if (next) beginRecording();
-            else setRecording(false);
+    <div className={styles.editor} aria-busy={busy} data-capturing={recording || undefined}>
+      <div className={styles.control}>
+        <div
+          className={styles.recorder}
+          onPointerDownCapture={() => {
+            intent.current = true;
           }}
-          displayText={
-            busy
-              ? t("Saving…")
-              : recording
-                ? preview || t("Record shortcut")
-                : (display ?? t("Disabled"))
-          }
-        />
-        {resetVisible ? (
+          onKeyDownCapture={(event) => {
+            if (event.key === "Enter" || event.key === " ") intent.current = true;
+          }}
+          onFocusCapture={() => {
+            focusing.current = true;
+          }}
+          onFocus={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+          onBlur={() => {
+            focusing.current = false;
+            intent.current = false;
+          }}
+        >
+          <ShortcutRecorder
+            label={t("Change {p0} shortcut", { p0: name })}
+            hideLabel
+            hideActions
+            platform={IS_MAC ? "mac" : "other"}
+            disabled={busy || disabled}
+            recording={recording}
+            displayKeys={
+              !recording && !busy && display && display !== t("Unassigned")
+                ? (display.match(/[⌘⌃⌥⇧]|(?:Ctrl|Control|Alt|Shift|Win)\+|.+/g) ?? [display]).map(
+                    (key) => (key.length > 1 ? key.replace(/\+$/, "") : key),
+                  )
+                : undefined
+            }
+            onRecordingChange={(next) => {
+              if (!next) {
+                setRecording(false);
+                return;
+              }
+              if (focusing.current && !intent.current) return;
+              beginRecording();
+            }}
+            displayText={
+              busy
+                ? t("Saving…")
+                : recording
+                  ? preview || t("Record shortcut")
+                  : (display ?? t("Disabled"))
+            }
+          />
+        </div>
+        {resetVisible && !recording ? (
           <Button
             variant="ghost"
             iconOnly
             label={t("Reset {p0} shortcut", { p0: name })}
+            tooltip={t("Restore default")}
             disabled={busy || disabled}
             onClick={() => void run(onReset)}
           >
@@ -233,9 +264,19 @@ export function ShortcutEditor({
         ) : null}
       </div>
       {recording ? (
-        <p className={styles.hint} aria-live="polite">
-          {t("Del disables · Esc cancels")}
-        </p>
+        <div className={styles.captureHint} aria-live="polite">
+          <span className={styles.hint}>{t("Del disables · Esc cancels")}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setRecording(false);
+              setError(null);
+            }}
+          >
+            {t("Cancel")}
+          </Button>
+        </div>
       ) : null}
       {onFeedbackChange ? null : error ? (
         <SettingsFeedback state="error">{error}</SettingsFeedback>
@@ -424,11 +465,9 @@ export function KeybindingsPage() {
   const [category, setCategory] = useRetainedState("keybindings:category", "all");
   const [status, setStatus] = useRetainedState("keybindings:status", "all");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const pendingSave = useRef(false);
   const filterAnchor = useRef<HTMLButtonElement>(null);
-  const helpAnchor = useRef<HTMLButtonElement>(null);
   const [lastRevealed, setLastRevealed] = useState(revealed);
   if (revealed !== lastRevealed) {
     setLastRevealed(revealed);
@@ -503,162 +542,148 @@ export function KeybindingsPage() {
 
   return (
     <div className={styles.page}>
-      <Group
-        title={t("Shortcuts")}
-        layout="full"
-        description={t("Click a shortcut to record new keys. Changes save automatically.")}
-      >
-        <div className={styles.toolbar}>
-          <TextField
+      <div className={styles.band}>
+        <div className={styles.search}>
+          <SearchInput
             type="search"
-            label={t("Filter keybindings")}
-            hideLabel
+            appearance="field"
+            aria-label={t("Filter keybindings")}
+            placeholder={t("Filter keybindings")}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Filter keybindings")}
             spellCheck={false}
             autoComplete="off"
           />
-          <span className={styles.summary} role="status">
-            {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
-          </span>
-          <Button
-            ref={filterAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Filters")}
-            selected={filtered}
-            aria-expanded={filtersOpen}
-            aria-haspopup="dialog"
-            onClick={() => setFiltersOpen(!filtersOpen)}
-          >
-            <ListFilter aria-hidden strokeWidth={1.75} />
-          </Button>
-          <Button
-            ref={helpAnchor}
-            variant="ghost"
-            iconOnly
-            label={t("Shortcut help")}
-            aria-expanded={helpOpen}
-            aria-haspopup="dialog"
-            onClick={() => setHelpOpen(!helpOpen)}
-          >
-            <CircleHelp aria-hidden strokeWidth={1.75} />
-          </Button>
-          {filtersOpen ? (
-            <Popover
-              anchor={filterAnchor}
-              role="dialog"
-              aria-label={t("Filters")}
-              width={280}
-              autoFocus
-              onDismiss={() => setFiltersOpen(false)}
-            >
-              <div className={styles.popover}>
-                <span className="text-ui-secondary font-medium text-content">{t("Category")}</span>
-                <Select
-                  label={t("Category")}
-                  value={category}
-                  onChange={setCategory}
-                  options={[
-                    { value: "all", label: t("All categories") },
-                    ...categories.map((value) => ({ value, label: t(value) })),
-                  ]}
-                />
-                <span className="text-ui-secondary font-medium text-content">{t("Status")}</span>
-                <Select
-                  label={t("Status")}
-                  value={status}
-                  onChange={setStatus}
-                  options={[
-                    { value: "all", label: t("All bindings") },
-                    { value: "modified", label: t("Modified") },
-                    { value: "disabled", label: t("Disabled") },
-                    { value: "unassigned", label: t("Unassigned") },
-                  ]}
-                />
-                <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
-                  {t("Reset filters")}
-                </Button>
-              </div>
-            </Popover>
-          ) : null}
-          {helpOpen ? (
-            <Popover
-              anchor={helpAnchor}
-              role="dialog"
-              aria-label={t("Shortcut help")}
-              width={320}
-              autoFocus
-              onDismiss={() => setHelpOpen(false)}
-            >
-              <div className={styles.popover}>
-                <p>
-                  {t(
-                    "App shortcuts apply while this app is focused. Quick composer uses a global shortcut on this computer.",
-                  )}
-                </p>
-                <p>
-                  {t(
-                    "Conflicting shortcuts are rejected. Press Escape to cancel, Delete to disable, or use Reset to restore the default.",
-                  )}
-                </p>
-              </div>
-            </Popover>
-          ) : null}
         </div>
-        {filtered ? (
-          <p className={styles.activeSummary}>
+        <Button
+          ref={filterAnchor}
+          variant="ghost"
+          iconOnly
+          label={t("Filters")}
+          tooltip={t("Filters")}
+          selected={filtered}
+          aria-expanded={filtersOpen}
+          aria-haspopup="dialog"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <ListFilter aria-hidden strokeWidth={1.75} />
+        </Button>
+        <InfoPopover label={t("Shortcut help")}>
+          <p>
+            {t(
+              "App shortcuts apply while this app is focused. Quick composer uses a global shortcut on this computer.",
+            )}
+          </p>
+          <p>
+            {t(
+              "Click a shortcut to record new keys. Conflicting shortcuts are rejected. Press Escape to cancel, Delete to disable, or use Reset to restore the default.",
+            )}
+          </p>
+        </InfoPopover>
+        <span className={styles.summary} role="status">
+          {t("Showing {p0} of {p1} bindings", { p0: rows.length, p1: allRows.length })}
+        </span>
+        {filtersOpen ? (
+          <Popover
+            anchor={filterAnchor}
+            role="dialog"
+            aria-label={t("Filters")}
+            width={280}
+            autoFocus
+            flow="scroll"
+            onDismiss={() => setFiltersOpen(false)}
+          >
+            <div className={styles.popover}>
+              <span className="text-ui-secondary font-medium text-content">{t("Category")}</span>
+              <Select
+                label={t("Category")}
+                value={category}
+                onChange={setCategory}
+                options={[
+                  { value: "all", label: t("All categories") },
+                  ...categories.map((value) => ({ value, label: t(value) })),
+                ]}
+              />
+              <span className="text-ui-secondary font-medium text-content">{t("Status")}</span>
+              <Select
+                label={t("Status")}
+                value={status}
+                onChange={setStatus}
+                options={[
+                  { value: "all", label: t("All bindings") },
+                  { value: "modified", label: t("Modified") },
+                  { value: "disabled", label: t("Disabled") },
+                  { value: "unassigned", label: t("Unassigned") },
+                ]}
+              />
+              <Button variant="ghost" onClick={resetFilters} disabled={!filtered}>
+                {t("Reset filters")}
+              </Button>
+            </div>
+          </Popover>
+        ) : null}
+      </div>
+      {filtered ? (
+        <div className={styles.activeFilters}>
+          <span>
             {[
               category !== "all" ? `${t("Category")}: ${t(category)}` : null,
-              status !== "all" ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}` : null,
-            ].filter(Boolean).join(" · ")}
-          </p>
-        ) : null}
-        <div className={styles.list}>
-          {rows.length === 0 ? (
-            <SettingsFeedback
-              state="empty"
-              action={
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    setQuery("");
-                    resetFilters();
-                  }}
-                >
-                  {t("Clear search and filters")}
-                </Button>
-              }
-            >
-              {t("No matching bindings")}
-            </SettingsFeedback>
-          ) : (
-            categories.map((group) => {
-              const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
-              if (!entries.length) return null;
-              return (
-                <section key={group} aria-label={t(group)}>
-                  <h3 className={styles.category}>
-                    {t(group)} <span>{entries.length}</span>
-                  </h3>
-                  {entries.map((row) => (
-                    <KeybindingSettingsRow
-                      key={row.command}
-                      row={row}
-                      override={overrides[row.command]}
-                      modified={isModified(row.command)}
-                      saving={saving}
-                      onSave={save}
-                      onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
-                    />
-                  ))}
-                </section>
-              );
-            })
-          )}
+              status !== "all"
+                ? `${t("Status")}: ${t(status === "modified" ? "Modified" : status === "disabled" ? "Disabled" : "Unassigned")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+          <Button variant="ghost" size="sm" onClick={resetFilters}>
+            {t("Reset filters")}
+          </Button>
         </div>
-      </Group>
+      ) : null}
+      <div className={styles.list}>
+        {rows.length === 0 ? (
+          <SettingsFeedback
+            state="empty"
+            action={
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setQuery("");
+                  resetFilters();
+                }}
+              >
+                {t("Clear search and filters")}
+              </Button>
+            }
+          >
+            {t("No matching bindings")}
+          </SettingsFeedback>
+        ) : (
+          categories.map((group) => {
+            const entries = rows.filter((row) => row.command.startsWith(`${group}:`));
+            if (!entries.length) return null;
+            return (
+              <Group
+                key={group}
+                title={t(group)}
+                action={<span className={styles.groupCount}>{entries.length}</span>}
+              >
+                {entries.map((row) => (
+                  <KeybindingSettingsRow
+                    key={row.command}
+                    row={row}
+                    override={overrides[row.command]}
+                    modified={isModified(row.command)}
+                    saving={saving}
+                    onSave={save}
+                    onSaved={() => setOverrides({ ...loadKeybindingOverrides() })}
+                  />
+                ))}
+              </Group>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

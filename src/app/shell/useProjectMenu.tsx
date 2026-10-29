@@ -1,4 +1,5 @@
 import { Alert } from "../../shared/ui/Alert";
+import { NEW_LOCAL_HOST_SESSION, newLocalHostSession } from "../../features/connections/model/newLocalHostSession";
 import { t, useT } from "../../shared/i18n";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -418,6 +419,8 @@ export function useProjectMenu({
     | null
   >(null);
   const [menuError, setMenuError] = useState<string | null>(null);
+  const [localHostCreating, setLocalHostCreating] = useState(false);
+  const localHostCreationPending = useRef(false);
   const [externalEditors, setExternalEditors] = useState<ExternalEditor[] | null>(null);
   const trigger = useRef<HTMLElement | null>(null);
   // The menus render straight from storage; re-render when it changes.
@@ -547,6 +550,19 @@ export function useProjectMenu({
   const onPick = (action: string) => {
     if (!projectMenu) return;
     const { path, projectKey: key } = projectMenu;
+    if (action === "new-local-host-session") {
+      if (localHostCreationPending.current) return false;
+      localHostCreationPending.current = true;
+      setLocalHostCreating(true);
+      void newLocalHostSession(path).then((session) => {
+        window.dispatchEvent(new CustomEvent(NEW_LOCAL_HOST_SESSION, { detail: session }));
+        setProjectMenu(null);
+      }).catch((error) => setMenuError(String(error))).finally(() => {
+        localHostCreationPending.current = false;
+        setLocalHostCreating(false);
+      });
+      return false;
+    }
     if (action === "rename-folder") {
       setRenamingFolder(path);
       return;
@@ -688,6 +704,9 @@ export function useProjectMenu({
             : undefined
         }
         extraItems={[
+          ...(isLocalProject(projectMenu.path)
+            ? [{ id: "new-local-host-session", label: localHostCreating ? t("Connecting…") : t("New conversation on this computer's Host"), icon: AppWindow, disabled: localHostCreating }]
+            : []),
           ...(projectMenu.onSelectForBulk
             ? [{ id: "select-for-bulk", label: t("Select"), icon: CheckList }]
             : []),

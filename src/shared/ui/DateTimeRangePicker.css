@@ -6,8 +6,6 @@
 .date-time-range-panel {
   inline-size: min(24rem, calc(100vw - 24px));
   max-inline-size: 100%;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 .date-time-range-panel form {
   display: grid;
@@ -36,4 +34,15 @@
 /* Both instants stay aligned as digits change. */
 .date-time-range-value {
   font-variant-numeric: tabular-nums;
+}
+/* A narrow container shrinks the trigger and clips the range; the full range stays in the title and name. */
+.date-time-range-trigger {
+  max-inline-size: 100%;
+  min-inline-size: 0;
+}
+.date-time-range-value {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

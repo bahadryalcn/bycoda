@@ -129,7 +129,7 @@ export function GitStashSection({ cwd, enabled, hasChanges, onOpenCommit }: Prop
               strokeWidth={1.75}
             />
           )}
-          <span className="min-w-0 truncate text-xs font-medium text-[var(--ui-text-secondary)]">
+          <span className="min-w-0 truncate text-ui-caption font-medium text-(--ui-text-secondary)">
             {t("Stashes")}
           </span>
           <span className="text-(length:--ui-font-caption) tabular-nums text-(--ui-text-secondary)">

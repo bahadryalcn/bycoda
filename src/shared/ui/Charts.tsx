@@ -8,6 +8,7 @@ import {
 } from "./arc/activity-heatmap/activity-heatmap";
 
 export type { LineChartDatum, LineChartSeries } from "./arc/line-chart/line-chart";
+export type { BarChartDatum } from "./arc/bar-chart/bar-chart";
 export function LineChart(props: LineChartProps) {
   const t = useT();
   return (
@@ -23,11 +24,12 @@ export function LineChart(props: LineChartProps) {
 export function BarChart(props: BarChartProps) {
   const t = useT();
   return (
-    <div className="bycoda-arc bycoda-arc-chart">
+    <div className="bycoda-arc bycoda-arc-chart min-w-0">
       <ArcBarChart
         categoryLabel={t("Time")}
         averageLabel={t("Average")}
         valueLabel={t("Value")}
+        seriesColumnLabel={t("Series")}
         {...props}
       />
     </div>

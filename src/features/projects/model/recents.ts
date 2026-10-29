@@ -199,12 +199,19 @@ export function archiveProject(path: string): RecentProject[] {
   return recents;
 }
 
-export function loadArchivedProjects(): ArchivedProject[] {
+/**
+ * Archived-project read with its outcome. `unavailable` means the stored value
+ * could not be read or is not a list, which is different from a genuinely empty
+ * archive; callers must not present it as "No archived projects".
+ */
+export type ArchivedProjectsRead = { state: "ready" | "unavailable"; items: ArchivedProject[] };
+
+export function readArchivedProjects(): ArchivedProjectsRead {
   try {
     const raw = localStorage.getItem(ARCHIVED_KEY);
-    if (!raw) return [];
+    if (!raw) return { state: "ready", items: [] };
     const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) return { state: "unavailable", items: [] };
     const out: ArchivedProject[] = [];
     const seen = new Set<string>();
     for (const item of parsed) {
@@ -219,10 +226,14 @@ export function loadArchivedProjects(): ArchivedProject[] {
         typeof rec.archivedAt === "number" && Number.isFinite(rec.archivedAt) ? rec.archivedAt : 0;
       out.push({ path, archivedAt });
     }
-    return out;
+    return { state: "ready", items: out };
   } catch {
-    return [];
+    return { state: "unavailable", items: [] };
   }
+}
+
+export function loadArchivedProjects(): ArchivedProject[] {
+  return readArchivedProjects().items;
 }
 
 export function subscribeArchivedProjects(onChange: () => void): () => void {

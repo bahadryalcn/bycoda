@@ -1,68 +1,80 @@
 //! Device-authenticated TCP relay for opening an owning host's dev app in this PC's browser.
 //! Credentials never enter the renderer, browser URL, or forwarded HTTP request.
-use super::{read, rpc, store_path, RemoteConnections, StoredMachine};
+use super::native_gateway::{NativeGatewayChannel, NativeGatewayReply};
+use super::RemoteConnections;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Mutex, OnceLock, Weak,
 };
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, State};
 
 const CHUNK: usize = 256 * 1024;
+const HEADER_LIMIT: usize = 64 * 1024;
 const IDLE: Duration = Duration::from_secs(15 * 60);
 struct Gateway {
     port: u16,
     alive: AtomicBool,
     active: AtomicUsize,
     touched: Mutex<Instant>,
+    channel: Weak<NativeGatewayChannel>,
 }
 static GATEWAYS: OnceLock<Mutex<HashMap<String, Arc<Gateway>>>> = OnceLock::new();
 
 #[derive(Clone)]
 struct Access {
-    machine: StoredMachine,
-    endpoint: String,
-    store: PathBuf,
+    channel: Arc<NativeGatewayChannel>,
     params: Value,
     target_origin: String,
 }
 
 impl Access {
     fn current(&self) -> bool {
-        read(&self.store).is_ok_and(|machines| {
-            machines.iter().any(|machine| {
-                machine.id == self.machine.id
-                    && machine.environment_id == self.machine.environment_id
-                    && machine.token == self.machine.token
-                    && machine.endpoint == self.machine.endpoint
-                    && machine.ssh == self.machine.ssh
-            })
-        })
+        self.channel.is_current()
     }
-    fn call(&self, method: &str, mut extra: Value) -> Result<Value, String> {
-        if !self.current() {
-            return Err(
-                "The owning computer is disconnected. Reconnect it and open the link again.".into(),
-            );
-        }
+    fn call(&self, method: &str, mut extra: Value) -> Result<NativeGatewayReply, String> {
         let params = extra
             .as_object_mut()
             .ok_or("Invalid development server request")?;
         params.insert("projectId".into(), self.params["projectId"].clone());
-        rpc(
-            &self.endpoint,
-            &self.machine.token,
-            Some(&self.machine.environment_id),
-            method,
-            extra,
-        )
+        self.channel.request(method, extra)
     }
+    fn write(&self, stream: &str, bytes: &[u8]) -> Result<(), String> {
+        self.call(
+            "devServers.bridgeWrite",
+            json!({ "streamId": stream, "data": STANDARD.encode(bytes) }),
+        )?
+        .project(|value| {
+            if value["written"].as_u64() != Some(bytes.len() as u64) {
+                return Err("The development server did not acknowledge the original bytes".into());
+            }
+            Ok(())
+        })
+    }
+}
+
+fn read_chunk(value: &Value) -> Result<(Vec<u8>, bool), String> {
+    let data = value["data"]
+        .as_str()
+        .ok_or("Host returned invalid development server data")?;
+    if data.len() > CHUNK.div_ceil(3) * 4 {
+        return Err("Host returned too much development server data".into());
+    }
+    let bytes = STANDARD
+        .decode(data)
+        .map_err(|_| "Host returned invalid development server data")?;
+    if bytes.len() > CHUNK || STANDARD.encode(&bytes) != data {
+        return Err("Host returned invalid or oversized development server bytes".into());
+    }
+    let ended = value["ended"]
+        .as_bool()
+        .ok_or("Host returned no development server stream state")?;
+    Ok((bytes, ended))
 }
 
 fn timeout(error: &std::io::Error) -> bool {
@@ -218,35 +230,44 @@ fn first_request(
         }
         bytes.extend_from_slice(&part[..count]);
         if let Some(end) = bytes.windows(4).position(|part| part == b"\r\n\r\n") {
+            if end > HEADER_LIMIT {
+                return Err("Browser headers are too large".into());
+            }
             return browser_request(&bytes, end, port, target_origin);
         }
-        if bytes.len() > 64 * 1024 {
+        if bytes.len() > HEADER_LIMIT {
             return Err("Browser headers are too large".into());
         }
     }
 }
 
 fn connection(mut socket: TcpStream, access: Access, gateway: Arc<Gateway>) {
-    let result = relay(&mut socket, &access, &gateway);
-    if result.is_err() {
+    let mut response_started = false;
+    let result = relay(&mut socket, &access, &gateway, &mut response_started);
+    if result.is_err() && !response_started {
         let _ = socket.write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nThe private development server connection is unavailable. Reopen the link from bycoda.\n");
     }
     let _ = socket.shutdown(Shutdown::Both);
     gateway.active.fetch_sub(1, Ordering::SeqCst);
 }
 
-fn relay(socket: &mut TcpStream, access: &Access, gateway: &Arc<Gateway>) -> Result<(), String> {
+fn relay(
+    socket: &mut TcpStream,
+    access: &Access,
+    gateway: &Arc<Gateway>,
+    response_started: &mut bool,
+) -> Result<(), String> {
     let first = first_request(socket, gateway.port, &access.target_origin)?;
     let opened = access.call("devServers.bridgeOpen", access.params.clone())?;
-    let stream = opened["streamId"]
-        .as_str()
-        .ok_or("Host returned no development server connection")?
-        .to_owned();
+    let stream = opened.project(|value| {
+        value["streamId"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| "Host returned no development server connection".into())
+    })?;
     let result = (|| {
-        access.call(
-            "devServers.bridgeWrite",
-            json!({ "streamId": stream, "data": STANDARD.encode(first.data) }),
-        )?;
+        access.write(&stream, &first.data)?;
         socket
             .set_read_timeout(Some(Duration::from_secs(1)))
             .map_err(|e| e.to_string())?;
@@ -283,7 +304,12 @@ fn relay(socket: &mut TcpStream, access: &Access, gateway: &Arc<Gateway>) -> Res
                 match upload.read(&mut buffer[..limit]) {
                     Ok(0) => break,
                     Ok(count) => {
-                        if writer_access.call("devServers.bridgeWrite", json!({ "streamId": writer_stream, "data": STANDARD.encode(&buffer[..count]) })).is_err() { break; }
+                        if writer_access
+                            .write(&writer_stream, &buffer[..count])
+                            .is_err()
+                        {
+                            break;
+                        }
                         if !first.websocket {
                             remaining -= count;
                         }
@@ -300,29 +326,32 @@ fn relay(socket: &mut TcpStream, access: &Access, gateway: &Arc<Gateway>) -> Res
         });
         let mut failure = None;
         let mut response_headers = Vec::new();
+        let mut response_replies = Vec::new();
         let mut headers_sent = false;
         while !finished.load(Ordering::SeqCst) && gateway.alive.load(Ordering::SeqCst) {
             match access.call("devServers.bridgeRead", json!({ "streamId": stream })) {
-                Ok(value) => {
-                    let data = value["data"].as_str().unwrap_or_default();
-                    if data.len() > CHUNK.div_ceil(3) * 4 {
-                        failure = Some("Host returned too much development server data".into());
-                        break;
-                    }
-                    let bytes = match STANDARD.decode(data) {
-                        Ok(bytes) => bytes,
-                        Err(_) => {
-                            failure = Some("Host returned invalid development server data".into());
+                Ok(reply) => {
+                    let (bytes, ended) = match reply.project(read_chunk) {
+                        Ok(value) => value,
+                        Err(error) => {
+                            failure = Some(error);
                             break;
                         }
                     };
                     if !bytes.is_empty() {
                         if !headers_sent {
                             response_headers.extend_from_slice(&bytes);
+                            response_replies.push(reply.clone());
                             if let Some(end) = response_headers
                                 .windows(4)
                                 .position(|value| value == b"\r\n\r\n")
                             {
+                                if end > HEADER_LIMIT {
+                                    failure = Some(
+                                        "Development server response headers are too large".into(),
+                                    );
+                                    break;
+                                }
                                 let header = String::from_utf8_lossy(&response_headers[..end]);
                                 let switching = header.lines().next().is_some_and(|line| {
                                     line.split_whitespace().nth(1) == Some("101")
@@ -361,6 +390,15 @@ fn relay(socket: &mut TcpStream, access: &Access, gateway: &Arc<Gateway>) -> Res
                                     })
                                     .collect::<Vec<_>>()
                                     .join("\r\n");
+                                let refs = response_replies.iter().collect::<Vec<_>>();
+                                let _admission = match NativeGatewayReply::admit_many(&refs) {
+                                    Ok(value) => value,
+                                    Err(error) => {
+                                        failure = Some(error);
+                                        break;
+                                    }
+                                };
+                                *response_started = true;
                                 if socket
                                     .write_all(header.as_bytes())
                                     .and_then(|_| socket.write_all(b"\r\n\r\n"))
@@ -370,21 +408,31 @@ fn relay(socket: &mut TcpStream, access: &Access, gateway: &Arc<Gateway>) -> Res
                                     break;
                                 }
                                 response_headers.clear();
+                                response_replies.clear();
                                 headers_sent = true;
-                            } else if response_headers.len() > 64 * 1024 {
+                            } else if response_headers.len() > HEADER_LIMIT {
                                 failure = Some(
                                     "Development server response headers are too large".into(),
                                 );
                                 break;
                             }
-                        } else if socket.write_all(&bytes).is_err() {
-                            break;
+                        } else {
+                            let _admission = match reply.admit() {
+                                Ok(value) => value,
+                                Err(error) => {
+                                    failure = Some(error);
+                                    break;
+                                }
+                            };
+                            if socket.write_all(&bytes).is_err() {
+                                break;
+                            }
                         }
                         if let Ok(mut touched) = gateway.touched.lock() {
                             *touched = Instant::now();
                         }
                     }
-                    if value["ended"].as_bool() == Some(true) {
+                    if ended {
                         break;
                     }
                 }
@@ -425,64 +473,38 @@ pub fn remote_dev_server_url(
     {
         return Err("Private browser access requires a discovered HTTP development server. Use the host preview for HTTPS.".into());
     }
-    let store = store_path(&app)?;
-    let machine = {
-        let _guard = state
-            .store
-            .lock()
-            .map_err(|_| "Connection store is locked")?;
-        read(&store)?
-            .into_iter()
-            .find(|m| m.id == machine_id)
-            .ok_or("The owning computer is not connected")?
-    };
-    if machine.environment_id != environment_id {
-        return Err(
-            "The owning computer changed. Reconnect this project's original computer.".into(),
-        );
-    }
-    let endpoint = match &machine.ssh {
-        Some(target) => {
-            state
-                .tunnels
-                .endpoint(&machine.id, &machine.environment_id, target, true)?
-                .endpoint
-        }
-        None => machine.endpoint.clone(),
-    };
+    let channel = NativeGatewayChannel::connect(&app, &state, &machine_id, &environment_id)?;
     let params = json!({ "projectId": project_id, "id": server_id, "identity": identity, "port": port, "address": address });
     let mut access = Access {
-        machine,
-        endpoint,
-        store,
+        channel,
         params,
         target_origin: String::new(),
     };
     // Repeat discovery on the owner before reusing even an existing local listener.
     let checked = access.call("devServers.bridgeCheck", access.params.clone())?;
-    access.target_origin = url::Url::parse(
-        checked["url"]
-            .as_str()
-            .ok_or("The development server has no URL")?,
-    )
-    .map_err(|_| "The development server URL is invalid")?
-    .origin()
-    .ascii_serialization();
+    access.target_origin = checked.project(|value| {
+        Ok(url::Url::parse(
+            value["url"]
+                .as_str()
+                .ok_or("The development server has no URL")?,
+        )
+        .map_err(|_| "The development server URL is invalid")?
+        .origin()
+        .ascii_serialization())
+    })?;
     // Authentication replacement must never reuse a listener carrying the previous credential.
-    let key = json!([
-        access.machine.id,
-        access.machine.environment_id,
-        access.machine.token,
-        access.machine.ssh,
-        access.endpoint,
-        access.params
-    ])
-    .to_string();
+    let key = json!([access.channel.key(), access.params]).to_string();
     let mut gateways = GATEWAYS
         .get_or_init(Mutex::default)
         .lock()
         .map_err(|_| "Development server access is unavailable")?;
-    gateways.retain(|_, gate| gate.alive.load(Ordering::SeqCst));
+    gateways.retain(|_, gate| {
+        gate.alive.load(Ordering::SeqCst)
+            && gate
+                .channel
+                .upgrade()
+                .is_some_and(|channel| channel.is_current())
+    });
     let gateway = if let Some(gateway) = gateways.get(&key) {
         gateway.clone()
     } else {
@@ -496,6 +518,7 @@ pub fn remote_dev_server_url(
             alive: AtomicBool::new(true),
             active: AtomicUsize::new(0),
             touched: Mutex::new(Instant::now()),
+            channel: Arc::downgrade(&access.channel),
         });
         let running = gateway.clone();
         std::thread::spawn(move || {
@@ -543,6 +566,7 @@ pub fn remote_dev_server_url(
         .map_err(|_| "Invalid local browser address")?;
     url.set_port(Some(gateway.port))
         .map_err(|_| "Invalid local browser port")?;
+    let _admission = checked.admit()?;
     Ok(url.into())
 }
 
@@ -603,3 +627,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "dev_server_access_ws_tests.rs"]
+mod ws_tests;

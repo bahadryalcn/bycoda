@@ -917,6 +917,20 @@ pub struct Tunnels {
     exit_sink: Mutex<Option<ExitSink>>,
 }
 impl Tunnels {
+    /// A retained lease is not authority after its registry slot is replaced.
+    /// Release both locks before performing any RPC or browser socket IO.
+    pub(crate) fn is_current(&self, id: &str, lease: &TunnelLease) -> bool {
+        let Some(slot) = self.slots().get(id).cloned() else {
+            return false;
+        };
+        if !Arc::ptr_eq(&slot, &lease.slot) {
+            return false;
+        }
+        let Ok(current) = slot.lock() else {
+            return false;
+        };
+        current.generation == lease.generation && current.tunnel.as_ref().is_some_and(Tunnel::alive)
+    }
     fn slots(&self) -> std::sync::MutexGuard<'_, HashMap<String, Arc<Mutex<Slot>>>> {
         self.slots.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -1393,6 +1407,34 @@ mod tests {
         assert!(error.starts_with("Machine is unreachable"));
         let slot = tunnels.slots().get("m").unwrap().clone();
         assert!(slot.lock().unwrap().tunnel.is_none());
+    }
+    #[test]
+    fn a_pinned_lease_cannot_authorize_a_replaced_removed_or_reconnected_tunnel() {
+        let tunnels = Tunnels::default();
+        let target = SshTarget {
+            target: "fixture@host".into(),
+            port: None,
+            remote_port: 3774,
+            alternate: None,
+            host_key_alias: None,
+            identity_file: None,
+        };
+        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 4321));
+        let lease = tunnels.endpoint("m", "env", &target, false).unwrap();
+        assert!(tunnels.is_current("m", &lease));
+        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 4321));
+        assert!(
+            !tunnels.is_current("m", &lease),
+            "even equal port/generation has a different actual slot"
+        );
+        let current = tunnels.endpoint("m", "env", &target, false).unwrap();
+        assert!(tunnels.is_current("m", &current));
+        tunnels.remove("m");
+        assert!(!tunnels.is_current("m", &current));
+        tunnels.insert("m".into(), "env", Tunnel::adopt(long_lived_child(), 4321));
+        let clearing = tunnels.endpoint("m", "env", &target, false).unwrap();
+        tunnels.clear();
+        assert!(!tunnels.is_current("m", &clearing));
     }
     #[test]
     fn a_missing_tunnel_is_not_started_when_connecting_is_not_allowed() {

@@ -857,6 +857,7 @@ export const JsonViewer = forwardRef<HTMLDivElement, JsonViewerProps>(function J
                   aria-label={describe(row)}
                   className={styles.row}
                   data-kind={row.kind}
+                  data-copyable={(copyable && row.kind === "node") || undefined}
                   data-active={isActive || undefined}
                   style={{ "--level": row.level - 1 } as CSSProperties}
                   initial={{ height: 0, opacity: 0, overflow: "hidden" }}

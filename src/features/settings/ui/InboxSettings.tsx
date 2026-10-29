@@ -4,10 +4,14 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 
 import { useCallback, useContext, useEffect, useId, useRef, useState } from "react";
-import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
+import { InboxScopeCollection } from "./InboxScopeCollection";
 
 import { JiraSettings } from "./JiraSettings";
-import { InboxConnectionStatus, InboxConnectionError } from "./InboxConnectionStatus";
+import {
+  InboxConnectionStatus,
+  InboxConnectionError,
+  useConnectionVerification,
+} from "./InboxConnectionStatus";
 
 import { InboxProviderMark } from "../../inbox/ui/InboxProviderMark";
 
@@ -254,6 +258,7 @@ export function GithubSettings() {
 
 export function GitlabSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [url, setUrl] = useState("https://gitlab.com");
   const [savedUrl, setSavedUrl] = useState("https://gitlab.com");
   const [editing, setEditing] = useState(false);
@@ -305,6 +310,7 @@ export function GitlabSettings() {
       setUrl(status.url);
       setSavedUrl(status.url);
       setStatusError(null);
+      verification.markVerified();
       setEditing(false);
       setToken("");
       setConnected(status.connected);
@@ -326,6 +332,7 @@ export function GitlabSettings() {
     try {
       const status = await disconnectGitlab(savedUrl);
       setConnected(false);
+      verification.clearVerified();
       setUrl(status.url);
       clearInboxCache();
     } catch (err: unknown) {
@@ -342,6 +349,7 @@ export function GitlabSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
+        verifiedAt={verification.verifiedAt}
         error={statusError}
         onCheck={() => void checkStatus()}
       />
@@ -356,7 +364,7 @@ export function GitlabSettings() {
         )}
       >
         {connected && !editing ? (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="summary">
             <span
               title={savedUrl}
               className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
@@ -382,7 +390,7 @@ export function GitlabSettings() {
             </Button>
           </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <TextField
               label={t("GitLab URL")}
               type="url"
@@ -442,6 +450,7 @@ export function GitlabSettings() {
 
 export function AzureDevOpsSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [url, setUrl] = useState("https://dev.azure.com/myorg");
   const [savedUrl, setSavedUrl] = useState("https://dev.azure.com/myorg");
   const [editing, setEditing] = useState(false);
@@ -493,6 +502,7 @@ export function AzureDevOpsSettings() {
       setUrl(status.url);
       setSavedUrl(status.url);
       setStatusError(null);
+      verification.markVerified();
       setEditing(false);
       setToken("");
       setConnected(status.connected);
@@ -514,6 +524,7 @@ export function AzureDevOpsSettings() {
     try {
       const status = await disconnectAzureDevOps(savedUrl);
       setConnected(false);
+      verification.clearVerified();
       setUrl(status.url || url);
       clearInboxCache();
     } catch (err: unknown) {
@@ -530,6 +541,7 @@ export function AzureDevOpsSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
+        verifiedAt={verification.verifiedAt}
         error={statusError}
         onCheck={() => void checkStatus()}
       />
@@ -544,7 +556,7 @@ export function AzureDevOpsSettings() {
         )}
       >
         {connected && !editing ? (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="summary">
             <span
               title={savedUrl}
               className="max-w-56 break-all text-ui-caption text-(--ui-text-muted)"
@@ -570,7 +582,7 @@ export function AzureDevOpsSettings() {
             </Button>
           </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <TextField
               label={t("Azure DevOps organization URL")}
               type="url"
@@ -630,6 +642,7 @@ export function AzureDevOpsSettings() {
 
 export function LinearSettings() {
   useLocale();
+  const verification = useConnectionVerification();
   const [token, setToken] = useState("");
   const [connected, setConnected] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -710,6 +723,7 @@ export function LinearSettings() {
       setEditing(false);
       setConnected(true);
       setStatusError(null);
+      verification.markVerified();
       setAccountEpoch((value) => value + 1);
       setTeams([]);
       clearInboxCache();
@@ -734,6 +748,7 @@ export function LinearSettings() {
     try {
       await disconnectLinear();
       setConnected(false);
+      verification.clearVerified();
       setAccountEpoch((value) => value + 1);
       setTeams([]);
       setTeamsError(null);
@@ -762,6 +777,7 @@ export function LinearSettings() {
         checking={checking}
         busy={busy || Boolean(token)}
         configured={connected}
+        verifiedAt={verification.verifiedAt}
         error={statusError}
         onCheck={() => void checkStatus()}
       />
@@ -776,7 +792,10 @@ export function LinearSettings() {
         )}
       >
         {connected && !editing ? (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="summary">
+            <span className="text-ui-caption text-(--ui-text-secondary)">
+              {t("API key saved on this computer")}
+            </span>
             <Button disabled={busy || checking} onClick={() => setEditing(true)}>
               {t("Edit")}
             </Button>
@@ -790,7 +809,7 @@ export function LinearSettings() {
             </Button>
           </div>
         ) : (
-          <div className="inbox-account-fields">
+          <div className="inbox-account-fields" data-state="form">
             <PasswordField
               label={t("Linear API key")}
 
@@ -834,8 +853,10 @@ export function LinearSettings() {
       <InboxConnectionError error={error} />
       {connected ? (
         <Row
+          stacked
           label={t("Teams")}
           description={t("Unchecked teams stay out of the inbox.")}
+          descriptionVisible
           persistence={{ mode: "automatic" }}
           feedback={
             teamScope.error ? (
@@ -848,44 +869,33 @@ export function LinearSettings() {
             ) : undefined
           }
         >
-          {teams.length > 0 && teamScope.available ? (
-            <SearchableSelect
-              multiple
+          {teamScope.available ? (
+            <InboxScopeCollection
               label={t("Teams")}
-              options={teams.map((team) => ({
-                value: team.id,
-                label: team.name,
-                keywords: team.key,
-              }))}
-              value={teams
+              searchLabel={t("Search teams")}
+              items={teams.map((team) => ({ id: team.id, title: team.name, meta: team.key }))}
+              selectedIds={teams
                 .filter((team) => !hiddenTeamIds.includes(team.id))
                 .map((team) => team.id)}
               onChange={setVisibleTeams}
-              disabled={
-                busy || checking || teamsLoading || Boolean(teamsError) || !teamScope.available
-              }
+              disabled={busy || checking || teamsLoading || Boolean(teamsError)}
               loading={teamsLoading}
-              showSelectedValues
-              placeholder={t("{p0} of {p1} teams selected", { p0: 0, p1: teams.length })}
-              selectionLabels={{
-                summary: (count) =>
-                  t("{p0} of {p1} teams selected", { p0: count, p1: teams.length }),
-              }}
+              summary={(count, total) => t("{p0} of {p1} teams selected", { p0: count, p1: total })}
+              emptyLabel={t("No teams available. Refresh teams to try again.")}
+              noMatchLabel={t("No matching teams")}
+              actions={
+                <Button
+                  className="shrink-0"
+                  size="sm"
+                  loading={teamsLoading}
+                  disabled={busy || checking}
+                  onClick={() => void loadTeams()}
+                >
+                  {teamsError ? t("Retry") : t("Refresh teams")}
+                </Button>
+              }
             />
           ) : null}
-          {teams.length === 0 && !teamsLoading && !teamsError ? (
-            <span role="status" className="text-ui-caption text-(--ui-text-secondary)">
-              {t("No teams available. Refresh teams to try again.")}
-            </span>
-          ) : null}
-          <Button
-            className="shrink-0"
-            loading={teamsLoading}
-            disabled={busy || checking}
-            onClick={() => void loadTeams()}
-          >
-            {teamsError ? t("Retry") : t("Refresh teams")}
-          </Button>
         </Row>
       ) : null}
       <InboxConnectionError error={teamsError} />

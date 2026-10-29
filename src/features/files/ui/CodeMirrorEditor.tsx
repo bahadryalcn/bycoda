@@ -66,6 +66,7 @@ import { editorReadability } from "../editor/editorReadability";
 import {
   preserveEditorViewport,
   replaceEditorDoc,
+  normalizeLineBreaks,
   scrollLineToTop,
   topVisibleLine,
 } from "../editor/editorDoc";
@@ -104,6 +105,12 @@ import { useInlineBlame, useInlineBlameUnavailableReason } from "./InlineBlameTo
 
 import { FILE_EDITOR_AUTOSAVE_DELAY_MS } from "../editor/editorTiming";
 import { registerClosingEditor } from "../model/editorClose";
+import {
+  installEditorInputGate,
+  applyExternalEditorUpdate,
+  type MountedEditorObserver,
+  type EditorWorkTicket,
+} from "./useMountedEditorClosure";
 
 type EditorNavigationRequest = EditorNavigation & { token: number };
 
@@ -118,15 +125,15 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     propsRef.current = props;
   });
   const dirtyRef = useRef(false);
-  const internalSaveRef = useRef<(() => Promise<boolean>) | null>(null);
+  const internalSaveRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const pending = useRef(new Set<Promise<void>>());
   const saveRequestRef = props.saveRequestRef ?? internalSaveRef;
   const onDirtyChange = useCallback((dirty: boolean) => {
     dirtyRef.current = dirty;
     propsRef.current.onDirtyChange(dirty);
   }, []);
-  const onSave = useCallback((text: string) => {
-    const write = propsRef.current.onSave(text);
+  const onSave = useCallback((text: string, ticket?: EditorWorkTicket) => {
+    const write = ticket ? propsRef.current.onSave(text, ticket) : propsRef.current.onSave(text);
     pending.current.add(write);
     void write.then(
       () => pending.current.delete(write),
@@ -152,6 +159,10 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
     [props.path, saveRequestRef],
   );
   const [merge, setMerge] = useState(() => hasConflictMarkers(props.value));
+  useLayoutEffect(() => {
+    props.captureObserver?.changed();
+    if (merge && props.initialDraft === undefined) props.captureObserver?.attach(null);
+  }, [merge, props.initialDraft, props.captureObserver]);
   useEffect(() => {
     if (hasConflictMarkers(props.value)) setMerge(true);
   }, [props.value]);
@@ -165,6 +176,7 @@ export function CodeMirrorEditor(props: Parameters<typeof StandardCodeMirrorEdit
       onDirtyChange={onDirtyChange}
       canSave={props.canAutosave}
       onDocumentChange={onMergedDocumentChange}
+      captureObserver={props.captureObserver}
       saveRequestRef={saveRequestRef}
       onOpenFile={props.onOpenFile}
     />
@@ -197,6 +209,7 @@ function StandardCodeMirrorEditor({
   onStageGit,
   onDocChange,
   onDocumentChange,
+  captureObserver,
   onEdit,
   shown = true,
   saveRequestRef,
@@ -219,19 +232,20 @@ function StandardCodeMirrorEditor({
   navigation?: EditorNavigationRequest | null;
   onDirtyChange: (dirty: boolean) => void;
   onErrorCountChange: (count: number) => void;
-  onSave: (content: string) => Promise<void>;
+  onSave: (content: string, ticket?: EditorWorkTicket) => Promise<void>;
   canAutosave: () => boolean;
   onStageGit?: (contents: string) => Promise<void>;
   /** Receives the whole text after each change: pass it only while it is shown. */
   onDocChange?: (content: string) => void;
   /** Admits the actual immutable document before deferred persistence starts. */
   onDocumentChange?: (document: Text) => void;
+  captureObserver?: MountedEditorObserver;
   /** Cheap per-change notice that copies no text. */
   onEdit?: () => void;
   /** False while covered by another tab: git refreshes wait until it is shown. */
   shown?: boolean;
   /** Runs the same save flow as Ctrl/Cmd+S before an external preview. */
-  saveRequestRef?: { current: (() => Promise<boolean>) | null };
+  saveRequestRef?: { current: ((parent?: EditorWorkTicket) => Promise<boolean>) | null };
   /** Lets the conflict bar step to the next conflicted file. */
   onOpenFile?: OpenFileFn;
   formatOnSave?: boolean;
@@ -252,6 +266,10 @@ function StandardCodeMirrorEditor({
   const canStage = onStageGit !== undefined;
   const onDocChangeRef = useRef(onDocChange);
   const onDocumentChangeRef = useRef(onDocumentChange);
+  const captureObserverRef = useRef(captureObserver);
+  useLayoutEffect(() => {
+    captureObserverRef.current = captureObserver;
+  }, [captureObserver]);
   const onEditRef = useRef(onEdit);
   const shownRef = useRef(shown);
   shownRef.current = shown;
@@ -311,7 +329,7 @@ function StandardCodeMirrorEditor({
   const [blameError, setBlameError] = useState<string | null>(null);
   const [formatError, setFormatError] = useState<string | null>(null);
   const scheduleBlameRef = useRef<(() => void) | null>(null);
-  const saveNowRef = useRef<(() => Promise<boolean>) | null>(null);
+  const saveNowRef = useRef<((parent?: EditorWorkTicket) => Promise<boolean>) | null>(null);
   const [chunkNav, setChunkNav] = useState<{
     positions: number[];
     index: number;
@@ -412,6 +430,8 @@ function StandardCodeMirrorEditor({
     let saveGeneration = 0;
     let formatGeneration = 0;
     let autosaveTimer = 0;
+    let composing = false;
+    let compositionSettling = false;
     let view: EditorView;
     let split: MergeView | null = null;
     const carry = carryRef.current;
@@ -422,7 +442,9 @@ function StandardCodeMirrorEditor({
       setDirty(initialDirtyRef.current || (saved ? !view.state.doc.eq(saved) : false));
     };
 
-    const formatDocument = async (manual = false) => {
+    const formatDocument = async (manual = false, parent?: EditorWorkTicket) => {
+      const settled = captureObserverRef.current?.operation("formatter", parent);
+      if (captureObserverRef.current && !settled) return;
       const generation = ++formatGeneration;
       const before = view.state.doc;
       const selection = view.state.selection;
@@ -435,34 +457,43 @@ function StandardCodeMirrorEditor({
             setFormatError(t("No formatter is available for this file, or its syntax is invalid."));
           return;
         }
-        replaceEditorDoc(view, result.formatted, {
-          annotations: [isolateHistory.of("full")],
-          selection: view.state.selection.eq(selection)
-            ? { anchor: Math.min(Math.max(0, result.cursorOffset), result.formatted.length) }
-            : undefined,
-          scroller: scrollerRef.current ?? undefined,
-        });
+        const apply = () =>
+          replaceEditorDoc(view, result.formatted, {
+            annotations: [isolateHistory.of("full")],
+            selection: view.state.selection.eq(selection)
+              ? { anchor: Math.min(Math.max(0, result.cursorOffset), result.formatted.length) }
+              : undefined,
+            scroller: scrollerRef.current ?? undefined,
+          });
+        if (settled) settled.apply(apply);
+        else apply();
       } catch (error) {
         if (!disposed && generation === formatGeneration)
           setFormatError(error instanceof Error ? error.message : String(error));
+      } finally {
+        settled?.();
       }
     };
 
     /** Resolves true once the document reached the disk. */
-    const saveDocument = (automatic = false): Promise<boolean> => {
+    const saveDocument = (automatic = false, parent?: EditorWorkTicket): Promise<boolean> => {
+      const settled = captureObserverRef.current?.operation("editor-save", parent);
+      if (captureObserverRef.current && !settled) return Promise.resolve(false);
       const retryPendingAutosave = autosaveTimer !== 0 && loadAutosave();
       window.clearTimeout(autosaveTimer);
       const generation = ++saveGeneration;
       return (async () => {
         if (formatOnSaveRef.current && loadFormatOnSave()) {
-          await formatDocument();
+          await formatDocument(false, settled ?? undefined);
           if (disposed || generation !== saveGeneration) return false;
         }
 
         const document = view.state.doc;
         if (automatic && !canAutosaveRef.current()) return false;
         try {
-          await onSaveRef.current(document.toString());
+          if (settled && captureObserverRef.current?.closed())
+            await onSaveRef.current(document.toString(), settled);
+          else await onSaveRef.current(document.toString());
         } catch {
           if (
             retryPendingAutosave &&
@@ -475,18 +506,22 @@ function StandardCodeMirrorEditor({
           return false;
         }
         if (disposed || generation !== saveGeneration) return true;
-        savedDocumentRef.current = document;
-        initialDirtyRef.current = false;
-        markDirty();
+        const apply = () => {
+          savedDocumentRef.current = document;
+          initialDirtyRef.current = false;
+          markDirty();
+        };
+        if (settled) settled.apply(apply);
+        else apply();
         scheduleBlame();
         return true;
-      })();
+      })().finally(() => settled?.());
     };
     const save = (automatic = false) => {
       void saveDocument(automatic);
       return true;
     };
-    saveNowRef.current = () => saveDocument();
+    saveNowRef.current = (parent) => saveDocument(false, parent);
     if (saveRequestRef) saveRequestRef.current = saveNowRef.current;
 
     // Blame describes what is on disk, so it is fetched when it is switched on,
@@ -525,9 +560,12 @@ function StandardCodeMirrorEditor({
 
     function scheduleAutosave() {
       window.clearTimeout(autosaveTimer);
+      autosaveTimer = 0;
+      captureObserverRef.current?.changed();
       if (!loadAutosave()) return;
       autosaveTimer = window.setTimeout(() => {
         autosaveTimer = 0;
+        captureObserverRef.current?.changed();
         if (dirtyRef.current && loadAutosave() && canAutosaveRef.current()) {
           save(true);
         }
@@ -598,6 +636,8 @@ function StandardCodeMirrorEditor({
         ]),
       ),
       EditorView.updateListener.of((update) => {
+        if (update.startState.readOnly !== update.state.readOnly)
+          captureObserverRef.current?.changed();
         if (
           update.transactions.some(
             (tr) =>
@@ -625,6 +665,7 @@ function StandardCodeMirrorEditor({
           setSelectionTarget(null);
         }
         if (!update.docChanged) return;
+        captureObserverRef.current?.changed();
         setConflictCount(conflictBlocks(update.state).length);
         onEditRef.current?.();
         onDocChangeRef.current?.(update.state.doc.toString());
@@ -636,6 +677,24 @@ function StandardCodeMirrorEditor({
         scheduleAutosave();
       }),
       EditorView.domEventHandlers({
+        compositionstart: () => {
+          composing = true;
+          captureObserverRef.current?.changed();
+        },
+        compositionend: () => {
+          composing = false;
+          compositionSettling = true;
+          captureObserverRef.current?.changed();
+          view.requestMeasure({
+            read: () => null,
+            write: () => {
+              if (!disposed && !view.compositionStarted) {
+                compositionSettling = false;
+                captureObserverRef.current?.changed();
+              }
+            },
+          });
+        },
         blur: () => {
           pendingNavigationRef.current = null;
           selectionMeasureVersion++;
@@ -678,6 +737,10 @@ function StandardCodeMirrorEditor({
     } else {
       view = new EditorView({ doc: initialDoc, parent: host, extensions });
     }
+    const inputGate = installEditorInputGate(view, captureObserverRef.current);
+    const originalGate = leftView
+      ? installEditorInputGate(leftView, captureObserverRef.current)
+      : null;
     splitRef.current = split;
     const detachSplitOverview = split ? attachSplitOverview(split) : null;
     scrollerRef.current = split ? split.dom : view.scrollDOM;
@@ -692,6 +755,24 @@ function StandardCodeMirrorEditor({
       markDirty();
     }
     viewRef.current = view;
+    captureObserverRef.current?.attach({
+      setClosed(closed) {
+        inputGate.setClosed(closed);
+        originalGate?.setClosed(closed);
+        if (!closed && dirtyRef.current) scheduleAutosave();
+      },
+      read() {
+        if (disposed) throw new Error("Editor view retired");
+        return {
+          text: view.state.doc.toString(),
+          composing: composing || compositionSettling || view.composing,
+          compositionStarted: view.compositionStarted,
+          readOnly: view.state.readOnly,
+          pendingAutosave: dirtyRef.current && autosaveTimer !== 0,
+          kind: "source",
+        };
+      },
+    });
     setConflictCount(conflictBlocks(view.state).length);
     if (blameOnRef.current) scheduleBlame();
     lockOverscroll(scrollerRef.current as HTMLDivElement);
@@ -726,14 +807,19 @@ function StandardCodeMirrorEditor({
     void languageForPath(path).then((extension) => {
       if (!disposed && extension) {
         const reconfigure = { effects: language.reconfigure(extension) };
-        view.dispatch(reconfigure);
-        leftView?.dispatch(reconfigure);
+        applyExternalEditorUpdate(captureObserverRef.current, () => {
+          view.dispatch(reconfigure);
+          leftView?.dispatch(reconfigure);
+        });
       }
     });
 
     const unsubscribeAutosave = subscribeAutosave(scheduleAutosave);
     return () => {
       disposed = true;
+      captureObserverRef.current?.attach(null);
+      inputGate.release();
+      originalGate?.release();
       unsubscribeAutosave();
       window.clearTimeout(autosaveTimer);
       window.clearTimeout(blameTimer);
@@ -778,16 +864,20 @@ function StandardCodeMirrorEditor({
     const reconfigure = {
       effects: editorScheme.reconfigure(schemeExtensions(colorScheme)),
     };
-    viewRef.current?.dispatch(reconfigure);
-    leftViewRef.current?.dispatch(reconfigure);
+    applyExternalEditorUpdate(captureObserverRef.current, () => {
+      viewRef.current?.dispatch(reconfigure);
+      leftViewRef.current?.dispatch(reconfigure);
+    });
   }, [colorScheme]);
 
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
-    view.dispatch({
-      effects: editorBlameConfig.reconfigure(blameOn ? inlineBlameExtension : []),
-    });
+    applyExternalEditorUpdate(captureObserverRef.current, () =>
+      view.dispatch({
+        effects: editorBlameConfig.reconfigure(blameOn ? inlineBlameExtension : []),
+      }),
+    );
     if (blameOn) scheduleBlameRef.current?.();
     else setBlameError(null);
   }, [blameOn]);
@@ -869,19 +959,24 @@ function StandardCodeMirrorEditor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view || splitDiff) return;
-    view.dispatch({
-      effects: editorGitConfig.reconfigure(showDiff ? editorGit(gitOptions) : []),
+    applyExternalEditorUpdate(captureObserverRef.current, () => {
+      view.dispatch({
+        effects: editorGitConfig.reconfigure(showDiff ? editorGit(gitOptions) : []),
+      });
+      if (showDiff) {
+        setGitOriginal(view, gitOriginalRef.current);
+        syncChunkNav(view);
+      } else {
+        setChunkNav(null);
+      }
     });
-    if (showDiff) {
-      setGitOriginal(view, gitOriginalRef.current);
-      syncChunkNav(view);
-    } else {
-      setChunkNav(null);
-    }
   }, [canStage, showDiff, splitDiff]);
 
   useEffect(() => {
-    if (splitRef.current) setSplitCanStage(splitRef.current, canStage);
+    if (splitRef.current)
+      applyExternalEditorUpdate(captureObserverRef.current, () =>
+        setSplitCanStage(splitRef.current!, canStage),
+      );
   }, [canStage, splitDiff]);
 
   useEffect(() => {
@@ -889,14 +984,16 @@ function StandardCodeMirrorEditor({
     if (!view || !showDiff) return;
     const split = splitRef.current;
     let changed = false;
-    preserveEditorViewport(
-      view,
-      () => {
-        changed = split
-          ? setSplitOriginal(split, gitOriginal ?? "")
-          : setGitOriginal(view, gitOriginal);
-      },
-      scrollerRef.current ?? view.scrollDOM,
+    applyExternalEditorUpdate(captureObserverRef.current, () =>
+      preserveEditorViewport(
+        view,
+        () => {
+          changed = split
+            ? setSplitOriginal(split, gitOriginal ?? "")
+            : setGitOriginal(view, gitOriginal);
+        },
+        scrollerRef.current ?? view.scrollDOM,
+      ),
     );
     if (!changed) return;
     chunkNavPinnedRef.current = null;
@@ -928,16 +1025,21 @@ function StandardCodeMirrorEditor({
     const view = viewRef.current;
     if (!view || dirtyRef.current) return;
     if (view.state.doc.toString() === value) return;
-    replaceEditorDoc(view, value, {
-      annotations: [Transaction.addToHistory.of(false), diskReload.of(true)],
-      scroller: scrollerRef.current ?? undefined,
-    });
-    savedDocumentRef.current = view.state.doc;
-    setDirty(false);
-    if (showDiff) {
-      chunkNavPinnedRef.current = null;
-      syncChunkNav(view);
-    }
+    const apply = () => {
+      const applied = replaceEditorDoc(view, value, {
+        annotations: [Transaction.addToHistory.of(false), diskReload.of(true)],
+        scroller: scrollerRef.current ?? undefined,
+      });
+      if (!applied || view.state.doc.toString() !== normalizeLineBreaks(value)) return;
+      savedDocumentRef.current = view.state.doc;
+      setDirty(false);
+      if (showDiff) {
+        chunkNavPinnedRef.current = null;
+        syncChunkNav(view);
+      }
+    };
+    if (captureObserverRef.current) captureObserverRef.current.external(apply);
+    else apply();
   }, [showDiff, syncChunkNav, value]);
 
   useEffect(() => {
@@ -1013,10 +1115,7 @@ function StandardCodeMirrorEditor({
           onMarkResolved={() => void markResolved()}
         />
         {formatError ? (
-          <p
-            role="alert"
-            className="shrink-0 border-b border-stroke px-3 py-1 text-[11px] text-content/65"
-          >
+          <p role="alert" className="shrink-0 px-3 py-1 text-ui-caption text-(--ui-text-secondary)">
             {t("Formatting failed: ")}
             {formatError}
           </p>
@@ -1024,7 +1123,7 @@ function StandardCodeMirrorEditor({
         {blameOn && blameError ? (
           <p
             role="status"
-            className="shrink-0 truncate border-b border-stroke px-3 py-1 text-[11px] text-content/45"
+            className="shrink-0 truncate px-3 py-1 text-ui-caption text-(--ui-text-muted)"
             title={blameError}
           >
             {t("Blame unavailable: ")}
@@ -1120,40 +1219,42 @@ function DiffChunkNav({
   useLocale();
   return (
     <header
-      className="flex h-8 shrink-0 items-center justify-between gap-3 border-b border-stroke px-3 pr-1"
+      className="flex min-h-(--ui-control-height-compact) shrink-0 items-center justify-between gap-2 px-2"
       role="toolbar"
       aria-label={t("Jump between changes")}
     >
       <DiffChunkStat additions={additions} deletions={deletions} />
-      <div className="flex items-center gap-0.5">
-        <DiffLayoutToggle className="mr-1" />
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Previous change")}
           motion="none"
           type="button"
-          title={t("Previous change")}
-          aria-label={t("Previous change")}
           disabled={total === 0 || index <= 0}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onPrev}
         >
-          <ChevronUp className="size-3.5" strokeWidth={1.75} />
+          <ChevronUp className="icon-sm" strokeWidth={1.75} />
         </Button>
-        <span className="min-w-10 px-0.5 text-center font-mono text-[10.5px] font-medium tabular-nums text-content/55 select-none">
+        <span className="min-w-10 text-center text-ui-micro font-medium tabular-nums text-(--ui-text-secondary) select-none">
           {total === 0 ? "0/0" : `${index + 1}/${total}`}
         </span>
         <Button
           variant="ghost"
+          size="sm"
+          iconOnly
+          label={t("Next change")}
           motion="none"
           type="button"
-          title={t("Next change")}
-          aria-label={t("Next change")}
           disabled={total === 0 || index >= total - 1}
           onMouseDown={(event) => event.preventDefault()}
           onClick={onNext}
         >
-          <ChevronDown className="size-3.5" strokeWidth={1.75} />
+          <ChevronDown className="icon-sm" strokeWidth={1.75} />
         </Button>
+        <DiffLayoutToggle />
       </div>
     </header>
   );
@@ -1165,7 +1266,7 @@ function DiffChunkStat({ additions, deletions }: { additions: number; deletions:
     return <span className="min-w-0 flex-1" />;
   }
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-[11px] font-semibold tabular-nums">
+    <span className="flex min-w-0 shrink-0 items-center gap-1.5 font-sans text-ui-micro font-medium tabular-nums">
       {additions > 0 ? <span className="text-success">+{formatInteger(additions)}</span> : null}
       {deletions > 0 ? <span className="text-danger">-{formatInteger(deletions)}</span> : null}
     </span>

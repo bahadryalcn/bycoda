@@ -1,3 +1,4 @@
+import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -278,20 +279,20 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       aria-label={t("Session notes")}
       data-notes-panel
       onKeyDown={onKeyDown}
-      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-stroke text-content"
+      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-(--ui-surface-panel) text-content"
     >
       <div
         {...separatorProps}
         aria-label={t("Resize notes panel")}
         className={`absolute inset-y-0 -left-px z-10 w-1.5 cursor-col-resize touch-none ${
-          dragging ? "bg-content/15" : "hover:bg-content/10"
+          dragging ? "bg-(--ui-surface-selected)" : "hover:bg-(--ui-surface-hover)"
         }`}
         onPointerDown={onPointerDown}
         onDoubleClick={onDoubleClick}
       />
       <div
         data-notes-header
-        className="flex h-9 shrink-0 items-center gap-1 border-b border-stroke px-2"
+        className="flex h-9 shrink-0 items-center gap-1 px-2"
       >
         <Button
           ref={listButton}
@@ -308,10 +309,10 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           }}
           className="min-w-0 flex-1"
         >
-          <File className="size-3.5 shrink-0 text-content/45" strokeWidth={1.75} />
+          <File className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
           <span className="min-w-0 flex-1 truncate">{selected?.title ?? t("Notes")}</span>
           <ChevronDown
-            className={`size-3 shrink-0 text-content/45 transition-transform ${
+            className={`size-3 shrink-0 text-(--ui-text-secondary) transition-transform ${
               listOpen ? "rotate-180" : ""
             }`}
             strokeWidth={1.75}
@@ -323,13 +324,13 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           onClick={() => void onCreate()}
         >
           {creating ? (
-            <LoaderCircle className="size-3.5 animate-spin" strokeWidth={1.75} />
+            <LoaderCircle className="icon-sm animate-spin" strokeWidth={1.75} />
           ) : (
-            <Plus className="size-3.5" strokeWidth={1.75} />
+            <Plus className="icon-sm" strokeWidth={1.75} />
           )}
         </PanelIconButton>
         <PanelIconButton label={closeLabel} onClick={() => setNotesPanelOpen(false)}>
-          <X className="size-3.5" strokeWidth={1.75} />
+          <X className="icon-sm" strokeWidth={1.75} />
         </PanelIconButton>
       </div>
       {listOpen ? (
@@ -456,7 +457,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         </div>
       ) : (
         <div className="grid min-h-0 flex-1 place-items-center">
-          <LoaderCircle className="size-4 animate-spin text-content/40" strokeWidth={1.75} />
+          <LoaderCircle className="icon-md animate-spin text-(--ui-text-secondary)" strokeWidth={1.75} />
         </div>
       )}
       <div className="session-notes-library-link">
@@ -518,7 +519,7 @@ function NoteGroup({
   if (notes.length === 0) return null;
   return (
     <section aria-label={label} className="mb-1 last:mb-0">
-      <h3 className="px-2 pb-1 pt-1.5 text-[11px] text-content/45">{label}</h3>
+      <h3 className="px-2 pb-1 pt-1.5 text-ui-caption font-medium text-(--ui-text-secondary)">{label}</h3>
       <ul className="flex flex-col gap-0.5">
         {notes.map((note) => {
           const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
@@ -537,7 +538,7 @@ function NoteGroup({
               >
                 <span className="min-w-0 flex-1 truncate">{note.title}</span>
                 {time ? (
-                  <span className="shrink-0 text-[11px] tabular-nums text-content/45">{time}</span>
+                  <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">{time}</span>
                 ) : null}
               </Button>
             </li>
@@ -768,7 +769,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         aria-label={t("Note")}
         placeholder={t("Write markdown…")}
         spellCheck={false}
-        className="min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-[13px] leading-5 text-content placeholder:text-content/35"
+        className="min-h-0 w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-ui-secondary leading-5 text-content placeholder:text-(--ui-text-muted)"
       />
       {conflict ? (
         <Alert tone="warning">
@@ -848,16 +849,25 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
           </Button>
         </Alert>
       ) : null}
-      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 border-t border-stroke px-2 py-1">
-        <span role="status" className="session-note-status">
-          {saveError || conflict
-            ? t("Unsaved changes")
-            : saving
-              ? t("Saving…")
-              : body !== note.body || title !== note.title
-                ? t("Unsaved changes")
-                : t("Saved")}
-        </span>
+      <div className="flex min-h-9 shrink-0 flex-wrap items-center gap-1 px-2 py-1">
+        <NoteSaveStatus
+          className="session-note-status"
+          state={
+            deleting
+              ? "deleting"
+              : saveError
+                ? "failed"
+                : conflict
+                  ? "conflict"
+                  : recovering
+                    ? "recovering"
+                    : saving
+                      ? "saving"
+                      : body !== note.body || title !== note.title
+                        ? "unsaved"
+                        : "saved"
+          }
+        />
         <ExpandingButtonGroup
           label={t("Note actions")}
           size="sm"
@@ -903,7 +913,7 @@ const PanelNoteEditor = memo(function PanelNoteEditor({
         <span className="min-w-0 flex-1" />
         <ConfirmMorph
           label={t("Delete note")}
-          icon={<Trash2 className="size-3.5" />}
+          icon={<Trash2 className="icon-sm" />}
           prompt={t("Delete note permanently?")}
           confirmTimeout={0}
           disabled={deleting}

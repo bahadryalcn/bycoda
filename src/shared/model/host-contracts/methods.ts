@@ -1,4 +1,32 @@
+import {
+  DEVICE_LIFECYCLE_RPC_SCHEMAS,
+  MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS,
+  type DeviceLifecycleMethod,
+  type MobileDevicePreviewMethod,
+} from "./native-devices";
+import { NATIVE_DELIVERY_RPC_SCHEMAS, type NativeDeliveryMethod } from "./native-delivery";
+import {
+  NATIVE_DEVICES_RPC_SCHEMAS,
+  nativeDeviceReadOnly,
+  type NativeDeviceMethod,
+} from "./native-devices";
 import { z } from "zod";
+import { hostRpcWireMethod } from "./aliases";
+import { ModelsListParamsSchema, ModelsListResultSchema } from "./models";
+import {
+  NATIVE_SERVICES_RPC_SCHEMAS,
+  nativeServiceReadOnly,
+  type NativeServiceMethod,
+} from "./native-services";
+import {
+  NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS,
+  type NativeServiceUploadMethod,
+} from "./native-service-upload";
+import { NATIVE_WORKSPACE_RPC_SCHEMAS, type NativeWorkspaceMethod } from "./native-workspaces";
+import {
+  NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS,
+  type NativeBufferUploadMethod,
+} from "./native-buffer-upload";
 import {
   NativeBufferRecoveryListParamsSchema,
   NativeBufferRecoverySourceSchema,
@@ -238,7 +266,238 @@ const crewOperation = (method: keyof typeof CREWS_RPC_SCHEMAS): HostRpcMethodDef
   cost: method === "crews.stop" ? "control" : "read",
 });
 
+const nativeWorkspaceOperation = (method: NativeWorkspaceMethod): HostRpcMethodDefinition => {
+  const schema = NATIVE_WORKSPACE_RPC_SCHEMAS[method];
+  const readOnly =
+    method === "native.rewind.lookup" ||
+    method === "workspaces.cleanup.plan" ||
+    method === "workspaces.cleanup.status";
+  return {
+    ...(readOnly ? read(schema.params, schema.result) : control(schema.params, schema.result)),
+    // Buffer reporting and Git capture must not exhaust Stop/receipt capacity.
+    cost: "read",
+    requiredCapability: method.startsWith("workspaces.")
+      ? "transport.ws.workspaces.cleanup.v1"
+      : "native.workspaces.v1",
+    responseTimeoutMs: 30_000,
+  };
+};
+
+const nativeBufferUploadOperation = (
+  method: NativeBufferUploadMethod,
+): HostRpcMethodDefinition => ({
+  ...(method === "native.buffers.upload.status"
+    ? read(
+        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
+        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
+      )
+    : control(
+        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].params,
+        NATIVE_BUFFER_UPLOAD_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: "native.buffers.upload.v1",
+  responseTimeoutMs: 30_000,
+});
+
+const nativeServiceOperation = (method: NativeServiceMethod): HostRpcMethodDefinition => ({
+  ...(nativeServiceReadOnly(method)
+    ? read(NATIVE_SERVICES_RPC_SCHEMAS[method].params, NATIVE_SERVICES_RPC_SCHEMAS[method].result)
+    : control(
+        NATIVE_SERVICES_RPC_SCHEMAS[method].params,
+        NATIVE_SERVICES_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: "native.services.v1",
+  responseTimeoutMs: 30_000,
+});
+const nativeServiceUploadOperation = (
+  method: NativeServiceUploadMethod,
+): HostRpcMethodDefinition => ({
+  ...(method === "native.services.upload.status"
+    ? read(
+        NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS[method].params,
+        NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS[method].result,
+      )
+    : control(
+        NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS[method].params,
+        NATIVE_SERVICE_UPLOAD_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: "native.services.v1",
+  responseTimeoutMs: 30_000,
+});
+
+const nativeDeviceOperation = (method: NativeDeviceMethod): HostRpcMethodDefinition => ({
+  ...(nativeDeviceReadOnly(method)
+    ? read(NATIVE_DEVICES_RPC_SCHEMAS[method].params, NATIVE_DEVICES_RPC_SCHEMAS[method].result)
+    : control(
+        NATIVE_DEVICES_RPC_SCHEMAS[method].params,
+        NATIVE_DEVICES_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: "transport.ws.devices.v1",
+  responseTimeoutMs:
+    method === "devices.boot"
+      ? 240_000
+      : method === "devices.start"
+        ? 60_000
+        : method === "devices.action" || method === "devices.capture"
+          ? 180_000
+          : 30_000,
+});
+const deviceLifecycleOperation = (method: DeviceLifecycleMethod): HostRpcMethodDefinition => ({
+  ...control(
+    DEVICE_LIFECYCLE_RPC_SCHEMAS[method].params,
+    DEVICE_LIFECYCLE_RPC_SCHEMAS[method].result,
+  ),
+  cost: "read",
+  requiredCapability: "transport.ws.devices.v1",
+  responseTimeoutMs: method === "devices.setup" ? 1_230_000 : 30_000,
+});
+const mobileDevicePreviewOperation = (
+  method: MobileDevicePreviewMethod,
+): HostRpcMethodDefinition => ({
+  ...(method === "devices.preview.mobile.start"
+    ? control(
+        MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS[method].params,
+        MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS[method].result,
+      )
+    : read(
+        MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS[method].params,
+        MOBILE_DEVICE_PREVIEW_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: "transport.ws.devices.preview.mobile.v1",
+  responseTimeoutMs: 30_000,
+});
+const nativeDeliveryOperation = (method: NativeDeliveryMethod): HostRpcMethodDefinition => ({
+  ...(method.endsWith(".status") || method.endsWith(".result.read")
+    ? read(NATIVE_DELIVERY_RPC_SCHEMAS[method].params, NATIVE_DELIVERY_RPC_SCHEMAS[method].result)
+    : control(
+        NATIVE_DELIVERY_RPC_SCHEMAS[method].params,
+        NATIVE_DELIVERY_RPC_SCHEMAS[method].result,
+      )),
+  cost: "read",
+  requiredCapability: method.startsWith("native.delivery.epochs.")
+    ? "native.delivery.epochs.v2"
+    : method.endsWith(".ack")
+      ? method.startsWith("native.buffers.")
+        ? "native.buffers.delivery.ack.v1"
+        : "native.services.delivery.ack.v1"
+      : method.startsWith("native.buffers.")
+        ? "native.buffers.delivery.v1"
+        : "native.services.delivery.v1",
+  responseTimeoutMs: 30_000,
+});
 export const HOST_RPC_METHODS = Object.freeze({
+  "native.delivery.epochs.open": nativeDeliveryOperation("native.delivery.epochs.open"),
+  "native.delivery.epochs.status": nativeDeliveryOperation("native.delivery.epochs.status"),
+  "native.delivery.epochs.compact": nativeDeliveryOperation("native.delivery.epochs.compact"),
+  "native.delivery.epochs.close": nativeDeliveryOperation("native.delivery.epochs.close"),
+  "native.buffers.delivery.ack": nativeDeliveryOperation("native.buffers.delivery.ack"),
+  "native.services.delivery.ack": nativeDeliveryOperation("native.services.delivery.ack"),
+  "native.buffers.delivery.apply": nativeDeliveryOperation("native.buffers.delivery.apply"),
+  "native.buffers.delivery.status": nativeDeliveryOperation("native.buffers.delivery.status"),
+  "native.services.delivery.apply": nativeDeliveryOperation("native.services.delivery.apply"),
+  "native.services.delivery.status": nativeDeliveryOperation("native.services.delivery.status"),
+  "native.services.delivery.result.read": nativeDeliveryOperation(
+    "native.services.delivery.result.read",
+  ),
+  "devices.setup": deviceLifecycleOperation("devices.setup"),
+  "devices.stop": deviceLifecycleOperation("devices.stop"),
+  "devices.preview.mobile.start": mobileDevicePreviewOperation("devices.preview.mobile.start"),
+  "devices.preview.mobile.status": mobileDevicePreviewOperation("devices.preview.mobile.status"),
+  "devices.preview.impact": mobileDevicePreviewOperation("devices.preview.impact"),
+
+  "devices.status": nativeDeviceOperation("devices.status"),
+  "devices.preflight": nativeDeviceOperation("devices.preflight"),
+  "devices.preview": nativeDeviceOperation("devices.preview"),
+  "devices.preview.status": nativeDeviceOperation("devices.preview.status"),
+  "devices.list": nativeDeviceOperation("devices.list"),
+  "devices.start": nativeDeviceOperation("devices.start"),
+  "devices.boot": nativeDeviceOperation("devices.boot"),
+  "devices.capture": nativeDeviceOperation("devices.capture"),
+  "devices.action": nativeDeviceOperation("devices.action"),
+
+  "native.services.upload.begin": nativeServiceUploadOperation("native.services.upload.begin"),
+  "native.services.upload.append": nativeServiceUploadOperation("native.services.upload.append"),
+  "native.services.upload.commit": nativeServiceUploadOperation("native.services.upload.commit"),
+  "native.services.upload.status": nativeServiceUploadOperation("native.services.upload.status"),
+  "native.services.upload.cancel": nativeServiceUploadOperation("native.services.upload.cancel"),
+  "native.services.runtimeLogs.bridge.describe": nativeServiceOperation(
+    "native.services.runtimeLogs.bridge.describe",
+  ),
+  "native.services.runtimeLogs.access.issue": nativeServiceOperation(
+    "native.services.runtimeLogs.access.issue",
+  ),
+  "native.services.runtimeLogs.terminals.append": nativeServiceOperation(
+    "native.services.runtimeLogs.terminals.append",
+  ),
+  "native.services.conversation.bridge.describe": nativeServiceOperation(
+    "native.services.conversation.bridge.describe",
+  ),
+  "native.services.conversation.access.issue": nativeServiceOperation(
+    "native.services.conversation.access.issue",
+  ),
+  "native.services.conversation.desktop.take": nativeServiceOperation(
+    "native.services.conversation.desktop.take",
+  ),
+  "native.services.conversation.desktop.finish": nativeServiceOperation(
+    "native.services.conversation.desktop.finish",
+  ),
+  "native.services.conversation.desktop.authorize": nativeServiceOperation(
+    "native.services.conversation.desktop.authorize",
+  ),
+  "native.services.social.bridge.describe": nativeServiceOperation(
+    "native.services.social.bridge.describe",
+  ),
+  "native.services.social.access.issue": nativeServiceOperation(
+    "native.services.social.access.issue",
+  ),
+  "native.services.social.native.status": nativeServiceOperation(
+    "native.services.social.native.status",
+  ),
+  "native.services.social.native.enroll": nativeServiceOperation(
+    "native.services.social.native.enroll",
+  ),
+  "native.services.social.native.register": nativeServiceOperation(
+    "native.services.social.native.register",
+  ),
+  "native.services.social.native.authority": nativeServiceOperation(
+    "native.services.social.native.authority",
+  ),
+  "native.services.social.native.reset": nativeServiceOperation(
+    "native.services.social.native.reset",
+  ),
+  "native.services.workspace.format": nativeServiceOperation("native.services.workspace.format"),
+  "models.list": {
+    ...read(ModelsListParamsSchema, ModelsListResultSchema),
+    requiredCapability: "transport.ws.models.v1",
+    responseTimeoutMs: 60_000,
+  },
+  "native.buffers.upload.start": nativeBufferUploadOperation("native.buffers.upload.start"),
+  "native.buffers.upload.write": nativeBufferUploadOperation("native.buffers.upload.write"),
+  "native.buffers.upload.commit": nativeBufferUploadOperation("native.buffers.upload.commit"),
+  "native.buffers.upload.status": nativeBufferUploadOperation("native.buffers.upload.status"),
+  "native.buffers.upload.abort": nativeBufferUploadOperation("native.buffers.upload.abort"),
+  "native.turn.begin": nativeWorkspaceOperation("native.turn.begin"),
+  "native.turn.end": nativeWorkspaceOperation("native.turn.end"),
+  "native.activity.start": nativeWorkspaceOperation("native.activity.start"),
+  "native.activity.end": nativeWorkspaceOperation("native.activity.end"),
+  "native.buffers.update": nativeWorkspaceOperation("native.buffers.update"),
+  "native.buffers.retire": nativeWorkspaceOperation("native.buffers.retire"),
+  "native.buffers.reconcile": nativeWorkspaceOperation("native.buffers.reconcile"),
+  "native.rewind.plan": nativeWorkspaceOperation("native.rewind.plan"),
+  "native.rewind.prepare": nativeWorkspaceOperation("native.rewind.prepare"),
+  "native.rewind.apply": nativeWorkspaceOperation("native.rewind.apply"),
+  "native.rewind.status": nativeWorkspaceOperation("native.rewind.status"),
+  "native.rewind.lookup": nativeWorkspaceOperation("native.rewind.lookup"),
+  "native.rewind.cancelPreparation": nativeWorkspaceOperation("native.rewind.cancelPreparation"),
+  "native.rewind.ack": nativeWorkspaceOperation("native.rewind.ack"),
+  "workspaces.cleanup.plan": nativeWorkspaceOperation("workspaces.cleanup.plan"),
+  "workspaces.cleanup.apply": nativeWorkspaceOperation("workspaces.cleanup.apply"),
+  "workspaces.cleanup.status": nativeWorkspaceOperation("workspaces.cleanup.status"),
   "native.buffers.recovery.list": {
     ...read(NativeBufferRecoveryListParamsSchema, NativeBufferRecoveryPageSchema),
     requiredCapability: "native.buffers.recovery.v1",
@@ -634,6 +893,13 @@ export function getHostRpcMethod(method: string): HostRpcMethodDefinition | unde
   return Object.prototype.hasOwnProperty.call(HOST_RPC_METHODS, method)
     ? HOST_RPC_METHODS[method as HostRpcMethod]
     : undefined;
+}
+
+/** Private Native workspace and development-server gateway ingress. Canonical
+ * declaration alone grants neither mobile/window ingress nor gateway access. */
+export function nativeDesktopMethod(method: string): boolean {
+  const wireMethod = hostRpcWireMethod(method);
+  return wireMethod.startsWith("native.") || wireMethod.startsWith("devServers.bridge");
 }
 
 export function hostRpcCost(method: string, params: Record<string, unknown>): "read" | "control" {

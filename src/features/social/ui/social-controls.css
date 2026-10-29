@@ -41,8 +41,8 @@
 .social-editor {
   margin-block-start: 0.75rem;
   padding: clamp(1rem, 0.75rem + 1cqi, 1.5rem);
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
 }
 .social-view .social-editor > .social-form {

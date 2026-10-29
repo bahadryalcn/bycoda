@@ -39,39 +39,24 @@ export function LinkSessionWorkItemDialog({
       onClose={onClose}
     >
       <form onSubmit={submit} className="flex flex-col gap-4 p-4 text-ui-caption">
-        <label className="flex flex-col gap-1.5">
-          <span className="font-medium text-(--ui-text-secondary)">
-            {t("Issue or pull request URL")}
-          </span>
-          <TextField
-            hideLabel
-            label=""
-            autoFocus
-            type="url"
-            value={url}
-            aria-label={t("GitHub issue or pull request URL")}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? "linked-work-item-error" : undefined}
-            placeholder="https://github.com/owner/repo/pull/123"
-            onChange={(event) => {
-              setUrl(event.target.value);
-              if (error) setError("");
-            }}
-          />
-          {error ? (
-            <span
-              id="linked-work-item-error"
-              role="alert"
-              className="text-ui-micro text-(--ui-tone-danger-fg)"
-            >
-              {error}
-            </span>
-          ) : (
-            <span className="text-ui-micro text-(--ui-text-secondary)">
-              {t("Paste the full github.com URL. The linked item will appear on the session card.")}
-            </span>
-          )}
-        </label>
+        <TextField
+          label={t("Issue or pull request URL")}
+          autoFocus
+          type="url"
+          value={url}
+          aria-label={t("GitHub issue or pull request URL")}
+          description={
+            error
+              ? undefined
+              : t("Paste the full github.com URL. The linked item will appear on the session card.")
+          }
+          error={error || undefined}
+          placeholder="https://github.com/owner/repo/pull/123"
+          onChange={(event) => {
+            setUrl(event.target.value);
+            if (error) setError("");
+          }}
+        />
         <div className="flex items-center justify-end gap-2">
           {initial ? (
             <Button

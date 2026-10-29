@@ -44,12 +44,13 @@ fn captured_retained_reads_use_actual_owned_store_and_reject_changed_identity() 
             .err(),
         Some(ChannelError::InvalidScope)
     );
+    // Deliberate corrupt-identity fixture beneath the production SQL guard.
     store
         .lock_conn()
         .unwrap()
-        .execute(
-            "UPDATE native_authority_identity SET source_profile_id='replaced'",
-            [],
+        .execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_profile_id='replaced'",
         )
         .unwrap();
     assert_eq!(
@@ -481,12 +482,13 @@ fn a_closed_request_envelope_rejects_unknown_fields_before_admission() {
 #[test]
 fn changed_native_store_identity_revokes_instead_of_rebinding_a_session() {
     let (store, mut channel, _peer) = fixture();
+    // Only the fixture bypasses immutability; the captured channel must revoke.
     store
         .lock_conn()
         .unwrap()
-        .execute(
-            "UPDATE native_authority_identity SET source_store_id='replacement-store' WHERE id=1",
-            [],
+        .execute_batch(
+            "DROP TRIGGER native_raw_identity_immutable;
+             UPDATE native_authority_identity SET source_store_id='replacement-store' WHERE id=1",
         )
         .unwrap();
     assert!(matches!(

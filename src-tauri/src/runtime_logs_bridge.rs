@@ -86,14 +86,17 @@ pub fn harness_runtime_logs_bridge(
     if session_id.is_empty() {
         return Ok(None);
     }
-    let value =
-        crate::remote::local_runtime_logs_rpc(&app, "runtimeLogs.bridge.describe", json!({}));
-    Ok(value.ok().map(|value| {
-        crate::session_tools_bridge::metadata(
-            value,
-            crate::session_tools_bridge::Group::RuntimeLogs,
-        )
-    }))
+    let Ok(service) = crate::remote::NativeServiceChannel::connect(&app) else {
+        return Ok(None);
+    };
+    Ok(service
+        .project("runtimeLogs.bridge.describe", json!({}), |value| {
+            Ok(crate::session_tools_bridge::metadata(
+                value.clone(),
+                crate::session_tools_bridge::Group::RuntimeLogs,
+            ))
+        })
+        .ok())
 }
 
 pub fn configure_child(
@@ -119,34 +122,38 @@ pub fn configure_child(
         .filter(|(_, suffix)| !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()))
         .map(|(id, _)| id)
         .unwrap_or(session_id);
-    let Ok(grant) = crate::remote::local_runtime_logs_rpc(
-        app,
+    let Ok(service) = crate::remote::NativeServiceChannel::connect(app) else {
+        return;
+    };
+    let _ = service.project(
         "runtimeLogs.access.issue",
         json!({"sessionId": primary}),
-    ) else {
-        return;
-    };
-    let Ok(grant) = crate::session_tools_bridge::register(
-        app,
-        session_id,
-        stamp,
-        crate::session_tools_bridge::Group::RuntimeLogs,
-        grant,
-    ) else {
-        return;
-    };
-    let (Some(token), Some(endpoint), Some(environment)) = (
-        grant.get("token").and_then(Value::as_str),
-        grant.get("endpoint").and_then(Value::as_str),
-        grant.get("environmentId").and_then(Value::as_str),
-    ) else {
-        return;
-    };
-    command
-        .env("BYCODA_RUNTIME_LOGS_TOKEN", token)
-        .env("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint)
-        .env("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment);
-    crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+        |issued| {
+            let mut issued = issued.clone();
+            issued["endpoint"] = json!(service.endpoint());
+            let grant = crate::session_tools_bridge::register_pinned(
+                app,
+                session_id,
+                stamp,
+                crate::session_tools_bridge::Group::RuntimeLogs,
+                issued,
+                service.clone(),
+            )?;
+            let (Some(token), Some(endpoint), Some(environment)) = (
+                grant.get("token").and_then(Value::as_str),
+                grant.get("endpoint").and_then(Value::as_str),
+                grant.get("environmentId").and_then(Value::as_str),
+            ) else {
+                return Err("Runtime log tool grant is incomplete".into());
+            };
+            command
+                .env("BYCODA_RUNTIME_LOGS_TOKEN", token)
+                .env("BYCODA_RUNTIME_LOGS_ENDPOINT", endpoint)
+                .env("BYCODA_RUNTIME_LOGS_ENVIRONMENT", environment);
+            crate::session_tools_bridge::cache_grant(session_id, stamp, grants(), grant);
+            Ok(())
+        },
+    );
 }
 
 #[cfg(test)]

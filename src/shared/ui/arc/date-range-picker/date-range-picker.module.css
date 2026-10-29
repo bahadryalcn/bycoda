@@ -8,6 +8,9 @@
   .root {
     display: inline-block;
     vertical-align: top;
+    /* A narrow container shrinks the trigger instead of overflowing it. */
+    max-inline-size: 100%;
+    min-inline-size: 0;
   }
 }
 
@@ -99,6 +102,8 @@
   z-index: 1;
   display: inline-flex;
   width: max-content;
+  max-inline-size: 100%;
+  min-inline-size: 0;
   height: var(--control-height-md);
   align-items: center;
   gap: 10px;
@@ -143,6 +148,10 @@
 }
 .value {
   display: inline-flex;
+  /* Shrinks with a narrow trigger and clips; the full range stays in the button's title and name. */
+  min-inline-size: 0;
+  overflow-x: clip;
+  overflow-y: visible;
   font-variant-numeric: tabular-nums;
 }
 .value[data-empty] {

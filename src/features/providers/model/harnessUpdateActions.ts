@@ -3,8 +3,8 @@ import {
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { inspectHarnessBinary, updateHarnessCli } from "../../../integrations/harness/core/child";
-import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
 import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import { refreshProviderCatalog } from "./catalogReceipts";
 import {
   announceHarnessUpdated,
   checkHarnessVersions,
@@ -16,10 +16,17 @@ import {
   type HarnessVersionCheck,
 } from "./harnessUpdates";
 
+/**
+ * Outcome of the model-list refresh that follows a verified CLI update:
+ * `fresh` a new list landed, `unchanged` the previous list is still shown
+ * (not proof of availability), `failed` the refresh itself errored.
+ */
+export type HarnessCatalogRefresh = "fresh" | "unchanged" | "failed";
+
 export type HarnessUpdateRun =
   | { status: "idle" }
   | { status: "updating" }
-  | { status: "updated"; version: string; catalogRefresh?: "attempted" | "failed" }
+  | { status: "updated"; version: string; catalogRefresh?: HarnessCatalogRefresh }
   | { status: "failed"; error: string };
 
 export type HarnessUpdateSnapshot = {
@@ -156,16 +163,16 @@ async function performUpdate(update: HarnessUpdate): Promise<HarnessUpdateRun> {
     }
     if (version && !isHarnessVersionBehind(update.harness, version, update.latest)) {
       stage = "model refresh";
-      let catalogRefresh: "attempted" | "failed" = "attempted";
+      let catalogRefresh: HarnessCatalogRefresh;
       try {
-        await refreshHarnessCatalogs([update.harness], { force: true });
+        const receipt = await refreshProviderCatalog(update.harness, { force: true });
+        catalogRefresh =
+          receipt.status === "fresh" ? "fresh" : receipt.status === "error" ? "failed" : "unchanged";
       } catch {
         catalogRefresh = "failed";
       }
       void announceHarnessUpdated(update.harness).catch(() => undefined);
-      return catalogRefresh === "failed"
-        ? { status: "updated", version, catalogRefresh }
-        : { status: "updated", version };
+      return { status: "updated", version, catalogRefresh };
     }
     throw new Error(`Still on ${version} after updating.`);
   } catch (error) {

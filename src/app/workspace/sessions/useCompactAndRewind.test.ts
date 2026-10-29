@@ -133,6 +133,17 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it("keeps local Host compact and rewind out of Native when its owner client is detached", async () => {
+  const session = chat(true);
+  session.hostBinding = { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: session.id, authorityGeneration: 1, created: true };
+  deps.sessionsRef.current = [session];
+  expect(actions.onCompactContext(session.id)).toBe(false);
+  expect(await actions.onRewindMessage(session.id, "selected-user")).toBe(false);
+  expect(effects.providerRewind).not.toHaveBeenCalled();
+  expect(effects.apply).not.toHaveBeenCalled();
+  expect(effects.save).not.toHaveBeenCalled();
+});
+
 it("keeps a managed Undo review's original authority when it changes during preparation", async () => {
   const original = { ...chat(true), adoptedAuthorityGeneration: 2 };
   deps.sessionsRef.current = [original];

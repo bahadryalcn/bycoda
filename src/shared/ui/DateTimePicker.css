@@ -153,6 +153,22 @@
   font-variant-numeric: tabular-nums;
   text-align: center;
 }
+/* State contract: disabled dims the whole picker; read-only keeps full ink and has no hover or pressed cue. */
+.bycoda-date-time-picker[data-disabled] :is(.date-time-weekday, .date-time-title, .date-time-time-label) {
+  color: var(--ui-text-disabled);
+}
+.bycoda-date-time-picker[data-readonly] .date-time-day {
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bycoda-date-time-picker[data-readonly] .date-time-day:hover:not([data-selected]) {
+    background: transparent;
+    color: var(--ui-text-secondary);
+  }
+}
+.bycoda-date-time-picker[data-readonly] .date-time-day:active:not([data-selected]) {
+  background: transparent;
+}
 @media (pointer: coarse) {
   .date-time-day,
   .date-time-month-action {

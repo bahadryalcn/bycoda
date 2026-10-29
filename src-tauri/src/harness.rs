@@ -253,6 +253,35 @@ impl Owners {
     }
 }
 
+// The ledger observation is pre-recipient. Only the final native route can
+// stamp the captured physical consumer; this is not the spawning-owner grant.
+fn recipient_output_metadata(
+    mut observed: Option<OutputMetadata>,
+    owner_epoch: Option<String>,
+) -> Option<OutputMetadata> {
+    if let Some(observed) = &mut observed {
+        observed.owner_epoch = owner_epoch;
+        if observed.owner_epoch.is_none() {
+            observed.available = false;
+            observed
+                .unavailable_reason
+                .get_or_insert(UnavailableReason::OwnerUnavailable);
+        }
+    }
+    observed
+}
+
+fn recipient_output_state(mut state: OutputState, owner_epoch: Option<String>) -> OutputState {
+    state.owner_epoch = owner_epoch;
+    if state.owner_epoch.is_none() {
+        state.state = crate::native_provider_output::EmissionState::Unavailable;
+        state
+            .reason
+            .get_or_insert(UnavailableReason::OwnerUnavailable);
+    }
+    state
+}
+
 fn emit_output_batch<P: Serialize + Clone>(
     app: &AppHandle,
     owners: &Owners,
@@ -272,17 +301,12 @@ fn emit_output_batch<P: Serialize + Clone>(
         if let Route::Windows(labels) = route {
             for label in labels {
                 let owner = owners.output_owner(&label);
-                let mut observed = metadata.clone();
-                if let Some(observed) = &mut observed {
-                    observed.owner_epoch = owner.as_ref().map(|owner| owner.epoch());
-                    if owner.is_none() {
-                        observed.available = false;
-                        observed
-                            .unavailable_reason
-                            .get_or_insert(UnavailableReason::OwnerUnavailable);
-                    }
-                }
+                let observed = recipient_output_metadata(
+                    metadata.clone(),
+                    owner.as_ref().map(|owner| owner.epoch()),
+                );
                 let sent = app.emit_to(label.as_str(), event, make(observed)).is_ok();
+                stream.observe_recipient_delivery(metadata.as_ref(), owner.clone(), items, sent);
                 delivered |= sent;
                 complete &= sent && owner.is_some();
             }
@@ -290,7 +314,7 @@ fn emit_output_batch<P: Serialize + Clone>(
             complete = false;
         }
         if !delivered {
-            let mut observed = metadata;
+            let mut observed = metadata.clone();
             if let Some(observed) = &mut observed {
                 observed.owner_epoch = None;
                 observed.available = false;
@@ -300,7 +324,8 @@ fn emit_output_batch<P: Serialize + Clone>(
             }
             // Preserve existing fallback delivery; it never supplies an exact
             // physical consumer or a prospective Native checkpoint seal.
-            let _ = app.emit(event, make(observed));
+            let sent = app.emit(event, make(observed)).is_ok();
+            stream.observe_recipient_delivery(metadata.as_ref(), None, items, sent);
             complete = false;
         }
         complete
@@ -319,14 +344,8 @@ fn route_output_state<P: Serialize + Clone>(
     if let Route::Windows(labels) = owners.route(|label| app.get_webview_window(label).is_some()) {
         for label in labels {
             let owner = owners.output_owner(&label);
-            let mut current = state.clone();
-            current.owner_epoch = owner.as_ref().map(|owner| owner.epoch());
-            if owner.is_none() {
-                current.state = crate::native_provider_output::EmissionState::Unavailable;
-                current
-                    .reason
-                    .get_or_insert(UnavailableReason::OwnerUnavailable);
-            }
+            let current =
+                recipient_output_state(state.clone(), owner.as_ref().map(|owner| owner.epoch()));
             let sent = app.emit_to(label.as_str(), event, make(current)).is_ok();
             delivered |= sent;
             complete &= sent && owner.is_some();
@@ -527,6 +546,29 @@ impl HarnessHost {
     #[allow(dead_code)] // The trusted output-applied checkpoint port is not installed.
     pub(crate) fn native_output_streams(&self, session_id: &str) -> Vec<Arc<NativeOutputStream>> {
         self.output.retained(session_id)
+    }
+    #[allow(dead_code)] // Private future checkpoint discovery; not a qualified verifier/IPC.
+    pub(crate) fn native_output_target_streams(
+        &self,
+        logical_session_id: &str,
+    ) -> Vec<Arc<NativeOutputStream>> {
+        self.output.retained_for_target(logical_session_id)
+    }
+
+    /// Native-only preflight. The retained result must be consumed under the
+    /// physical-owner group and actual FULL transaction; no public DTO is proof.
+    pub(crate) fn prepare_native_output_inputs(
+        &self,
+        store: &crate::session_store::SessionStore,
+        target: &str,
+        recipient: &crate::native_window_lifecycle::NativeCheckpointWindow,
+        claims: &[crate::native_provider_output::NativeInputClaim],
+    ) -> Result<
+        crate::native_provider_output::PreparedNativeInputGroup,
+        crate::native_provider_output::InputComparisonError,
+    > {
+        self.output
+            .prepare_input_group(store, target, recipient, claims)
     }
 
     fn lock_inner(&self) -> std::sync::MutexGuard<'_, HarnessInner> {
@@ -6531,6 +6573,232 @@ mod native_output_integration_tests {
     use super::*;
     use crate::native_provider_output::EmissionState;
 
+    struct RecipientWire {
+        registry: NativeProviderOutputRegistry,
+        store: Arc<crate::session_store::SessionStore>,
+        output: Arc<NativeOutputStream>,
+        recipient_owner: Arc<OutputOwner>,
+        sent_metadata: Arc<Mutex<Option<OutputMetadata>>>,
+        original_resources: Arc<tauri::ResourceTable>,
+        recipient_resources: Arc<tauri::ResourceTable>,
+        original: Arc<crate::native_window_lifecycle::NativeCheckpointWindow>,
+        recipient: Arc<crate::native_window_lifecycle::NativeCheckpointWindow>,
+        instance: uuid::Uuid,
+    }
+    impl RecipientWire {
+        fn new(bound: bool) -> Self {
+            use crate::native_window_lifecycle::{
+                capture_checkpoint_resources, test_buffer_resources, with_checkpoint_resources,
+            };
+            use crate::session_store::{window_barrier::WindowBarrier, SessionStore};
+            let store = Arc::new(SessionStore::open_in_memory().unwrap());
+            let instance = store.native_instance_id();
+            if bound {
+                store.lock_conn().unwrap().execute("INSERT INTO sessions(id,cwd,harness,model,runtime_mode,title,created_at,updated_at)
+                  VALUES('logical','/isolated','fixture','fixture','supervised','fixture',1,1)", []).unwrap();
+            }
+            let barrier = WindowBarrier::new();
+            barrier.admit_window("original").unwrap();
+            barrier.admit_window("recipient").unwrap();
+            let original_resources = Arc::new(test_buffer_resources(&barrier, "original"));
+            let recipient_resources = Arc::new(test_buffer_resources(&barrier, "recipient"));
+            let original =
+                Arc::new(capture_checkpoint_resources(&original_resources, instance).unwrap());
+            let recipient =
+                Arc::new(capture_checkpoint_resources(&recipient_resources, instance).unwrap());
+            let source = OutputSource::capture_owned_physical(
+                store.clone(),
+                if bound { "logical#wire" } else { "probe" },
+                bound.then_some("logical"),
+                OutputOwner::capture_resources(original_resources.clone(), instance),
+            )
+            .unwrap();
+            let actual_recipient = recipient.clone();
+            let actual_resources = recipient_resources.clone();
+            let registry = NativeProviderOutputRegistry::new();
+            let output = registry.begin_sse(
+                source,
+                Arc::new(move || {
+                    with_checkpoint_resources(
+                        &actual_recipient,
+                        &actual_resources,
+                        instance,
+                        |_, _| Ok(()),
+                    )
+                    .is_ok()
+                }),
+                Arc::new(|_| true),
+            );
+            Self {
+                registry,
+                store,
+                output,
+                recipient_owner: OutputOwner::capture_resources(
+                    recipient_resources.clone(),
+                    instance,
+                ),
+                sent_metadata: Arc::new(Mutex::new(None)),
+                original_resources,
+                recipient_resources,
+                original,
+                recipient,
+                instance,
+            }
+        }
+        fn recipient_epoch(&self) -> Option<String> {
+            crate::native_window_lifecycle::with_checkpoint_resources(
+                &self.recipient,
+                &self.recipient_resources,
+                self.instance,
+                |_, _| Ok(self.recipient.incarnation().to_string()),
+            )
+            .ok()
+        }
+        fn packet(&self) -> serde_json::Value {
+            let items = vec![r#"{"type":"context","used":1}"#.to_string()];
+            let (sent, received) = mpsc::channel();
+            let receipt = self.output.reader(0);
+            let output = self.output.clone();
+            let recipient = self.recipient.clone();
+            let resources = self.recipient_resources.clone();
+            let instance = self.instance;
+            let physical = self.recipient_owner.clone();
+            let sent_metadata = self.sent_metadata.clone();
+            let success = read_sse_batches(
+                std::io::Cursor::new(format!("data: {}\n\n", items[0])),
+                &AtomicBool::new(false),
+                move |parsed| {
+                    assert_eq!(parsed, items);
+                    output.emit(OutputChannel::Sse, &parsed, |raw| {
+                        // Ledger data intentionally has no recipient before routing.
+                        assert!(raw.as_ref().unwrap().owner_epoch.is_none());
+                        let epoch = crate::native_window_lifecycle::with_checkpoint_resources(
+                            &recipient,
+                            &resources,
+                            instance,
+                            |_, _| Ok(recipient.incarnation().to_string()),
+                        )
+                        .ok();
+                        let owner = physical.current().then(|| physical.clone());
+                        let observed = recipient_output_metadata(raw.clone(), epoch);
+                        *sent_metadata.lock().unwrap() = observed.clone();
+                        let enqueued = sent
+                            .send(serde_json::json!({
+                                "sessionId":output.observation().session_id,
+                                "items":parsed,
+                                "nativeOutput":observed,
+                            }))
+                            .is_ok();
+                        output.observe_recipient_delivery(raw.as_ref(), owner, &parsed, enqueued);
+                        enqueued
+                    });
+                },
+            );
+            receipt.finish(success, false);
+            self.output.terminal_complete(success, false);
+            self.output.terminal_delivery(true);
+            let raw = self.output.observation();
+            assert!(raw.owner_epoch.is_none());
+            serde_json::json!({
+                "expected":{"recipientEpoch":self.recipient.incarnation().to_string(),
+                    "originalEpoch":self.original.incarnation().to_string(),
+                    "logicalSessionId":raw.logical_session_id},
+                "batch":received.recv_timeout(Duration::from_secs(3)).unwrap(),
+                "terminal":{"sessionId":raw.session_id,
+                    "nativeOutputState":recipient_output_state(raw, self.recipient_epoch())},
+            })
+        }
+    }
+
+    #[test]
+    fn production_recipient_stamps_use_actual_native_resources_on_batch_and_state() {
+        let fixture = RecipientWire::new(true);
+        let packet = fixture.packet();
+        let recipient = fixture.recipient.incarnation().to_string();
+        assert_ne!(recipient, fixture.original.incarnation().to_string());
+        for metadata in [
+            &packet["batch"]["nativeOutput"],
+            &packet["terminal"]["nativeOutputState"],
+        ] {
+            assert_eq!(metadata["ownerEpoch"], recipient);
+            assert_eq!(metadata["sessionId"], "logical#wire");
+            assert_eq!(metadata["logicalSessionId"], "logical");
+            assert_eq!(metadata["qualified"], false);
+        }
+        assert_eq!(packet["batch"]["nativeOutput"]["available"], true);
+        assert_eq!(packet["terminal"]["nativeOutputState"]["state"], "sealed");
+        assert!(fixture.output.verified_emit_seal().unwrap().is_current());
+        let claim = crate::native_provider_output::NativeInputClaim {
+            version: 1,
+            qualified: false,
+            kind: "native-output-item-comparison".into(),
+            batch: fixture.sent_metadata.lock().unwrap().clone().unwrap(),
+            item_index: 0,
+        };
+        let input = fixture
+            .registry
+            .compare_recipient_input(
+                &fixture.store,
+                &fixture.recipient,
+                &fixture.recipient_resources,
+                &claim,
+            )
+            .unwrap();
+        assert!(input.is_current(
+            &fixture.store,
+            &fixture.recipient,
+            &fixture.recipient_resources
+        ));
+        assert_eq!(input.scope().recipient_epoch.to_string(), recipient);
+        crate::native_window_lifecycle::test_reload_buffer_resources(&fixture.original_resources);
+        assert!(fixture.recipient_epoch().is_some());
+        // A current consumer cannot replace the private original source owner.
+        assert!(fixture.output.verified_emit_seal().is_err());
+        assert!(!input.is_current(
+            &fixture.store,
+            &fixture.recipient,
+            &fixture.recipient_resources
+        ));
+    }
+
+    #[test]
+    fn recipient_reload_and_unbound_source_never_gain_available_wire_observations() {
+        let fixture = RecipientWire::new(true);
+        crate::native_window_lifecycle::test_reload_buffer_resources(&fixture.recipient_resources);
+        let packet = fixture.packet();
+        assert!(packet["batch"]["nativeOutput"]["ownerEpoch"].is_null());
+        assert_eq!(packet["batch"]["nativeOutput"]["available"], false);
+        assert_eq!(
+            packet["terminal"]["nativeOutputState"]["state"],
+            "unavailable"
+        );
+        let unbound = RecipientWire::new(false).packet();
+        assert!(unbound["batch"]["nativeOutput"]["ownerEpoch"].is_string());
+        assert!(unbound["batch"]["nativeOutput"]
+            .get("logicalSessionId")
+            .is_none());
+        assert_eq!(unbound["batch"]["nativeOutput"]["available"], false);
+        assert_eq!(
+            unbound["batch"]["nativeOutput"]["unavailableReason"],
+            "session-unbound"
+        );
+    }
+
+    #[test]
+    #[ignore = "owned isolated Native wire fixture; Root consumes bytes via JS observer"]
+    fn owned_native_recipient_wire_fixture() {
+        let bound = RecipientWire::new(true).packet();
+        let unknown = RecipientWire::new(true);
+        crate::native_window_lifecycle::test_reload_buffer_resources(&unknown.recipient_resources);
+        let unknown = unknown.packet();
+        let unbound = RecipientWire::new(false).packet();
+        println!("NATIVE_OUTPUT_RECIPIENT_WIRE");
+        println!(
+            "{}",
+            serde_json::json!({"version":1,"qualified":false,"bound":bound,"unknownRecipient":unknown,"unbound":unbound})
+        );
+    }
+
     fn logical_source(route: &str) -> OutputSource {
         use crate::session_store::window_barrier::{NativeLane, WindowBarrier};
         let store = Arc::new(crate::session_store::SessionStore::open_in_memory().unwrap());
@@ -6578,6 +6846,8 @@ mod native_output_integration_tests {
             "logical"
         );
         assert!(host.output_for_route("logical#another").unwrap().is_none());
+        assert_eq!(host.native_output_target_streams("logical").len(), 1);
+        assert!(host.native_output_streams("logical").is_empty());
         assert!(host.authority_idle("logical").is_err());
         assert!(host.authority_idle("unrelated").is_ok());
         host.stop_sse("logical#sse");
@@ -6813,14 +7083,27 @@ mod native_output_integration_tests {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000);
         }
+        let native = RecipientWire::new(true);
+        let original =
+            OutputOwner::capture_resources(native.original_resources.clone(), native.instance);
+        let source = OutputSource::capture_owned_physical(
+            native.store.clone(),
+            "logical#actual-owned-child",
+            Some("logical"),
+            original,
+        )
+        .unwrap();
         let mut child = command.spawn().unwrap();
         let host = HarnessHost::new();
-        let source = logical_source("logical#actual-owned-child");
         let stdout = child.stdout.take().unwrap();
         let stderr = child.stderr.take().unwrap();
-        let (output, child) =
-            host.output
-                .begin_process(source, child, Arc::new(|| true), Arc::new(|_| true));
+        let current = native.recipient_owner.clone();
+        let (output, child) = host.output.begin_process(
+            source,
+            child,
+            Arc::new(move || current.current()),
+            Arc::new(|_| true),
+        );
         let (sent, received) = mpsc::channel();
         let jobs = [
             (
@@ -6838,11 +7121,20 @@ mod native_output_integration_tests {
             let receipt = output.reader(slot as u8);
             let output = output.clone();
             let sent = sent.clone();
+            let recipient = native.recipient_owner.clone();
             thread::spawn(move || {
                 read_provider_lines(reader, receipt, move |items| {
                     output.emit(channel, &items, |metadata| {
-                        sent.send((channel, items.clone(), metadata.unwrap()))
-                            .is_ok()
+                        let raw = metadata.unwrap();
+                        let owner = recipient.current().then(|| recipient.clone());
+                        let observed = recipient_output_metadata(
+                            Some(raw.clone()),
+                            owner.as_ref().map(|owner| owner.epoch()),
+                        )
+                        .unwrap();
+                        let enqueued = sent.send((channel, items.clone(), observed)).is_ok();
+                        output.observe_recipient_delivery(Some(&raw), owner, &items, enqueued);
+                        enqueued
                     })
                 })
             })
@@ -6881,6 +7173,55 @@ mod native_output_integration_tests {
             (1..=emitted.len() as u64).collect::<Vec<_>>()
         );
         assert!(output.verified_emit_seal().unwrap().is_current());
+        let claim = crate::native_provider_output::NativeInputClaim {
+            version: 1,
+            qualified: false,
+            kind: "native-output-item-comparison".into(),
+            batch: emitted[0].2.clone(),
+            item_index: 0,
+        };
+        let input = host
+            .output
+            .compare_recipient_input(
+                &native.store,
+                &native.recipient,
+                &native.recipient_resources,
+                &claim,
+            )
+            .unwrap();
+        assert!(input.is_current(
+            &native.store,
+            &native.recipient,
+            &native.recipient_resources
+        ));
+        assert_eq!(input.scope().item_utf8_bytes, emitted[0].1[0].len());
+        let prepared = host
+            .prepare_native_output_inputs(&native.store, "logical", &native.recipient, &[claim])
+            .unwrap();
+        crate::native_window_lifecycle::with_checkpoint_owner_group(
+            &prepared.owners(),
+            native.instance,
+            |owners| {
+                prepared.with_stable_inputs(&owners, |stable| {
+                    crate::session_store::authority::with_full_projection_transaction(
+                        &native.store,
+                        |tx| {
+                            stable.validate_at(&native.store, &tx, |inputs| {
+                                assert_eq!(inputs.logical_target(), "logical");
+                                assert_eq!(inputs.len(), 1);
+                                assert_eq!(inputs.scope(0).unwrap().stream_epoch, output.epoch());
+                                assert_eq!(
+                                    inputs.scope(0).unwrap().item_utf8_bytes,
+                                    emitted[0].1[0].len()
+                                );
+                                Ok(())
+                            })
+                        },
+                    )
+                })
+            },
+        )
+        .unwrap();
     }
 }
 

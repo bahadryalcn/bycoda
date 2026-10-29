@@ -53,7 +53,7 @@ test("library copy reconciles an uncertain saved profile without a second save",
   await page.goto("/tests/browser/crews.html?copyUnknown");
   await page.getByRole("button", { name: "Crew settings page", exact: true }).click();
   await page
-    .locator(".settings-row")
+    .locator(".settings-collection-row")
     .filter({ hasText: "API engineer" })
     .getByRole("button", { name: /^Edit / })
     .click();
@@ -619,7 +619,7 @@ test("editing keeps the roster first, settings one tab away, and fits narrow win
     .click();
   const dialog = page.getByRole("dialog", { name: "Website Crew" });
   await expect(dialog.getByRole("region", { name: "Coordinator" })).toBeVisible();
-  await dialog.getByRole("button", { name: /UI Build accessible UI/ }).click();
+  await dialog.getByRole("button", { name: /^UI Specialist/ }).click();
   // Automatic members rate their models with plain levels instead of raw numbers.
   await expect(dialog.getByRole("list", { name: "Model ratings" })).toBeVisible();
   await expect(dialog.getByText("Owner quality estimate")).toHaveCount(0);

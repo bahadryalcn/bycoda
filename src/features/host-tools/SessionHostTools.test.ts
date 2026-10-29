@@ -26,16 +26,14 @@ async function toolAct(run: () => unknown) {
   });
 }
 
+const toolTabs = () => [...container.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
+/** The visible tool navigation: the selected tab names the active tool. */
 const toolChooser = () =>
-  container.querySelector<HTMLButtonElement>('button[aria-label="Conversation tool selection"]')!;
-const toolOptions = () => [
-  ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-];
+  container.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')!;
 async function chooseTool(name: string) {
-  await toolAct(() => toolChooser().click());
-  const option = toolOptions().find((option) => option.getAttribute("aria-label") === name)!;
-  expect(option).toBeDefined();
-  await toolAct(() => option.click());
+  const tab = toolTabs().find((tab) => tab.getAttribute("aria-label") === name)!;
+  expect(tab).toBeDefined();
+  await toolAct(() => tab.click());
 }
 
 beforeEach(() => {
@@ -104,15 +102,7 @@ it("keeps common chrome compact and selects another tool without starting resour
   expect(container.querySelector(".host-tools-heading")).toBeNull();
   expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
   expect(container.querySelector(".host-tools-topbar-device")).toBeNull();
-  const chooser = container.querySelector<HTMLButtonElement>(
-    '[aria-label="Conversation tool selection"]',
-  )!;
-  await toolAct(async () => chooser.click());
-  const resourceOption = [
-    ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
-  ].find((option) => option.textContent?.includes("Resource usage"))!;
-  expect(resourceOption).toBeTruthy();
-  await toolAct(async () => resourceOption.click());
+  await chooseTool("Resource usage");
   expect(container.querySelector("[data-active-tool]")?.getAttribute("data-active-tool")).toBe(
     "resources",
   );
@@ -161,15 +151,21 @@ it("shares one named chooser and header row across all five panels", async () =>
     await chooseTool(name);
     const header = container.querySelector(".host-tools-topbar")!;
     expect(container.querySelectorAll(".host-tools-topbar")).toHaveLength(1);
-    expect(header.querySelectorAll('[aria-label="Conversation tool selection"]')).toHaveLength(1);
+    // Wide panes show the tablist, narrow panes one named selector; a container
+    // query displays exactly one of them, so both are present in the DOM here.
+    expect(header.querySelectorAll('[role="tablist"][aria-label="Conversation tool selection"]')).toHaveLength(1);
+    expect(header.querySelectorAll(".host-tools-compact-selector")).toHaveLength(1);
     expect(
-      container.querySelectorAll(
-        ".host-tools-heading, .host-tools-compact-selector, [role=tablist]",
-      ),
-    ).toHaveLength(0);
+      header.querySelector(".host-tools-compact-trigger")?.textContent,
+    ).toContain(name);
+    expect(container.querySelectorAll(".host-tools-heading")).toHaveLength(0);
+    expect(toolTabs()).toHaveLength(5);
     expect(toolChooser().textContent).toContain(name);
     expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
-    expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(name);
+    const panel = container.querySelector('[role="tabpanel"]')!;
+    expect(document.getElementById(panel.getAttribute("aria-labelledby")!)!.getAttribute("aria-label")).toBe(
+      name,
+    );
   }
 });
 afterEach(async () => {
@@ -177,7 +173,7 @@ afterEach(async () => {
   container.remove();
   vi.unstubAllGlobals();
 });
-it("only mounts the active tool and returns keyboard menu focus to its chooser", async () => {
+it("only mounts the active tool and moves between visible tool tabs with the keyboard", async () => {
   await toolAct(async () =>
     root.render(
       createElement(SessionHostTools, {
@@ -190,45 +186,23 @@ it("only mounts the active tool and returns keyboard menu focus to its chooser",
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "device.host", "devices.status", {});
   expect(container.textContent).not.toContain("Saved visuals");
   expect(container.textContent).not.toContain("PR tracking");
-  const chooser = toolChooser();
-  expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  expect(toolTabs()).toHaveLength(5);
+  expect(toolChooser().getAttribute("aria-label")).toBe("Devices");
   await toolAct(() => {
-    chooser.focus();
-    chooser.click();
+    toolChooser().focus();
+    toolChooser().dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
   });
-  let options = toolOptions();
-  expect(document.activeElement).toBe(options[0]);
-  expect(options[0].getAttribute("aria-checked")).toBe("true");
-  await toolAct(() =>
-    document.activeElement!.dispatchEvent(
-      new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
-    ),
-  );
-  expect(document.activeElement).toBe(options[1]);
-  // Native Enter activation is covered by the browser suite; happy-dom does not synthesize it.
-  await toolAct(() => (document.activeElement as HTMLButtonElement).click());
-  expect(document.activeElement).toBe(chooser);
-  expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(
-    "Host browser",
-  );
+  expect(toolChooser().getAttribute("aria-label")).toBe("Host browser");
+  expect(document.activeElement).toBe(toolChooser());
   expect(container.querySelectorAll('[role="tabpanel"]')).toHaveLength(1);
   expect(hostFeatureRequest).toHaveBeenCalledWith("/repo", "browser.shared", "browser.status", {
     leaseId: undefined,
   });
-  await toolAct(() => chooser.click());
-  options = toolOptions();
-  expect(options[1].getAttribute("aria-checked")).toBe("true");
   await toolAct(() =>
-    document.activeElement!.dispatchEvent(
-      new KeyboardEvent("keydown", { bubbles: true, key: "End" }),
-    ),
+    toolChooser().dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "End" })),
   );
-  expect(document.activeElement).toBe(options[4]);
-  await toolAct(() => (document.activeElement as HTMLButtonElement).click());
-  expect(document.activeElement).toBe(chooser);
-  expect(container.querySelector('[role="tabpanel"]')!.getAttribute("aria-label")).toBe(
-    "Resource usage",
-  );
+  expect(toolChooser().getAttribute("aria-label")).toBe("Resource usage");
+  expect(document.activeElement).toBe(toolChooser());
   expect(
     vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "resources.read"),
   ).toBe(false);

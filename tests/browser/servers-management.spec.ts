@@ -7,23 +7,52 @@ test.describe("touch selection", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   test("touch hold selects and release keeps the selection without opening details", async ({
     page,
+    browserName,
   }) => {
     await page.goto("/tests/browser/servers.html?terminalWorkspace&sshFixture");
     const first = page.locator('[data-server-row="fixture-0"]');
     const bounds = await first.boundingBox();
     expect(bounds).not.toBeNull();
     const touch = { x: bounds!.x + bounds!.width / 2, y: bounds!.y + bounds!.height / 2 };
-    const client = await page.context().newCDPSession(page);
-    await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touch] });
-    await page.waitForTimeout(650);
-    await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    if (browserName === "chromium") {
+      const client = await page.context().newCDPSession(page);
+      await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touch] });
+      await page.waitForTimeout(650);
+      await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await client.detach();
+    } else {
+      // Only Chromium exposes CDP touch input. Other engines get the same touch pointer
+      // sequence the row's long-press handler listens to, followed by the click a
+      // browser may still synthesize after the release.
+      await first.evaluate(
+        async (row, point) => {
+          const init = {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            clientX: point.x,
+            clientY: point.y,
+            pointerId: 7,
+            pointerType: "touch",
+            isPrimary: true,
+            button: 0,
+          };
+          row.dispatchEvent(new PointerEvent("pointerdown", { ...init, buttons: 1 }));
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          row.dispatchEvent(new PointerEvent("pointerup", { ...init, buttons: 0 }));
+          row.dispatchEvent(
+            new MouseEvent("click", { ...init, detail: 1, view: window, buttons: 0 }),
+          );
+        },
+        touch,
+      );
+    }
     await expect(
       page.getByRole("checkbox", { name: "Select Server 00", exact: true }),
     ).toBeChecked();
     await expect(page.getByRole("region", { name: "Server details" })).toHaveCount(0);
     await expect(page.getByRole("menu")).toHaveCount(0);
     await expect(page.getByRole("region", { name: "SSH terminal", exact: true })).toHaveCount(0);
-    await client.detach();
   });
 });
 
@@ -84,8 +113,8 @@ for (const theme of ["light", "dark"]) {
       const rows = page.getByRole("list", { name: "Servers", exact: true });
       await expect(rows.locator("[data-server-row]")).toHaveCount(36);
       const saved = page
-        .locator("details")
-        .filter({ has: page.locator("summary", { hasText: "Saved SSH tabs" }) });
+        .locator("details:not(:has(details))")
+        .filter({ has: page.locator("summary", { hasText: /Saved SSH tabs.*Not connected/ }) });
       await expect(saved).not.toHaveAttribute("open");
       expect(await page.getByText("Remember saved SSH tabs", { exact: true }).count()).toBe(1);
       await expect(rows.getByRole("checkbox")).toHaveCount(0);
@@ -155,8 +184,8 @@ test("confirmed mixed bulk removal removes only selected records", async ({ page
 test("removing saved tabs keeps the server and never launches a connection", async ({ page }) => {
   await page.goto("/tests/browser/servers.html?terminalWorkspace&sshFixture&serverRestoreFixture");
   const saved = page
-    .locator("details")
-    .filter({ has: page.locator("summary", { hasText: "Saved SSH tabs" }) });
+    .locator("details:not(:has(details))")
+    .filter({ has: page.locator("summary", { hasText: /Saved SSH tabs.*Not connected/ }) });
   await saved.locator("summary").click();
   await saved.getByRole("checkbox", { name: "Select saved SSH tabs", exact: true }).check();
   await saved.getByRole("button", { name: "Remove selected", exact: true }).click();
@@ -180,12 +209,12 @@ test("server detail drafts survive opening and returning from a terminal", async
   await page.locator('[data-server-row="ssh-duplicate"]').click();
   const details = page.getByRole("region", { name: "Server details", exact: true });
   await details.getByRole("button", { name: "Organization", exact: true }).click();
-  await details.getByRole("textbox", { name: "Group", exact: true }).fill("Unfinished group");
+  await details.getByRole("combobox", { name: "Group", exact: true }).fill("Unfinished group");
   await details.getByRole("button", { name: "Connect via SSH", exact: true }).click();
   await expect(page.getByRole("region", { name: "SSH terminal", exact: true })).toBeVisible();
   await expect(details).toBeHidden();
   await page.getByRole("button", { name: "Servers", exact: true }).click();
-  await expect(details.getByRole("textbox", { name: "Group", exact: true })).toHaveValue(
+  await expect(details.getByRole("combobox", { name: "Group", exact: true })).toHaveValue(
     "Unfinished group",
   );
   await page.screenshot({ path: `${evidence}/details-draft.png` });

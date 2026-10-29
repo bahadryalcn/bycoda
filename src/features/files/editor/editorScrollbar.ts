@@ -480,13 +480,15 @@ const scrollbarTheme = EditorView.theme({
     right: "3px",
     minHeight: `${MIN_THUMB_HEIGHT}px`,
     borderRadius: "2px",
-    backgroundColor: "var(--ui-text-disabled)",
+    backgroundColor: "var(--ui-scrollbar-thumb)",
     willChange: "transform",
   },
-  ".cm-editorScrollbar[data-hover] .cm-editorScrollbarThumb, .cm-editorScrollbar[data-dragging] .cm-editorScrollbarThumb":
-    {
-      backgroundColor: "var(--ui-text-secondary)",
-    },
+  ".cm-editorScrollbar[data-hover] .cm-editorScrollbarThumb": {
+    backgroundColor: "var(--ui-scrollbar-thumb-hover)",
+  },
+  ".cm-editorScrollbar[data-dragging] .cm-editorScrollbarThumb": {
+    backgroundColor: "var(--ui-scrollbar-thumb-active)",
+  },
   ".cm-editorScrollbarTick": {
     position: "absolute",
     zIndex: "2",

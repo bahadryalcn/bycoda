@@ -3,6 +3,7 @@ import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { SocialPanelActiveContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
+import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
 import { Popover } from "../../../shared/ui/Popover";
 import { SlidersHorizontal } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
@@ -27,23 +28,20 @@ export function SocialFilters({
   }, [active]);
   return (
     <>
-      <Button
+      <FilterTrigger
         disabled={socialLocked}
         ref={anchor}
         type="button"
-        variant="secondary"
         size="sm"
-        iconOnly={!activeCount}
-        label={t("Filters")}
-        title={t("Filters")}
-        aria-label={activeCount ? t("Filters · {p0} active", { p0: activeCount }) : t("Filters")}
+        label={activeCount ? t("Filters · {p0} active", { p0: activeCount }) : t("Filters")}
+        icon={<SlidersHorizontal className="icon-sm" aria-hidden="true" />}
+        activeCount={activeCount}
+        onReset={socialLocked ? undefined : onReset}
+        resetLabel={t("Reset filters")}
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((value) => !value)}
-      >
-        <SlidersHorizontal aria-hidden="true" />
-        {activeCount ? <span>{activeCount}</span> : null}
-      </Button>
+      />
       {open && active ? (
         <Popover
           anchor={anchor}
@@ -52,7 +50,13 @@ export function SocialFilters({
           role="dialog"
           aria-label={t("Filters")}
           className="social-filter-panel"
-          onDismiss={() => setOpen(false)}
+          flow="scroll"
+          onDismiss={(reason) => {
+            setOpen(false);
+            // The trigger re-renders with its count while a filter changes; return
+            // focus to the current trigger.
+            if (reason === "escape") anchor.current?.focus();
+          }}
         >
           <div className="social-filter-heading">
             <strong>{t("Filters")}</strong>

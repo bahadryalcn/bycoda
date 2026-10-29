@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createServerTerminalRestoreState } from "./serverTerminalRestoreState";
 
 describe("saved server tab restore ownership", () => {
@@ -104,5 +104,48 @@ describe("saved server tab restore ownership", () => {
     expect(state.getSnapshot().restore?.tabs).toHaveLength(1);
     state.activate("absent");
     expect(state.getSnapshot().restore?.activeTabId).toBeUndefined();
+  });
+  it("reports the real write result and lets a later success clear a failure", () => {
+    const state = createServerTerminalRestoreState();
+    state.initialize({ version: 1, enabled: true, tabs: [{ tabId: "ui-1", serverId: "server-1" }] });
+    expect(state.getSnapshot().saveStatus).toBe("idle");
+    state.saveStarted();
+    expect(state.getSnapshot().saveStatus).toBe("saving");
+    state.saveFailed(new Error("disk full"));
+    expect(state.getSnapshot()).toMatchObject({ saveStatus: "failed", saveError: "disk full" });
+    // Preferences and identity survive a failed write.
+    expect(state.getSnapshot()).toMatchObject({ initialized: true, pending: ["ui-1"] });
+    expect(state.getSnapshot().restore?.enabled).toBe(true);
+    state.saveStarted();
+    expect(state.getSnapshot()).toMatchObject({ saveStatus: "saving", saveError: undefined });
+    state.saveSucceeded();
+    expect(state.getSnapshot()).toMatchObject({ saveStatus: "idle", saveError: undefined });
+  });
+
+  it("stays saving until every overlapping write settles", () => {
+    const state = createServerTerminalRestoreState();
+    state.saveStarted();
+    state.saveStarted();
+    state.saveSucceeded();
+    expect(state.getSnapshot().saveStatus).toBe("saving");
+    state.saveSucceeded();
+    expect(state.getSnapshot().saveStatus).toBe("idle");
+  });
+
+  it("retries only through the registered writer and reports a retry that throws", async () => {
+    const state = createServerTerminalRestoreState();
+    await state.retrySave();
+    expect(state.getSnapshot().canRetrySave).toBe(false);
+    const retry = vi.fn().mockRejectedValueOnce(new Error("offline")).mockResolvedValue(undefined);
+    state.setSaveRetry(retry);
+    expect(state.getSnapshot().canRetrySave).toBe(true);
+    state.saveStarted();
+    state.saveFailed("first");
+    await state.retrySave();
+    expect(state.getSnapshot()).toMatchObject({ saveStatus: "failed", saveError: "offline" });
+    await state.retrySave();
+    expect(retry).toHaveBeenCalledTimes(2);
+    state.setSaveRetry(undefined);
+    expect(state.getSnapshot().canRetrySave).toBe(false);
   });
 });

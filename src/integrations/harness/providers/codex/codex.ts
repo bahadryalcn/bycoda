@@ -1,4 +1,12 @@
-import { captureNativeOutputWorkEvent, runNativeOutputWork, nativeOutputSink, captureNativeOutputEvent, captureNativeOutputWork, trackNativeOutputWork, type NativeOutputWork } from "../../core/nativeOutputDelivery";
+import {
+  captureNativeOutputWorkEvent,
+  runNativeOutputWork,
+  nativeOutputSink,
+  captureNativeOutputEvent,
+  captureNativeOutputWork,
+  trackNativeOutputWork,
+  type NativeOutputWork,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
@@ -143,7 +151,10 @@ type Live = {
   /** Child thread id -> the agent tool row that spawned it. */
   subagentThreads: Map<string, string>;
   /** Child notifications that arrived before their row was known. */
-  pendingSubagent: Map<string, Array<{ method: string; params: unknown; work: NativeOutputWork | null }>>;
+  pendingSubagent: Map<
+    string,
+    Array<{ method: string; params: unknown; work: NativeOutputWork | null }>
+  >;
   /** Agent rows still running, by call id, with the name to settle them under. */
   openAgentRows: Map<string, string>;
   /** Latest rate-limit windows by limit id, merged from sparse updates. */
@@ -493,7 +504,8 @@ export async function stopCodexSession(sessionId: string): Promise<void> {
   if (live) {
     live.muteUpdates = true;
     live.turnGeneration += 1;
-    for (const backlog of live.pendingSubagent.values()) for (const step of backlog) step.work?.fail("codex-backlog-retired");
+    for (const backlog of live.pendingSubagent.values())
+      for (const step of backlog) step.work?.fail("codex-backlog-retired");
     live.pendingSubagent.clear();
     clearServerRequests(live);
     live.turnDone?.();
@@ -572,18 +584,23 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     {
       onNotification: (method, params, work) => {
         const live = liveRef.current;
-        if (!live || live.muteUpdates) { work?.fail("codex-notification-retired"); return; }
+        if (!live || live.muteUpdates) {
+          work?.fail("codex-notification-retired");
+          return;
+        }
         if (live.notificationQueue) {
           const turnGeneration = live.turnGeneration;
           const queued = live.notificationQueue
             .catch(() => undefined)
-            .then(nativeOutputSink(work ?? null, () => {
-              if (live.muteUpdates || live.cancelled || turnGeneration !== live.turnGeneration) {
-                work?.fail("codex-notification-retired");
-                return;
-              }
-              return handleNotification(live, method, params, work ?? null);
-            }));
+            .then(
+              nativeOutputSink(work ?? null, () => {
+                if (live.muteUpdates || live.cancelled || turnGeneration !== live.turnGeneration) {
+                  work?.fail("codex-notification-retired");
+                  return;
+                }
+                return handleNotification(live, method, params, work ?? null);
+              }),
+            );
           trackNotificationQueue(
             live,
             queued.catch(() => undefined),
@@ -609,19 +626,21 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             : live
               ? handleServerRequest(live, id, method, params)
               : undefined;
-        return response?.catch(nativeOutputSink(work ?? null, (error: unknown) => {
-          if (live?.muteUpdates || (live && live.turnDone !== turn)) return;
-          const failure = error instanceof Error ? error : new Error(String(error));
-          rpc.close(failure);
-          if (live?.turnFailed) {
-            live.turnFailed(failure);
-          } else {
-            (live?.onEvent ?? input.onEvent)({
-              type: "session.error",
-              message: failure.message,
-            });
-          }
-        }));
+        return response?.catch(
+          nativeOutputSink(work ?? null, (error: unknown) => {
+            if (live?.muteUpdates || (live && live.turnDone !== turn)) return;
+            const failure = error instanceof Error ? error : new Error(String(error));
+            rpc.close(failure);
+            if (live?.turnFailed) {
+              live.turnFailed(failure);
+            } else {
+              (live?.onEvent ?? input.onEvent)({
+                type: "session.error",
+                message: failure.message,
+              });
+            }
+          }),
+        );
       },
     },
     { includeJsonrpc: false, label: "codex", defaultRequestTimeoutMs: 60_000 },
@@ -906,22 +925,27 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
 
   try {
     live.pendingTurnStart = true;
-    await live.rpc.requestWithNativeOutput<{ turn?: { id?: string } }>("turn/start", params, (response, work) => nativeOutputSink(work, () => {
-    live.pendingTurnStart = false;
-    // Natural completion may arrive before this response. Still acknowledge it,
-    // but never accept a stopped turn or an old transport's late response.
-    if (live.cancelled || live.muteUpdates) return response;
-    input.onAccepted?.();
-    const turnId = response.turn?.id ?? live.activeTurnId;
-    // turn/completed can arrive before turn/start returns; don't resurrect a
-    // finished turn's id after finishActiveTurn cleared activeTurnId.
-    if (turnId && live.turnDone && !live.awaitingAsyncAnswers) {
-      live.activeTurnId = live.activeTurnId ?? turnId;
-      live.onEvent({ type: "turn.started", providerTurnId: turnId });
-    }
-    settlePendingTurn(live);
-    return response;
-    })());
+    await live.rpc.requestWithNativeOutput<{ turn?: { id?: string } }>(
+      "turn/start",
+      params,
+      (response, work) =>
+        nativeOutputSink(work, () => {
+          live.pendingTurnStart = false;
+          // Natural completion may arrive before this response. Still acknowledge it,
+          // but never accept a stopped turn or an old transport's late response.
+          if (live.cancelled || live.muteUpdates) return response;
+          input.onAccepted?.();
+          const turnId = response.turn?.id ?? live.activeTurnId;
+          // turn/completed can arrive before turn/start returns; don't resurrect a
+          // finished turn's id after finishActiveTurn cleared activeTurnId.
+          if (turnId && live.turnDone && !live.awaitingAsyncAnswers) {
+            live.activeTurnId = live.activeTurnId ?? turnId;
+            live.onEvent({ type: "turn.started", providerTurnId: turnId });
+          }
+          settlePendingTurn(live);
+          return response;
+        })(),
+    );
     await turnPromise;
   } catch (error) {
     if (live.cancelled) return;
@@ -987,7 +1011,12 @@ async function runCompaction(live: Live): Promise<void> {
   }
 }
 
-function handleNotification(live: Live, method: string, params: unknown, outputWork: NativeOutputWork | null = null): void | Promise<void> {
+function handleNotification(
+  live: Live,
+  method: string,
+  params: unknown,
+  outputWork: NativeOutputWork | null = null,
+): void | Promise<void> {
   if (live.muteUpdates || live.cancelled) return;
   if (method === "skills/changed") {
     return loadCodexSkills(live, live.sessionId);
@@ -1063,10 +1092,15 @@ function handleNotification(live: Live, method: string, params: unknown, outputW
     for (const pendingStep of backlog ?? []) {
       const emit = () => {
         try {
-          const actual = nativeOutputSink(pendingStep.work, () => emitSubagentSteps(live, owner, pendingStep.method, pendingStep.params))();
+          const actual = nativeOutputSink(pendingStep.work, () =>
+            emitSubagentSteps(live, owner, pendingStep.method, pendingStep.params),
+          )();
           if (actual) return trackNativeOutputWork(actual, pendingStep.work);
           pendingStep.work?.finish();
-        } catch (error) { pendingStep.work?.fail("codex-backlog-replay-failed"); throw error; }
+        } catch (error) {
+          pendingStep.work?.fail("codex-backlog-replay-failed");
+          throw error;
+        }
       };
       if (replay) {
         replay = replay.then(emit);
@@ -1163,15 +1197,15 @@ function showCodexAsyncQuestion(live: Live, rec: Record<string, unknown> | null)
   void runNativeOutputWork(async (work) => {
     const reply = await outcome;
     nativeOutputSink(work, () => {
-    live.onEvent({
-      type: "question.resolved",
-      requestId: uiId,
-      decision:
-        reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
-      ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
-    });
-    showNextQuestion(live);
-    settleAsyncAnswers(live);
+      live.onEvent({
+        type: "question.resolved",
+        requestId: uiId,
+        decision:
+          reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
+        ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
+      });
+      showNextQuestion(live);
+      settleAsyncAnswers(live);
     })();
   });
 }
@@ -1180,40 +1214,43 @@ async function materializeGeneratedImage(
   live: Live,
   event: Extract<HarnessEvent, { type: "image.generated"; data: string }>,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const turnGeneration = live.turnGeneration;
-  try {
-    const asset = await saveGeneratedImage({
-      data: event.data,
-      name: event.name,
-    });
-    if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
-      void nativeOutputSink(outputWork, () => runNativeOutputWork(() => deleteGeneratedImages([asset.path])))().catch(() => undefined);
-      return;
+  return runNativeOutputWork(async (outputWork) => {
+    const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+      live.onEvent(event),
+    );
+    const turnGeneration = live.turnGeneration;
+    try {
+      const asset = await saveGeneratedImage({
+        data: event.data,
+        name: event.name,
+      });
+      if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
+        void nativeOutputSink(outputWork, () =>
+          runNativeOutputWork(() => deleteGeneratedImages([asset.path])),
+        )().catch(() => undefined);
+        return;
+      }
+      emitNative({
+        type: "image.generated",
+        itemId: event.itemId,
+        path: asset.path,
+        name: event.name,
+        mimeType: asset.mimeType,
+        size: asset.size,
+        ...(event.alt ? { alt: event.alt } : {}),
+      });
+    } catch (cause) {
+      if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
+        return;
+      }
+      emitNative({
+        type: "session.error",
+        message: `Could not save generated image: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      });
     }
-    emitNative({
-      type: "image.generated",
-      itemId: event.itemId,
-      path: asset.path,
-      name: event.name,
-      mimeType: asset.mimeType,
-      size: asset.size,
-      ...(event.alt ? { alt: event.alt } : {}),
-    });
-  } catch (cause) {
-    if (live.cancelled || live.muteUpdates || turnGeneration !== live.turnGeneration) {
-      return;
-    }
-    emitNative({
-      type: "session.error",
-      message: `Could not save generated image: ${
-        cause instanceof Error ? cause.message : String(cause)
-      }`,
-    });
-  }
-
-});
+  });
 }
 
 /** Rate-limit updates are sparse: a missing window keeps its last reading. */
@@ -1318,7 +1355,10 @@ function handleSubagentNotification(
   )
     return;
   const backlog = live.pendingSubagent.get(threadId) ?? [];
-  if (backlog.length >= MAX_PENDING_SUBAGENT) { captureNativeOutputWork()?.fail("codex-backlog-capacity"); return; }
+  if (backlog.length >= MAX_PENDING_SUBAGENT) {
+    captureNativeOutputWork()?.fail("codex-backlog-capacity");
+    return;
+  }
   backlog.push({ method, params, work: captureNativeOutputWork() });
   live.pendingSubagent.set(threadId, backlog);
 }
@@ -1443,7 +1483,8 @@ function finishActiveTurn(live: Live, extraEvents: HarnessEvent[] = []): void {
   live.emittedGeneratedImages.clear();
   live.emittedAsyncQuestions.clear();
   live.subagentThreads.clear();
-  for (const backlog of live.pendingSubagent.values()) for (const step of backlog) step.work?.fail("codex-backlog-retired");
+  for (const backlog of live.pendingSubagent.values())
+    for (const step of backlog) step.work?.fail("codex-backlog-retired");
   live.pendingSubagent.clear();
   TurnLatch.finish(live, extraEvents);
 }
@@ -1458,156 +1499,239 @@ async function handleServerRequest(
   method: string,
   params: unknown,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const threadId = stringField(asRecord(params), "threadId") ?? live.threadId;
-  if (method === "item/tool/requestUserInput") {
-    if (live.cancelled || live.muteUpdates) {
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
-      return;
-    }
-    let questions;
-    try {
-      questions = codexQuestions(params);
-    } catch (error) {
-      emitNative({
-        type: "status",
-        text: error instanceof Error ? error.message : String(error),
-      });
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
-      return;
-    }
-    const uiId = live.nextApprovalUiId++;
-    const event: Extract<HarnessEvent, { type: "question.asked" }> = {
-      type: "question.asked",
-      requestId: uiId,
-      title: questionPromptTitle(questions),
-      questions,
-      callId: stringField(asRecord(params), "itemId"),
-      providerTurnId: stringField(asRecord(params), "turnId"),
-      behavior: asRecord(params)?.isBlocking === false ? "nonBlocking" : "blocking",
-      dismissAction: "skip",
-    };
-captureNativeOutputWorkEvent(outputWork, event);
-    const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
-      live.questions.set(uiId, {
-        rpcId: id,
-        threadId,
-        event,
-        resolve,
-        deliver: (reply) => nativeOutputSink(outputWork, () => live.rpc.respond(id, codexQuestionResponse(questions, reply)))(),
-        // Older servers omit this field and must keep their blocking behavior.
-        isBlocking: asRecord(params)?.isBlocking !== false,
-      });
-    }).finally(() => {
-      clearTimeout(live.questions.get(uiId)?.timer);
-      live.questions.delete(uiId);
-    });
-    nativeOutputSink(outputWork, showNextQuestion)(live);
-    const reply = await outcome;
-    emitNative({
-      type: "question.resolved",
-      requestId: uiId,
-      decision:
-        reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
-      ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
-    });
-    nativeOutputSink(outputWork, showNextQuestion)(live);
-    return;
-  }
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const threadId = stringField(asRecord(params), "threadId") ?? live.threadId;
+      if (method === "item/tool/requestUserInput") {
+        if (live.cancelled || live.muteUpdates) {
+          await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
+          return;
+        }
+        let questions;
+        try {
+          questions = codexQuestions(params);
+        } catch (error) {
+          emitNative({
+            type: "status",
+            text: error instanceof Error ? error.message : String(error),
+          });
+          await nativeOutputSink(outputWork, () => live.rpc.respond(id, { answers: {} }))();
+          return;
+        }
+        const uiId = live.nextApprovalUiId++;
+        const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+          type: "question.asked",
+          requestId: uiId,
+          title: questionPromptTitle(questions),
+          questions,
+          callId: stringField(asRecord(params), "itemId"),
+          providerTurnId: stringField(asRecord(params), "turnId"),
+          behavior: asRecord(params)?.isBlocking === false ? "nonBlocking" : "blocking",
+          dismissAction: "skip",
+        };
+        captureNativeOutputWorkEvent(outputWork, event);
+        const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
+          live.questions.set(uiId, {
+            rpcId: id,
+            threadId,
+            event,
+            resolve,
+            deliver: (reply) =>
+              nativeOutputSink(outputWork, () =>
+                live.rpc.respond(id, codexQuestionResponse(questions, reply)),
+              )(),
+            // Older servers omit this field and must keep their blocking behavior.
+            isBlocking: asRecord(params)?.isBlocking !== false,
+          });
+        }).finally(() => {
+          clearTimeout(live.questions.get(uiId)?.timer);
+          live.questions.delete(uiId);
+        });
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        const reply = await outcome;
+        emitNative({
+          type: "question.resolved",
+          requestId: uiId,
+          decision:
+            reply === "cancelled"
+              ? "cancelled"
+              : reply.kind === "answered"
+                ? "answered"
+                : "skipped",
+          ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
+        });
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        return;
+      }
 
-  if (method === "mcpServer/elicitation/request") {
-    const confirmation = codexMcpConfirmation(params);
-    const form = confirmation ? null : codexMcpForm(params);
-    if (form && !live.cancelled && !live.muteUpdates) {
-      await nativeOutputSink(outputWork, handleMcpForm)(live, id, threadId, form);
-      return;
-    }
-    if (!confirmation || live.cancelled || live.muteUpdates) {
-      if (!live.cancelled && !live.muteUpdates)
+      if (method === "mcpServer/elicitation/request") {
+        const confirmation = codexMcpConfirmation(params);
+        const form = confirmation ? null : codexMcpForm(params);
+        if (form && !live.cancelled && !live.muteUpdates) {
+          await nativeOutputSink(outputWork, handleMcpForm)(live, id, threadId, form);
+          return;
+        }
+        if (!confirmation || live.cancelled || live.muteUpdates) {
+          if (!live.cancelled && !live.muteUpdates)
+            emitNative({
+              type: "status",
+              text: `This MCP server requested a form or browser sign-in that ${PRODUCT_IDENTITY.displayName} does not support yet. Complete it in the server's own interface.`,
+            });
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, {
+              action: "cancel",
+              content: null,
+              _meta: null,
+            }),
+          )();
+          return;
+        }
+        if (!live.planning && live.runtimeMode === "full-access") {
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, {
+              action: "accept",
+              content: confirmation.content,
+              _meta: null,
+            }),
+          )();
+          return;
+        }
+        const uiId = live.nextApprovalUiId++;
+        const pending = nativeOutputSink(outputWork, waitApproval)(
+          live,
+          uiId,
+          id,
+          "permissions",
+          threadId,
+        );
+        // MCP consent requires an explicit decision outside non-plan Full Access turns.
+        emitNative({
+          type: "approval.requested",
+          requestId: uiId,
+          kind: "other",
+          title: confirmation.title,
+        });
+        const decision = await pending;
+        emitNative({ type: "approval.resolved", requestId: uiId, decision });
+        if (decision !== "cancelled")
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, {
+              action: decision === "allow" ? "accept" : "decline",
+              content: decision === "allow" ? confirmation.content : null,
+              _meta: null,
+            }),
+          )();
+        return;
+      }
+
+      const uiId = live.nextApprovalUiId++;
+      const mapped = mapApprovalRequest(method, params, uiId);
+      if (!mapped) {
+        // An empty success or invented denial hides protocol incompatibility.
         emitNative({
           type: "status",
-          text: `This MCP server requested a form or browser sign-in that ${PRODUCT_IDENTITY.displayName} does not support yet. Complete it in the server's own interface.`,
+          text: `Unsupported Codex request: ${method}`,
         });
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-        action: "cancel",
-        content: null,
-        _meta: null,
-      }))();
-      return;
-    }
-    if (!live.planning && live.runtimeMode === "full-access") {
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-        action: "accept",
-        content: confirmation.content,
-        _meta: null,
-      }))();
-      return;
-    }
-    const uiId = live.nextApprovalUiId++;
-    const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, "permissions", threadId);
-    // MCP consent requires an explicit decision outside non-plan Full Access turns.
-    emitNative({
-      type: "approval.requested",
-      requestId: uiId,
-      kind: "other",
-      title: confirmation.title,
-    });
-    const decision = await pending;
-    emitNative({ type: "approval.resolved", requestId: uiId, decision });
-    if (decision !== "cancelled")
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-        action: decision === "allow" ? "accept" : "decline",
-        content: decision === "allow" ? confirmation.content : null,
-        _meta: null,
-      }))();
-    return;
-  }
+        await nativeOutputSink(outputWork, () =>
+          live.rpc.respondError(id, {
+            code: -32601,
+            message: `Unsupported method: ${method}`,
+          }),
+        )();
+        return;
+      }
 
-  const uiId = live.nextApprovalUiId++;
-  const mapped = mapApprovalRequest(method, params, uiId);
-  if (!mapped) {
-    // An empty success or invented denial hides protocol incompatibility.
-    emitNative({
-      type: "status",
-      text: `Unsupported Codex request: ${method}`,
-    });
-    await nativeOutputSink(outputWork, () => live.rpc.respondError(id, {
-      code: -32601,
-      message: `Unsupported method: ${method}`,
-    }))();
-    return;
-  }
+      if (live.planning || live.cancelled || live.muteUpdates) {
+        // Plan turns run in a non-escalating read-only sandbox. If an older
+        // app-server still asks for broader access, deny it silently instead of
+        // leaking a Supervised approval prompt into the user's selected mode.
+        if (method === "item/permissions/requestApproval") {
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, { permissions: {} }),
+          )().catch(() => undefined);
+        } else {
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, {
+              decision: toCodexApprovalDecision("deny", mapped.kind),
+            }),
+          )().catch(() => undefined);
+        }
+        return;
+      }
 
-  if (live.planning || live.cancelled || live.muteUpdates) {
-    // Plan turns run in a non-escalating read-only sandbox. If an older
-    // app-server still asks for broader access, deny it silently instead of
-    // leaking a Supervised approval prompt into the user's selected mode.
-    if (method === "item/permissions/requestApproval") {
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, { permissions: {} }))().catch(() => undefined);
-    } else {
-      await nativeOutputSink(outputWork, () => live.rpc
-        .respond(id, {
-          decision: toCodexApprovalDecision("deny", mapped.kind),
-        }))()
-        .catch(() => undefined);
-    }
-    return;
-  }
+      if (method === "item/permissions/requestApproval") {
+        // Auto-deny extra permission grants in supervised; allow in full-access.
+        if (live.runtimeMode === "full-access") {
+          const rec = asRecord(params);
+          const permissions = rec?.permissions ?? {};
+          await nativeOutputSink(outputWork, () =>
+            live.rpc.respond(id, {
+              scope: "session",
+              permissions,
+            }),
+          )();
+          return;
+        }
+        if (live.runtimeMode === "supervised") {
+          const pending = nativeOutputSink(outputWork, waitApproval)(
+            live,
+            uiId,
+            id,
+            mapped.kind,
+            threadId,
+          );
+          emitNative(mapped.event);
+          const decision = await pending;
+          emitNative({
+            type: "approval.resolved",
+            requestId: uiId,
+            decision,
+          });
+          if (decision === "cancelled") return;
+          if (decision === "allow") {
+            const rec = asRecord(params);
+            await nativeOutputSink(outputWork, () =>
+              live.rpc.respond(id, {
+                scope: "turn",
+                permissions: rec?.permissions ?? {},
+              }),
+            )();
+          } else {
+            await nativeOutputSink(outputWork, () => live.rpc.respond(id, { permissions: {} }))();
+          }
+          return;
+        }
+        // auto / auto-accept: grant requested permissions for the turn.
+        const rec = asRecord(params);
+        await nativeOutputSink(outputWork, () =>
+          live.rpc.respond(id, {
+            scope: "turn",
+            permissions: rec?.permissions ?? {},
+          }),
+        )();
+        return;
+      }
 
-  if (method === "item/permissions/requestApproval") {
-    // Auto-deny extra permission grants in supervised; allow in full-access.
-    if (live.runtimeMode === "full-access") {
-      const rec = asRecord(params);
-      const permissions = rec?.permissions ?? {};
-      await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-        scope: "session",
-        permissions,
-      }))();
-      return;
-    }
-    if (live.runtimeMode === "supervised") {
-      const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, mapped.kind, threadId);
+      const auto = autoApproval(live.runtimeMode, mapped.kind);
+      if (auto) {
+        await nativeOutputSink(outputWork, () =>
+          live.rpc.respond(id, {
+            decision: toCodexApprovalDecision(auto, mapped.kind),
+          }),
+        )();
+        return;
+      }
+
+      const pending = nativeOutputSink(outputWork, waitApproval)(
+        live,
+        uiId,
+        id,
+        mapped.kind,
+        threadId,
+      );
       emitNative(mapped.event);
       const decision = await pending;
       emitNative({
@@ -1616,48 +1740,14 @@ captureNativeOutputWorkEvent(outputWork, event);
         decision,
       });
       if (decision === "cancelled") return;
-      if (decision === "allow") {
-        const rec = asRecord(params);
-        await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-          scope: "turn",
-          permissions: rec?.permissions ?? {},
-        }))();
-      } else {
-        await nativeOutputSink(outputWork, () => live.rpc.respond(id, { permissions: {} }))();
-      }
-      return;
-    }
-    // auto / auto-accept: grant requested permissions for the turn.
-    const rec = asRecord(params);
-    await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-      scope: "turn",
-      permissions: rec?.permissions ?? {},
-    }))();
-    return;
-  }
-
-  const auto = autoApproval(live.runtimeMode, mapped.kind);
-  if (auto) {
-    await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-      decision: toCodexApprovalDecision(auto, mapped.kind),
-    }))();
-    return;
-  }
-
-  const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, mapped.kind, threadId);
-  emitNative(mapped.event);
-  const decision = await pending;
-  emitNative({
-    type: "approval.resolved",
-    requestId: uiId,
-    decision,
-  });
-  if (decision === "cancelled") return;
-  await nativeOutputSink(outputWork, () => live.rpc.respond(id, {
-    decision: toCodexApprovalDecision(decision, mapped.kind),
-  }))();
-
-});
+      await nativeOutputSink(outputWork, () =>
+        live.rpc.respond(id, {
+          decision: toCodexApprovalDecision(decision, mapped.kind),
+        }),
+      )();
+    },
+    { additionalInput: true },
+  );
 }
 
 async function handleMcpForm(
@@ -1666,57 +1756,65 @@ async function handleMcpForm(
   threadId: string,
   form: CodexMcpForm,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  // Forms require user-supplied data even in Full Access. Never invent a default.
-  while (!live.cancelled && !live.muteUpdates) {
-    const uiId = live.nextApprovalUiId++;
-    const event: Extract<HarnessEvent, { type: "question.asked" }> = {
-      type: "question.asked",
-      requestId: uiId,
-      title: form.title,
-      questions: form.questions,
-      behavior: "blocking",
-      dismissAction: "decline",
-    };
-captureNativeOutputWorkEvent(outputWork, event);
-    const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
-      live.questions.set(uiId, {
-        rpcId,
-        threadId,
-        event,
-        resolve,
-        isBlocking: true,
-        deliver: (reply) => {
-          let response;
-          try {
-            response = codexMcpFormResponse(form, reply);
-          } catch (error) {
-            throw new QuestionReplyValidationError(
-              error instanceof Error ? error.message : t("Check the form values."),
-            );
-          }
-          return nativeOutputSink(outputWork, () => live.rpc.respond(rpcId, response))();
-        },
-      });
-    }).finally(() => {
-      live.questions.delete(uiId);
-    });
-    nativeOutputSink(outputWork, showNextQuestion)(live);
-    const reply = await outcome;
-    emitNative({
-      type: "question.resolved",
-      requestId: uiId,
-      decision:
-        reply === "cancelled" ? "cancelled" : reply.kind === "answered" ? "answered" : "skipped",
-      ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
-    });
-    nativeOutputSink(outputWork, showNextQuestion)(live);
-    if (reply === "cancelled" || live.cancelled || live.muteUpdates) return;
-    return;
-  }
-
-});
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      // Forms require user-supplied data even in Full Access. Never invent a default.
+      while (!live.cancelled && !live.muteUpdates) {
+        const uiId = live.nextApprovalUiId++;
+        const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+          type: "question.asked",
+          requestId: uiId,
+          title: form.title,
+          questions: form.questions,
+          behavior: "blocking",
+          dismissAction: "decline",
+        };
+        captureNativeOutputWorkEvent(outputWork, event);
+        const outcome = new Promise<UserQuestionReply | "cancelled">((resolve) => {
+          live.questions.set(uiId, {
+            rpcId,
+            threadId,
+            event,
+            resolve,
+            isBlocking: true,
+            deliver: (reply) => {
+              let response;
+              try {
+                response = codexMcpFormResponse(form, reply);
+              } catch (error) {
+                throw new QuestionReplyValidationError(
+                  error instanceof Error ? error.message : t("Check the form values."),
+                );
+              }
+              return nativeOutputSink(outputWork, () => live.rpc.respond(rpcId, response))();
+            },
+          });
+        }).finally(() => {
+          live.questions.delete(uiId);
+        });
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        const reply = await outcome;
+        emitNative({
+          type: "question.resolved",
+          requestId: uiId,
+          decision:
+            reply === "cancelled"
+              ? "cancelled"
+              : reply.kind === "answered"
+                ? "answered"
+                : "skipped",
+          ...(reply !== "cancelled" && reply.kind === "answered" ? { reply } : {}),
+        });
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        if (reply === "cancelled" || live.cancelled || live.muteUpdates) return;
+        return;
+      }
+    },
+    { additionalInput: true },
+  );
 }
 
 function waitApproval(

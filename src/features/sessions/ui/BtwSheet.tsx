@@ -6,6 +6,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Plus, RefreshCw, X } from "../../../shared/ui/icons";
 
 import { Composer } from "./Composer";
+import {
+  retainParentInput,
+  useParentInputClosure,
+  useParentInputsClosed,
+  canPublishParentInput,
+  mutateParentInput,
+  type ParentAdmission,
+} from "../data/parentInputClosure";
 import { AgentTranscript } from "./AgentTranscript";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
 import { preferredModelSettings, resolveModel } from "../model/models";
@@ -26,6 +34,7 @@ import {
 } from "../model/session";
 
 type Options = {
+  parentSessionId?: string;
   /** False when this session cannot take side questions right now. */
   available: boolean;
   blocks: Block[];
@@ -82,6 +91,7 @@ const NO_BLOCKS: Block[] = [];
  * questions while this is open; the sheet shows one tab per side thread.
  */
 export function useBtwConversation({
+  parentSessionId,
   available,
   blocks,
   harness,
@@ -94,6 +104,7 @@ export function useBtwConversation({
   onStop,
   onModelChange,
 }: Options) {
+  const inputClosed = useParentInputsClosed(parentSessionId);
   const [requestedOpen, setRequestedOpen] = useState(false);
   const open = requestedOpen && available;
   // Stay mounted while the close animation plays.
@@ -110,6 +121,26 @@ export function useBtwConversation({
   } | null>(null);
   // Unsent text the side composer starts from; a new key remounts it.
   const [seed, setSeed] = useState({ key: 0, text: "" });
+  const parentChanged = useParentInputClosure({
+    kind: "btw-parent",
+    sessionId: parentSessionId,
+    snapshot: () => ({
+      requestedOpen,
+      rendered,
+      available,
+      drafts,
+      draftTexts: draftTextsRef.current,
+      activeId,
+      draftModel,
+      draftModelSettings,
+      optimistic,
+      seed,
+      harness,
+      model,
+      modelSettings,
+    }),
+    missingCoverage: ["nested-btw-input-scope", "decision-conservation"],
+  });
 
   const turns = useMemo(() => groupTurns(blocks, managed), [blocks, managed]);
   const entries = useMemo(() => sessionBtwThreads(blocks, managed), [blocks, managed]);
@@ -187,6 +218,7 @@ export function useBtwConversation({
   }, [entries]);
 
   const finishClose = () => {
+    parentChanged();
     // Availability can disappear without an explicit close (for example when
     // the session changes harness). Do not leave a latent open request that
     // reopens the sheet if availability later returns.
@@ -204,26 +236,55 @@ export function useBtwConversation({
     text: string,
     nextModel: string,
     nextSettings: Record<string, string>,
+    rawText = text,
+    original?: ParentAdmission,
   ): boolean => {
-    const messageId = crypto.randomUUID();
-    const accepted = onSubmit(
-      tab.turn,
-      tab.id,
-      messageId,
-      text,
-      nextModel || undefined,
-      nextSettings,
-    );
-    if (accepted === false) return false;
-    setOptimistic({
-      threadId: tab.id,
-      message: { id: messageId, role: "user", text, createdAt: Date.now() },
-    });
-    return true;
+    const operation = () => {
+      const messageId = crypto.randomUUID();
+      const input = {
+        source: "btw-dispatch-intent",
+        disposition: "dispatching",
+        threadId: tab.id,
+        turnIds: tab.turn.map((block) => block.id),
+        messageId,
+        text,
+        rawText,
+        model: nextModel,
+        modelSettings: nextSettings,
+      };
+      const retained = retainParentInput({
+        kind: "btw-parent",
+        sessionId: parentSessionId,
+        snapshot: () => input,
+        missingCoverage: ["decision-conservation", "nested-btw-input-scope"],
+      });
+      const accepted = onSubmit(
+        tab.turn,
+        tab.id,
+        messageId,
+        text,
+        nextModel || undefined,
+        nextSettings,
+      );
+      if (accepted === false) {
+        retained.release();
+        return false;
+      }
+      retained.update({ ...input, disposition: "accepted-unknown" });
+      setOptimistic({
+        threadId: tab.id,
+        message: { id: messageId, role: "user", text, createdAt: Date.now() },
+      });
+      return true;
+    };
+    return original
+      ? parentChanged.continue(original, operation)
+      : mutateParentInput(parentChanged, operation);
   };
 
   // A new tab reads from the latest finished turn at the moment it opens.
   const startDraft = (): BtwTab | null => {
+    if (!parentChanged.canMutate()) return null;
     const turnId = btwOpenTargetTurnId(turns, blocks, harness, managed);
     const turn = turnId ? turns.find((entry) => entry[0]?.id === turnId) : undefined;
     if (!turnId || !turn) return null;
@@ -238,6 +299,7 @@ export function useBtwConversation({
   };
 
   const selectTab = (id: string) => {
+    if (!parentChanged.canMutate()) return;
     if (id === activeTabId) return;
     setDraftModel(null);
     setDraftModelSettings(null);
@@ -249,6 +311,7 @@ export function useBtwConversation({
   };
 
   return {
+    parentSessionId,
     open,
     rendered,
     tabs,
@@ -258,75 +321,87 @@ export function useBtwConversation({
     pendingBlocks: persisted?.pendingBlocks ?? NO_BLOCKS,
     running,
     harness: composerHarness,
-    canAsk: tabHarness != null,
+    canAsk: !inputClosed && tabHarness != null,
+    canAskCurrentTarget: available && tabHarness != null,
+    inputClosed,
     seed,
     model: selectedModel,
     modelSettings: selectedModelSettings,
-    canStartDraft: btwOpenTargetTurnId(turns, blocks, harness, managed) != null,
+    canStartDraft: !inputClosed && btwOpenTargetTurnId(turns, blocks, harness, managed) != null,
     finishClose,
     selectTab,
     /**
      * Open a new tab. `text` is sent right away, or left unsent in the side
      * composer with `draft`.
      */
-    openWith(text: string, options?: { draft?: boolean }): boolean {
-      if (!available) return false;
-      const question = text.trim();
-      if (!question && !btwOpenTargetTurnId(turns, blocks, harness, managed)) {
-        const existing = tabs.find((tab) => tab.id === activeTabId) ?? tabs[tabs.length - 1];
-        if (!existing) return false;
-        setActiveId(existing.id);
-        setSeed((current) => ({
-          key: current.key + 1,
-          text: draftTextsRef.current[existing.id] ?? "",
-        }));
-        setRequestedOpen(true);
-        return true;
-      }
-      const previousActiveId = activeTabId;
-      const tab = startDraft();
-      if (!tab) return false;
-      if (options?.draft) {
-        setRequestedOpen(true);
-        draftTextsRef.current[tab.id] = text;
-        setSeed((current) => ({ key: current.key + 1, text }));
-        return true;
-      }
-      const tabModel = baseModelFor(tab);
-      const tabHarness = tabHarnessFor(blocks, tab, harness);
-      if (question && tabHarness) {
-        const accepted = send(
-          tab,
-          question,
-          tabModel,
-          preferredModelSettings(resolveModel(tabHarness, tabModel), modelSettings),
-        );
-        if (!accepted) {
-          setDrafts((current) => current.filter((entry) => entry.id !== tab.id));
-          delete draftTextsRef.current[tab.id];
-          setActiveId(previousActiveId);
-          return false;
+    openWith(text: string, options?: { draft?: boolean }, original?: ParentAdmission): boolean {
+      const operation = () => {
+        if (!parentChanged.canMutate()) return false;
+        if (!available) return false;
+        const question = text.trim();
+        if (!question && !btwOpenTargetTurnId(turns, blocks, harness, managed)) {
+          const existing = tabs.find((tab) => tab.id === activeTabId) ?? tabs[tabs.length - 1];
+          if (!existing) return false;
+          setActiveId(existing.id);
+          setSeed((current) => ({
+            key: current.key + 1,
+            text: draftTextsRef.current[existing.id] ?? "",
+          }));
+          setRequestedOpen(true);
+          return true;
         }
-      }
-      setRequestedOpen(true);
-      return true;
+        const previousActiveId = activeTabId;
+        const tab = startDraft();
+        if (!tab) return false;
+        if (options?.draft) {
+          setRequestedOpen(true);
+          draftTextsRef.current[tab.id] = text;
+          setSeed((current) => ({ key: current.key + 1, text }));
+          return true;
+        }
+        const tabModel = baseModelFor(tab);
+        const tabHarness = tabHarnessFor(blocks, tab, harness);
+        if (question && tabHarness) {
+          const accepted = send(
+            tab,
+            question,
+            tabModel,
+            preferredModelSettings(resolveModel(tabHarness, tabModel), modelSettings),
+            text,
+            original,
+          );
+          if (!accepted) {
+            setDrafts((current) => current.filter((entry) => entry.id !== tab.id));
+            delete draftTextsRef.current[tab.id];
+            setActiveId(previousActiveId);
+            return false;
+          }
+        }
+        setRequestedOpen(true);
+        return true;
+      };
+      return original ? parentChanged.continue(original, operation) : operation();
     },
     startDraft() {
       startDraft();
     },
     changeDraft(text: string) {
+      if (!canPublishParentInput(parentSessionId)) return;
       if (activeTabId) draftTextsRef.current[activeTabId] = text;
+      parentChanged();
     },
     close() {
+      parentChanged();
       setRequestedOpen(false);
     },
     /** False keeps the text in the composer. */
-    submit(text: string): boolean {
+    submit(text: string, original?: ParentAdmission): boolean {
       const question = text.trim();
-      if (!question || running || !active || !tabHarness) return false;
-      return send(active, question, selectedModel, selectedModelSettings);
+      if (!available || !question || running || !active || !tabHarness) return false;
+      return send(active, question, selectedModel, selectedModelSettings, text, original);
     },
     closeTab(tab: BtwTab) {
+      if (!parentChanged.canMutate()) return;
       const remaining = tabs.filter((entry) => entry.id !== tab.id);
       setDrafts((current) => current.filter((entry) => entry.id !== tab.id));
       if (tab.thread) onDelete?.(tab.turn, tab.id);
@@ -342,14 +417,17 @@ export function useBtwConversation({
     },
     /** Stop the active tab's streaming answer, keeping what arrived. */
     stop() {
+      parentChanged();
       if (!active) return;
       setOptimistic((current) => (current?.threadId === active.id ? null : current));
       if (persisted?.status === "running") onStop?.(active.turn, active.id);
     },
     retry() {
+      if (!parentChanged.canMutate()) return;
       if (active && persisted) onRetry(active.turn, persisted.id);
     },
     changeModel(nextHarness: HarnessId, nextModel: string) {
+      if (!parentChanged.canMutate()) return;
       if (nextHarness !== composerHarness) return;
       const nextSettings = preferredModelSettings(
         resolveModel(nextHarness, nextModel),
@@ -362,6 +440,7 @@ export function useBtwConversation({
       }
     },
     changeModelSettings(nextSettings: Record<string, string>) {
+      if (!parentChanged.canMutate()) return;
       setDraftModelSettings(nextSettings);
       if (persisted && active) {
         onModelChange?.(active.turn, active.id, selectedModel, nextSettings);
@@ -536,6 +615,7 @@ export function BtwSheet({
                     </Button>
                     <InlineAction
                       className="mr-1 shrink-0"
+                      tabIndex={selected ? 0 : -1}
                       label={
                         tab.thread ? t("Delete “{p0}”", { p0: label }) : t("Discard new question")
                       }
@@ -622,7 +702,7 @@ export function BtwSheet({
                 key={`${activeTabId}:${btw.seed.key}`}
                 compact
                 enabled={visible && open}
-                disabled={!btw.canAsk}
+                disabled={!btw.canAskCurrentTarget}
                 focused={visible && open && !running}
                 harness={harness}
                 model={btw.model}
@@ -631,6 +711,7 @@ export function BtwSheet({
                 cwd={cwd ?? "~"}
                 executionCwd={cwd ?? "~"}
                 sessionId={activeTabId}
+                parentSessionId={btw.parentSessionId ?? null}
                 hideProjectPicker
                 hideBranchPicker
                 hideTopBar
@@ -647,7 +728,7 @@ export function BtwSheet({
                 busy={running}
                 allowBusySubmit={false}
                 onStop={btw.stop}
-                onSubmit={(text) => btw.submit(text)}
+                onSubmit={(text, _attachments, _options, original) => btw.submit(text, original)}
               />
             ) : null}
           </div>

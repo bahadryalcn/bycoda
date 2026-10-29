@@ -1,6 +1,6 @@
 .usage-analytics {
   display: grid;
-  gap: 16px;
+  gap: 20px;
   min-inline-size: 0;
   container-type: inline-size;
 }
@@ -12,7 +12,7 @@
   font-weight: 500;
   color: var(--color-content);
 }
-.usage-analytics-header,
+.usage-band,
 .usage-analytics-actions,
 .usage-controls,
 .usage-section-heading,
@@ -24,11 +24,27 @@
   gap: 8px;
   min-inline-size: 0;
 }
-.usage-analytics-header,
 .usage-section-heading {
   justify-content: space-between;
 }
-.usage-analytics-header p,
+/* One compact top band: view switch, scope caption, then period and filter actions.
+   It stays one row while there is room and wraps as a unit when there is not. */
+.usage-band {
+  gap: 8px 16px;
+}
+.usage-band-scope {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+}
+.usage-band-scope > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.usage-band .usage-analytics-actions {
+  margin-inline-start: auto;
+  gap: 4px;
+}
+.usage-band-scope > p,
 .usage-muted,
 .usage-data-notes,
 .usage-section-heading > span,
@@ -51,15 +67,18 @@
   gap: 12px;
   padding: 16px;
 }
+/* Key numbers are the first read: open tiles separated by space, no rules. */
 .usage-metrics {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-block: 1px solid var(--color-stroke);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
 }
 .usage-metrics > div {
+  flex: 1 1 9rem;
   display: grid;
+  align-content: start;
   gap: 6px;
-  padding: 12px;
+  padding-block: 4px;
   min-inline-size: 0;
 }
 .usage-metrics > div > button {
@@ -96,8 +115,8 @@
 .usage-panel {
   min-inline-size: 0;
   padding: 16px;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
 }
 .usage-panel > .usage-muted {
@@ -183,8 +202,6 @@
 }
 .usage-data-notes {
   line-height: 1.6;
-  border-block-start: 1px solid var(--color-stroke);
-  padding-block-start: 12px;
 }
 .usage-data-notes p {
   margin-block-start: 6px;
@@ -339,11 +356,9 @@
   }
 }
 @container (max-width: 540px) {
-  .usage-metrics {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .usage-metrics > div {
-    padding: 8px 6px;
+    flex-basis: 100%;
+    padding-block: 2px;
     gap: 4px;
   }
   .usage-filter-panel .usage-controls {

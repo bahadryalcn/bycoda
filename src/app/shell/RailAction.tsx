@@ -75,10 +75,10 @@ export function RailAction({
         </Badge>
       ) : null}
       <Icon
-        className={`icon-md shrink-0 ${active ? "text-accent" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
+        className={`icon-sm shrink-0 ${active ? "text-content" : "text-(--ui-text-secondary)"} ${badge != null ? "ml-4" : ""}`}
         strokeWidth={1.75}
       />
-      <span className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden">
+      <span className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden">
         {label}
       </span>
       {dot ? (
@@ -131,10 +131,10 @@ export function RailSearch({
       shortcut={shortcut}
       className={`relative flex w-full items-center gap-2 @max-[140px]/rail:justify-center`}
     >
-      <Icon className="size-4 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
+      <Icon className="icon-sm shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       <span
         data-rail-search-label
-        className="min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden"
+        className="min-w-0 flex-1 truncate text-ui-caption font-medium leading-tight @max-[140px]/rail:hidden"
       >
         {label}
       </span>

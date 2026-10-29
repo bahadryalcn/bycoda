@@ -19,6 +19,18 @@ function deferred<T>() {
   });
   return { promise, resolve, reject };
 }
+async function fullComparison(f: Awaited<ReturnType<typeof fixture>>, session: Session) {
+  let token: ReturnType<typeof f.projection.getSessionOutputFullCandidate> = null;
+  await vi.waitFor(() => {
+    token = f.projection.getSessionOutputFullCandidate(session);
+    expect(token).not.toBeNull();
+    expect(f.projection.getSessionOutputFullCandidateComparison(token!)).not.toBeNull();
+  });
+  return {
+    token: token!,
+    comparison: f.projection.getSessionOutputFullCandidateComparison(token!)!,
+  };
+}
 async function fixture() {
   vi.resetModules();
   vi.stubGlobal("crypto", webcrypto);
@@ -40,10 +52,25 @@ async function fixture() {
   };
   model.resetSessionsStore([initial]);
   let revision = 0;
+  const nativeWriteId = () => `55555555-5555-4555-8555-${revision.toString(16).padStart(12, "0")}`;
   mocks.invoke.mockImplementation(async (command: string, args: any) => {
-    if (command === "session_upsert")
-      return { ...args.session, updatedAt: ++revision, transcriptRevision: revision };
-    if (command === "session_apply_delta") return { updatedAt: ++revision, revision };
+    if (command === "session_upsert") {
+      revision++;
+      return {
+        ...args.session,
+        updatedAt: revision,
+        transcriptRevision: revision,
+        ...(args.captureOutputReceipt ? { nativeWriteId: nativeWriteId() } : {}),
+      };
+    }
+    if (command === "session_apply_delta") {
+      revision++;
+      return {
+        updatedAt: revision,
+        revision,
+        ...(args.captureOutputReceipt ? { nativeWriteId: nativeWriteId() } : {}),
+      };
+    }
     return undefined;
   });
   let sequence = 0;
@@ -55,7 +82,7 @@ async function fixture() {
     projection.recordAppliedSessionOutput(next, [event]);
     return next;
   }
-  function emit(event: HarnessEvent, retain = false) {
+  function emit(event: HarnessEvent, retain = false, project = true) {
     const items = [JSON.stringify(event)];
     const bytes = output.frameNativeOutputItems("stdout", items);
     const tokens = output.observeNativeOutputBatch(initial.id, "stdout", items, {
@@ -84,12 +111,61 @@ async function fixture() {
       output.captureNativeOutputEvent(initial.id, event);
       if (retain) work = output.captureNativeOutputWork();
     });
-    return { session: apply(event), work };
+    return { session: project ? apply(event) : model.getSessions()[0], work };
   }
   const state = () => projection.sessionOutputStorageObservation(initial.id);
   const pending = () => output.inspectNativeOutputDelivery(initial.id).streams[0].pendingCausalWork;
   return { initial, model, projection, persistence, output, apply, emit, state, pending };
 }
+
+it("flattens intentional multi-input ancestry into every exact original once at candidate admission", async () => {
+  const f = await fixture();
+  const first = f.emit({ type: "context", used: 1 }, true);
+  const second = f.emit({ type: "context", used: 2 }, true);
+  const joined = f.output.joinNativeOutputWorks([first.work!, second.work!], f.initial.id)!;
+  expect(joined).not.toBeNull();
+  first.work!.finish();
+  second.work!.finish();
+  const event: HarnessEvent = { type: "context", used: 3 };
+  f.output.captureNativeOutputWorkEvent(joined, event);
+  const session = f.apply(event);
+  joined.finish();
+  // The two earlier events and their joined later event share actual originals.
+  expect(f.state().pendingOrigins).toBe(2);
+  await f.persistence.upsertSession(session);
+  const { token, comparison } = await fullComparison(f, session);
+  expect(comparison.items.map((item) => [item.batch.sequence, item.itemIndex])).toEqual([
+    [1, 0],
+    [2, 0],
+  ]);
+  expect(f.state().acknowledgedOrigins).toBe(2);
+  f.output.invalidateNativeOutputSession(f.initial.id, "one-original-retired");
+  expect(f.projection.getSessionOutputFullCandidateComparison(token)).toBeNull();
+});
+
+it("admits no partial projection when a later joined constituent exhausts actual retention capacity", async () => {
+  const f = await fixture();
+  const first = f.emit({ type: "context", used: 1 }, true, false);
+  const second = f.emit({ type: "context", used: 2 }, true, false);
+  const joined = f.output.joinNativeOutputWorks([second.work!, first.work!], f.initial.id)!;
+  first.work!.finish();
+  second.work!.finish();
+  const fillers = Array.from({ length: 127 }, () =>
+    f.output.retainNativeOutputEventOrigin(first.work!.origin)!,
+  );
+  expect(fillers.every(Boolean)).toBe(true);
+  const event: HarnessEvent = { type: "context", used: 3 };
+  f.output.captureNativeOutputWorkEvent(joined, event);
+  const session = f.apply(event);
+  expect(f.state().pendingOrigins).toBe(0);
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id).unavailable).toBe(true);
+  await f.persistence.upsertSession(session);
+  expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+  expect(f.output.getNativeOutputEventOriginComparisons(joined.origin)).toBeNull();
+  joined.finish();
+  fillers.forEach((work) => work.finish());
+  expect(f.pending()).toBe(0);
+});
 
 it("holds the actual applied origin through an unresolved normal write; its ACK is not a FULL checkpoint", async () => {
   const f = await fixture();
@@ -293,3 +369,400 @@ it("metadata write capacity cannot evict an origin or fabricate an ACK", async (
   for (const handle of handles) f.projection.releaseSessionOutputWrite(handle);
   expect(f.state()).toMatchObject({ pendingOrigins: 1, activeWrites: 0, unavailable: true });
 });
+
+it("a real drain flush owns the deferred save, and later application invalidates its boundary without cancelling the actual write", async () => {
+  const f = await fixture();
+  f.emit({ type: "context", used: 1 });
+  const { rendererPersistenceDrain } = await import("./persistenceDrain");
+  const gate = deferred<any>();
+  mocks.invoke.mockReturnValueOnce(gate.promise);
+  const attempt = rendererPersistenceDrain.beginAttempt([f.initial.id]);
+  const observation = attempt.observe();
+  const failedObservation = expect(observation).rejects.toMatchObject({ code: "late-producer" });
+  try {
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+    f.emit({ type: "context", used: 2 });
+    await failedObservation;
+    expect(f.state().pendingOrigins).toBe(2);
+    expect(f.state().activeWrites).toBe(1);
+    gate.resolve({ id: f.initial.id, updatedAt: 0, transcriptRevision: 0 });
+    await f.persistence.flushSessionWrites();
+    expect(f.state().pendingOrigins).toBe(1);
+  } finally {
+    attempt.abandon();
+  }
+  await f.persistence.flushSessionWritesStrict([f.initial.id]);
+  expect(f.state()).toMatchObject({
+    pendingOrigins: 0,
+    applicationThrough: null,
+    fullCheckpoint: false,
+  });
+});
+
+it("retains genuine item comparisons and the exact immutable admitted payload after NORMAL ACK", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  const gate = deferred<any>();
+  mocks.invoke.mockReturnValueOnce(gate.promise);
+  const saving = f.persistence.upsertSession(session);
+  await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+  expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    inFlightCandidates: 1,
+  });
+  const admitted = mocks.invoke.mock.calls[0][1];
+  expect(Object.isFrozen(admitted)).toBe(true);
+  expect(Object.isFrozen(admitted.session.blocks[0])).toBe(true);
+  gate.resolve({
+    id: session.id,
+    updatedAt: 12,
+    transcriptRevision: 7,
+    nativeWriteId: "55555555-5555-4555-8555-555555555555",
+  });
+  await saving;
+  const { comparison } = await fullComparison(f, session);
+  expect(comparison.admittedPayload).toBe(admitted);
+  expect(admitted.captureOutputReceipt).toBe(true);
+  expect(comparison).toMatchObject({
+    qualified: false,
+    fullCheckpoint: false,
+    applicationThrough: null,
+    nativeCommitmentRequired: true,
+    command: "session_upsert",
+    acknowledgement: { kind: "replace", revision: 7, updatedAt: 12 },
+    items: [{ kind: "native-output-item-comparison", itemIndex: 0, batch: { sequence: 1 } }],
+  });
+  expect(f.state().pendingOrigins).toBe(0);
+  expect(f.pending()).toBe(0);
+  expect(f.projection.getSessionOutputFullCandidate({ ...session })).toBeNull();
+  expect(
+    f.projection.getSessionOutputFullCandidateComparison({ kind: "session-output-full-candidate" }),
+  ).toBeNull();
+});
+
+it("invalidates an acknowledged candidate on later accepted metadata and recaptures the retained origin on a genuine covering save", async () => {
+  const f = await fixture();
+  const first = f.emit({ type: "context", used: 1 }).session;
+  await f.persistence.upsertSession(first);
+  const previous = await fullComparison(f, first);
+  const next = { ...first, title: "Accepted edit" };
+  f.model.setSessions([next]);
+  expect(f.projection.getSessionOutputFullCandidateComparison(previous.token)).toBeNull();
+  expect(f.projection.getSessionOutputFullCandidate(next)).toBeNull();
+  expect(f.state().pendingOrigins).toBe(0);
+  await f.persistence.upsertSession(next);
+  const current = await fullComparison(f, next);
+  expect(current.comparison.items).toEqual(previous.comparison.items);
+  expect(current.comparison.modelVersion).toBeGreaterThan(previous.comparison.modelVersion);
+  expect((current.comparison.admittedPayload as any).session.title).toBe("Accepted edit");
+});
+
+it("a later no-op event from the same original item revokes the earlier candidate", async () => {
+  const f = await fixture();
+  const original = f.emit({ type: "context", used: 1 }, true);
+  await f.persistence.upsertSession(original.session);
+  const previous = await fullComparison(f, original.session);
+  const event: HarnessEvent = { type: "context", used: 1 };
+  original.work!.run(() => f.output.captureNativeOutputEvent(f.initial.id, event));
+  expect(f.apply(event)).toBe(original.session);
+  expect(f.projection.getSessionOutputFullCandidateComparison(previous.token)).toBeNull();
+  original.work!.finish();
+  await f.persistence.upsertSession(original.session);
+  expect((await fullComparison(f, original.session)).comparison.items).toHaveLength(1);
+});
+
+it("reset ABA retires comparison eligibility but retains the actual candidate/write until its real settlement", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  const gate = deferred<any>();
+  mocks.invoke.mockReturnValueOnce(gate.promise);
+  const saving = f.persistence.upsertSession(session);
+  await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+  f.model.resetSessionsStore([{ ...session }]);
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 1,
+    inFlightCandidates: 1,
+  });
+  expect(f.pending()).toBe(1);
+  gate.resolve({ id: session.id, updatedAt: 1, transcriptRevision: 1 });
+  await saving;
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 0,
+    inFlightCandidates: 0,
+    payloadBytes: 0,
+    candidateOriginReferences: 0,
+  });
+  expect(f.projection.getSessionOutputFullCandidate(f.model.getSessions()[0])).toBeNull();
+  expect(f.pending()).toBe(0);
+});
+
+it("a null CAS revokes the prior candidate and requires a real replacement acknowledgement", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  await f.persistence.upsertSession(session);
+  const previous = await fullComparison(f, session);
+  mocks.invoke.mockResolvedValueOnce(null);
+  await f.persistence.upsertSession(session);
+  expect(f.projection.getSessionOutputFullCandidateComparison(previous.token)).toBeNull();
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 0,
+    replacementRequired: true,
+  });
+  await f.persistence.upsertSession(session);
+  expect((await fullComparison(f, session)).comparison.acknowledgement.kind).toBe("replace");
+});
+
+it("a coalesced snapshot creates only the actually invoked delta comparison for its accepted descendant", async () => {
+  const f = await fixture();
+  const gate = deferred<any>();
+  mocks.invoke.mockReturnValueOnce(gate.promise);
+  const base = f.persistence.upsertSession(f.initial);
+  await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+  const first = f.emit({ type: "context", used: 1 }).session;
+  const saving = f.persistence.upsertSessionLive(first);
+  const next = f.emit({ type: "context", used: 2 }).session;
+  await f.persistence.upsertSessionLive(next);
+  expect(f.projection.sessionOutputFullCandidateObservation(next.id).retainedCandidates).toBe(0);
+  gate.resolve({ id: next.id, updatedAt: 1, transcriptRevision: 1 });
+  await base;
+  await saving;
+  const { comparison } = await fullComparison(f, next);
+  expect(comparison.command).toBe("session_apply_delta");
+  expect(comparison.admittedPayload).toBe(mocks.invoke.mock.calls[1][1]);
+  expect((comparison.admittedPayload as any).delta.session.contextUsed).toBe(2);
+  expect(comparison.items.map((item) => item.batch.sequence)).toEqual([1, 2]);
+});
+
+it("capacity rejection preserves the ordinary sanitized write and real ACK without manufacturing a candidate", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  const text = "x".repeat(f.projection.SESSION_OUTPUT_FULL_LIMITS.payloadBytesPerCandidate + 1);
+  const large = { ...session, blocks: [{ ...session.blocks[0], text }] };
+  f.model.setSessions([large]);
+  await f.persistence.upsertSession(large);
+  expect(mocks.invoke.mock.calls[0][1].session.blocks[0].text).toBe(text);
+  expect(mocks.invoke.mock.calls[0][1].captureOutputReceipt).toBeUndefined();
+  expect(f.state().pendingOrigins).toBe(0);
+  expect(f.pending()).toBe(0);
+  expect(f.projection.getSessionOutputFullCandidate(large)).toBeNull();
+  expect(f.projection.sessionOutputFullCandidateObservation(large.id)).toMatchObject({
+    retainedCandidates: 0,
+    payloadBytes: 0,
+    unavailable: true,
+  });
+});
+
+it("bounds held candidate admissions and supersession never releases actual write ownership", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  const handles: NonNullable<ReturnType<typeof f.projection.captureSessionOutputWrite>>[] = [];
+  for (let index = 0; index < f.projection.SESSION_OUTPUT_FULL_LIMITS.candidates + 1; index++) {
+    const handle = f.projection.captureSessionOutputWrite(session)!;
+    handles.push(handle);
+    f.projection.prepareSessionOutputWritePayload(
+      handle,
+      { session: { id: session.id, blocks: [] } },
+      "replace",
+    );
+  }
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 128,
+    inFlightCandidates: 128,
+    unavailable: true,
+  });
+  expect(f.pending()).toBe(1);
+  for (const handle of handles)
+    f.projection.acknowledgeSessionOutputWrite(handle, {
+      kind: "replace",
+      revision: 1,
+      updatedAt: 1,
+    });
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 0,
+    inFlightCandidates: 0,
+    payloadBytes: 0,
+    candidateOriginReferences: 0,
+  });
+  expect(f.pending()).toBe(0);
+});
+
+it("disposes a completed comparison and rechecks genuine original metadata rather than caching a prior positive claim", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  await f.persistence.upsertSession(session);
+  const first = await fullComparison(f, session);
+  f.projection.disposeSessionOutputFullCandidate(first.token);
+  expect(f.projection.getSessionOutputFullCandidateComparison(first.token)).toBeNull();
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id).payloadBytes).toBe(0);
+  await f.persistence.upsertSession(session);
+  const next = await fullComparison(f, session);
+  f.output.invalidateNativeOutputDelivery("fixture-source-reloaded");
+  expect(f.projection.getSessionOutputFullCandidateComparison(next.token)).toBeNull();
+});
+
+it.each([undefined, "not-a-native-locator", "55555555-5555-4555-A555-555555555555"])(
+  "legacy or malformed Native write locator %s preserves normal ACK without retaining a comparison",
+  async (nativeWriteId) => {
+    const f = await fixture();
+    const session = f.emit({ type: "context", used: 1 }).session;
+    mocks.invoke.mockResolvedValueOnce({
+      id: session.id,
+      updatedAt: 1,
+      transcriptRevision: 1,
+      nativeWriteId,
+    });
+    await f.persistence.upsertSession(session);
+    expect(mocks.invoke.mock.calls[0][1].captureOutputReceipt).toBe(true);
+    expect(f.state()).toMatchObject({ pendingOrigins: 0, acknowledgedOrigins: 1, failedWrites: 0 });
+    expect(f.pending()).toBe(0);
+    expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+    expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+      retainedCandidates: 0,
+      payloadBytes: 0,
+      sessionOrigins: 1,
+    });
+    // A later genuine save can acquire a real locator without replaying provider effects.
+    await f.persistence.upsertSession(session);
+    expect((await fullComparison(f, session)).comparison.acknowledgement.nativeWriteId).toMatch(
+      /^[0-9a-f-]{36}$/,
+    );
+  },
+);
+
+it("does not opt an ordinary save without genuine applied origins into Native receipt retention", async () => {
+  const f = await fixture();
+  await f.persistence.upsertSession(f.initial);
+  expect(mocks.invoke.mock.calls[0][1].captureOutputReceipt).toBeUndefined();
+  expect(f.projection.getSessionOutputFullCandidate(f.initial)).toBeNull();
+});
+
+it("best-effort comparison snapshot rejection preserves the original unsnapshotable invoke arguments", async () => {
+  const f = await fixture();
+  const session = f.emit({ type: "context", used: 1 }).session;
+  const write = f.projection.captureSessionOutputWrite(session);
+  const input: { session: { id: string; blocks: unknown[] }; cycle?: unknown } = {
+    session: { id: session.id, blocks: [] },
+  };
+  input.cycle = input;
+  expect(f.projection.prepareSessionOutputWritePayload(write, input, "replace")).toBe(input);
+  expect(Object.hasOwn(input, "captureOutputReceipt")).toBe(false);
+  expect(Object.isFrozen(input)).toBe(false);
+  expect(f.projection.sessionOutputFullCandidateObservation(session.id)).toMatchObject({
+    retainedCandidates: 0,
+    unavailable: true,
+  });
+  // Ordinary result accounting still belongs to the actual caller, not the failed observer.
+  f.projection.acknowledgeSessionOutputWrite(write, { kind: "replace", revision: 1, updatedAt: 1 });
+  expect(f.pending()).toBe(0);
+  expect(f.state().failedWrites).toBe(0);
+});
+
+it.each(["object", "array", "getter", "inherited-object", "inherited-array"] as const)(
+  "preserves ordinary serialization through a custom %s toJSON instead of opting altered data into Native comparison",
+  async (kind) => {
+    const f = await fixture();
+    const session = f.emit({ type: "context", used: 1 }).session;
+    const write = f.projection.captureSessionOutputWrite(session);
+    const original =
+      kind === "array" || kind === "inherited-array" ? ["original"] : { text: "original" };
+    const input = { session: { id: session.id, blocks: [original] } };
+    const getter = vi.fn();
+    const hook = vi.fn(function (this: unknown) {
+      return this === original ? { text: "ordinary custom serialization" } : this;
+    });
+    const owner =
+      kind === "inherited-object"
+        ? Object.prototype
+        : kind === "inherited-array"
+          ? Array.prototype
+          : original;
+    const previous = Object.getOwnPropertyDescriptor(owner, "toJSON");
+    let prepared!: typeof input;
+    let ordinaryJson = "";
+    let callsBeforeSend = -1;
+    try {
+      Object.defineProperty(
+        owner,
+        "toJSON",
+        kind === "getter"
+          ? {
+              configurable: true,
+              get() {
+                getter();
+                return hook;
+              },
+            }
+          : { configurable: true, value: hook },
+      );
+      prepared = f.projection.prepareSessionOutputWritePayload(write, input, "replace");
+      callsBeforeSend = hook.mock.calls.length + getter.mock.calls.length;
+      // Native's ordinary JSON serialization retains its original hook receiver.
+      ordinaryJson = JSON.stringify(prepared);
+    } finally {
+      if (previous) Object.defineProperty(owner, "toJSON", previous);
+      else Reflect.deleteProperty(owner, "toJSON");
+    }
+    expect(prepared === input).toBe(true);
+    expect(Object.hasOwn(prepared, "captureOutputReceipt")).toBe(false);
+    expect(callsBeforeSend).toBe(0);
+    expect(JSON.parse(ordinaryJson)).toEqual({
+      session: { id: session.id, blocks: [{ text: "ordinary custom serialization" }] },
+    });
+    if (kind === "getter") expect(getter).toHaveBeenCalledOnce();
+    f.projection.acknowledgeSessionOutputWrite(write, {
+      kind: "replace",
+      revision: 1,
+      updatedAt: 1,
+      nativeWriteId: "55555555-5555-4555-8555-555555555555",
+    });
+    expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+    expect(f.projection.sessionOutputFullCandidateObservation(session.id).retainedCandidates).toBe(
+      0,
+    );
+    expect(f.state()).toMatchObject({ pendingOrigins: 0, failedWrites: 0 });
+  },
+);
+
+it.each(["custom-array-prototype", "standard-array-prototype"] as const)(
+  "preserves ordinary serialization of a hole supplied by %s without changing the Native payload",
+  async (kind) => {
+    const f = await fixture();
+    const session = f.emit({ type: "context", used: 1 }).session;
+    const write = f.projection.captureSessionOutputWrite(session);
+    const index = kind === "standard-array-prototype" ? 5000 : 0;
+    const array: unknown[] = [];
+    array.length = index + 1;
+    const owner =
+      kind === "custom-array-prototype" ? Object.create(Array.prototype) : Array.prototype;
+    const previous = Object.getOwnPropertyDescriptor(owner, index);
+    if (kind === "custom-array-prototype") Object.setPrototypeOf(array, owner);
+    const input = { session: { id: session.id, blocks: array } };
+    let prepared!: typeof input;
+    let ordinaryJson = "";
+    try {
+      Object.defineProperty(owner, index, {
+        configurable: true,
+        value: "inherited ordinary value",
+        writable: true,
+      });
+      prepared = f.projection.prepareSessionOutputWritePayload(write, input, "replace");
+      ordinaryJson = JSON.stringify(prepared);
+    } finally {
+      if (previous) Object.defineProperty(owner, index, previous);
+      else Reflect.deleteProperty(owner, index);
+    }
+    expect(prepared === input).toBe(true);
+    expect(Object.hasOwn(prepared, "captureOutputReceipt")).toBe(false);
+    const persisted = JSON.parse(ordinaryJson).session.blocks;
+    expect(persisted).toHaveLength(index + 1);
+    expect(persisted[index]).toBe("inherited ordinary value");
+    f.projection.acknowledgeSessionOutputWrite(write, {
+      kind: "replace",
+      revision: 1,
+      updatedAt: 1,
+      nativeWriteId: "55555555-5555-4555-8555-555555555555",
+    });
+    expect(f.projection.getSessionOutputFullCandidate(session)).toBeNull();
+    expect(f.pending()).toBe(0);
+  },
+);

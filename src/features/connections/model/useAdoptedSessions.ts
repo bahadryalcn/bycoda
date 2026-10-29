@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { hostSessionBinding } from "./sessionExecutionBinding";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness/core/registry";
 import { sessionWorkCwd, type Session } from "../../sessions/model/session";
@@ -128,7 +129,7 @@ export function useAdoptedSessions(
               throw new Error("This conversation belongs to another project.");
             return host;
           },
-          local: () => (stopped ? [] : sessionsRef.current),
+          local: () => (stopped ? [] : sessionsRef.current.filter((session) => !hostSessionBinding(session))),
           mirrored,
           // Only an explicit refresh saves a separate copy, before it replaces
           // the local conversation. A failed backup leaves the original untouched.
@@ -146,6 +147,7 @@ export function useAdoptedSessions(
             const update = (list: Session[]) => {
               let changed = false;
               const next = list.map((session) => {
+                if (hostSessionBinding(session)) return session;
                 const continuingElsewhere = running.has(session.id) || undefined;
                 if (session.continuingElsewhere === continuingElsewhere) return session;
                 changed = true;

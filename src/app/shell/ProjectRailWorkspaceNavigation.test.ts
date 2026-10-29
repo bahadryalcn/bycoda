@@ -125,7 +125,8 @@ it("opens Servers from expanded and compact tools without a project", async () =
 it("selects the workspace root through normal project navigation without opening a modal", async () => {
   await render();
   expect(workspaceButton().title).toBe("G:/wallet");
-  expect(host.textContent).toContain("Workspace");
+  // The linked-workspace marker is an icon with an accessible name, not visible caption text.
+  expect(host.querySelector('[role="img"][aria-label="Workspace"]')).not.toBeNull();
   await act(async () => workspaceButton().click());
   expect(select).toHaveBeenCalledWith("G:/wallet");
   expect(loadProjectGroups()[0].collapsed).toBe(false);

@@ -114,7 +114,7 @@ export function AntigravityAccountSettings({ embedded = false }: { embedded?: bo
       <div
         id="setting-antigravity-account"
         data-setting-id="antigravity-account"
-        className="border-t border-stroke"
+        className="provider-antigravity-box"
       >
         <div className="flex flex-wrap items-center gap-4 px-4 py-3.5">
           <div className="flex min-w-0 flex-1 items-center gap-2.5">

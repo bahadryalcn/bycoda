@@ -14,7 +14,7 @@
 }
 
 .composer .message {
-  min-block-size: 3lh;
+  min-block-size: 2lh;
   max-block-size: 8rem;
 }
 

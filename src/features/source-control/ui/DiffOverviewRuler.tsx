@@ -95,7 +95,7 @@ export function DiffOverviewRuler({
       },
       {
         interactive: true,
-        band: true,
+        band: false,
         beforeDraw: () => {
           // Left of the native scrollbar, never over it.
           ruler.dom.style.right = `${scrollbarGutter(scroller)}px`;

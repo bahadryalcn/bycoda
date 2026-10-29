@@ -45,7 +45,10 @@ vi.mock("../model/useProjectFileSearch", () => ({
     };
   },
 }));
-vi.mock("../../group-lock/hooks/useGroupLock", () => ({ useLockSnapshot: () => ({}) }));
+vi.mock("../../group-lock/hooks/useGroupLock", () => {
+  const snapshot = { lockedGroupIds: new Set<string>(), lockedProjectKeys: new Set<string>() };
+  return { useLockSnapshot: () => snapshot };
+});
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {

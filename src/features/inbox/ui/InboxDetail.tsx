@@ -412,6 +412,18 @@ export function InboxDetail({
                     </span>
                   </>
                 ) : null}
+                {baseRef && headRef ? (
+                  <>
+                    <span aria-hidden>·</span>
+                    <span className="inline-flex min-w-0 items-center gap-1">
+                      <GitCompare className="icon-xs shrink-0" strokeWidth={1.75} />
+                      <span className="min-w-0 wrap-anywhere">
+                        {baseRef} ← {headRef}
+                      </span>
+                      <CopyBranchNameButton branch={headRef} />
+                    </span>
+                  </>
+                ) : null}
                 {reviewLabel ? (
                   <Badge
                     tone={
@@ -461,7 +473,8 @@ export function InboxDetail({
                   })}
                 </div>
               ) : null}
-              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5" data-inbox-detail-actions>
+              <div role="group" aria-label={t("Agent actions")} data-inbox-actions="agent" className="flex flex-wrap items-center gap-2">
                 {onStart && item.kind !== "pr" ? (
                   <>
                     <Button
@@ -501,6 +514,13 @@ export function InboxDetail({
                     ) : null}
                   </>
                 ) : null}
+                {onDiscuss ? (
+                  <Button variant="secondary" type="button" onClick={onDiscuss}>
+                    <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
+                  </Button>
+                ) : null}
+              </div>
+              <div role="group" aria-label={t("Provider actions")} data-inbox-actions="public" className="flex flex-wrap items-center gap-2">
                 {githubKind === "pr" ? (
                   <GithubPrActions
                     item={item}
@@ -509,11 +529,6 @@ export function InboxDetail({
                     reviewedHeadOid={prDiff?.headOid || details?.headRefOid}
                     onChange={onItemChange}
                   />
-                ) : null}
-                {onDiscuss ? (
-                  <Button variant="secondary" type="button" onClick={onDiscuss}>
-                    <MessageSquare className="icon-sm" strokeWidth={1.75} /> {t("Ask")}
-                  </Button>
                 ) : null}
                 {panel ? null : (
                   <Button
@@ -527,6 +542,7 @@ export function InboxDetail({
                     {externalActionLabel}
                   </Button>
                 )}
+              </div>
               </div>
               {startError ? (
                 <p className="text-ui-caption text-(--ui-tone-danger-fg)">{startError}</p>
@@ -598,7 +614,7 @@ export function InboxDetail({
           className={panel ? "min-w-0" : "min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-none"}
         >
           <div
-            className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : "mx-auto max-w-5xl"}`}
+            className={`flex w-full min-w-0 flex-col gap-4 px-4 py-4 ${tab === "code" ? "" : tab === "checks" ? "mx-auto max-w-5xl" : "mx-auto max-w-3xl"}`}
           >
             {isPr && tab === "code" ? (
               diffLoading && !prDiff ? (
@@ -749,42 +765,88 @@ export function InboxDetail({
   );
 }
 
+/**
+ * Copies the head branch name. One write at a time; the outcome belongs to the
+ * branch it was requested for, so a write that settles after the branch changed
+ * is ignored. A failure stays visible next to the control until it is retried.
+ */
 export function CopyBranchNameButton({ branch }: { branch: string }) {
   useLocale();
-  const [copied, setCopied] = useState(false);
+  const [outcome, setOutcome] = useState<{
+    branch: string;
+    status: "pending" | "copied" | "failed";
+  } | null>(null);
   const timer = useRef<number | null>(null);
+  const pending = useRef(false);
+  const generation = useRef(0);
+  const clearTimer = () => {
+    if (timer.current != null) window.clearTimeout(timer.current);
+    timer.current = null;
+  };
 
   useEffect(() => {
-    setCopied(false);
+    generation.current += 1;
+    pending.current = false;
+    clearTimer();
+    setOutcome(null);
     return () => {
-      if (timer.current != null) window.clearTimeout(timer.current);
+      generation.current += 1;
+      clearTimer();
     };
   }, [branch]);
 
+  const status = outcome?.branch === branch ? outcome.status : null;
+  const label =
+    status === "copied"
+      ? t("Copied")
+      : status === "failed"
+        ? t("Copy failed. Try again.")
+        : t("Copy branch name");
+
+  const copy = () => {
+    if (pending.current) return;
+    pending.current = true;
+    const requested = generation.current;
+    const target = branch;
+    clearTimer();
+    setOutcome({ branch: target, status: "pending" });
+    const settle = (next: "copied" | "failed") => {
+      if (generation.current !== requested) return;
+      pending.current = false;
+      setOutcome({ branch: target, status: next });
+      if (next === "copied") {
+        playCue("copy");
+        timer.current = window.setTimeout(() => setOutcome(null), 2000);
+      }
+    };
+    void copyText(target).then(
+      () => settle("copied"),
+      () => settle("failed"),
+    );
+  };
+
   return (
-    <Button
-      variant="ghost"
-      type="button"
-      title={copied ? t("Copied") : t("Copy branch name")}
-      aria-label={copied ? t("Copied") : t("Copy branch name")}
-      className="shrink-0"
-      onClick={() => {
-        void copyText(branch).then(
-          () => {
-            playCue("copy");
-            setCopied(true);
-            if (timer.current != null) window.clearTimeout(timer.current);
-            timer.current = window.setTimeout(() => setCopied(false), 2000);
-          },
-          () => {},
-        );
-      }}
-    >
-      {copied ? (
-        <Check className="icon-xs" strokeWidth={1.75} />
-      ) : (
-        <Copy className="icon-xs" strokeWidth={1.75} />
-      )}
-    </Button>
+    <>
+      <Button
+        variant="ghost"
+        type="button"
+        title={label}
+        aria-label={label}
+        className="shrink-0"
+        loading={status === "pending"}
+        onClick={copy}
+      >
+        {status === "copied" ? (
+          <Check className="icon-xs" strokeWidth={1.75} />
+        ) : (
+          <Copy className="icon-xs" strokeWidth={1.75} />
+        )}
+      </Button>
+      {status === "failed" ? (
+        <span role="status" className="shrink-0 text-ui-caption text-(--ui-tone-danger-fg)">
+          {t("Copy failed. Try again.")}
+        </span>
+      ) : null}
+    </>
   );
 }

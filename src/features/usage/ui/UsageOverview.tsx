@@ -460,8 +460,21 @@ export function UsageOverview({
       {view === "projects" && (!showAnalytics || metricUnavailable) && (
         <div id="setting-provider-usage" data-setting-id="provider-usage" />
       )}
-      <div className="usage-analytics-header">
-        <div>
+      <div className="usage-band">
+        {!limitsOnly && (
+          <SegmentedControl
+            label={t("Usage views")}
+            value={view}
+            onValueChange={setView}
+            options={[
+              { value: "overview", label: t("Overview") },
+              { value: "projects", label: t("Projects") },
+              { value: "time", label: t("Time analysis") },
+              ...(limits ? [{ value: "limits", label: t("Limits") }] : []),
+            ]}
+          />
+        )}
+        <div className="usage-band-scope">
           <p>
             {t(limitsOnly ? "This machine" : "This machine · Local session logs")} ·{" "}
             {Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -494,7 +507,7 @@ export function UsageOverview({
             aria-expanded={openFilters}
             onClick={() => setOpenFilters(!openFilters)}
           >
-            <ListFilter aria-hidden strokeWidth={1.75} />
+            <ListFilter aria-hidden className="icon-sm" strokeWidth={1.75} />
           </Button>
           {!limitsOnly && view !== "limits" && !unavailable && !partial && (
             <Button
@@ -504,7 +517,7 @@ export function UsageOverview({
               loading={refreshing}
               onClick={refreshData}
             >
-              <RefreshCw aria-hidden strokeWidth={1.75} />
+              <RefreshCw aria-hidden className="icon-sm" strokeWidth={1.75} />
             </Button>
           )}
         </div>
@@ -604,19 +617,6 @@ export function UsageOverview({
         </Popover>
       )}
 
-      {!limitsOnly && (
-        <SegmentedControl
-          label={t("Usage views")}
-          value={view}
-          onValueChange={setView}
-          options={[
-            { value: "overview", label: t("Overview") },
-            { value: "projects", label: t("Projects") },
-            { value: "time", label: t("Time analysis") },
-            ...(limits ? [{ value: "limits", label: t("Limits") }] : []),
-          ]}
-        />
-      )}
       {view !== "limits" ? (
         <p className="usage-muted">
           {t(metricNames[metric])} · {t(names[dimension])} · {t(({ "15m": "15 minutes", hour: "Hourly", day: "Daily", week: "Weekly" })[actualResolution])}
@@ -839,7 +839,7 @@ export function UsageOverview({
                   onChange={(e) => setSearch(e.target.value)}
                 />
                 <Button variant="secondary" onClick={exportCsv}>
-                  <ArrowDownCircle aria-hidden strokeWidth={1.75} />
+                  <ArrowDownCircle aria-hidden className="icon-sm" strokeWidth={1.75} />
                   {t("Export CSV")}
                 </Button>
               </div>

@@ -1,16 +1,14 @@
+/* General channels, events and the daily summary read as one ordered column. */
 .notification-alert-settings {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
-  align-items: start;
-  gap: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
   min-inline-size: 0;
 }
 .notification-permission-status {
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   line-height: 1.5;
-  padding: 12px 16px;
-  border-block-start: 1px solid var(--color-stroke);
 }
 .notification-permission-status p {
   margin: 0;
@@ -19,12 +17,5 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-}
-.notification-alert-settings .settings-advanced > p {
-  margin: 8px 0 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+  gap: 4px 8px;
 }

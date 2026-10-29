@@ -272,23 +272,14 @@ export function McpSettings({ cwd, recents = [] }: { cwd: string; recents?: Rece
   );
   if (project.startsWith("remote://")) {
     return (
-      <div className="grid min-w-0 gap-6">
+      <div className="grid min-w-0 gap-7">
         {projectPicker}
         <SettingsFeedback state="warning">{t(MCP_LOCAL_ONLY_ERROR)}</SettingsFeedback>
       </div>
     );
   }
   return (
-    <div className="grid min-w-0 gap-6">
-      <nav className="flex flex-wrap gap-2" aria-label={t("MCP settings")}>
-        {[["setting-mcp-servers", "MCP connections"], ["setting-external-mcp-access", "External MCP access"]].map(([id, label]) => (
-          <Button key={id} variant="ghost" onClick={() => {
-            const target = document.getElementById(id);
-            target?.scrollIntoView({ block: "start" });
-            target?.focus({ preventScroll: true });
-          }}>{t(label)}</Button>
-        ))}
-      </nav>
+    <div className="grid min-w-0 gap-7">
       <McpConnections key={project} cwd={project} projectPicker={projectPicker} />
       <ExternalMcpAccess cwd={project} />
     </div>
@@ -454,7 +445,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-3">
-            <h2 className="text-ui-body font-medium">{t("MCP connections")}</h2>
+            <h2 className="text-ui-title font-medium">{t("MCP connections")}</h2>
             {projectPicker}
           </div>
         </div>

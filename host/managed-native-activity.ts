@@ -9,6 +9,7 @@ import {
 import { withHostGitMutation } from "./git-mutations";
 import { durableWrite } from "./turn-git-history";
 import { createNativeBufferReports } from "./native-buffer-reports";
+import type { NativeBufferPersistence } from "./ports/native-buffer-persistence";
 export type { NativeBufferSnapshot } from "./native-buffer-reports";
 import type { ManagedWorkspace } from "./workspace-contracts";
 import type {
@@ -49,6 +50,7 @@ export function createManagedNativeActivity(deps: {
   assertWritable(id: string): Promise<void>;
   authorize(owner: WorkspaceOwnerAuthorization): Promise<boolean>;
   now?(): number;
+  bufferPersistence?: NativeBufferPersistence;
 }) {
   let tail: Promise<unknown> = Promise.resolve();
   const serial = <T>(action: () => Promise<T>): Promise<T> => {
@@ -102,9 +104,11 @@ export function createManagedNativeActivity(deps: {
     serial,
     authenticate,
     now: deps.now,
+    persistence: deps.bufferPersistence,
   });
   const probe = buffers.probe;
   return {
+    initializeBufferRetention: buffers.initializeRetention,
     probe,
     start(request: NativeActivityStart, owner: WorkspaceOwnerAuthorization) {
       return serial(async () => {
@@ -212,6 +216,7 @@ export function createManagedNativeActivity(deps: {
     retireBuffers: buffers.retireBuffers,
     reconcileBuffers: buffers.reconcileBuffers,
     updateBuffers: buffers.updateBuffers,
+    verifyBufferDelivery: buffers.verifyDelivery,
     listBufferRecovery: buffers.listRecovery,
     readBufferRecovery: buffers.readRecovery,
     bufferRecoveryStatus: buffers.recoveryStatus,

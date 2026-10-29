@@ -691,9 +691,8 @@ export function InboxPrChecks({
           <p className="text-ui-caption font-medium">
             {t(error ? "Checks refresh failed" : "Checking the latest revision…")}
           </p>
-          <p className="break-words text-ui-caption">
-            {error || t("Saved results may be out of date.")}
-          </p>
+          {error ? <p className="break-words text-ui-caption">{error}</p> : null}
+          <p className="break-words text-ui-caption">{t("Saved results may be out of date.")}</p>
           {error ? (
             <Button variant="ghost" loading={refreshing} onClick={onRefresh}>
               {t("Retry loading checks")}

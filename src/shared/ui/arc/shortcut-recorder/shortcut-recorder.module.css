@@ -133,8 +133,9 @@
 .control[data-state="conflict"] {
   border-color: var(--ui-tone-warning-border);
 }
-/* The frame carries the focus indication, so the inner button never draws a second rectangle. */
-.control .recorder:focus-visible {
+/* The frame carries the focus indication, so the inner button never draws a second rectangle. Written one
+   class stronger than the shared `.bycoda-arc :is([tabindex]):focus-visible` rule, which it otherwise ties. */
+.control .recorder.recorder:focus-visible {
   outline: none;
 }
 .field[data-disabled] .control {

@@ -72,50 +72,34 @@ export function RefNameDialog({
       }}
     >
       <form className="flex flex-col gap-4 p-4" onSubmit={submit}>
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">{label}</span>
+        {/* The failure message belongs to the name field, which takes focus when it appears. */}
+        <TextField
+          label={label}
+          ref={input}
+          type="text"
+          value={name}
+          placeholder={placeholder}
+          error={error || undefined}
+          spellCheck={false}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          disabled={busy}
+          onChange={(event) => setName(event.target.value)}
+        />
+        {extra ? (
           <TextField
-            hideLabel
-            label=""
-            ref={input}
+            label={extra.label}
             type="text"
-            value={name}
-            placeholder={placeholder}
-            aria-label={label}
+            value={extraValue}
+            placeholder={extra.placeholder}
             spellCheck={false}
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             disabled={busy}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => setExtraValue(event.target.value)}
           />
-        </label>
-        {extra ? (
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[12px] font-medium text-[var(--ui-text-secondary)]">
-              {extra.label}
-            </span>
-            <TextField
-              hideLabel
-              label=""
-              type="text"
-              value={extraValue}
-              placeholder={extra.placeholder}
-              aria-label={extra.label}
-              spellCheck={false}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              disabled={busy}
-              onChange={(event) => setExtraValue(event.target.value)}
-            />
-          </label>
-        ) : null}
-
-        {error ? (
-          <p role="alert" className="text-[11px] leading-4 text-danger">
-            {error}
-          </p>
         ) : null}
 
         <div className="flex justify-end gap-2">

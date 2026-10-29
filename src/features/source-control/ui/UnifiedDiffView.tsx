@@ -315,7 +315,7 @@ export function UnifiedDiffView({
   }
 
   const count = fileCount ?? files.length;
-  const fileLabel = count === 1 ? "1 file" : `${count} files`;
+  const fileLabel = count === 1 ? t("1 file") : t("{p0} files", { p0: count });
   const additions = totals?.additions ?? files.reduce((sum, file) => sum + file.additions, 0);
   const deletions = totals?.deletions ?? files.reduce((sum, file) => sum + file.deletions, 0);
 
@@ -328,10 +328,16 @@ export function UnifiedDiffView({
       }
     >
       <div
-        className="flex min-h-8 min-w-0 shrink-0 items-center gap-2 border-b border-stroke px-3 py-px text-ui-caption"
+        data-diff-toolbar=""
+        className="flex min-h-9 min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-stroke px-3 py-1 text-ui-caption"
       >
-        <span className="shrink-0 text-(--ui-text-secondary)">{fileLabel}</span>
-        <DiffCounts additions={additions} deletions={deletions} />
+        {/* Count and churn truncate first; the view and expand controls never wrap away. */}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="min-w-0 truncate text-(--ui-text-secondary)" title={fileLabel}>
+            {fileLabel}
+          </span>
+          <DiffCounts additions={additions} deletions={deletions} />
+        </span>
         <span role="group" aria-label={t("Diff view")} className="ml-auto flex shrink-0 items-center gap-0.5">
           <DiffLayoutToggle className="mr-0.5" />
           <Button
@@ -1507,7 +1513,10 @@ function DiffCounts({ additions, deletions }: { additions: number; deletions: nu
   useLocale();
   if (additions <= 0 && deletions <= 0) return null;
   return (
-    <span className="flex shrink-0 items-center gap-1.5 font-sans text-ui-micro font-semibold tabular-nums">
+    <span
+      className="flex shrink-0 items-center gap-1.5 font-sans text-ui-micro font-semibold tabular-nums"
+      title={t("{p0} lines added, {p1} lines removed", { p0: additions, p1: deletions })}
+    >
       {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
       {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
     </span>

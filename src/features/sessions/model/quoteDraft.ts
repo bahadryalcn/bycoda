@@ -13,9 +13,22 @@ export type QuoteRequest = {
   mode?: AddToChatMode;
 };
 
+/**
+ * Normalizes line endings and drops only leading/trailing blank lines. Leading
+ * indentation of the first content line is meaningful for code, terminal output
+ * and YAML, so the text is never `trim()`med; `trim()` only decides emptiness.
+ */
+export function normalizeSelectedText(text: string): string {
+  if (!text.trim()) return "";
+  return text
+    .replace(/\r\n?/g, "\n")
+    .replace(/^(?:[ \t]*\n)+/, "")
+    .replace(/(?:\n[ \t]*)+$/, "");
+}
+
 export function requestAddToChat(text: string, mode: AddToChatMode = "quote") {
   if (typeof window === "undefined") return;
-  const value = text.replace(/\r\n?/g, "\n").trim();
+  const value = normalizeSelectedText(text);
   if (!value) return;
   window.dispatchEvent(
     new CustomEvent<AddToChatRequest>(ADD_TO_CHAT_EVENT, {
@@ -42,7 +55,7 @@ export function isMarkdownBlockquotePosition(text: string, position: number): bo
 }
 
 export function appendSelectionQuote(draft: string, text: string): string {
-  const selected = text.replace(/\r\n?/g, "\n").trim();
+  const selected = normalizeSelectedText(text);
   if (!selected) return draft;
 
   const quote = selected
@@ -53,7 +66,7 @@ export function appendSelectionQuote(draft: string, text: string): string {
 }
 
 export function appendComposerInsert(draft: string, text: string): string {
-  const selected = text.replace(/\r\n?/g, "\n").trim();
+  const selected = normalizeSelectedText(text);
   if (!selected) return draft;
   return joinComposerInsert(draft, selected);
 }

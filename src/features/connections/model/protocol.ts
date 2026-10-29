@@ -136,6 +136,7 @@ export type HostDirectory = {
   entries: { name: string; path: string }[];
 };
 export type HostModelCatalog = {
+  accounts?: Partial<Record<"codex" | "claude", { id: string; label: string }[]>>;
   models: Partial<Record<RemoteProvider, AgentModel[]>>;
   errors: Partial<Record<RemoteProvider, string>>;
   /** Providers still being discovered; available models remain usable. */
@@ -363,11 +364,15 @@ type HostCommandBody =
       model: string;
       modelSettings?: Record<string, string>;
       runtimeMode: RuntimeMode;
-      /** Atomic creation plus durable first turn on capable hosts. */
-      firstTurn?: Extract<HostCommand, { type: "send" | "draft" }>;
+      /** Atomic first turn targets the created session. Legacy nested IDs are ignored. */
+      firstTurn?: (
+        | Omit<Extract<HostCommand, { type: "send" }>, "sessionId">
+        | Omit<Extract<HostCommand, { type: "draft" }>, "sessionId">
+      ) & { sessionId?: string };
     }
   | {
       type: "configure";
+      providerAccountId?: string | null;
       commandId: string;
       sessionId: string;
       /** Supported by hosts advertising sessions.harnessSwitch. */

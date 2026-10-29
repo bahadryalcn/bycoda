@@ -195,11 +195,7 @@ function terminalColors(light: boolean, scope: HTMLElement) {
       themePalette.accent,
       scope,
     ),
-    selectionForeground: cssColor(
-      "var(--ui-text-selection-foreground)",
-      themePalette.scrim,
-      scope,
-    ),
+    selectionForeground: cssColor("var(--ui-text-selection-foreground)", themePalette.scrim, scope),
   });
   const { minimumContrastRatio, canvasResolved, ...theme } = policy;
   return {
@@ -210,7 +206,11 @@ function terminalColors(light: boolean, scope: HTMLElement) {
       matchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
       activeMatchBorder: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
       matchOverviewRuler: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
-      activeMatchColorOverviewRuler: cssHexColor("var(--ui-focus-ring-color)", themePalette.accent, scope),
+      activeMatchColorOverviewRuler: cssHexColor(
+        "var(--ui-focus-ring-color)",
+        themePalette.accent,
+        scope,
+      ),
     } satisfies ISearchOptions["decorations"],
   };
 }
@@ -311,6 +311,10 @@ export function TerminalView({
     (sshConnectionId || sshEndpoint),
   );
   const remoteShell = useSshShellIntegration(id, integrated);
+  // "auto" keeps the default, but until the remote shell reports integration
+  // for this tab the explicit Bash/Zsh/PowerShell option stays reachable.
+  const manualSuggestionsAvailable =
+    integrated && shellIntegration === "auto" && remoteShell.state?.id !== id;
   const promptCallback = useRef(onSshPromptReady);
   useLayoutEffect(() => {
     promptCallback.current = onSshPromptReady;
@@ -349,7 +353,9 @@ export function TerminalView({
   const hostRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
   const [terminal, setTerminal] = useState<Terminal | null>(null);
-  const [displayFontSize, setDisplayFontSize] = useState(fontSize ?? loadAppearancePreferences().terminalSize);
+  const [displayFontSize, setDisplayFontSize] = useState(
+    fontSize ?? loadAppearancePreferences().terminalSize,
+  );
   const [savedFontSize, setSavedFontSize] = useState(loadAppearancePreferences().terminalSize);
   const [searchDecorations, setSearchDecorations] = useState<ISearchOptions["decorations"]>();
   const resetFontSizeRef = useRef<() => void>(() => {});
@@ -388,6 +394,9 @@ export function TerminalView({
       letterSpacing: 0,
       scrollback: 5000,
       allowTransparency: true,
+      // The search addon registers its match highlights through xterm's
+      // decoration API, which xterm gates behind this flag.
+      allowProposedApi: true,
       smoothScrollDuration: 0,
       theme: colors.theme,
       macOptionIsMeta: IS_MAC,
@@ -397,7 +406,9 @@ export function TerminalView({
     setDisplayFontSize(term.options.fontSize!);
     setSavedFontSize(preferences.terminalSize);
     setSearchDecorations(colors.searchDecorations);
-    const onMotionChange = () => { term.options.cursorBlink = !reducedMotion?.matches; };
+    const onMotionChange = () => {
+      term.options.cursorBlink = !reducedMotion?.matches;
+    };
     reducedMotion?.addEventListener("change", onMotionChange);
     term.loadAddon(new WebLinksAddon(activateTerminalLink));
     termRef.current = term;
@@ -781,7 +792,10 @@ export function TerminalView({
       fontSizeCallback.current?.(size);
       applySizeRef.current();
     };
-    host.addEventListener("wheel", onZoomWheel, { capture: true, passive: false });
+    host.addEventListener("wheel", onZoomWheel, {
+      capture: true,
+      passive: false,
+    });
 
     term.attachCustomWheelEventHandler(() => {
       if (term.element?.classList.contains("enable-mouse-events")) return true;
@@ -1112,7 +1126,9 @@ export function TerminalView({
         remoteShell={integrated ? remoteShell : undefined}
         onStartupReview={sshConnectionId ? onStartupReview : undefined}
         onEnableShellIntegration={
-          !integrated && (sshConnectionId || sshEndpoint) ? onEnableShellIntegration : undefined
+          (sshConnectionId || sshEndpoint) && (!integrated || manualSuggestionsAvailable)
+            ? onEnableShellIntegration
+            : undefined
         }
         onSavedCommands={
           integrated && sshConnectionId

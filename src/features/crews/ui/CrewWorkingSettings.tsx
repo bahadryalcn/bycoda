@@ -7,7 +7,7 @@ import { NumberField } from "../../../shared/ui/NumberField";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select } from "../../../shared/ui/Select";
-import { Toggle } from "../../settings/ui/settingsControls";
+import { Group, Row, Toggle } from "../../settings/ui/settingsControls";
 import type { HostModelCatalog } from "../../connections/model/protocol";
 import type { CrewAgent, CrewPolicy } from "../model/crew";
 import {
@@ -26,59 +26,6 @@ export type CrewPolicyErrors = {
   maxAssignments: string;
   maxRunMinutes: string;
 };
-
-function Section({
-  title,
-  info,
-  lead,
-  children,
-}: {
-  title: string;
-  info?: ReactNode;
-  lead?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section aria-label={title} className="flex min-w-0 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-1">
-        <h4 className="min-w-0 text-ui-body font-medium">{title}</h4>
-        {info}
-      </div>
-      {lead ? <p className="text-ui-caption text-(--ui-text-secondary)">{lead}</p> : null}
-      <div className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">
-        {children}
-      </div>
-    </section>
-  );
-}
-
-/** A label with its visible consequence on the left and the control on the right; stacks when narrow. */
-function SettingRow({
-  label,
-  hint,
-  info,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  info?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className="grid min-w-0 items-center gap-x-4 gap-y-1.5 py-2 @min-[32rem]/crew-editor:grid-cols-[minmax(0,1fr)_auto]">
-      <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1">
-          <span className="min-w-0 text-ui-body">{label}</span>
-          {info}
-        </div>
-        {hint ? <p className="text-ui-caption text-(--ui-text-secondary)">{hint}</p> : null}
-      </div>
-      <div className="flex min-w-0 items-center gap-2 @min-[32rem]/crew-editor:justify-end">
-        {children}
-      </div>
-    </div>
-  );
-}
 
 function memberNames(effects: MemberPolicyEffect[], withShare = false) {
   return shortNameList(
@@ -165,19 +112,47 @@ export function CrewWorkingSettings({
     );
   };
 
+  const eligibilityFeedback =
+    impact.blocked.length || impact.narrowed.length || (guardsActive && agents.length) ? (
+      <div className="flex min-w-0 flex-col gap-1.5">
+        {impact.blocked.length ? (
+          <Alert tone="warning">
+            {t("No eligible model left for: {p0}. Fixed models are not exempt.", {
+              p0: memberNames(impact.blocked),
+            })}
+          </Alert>
+        ) : null}
+        {impact.narrowed.length ? (
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Fewer candidates (eligible/total): {p0}", {
+              p0: memberNames(impact.narrowed, true),
+            })}
+          </p>
+        ) : null}
+        {!impact.blocked.length && !impact.narrowed.length ? (
+          <p className="text-ui-caption text-(--ui-text-secondary)">
+            {t("Every member keeps its models under these guards.")}
+          </p>
+        ) : null}
+      </div>
+    ) : undefined;
+
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <Section
+    <div className="settings-topics">
+      <Group
         title={t("Model eligibility")}
-        lead={t(
+        description={t(
           "Applied first, to every member including fixed models. A fixed model that fails a guard is not used.",
         )}
+        descriptionVisible
+        feedback={eligibilityFeedback}
       >
-        <SettingRow
+        <Row
           label={t("Highest cost allowed")}
-          hint={t(
+          description={t(
             "A relative rating, not money. Skips models rated above it and caps a job's combined worker and reviewer estimate.",
           )}
+          descriptionVisible
           info={
             <InfoPopover label={t("About the cost limit")}>
               <p>
@@ -199,71 +174,59 @@ export function CrewWorkingSettings({
             t("Medium"),
             t("High"),
           ])}
-        </SettingRow>
-        <SettingRow
+        </Row>
+        <Row
           label={t("Lowest quality allowed")}
-          hint={t("Models rated below this quality are skipped.")}
+          description={t("Models rated below this quality are skipped.")}
+          descriptionVisible
         >
           {levelSelect("minimumQuality", t("Lowest quality allowed"), QUALITY_LEVELS, [
             t("Basic"),
             t("Good"),
             t("Best"),
           ])}
-        </SettingRow>
-        <SettingRow
+        </Row>
+        <Row
           label={t("Use models without a cost rating")}
-          hint={t("When off, only models you rated for cost can be chosen.")}
+          description={t("When off, only models you rated for cost can be chosen.")}
+          descriptionVisible
         >
           <Toggle
             label={t("Use models without a cost rating")}
             on={policy.allowUnknownCost}
             onChange={(value) => onPolicyChange({ allowUnknownCost: value })}
           />
-        </SettingRow>
-        {impact.blocked.length || impact.narrowed.length || (guardsActive && agents.length) ? (
-          <div className="flex min-w-0 flex-col gap-1.5 py-2">
-            {impact.blocked.length ? (
-              <Alert tone="warning">
-                {t("No eligible model left for: {p0}. Fixed models are not exempt.", {
-                  p0: memberNames(impact.blocked),
-                })}
-              </Alert>
-            ) : null}
-            {impact.narrowed.length ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">
-                {t("Fewer candidates (eligible/total): {p0}", {
-                  p0: memberNames(impact.narrowed, true),
-                })}
-              </p>
-            ) : null}
-            {!impact.blocked.length && !impact.narrowed.length ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">
-                {t("Every member keeps its models under these guards.")}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-      </Section>
+        </Row>
+      </Group>
 
-      <Section
+      <Group
         title={t("Automatic ranking")}
-        lead={
+        description={
           automatic === 1
             ? t("Used by the member set to Automatic.")
             : automatic
               ? t("Used by {p0} members set to Automatic.", { p0: automatic })
               : t("No member chooses its model automatically. These apply once one does.")
         }
+        descriptionVisible
+        feedback={
+          policy.costWeight !== undefined || policy.qualityWeight !== undefined ? (
+            <p className="text-ui-caption text-(--ui-text-secondary)">
+              {t("Custom weights are active. Choose a preset to reset them.")}
+            </p>
+          ) : undefined
+        }
       >
-        <SettingRow
+        <Row
           label={t("Priority")}
-          hint={
+          description={
             policy.preset === "economy"
               ? t("Prefers models you rated cheaper.")
               : policy.preset === "quality"
                 ? t("Prefers models you rated higher quality.")
                 : t("Weighs cost and quality equally.")
           }
+          descriptionVisible
         >
           <SegmentedControl
             label={t("Priority")}
@@ -282,25 +245,22 @@ export function CrewWorkingSettings({
               })
             }
           />
-        </SettingRow>
-        {policy.costWeight !== undefined || policy.qualityWeight !== undefined ? (
-          <p className="py-2 text-ui-caption text-(--ui-text-secondary)">
-            {t("Custom weights are active. Choose a preset to reset them.")}
-          </p>
-        ) : null}
-      </Section>
+        </Row>
+      </Group>
 
       {fixed.length ? (
-        <Section title={t("Models")}>
-          <SettingRow
+        <Group title={t("Models")}>
+          <Row
+            stacked
             label={t("Same model for every fixed member")}
-            hint={
+            description={
               bulkApplied !== null
                 ? t("Applied to {p0} fixed members. Save to keep it.", { p0: bulkApplied })
                 : t("Replaces the model of {p0} members with a fixed model.", {
                     p0: fixed.length,
                   })
             }
+            descriptionVisible
           >
             <SearchableSelect
               label={t("Same model for every fixed member")}
@@ -325,46 +285,65 @@ export function CrewWorkingSettings({
             >
               {t("Apply")}
             </Button>
-          </SettingRow>
-        </Section>
+          </Row>
+        </Group>
       ) : null}
 
-      <Section title={t("Execution limits")}>
-        <div className="grid min-w-0 gap-3 py-2 @min-[36rem]/crew-editor:grid-cols-3">
+      <Group title={t("Execution limits")}>
+        <Row
+          label={t("Members working at once")}
+          description={t("How many assignments can run at the same time.")}
+          descriptionVisible
+        >
           <NumberField
             label={t("Members working at once")}
-            description={t("How many assignments can run at the same time.")}
+            hideLabel
             min={1}
             max={4}
             value={policy.maxParallel}
             error={errors.maxParallel || undefined}
             onChange={(e) => onPolicyChange({ maxParallel: Number(e.target.value) })}
           />
+        </Row>
+        <Row
+          label={t("Assignments per job")}
+          description={t("The most assignments the coordinator can hand out for one job.")}
+          descriptionVisible
+        >
           <NumberField
             label={t("Assignments per job")}
-            description={t("The most assignments the coordinator can hand out for one job.")}
+            hideLabel
             min={1}
             max={20}
             value={policy.maxAssignments}
             error={errors.maxAssignments || undefined}
             onChange={(e) => onPolicyChange({ maxAssignments: Number(e.target.value) })}
           />
+        </Row>
+        <Row
+          label={t("Minutes per assignment")}
+          description={t("An assignment running longer than this is stopped.")}
+          descriptionVisible
+        >
           <NumberField
             label={t("Minutes per assignment")}
-            description={t("An assignment running longer than this is stopped.")}
+            hideLabel
             min={1}
             max={240}
             value={policy.maxRunMinutes}
             error={errors.maxRunMinutes || undefined}
             onChange={(e) => onPolicyChange({ maxRunMinutes: Number(e.target.value) })}
           />
-        </div>
-      </Section>
+        </Row>
+      </Group>
 
-      <Section title={t("Permissions")}>
-        <SettingRow
+      <Group title={t("Permissions")}>
+        <Row
           label={t("Coordinator answers permission requests")}
-          hint={t("When a member asks to run a tool, the coordinator decides instead of you.")}
+          description={t(
+            "When a member asks to run a tool, the coordinator decides instead of you.",
+          )}
+          descriptionVisible
           info={
             <InfoPopover label={t("About coordinator approvals")}>
               <p>
@@ -385,10 +364,11 @@ export function CrewWorkingSettings({
             on={policy.delegateApprovals === true}
             onChange={(value) => onPolicyChange({ delegateApprovals: value })}
           />
-        </SettingRow>
-        <SettingRow
+        </Row>
+        <Row
           label={t("Allow provider sub-agents")}
-          hint={t("Members may start their provider's own helper agents.")}
+          description={t("Members may start their provider's own helper agents.")}
+          descriptionVisible
           info={
             <InfoPopover label={t("About provider sub-agents")}>
               <p>
@@ -404,21 +384,23 @@ export function CrewWorkingSettings({
             on={policy.allowSubagents}
             onChange={(value) => onPolicyChange({ allowSubagents: value })}
           />
-        </SettingRow>
-      </Section>
+        </Row>
+      </Group>
 
-      <Section title={t("Appearance")}>
-        <SettingRow
+      <Group title={t("Appearance")}>
+        <Row
+          stacked
           label={t("Crew icon and color")}
-          hint={
+          description={
             appearanceSavedNow
               ? t("Saved on this device right away. Discard does not undo it.")
               : t("Saved with the crew when you create it.")
           }
+          descriptionVisible
         >
           {appearance}
-        </SettingRow>
-      </Section>
+        </Row>
+      </Group>
       {maintenance}
     </div>
   );

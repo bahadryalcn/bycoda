@@ -261,7 +261,7 @@ export function FolderPicker({ title, multiple, onPick, onClose }: Props) {
           tabIndex={0}
           aria-activedescendant={visibleEntries[active] ? `folder-picker-${active}` : undefined}
           title={t("↑ ↓ Navigate · Enter Open folder · Backspace Parent folder · Esc Close")}
-          className="h-[min(340px,50vh)] overflow-y-auto overscroll-none p-1.5 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent"
+          className="h-[min(340px,50vh)] overflow-y-auto overscroll-none p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-(--ui-focus-ring-color)"
           onKeyDown={(event) => {
             if (busy || loading) return;
             if (event.key === "ArrowDown" || event.key === "ArrowUp") {

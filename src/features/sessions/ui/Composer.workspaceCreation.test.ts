@@ -86,9 +86,15 @@ async function draw(props: Partial<ComponentProps<typeof Composer>> = {}) {
   await act(async () => root.render(createElement(Draft)));
 }
 const button = (label: string) =>
-  [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (entry) => entry.textContent === label || entry.getAttribute("aria-label") === label,
-  );
+  [...container.querySelectorAll<HTMLButtonElement>("button")].find((entry) => {
+    const name = entry.getAttribute("aria-label");
+    const description = entry.getAttribute("aria-description");
+    return (
+      entry.textContent === label ||
+      name === label ||
+      (!!description && name === `${label}. ${description}`)
+    );
+  });
 
 it("lets an explicit current choice send on an older remote Host", async () => {
   await draw({
@@ -114,6 +120,9 @@ it.each([false, true])(
       "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
     );
     expect(button("Send")?.disabled).toBe(true);
+    expect(button("Send")?.getAttribute("aria-description")).toBe(
+      "The Host update on this computer is waiting for active sessions to finish and will install automatically.",
+    );
     await act(async () => button("Use current checkout")!.click());
     expect(container.querySelector("textarea")?.value).toBe("Preserve this draft");
     expect(container.querySelector('[role="alert"]')).toBeNull();

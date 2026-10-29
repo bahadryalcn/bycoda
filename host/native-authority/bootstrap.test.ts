@@ -102,6 +102,113 @@ const lookup = ({
 }) => input;
 
 describe("private native authority bootstrap", () => {
+  it("routes projection observation only through the authenticated original association", async () => {
+    const source = await registeredFixture({ config: { projectionDelay: 80 } });
+    const association = await source.registry.register(source.first.input);
+    const f = await fixture({ registry: source.registry, bodyTimeoutMs: 30 });
+    const input = {
+      ...reference(association),
+      sessionId: "logical.session",
+      migrationId: "migration.round",
+      generation: 7,
+    };
+    for (const headers of [{ Authorization: "Bearer paired-device-token" }, { Origin: "" }]) {
+      expect((await f.call(action("source-projection-observe", input), headers)).status).toBe(403);
+    }
+    for (const invalid of [
+      { ...input, sourceEpoch: randomUUID() },
+      { ...input, qualified: true },
+      { ...input, generation: Number.MAX_SAFE_INTEGER + 1 },
+      { ...input, sourceProfileId: randomUUID() },
+    ]) {
+      expect([400, 409]).toContain(
+        (await f.call(action("source-projection-observe", invalid))).status,
+      );
+    }
+    expect((await source.audit()).some((entry) => entry.kind === "source-projection-observe")).toBe(
+      false,
+    );
+    // Body admission was 30ms; the already accepted observation has its own
+    // 35s HTTP budget and must not be abandoned when that body deadline passes.
+    const result = await f.call(action("source-projection-observe", input));
+    expect(result.status).toBe(200);
+    expect(result.cache).toBe("no-store");
+    expect(JSON.parse(result.raw)).toMatchObject({
+      version: 1,
+      qualified: false,
+      status: "unverified",
+      receiptCount: 0,
+      missingCoverage: ["fixture-not-native-proof"],
+    });
+    expect(
+      (await source.audit()).filter((entry) => entry.kind === "source-projection-observe"),
+    ).toEqual([
+      {
+        version: 1,
+        kind: "source-projection-observe",
+        requestId: 1,
+        sourceEpoch: association.sourceEpoch,
+        sessionId: "logical.session",
+        migrationId: "migration.round",
+        generation: 7,
+      },
+    ]);
+    expect(source.opens).toBe(1);
+  });
+
+  it("retains an aborted projection's actual job and HTTP slot until settlement without replay", async () => {
+    const source = await registeredFixture({ config: { projectionDelay: 180 } });
+    const association = await source.registry.register(source.first.input);
+    const f = await fixture({ registry: source.registry, maxPending: 1 });
+    const held = f.begin();
+    const detached = held.result.catch(() => undefined);
+    held.req.end(
+      action("source-projection-observe", {
+        ...reference(association),
+        sessionId: "session",
+        migrationId: "migration",
+        generation: 0,
+      }),
+    );
+    await vi.waitFor(async () =>
+      expect(
+        (await source.audit()).some((entry) => entry.kind === "source-projection-observe"),
+      ).toBe(true),
+    );
+    held.req.destroy();
+    await detached;
+    expect((await f.call(action("describe"))).status).toBe(503);
+    await vi.waitFor(async () => expect((await f.call(action("describe"))).status).toBe(200));
+    expect(
+      (await source.audit()).filter((entry) => entry.kind === "source-projection-observe"),
+    ).toHaveLength(1);
+    expect(source.opens).toBe(1);
+  });
+
+  it("reports a lost projection reply as unknown and never resends it", async () => {
+    const source = await registeredFixture({ config: { disconnectProjection: true } });
+    const association = await source.registry.register(source.first.input);
+    const f = await fixture({ registry: source.registry });
+    const input = {
+      ...reference(association),
+      sessionId: "session",
+      migrationId: "migration",
+      generation: 0,
+    };
+    const first = await f.call(action("source-projection-observe", input));
+    expect(first.status).toBe(502);
+    expect(JSON.parse(first.raw)).toEqual({
+      version: 1,
+      error: "TRANSPORT_UNKNOWN",
+      qualified: false,
+    });
+    expect((await f.call(action("source-projection-observe", input))).status).toBe(404);
+    expect(
+      (await source.audit()).filter((entry) => entry.kind === "source-projection-observe"),
+    ).toHaveLength(1);
+    expect(source.opens).toBe(1);
+  });
+
   it("releases an abruptly aborted body without an unhandled error or lost slot", async () => {
     const f = await fixture({ maxPending: 1, bodyTimeoutMs: 5_000 });
     const arrived = f.nextRequest();

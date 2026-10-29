@@ -223,6 +223,32 @@ async function runChild() {
         result = { version: 1, kind: "source-status-result", requestId, ...scope() };
         if (config.statusChange) Object.assign(result, config.statusChange);
         if (config.disconnectStatus) process.exit(0);
+      } else if (value.kind === "source-projection-observe") {
+        if (!hello || value.sourceEpoch !== config.sourceEpoch || value.requestId <= requestId)
+          process.exit(2);
+        requestId = value.requestId;
+        if (config.projectionDelay) await delay(config.projectionDelay);
+        if (config.projectionError) {
+          await reply({ kind: "error", id: command.id, code: config.projectionError });
+          process.exit(2);
+        }
+        if (config.disconnectProjection) process.exit(0);
+        result = {
+          version: 1,
+          kind: "source-projection-observation",
+          requestId,
+          sourceEpoch: config.sourceEpoch,
+          observation: {
+            version: 1,
+            qualified: false,
+            prepareId: config.prepareId ?? randomUUID(),
+            status: "unverified",
+            receiptCount: 0,
+            missingCoverage: ["fixture-not-native-proof"],
+            ...config.projectionObservation,
+          },
+        };
+        if (config.projectionChange) Object.assign(result, config.projectionChange);
       } else process.exit(2);
       await reply({ kind: "sent", id: command.id });
     } else if (command.kind === "receive")

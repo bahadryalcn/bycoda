@@ -173,6 +173,7 @@ export function Notice({
   return (
     <Alert
       className="social-notice"
+      inline
       data-kind={kind}
       tone={kind === "error" ? "danger" : kind === "loading" ? "info" : kind}
       title={title}

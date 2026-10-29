@@ -1,50 +1,117 @@
+/* Appearance topics. The shared settings frame owns Group/Row geometry; this file only sequences the
+   topics and styles the few Appearance-specific controls (palette chips, background previews). */
 .appearance-settings {
   container: appearance / inline-size;
   display: grid;
+  /* Topics are tasks, not pages: a 32px rhythm separates them and the topic links sit close to the first one. */
   gap: 32px;
   min-inline-size: 0;
 }
+/* Topic links read as one tab strip: the current topic carries the shared selected fill. */
+.appearance-topic-nav {
+  margin-block: -4px -16px;
+  padding: 4px;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.appearance-topic-nav > button {
+  flex: none;
+}
 .appearance-section {
   min-inline-size: 0;
-}
-.appearance-section-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 16px;
-  margin-block-end: 16px;
-  padding-block-end: 12px;
-  border-block-end: 1px solid var(--color-stroke);
-}
-.appearance-section-heading h2 {
-  margin: 0;
-  font-size: var(--ui-font-title);
-  font-weight: 500;
-  color: var(--color-content);
-}
-.appearance-section-heading p {
-  margin: 0;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-secondary);
-  overflow-wrap: anywhere;
+  scroll-margin-block-start: 16px;
 }
 .appearance-section-body {
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 28rem), 1fr));
-  align-items: start;
-  display: grid;
-  gap: 20px;
   min-inline-size: 0;
 }
-.appearance-background-empty {
-  display: grid;
-  min-block-size: 5rem;
-  place-content: center;
-  padding: 16px;
+.appearance-section-body > .settings-advanced {
+  margin-block: 0;
+}
+.appearance-section-body > .settings-advanced > .settings-group {
+  padding-block-start: 4px;
 }
 
-.appearance-section-body > :not(.settings-group) {
-  grid-column: 1 / -1;
+/* Palettes are named chips: a two-tone dot (surface, accent) and the name; selection is the shared fill. */
+.appearance-palettes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  inline-size: 100%;
 }
-.appearance-section {
-  scroll-margin-block-start: 16px;
+.appearance-palette {
+  inline-size: auto;
+  min-inline-size: 0;
+  white-space: nowrap;
+}
+.appearance-palette-dot {
+  display: inline-flex;
+  flex: none;
+  inline-size: 14px;
+  block-size: 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-stroke);
+  border-radius: 50%;
+  overflow: hidden;
+}
+.appearance-palette-dot > i {
+  flex: 1;
+}
+.appearance-palette-dot > i:first-child {
+  background: var(--palette-base);
+}
+.appearance-palette-dot > i:last-child {
+  background: var(--palette-accent);
+}
+.appearance-palette-name {
+  font-weight: 500;
+}
+
+/* Background previews are small real samples, never a gallery. */
+.appearance-background-empty {
+  display: grid;
+  min-block-size: 4rem;
+  place-content: center;
+  padding: 12px;
+}
+.appearance-bg-block {
+  padding-block: 8px;
+}
+.appearance-bg-frame {
+  overflow: hidden;
+  max-inline-size: 28rem;
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+}
+.appearance-live-preview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  padding-block: 8px;
+}
+.appearance-live-stage {
+  position: relative;
+  flex: 0 1 16rem;
+  min-inline-size: 8rem;
+  block-size: 6rem;
+  overflow: hidden;
+  border: 1px solid var(--ui-editor-border);
+  border-radius: var(--ui-radius-card);
+  background: var(--color-background-base);
+}
+.appearance-live-caption {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  display: grid;
+  gap: 2px;
+}
+.appearance-live-caption > p {
+  margin: 0;
+}
+.appearance-live-picker {
+  padding-block: 8px;
 }

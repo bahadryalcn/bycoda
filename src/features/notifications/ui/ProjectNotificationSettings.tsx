@@ -5,13 +5,16 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { NotificationMuteControl } from "./NotificationMuteControl";
 import { Button } from "../../../shared/ui/Button";
-import { TextField } from "../../../shared/ui/TextField";
-import { SettingsFeedback } from "../../settings/ui/settingsControls";
+import { Segmented, SettingsFeedback } from "../../settings/ui/settingsControls";
+import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import "./ProjectNotificationSettings.css";
 import { ProjectLogoIcon } from "../../projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
-import { useProjectNotificationPreferences } from "../hooks/useProjectNotificationPreferences";
+import {
+  useProjectNotificationPreferences,
+  useProjectNotificationPreferencesStatus,
+} from "../hooks/useProjectNotificationPreferences";
 import { useNotificationProjects } from "../hooks/useNotificationProjects";
 import {
   NOTIFICATION_CATEGORIES,
@@ -54,6 +57,9 @@ export function ProjectNotificationSettings({
   ]);
   const projects = [...notificationProjects.projects].sort((a, b) => a.name.localeCompare(b.name));
   const preferences = useProjectNotificationPreferences();
+  const { status: preferencesStatus, retry: retryPreferencesRead } =
+    useProjectNotificationPreferencesStatus();
+  const preferencesUnavailable = preferencesStatus === "unavailable";
   const groupLogos = useTabGroupLogos();
   const groupColors = loadTabGroupColors();
   const groupCustomColors = loadTabGroupCustomColors();
@@ -63,11 +69,18 @@ export function ProjectNotificationSettings({
   const [selecting, setSelecting] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"all" | "muted" | "customized">("all");
   const search = query.trim().toLocaleLowerCase();
-  const visibleProjects = projects.filter((project) =>
-    [project.name, project.detail, ...project.paths].some((value) =>
-      value.toLocaleLowerCase().includes(search),
-    ),
+  const visibleProjects = projects.filter(
+    (project) =>
+      [project.name, project.detail, ...project.paths].some((value) =>
+        value.toLocaleLowerCase().includes(search),
+      ) &&
+      (scope === "all" ||
+        (scope === "muted"
+          ? isProjectMuted(preferences[project.id] ?? { disabled: [] })
+          : (preferences[project.id]?.disabled.length ?? 0) > 0 ||
+            isProjectMuted(preferences[project.id] ?? { disabled: [] }))),
   );
   const selectedIds = selected.filter((id) => projects.some((project) => project.id === id));
   const targetCard = useRef<HTMLFieldSetElement>(null);
@@ -79,6 +92,7 @@ export function ProjectNotificationSettings({
     : undefined;
   useEffect(() => {
     setQuery("");
+    setScope("all");
   }, [notificationProjectPath, notificationSettingsRequest]);
   useEffect(() => {
     if (!notificationProjectPath) {
@@ -118,8 +132,8 @@ export function ProjectNotificationSettings({
       aria-label={t("Project notifications")}
       className="project-notification-settings @container/notifications"
     >
-      <div className="flex flex-wrap items-end gap-4 pb-2.5">
-        <div className="min-w-[min(100%,240px)] flex-1">
+      <div className="settings-collection-header">
+        <div>
           <h2 className="text-ui-secondary font-medium text-content">
             {t("Project notifications")}
           </h2>
@@ -130,47 +144,67 @@ export function ProjectNotificationSettings({
           </p>
         </div>
         {projects.length ? (
-          <div className="shrink-0 pb-0.5">
-            <Button
-              variant="secondary"
-              className="shrink-0"
-              type="button"
-              aria-pressed={selecting}
-              onClick={() => {
-                setSelecting(!selecting);
-                setSelected([]);
-              }}
-            >
-              {selecting ? t("Done") : t("Select projects")}
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            className="shrink-0"
+            type="button"
+            aria-pressed={selecting}
+            onClick={() => {
+              setSelecting(!selecting);
+              setSelected([]);
+            }}
+          >
+            {selecting ? t("Done") : t("Select projects")}
+          </Button>
         ) : null}
       </div>
-      <div className="project-notification-collection" data-highlighted={highlighted || undefined}>
+      <div
+        className="project-notification-collection settings-collection"
+        data-highlighted={highlighted || undefined}
+      >
+        {preferencesUnavailable ? (
+          <SettingsFeedback
+            state="warning"
+            action={<Button onClick={() => retryPreferencesRead()}>{t("Retry")}</Button>}
+          >
+            {t(
+              "Saved project notification choices could not be read. The values shown are the last known ones and changes are paused until they can be read.",
+            )}
+          </SettingsFeedback>
+        ) : null}
         {projects.length === 0 ? (
-          <p role="status" className="px-4 py-3.5 text-ui-caption text-(--ui-text-secondary)">
+          <p role="status" className="settings-collection-empty">
             {t("Open a project or connect an Inbox provider to configure its notifications.")}
           </p>
         ) : null}
         {projects.length ? (
           <>
-            <div className="project-notification-toolbar">
-              <TextField
-                label={t("Search projects")}
-                hideLabel
-                placeholder={t("Search projects")}
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
+            <CollectionToolbar
+              className="project-notification-toolbar"
+              label={t("Search projects")}
+              query={query}
+              onQueryChange={setQuery}
+              count={t("Showing {p0} of {p1} known projects", {
+                p0: visibleProjects.length,
+                p1: projects.length,
+              })}
+            >
+              <Segmented
+                label={t("Show projects")}
+                value={scope}
+                options={[
+                  { value: "all", label: t("All") },
+                  { value: "customized", label: t("Customized") },
+                  { value: "muted", label: t("Muted") },
+                ]}
+                onChange={setScope}
               />
-              <span role="status" className="project-notification-count">
-                {t("Showing {p0} of {p1} known projects", { p0: visibleProjects.length, p1: projects.length })}
-              </span>
-            </div>
+            </CollectionToolbar>
             {selecting ? (
-              <div className="flex min-h-9 flex-wrap items-center justify-between gap-3 px-4 py-3.5">
+              <div className="settings-collection-row">
                 <label className="flex cursor-pointer items-center gap-2.5 text-ui-caption text-(--ui-text-secondary) hover:text-(--ui-tone-neutral-fg)">
                   <ProjectSelection
-                  label={t("Select all known projects")}
+                    label={t("Select all known projects")}
                     checked={selectedIds.length === projects.length}
                     mixed={selectedIds.length > 0 && selectedIds.length < projects.length}
                     onChange={(checked) =>
@@ -182,22 +216,34 @@ export function ProjectNotificationSettings({
                     : t("Select all known projects")}
                 </label>
                 {selectedIds.length ? (
-                  <div role="group" aria-label={t("Mute selected projects")}>
+                  <div
+                    className="settings-collection-actions"
+                    role="group"
+                    aria-label={t("Mute selected projects")}
+                  >
                     <NotificationMuteControl projectIds={selectedIds} />
                   </div>
                 ) : null}
               </div>
             ) : null}
             <div
-              className="project-notification-list"
+              className="project-notification-list settings-collection-list"
               role="region"
               aria-label={t("Project notifications")}
               tabIndex={0}
             >
               {visibleProjects.length === 0 ? (
-                <div className="project-notification-empty">
+                <div className="settings-collection-empty project-notification-empty">
                   <p role="status">{t("No projects found")}</p>
-                  <Button variant="ghost" onClick={() => setQuery("")}>{t("Clear search")}</Button>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setQuery("");
+                      setScope("all");
+                    }}
+                  >
+                    {t("Clear search")}
+                  </Button>
                 </div>
               ) : null}
               {visibleProjects.map((project) => {
@@ -230,7 +276,7 @@ export function ProjectNotificationSettings({
                     className="project-notification-item"
                   >
                     <legend className="sr-only">{project.name} ({project.detail})</legend>
-                    <div className="project-notification-item-heading">
+                    <div className="project-notification-item-heading settings-collection-row">
                       <div className="flex min-w-[min(100%,200px)] flex-1 items-center gap-3">
                         {selecting ? (
                           <ProjectSelection
@@ -307,12 +353,12 @@ export function ProjectNotificationSettings({
                           />
                         </Button>
                       </div>
-                      <div className="ml-auto max-w-full">
+                      <div className="settings-collection-actions">
                         <NotificationMuteControl projectIds={[project.id]} compact />
                       </div>
                     </div>
                     {error?.projectId === project.id ? (
-                      <div className="px-4 pb-3">
+                      <div className="project-notification-error">
                         <SettingsFeedback
                           state="error"
                           action={<Button onClick={() => setCategory(project.id, error.category, error.enabled)}>{t("Retry")}</Button>}
@@ -349,6 +395,7 @@ export function ProjectNotificationSettings({
                               })}
                               aria-describedby={muted ? muteHintId : undefined}
                               checked={!preferences[project.id]?.disabled.includes(category.id)}
+                              disabled={preferencesUnavailable}
                               onCheckedChange={(checked) =>
                                 setCategory(project.id, category.id, checked)
                               }

@@ -3,7 +3,6 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
-import { Alert } from "../../../shared/ui/Alert";
 import { basename } from "../../../platform/tauri/fs";
 import { folderRenameError } from "../model/projectFolderRename";
 
@@ -44,22 +43,17 @@ export function RenameProjectFolderDialog({
         }}
       >
         <p className="break-all text-xs text-(--ui-text-secondary)">{path}</p>
-        <label className="block space-y-1 text-xs text-(--ui-text-secondary)">
-          <span>{t("Folder name")}</span>
-          <TextField
-            label=""
-            hideLabel
-            autoFocus
-            value={name}
-            disabled={busy}
-            onChange={(event) => {
-              setName(event.target.value);
-              setError(null);
-            }}
-            aria-invalid={!!invalid || !!error}
-          />
-        </label>
-        {invalid || error ? <Alert tone="danger">{invalid ?? error}</Alert> : null}
+        <TextField
+          label={t("Folder name")}
+          autoFocus
+          value={name}
+          disabled={busy}
+          error={invalid ?? error ?? undefined}
+          onChange={(event) => {
+            setName(event.target.value);
+            setError(null);
+          }}
+        />
         <div className="flex justify-end gap-2">
           <Button type="button" disabled={busy} onClick={onClose} variant="ghost">
             {t("Cancel")}

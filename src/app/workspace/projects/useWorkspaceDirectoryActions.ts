@@ -2,6 +2,7 @@ import { useCallback, type Dispatch, type MutableRefObject, type SetStateAction 
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
 import {
   newSession,
+  newSessionForProject,
   retargetSessionToProject,
   type Session,
   type WorkspaceMode,
@@ -31,6 +32,7 @@ import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { forgetHarnessSession } from "../../../integrations/harness";
 import { projectName } from "../../../shared/lib/paths";
 import type { WorktreeFocus } from "../../../features/source-control/model/worktreeFocus";
+import { hostSessionBinding } from "../../../features/connections/model/sessionExecutionBinding";
 
 export interface WorkspaceDirectoryActionsDeps {
   activeTab: WorkspaceTab | undefined;
@@ -93,24 +95,27 @@ export function useWorkspaceDirectoryActions({
       const normalized = normalizeProjectPath(cwd);
       const current = sessionsRef.current.find((s) => s.id === sessionId);
       const previous = current?.cwd;
+      const owner = current && hostSessionBinding(current);
+      if (owner && previous && sameProjectPath(previous, normalized)) return;
       // Threads stay bound to their project. Switching from the composer opens a
       // new tab instead of retargeting the conversation.
       if (
         current &&
         previous &&
-        looksLikeProject(previous) &&
         !sameProjectPath(previous, normalized) &&
-        !isBlankSession(current)
+        (owner || (looksLikeProject(previous) && !isBlankSession(current)))
       ) {
         setProjectCwd(normalized);
         setRecents(rememberProject(normalized));
-        const session = newSession(
-          current.harness,
-          normalized,
-          current.model,
-          current.runtimeMode,
-          current.modelSettings,
-        );
+        const session = owner
+          ? newSessionForProject(current, normalized)
+          : newSession(
+              current.harness,
+              normalized,
+              current.model,
+              current.runtimeMode,
+              current.modelSettings,
+            );
         const tab = newTab(session.id);
         setSessions((prev) => [...prev, session]);
         appendTab(tab, normalized);
@@ -118,6 +123,7 @@ export function useWorkspaceDirectoryActions({
         setComposerFocused(true);
         return;
       }
+      if (owner) return;
       if (previous && !sameProjectPath(previous, normalized) && previous !== "~") {
         void keepSessionChanges(sessionId, previous).catch((error) => {
           console.warn("App operation failed", error);
@@ -167,8 +173,9 @@ export function useWorkspaceDirectoryActions({
 
   const onBranchChange = useCallback(
     (sessionId: string) => {
-      notifyGitChanged();
       const current = sessionsRef.current.find((s) => s.id === sessionId);
+      if (current && hostSessionBinding(current)) return;
+      notifyGitChanged();
       if (!current) return;
       void forgetHarnessSession(current.harness, sessionId);
       const next = {
@@ -191,6 +198,7 @@ export function useWorkspaceDirectoryActions({
         prev.map((session) => {
           if (
             session.id !== sessionId ||
+            hostSessionBinding(session) ||
             (!isBlankSession(session) &&
               !(session.workspaceMode && !session.worktreeCwd && !session.busy))
           ) {
@@ -217,6 +225,7 @@ export function useWorkspaceDirectoryActions({
     setSessions((prev) =>
       prev.map((session) =>
         session.id === sessionId &&
+        !hostSessionBinding(session) &&
         (isBlankSession(session) ||
           (!!session.workspaceMode && !session.worktreeCwd && !session.busy)) &&
         session.workspaceMode !== "current"

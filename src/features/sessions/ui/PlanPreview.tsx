@@ -46,7 +46,7 @@ export function PlanPreview({
         : t("Build");
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+    <div className="mb-2 overflow-hidden rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel)">
       <div className="flex items-start gap-2.5 px-3 py-2.5">
         {streaming ? (
           <CircleDashed

@@ -178,18 +178,23 @@ createRoot(document.getElementById("root")!).render(
     }
   >
     <div
-      data-settings-section={params.get("page") === "1" ? "usage" : undefined}
-      className={
-        params.get("page") === "1" ? "bycoda-settings-form @container/settings" : undefined
-      }
+      data-settings-scroller={params.get("page") === "1" ? "" : undefined}
+      data-settings-width={params.get("page") === "1" ? "wide" : undefined}
     >
-      {params.get("page") === "1" ? (
-        <UsagePage />
-      ) : params.get("overview") === "1" ? (
-        <OverviewFixture />
-      ) : (
-        <UsageBudgets />
-      )}
+      <div
+        data-settings-section={params.get("page") === "1" ? "usage" : undefined}
+        className={
+          params.get("page") === "1" ? "bycoda-settings-form @container/settings" : undefined
+        }
+      >
+        {params.get("page") === "1" ? (
+          <UsagePage />
+        ) : params.get("overview") === "1" ? (
+          <OverviewFixture />
+        ) : (
+          <UsageBudgets />
+        )}
+      </div>
     </div>
   </main>,
 );

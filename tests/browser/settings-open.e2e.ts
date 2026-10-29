@@ -12,7 +12,9 @@ for (const theme of ["light", "dark"]) {
       for (const id of ["dark-lightness", "code-font-size", "sidebar-opacity", "tab-animations"]) {
         await expect(appearance.locator(`[data-setting-id="${id}"]`)).toBeVisible();
       }
-      await expect(appearance.locator(".appearance-scheme-option")).toHaveCount(3);
+      await expect(
+        appearance.getByRole("radiogroup", { name: "Renk şeması" }).getByRole("radio"),
+      ).toHaveCount(3);
       await expect(appearance.locator(".appearance-palette")).toHaveCount(6);
       const tide = appearance.locator(".appearance-palette").filter({ hasText: "Tide" });
       await tide.focus();
@@ -20,9 +22,18 @@ for (const theme of ["light", "dark"]) {
       await expect(tide).toHaveAttribute("aria-pressed", "true");
       await page.reload();
       await expect(tide).toHaveAttribute("aria-pressed", "true");
-      expect(await appearance.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
-        true,
-      );
+      // Open rows outset their hover surface by 12px into the form's padding, so the measured
+      // boundary is the padded form and the scroller, not the inner appearance wrapper.
+      expect(
+        await page
+          .locator(".bycoda-settings-form")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      ).toBe(true);
+      expect(
+        await page
+          .locator("[data-settings-scroller]")
+          .evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+      ).toBe(true);
       const overflow = await appearance
         .locator(".settings-row, .settings-group-heading, .appearance-scheme-options")
         .evaluateAll((nodes) =>
@@ -60,8 +71,8 @@ test("settings expose advanced controls without opening a menu", async ({ page }
     // Keep this inventory exact so ordinary settings cannot silently move behind disclosures.
     const optionalDisclosures: Record<string, string[]> = {
       general: ["Build details"],
-      connections: ["Connect to an existing host by URL", "How reconnection works"],
-      policies: ["About"],
+      // Reconnection help moved from a disclosure into the group's information control.
+      connections: ["Connect to an existing host by URL"],
     };
     await expect
       .poll(async () =>
@@ -70,6 +81,12 @@ test("settings expose advanced controls without opening a menu", async ({ page }
           .sort(),
       )
       .toEqual((optionalDisclosures[section] ?? []).slice().sort());
+    if (section === "connections") {
+      const recovery = form.getByRole("region", { name: "Connection recovery", exact: true });
+      await expect(recovery).toContainText("Retrying uses the saved address and account", {
+        useInnerText: false,
+      });
+    }
     if (section === "general") {
       const buildDetails = form.getByTestId("build-identity-details");
       await buildDetails.locator("summary").click();

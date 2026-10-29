@@ -37,13 +37,25 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Change events that carry no detail payload. */
+const NO_DETAIL = new Set([
+  "bycoda.closeToTray",
+  "bycoda.tabAnimationsEnabled",
+  "bycoda.resumeAtReset",
+  "bycoda.autoContinueInterrupted",
+]);
+/** Flags that notify only after the durable write is confirmed. */
+const CONFIRMED_ONLY = new Set(["bycoda.resumeAtReset", "bycoda.autoContinueInterrupted"]);
+/** Appearance flags keep the applied value for this window when the write fails. */
+const APPLIED_ON_FAILURE = new Set(["bycoda.bodyGlass"]);
+
 describe.each([
   [
     "bycoda.tabAnimationsEnabled",
     settings.loadTabAnimationsEnabled,
     settings.saveTabAnimationsEnabled,
     false,
-    undefined,
+    "bycoda:tab-animations-change",
   ],
   [
     "bycoda.notesEnabled",
@@ -82,13 +94,19 @@ describe.each([
     "bycoda:crew-scene-enabled-change",
   ],
   ["bycoda.claudeHooks", settings.loadClaudeHooks, settings.saveClaudeHooks, true, "bycoda:claude-hooks-change"],
-  ["bycoda.resumeAtReset", settings.loadResumeAtReset, settings.saveResumeAtReset, true, undefined],
+  [
+    "bycoda.resumeAtReset",
+    settings.loadResumeAtReset,
+    settings.saveResumeAtReset,
+    true,
+    "bycoda:resume-at-reset-change",
+  ],
   [
     "bycoda.autoContinueInterrupted",
     settings.loadAutoContinueInterrupted,
     settings.saveAutoContinueInterrupted,
     true,
-    undefined,
+    "bycoda:auto-continue-interrupted-change",
   ],
   [
     "bycoda.bodyGlass",
@@ -145,7 +163,7 @@ describe.each([
     const dispatch = vi.spyOn(window, "dispatchEvent");
     const listener = vi.fn((event: Event) => {
       expect(event.type).toBe(eventName);
-      if (key !== "bycoda.closeToTray") {
+      if (!NO_DETAIL.has(key)) {
         expect((event as CustomEvent<boolean | string>).detail).toBe(
           key === "bycoda.bodyGlass" ? key : value,
         );
@@ -168,20 +186,28 @@ describe.each([
   it("still emits its change event when writing fails", () => {
     const value = !fallback;
     const dispatch = vi.spyOn(window, "dispatchEvent");
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+    const setItem = vi.spyOn(localStorage, "setItem").mockImplementation(() => {
       throw new Error("storage quota exceeded");
     });
 
-    expect(() => save(value)).not.toThrow();
-    expect(load()).toBe(fallback);
-    expect(dispatch).toHaveBeenCalledTimes(eventName ? 1 : 0);
-    if (eventName) {
-      expect(dispatch).toHaveBeenCalledWith(
-        expect.objectContaining({
-          type: eventName,
-          ...(key === "bycoda.closeToTray" ? {} : { detail: key === "bycoda.bodyGlass" ? key : value }),
-        }),
-      );
+    try {
+      expect(() => save(value)).not.toThrow();
+      // Appearance keeps the applied value in this window; other flags keep the stored value.
+      expect(load()).toBe(APPLIED_ON_FAILURE.has(key) ? value : fallback);
+      const emits = eventName && !CONFIRMED_ONLY.has(key);
+      expect(dispatch).toHaveBeenCalledTimes(emits ? 1 : 0);
+      if (emits) {
+        expect(dispatch).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: eventName,
+            ...(NO_DETAIL.has(key) ? {} : { detail: key === "bycoda.bodyGlass" ? key : value }),
+          }),
+        );
+      }
+    } finally {
+      // A later successful write clears the window-only fallback for the next test.
+      setItem.mockRestore();
+      save(fallback);
     }
   });
 

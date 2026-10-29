@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -11,8 +12,36 @@ import {
   completed,
   stopChildren,
   waitForNativePage,
+  frozenSourceIdentity,
 } from "./dev-native.mjs";
+import { fingerprintFiles } from "./build-info.mjs";
 import { loopbackUrl, screenshotOptions, verifyNativeIdentity } from "./dev-shot.mjs";
+
+test("frozen native builds verify original source bytes and reject tampering or path escape without Git", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bycoda-frozen-"));
+  try {
+    await mkdir(join(root, "src"));
+    const bytes = Buffer.from("export const original = true;\n");
+    await writeFile(join(root, "src/main.ts"), bytes);
+    const identity = { ...nativeIdentity, sourceFingerprint: fingerprintFiles(new Map([["src/main.ts", bytes]])) };
+    const manifest = { schemaVersion: 1, identity, files: [{ path: "src/main.ts", sha256: createHash("sha256").update(bytes).digest("hex") }] };
+    const save = () => writeFile(join(root, "frozen-source.json"), JSON.stringify(manifest));
+    await save();
+    assert.equal((await frozenSourceIdentity(root)).head, identity.head);
+    await writeFile(join(root, "src/main.ts"), "changed");
+    await assert.rejects(frozenSourceIdentity(root), /Frozen source changed/);
+    manifest.files[0].path = "../outside.ts";
+    await save();
+    await assert.rejects(frozenSourceIdentity(root), /Invalid frozen source path/);
+    manifest.files[0].path = "src/main.ts";
+    manifest.files.push({ ...manifest.files[0] });
+    await writeFile(join(root, "src/main.ts"), bytes);
+    await save();
+    await assert.rejects(frozenSourceIdentity(root), /Invalid frozen source path/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test("Windows Host data follows only the isolated native profile instead of the checkout volume", () => {
   const environment = {

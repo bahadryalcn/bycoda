@@ -64,20 +64,11 @@ function GitFeedbackContent({
     <Alert
       tone={kind === "error" ? "danger" : kind}
       role={kind === "error" ? "alert" : "status"}
-      className="mx-2 my-1.5 min-w-0 shrink-0"
+      inline
+      className="mx-2 my-0.5 min-w-0 shrink-0"
     >
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <div
-          className={
-            kind === "error"
-              ? "text-danger"
-              : kind === "warning"
-                ? "text-warning"
-                : "text-(--color-content)"
-          }
-        >
-          {title}
-        </div>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="text-(--color-content)">{title}</div>
         {detail ? (
           <Button
             variant="link"
@@ -89,12 +80,12 @@ function GitFeedbackContent({
           </Button>
         ) : null}
         {onRetry ? (
-          <Button variant="secondary" onClick={onRetry}>
+          <Button variant="ghost" size="sm" onClick={onRetry}>
             {t("Retry")}
           </Button>
         ) : null}
         {onDismiss ? (
-          <Button variant="ghost" onClick={onDismiss}>
+          <Button variant="ghost" size="sm" onClick={onDismiss}>
             {t("Dismiss")}
           </Button>
         ) : null}

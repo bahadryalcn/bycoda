@@ -137,7 +137,7 @@ import {
   remoteOpenMatch,
 } from "../../features/sync/model/syncRemoteProjects";
 import { LastSessionsSection, type RecentSessionsSource } from "./LastSessionsSection";
-import { DevModeSlot, TabVisitNav } from "./TitleBar";
+import { DevModeIndicator, TabVisitNav } from "./TitleBar";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 import type { InstalledUpdate } from "../model/updateNotice";
 import type { SettingsSectionId } from "../../features/settings/model/settings";
@@ -172,6 +172,7 @@ import {
   keepFocus,
   moveStepForKey,
   RAIL_DRAG_HANDLE,
+  RAIL_SECTION_BLOCK,
   RailSectionHeader,
   useRailSections,
   type RailSectionDrag,
@@ -229,6 +230,8 @@ type Props = {
   onOpenCrewSession?: (target: BackgroundSessionTarget) => void | Promise<void>;
   recentSessions?: RecentSessionsSource;
   settingsOpen?: boolean;
+  /** Settings dialog is open over the rail: selects the Settings tool without hiding rail chrome. */
+  settingsDialogOpen?: boolean;
   settingsSection?: SettingsSectionId;
   onOpenSettings?: () => void;
   onOpenNotificationSettings?: (projectPath?: string) => void;
@@ -279,6 +282,7 @@ export function ProjectRail({
   onOpenCrewSession,
   recentSessions,
   settingsOpen = false,
+  settingsDialogOpen = false,
   onOpenSettings,
   onOpenNotificationSettings,
   onCloseSettings,
@@ -741,7 +745,8 @@ export function ProjectRail({
       projectGroups.length > 0 ? (
         <div
           ref={rail.drag("groups").setRef}
-          className="reorder-item rail-reorder-block mb-2 shrink-0"
+          className={RAIL_SECTION_BLOCK}
+          data-collapsed={rail.collapsed.groups || undefined}
         >
           <ProjectSectionHeader
             label={t("Groups")}
@@ -814,7 +819,7 @@ export function ProjectRail({
       data-side-pane="rail"
       data-usage-guide="project-navigation"
       aria-label={t("Projects")}
-      className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-stroke pe-1.5 ${visible ? "flex" : "hidden"}`}
+      className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
       {!navigator ? (
         <div
@@ -823,7 +828,7 @@ export function ProjectRail({
         >
           {IS_MAC ? <div className="w-[78px] shrink-0" /> : null}
           {IS_MAC ? null : brand}
-          <DevModeSlot fill={IS_MAC} />
+          {IS_MAC ? <div className="min-w-0 flex-1" /> : null}
           {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
           <div
             className={`shrink-0 ${
@@ -867,6 +872,7 @@ export function ProjectRail({
                   <ExpandingButtonGroup
                     label={t("Workspace tools")}
                     size="sm"
+                    chrome="bare"
                     fit
                     fullWidth
                     defaultExpanded={
@@ -985,6 +991,8 @@ export function ProjectRail({
                         id: "settings",
                         label: t("Settings"),
                         icon: <Settings />,
+                        // Only a real open page or dialog is selected; opening the label never paints selection.
+                        active: settingsOpen || settingsDialogOpen,
                         shortcut: settingsShortcut,
                         onSelect: onOpenSettings,
                         disabled: !onOpenSettings,
@@ -1065,6 +1073,7 @@ export function ProjectRail({
                     label={t("Settings")}
                     icon={Settings}
                     onClick={onOpenSettings}
+                    active={settingsOpen || settingsDialogOpen}
                     command="App: Settings"
                   />
                 </nav>
@@ -1072,7 +1081,9 @@ export function ProjectRail({
             ) : null}
             <div className="bycoda-rail-status shrink-0">
               {recoveryControl}
-              <div className="shrink-0 @max-[140px]/rail:hidden">
+              {/* The status block is inset 7px (bycoda.css); the live-agents header and cards
+                  carry their own px-2, so they sit on the same column as the ledger sections. */}
+              <div className="-mx-[7px] shrink-0 @max-[140px]/rail:hidden">
                 <LiveAgentsPreview
                   agents={visibleLiveAgents}
                   activeSessionId={activeSessionId}
@@ -1150,6 +1161,7 @@ export function ProjectRail({
                     <SidebarUpdateFooter />
                   </div>
                 </div>
+                <DevModeIndicator />
               </>
             ) : null}
           </>
@@ -1173,7 +1185,7 @@ export function ProjectRail({
           {...resize.separatorProps}
           aria-label={t("Resize project sidebar")}
           className={`absolute inset-y-0 end-0 z-10 w-1.5 cursor-col-resize touch-none ${
-            resize.dragging ? "bg-content/15" : "hover:bg-(--ui-surface-hover)"
+            resize.dragging ? "bg-(--ui-surface-pressed)" : "hover:bg-(--ui-surface-hover)"
           }`}
           onPointerDown={resize.onPointerDown}
           onDoubleClick={resize.onDoubleClick}
@@ -1245,7 +1257,11 @@ function ProjectSection({
 }) {
   useLocale();
   return (
-    <div ref={drag.setRef} className="reorder-item rail-reorder-block shrink-0 mb-2">
+    <div
+      ref={drag.setRef}
+      className={RAIL_SECTION_BLOCK}
+      data-collapsed={collapsed || undefined}
+    >
       <ProjectSectionHeader
         label={label}
         onAdd={onAdd}
@@ -1626,7 +1642,7 @@ function ProjectGroupSection({
       ref={(el) => sortableGroups.setItemRef(group.id, el)}
       className={`reorder-item rail-reorder-block project-group-section shrink-0 overflow-hidden rounded-md ${
         showBody ? "mb-1.5" : ""
-      } ${renderBody && !folded ? "bg-content/3" : ""}`}
+      }`}
       data-project-group={group.id}
       data-workspace-root={workspaceRoot ?? undefined}
       data-folded={folded || undefined}
@@ -1635,8 +1651,8 @@ function ProjectGroupSection({
     >
       <ActionHost
         selected={workspaceSelected}
-        className={`project-reorder-item group relative flex h-8 items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
-        style={{ backgroundColor: railBackgroundColor(loadRailBackgrounds(group.id).header) }}
+        className={`project-reorder-item group relative flex h-(--ui-control-height-compact) items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0 ${RAIL_DRAG_HANDLE}`}
+        ground={railBackgroundColor(loadRailBackgrounds(group.id).header)}
         aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
         onPointerDown={(event) => {
           if (event.button !== 0) return;
@@ -1765,7 +1781,20 @@ function ProjectGroupSection({
             </span>
           ) : null}
         </div>
-        <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
+        {/* The change count stays visible; the row actions take space only while the
+            row is hovered, focused or selected, so the group name keeps its width. */}
+        {gitSummary.dirty > 0 ? (
+          <span
+            className="my-auto shrink-0 tabular-nums text-ui-caption text-warning @max-[140px]/rail:hidden"
+            title={gitTitle}
+          >
+            {gitSummary.dirty}
+          </span>
+        ) : null}
+        <div
+          data-action-slot="collapse"
+          className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden"
+        >
           {localPaths.length > 0 || (workspaceRoot && !locked) ? (
             <InlineAction
               label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
@@ -1790,11 +1819,6 @@ function ProjectGroupSection({
             >
               <GitBranch className="icon-xs" strokeWidth={1.75} />
             </InlineAction>
-          ) : null}
-          {gitSummary.dirty > 0 ? (
-            <span className="shrink-0 tabular-nums text-ui-caption text-warning" title={gitTitle}>
-              {gitSummary.dirty}
-            </span>
           ) : null}
           <InlineAction
             label={
@@ -1906,7 +1930,7 @@ function ProjectGroupSection({
 }
 
 const nameClassName =
-  "min-w-0 flex-1 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden";
+  "min-w-0 flex-1 truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden";
 
 function ProjectCard({
   item,
@@ -1991,7 +2015,7 @@ function ProjectCard({
     busy,
   );
   const labelClassName = machine
-    ? "min-w-0 max-w-[75%] shrink-0 truncate text-ui-body font-medium leading-tight @max-[140px]/rail:hidden"
+    ? "min-w-0 max-w-[75%] shrink-0 truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden"
     : nameClassName;
 
   return (
@@ -1999,22 +2023,10 @@ function ProjectCard({
       ref={(el) => sortable.setItemRef(item.path, el)}
       selected={selected || multiSelected}
       data-project-path={item.path}
-      style={{
-        backgroundColor: railBackgroundColor(loadRailBackgrounds(key).header),
-        ...(selected || multiSelected
-          ? {
-              backgroundImage:
-                "linear-gradient(var(--ui-surface-selected), var(--ui-surface-selected))",
-            }
-          : {}),
-      }}
+      ground={railBackgroundColor(loadRailBackgrounds(key).header)}
       data-project-working={busy || undefined}
       data-multi-selected={multiSelected || undefined}
-      className={`reorder-item project-reorder-item group relative flex touch-none items-stretch rounded-md px-2 h-8 @max-[140px]/rail:px-0 ${
-        multiSelected || selected
-          ? "bg-accent/12 text-content ring-1 ring-inset ring-accent/25"
-          : "text-content"
-      } cursor-default`}
+      className="reorder-item project-reorder-item group relative flex h-(--ui-control-height-compact) cursor-default touch-none items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0"
       onPointerDown={(event) => {
         if (multi?.active || event.ctrlKey || event.metaKey || event.shiftKey) return;
         if (event.button !== 0) return;

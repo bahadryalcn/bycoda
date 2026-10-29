@@ -15,22 +15,31 @@ import { SettingsFeedback } from "./settingsControls";
 export function BuildIdentityDetails() {
   useLocale();
   const [native, setNative] = useState<BuildIdentity | null>(null);
+  // "failed" is a read error; a successful read of nothing stays "ready" with null (honestly unknown).
+  const [readState, setReadState] = useState<"loading" | "ready" | "failed">("loading");
+  const [attempt, setAttempt] = useState(0);
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string>();
   const pending = useRef(false);
   useEffect(() => {
     let active = true;
+    setReadState("loading");
     void invoke<BuildIdentity | null>("build_identity").then(
       (value) => {
-        if (active) setNative(value);
+        if (!active) return;
+        setNative(value);
+        setReadState("ready");
       },
-      () => undefined,
+      () => {
+        // Keep any earlier stamp as retained evidence; only the read itself failed.
+        if (active) setReadState("failed");
+      },
     );
     return () => {
       active = false;
     };
-  }, []);
+  }, [attempt]);
   const copy = async () => {
     if (pending.current) return;
     pending.current = true;
@@ -53,13 +62,23 @@ export function BuildIdentityDetails() {
       data-testid="build-identity-details"
     >
       <summary>{t("Build details")}</summary>
-      <dl className="grid min-w-0 gap-2 py-2">
+      <dl className="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-4 gap-y-1 py-2">
         <dt>{t("App source")}</dt>
-        <dd className="break-all">{t(buildIdentityLabel())}</dd>
+        <dd className="break-all text-content">{t(buildIdentityLabel())}</dd>
         <dt>{t("Native source")}</dt>
-        <dd className="break-all">{t(buildIdentityLabel(native))}</dd>
+        <dd className="break-all text-content">
+          {readState === "failed" && !native
+            ? t("Unavailable: the native build stamp could not be read.")
+            : t(buildIdentityLabel(native))}
+          {readState === "failed" && native ? (
+            <span className="text-(--ui-text-secondary)">
+              {" "}
+              {t("(last successful read; the latest read failed)")}
+            </span>
+          ) : null}
+        </dd>
         <dt>{t("Source comparison")}</dt>
-        <dd>
+        <dd className="text-content">
           {t(
             {
               exact: "Same source",
@@ -70,9 +89,14 @@ export function BuildIdentityDetails() {
           )}
         </dd>
       </dl>
-      <Button onClick={() => void copy()} loading={copying} loadingLabel={t("Copying…")}>
-        {copied ? t("Copied") : t("Copy build details")}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => void copy()} loading={copying} loadingLabel={t("Copying…")}>
+          {copied ? t("Copied") : t("Copy build details")}
+        </Button>
+        {readState === "failed" ? (
+          <Button onClick={() => setAttempt((value) => value + 1)}>{t("Retry native read")}</Button>
+        ) : null}
+      </div>
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
     </details>
   );

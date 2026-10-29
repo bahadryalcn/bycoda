@@ -119,9 +119,7 @@ async function draw(extra: Record<string, unknown> = {}) {
 }
 async function chooseFile() {
   await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('button[aria-label="Add files or choose a mode"]')!
-      .click(),
+    container.querySelector<HTMLButtonElement>('button[aria-label="Add files or skills"]')!.click(),
   );
   const button = [...document.querySelectorAll<HTMLButtonElement>("button")].find((entry) =>
     entry.textContent?.includes("Upload file"),
@@ -188,9 +186,7 @@ it("rejects an already open mention completion before changing its closed draft"
 it("rejects insertion from an already open plus menu without dropping its draft", async () => {
   await draw();
   await act(async () =>
-    container
-      .querySelector<HTMLButtonElement>('button[aria-label="Add files or choose a mode"]')!
-      .click(),
+    container.querySelector<HTMLButtonElement>('button[aria-label="Add files or skills"]')!.click(),
   );
   const option = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
     button.textContent?.includes("Skills"),

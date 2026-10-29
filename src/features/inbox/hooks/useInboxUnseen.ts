@@ -37,10 +37,10 @@ import {
   linkedSessionSeenAt,
   subscribeLinkedSessionSeen,
 } from "../model/linkedSessionSeen";
-import { loadHiddenLinearTeamIds } from "../model/linear";
+import { readHiddenLinearTeamIds } from "../model/linear";
 import {
   JIRA_CHANGE_EVENT,
-  loadHiddenJiraProjectIds,
+  readHiddenJiraProjectIds,
   jiraBackgroundSyncEnabled,
 } from "../model/jira";
 import type { RecentProject } from "../../projects/model/recents";
@@ -218,8 +218,9 @@ export function useInboxActivity(
         assignedToMe: filters.assignedToMe,
         state: inboxFetchState(filters),
         search: "",
-        linearHiddenTeamIds: loadHiddenLinearTeamIds(),
-        jiraHiddenProjectIds: loadHiddenJiraProjectIds(),
+        // Unreadable scope stays undefined so the fetch fails closed instead of widening.
+        linearHiddenTeamIds: readHiddenLinearTeamIds() ?? undefined,
+        jiraHiddenProjectIds: readHiddenJiraProjectIds() ?? undefined,
         jiraEnabled: jiraBackgroundSyncEnabled(),
       };
       try {

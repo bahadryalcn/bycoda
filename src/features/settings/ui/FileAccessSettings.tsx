@@ -6,8 +6,9 @@ import {
   getFileAccessMode,
   type FileAccessMode,
 } from "../../../platform/tauri/fileAccess";
-import { AdvancedSettings, Group, Row } from "./settingsControls";
+import { Group, Row } from "./settingsControls";
 import { Button } from "../../../shared/ui/Button";
+import { RefreshCw } from "../../../shared/ui/icons";
 
 export function FileAccessSettings({ embedded = false }: { embedded?: boolean }) {
   useLocale();
@@ -74,6 +75,23 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
       <Row
         id="file-access"
         label={t("File access")}
+        scope={
+          <>
+            <span role="status" aria-live="polite" className="privacy-file-access-status">
+              {statusUnavailable ? t("Status unavailable") : mode === null
+                ? error
+                  ? t("Status unavailable")
+                  : t("Loading…")
+                : modeLabel}
+            </span>
+            {statusUnavailable && mode !== null ? (
+              <span className="privacy-file-access-status">
+                {" · "}
+                {t("Last known access: {p0}", { p0: modeLabel })}
+              </span>
+            ) : null}
+          </>
+        }
         feedback={
           error ? (
             <SettingsFeedback
@@ -90,42 +108,45 @@ export function FileAccessSettings({ embedded = false }: { embedded?: boolean })
           ) : null
         }
       >
-        <span role="status" aria-live="polite">
-          {statusUnavailable ? t("Status unavailable") : mode === null
-            ? error
-              ? t("Status unavailable")
-              : t("Loading…")
-            : modeLabel}
-        </span>
-        {statusUnavailable && mode !== null ? <span>{t("Last known access: {p0}", { p0: modeLabel })}</span> : null}
-        <Button
-          loading={pending === "configure"}
-          disabled={pending !== null || mode === null || statusUnavailable}
-          onClick={() => void review()}
-        >
-          {t("Change file access")}
-        </Button>
-        <Button variant="ghost" loading={pending === "read"} disabled={pending !== null} onClick={() => void refresh()}>
-          {t("Refresh")}
-        </Button>
+        <div className="flex flex-nowrap items-center gap-1">
+          <Button
+            loading={pending === "configure"}
+            disabled={pending !== null || mode === null || statusUnavailable}
+            onClick={() => void review()}
+          >
+            {t("Change file access")}
+          </Button>
+          <Button
+            variant="ghost"
+            iconOnly
+            label={t("Refresh")}
+            tooltip={t("Refresh")}
+            loading={pending === "read"}
+            disabled={pending !== null}
+            onClick={() => void refresh()}
+          >
+            <RefreshCw aria-hidden="true" className="icon-sm" strokeWidth={1.75} />
+          </Button>
+        </div>
       </Row>
-      <AdvancedSettings
+      <Row
         id="file-access-permissions"
-        settingIds={["file-access-permissions"]}
-        title={t("Files, projects and skills")}
-        defaultOpen={false}
-      >
-        <p className="privacy-inline-note">
-          {t("Scope: this computer. Remote hosts manage their own file access.")}
-        </p>
-        <Row
-          label={t("Separate permissions")}
-          description={t(
-            "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Agent approval rules still control commands and tools. Change file access opens the native consent flow.",
-          )}
-        />
-      </AdvancedSettings>
+        label={t("Separate permissions")}
+        descriptionVisible
+        description={t(
+          "All files access allows reading and editing files on this computer. Selected-folder grants may be read-only. Agent approval rules still control commands and tools. Change file access opens the native consent flow.",
+        )}
+      />
     </>
   );
-  return embedded ? content : <Group title={t("File access")}>{content}</Group>;
+  return embedded ? (
+    content
+  ) : (
+    <Group
+      title={t("File access")}
+      scope={t("Scope: this computer. Remote hosts manage their own file access.")}
+    >
+      {content}
+    </Group>
+  );
 }

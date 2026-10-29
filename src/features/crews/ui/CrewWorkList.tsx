@@ -49,7 +49,7 @@ export function CrewWorkList({
   return (
     <nav
       aria-label={t("Crew work")}
-      className="flex min-w-0 flex-col border-b border-(--ui-tone-neutral-border) @min-[640px]/crew-management:border-b-0 @min-[640px]/crew-management:border-e"
+      className="flex min-w-0 flex-col bg-(--ui-surface-panel)"
     >
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl

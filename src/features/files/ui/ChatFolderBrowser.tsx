@@ -247,29 +247,21 @@ export function ChatFolderBrowser({
                 "Enter the shared folder path you can open on this computer. This mapping also applies to its files and subfolders.",
               )}
             </p>
-            <label className="grid gap-1">
-              {t("Folder on connected machine")}
-              <TextField
-                hideLabel
-                label=""
-                className="font-mono"
-                value={remoteRoot}
-                onChange={(event) => setRemoteRoot(event.target.value)}
-                required
-              />
-            </label>
-            <label className="grid gap-1">
-              {t("Same folder on this computer")}
-              <TextField
-                hideLabel
-                label=""
-                className="font-mono"
-                placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
-                value={localRoot}
-                onChange={(event) => setLocalRoot(event.target.value)}
-                required
-              />
-            </label>
+            <TextField
+              label={t("Folder on connected machine")}
+              className="font-mono"
+              value={remoteRoot}
+              onChange={(event) => setRemoteRoot(event.target.value)}
+              required
+            />
+            <TextField
+              label={t("Same folder on this computer")}
+              className="font-mono"
+              placeholder={IS_WIN ? t("\\\\MacBook\\share\\projects") : "/Volumes/share/projects"}
+              value={localRoot}
+              onChange={(event) => setLocalRoot(event.target.value)}
+              required
+            />
             <Button
               variant="ghost"
               motion="none"

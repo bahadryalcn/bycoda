@@ -556,7 +556,8 @@ describe("AgentTranscript collapsed work", () => {
     );
 
     expect(markup).toContain("Inspect auth");
-    expect(markup).toContain("failed");
+    // The run's state line names the failure; the reason follows in its report.
+    expect(markup).toContain("Failed");
     expect(markup).toContain("Child process disconnected");
     expect(markup).toContain("Hide Inspect auth&#x27;s work");
 

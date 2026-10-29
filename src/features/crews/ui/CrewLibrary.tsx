@@ -4,14 +4,15 @@ import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
+import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Modal } from "../../../shared/ui/Modal";
-import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { MoreHorizontal, Plus, Trash2 } from "../../../shared/ui/icons";
 import { Group, Row } from "../../settings/ui/settingsControls";
+import { CollectionToolbar } from "../../settings/ui/SettingsCollection";
 import { parseCrewAgent, type CrewAgent, type SavedCrewAgent } from "../model/crew";
 import type { ProjectCrews, useProjectCrews } from "../model/crewClient";
 import { catalogCandidate, catalogModels, libraryGroups, newCrewMember } from "../model/crewRoster";
@@ -66,87 +67,95 @@ export function CrewLibrary({
           </Button>
         }
       >
-        {data.agents.length ? (
-          <div className="flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-            <SearchInput
-              appearance="field"
-              containerClassName="min-w-40 flex-1"
-              aria-label={t("Search name, role, model or group")}
-              placeholder={t("Search name, role, model or group")}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-            {groups.length ? (
-              <SearchableSelect
-                label={t("Member group")}
-                value={activeGroup}
-                options={[
-                  { value: "", label: t("All groups") },
-                  ...groups.map((name) => ({ value: name, label: name })),
-                ]}
-                onChange={setGroup}
-              />
-            ) : null}
-            {activeGroup && data.groupsSupported ? (
-              <Button
-                ref={groupTrigger}
-                variant="ghost"
-                iconOnly
-                label={t("Group options")}
-                aria-haspopup="menu"
-                aria-expanded={groupMenu}
-                onClick={() => setGroupMenu(true)}
-              >
-                <MoreHorizontal className="icon-md" />
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
         {!data.agents.length ? (
           <Row
             label={t("No library members yet")}
             description={t("Create one here, or save a crew member to the library from its crew.")}
+            descriptionVisible
           />
-        ) : !agents.length ? (
-          <Row label={t("No matching members.")}>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setQuery("");
-                setGroup("");
-              }}
-            >
-              {t("Clear filters")}
-            </Button>
-          </Row>
         ) : (
-          agents.map((agent) => (
-            <Row
-              key={agent.id}
-              label={
-                // Identity is data, not help text: it stays visible in the row.
-                <span className="flex min-w-0 flex-col gap-0.5">
-                  <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-                    <span className="truncate">{agent.name}</span>
-                    {agent.groups?.map((name) => (
-                      <Badge key={name} size="sm">
-                        {name}
-                      </Badge>
-                    ))}
-                  </span>
-                  <CrewMemberMeta agent={agent} catalog={data.catalog} />
-                </span>
-              }
+          <div className="settings-collection">
+            <CollectionToolbar
+              label={t("Search name, role, model or group")}
+              query={query}
+              onQueryChange={setQuery}
+              count={t("Showing {p0} of {p1} members", {
+                p0: agents.length,
+                p1: data.agents.length,
+              })}
             >
-              <Button
-                variant="ghost"
-                aria-label={t("Edit {p0}", { p0: agent.name })}
-                onClick={() => setEditing(agent)}
-              >
-                {t("Edit")}
-              </Button>
-            </Row>
-          ))
+              {groups.length ? (
+                <SearchableSelect
+                  label={t("Member group")}
+                  value={activeGroup}
+                  options={[
+                    { value: "", label: t("All groups") },
+                    ...groups.map((name) => ({ value: name, label: name })),
+                  ]}
+                  onChange={setGroup}
+                />
+              ) : null}
+              {activeGroup && data.groupsSupported ? (
+                <Button
+                  ref={groupTrigger}
+                  variant="ghost"
+                  iconOnly
+                  label={t("Group options")}
+                  aria-haspopup="menu"
+                  aria-expanded={groupMenu}
+                  onClick={() => setGroupMenu(true)}
+                >
+                  <MoreHorizontal className="icon-sm" />
+                </Button>
+              ) : null}
+            </CollectionToolbar>
+            <div
+              className="settings-collection-list"
+              role="region"
+              aria-label={t("Member library")}
+              tabIndex={0}
+            >
+              {!agents.length ? (
+                <div className="settings-collection-empty">
+                  <p role="status">{t("No matching members.")}</p>
+                  <Button
+                    variant="ghost"
+                    onClick={() => {
+                      setQuery("");
+                      setGroup("");
+                    }}
+                  >
+                    {t("Clear filters")}
+                  </Button>
+                </div>
+              ) : null}
+              {agents.map((agent) => (
+                <div key={agent.id} className="settings-collection-row">
+                  <div className="settings-collection-main">
+                    {/* Identity is data, not help text: it stays visible in the row. */}
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="settings-collection-title">{agent.name}</span>
+                      {agent.groups?.map((name) => (
+                        <Badge key={name} size="sm">
+                          {name}
+                        </Badge>
+                      ))}
+                    </div>
+                    <CrewMemberMeta agent={agent} catalog={data.catalog} />
+                  </div>
+                  <div className="settings-collection-actions">
+                    <Button
+                      variant="ghost"
+                      aria-label={t("Edit {p0}", { p0: agent.name })}
+                      onClick={() => setEditing(agent)}
+                    >
+                      {t("Edit")}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         )}
       </Group>
       {groupMenu ? (
@@ -247,6 +256,22 @@ function LibraryMemberDialog({
     }
   };
   const valid = !!agent.name.trim() && !!agent.candidates.length;
+  // An edit in progress is not dropped by a stray Escape or backdrop click (CWS-05).
+  const initial = useRef<string | null>(null);
+  initial.current ??= JSON.stringify([agent, scope]);
+  const dirty = JSON.stringify([agent, scope]) !== initial.current;
+  const { confirm, dialog: confirmDialog } = useConfirm();
+  const requestClose = () => {
+    if (pending) return;
+    if (!dirty) return onClose();
+    void confirm({
+      title: t("Discard changes?"),
+      message: t("Your edits to this member have not been saved."),
+      confirmLabel: t("Discard changes"),
+    }).then((ok) => {
+      if (ok) onClose();
+    });
+  };
   const save = (copy: boolean) => {
     if (!valid) {
       setShowIssues(true);
@@ -278,9 +303,7 @@ function LibraryMemberDialog({
     <Modal
       title={saved ? saved.name : t("New library member")}
       size="md"
-      onClose={() => {
-        if (!pending) onClose();
-      }}
+      onClose={requestClose}
       footer={
         <>
           {saved && data.deleteSupported ? (
@@ -340,6 +363,7 @@ function LibraryMemberDialog({
           groups={data.groupsSupported}
           groupSuggestions={groupNames}
           nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+          modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
           autoFocus={!saved}
         />
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
@@ -363,6 +387,7 @@ function LibraryMemberDialog({
         <p className="text-ui-caption text-(--ui-text-secondary)">
           {t("Crews keep their own copy. Changes here reach a crew only when you update it there.")}
         </p>
+        {confirmDialog}
       </fieldset>
     </Modal>
   );

@@ -376,12 +376,12 @@ export function ServersTerminalWorkspace({
               </Button>
               <ToolHeader>
                 <div className="flex min-w-0 items-center gap-2 px-3 text-sm">
-                  <Terminal aria-hidden className="icon-md shrink-0 text-accent" />
+                  <Terminal aria-hidden className="icon-sm shrink-0 text-(--ui-text-secondary)" />
                   <span className="truncate">
                     {terminals.find((terminal) => terminal.id === active)?.name ??
                       t("SSH terminal")}
                   </span>
-                  <Badge tone="info" size="sm">
+                  <Badge tone="neutral" size="sm">
                     SSH
                   </Badge>
                 </div>
@@ -389,7 +389,7 @@ export function ServersTerminalWorkspace({
               {!IS_MAC ? <WindowControls /> : null}
             </div>
             <div
-              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-surface-raised) px-2 py-1"
+              className="flex shrink-0 gap-1 overflow-x-auto border-b border-stroke bg-(--ui-surface-panel) px-2 py-1"
               role="tablist"
               aria-label={t("SSH terminals")}
             >
@@ -407,7 +407,7 @@ export function ServersTerminalWorkspace({
                 >
                   <Button
                     variant="tab"
-                    tone={active === terminal.id ? "info" : "neutral"}
+                    tone="neutral"
                     motion="none"
                     fullWidth
                     className="min-w-0 flex-1"

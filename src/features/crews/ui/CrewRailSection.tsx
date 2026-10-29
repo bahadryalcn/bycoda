@@ -15,7 +15,11 @@ import {
   Plus,
   Trash2,
 } from "../../../shared/ui/icons";
-import { RailSectionHeader, type RailSectionDrag } from "../../../app/shell/useRailSections";
+import {
+  RAIL_SECTION_BLOCK,
+  RailSectionHeader,
+  type RailSectionDrag,
+} from "../../../app/shell/useRailSections";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import type { CrewDefinition } from "../model/crew";
 import { useProjectCrews, type CrewRunView } from "../model/crewClient";
@@ -243,7 +247,11 @@ export function CrewRailSection({
     dialog?.kind === "delete" ? data.definitions.find((d) => d.id === dialog.crewId) : undefined;
 
   return (
-    <div ref={drag.setRef} className="reorder-item rail-reorder-block mb-2 shrink-0">
+    <div
+      ref={drag.setRef}
+      className={RAIL_SECTION_BLOCK}
+      data-collapsed={collapsed || undefined}
+    >
       <RailSectionHeader
         label={label}
         drag={drag}
@@ -309,7 +317,7 @@ export function CrewRailSection({
               key={crew.id}
               role="listitem"
               selected={menu?.crewId === crew.id}
-              className="group relative flex h-8 items-stretch"
+              className="group relative flex min-h-(--ui-control-height-compact) items-stretch"
               onContextMenu={openMenuAt}
             >
               <Button
@@ -334,7 +342,7 @@ export function CrewRailSection({
                 }}
                 className="flex min-w-0 flex-1 items-center gap-2 @max-[140px]/rail:justify-center"
               >
-                <span className="relative grid icon-md shrink-0 place-items-center">
+                <span className="relative grid icon-sm shrink-0 place-items-center">
                   <CrewAvatar crew={crew} active={working} />
                   {attention || (execution && !working) ? (
                     <span
@@ -347,7 +355,7 @@ export function CrewRailSection({
                     />
                   ) : null}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-ui-body font-medium @max-[140px]/rail:hidden">
+                <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium @max-[140px]/rail:hidden">
                   {crew.name}
                 </span>
                 {working ? (
@@ -394,7 +402,7 @@ export function CrewRailSection({
                     })
                   }
                 >
-                  <MoreHorizontal className="icon-md" strokeWidth={1.75} />
+                  <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
                 </InlineAction>
               </span>
             </ActionHost>

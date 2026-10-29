@@ -13,6 +13,8 @@ export interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   error?: string;
   /** Adapter hooks for a compact field with an existing visible label. */
   fieldClassName?: string;
+  /** `form` (default) is comfortable; `compact` is the 28px toolbar/inline-filter composition. */
+  fieldVariant?: "form" | "compact";
   hideLabel?: boolean;
   clearable?: boolean;
   /** A compact trailing icon action, separate from the label and messages. */
@@ -211,6 +213,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     id,
     className,
     fieldClassName,
+    fieldVariant = "form",
     hideLabel = false,
     clearable = false,
     endAdornment,
@@ -241,7 +244,10 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
     />
   );
   return (
-    <div className={[styles.field, fieldClassName].filter(Boolean).join(" ")}>
+    <div
+      className={[styles.field, fieldClassName].filter(Boolean).join(" ")}
+      data-variant={fieldVariant}
+    >
       {!hideLabel && (
         <label className={styles.label} htmlFor={controlId}>
           {label}

@@ -1,4 +1,5 @@
 import { trimAndCapText } from "../../../shared/lib/cappedText";
+import { inlineVisualFromResult, isInlineVisualRenderTool } from "../../../features/sessions/model/inlineVisual";
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
@@ -1103,6 +1104,10 @@ function upsertTool(
   },
 ): Session {
   const index = findToolIndex(session, patch);
+  const inlineVisual = !patch.streaming && !patch.detailTruncated &&
+    isInlineVisualRenderTool(patch.title ?? (index >= 0 ? session.blocks[index].tool?.title : undefined)) &&
+    !/error|fail|reject|cancel/i.test(patch.status ?? "")
+    ? inlineVisualFromResult(patch.detail) : undefined;
   const prompt = capAgentPrompt(patch.agentPrompt);
   if (index < 0) {
     const capped = capToolDetailMeta(patch.detail);
@@ -1113,6 +1118,7 @@ function upsertTool(
     return appendBlock(session, {
       id: crypto.randomUUID(),
       role: "tool",
+      ...(inlineVisual ? { inlineVisual } : {}),
       text: label,
       streaming: patch.streaming,
       ...(patch.agentModel || isAgentTool(patch.kind, label)
@@ -1168,6 +1174,7 @@ function upsertTool(
     prev.tool?.kind === kind &&
     prev.tool?.status === status &&
     prev.tool?.detail === detail &&
+    (!inlineVisual || JSON.stringify(prev.inlineVisual) === JSON.stringify(inlineVisual)) &&
     (prev.tool?.outputTruncated === true) === truncated &&
     (!patch.agentModel || prev.agentRun?.model === patch.agentModel) &&
     (!prompt || prev.agentRun?.prompt === prompt) &&
@@ -1180,6 +1187,7 @@ function upsertTool(
   const blocks = session.blocks.slice();
   blocks[index] = {
     ...prev,
+    ...(inlineVisual ? { inlineVisual } : {}),
     text: label,
     streaming: patch.streaming,
     ...(patch.agentModel || prev.agentRun

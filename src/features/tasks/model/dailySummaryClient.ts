@@ -92,11 +92,14 @@ export function loadStoredDailySummary(): DailySummary | null {
   }
 }
 
-export function saveStoredDailySummary(summary: DailySummary) {
+/** False when the cache write failed, so opening the summary may show older data. */
+export function saveStoredDailySummary(summary: DailySummary): boolean {
+  let stored = true;
   try {
     localStorage.setItem(KEY, JSON.stringify(summary));
   } catch {
-    // private mode / quota
+    stored = false;
   }
   if (typeof window !== "undefined") window.dispatchEvent(new Event(DAILY_SUMMARY_STORED_EVENT));
+  return stored;
 }

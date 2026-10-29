@@ -618,6 +618,43 @@ describe("settings pages", () => {
     expect(onSelectSection).toHaveBeenCalledWith("appearance");
   });
 
+  it("keeps the tabpanel out of the tab order and moves programmatic focus to the page title", async () => {
+    await render("general");
+    const panel = container.querySelector<HTMLElement>('[role="tabpanel"]')!;
+    expect(panel.hasAttribute("tabindex")).toBe(false);
+    const title = container.querySelector<HTMLElement>(".settings-page-title")!;
+    expect(title.tabIndex).toBe(-1);
+  });
+
+  it("embedded in an overlay: no duplicate titlebar or window controls, and the overlay owns Escape", async () => {
+    const onClose = vi.fn();
+    const onToggleMaximize = vi.fn();
+    await render("worktrees", { embedded: true, onClose, onToggleMaximize });
+    expect(container.querySelector(".bycoda-settings-titlebar")).toBeNull();
+    expect(container.querySelector('[aria-label="Back to workspace"]')).toBeNull();
+    expect(container.querySelector("[data-app-settings]")?.getAttribute("data-settings-presentation")).toBe(
+      "workspace",
+    );
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(onClose).not.toHaveBeenCalled();
+    const maximize = container.querySelector<HTMLButtonElement>('button[aria-label="Maximize"]')!;
+    await act(async () => maximize.click());
+    expect(onToggleMaximize).toHaveBeenCalledOnce();
+  });
+
+  it("restyles instead of remounting when the overlay is maximized", async () => {
+    await render("general", { embedded: true, onToggleMaximize: vi.fn() });
+    const search = container.querySelector<HTMLElement>(".settings-page-title")!;
+    await render("general", { embedded: true, onToggleMaximize: vi.fn(), maximized: true });
+    expect(container.querySelector<HTMLElement>(".settings-page-title")).toBe(search);
+    expect(container.querySelector("[data-app-settings]")?.hasAttribute("data-settings-maximized")).toBe(
+      true,
+    );
+    expect(container.querySelector('button[aria-label="Restore size"]')).not.toBeNull();
+  });
+
   it.each(["row", "column"])(
     "navigates %s category tabs with matching arrows and boundary keys",
     async (direction) => {
@@ -738,8 +775,11 @@ describe("settings pages", () => {
     });
     await render("providers");
 
-    const emails = container.querySelectorAll<HTMLButtonElement>('[aria-label="Reveal email"]');
-    expect(emails).toHaveLength(2);
+    // Account emails load for the selected provider only, so check each provider in turn.
+    const revealButtons = () =>
+      container.querySelectorAll<HTMLButtonElement>('[aria-label="Reveal email"]');
+    const emails = revealButtons();
+    expect(emails).toHaveLength(1);
     expect(
       [...emails].every((email) =>
         email.querySelector("span[aria-hidden]")?.className.includes("blur-[5px]"),
@@ -749,15 +789,22 @@ describe("settings pages", () => {
     await act(async () => emails[0].click());
     expect(emails[0].getAttribute("aria-label")).toBe("Hide email");
     expect(emails[0].querySelector("span[aria-hidden]")?.className).not.toContain("blur");
-    expect(emails[1].getAttribute("aria-label")).toBe("Reveal email");
     await act(async () => emails[0].click());
     expect(emails[0].getAttribute("aria-label")).toBe("Reveal email");
 
-    await act(async () => emails[0].click());
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>('nav[aria-label="Providers"] button[title="Codex"]')!.click(),
+    );
+    const codexEmails = revealButtons();
+    expect(codexEmails).toHaveLength(1);
+    expect(codexEmails[0].querySelector("span[aria-hidden]")?.className).toContain("blur-[5px]");
+    await act(async () => codexEmails[0].click());
+    expect(codexEmails[0].getAttribute("aria-label")).toBe("Hide email");
+
     await render("general");
     await render("providers");
     expect(container.querySelector('[aria-label="Hide email"]')).toBeNull();
-    expect(container.querySelectorAll('[aria-label="Reveal email"]')).toHaveLength(2);
+    expect(revealButtons()).toHaveLength(1);
   });
 
   it("moves usage controls and quotas out of provider settings", async () => {
@@ -786,6 +833,13 @@ describe("settings pages", () => {
         .querySelector('[role="meter"][aria-label="Default account session remaining"]')
         ?.getAttribute("aria-valuenow"),
     ).toBe("77");
+    // Display preferences are a collapsed disclosure until opened.
+    expect(container.querySelector('[aria-label="Show remaining usage"]')).toBeNull();
+    await act(async () =>
+      [...container.querySelectorAll<HTMLButtonElement>("button[aria-expanded]")]
+        .find((button) => button.textContent === "Display preferences")!
+        .click(),
+    );
     await act(async () =>
       container.querySelector<HTMLButtonElement>('[aria-label="Show remaining usage"]')!.click(),
     );
@@ -869,28 +923,50 @@ describe("settings pages", () => {
   it("previews and restores Haze with the existing empty-chat visibility", async () => {
     localStorage.setItem("bycoda.chatBackgroundPath", "/background.png");
     localStorage.setItem("bycoda.chatBackgroundEmptyOpacity", "0.4");
-    await render("appearance");
+    // The preview waits until the image has decoded; make the test image load.
+    const OriginalImage = globalThis.Image;
+    class DecodedImage {
+      onload: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      set src(_value: string) {
+        queueMicrotask(() => this.onload?.());
+      }
+    }
+    globalThis.Image = DecodedImage as unknown as typeof Image;
+    try {
+      await render("appearance");
 
-    const option = container.querySelector<HTMLButtonElement>(
-      "#new-thread-background-effect-gradient-blur",
-    )!;
-    expect(option.textContent).toBe("Haze");
-    await act(async () => option.click());
+      const option = container.querySelector<HTMLButtonElement>(
+        "#new-thread-background-effect-gradient-blur",
+      )!;
+      expect(option.textContent).toBe("Haze");
+      await act(async () => option.click());
 
-    const preview = container.querySelector<HTMLElement>(".gradient-blur-background")!;
-    expect(option.getAttribute("aria-checked")).toBe("true");
-    expect(preview.style.opacity).toBe("0.4");
-    expect(preview.querySelectorAll("span")).toHaveLength(2);
-    expect(localStorage.getItem("bycoda.newThreadBackgroundEffect")).toBe("gradient-blur");
+      const preview = container.querySelector<HTMLElement>(
+        '.chat-pane-background[data-session-empty="true"] > .gradient-blur-background',
+      )!;
+      expect(preview).not.toBeNull();
+      expect(option.getAttribute("aria-checked")).toBe("true");
+      // The preview follows the document's --chat-background-empty-opacity (CSS) instead of carrying its own copy,
+      // and choosing Haze leaves the saved empty-chat visibility untouched.
+      expect(preview.style.opacity).toBe("");
+      expect(localStorage.getItem("bycoda.chatBackgroundEmptyOpacity")).toBe("0.4");
+      expect(preview.querySelectorAll("span")).toHaveLength(2);
+      expect(localStorage.getItem("bycoda.newThreadBackgroundEffect")).toBe("gradient-blur");
 
-    await render("providers");
-    await render("appearance");
-    expect(
-      container
-        .querySelector("#new-thread-background-effect-gradient-blur")
-        ?.getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(container.querySelector(".gradient-blur-background")).not.toBeNull();
+      await render("providers");
+      await render("appearance");
+      expect(
+        container
+          .querySelector("#new-thread-background-effect-gradient-blur")
+          ?.getAttribute("aria-checked"),
+      ).toBe("true");
+      await vi.waitFor(() =>
+        expect(container.querySelector(".gradient-blur-background")).not.toBeNull(),
+      );
+    } finally {
+      globalThis.Image = OriginalImage;
+    }
   });
 
   it("manages named accounts independently for each supported provider", async () => {
@@ -1215,7 +1291,7 @@ describe("settings pages", () => {
     };
     await render("notifications", shortcut);
     const project = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="Notification categories for repo"]',
+      'button[aria-label="Notification categories for repo (github.com)"]',
     )!;
     const card = project.closest("fieldset")!;
     const section = container.querySelector('[data-setting-id="project-notifications"]')!;
@@ -1263,7 +1339,7 @@ describe("settings pages", () => {
       notificationProjectPath: "/repo",
     });
     const section = container.querySelector('[data-setting-id="project-notifications"]')!;
-    const project = section.querySelector('button[aria-label="Notification categories for repo"]')!;
+    const project = section.querySelector('button[aria-label="Notification categories for repo (github.com)"]')!;
     expect(section.querySelector("[data-highlighted]")).not.toBeNull();
     expect(project.getAttribute("aria-expanded")).toBe("true");
     expect(document.activeElement).toBe(project.closest("fieldset"));
@@ -1462,7 +1538,7 @@ describe("settings pages", () => {
       binaryPath: null,
       targetVersion: "2.1.285",
     });
-    expect(group.textContent).toContain("Updated to 2.1.285.");
+    expect(group.textContent).toContain("CLI updated to 2.1.285.");
     expect(group.querySelector('[aria-label="Update Claude Code to 2.1.285"]')).toBeNull();
 
     // Claude Code, updated earlier in this session, falls behind again and

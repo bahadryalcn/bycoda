@@ -9,6 +9,7 @@ export function NoteEditorPane({
   label,
   hidden = false,
   split = false,
+  document: readingPane = false,
   scrollKey,
   children,
 }: {
@@ -16,6 +17,8 @@ export function NoteEditorPane({
   hidden?: boolean;
   /** The visible pane caption is only needed when two panes share the view. */
   split?: boolean;
+  /** The rendered document pane uses the ~46rem reading measure on the canvas ground. */
+  document?: boolean;
   /** Note/project-scoped window-lifetime position, independent for each pane. */
   scrollKey?: string;
   children: ReactNode;
@@ -49,7 +52,7 @@ export function NoteEditorPane({
   }, [hidden, scrollKey]);
 
   return (
-    <div hidden={hidden} data-split={split || undefined} className={hidden ? "hidden" : "note-editor-pane"}>
+    <div hidden={hidden} data-split={split || undefined} data-document={readingPane || undefined} className={hidden ? "hidden" : "note-editor-pane"}>
       {split ? <div className="note-pane-label">{label}</div> : null}
       <div
         ref={setViewport}

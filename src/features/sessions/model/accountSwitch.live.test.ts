@@ -187,6 +187,7 @@ vi.mock("../../../integrations/harness/core/child", async (importOriginal) => {
       const provider = account?.provider ?? "claude";
       const accountId = account?.id ?? "default";
       const { env, dir } = childEnv(provider, accountId);
+      live.stderr.delete(id);
       live.spawns.push({
         provider,
         accountId,
@@ -209,11 +210,13 @@ vi.mock("../../../integrations/harness/core/child", async (importOriginal) => {
       });
       stdins.set(id, child.stdin);
       if (child.pid) pids.set(id, child.pid);
-      live.children.set(id, { kill: () => killTree(child.pid) });
+      const owner = { kill: () => killTree(child.pid) };
+      live.children.set(id, owner);
       child.stdin.on("error", () => undefined);
       let buffered = "";
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => {
+        if (live.children.get(id) !== owner) return;
         buffered += chunk;
         let at: number;
         while ((at = buffered.indexOf("\n")) >= 0) {
@@ -224,13 +227,18 @@ vi.mock("../../../integrations/harness/core/child", async (importOriginal) => {
       });
       child.stderr.setEncoding("utf8");
       child.stderr.on("data", (chunk: string) => {
+        if (live.children.get(id) !== owner) return;
         live.stderr.set(id, ((live.stderr.get(id) ?? "") + chunk).slice(-4000));
         stderrHandlers.get(id)?.(chunk);
       });
       child.on("error", (error) => {
+        if (live.children.get(id) !== owner) return;
         exitHandlers.get(id)?.(null, error.message);
       });
       child.on("exit", (code) => {
+        // Provider handoff reuses the application session id. A retired child's
+        // late output/exit belongs to its own generation, not the new provider.
+        if (live.children.get(id) !== owner) return;
         if (pids.get(id) === child.pid) {
           pids.delete(id);
           stdins.delete(id);
@@ -238,7 +246,12 @@ vi.mock("../../../integrations/harness/core/child", async (importOriginal) => {
         }
         if (buffered) lineHandlers.get(id)?.(buffered);
         buffered = "";
-        exitHandlers.get(id)?.(code);
+        // Preserve real CLI diagnostics when startup fails before emitting a
+        // protocol error. Otherwise live failures only say "Claude Code exited".
+        exitHandlers.get(id)?.(
+          code,
+          code ? `${path.basename(command)} exited (${code}): ${live.stderr.get(id)?.trim() || "no stderr"}` : undefined,
+        );
       });
     },
     writeChild: async (id: string, line: string) => {

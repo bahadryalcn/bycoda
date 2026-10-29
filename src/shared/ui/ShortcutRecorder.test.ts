@@ -90,7 +90,10 @@ it("asks before taking a bound shortcut and keeps the old value when canceled", 
   expect(change).not.toHaveBeenCalled();
   const buttons = [...container.querySelectorAll<HTMLButtonElement>("button")];
   const use = buttons.find((button) => button.textContent === "Use anyway")!;
-  const cancel = buttons.find((button) => button.textContent === "Cancel")!;
+  // The recording-state Cancel can still be animating out; the conflict prompt's own Cancel sits beside "Use anyway".
+  const cancel = [...use.parentElement!.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Cancel",
+  )!;
   // Both are shared Buttons, so they carry the Button hierarchy/tone attributes and a real focus state.
   expect(use.getAttribute("data-button-tone")).toBe("warning");
   expect(cancel.getAttribute("data-button-hierarchy")).toBe("ghost");

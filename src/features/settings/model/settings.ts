@@ -1640,6 +1640,41 @@ export function settingsSectionDescription(id: SettingsSectionId): string {
   return SETTINGS_SECTIONS.find((section) => section.id === id)?.description ?? "";
 }
 
+/**
+ * How a page wants to be presented. `bounded`: short preferences and forms in a readable
+ * track over the work context. `wide`: collections, tables and analytics that need a
+ * usable width. `workspace`: list/detail libraries that own the full height and are
+ * the pages worth maximizing. A hint only: the embedding surface decides the geometry
+ * and a page never remounts when it changes.
+ */
+export type SettingsPresentation = "bounded" | "wide" | "workspace";
+
+const SETTINGS_PRESENTATION: Record<SettingsSectionId, SettingsPresentation> = {
+  general: "bounded",
+  appearance: "bounded",
+  workspace: "bounded",
+  terminal: "bounded",
+  chat: "bounded",
+  notifications: "bounded",
+  groupLock: "bounded",
+  policies: "bounded",
+  providers: "wide",
+  mcp: "wide",
+  connections: "wide",
+  inbox: "bounded",
+  crews: "wide",
+  keybindings: "wide",
+  usage: "wide",
+  limits: "wide",
+  skills: "workspace",
+  archive: "bounded",
+  worktrees: "workspace",
+};
+
+export function settingsSectionPresentation(id: SettingsSectionId): SettingsPresentation {
+  return SETTINGS_PRESENTATION[id] ?? "bounded";
+}
+
 export function loadSettingsSection(): SettingsSectionId {
   try {
     const raw = localStorage.getItem(SECTION_KEY);

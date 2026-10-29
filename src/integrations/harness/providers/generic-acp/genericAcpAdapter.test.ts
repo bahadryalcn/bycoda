@@ -1,4 +1,8 @@
-import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AcpHandlers } from "../../core/acp";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
@@ -9,6 +13,8 @@ const mock = vi.hoisted(() => ({
   respond: vi.fn(async () => undefined),
   failMode: false,
   nativeModes: true,
+  onExit: undefined as ((code: number | null) => void) | undefined,
+  notify: vi.fn(async () => undefined),
 }));
 vi.mock("../../core/acp", () => ({
   AcpClient: class {
@@ -19,12 +25,14 @@ vi.mock("../../core/acp", () => ({
     respond = mock.respond;
     respondError = vi.fn();
     close = vi.fn();
-    notify = vi.fn();
+    notify = mock.notify;
   },
 }));
 vi.mock("../../core/child", () => ({
   spawnChild: vi.fn(),
-  watchChild: vi.fn(),
+  watchChild: (_id: string, _line: (line: string) => void, exit: (code: number | null) => void) => {
+    mock.onExit = exit;
+  },
   killChild: vi.fn(),
   invokeProviderCommand: async () => [],
 }));
@@ -53,6 +61,7 @@ beforeEach(() => {
   events.length = 0;
   mock.failMode = false;
   mock.nativeModes = true;
+  mock.onExit = undefined;
   mock.request.mockImplementation(async (method: string) => {
     if (method === "session/set_mode" && mock.failMode) throw new Error("mode rejected");
     if (method === "session/new")
@@ -82,7 +91,12 @@ it("switches to advertised plan mode and restores the prior mode for Build", asy
     30_000,
   );
   await sendGenericAcpTurn(input("build"));
-  expect(mock.request).toHaveBeenLastCalledWith("session/prompt", expect.anything(), 0, expect.any(Function));
+  expect(mock.request).toHaveBeenLastCalledWith(
+    "session/prompt",
+    expect.anything(),
+    0,
+    expect.any(Function),
+  );
   expect(mock.request).toHaveBeenCalledWith(
     "session/set_mode",
     { sessionId: "native-session", modeId: "default" },
@@ -215,16 +229,122 @@ it("does not prompt or create a replacement session when load fails; retry keeps
   expect(events).toContainEqual({ type: "message.delta", text: "Retry answer" });
 });
 
-
 it("retains a permission's real write after its UI callback returns", async () => {
- const {genericAcpAdapter}=await import("./genericAcpAdapter");
- await sendGenericAcpTurn({...input(undefined),runtimeMode:"supervised",onEvent:event=>{captureNativeOutputEvent("generic-plan",event);events.push(event);}});
- const inspect=nativeOutputFrame("generic-plan","permission",()=>{void mock.handlers.onRequest!(777,"session/request_permission",{toolCall:{title:"causal permission"},options:[{optionId:"yes",kind:"allow_once"}]});});
- const asked=events.find(e=>e.type==="approval.requested")!;const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
- let release!:()=>void;mock.respond.mockImplementationOnce(()=>new Promise<void>(resolve=>{release=resolve;}));
- genericAcpAdapter.respondApproval!("generic-plan",777,"allow");
- expect(inspect().pendingCausalWork).toBe(1);expect(events.some(e=>e.type==="approval.resolved")).toBe(false);
- release();await vi.waitFor(()=>expect(events.some(e=>e.type==="approval.resolved")).toBe(true));
- expect(getNativeOutputEventOrigin(events.find(e=>e.type==="approval.resolved")!)).toBe(origin);
- expect(inspect().pendingCausalWork).toBe(0);
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({
+    ...input(undefined),
+    runtimeMode: "supervised",
+    onEvent: (event) => {
+      captureNativeOutputEvent("generic-plan", event);
+      events.push(event);
+    },
+  });
+  const inspect = nativeOutputFrame("generic-plan", "permission", () => {
+    void mock.handlers.onRequest!(777, "session/request_permission", {
+      toolCall: { title: "causal permission" },
+      options: [{ optionId: "yes", kind: "allow_once" }],
+    });
+  });
+  const asked = events.find((e) => e.type === "approval.requested")!;
+  const origin = getNativeOutputEventOrigin(asked);
+  expect(origin).not.toBeNull();
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  genericAcpAdapter.respondApproval!("generic-plan", 777, "allow");
+  expect(inspect().pendingCausalWork).toBe(1);
+  expect(events.some((e) => e.type === "approval.resolved")).toBe(false);
+  release();
+  await vi.waitFor(() => expect(events.some((e) => e.type === "approval.resolved")).toBe(true));
+  expect(getNativeOutputEventOrigin(events.find((e) => e.type === "approval.resolved")!)).toBe(
+    origin,
+  );
+  expect(inspect().pendingCausalWork).toBe(0);
+});
+
+const permissionFixture = (id: number) =>
+  nativeOutputFrame("generic-plan", `permission-${id}`, () => {
+    void mock.handlers.onRequest!(id, "session/request_permission", {
+      toolCall: { title: "Retained permission" },
+      options: [{ optionId: "yes", kind: "allow_once" }],
+    });
+  });
+
+it("retires waiting approval ownership on natural child exit", async () => {
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(301);
+  expect(inspect().pendingCausalWork).toBe(1);
+  mock.onExit!(0);
+  expect(inspect().pendingCausalWork).toBe(0);
+  expect(mock.respond).not.toHaveBeenCalled();
+});
+
+it("retires an early waiting approval when startup rejects before Live registration", async () => {
+  let inspect!: ReturnType<typeof nativeOutputFrame>;
+  mock.request.mockImplementation(async (method: string) => {
+    if (method === "initialize") {
+      inspect = permissionFixture(302);
+      expect(inspect().pendingCausalWork).toBe(1);
+      throw new Error("fixture initialize rejected");
+    }
+    return {};
+  });
+  await expect(
+    sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" }),
+  ).rejects.toThrow("fixture initialize rejected");
+  expect(inspect().pendingCausalWork).toBe(0);
+  expect(mock.respond).not.toHaveBeenCalled();
+});
+
+it("retires a displaced waiting RPC id without releasing its replacement", async () => {
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const previous = permissionFixture(303);
+  expect(previous().pendingCausalWork).toBe(1);
+  const replacement = permissionFixture(303);
+  expect(previous().pendingCausalWork).toBe(0);
+  expect(replacement().pendingCausalWork).toBe(1);
+  mock.onExit!(0);
+  expect(replacement().pendingCausalWork).toBe(0);
+  expect(mock.respond).not.toHaveBeenCalled();
+});
+
+it("natural exit keeps a removed responding approval owned until its actual write settles", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(304);
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  genericAcpAdapter.respondApproval!("generic-plan", 304, "allow");
+  mock.onExit!(0);
+  expect(inspect().pendingCausalWork).toBe(1);
+  release();
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+});
+
+it("natural exit keeps an in-flight cancel reply owned until its actual write settles", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const inspect = permissionFixture(305);
+  let release!: () => void;
+  mock.respond.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
+  const cancelling = genericAcpAdapter.cancelTurn!("generic-plan");
+  mock.onExit!(0);
+  expect(inspect().pendingCausalWork).toBe(1);
+  release();
+  await cancelling;
+  expect(inspect().pendingCausalWork).toBe(0);
 });

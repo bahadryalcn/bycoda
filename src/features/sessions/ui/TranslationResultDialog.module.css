@@ -4,7 +4,7 @@
   gap: 16px;
   padding: 16px;
   color: var(--color-content);
-  font-size: var(--text-base);
+  font-size: var(--ui-font-body);
 }
 
 .modelRow {
@@ -19,26 +19,20 @@
 .status,
 .hint {
   color: var(--ui-text-secondary);
-  font-size: var(--text-xs);
+  font-size: var(--ui-font-caption);
 }
 
 .comparison {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  overflow: hidden;
-  border: 1px solid var(--color-stroke);
-  border-radius: var(--radius-panel);
-  background: var(--ui-surface);
+  gap: 12px;
 }
 
 .pane {
   min-inline-size: 0;
   overflow: clip;
+  border-radius: var(--ui-radius-card);
   background: var(--ui-surface);
-}
-
-.pane + .pane {
-  border-inline-start: 1px solid var(--color-stroke);
 }
 
 .paneHeader {
@@ -47,13 +41,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px;
-  border-block-end: 1px solid var(--color-stroke);
+  padding: 12px 12px 0;
 }
 
 .paneHeader h3 {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--ui-font-secondary);
   font-weight: 500;
 }
 
@@ -88,13 +81,21 @@
   font-variant-numeric: tabular-nums;
 }
 
+.result > [role="alert"] {
+  margin: 12px;
+}
+
 .placeholder p {
   margin: 0;
 }
 
+.result > [role="alert"] {
+  margin: 12px;
+}
+
 .error {
   margin: 0;
-  color: var(--color-danger);
+  color: var(--ui-tone-danger-fg);
   overflow-wrap: anywhere;
 }
 
@@ -140,11 +141,6 @@
 @media (max-width: 640px) {
   .comparison {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .pane + .pane {
-    border-inline-start: 0;
-    border-block-start: 1px solid var(--color-stroke);
   }
 
   .text,

@@ -300,11 +300,11 @@ export function UsageFooter({
   return (
     <footer
       aria-label={ariaLabel}
-      className={`@container/usage flex h-7 min-w-0 items-center gap-1.5 px-1.5 text-ui-micro text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
+      className={`@container/usage flex h-(--ui-control-height-compact) min-w-0 items-center gap-1 px-1.5 text-ui-micro text-(--ui-text-secondary) ${embedded ? "flex-1" : "shrink-0 border-t border-stroke"}`}
     >
       <div
         data-provider-usage
-        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto overscroll-x-contain"
+        className="scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain"
       >
         {session?.harness === "pi" ? (
           <PiUsage key={`${session.id}:${session.model}`} model={session.model} now={now} />
@@ -349,6 +349,7 @@ export function UsageFooter({
               variant="ghost"
               motion="none"
               type="button"
+              size="sm"
               className="size-7 shrink-0"
               aria-label={t("Refresh usage")}
               title={t("Refresh usage")}
@@ -356,7 +357,7 @@ export function UsageFooter({
               onClick={() => void refresh()}
             >
               <RefreshCw
-                className={`size-3.5 ${refreshing ? "motion-safe:animate-spin" : ""}`}
+                className={`icon-sm ${refreshing ? "motion-safe:animate-spin" : ""}`}
                 strokeWidth={1.75}
                 aria-hidden
               />
@@ -447,7 +448,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         className="inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap"
         title={HARNESS_TITLE[session.harness]}
       >
-        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
       </span>
     );
@@ -468,7 +469,7 @@ function SessionChip({ session }: { session: UsageFooterSession }) {
         title={t("{p0} sign-in required", { p0: HARNESS_TITLE[session.harness] })}
         onClick={() => setOpen((value) => !value)}
       >
-        <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+        <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
         <span>{HARNESS_LABEL[session.harness]}</span>
         {authRequired ? <span className="text-ui-caption text-warning">{t("sign in")}</span> : null}
       </Button>

@@ -77,7 +77,11 @@ afterEach(() => {
   localStorage.clear();
 });
 async function click(text: string) {
-  const button = [...container.querySelectorAll("button")].find((b) => b.textContent === text);
+  const named = (b: HTMLElement) => b.textContent === text || b.getAttribute("aria-label") === text;
+  // Menu choices (rendered in a popup layer) win over board buttons with the same name.
+  const button =
+    [...document.body.querySelectorAll<HTMLElement>("[role^='menuitem']")].find(named) ??
+    [...container.querySelectorAll<HTMLElement>("button")].find(named);
   expect(button).toBeDefined();
   await act(async () => button!.click());
 }
@@ -127,6 +131,9 @@ it("keeps Kanban issues visible when Jira does not support the board backlog", a
   await click("Refresh");
   await click("Backlog & sprints");
   expect(container.textContent).toContain("ENG-1");
+  // Planning lists the board first; the backlog group reads when it is opened.
+  await click("Backlog");
+  expect(container.textContent).toContain("ENG-1");
   expect(container.textContent).toContain("Backlog is not enabled for this Jira board");
   expect(container.querySelector('[role="alert"]')).toBeNull();
 });
@@ -145,7 +152,7 @@ it("clears issues when every project is excluded", async () => {
 });
 it("performs a keyboard status move through the real transition ID", async () => {
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(invoke).toHaveBeenCalledWith("jira_issue_transition", {
     key: "ENG-1",
@@ -155,7 +162,10 @@ it("performs a keyboard status move through the real transition ID", async () =>
 });
 it("shows active and future sprints and moves backlog issues to the selected sprint", async () => {
   await click("Backlog & sprints");
-  await click("Move");
+  // Planning opens the first sprint; collapse it and open the backlog group.
+  await click("Sprint 21");
+  await click("Backlog");
+  await click("Move ENG-1");
   await click("Sprint 21");
   expect(invoke).toHaveBeenCalledWith("jira_board_move", {
     boardId: 7,
@@ -175,7 +185,7 @@ it("requires an explicit workflow choice and never posts a required-fields trans
       ];
     return null;
   });
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(container.querySelector<HTMLButtonElement>("button:disabled")?.textContent).toBeTruthy();
   expect(
@@ -192,7 +202,7 @@ it("keeps failed writes visible after reloading the server state", async () => {
       ? Promise.reject("Permission denied")
       : previous(command, args),
   );
-  await click("Move");
+  await click("Move ENG-1");
   await click("Working");
   expect(container.querySelector('[role="alert"]')?.textContent).toBe("Permission denied");
   expect(container.querySelector('section[aria-label="Ready"]')?.textContent).toContain("ENG-1");
@@ -231,7 +241,7 @@ it("supports keyboard ranking within a column", async () => {
       : previous(command, args),
   );
   await click("Refresh");
-  await click("Move");
+  await click("Move ENG-1");
   await click("Rank later");
   expect(invoke).toHaveBeenCalledWith("jira_board_move", {
     boardId: 7,

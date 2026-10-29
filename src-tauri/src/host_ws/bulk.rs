@@ -54,6 +54,9 @@ impl std::fmt::Debug for Held {
     }
 }
 impl Held {
+    pub(super) fn commit_grant(&self) -> std::sync::Arc<super::permits::Grant> {
+        self.disclosure.grant()
+    }
     pub fn check(&self) -> Result<(), &'static str> {
         self.disclosure.disclose(())
     }

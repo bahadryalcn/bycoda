@@ -707,6 +707,7 @@
       "config": "tests/browser/playwright.settings.config.ts",
       "files": [
         "live-backgrounds.e2e.ts",
+        "settings-dialog.e2e.ts",
         "settings-open.e2e.ts",
         "settings-organization.e2e.ts",
         "workspace-settings.e2e.ts",
@@ -732,6 +733,7 @@
           "files": [
             "live-backgrounds.e2e.ts",
             "policies.e2e.ts",
+            "settings-dialog.e2e.ts",
             "settings-layout.e2e.ts",
             "settings-notifications.e2e.ts",
             "settings-open.e2e.ts",

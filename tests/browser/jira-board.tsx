@@ -145,7 +145,13 @@ function SharedControlsFixture() {
   const [hidden, setHidden] = useState(["2", "stale-project"]);
   return (
     <main className="flex min-w-0 flex-wrap items-center gap-2 p-4">
-      <GithubPrActions item={item} baseRef="main" headRef="feature" onChange={setItem} />
+      <GithubPrActions
+        item={item}
+        baseRef="main"
+        headRef="feature"
+        reviewedHeadOid={"a".repeat(40)}
+        onChange={setItem}
+      />
       <Button onClick={() => setOpen((value) => !value)}>Filters</Button>
       {open ? (
         <InboxFiltersMenu

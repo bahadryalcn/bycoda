@@ -221,14 +221,25 @@ impl<'a> Bridge<'a> {
         }
         Ok(())
     }
-    fn call(&self, method: &str, params: Value) -> Result<Value, String> {
+    fn project<T>(
+        &self,
+        method: &str,
+        params: Value,
+        project: impl FnOnce(&Value) -> Result<T, String>,
+    ) -> Result<T, String> {
         self.assert_current()?;
-        let value = self
+        let reply = self
             .host
             .call_recovery(self.app, method, params)
             .map_err(|_| unavailable())?;
         self.assert_current()?;
-        Ok(value)
+        reply
+            .project(|value| {
+                let result = project(value)?;
+                self.assert_current()?;
+                Ok(result)
+            })
+            .map_err(|_| unavailable())
     }
 }
 fn provenance_matches(value: &Value, context: &RecoveryContext) -> bool {
@@ -607,18 +618,18 @@ pub(super) fn list(
     request.validate(&expected)?;
     let _permit = Permit::acquire()?;
     let bridge = Bridge::capture(app, store, expected.as_ref())?;
-    let value = bridge.call(
+    bridge.project(
         "native.buffers.recovery.list",
         json!({"after":request.after,"limit":request.limit}),
-    )?;
-    let page = decode_page(
-        value,
-        bridge.context.clone(),
-        request.limit,
-        request.after.as_ref(),
-    )?;
-    bridge.assert_current()?;
-    Ok(page)
+        |value| {
+            decode_page(
+                value.clone(),
+                bridge.context.clone(),
+                request.limit,
+                request.after.as_ref(),
+            )
+        },
+    )
 }
 pub(super) fn read(
     app: &AppHandle,
@@ -629,13 +640,11 @@ pub(super) fn read(
     source.validate()?;
     let _permit = Permit::acquire()?;
     let bridge = Bridge::capture(app, store, Some(&expected))?;
-    let value = bridge.call(
+    bridge.project(
         "native.buffers.recovery.read",
         serde_json::to_value(&source).map_err(|_| invalid())?,
-    )?;
-    let value = project_read(&value, &source, &bridge.context)?;
-    bridge.assert_current()?;
-    Ok(value)
+        |value| project_read(value, &source, &bridge.context),
+    )
 }
 pub(super) fn status(
     app: &AppHandle,
@@ -647,7 +656,7 @@ pub(super) fn status(
     let _permit = Permit::acquire()?;
     let bridge = Bridge::capture(app, store, Some(&expected))?;
     let params = serde_json::to_value(&source).map_err(|_| invalid())?;
-    let value = bridge.call("native.buffers.recovery.status", params.clone())?;
+    bridge.project("native.buffers.recovery.status", params.clone(), |value| {
     if value["version"] != 1
         || value["qualified"] != false
         || value["resolution"] != "unsupported"
@@ -660,13 +669,13 @@ pub(super) fn status(
     let verified = found
         && inspectable
         && bridge
-            .call("native.buffers.recovery.read", params)
-            .and_then(|read| validate_read(&read, &source, &bridge.context))
+            .project("native.buffers.recovery.read", params.clone(), |read| validate_read(read, &source, &bridge.context))
             .is_ok();
     bridge.assert_current()?;
     Ok(
         json!({"version":1,"qualified":false,"resolution":"unsupported","context":bridge.context,"source":source,"found":verified,"inspectable":verified,"unavailable":found && !verified}),
     )
+    })
 }
 
 #[cfg(test)]

@@ -1,31 +1,27 @@
 import { useFollowBottom } from "../hooks/useFollowBottom";
-import { t, useLocale, useT } from "../../../shared/i18n";
+import { useLocale, useT } from "../../../shared/i18n";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GlassBackdrop } from "../../../app/shell/GlassBackdrop";
-import { ArrowDown, Check, Copy, CornerDownRight, Square, X } from "../../../shared/ui/icons";
+import { ArrowDown, Check, Copy, CornerDownRight, Square } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { Alert } from "../../../shared/ui/Alert";
 import { agentRunMarkdown, isReportStep } from "../model/agentRunMarkdown";
-import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
+import { blockLifecycle } from "../model/activityDock";
 import {
   commandCopyText,
   emptyOutputReason,
   inspectCommand,
 } from "../model/commandInspection";
 import type { AgentStep, Block } from "../model/session";
-import {
-  isSubagentBlock,
-  subagentName,
-  subagentReport,
-  subagentStatusLine,
-  toolCallState,
-} from "../model/transcriptActivity";
-import { AgentClock } from "./AgentClock";
+import { isSubagentBlock, subagentName, subagentReport } from "../model/transcriptActivity";
+import { SubagentReport, SubagentStateLine, runLabel } from "./SubagentAnatomy";
 import { ActivityRow, agentStepBlock } from "./AgentTranscript";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { VIEW_SUBAGENT_EVENT } from "./subagentFocus";
 import { useStopRequests } from "./useStopRequests";
 import { Button } from "../../../shared/ui/Button";
+import { PanelHeader } from "../../../shared/ui/PanelHeader";
+import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import styles from "./SubagentSheet.module.css";
 import { useSubagentModelName } from "../model/reactiveReads";
@@ -108,26 +104,6 @@ function blockForStep(step: AgentStep): Block {
   return block;
 }
 
-/** Same lifecycle rule as the dock (`blockLifecycle`), worded for the sheet. */
-function lifecycleLabel(lifecycle: DockAgentStatus): string {
-  switch (lifecycle) {
-    case "stopped":
-      return t("Stopped by you");
-    case "failed":
-      return t("Failed");
-    case "running":
-      return t("Running");
-    case "interrupted":
-      return t("Interrupted");
-    case "done":
-      return t("Done");
-  }
-}
-
-function runLabel(block: Block, busy: boolean): string {
-  return lifecycleLabel(blockLifecycle(block, busy));
-}
-
 /** Steps shown at first, and added by each "Show earlier steps". */
 const STEP_PAGE = 60;
 
@@ -173,14 +149,12 @@ export function SubagentSheet({
   const subagentModel = useSubagentModelName(block);
   const model = command ? undefined : subagentModel;
   const run = block.agentRun;
-  const state = toolCallState(block);
   const running = blockLifecycle(block, busy) === "running";
   // Showing in the transcript can fail (the block is not rendered there); the
   // sheet stays open with the reason instead of silently losing its context.
   const [showFailedFor, setShowFailedFor] = useState<string | null>(null);
   const showFailed = showFailedFor === block.id;
   const steps = run?.steps ?? [];
-  const summary = blockLifecycle(block, busy) === "stopped" ? "" : subagentStatusLine(block, steps);
   const stops = useStopRequests();
   const stopKey = block.tool?.callId ?? block.id;
   const stopping = stops.stopping.has(stopKey);
@@ -225,77 +199,55 @@ export function SubagentSheet({
         <div
           className={`${styles.layout} relative z-[1] flex h-full min-h-0 flex-col font-sans text-sm text-(--ui-tone-neutral-fg)`}
         >
-          <header className="flex shrink-0 flex-col gap-1 border-b border-(--ui-tone-neutral-border) py-2.5 pr-2 pl-4">
-            <div className="flex min-w-0 items-center gap-2">
-              <h2 className="min-w-0 flex-1 truncate text-sm font-medium" title={name}>
-                {name}
-              </h2>
-              <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
-              {onStop && running ? (
-                <Button
-                  className="shrink-0"
-                  variant="ghost"
-                  type="button"
-                  disabled={stopping}
-                  title={
-                    stops.failed.has(stopKey)
-                      ? t("Could not stop it. Try again.")
-                      : t(command ? "Stop this command" : "Stop this subagent")
-                  }
-                  onClick={() => stops.request(stopKey, onStop)}
-                >
-                  <Square className="size-3.5" strokeWidth={1.75} />
-                  {stopping ? t("Stopping…") : t("Stop")}
-                </Button>
-              ) : null}
-              <Button
-                iconOnly
-                label={t("Show in transcript")}
-                variant="ghost"
-                type="button"
-                onClick={() => {
-                  setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
-                }}
-                title={
-                  command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-                }
-                className="shrink-0"
-              >
-                <CornerDownRight className="size-3.5" strokeWidth={1.75} />
-              </Button>
-              <Button
-                iconOnly
-                label={t(command ? "Close command panel" : "Close agent panel")}
-                variant="ghost"
-                type="button"
-                aria-label={t(command ? "Close command panel" : "Close agent panel")}
-                title={t("Close (Esc)")}
-                onClick={onClose}
-                className="shrink-0"
-              >
-                <X className="size-4" strokeWidth={1.75} />
-              </Button>
-            </div>
-            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-xs wrap-anywhere text-(--ui-text-secondary)">
-              <span
-                className={
-                  state === "rejected"
-                    ? "text-(--ui-tone-danger-fg)"
-                    : running
-                      ? "text-(--ui-tone-accent-fg)"
-                      : blockLifecycle(block, busy) === "interrupted"
-                        ? "text-(--ui-tone-warning-fg)"
-                        : ""
-                }
-              >
-                {runLabel(block, busy)}
-              </span>
-              {run?.agentType ? <span>{run.agentType}</span> : null}
-              {model ? <span title={t("Model: {p0}", { p0: model })}>{model}</span> : null}
-              {summary && state !== "rejected" ? <span>{summary}</span> : null}
-              <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
-            </div>
-          </header>
+          <div className="flex shrink-0 flex-col gap-0.5 py-2.5 pr-2 pl-4">
+            <PanelHeader
+              title={name}
+              onClose={onClose}
+              closeLabel={t(command ? "Close command panel" : "Close agent panel")}
+              actions={
+                <>
+                  <CopyTranscriptButton block={block} busy={busy} status={runLabel(block, busy)} />
+                  {onStop && running ? (
+                    <Button
+                      className="shrink-0"
+                      variant="ghost"
+                      type="button"
+                      disabled={stopping}
+                      title={
+                        stops.failed.has(stopKey)
+                          ? t("Could not stop it. Try again.")
+                          : t(command ? "Stop this command" : "Stop this subagent")
+                      }
+                      onClick={() => stops.request(stopKey, onStop)}
+                    >
+                      <Square className="icon-sm" aria-hidden />
+                      {stopping
+                        ? t("Stopping…")
+                        : stops.failed.has(stopKey)
+                          ? t("Could not stop. Retry")
+                          : t("Stop")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    iconOnly
+                    label={t("Show in transcript")}
+                    variant="ghost"
+                    type="button"
+                    onClick={() => {
+                      setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+                    }}
+                    title={
+                      command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
+                    }
+                    className="shrink-0"
+                  >
+                    <CornerDownRight className="icon-sm" aria-hidden />
+                  </Button>
+                </>
+              }
+            />
+            <SubagentStateLine block={block} busy={busy} steps={steps} model={model} />
+          </div>
           {showFailed ? (
             <div className="shrink-0 px-4 pt-2">
               <Alert tone="warning" inline>
@@ -324,7 +276,7 @@ export function SubagentSheet({
           )}
           {!command && relay ? (
             <form
-              className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-tone-neutral-border) bg-[var(--ui-surface)] px-4 py-3`}
+              className={`${styles.composer} flex shrink-0 flex-col gap-2 bg-(--ui-surface) px-4 py-3`}
               onSubmit={(event) => {
                 event.preventDefault();
                 if (!relay.blockedReason && relay.draft.trim()) relay.send();
@@ -333,10 +285,7 @@ export function SubagentSheet({
               <TextareaField
                 className={styles.message}
                 label={t("Message for {p0}", { p0: name })}
-                description={t(
-                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                )}
-                rows={3}
+                rows={2}
                 value={relay.draft}
                 onChange={(event) => relay.setDraft(event.target.value)}
                 onKeyDown={(event) => {
@@ -351,9 +300,16 @@ export function SubagentSheet({
                 }}
               />
               {relay.blockedReason ? (
-                <p className="text-xs text-[var(--ui-text-muted)]">{relay.blockedReason}</p>
+                <p className="text-ui-caption text-(--ui-text-secondary)">{relay.blockedReason}</p>
               ) : null}
-              <p role="status" className="text-xs text-[var(--ui-text-muted)]">
+              <p
+                role="status"
+                className={`text-ui-caption empty:hidden ${
+                  relay.status === "rejected"
+                    ? "text-(--ui-tone-danger-fg)"
+                    : "text-(--ui-text-secondary)"
+                }`}
+              >
                 {relay.status === "accepted"
                   ? t("Request added to the main conversation. Delivery is not yet confirmed.")
                   : relay.status === "rejected"
@@ -361,6 +317,13 @@ export function SubagentSheet({
                     : null}
               </p>
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <InfoPopover className="mr-auto" label={t("How messaging works")}>
+                  <p className="text-ui-secondary">
+                    {t(
+                      "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
+                    )}
+                  </p>
+                </InfoPopover>
                 <Button variant="ghost" onClick={relay.onOpenConversation}>
                   {t("Open main conversation")}
                 </Button>
@@ -374,7 +337,7 @@ export function SubagentSheet({
               </div>
             </form>
           ) : !command ? (
-            <p className="shrink-0 border-t border-(--ui-tone-neutral-border) px-4 py-2 text-xs text-(--ui-text-secondary)">
+            <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
               {t("Messaging is unavailable in this conversation.")}
             </p>
           ) : null}
@@ -382,6 +345,27 @@ export function SubagentSheet({
       </section>
     </div>
   );
+}
+
+/** Copy text for a command, stating when the retained body is only a summary or shortened. */
+function commandDetailsCopyText(
+  block: Block,
+  busy: boolean,
+  status: string,
+  t: ReturnType<typeof useT>,
+): string {
+  const inspection = inspectCommand(block, busy);
+  const text = commandCopyText(inspection, status);
+  const notices = [
+    inspection.remote ? t("[Only a summary of the output is kept here; the full output was not loaded.]") : null,
+    inspection.outputTruncated
+      ? t("[Output was shortened; the full text may not be available.]")
+      : null,
+    inspection.command.truncated
+      ? t("[Command text was shortened to keep this conversation responsive.]")
+      : null,
+  ].filter((notice): notice is string => !!notice);
+  return notices.length ? [text, ...notices].join("\n\n") : text;
 }
 
 /** Local state for loading a remote summary into the full block. */
@@ -482,8 +466,19 @@ function CommandDetails({
     setBehind(false);
   };
 
+  // Silence is only claimed when the retained body is complete. A remote summary
+  // or shortened body cannot establish that the command printed nothing.
+  const unavailableText =
+    reason && !error
+      ? remote
+        ? t("The output is not loaded here. Only a summary is kept; load the full output to read it.")
+        : inspection.outputTruncated
+          ? t("The output was shortened and nothing is retained here, so it cannot be shown.")
+          : null
+      : null;
   const emptyText =
-    reason === "running"
+    unavailableText ??
+    (reason === "running"
       ? t("Running. No output has been reported yet; new output appears here.")
       : reason === "done"
         ? t("Finished. The command reported no output.")
@@ -493,13 +488,16 @@ function CommandDetails({
             ? t("Interrupted before it reported any output. Its final state was not reported.")
             : reason === "failed" && !error
               ? t("Failed without reporting output.")
-              : null;
+              : null);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
-      <section aria-label={t("Command")} className="flex shrink-0 flex-col gap-1">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pt-1 pb-3">
+      <section
+        aria-label={t("Command")}
+        className="flex max-h-[min(22rem,55dvh)] min-h-0 shrink flex-col gap-1 overflow-y-auto overscroll-contain"
+      >
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-ui-caption text-(--ui-text-secondary)">{t("Command")}</h3>
+          <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Command")}</h3>
           {longCommand ? (
             <Button
               variant="ghost"
@@ -513,8 +511,8 @@ function CommandDetails({
         </div>
         <pre
           tabIndex={0}
-          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color) ${
-            commandOpen || !longCommand ? "max-h-64" : "max-h-20"
+          className={`select-text overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) px-3 py-2 font-mono text-ui-caption leading-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color) ${
+            commandOpen || !longCommand ? "max-h-[min(16rem,32dvh)]" : "max-h-20"
           }`}
         >
           {command.text}
@@ -531,40 +529,46 @@ function CommandDetails({
           </p>
         ) : null}
       </section>
-      <section aria-label={t("Output")} className="relative flex min-h-0 flex-1 flex-col gap-1">
-        <h3 className="text-ui-caption text-(--ui-text-secondary)">{t("Output")}</h3>
-        {error ? (
-          <pre className="max-h-40 shrink-0 select-text overflow-auto whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
-            {error}
-          </pre>
-        ) : null}
-        {/* Always mounted: the follow hook attaches to this element once. */}
-        <div
-          ref={scroller}
-          tabIndex={0}
-          className="min-h-0 flex-1 overflow-auto overscroll-none rounded-lg [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:outline-(--ui-focus-ring-color)"
-        >
-          <div className="min-w-0">
-            {output ? (
-              <pre className="select-text whitespace-pre-wrap break-words rounded-lg bg-(--ui-surface-raised) p-3 font-mono text-ui-caption leading-5">
-                {output}
-              </pre>
-            ) : emptyText ? (
-              <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>
-            ) : null}
-          </div>
-        </div>
-        {behind && output ? (
-          <Button
-            className="absolute right-3 bottom-3 shadow-sm"
-            variant="secondary"
-            type="button"
-            onClick={jumpToLatest}
+      <section
+        aria-label={t("Output")}
+        className="relative flex min-h-[8rem] flex-1 flex-col gap-1"
+      >
+        <h3 className="text-ui-caption font-medium text-(--ui-text-secondary)">{t("Output")}</h3>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {/* The one scroll owner of the sheet: error and output read in one quiet
+              panel. Always mounted: the follow hook attaches to this element once. */}
+          <div
+            ref={scroller}
+            tabIndex={0}
+            className="min-h-0 flex-1 overflow-auto overscroll-none rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)"
           >
-            <ArrowDown className="size-3.5" strokeWidth={1.75} />
-            {t("Jump to latest")}
-          </Button>
-        ) : null}
+            <div className="flex min-w-0 flex-col gap-2 px-3 py-2">
+              {error ? (
+                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
+                  {error}
+                </pre>
+              ) : null}
+              {output ? (
+                <pre className="select-text whitespace-pre-wrap break-words font-mono text-ui-caption leading-5">
+                  {output}
+                </pre>
+              ) : emptyText ? (
+                <p className="text-ui-caption text-(--ui-text-secondary)">{emptyText}</p>
+              ) : null}
+            </div>
+          </div>
+          {behind && output ? (
+            <Button
+              className="absolute right-3 bottom-3 shadow-(--ui-elevation-floating)"
+              variant="secondary"
+              type="button"
+              onClick={jumpToLatest}
+            >
+              <ArrowDown className="size-3.5" strokeWidth={1.75} />
+              {t("Jump to latest")}
+            </Button>
+          ) : null}
+        </div>
         {inspection.outputTruncated ? (
           <p className="shrink-0 text-ui-caption text-(--ui-text-secondary)">
             {t("Output was shortened; the full text may not be available.")}
@@ -638,9 +642,7 @@ function CopyTranscriptButton({
   const command = !isSubagentBlock(block);
   const copy = () => {
     if (pending.current) return;
-    const text = command
-      ? commandCopyText(inspectCommand(block, busy), status)
-      : agentRunMarkdown(block, status);
+    const text = command ? commandDetailsCopyText(block, busy, status, t) : agentRunMarkdown(block, status);
     if (!text) return;
     pending.current = true;
     const requested = generation.current;
@@ -692,9 +694,9 @@ function PromptCard({ prompt }: { prompt: string }) {
   return (
     <section
       aria-label={t("Prompt")}
-      className="rounded-lg bg-(--ui-surface-raised) px-3 py-2 text-ui-secondary leading-5"
+      className="mb-2 rounded-lg bg-(--ui-surface-panel) px-3 py-2 text-ui-secondary leading-5"
     >
-      <h3 className="pb-0.5 text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
+      <h3 className="pb-0.5 text-ui-caption font-medium text-(--ui-text-secondary)">
         {t("Prompt")}
       </h3>
       <p
@@ -775,7 +777,6 @@ function SubagentTrail({
   // Follow the newest step until the reader scrolls up; scrolling back to the
   // end picks the follow up again.
   const report = subagentReport(block);
-  const failed = toolCallState(block) === "rejected";
   const prompt = block.agentRun?.prompt?.trim();
   // A run can hold hundreds of steps. Rows are variable-height and open on
   // demand, so rather than virtualise them the newest page is rendered and the
@@ -796,7 +797,7 @@ function SubagentTrail({
       <div className="flex min-w-0 flex-col gap-1 px-4 py-3">
         {prompt ? <PromptCard prompt={prompt} /> : null}
         {visible.length === 0 && !report ? (
-          <p className="pt-1 text-xs text-(--ui-text-secondary)">
+          <p className="pt-1 text-ui-caption text-(--ui-text-secondary)">
             {running ? t("Waiting for the first step.") : t("This agent did not report any steps.")}
           </p>
         ) : null}
@@ -824,20 +825,7 @@ function SubagentTrail({
             onOpenDiff={onOpenDiff}
           />
         ))}
-        {report ? (
-          <section
-            aria-label={failed ? t("Failure") : t("Report")}
-            className="mt-1 border-t border-(--ui-tone-neutral-border) pt-2"
-          >
-            {failed ? (
-              <pre className="min-w-0 whitespace-pre-wrap break-words font-mono text-ui-caption leading-5 text-(--ui-tone-danger-fg)">
-                {report}
-              </pre>
-            ) : (
-              <AgentMarkdown text={report} cwd={cwd} onOpenFile={onOpenFile} />
-            )}
-          </section>
-        ) : null}
+        <SubagentReport block={block} cwd={cwd} onOpenFile={onOpenFile} className="mt-3" />
       </div>
     </div>
   );

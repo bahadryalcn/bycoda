@@ -57,7 +57,15 @@ export type GroupLockView = {
 };
 
 export type VerifyResult =
-  | { ok: true }
+  | {
+      ok: true;
+      /**
+       * Verification passed but the change was not fully saved: `not-saved`
+       * changed nothing and can be retried, `partial` removed the password but
+       * left some group locks in saved data.
+       */
+      incomplete?: "not-saved" | "partial";
+    }
   | {
       ok: false;
       reason: "wrong" | "blocked" | "no-password";
@@ -201,14 +209,20 @@ function dispatch(action: LockAction) {
   invalidate();
 }
 
-function saveSettings(next: GroupLockSettings, requirePersistence = false) {
+/** Returns whether the settings reached storage; memory and subscribers follow either way unless persistence is required. */
+function saveSettings(next: GroupLockSettings, requirePersistence = false): boolean {
   const recordChanged = JSON.stringify(settings.record) !== JSON.stringify(next.record);
+  let persisted = true;
   if (requirePersistence) {
     // A password must survive restart before the UI reports that it is set.
     // Keep the previous record in memory if storage rejects the write.
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
   } else {
-    writeItem(SETTINGS_KEY, JSON.stringify(next));
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    } catch {
+      persisted = false;
+    }
   }
   settings = next;
   if (recordChanged) hiddenGroupsAuthorized = false;
@@ -217,6 +231,7 @@ function saveSettings(next: GroupLockSettings, requirePersistence = false) {
   if (recordChanged && !applyingRemoteLock) {
     for (const listener of lockRecordListeners) listener(next.record);
   }
+  return persisted;
 }
 
 const lockRecordListeners = new Set<(record: PasswordRecord | null) => void>();
@@ -329,22 +344,42 @@ export async function changeLockPassword(current: string, next: string): Promise
   return result;
 }
 
-/** Forgets the password and un-marks every group; their projects stay put. */
-function clearPassword() {
+export type PasswordClearOutcome = "complete" | "not-saved" | "partial";
+
+/**
+ * Forgets the password and un-marks every group; their projects stay put. The
+ * password record goes first and must reach storage: when it cannot, nothing
+ * else changes (`not-saved`) and the call can be repeated. When only the
+ * per-group flags fail to save the password is gone but those groups stay
+ * marked in saved data (`partial`).
+ */
+function clearPassword(): PasswordClearOutcome {
+  try {
+    saveSettings({ ...settings, record: null }, true);
+  } catch {
+    return "not-saved";
+  }
   temporarilyVisible.clear();
   hiddenGroupsAuthorized = false;
-  saveProjectGroups(loadProjectGroups().map(({ lockable: _lockable, ...group }) => group));
   writeAttempts(NO_ATTEMPTS);
   unlocked = new Set();
-  saveSettings({ ...settings, record: null });
+  persistUnlocked();
+  const groupsCleared = saveProjectGroups(
+    loadProjectGroups().map(({ lockable: _lockable, ...group }) => group),
+  );
+  invalidate();
   channel?.postMessage({ type: "state", groupIds: [] });
+  return groupsCleared ? "complete" : "partial";
 }
 
 export async function removeLockPassword(current: string): Promise<VerifyResult> {
   const revision = privacyRevision;
   const result = await verifyLockPassword(current);
   if (result.ok && privacyRevision !== revision) return staleVerification();
-  if (result.ok) clearPassword();
+  if (result.ok) {
+    const outcome = clearPassword();
+    if (outcome !== "complete") return { ok: true, incomplete: outcome };
+  }
   return result;
 }
 
@@ -352,8 +387,8 @@ export async function removeLockPassword(current: string): Promise<VerifyResult>
  * The "forgot password" reset. Nothing is asked of the user here beyond what
  * the caller's dialog asks: there is no second factor on this device.
  */
-export function resetForgottenPassword() {
-  clearPassword();
+export function resetForgottenPassword(): PasswordClearOutcome {
+  return clearPassword();
 }
 
 // ---- groups ----------------------------------------------------------------
@@ -410,11 +445,15 @@ export function restoreHiddenGroup(groupId: string, temporary = false): boolean 
   return true;
 }
 
-/** Marks the group lockable, leaving it open until it is locked. */
-export function makeGroupLockable(groupId: string) {
-  if (!settings.record) return;
-  updateProjectGroup(groupId, (group) => ({ ...group, lockable: true }));
+/**
+ * Marks the group lockable, leaving it open until it is locked. False when
+ * there is no password or the flag could not be saved; nothing changes then.
+ */
+export function makeGroupLockable(groupId: string): boolean {
+  if (!settings.record) return false;
+  if (!updateProjectGroup(groupId, (group) => ({ ...group, lockable: true }))) return false;
   dispatch({ type: "unlock", groupIds: [groupId] });
+  return true;
 }
 
 /** Locks a lockable group now and folds it away. */
@@ -450,27 +489,32 @@ export async function removeGroupLock(groupId: string, password: string): Promis
   const result = await verifyLockPassword(password);
   if (!result.ok) return result;
   if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
-  updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
+  const saved = updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
+  // Locking stays the safe side of a failed save.
   dispatch({ type: "lock", groupIds: [groupId] });
-  return result;
+  return saved ? result : { ok: true, incomplete: "not-saved" };
 }
 
 // ---- options ---------------------------------------------------------------
 
-export function setRelockOnLaunch(value: boolean) {
-  saveSettings({ ...settings, relockOnLaunch: value });
+/**
+ * The option setters apply to this window at once and return whether the
+ * choice reached storage; false means the next launch will read the old value.
+ */
+export function setRelockOnLaunch(value: boolean): boolean {
+  return saveSettings({ ...settings, relockOnLaunch: value });
 }
 
-export function setStartInPrivacyMode(value: boolean) {
-  saveSettings({ ...settings, startInPrivacyMode: value });
+export function setStartInPrivacyMode(value: boolean): boolean {
+  return saveSettings({ ...settings, startInPrivacyMode: value });
 }
 
-export function setAutoLockMinutes(value: AutoLockMinutes) {
-  saveSettings({ ...settings, autoLockMinutes: value });
+export function setAutoLockMinutes(value: AutoLockMinutes): boolean {
+  return saveSettings({ ...settings, autoLockMinutes: value });
 }
 
-export function setUnlockAll(value: boolean) {
-  saveSettings({ ...settings, unlockAll: value });
+export function setUnlockAll(value: boolean): boolean {
+  return saveSettings({ ...settings, unlockAll: value });
 }
 
 // ---- sync and inactivity ---------------------------------------------------

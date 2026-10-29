@@ -4,6 +4,72 @@ bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, He
 
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
 
+## Create a Host conversation on this computer
+
+Existing Native conversations are not automatically moved to the Host. Draft
+checkpoint retention and a successful remote action are separate outcomes: a
+retained draft does not mean that a message was sent or applied. If an operation's
+outcome is uncertain, bycoda keeps it unresolved rather than sending it again.
+
+Private Native checkpoints can retain unsent question answers, queue edits and
+source/merge editor drafts as recovery data. They do not submit those inputs.
+The regular question draft still clears when discarded; earlier private
+checkpoint snapshots are separate retained data with no permission to restore
+or answer the question. Editor checkpoint retention also does not report a
+successful save to the file on disk.
+
+While a Native checkpoint is preparing, affected inputs can temporarily become
+read-only. Work already accepted can finish; preparation does not send a new
+message, save a file or commit an unfinished IME composition on your behalf.
+Cancellation waits for the Native preparation to release its input gates.
+
+For a local project, open its project menu and choose **New conversation on this
+computer's Host**. bycoda connects to this computer's Host before opening the new
+conversation. Send the first message to create it there. The project and selected
+worktree remain on this computer, while the Host owns execution and transcript
+storage. If the Host is unavailable, the action shows an error; it does not start
+the conversation through Native execution.
+
+Model and account choices come from that Host. Named accounts must already exist
+on the Host; changing or clearing the account uses the Host's settings. Closing
+the tab or losing the connection does not stop an accepted turn. An uncertain
+send retains its command ID for receipt recovery.
+
+This is an explicit option for new conversations. Existing local conversations
+and the ordinary new-conversation action keep their current execution behavior.
+It does not migrate an existing conversation.
+
+The Host conversation stays attached to its project even before its first send.
+Selecting another project opens a separate conversation using the ordinary
+project defaults.
+
+Use the existing Host connection and pairing workflow to reach Host conversations
+from another device; installed
+cross-device acceptance of this new local entry point is still pending.
+
+## Connection changes and active tools
+
+Terminal log streams, pending desktop tools and development previews keep the
+computer selected when that operation started. Replacing or removing a connection
+stops new access through the old operation; it does not send its remaining output
+or actions to another computer. Reopen a development link after reconnecting.
+An interrupted reply does not automatically repeat a potentially accepted action.
+
+Device actions follow that same rule. If a computer connection changes after an
+action starts, its outcome may be unknown even when no result reaches this view.
+Inspect the original device or preview status before repeating an input. A preview
+whose original permission has expired cannot supply another stored screenshot;
+start a separately authorized capture when you need a current view.
+The same uncertainty can occur while setting up device tools or stopping the
+device service. Reconnect and check that computer's device-tool status before
+trying again. Mobile previews keep their original computer, project and access;
+switching projects does not transfer an existing preview to the new project.
+
+A social authority needs a stable HTTPS address, or a local loopback address for
+local use. An SSH connection alone is not an address that another Host can store
+and contact as its authority. The setup checks both peer addresses before issuing
+an enrollment token.
+
 ## Connect through SSH
 
 ### Servers catalog and terminal tabs
@@ -58,7 +124,7 @@ The composer's model picker lists models for the providers installed on the host
 
 The **Explorer** sidebar and Go to File use the normal file views for host folders and files. Opening a text file uses the normal editor tabs. Saving writes back to the host; remote reads and edits are limited to 1 MiB text files. File creation, rename, deletion, and project search use the same controls as local projects. The **Changes** sidebar and Git history graph use the normal Git views, including file diffs, staging, discarding, commits, pushing, and pull request creation through `gh` on the host. Remote pull requests use the host's commit list and diff summary for their title and body. An ordinary folder outside Git shows an empty Changes state. Git changes are refreshed every few seconds. Generated commit messages are not available remotely yet.
 
-The composer’s **+** menu supports file and image attachments, Plan mode, and saved drafts when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these menu actions.
+The composer’s **+** menu supports file and image attachments, and its **Mode** menu offers Plan mode and saved drafts, when the host advertises these capabilities. Attachments are copied to the host’s private data directory before the turn or draft is recorded; each file is limited to 20 MiB. Image previews are restored from the host when you reopen a conversation. A draft can be sent or removed from its transcript card. Plan mode uses the host provider and produces a reviewable plan card whose Build action continues on the host with the session’s current model. Update older hosts to enable these actions.
 
 Features that read or run on this computer are not available in these projects: `@` file mentions, skills and slash commands other than `/plan` and `/compact`, operator mode, and terminals. Worktree deletion and the local worktree settings page are not available remotely yet. Plans from the transcript open normal read-only plan tabs. Source files stay on the host; this feature shares host-owned sessions, not working-directory synchronization.
 
@@ -88,6 +154,13 @@ ssh -N -L 3776:127.0.0.1:3776 user@your-host
 Under **Settings → Connections → Connect to an existing host by URL**, enter `http://127.0.0.1:3776` and the device token.
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
+
+The desktop-to-Host migration is still under development. Its internal preparation
+check refuses a running or uncertain Native session and leaves the provider
+working. An idle preparation may briefly hold new input while windows save their
+state; cancellation releases it after accepted storage work finishes. This check
+does not move an existing conversation to another computer or enable a new
+execution default. Installed multi-device migration still requires acceptance.
 
 HTTPS endpoints can also be entered if you operate a reverse proxy to the loopback host. Plain HTTP is accepted only for loopback endpoints. Native desktop HTTP carries the saved credential; it is not exposed to the renderer or browser storage. The native connection store is `remote-machines.json` in the desktop app's data directory, with mode 0600 on Unix. This initial implementation does not use the OS keychain.
 
@@ -120,6 +193,44 @@ Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `
 **The host on this computer** ships inside the Windows and macOS installers. On start, an installed release app installs that host if this computer has none, and upgrades it when the bundled version is newer, using the same verified installer as SSH setup. It never downgrades, waits while the host has running sessions or another update is being installed, and treats an unreadable host database as busy. A waiting or failed update is shown in Settings → Connections and retried while the app is open.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Tagged releases include the matching archives; an unreleased checkout does not. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
+
+## Interrupted Native helper requests
+
+Development source now retains the original Native editor buffer report and
+desktop finish/format request before sending it. If the connection breaks after
+the Host may have accepted the request, recovery asks for that original's outcome
+instead of repeating the operation. An unknown outcome stays pending; it does
+not mean the operation failed. In particular, formatting must not be repeated
+automatically and an old buffer receipt cannot mark a newer editor state saved.
+After the local result has been safely consumed, a separate acknowledgement lets
+the Host release its large retained result. If that acknowledgement is interrupted,
+the app retries cleanup without repeating the original operation. Pending cleanup
+does not undo a successful local result. When retained result capacity is full,
+the Host rejects new formatting before starting it.
+This source behavior still requires installed-platform acceptance; it is not a
+claim about the version currently installed on your computer.
+
+In the development source, the Host database also retains buffer reports and
+their recovery metadata. These are paths and dirty/unknown flags, not an extra
+copy of unsaved editor text. Existing report/archive JSON files are legacy copies;
+copying them alone does not back up new reports. Keep a coherent Host database
+backup for restoration. Reading a recovered report does not mark an old editor
+owner current or authorize resolving dirty buffers.
+
+If the Host's helper handler has finished but its result is still unknown,
+development source can release that request's reserved result capacity without
+repeating it. Later requests can proceed while the original remains pending.
+Requests whose helper is still running, or whose admission was interrupted, keep
+their reservation. Releasing capacity does not mean the original failed or that
+it is safe to send it again.
+
+New development clients can also clean up completed delivery records in ordered
+groups while retaining a permanent guard against replay. Interrupted cleanup does
+not repeat the operation. Missing or uncertain outcomes stop cleanup until their
+original state is known. After a computer connection starts using this protocol,
+older clients must update before sending new buffer reports, finish replies or
+formatting requests through that connection; existing outcomes can still be read.
+This remains development-source behavior pending installed-platform acceptance.
 
 ## Scope of this first version
 

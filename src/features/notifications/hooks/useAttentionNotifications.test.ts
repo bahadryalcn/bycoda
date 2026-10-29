@@ -2,6 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { saveNotificationEvent } from "../model/notificationEvents";
 import {
   probeNotificationPermission,
   replaceUnseenAttention,
@@ -182,4 +183,56 @@ it("announces retry and failure once each even for the visible chat", async () =
     title: "Failed · app",
     body: "Connection failed",
   });
+});
+
+const askingSession = () =>
+  session({
+    busy: true,
+    blocks: [
+      { id: "u1", role: "user", text: "go" },
+      { id: "p", role: "approval", text: "Run it", approval: { requestId: 1 } },
+    ],
+  });
+
+it("clears stale taskbar attention when the taskbar preference changes without a session update", async () => {
+  await render([askingSession()], "other");
+  expect(calls("set_taskbar_attention").at(-1)).toEqual({ count: 1, flash: "critical" });
+
+  await act(async () => {
+    saveNotificationEvent("taskbar", false);
+  });
+  expect(calls("set_taskbar_attention").at(-1)).toMatchObject({ count: 0 });
+
+  await act(async () => {
+    saveNotificationsEnabled(false);
+  });
+  await act(async () => {
+    saveNotificationEvent("taskbar", true);
+  });
+  // Desktop notifications are off, so re-enabling the taskbar flag shows nothing.
+  expect(calls("set_taskbar_attention").at(-1)).toMatchObject({ count: 0 });
+});
+
+it("resends an unchanged taskbar count after the native call failed", async () => {
+  let failNext = true;
+  invoke.mockImplementation(async (command: string) => {
+    if (command === "set_taskbar_attention" && failNext) {
+      failNext = false;
+      throw new Error("taskbar unavailable");
+    }
+    if (command === "notification_permission") return "granted";
+  });
+  try {
+    const asking = askingSession();
+    await render([asking], "other");
+    expect(calls("set_taskbar_attention")).toHaveLength(1);
+
+    await render([{ ...asking }], "other");
+    expect(calls("set_taskbar_attention")).toHaveLength(2);
+    expect(calls("set_taskbar_attention").at(-1)).toEqual({ count: 1, flash: "critical" });
+  } finally {
+    invoke.mockImplementation(async (command: string) => {
+      if (command === "notification_permission") return "granted";
+    });
+  }
 });

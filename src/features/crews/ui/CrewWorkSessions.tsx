@@ -128,7 +128,7 @@ export function CrewWorkSessions({
       <div
         role="list"
         aria-label={t("Sessions")}
-        className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)"
+        className="flex min-w-0 flex-col gap-px"
       >
         <div role="listitem">
           <SessionRow

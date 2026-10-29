@@ -256,7 +256,8 @@ function ProjectTerminalDockComponent({
         aria-orientation={vertical ? "horizontal" : "vertical"}
         aria-label={t("Resize terminal")}
         aria-valuenow={dock.size}
-        className={`${sash} ${dragging ? "bg-content/15" : "hover:bg-content/10"}`}
+        className={`${sash} terminal-dock-sash`}
+        data-dragging={dragging || undefined}
         onPointerDown={onResizePointerDown}
         onPointerMove={onResizePointerMove}
         onPointerUp={onResizePointerUp}
@@ -276,7 +277,7 @@ function ProjectTerminalDockComponent({
                 onAddTerminal();
               }}
             >
-              <Plus className="size-3.5" strokeWidth={1.75} />
+              <Plus className="icon-sm" strokeWidth={1.75} />
             </IconButton>
             {onAddTerminalWithProfile ? (
               <div ref={profileButton} className="terminal-profile-trigger">
@@ -288,13 +289,13 @@ function ProjectTerminalDockComponent({
                     setProfileMenu(profileMenu ? null : profileButton.current);
                   }}
                 >
-                  <ChevronDown className="size-3" strokeWidth={1.75} />
+                  <ChevronDown className="icon-sm" strokeWidth={1.75} />
                 </IconButton>
               </div>
             ) : null}
             {onSplitTerminal ? (
               <IconButton label={t("Split")} onClick={() => splitTerminal(dock.pane.activeFileId)}>
-                <SplitSquare className="size-3.5" strokeWidth={1.75} />
+                <SplitSquare className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             ) : null}
             <div ref={sideButton}>
@@ -306,11 +307,11 @@ function ProjectTerminalDockComponent({
                   setMenu(menu ? null : sideButton.current);
                 }}
               >
-                <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+                <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
               </IconButton>
             </div>
             <IconButton label={t("Hide Terminal ({p0}J)", { p0: MOD })} onClick={onHide}>
-              <X className="size-3.5" strokeWidth={1.75} />
+              <X className="icon-sm" strokeWidth={1.75} />
             </IconButton>
           </div>
         </div>
@@ -398,7 +399,7 @@ function ProjectTerminalDockComponent({
                     onReorderTerminals(ids);
                   }}
                 >
-                  <Terminal className="size-3 shrink-0" strokeWidth={1.5} />
+                  <Terminal className="icon-sm shrink-0" strokeWidth={1.5} />
                   <span className="min-w-0 flex-1 truncate">{terminalTabLabel(file)}</span>
                 </Button>
                 <div className="terminal-row-actions">
@@ -411,7 +412,7 @@ function ProjectTerminalDockComponent({
                       title={t("Split")}
                       onClick={() => splitTerminal(file.id)}
                     >
-                      <SplitSquare className="size-3" strokeWidth={1.75} />
+                      <SplitSquare className="icon-sm" strokeWidth={1.75} />
                     </InlineAction>
                   ) : null}
                   <InlineAction
@@ -422,7 +423,7 @@ function ProjectTerminalDockComponent({
                     title={t("Close")}
                     onClick={() => onCloseTerminal(file.id)}
                   >
-                    <X className="size-3" strokeWidth={1.75} />
+                    <X className="icon-sm" strokeWidth={1.75} />
                   </InlineAction>
                 </div>
               </ActionHost>
@@ -582,7 +583,7 @@ function ProjectTerminalDockComponent({
               kind: "item",
               id: "move",
               label: t("Move Terminal"),
-              icon: <SideIcon className="size-3.5" />,
+              icon: <SideIcon className="icon-sm" />,
               submenu: SIDE_ITEMS.map((item) => ({
                 kind: "item" as const,
                 id: item.id,
@@ -595,7 +596,7 @@ function ProjectTerminalDockComponent({
               kind: "item",
               id: "close",
               label: t("Close Active Terminal"),
-              icon: <X className="size-3.5" />,
+              icon: <X className="icon-sm" />,
             },
             {
               kind: "item",
@@ -607,7 +608,7 @@ function ProjectTerminalDockComponent({
               kind: "item",
               id: "hide",
               label: t("Hide Terminal ({p0}J)", { p0: MOD }),
-              icon: <HideIcon className="size-3.5" />,
+              icon: <HideIcon className="icon-sm" />,
             },
           ]}
           onPick={(id) => {

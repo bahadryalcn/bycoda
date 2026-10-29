@@ -19,13 +19,13 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 16px 8px;
+  padding: 12px 16px 4px;
 }
+/* Tabs are separated from the list by spacing, not a rule. */
 .notification-sheet-tabs {
   display: flex;
   gap: 4px;
   padding: 0 16px 8px;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
 }
 .notification-sheet-list {
   min-block-size: 0;
@@ -33,31 +33,33 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
-  padding: 8px 12px 16px;
+  padding: 4px 8px 16px;
 }
 .notification-sheet-items {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
+/* Pending and History rows share one flat anatomy inside the sheet: title,
+   short content, secondary source/time. Floating popups keep their own card
+   surface outside the sheet. */
 .notification-sheet .approval-toast {
   animation: none;
-  border-style: solid;
-  background: var(--ui-surface);
+  border: 0;
+  border-radius: var(--ui-radius-card);
+  background: transparent;
   box-shadow: none;
   backdrop-filter: none;
 }
 .notification-request-body {
   align-items: stretch;
-  gap: 8px;
+  gap: 4px;
 }
-.notification-request-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-inline-size: 0;
-  margin-block-start: 4px;
+@media (hover: hover) and (pointer: fine) {
+  .notification-sheet .approval-toast:hover,
+  .notification-sheet .notification-history-item:hover {
+    background: var(--ui-surface-hover);
+  }
 }
 .notification-request-preview {
   display: -webkit-box;
@@ -98,19 +100,40 @@
 }
 .notification-request-meta .notification-project,
 .notification-history-meta .notification-project {
-  flex: 1;
+  /* A readable minimum: the row wraps before the source name collapses. */
+  flex: 1 1 7rem;
+}
+.notification-request-footer {
+  flex-wrap: nowrap;
+}
+.notification-request-footer .notification-project {
+  flex: 0 1 auto;
 }
 .notification-popup-dismiss {
   position: absolute;
   inset-block-start: 4px;
   inset-inline-end: 4px;
 }
-.notification-history-item {
-  padding: 12px 4px;
-  border-block-end: 1px solid var(--ui-tone-neutral-border);
+.notification-history-note {
+  margin: 0;
+  padding: 4px 12px 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
 }
-.notification-history-item:last-child {
-  border-block-end: 0;
+.notification-history-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 8px;
+}
+.notification-history-status > :first-child {
+  flex: 1;
+  min-inline-size: 0;
+}
+.notification-history-item {
+  padding: 8px 12px;
+  border-radius: var(--ui-radius-card);
 }
 .notification-history-details summary {
   cursor: pointer;
@@ -139,7 +162,7 @@
   white-space: pre-wrap;
 }
 .notification-history-meta {
-  margin-block-start: 8px;
+  margin-block-start: 4px;
 }
 .notification-history-meta time {
   font-variant-numeric: tabular-nums;

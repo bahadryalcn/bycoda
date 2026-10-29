@@ -14,6 +14,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
   useProjectDiffStats: vi.fn(() => null),
+  useProjectsDiffStats: vi.fn(() => []),
+}));
+vi.mock("../../features/source-control/hooks/useProjectWorktrees", () => ({
+  useProjectWorktrees: () => ({ data: undefined, refresh: async () => false }),
 }));
 vi.mock("../../features/source-control/hooks/useGitFileStatuses", () => ({
   useGitFileStatuses: () => ({ files: new Map(), dirs: new Map() }),

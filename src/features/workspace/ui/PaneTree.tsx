@@ -634,7 +634,7 @@ function PaneTreeComponent({
             }}
             onInputCapture={() => session && onSessionInteraction?.(session.id)}
             data-pane-can-maximize={(inSplit || maximum) && !hidden ? "true" : undefined}
-            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${inSplit && !maximum && focusedId === leaf.id ? "ring-1 ring-inset ring-(--ui-field-border-focus)" : ""} ${dragging ? "opacity-40" : ""}`}
+            className={`absolute flex min-h-0 min-w-0 flex-col overflow-hidden ${dragging ? "opacity-40" : ""}`}
             // The new pane focuses its composer or editor while it is still
             // offscreen, and focus scrolls this clip box to reveal it, which
             // fights the slide. Scroll events land before paint, so undoing

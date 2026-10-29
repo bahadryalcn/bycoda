@@ -1,4 +1,8 @@
-import { runNativeOutputWork, nativeOutputSink, captureNativeOutputCurrentEvent } from "../../core/nativeOutputDelivery";
+import {
+  runNativeOutputWork,
+  nativeOutputSink,
+  captureNativeOutputCurrentEvent,
+} from "../../core/nativeOutputDelivery";
 import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { TurnLatch } from "../../../../shared/lib/turnLatch";
 import { TurnNotReadyError } from "../../core/types";
@@ -574,16 +578,22 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       (event) => {
         if (live.muteUpdates) return;
         const turn = live.turnDone;
-        void runNativeOutputWork(async (work) => { try { await handleEvent(live, event); } catch (error: unknown) {
-          if (live.muteUpdates || live.turnDone !== turn) return;
-          // Failed ancestry lookups or replies must end the turn visibly;
-          // otherwise a child can remain blocked on an unanswered request.
-          nativeOutputSink(work, () => live.onEvent({
-            type: "session.error",
-            message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
-          }))();
-          nativeOutputSink(work, finishActiveTurn)(live);
-        }});
+        void runNativeOutputWork(async (work) => {
+          try {
+            await handleEvent(live, event);
+          } catch (error: unknown) {
+            if (live.muteUpdates || live.turnDone !== turn) return;
+            // Failed ancestry lookups or replies must end the turn visibly;
+            // otherwise a child can remain blocked on an unanswered request.
+            nativeOutputSink(work, () =>
+              live.onEvent({
+                type: "session.error",
+                message: `Could not route OpenCode event: ${error instanceof Error ? error.message : String(error)}`,
+              }),
+            )();
+            nativeOutputSink(work, finishActiveTurn)(live);
+          }
+        });
       },
       (error) => {
         if (live.muteUpdates || live.cancelled) return;
@@ -912,325 +922,343 @@ function pruneStreamCaches(live: Live): void {
 }
 
 async function handleEvent(live: Live, event: Record<string, unknown>): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  nativeOutputSink(outputWork, pruneStreamCaches)(live);
-  const type = typeof event.type === "string" ? event.type : "";
-  const properties = asRecord(event.properties) ?? {};
-  // Session lifecycle events establish ancestry, including nested subagents.
-  // Record them before applying the parent transcript's session filter.
-  if (type === "session.created" || type === "session.updated") {
-    const info = asRecord(properties.info);
-    const id = stringField(info, "id");
-    if (id) {
-      const parentId = stringField(info, "parentID");
-      live.sessionParentById.set(id, parentId);
-      nativeOutputSink(outputWork, pruneStreamCaches)(live);
-    }
-    return;
-  }
-
-  const payloadSessionId = eventSessionId(event);
-  if (type === "message.removed") {
-    const messageID = stringField(properties, "messageID");
-    if (
-      messageID &&
-      (!payloadSessionId || live.messageSessionById.get(messageID) === payloadSessionId)
-    ) {
-      live.completedMessages.delete(messageID);
-      nativeOutputSink(outputWork, forgetStreamMessage)(live, messageID);
-    }
-    return;
-  }
-  if (type === "session.deleted") {
-    const id = stringField(asRecord(properties.info), "id") ?? payloadSessionId;
-    if (id && id !== live.openCodeSessionId) {
-      const doomed = new Set([id]);
-      for (let changed = true; changed;) {
-        changed = false;
-        for (const [child, parent] of live.sessionParentById) {
-          if (parent && doomed.has(parent) && !doomed.has(child)) {
-            doomed.add(child);
-            changed = true;
-          }
-        }
-      }
-      for (const pending of live.approvals.values()) {
-        if (doomed.has(pending.sessionId)) {
-          pending.sessionDeleted = true;
-          pending.resolve("deny");
-        }
-      }
-      for (const pending of live.questions.values()) {
-        if (doomed.has(pending.sessionId)) {
-          pending.sessionDeleted = true;
-          pending.resolve({ kind: "skipped" });
-        }
-      }
-      for (const child of doomed) nativeOutputSink(outputWork, forgetSessionCache)(live, child);
-    }
-    return;
-  }
-  if (type === "message.part.removed") {
-    const id = stringField(properties, "partID");
-    const part = id ? live.partById.get(id) : undefined;
-    if (
-      id &&
-      (!payloadSessionId ||
-        (part?.messageID && live.messageSessionById.get(part.messageID) === payloadSessionId))
-    ) {
-      live.partById.delete(id);
-      live.emittedTextByPartId.delete(id);
-    }
-    return;
-  }
-  if (
-    payloadSessionId &&
-    ((type === "session.status" && stringField(asRecord(properties.status), "type") === "idle") ||
-      type === "session.idle")
-  ) {
-    nativeOutputSink(outputWork, retireSessionMessages)(live, payloadSessionId);
-  } else if (
-    payloadSessionId &&
-    (type.startsWith("message.") || type === "permission.asked" || type === "question.asked")
-  ) {
-    live.idleSessions.delete(payloadSessionId);
-  }
-  if (payloadSessionId && payloadSessionId !== live.openCodeSessionId) {
-    if (
-      type === "message.updated" ||
-      type === "message.part.updated" ||
-      type === "message.part.delta"
-    ) {
-      let knownParent: string | undefined = payloadSessionId;
-      const visited = new Set<string>();
-      while (
-        knownParent &&
-        knownParent !== live.openCodeSessionId &&
-        !visited.has(knownParent) &&
-        live.sessionParentById.has(knownParent)
-      ) {
-        visited.add(knownParent);
-        knownParent = live.sessionParentById.get(knownParent);
-      }
-      if (
-        knownParent !== live.openCodeSessionId &&
-        !(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))
-      )
-        return;
-      if (live.muteUpdates || live.cancelled) return;
-      nativeOutputSink(outputWork, handleSubagentEvent)(live, payloadSessionId, type, properties);
-      return;
-    }
-    // Only blocking interactions are forwarded otherwise. In particular, a
-    // child's idle/error event must never finish the parent's active turn.
-    if (type !== "permission.asked" && type !== "question.asked") return;
-    const turn = live.turnDone;
-    if (!(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))) return;
-    if (live.muteUpdates || live.turnDone !== turn) return;
-  } else if (live.client.generation === "v2") {
-    live.inbox.observe(type, properties);
-    if (nativeOutputSink(outputWork, gateAwaitedInbox)(live, type, properties)) return;
-  }
-
-  switch (type) {
-    case "message.updated": {
+  return runNativeOutputWork(async (outputWork) => {
+    const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+      live.onEvent(event),
+    );
+    nativeOutputSink(outputWork, pruneStreamCaches)(live);
+    const type = typeof event.type === "string" ? event.type : "";
+    const properties = asRecord(event.properties) ?? {};
+    // Session lifecycle events establish ancestry, including nested subagents.
+    // Record them before applying the parent transcript's session filter.
+    if (type === "session.created" || type === "session.updated") {
       const info = asRecord(properties.info);
       const id = stringField(info, "id");
-      const role = stringField(info, "role");
-      const agent = stringField(info, "agent");
-      const hidden = agent != null && KNOWN_HIDDEN_AGENTS.has(agent);
-      if (id && (role === "user" || role === "assistant")) {
-        live.messageRoleById.set(id, hidden ? "hidden" : role);
-        live.messageSessionById.set(id, live.openCodeSessionId);
-      }
-      // A compaction assistant's usage describes the summarization call, not
-      // the rebuilt context. Keep the previous meter value until a real turn
-      // reports the post-compaction window level.
-      if (role === "assistant" && !hidden) nativeOutputSink(outputWork, emitContext)(live, info);
-      if (id && asRecord(info?.time)?.completed != null) {
-        live.completedMessages.add(id);
+      if (id) {
+        const parentId = stringField(info, "parentID");
+        live.sessionParentById.set(id, parentId);
         nativeOutputSink(outputWork, pruneStreamCaches)(live);
       }
-      break;
+      return;
     }
-    case "message.part.delta": {
-      const partID = stringField(properties, "partID");
-      const delta = streamTextDelta(properties.delta);
-      if (!partID || !delta) break;
-      const existing = live.partById.get(partID);
-      if (!existing || nativeOutputSink(outputWork, roleForPart)(live, existing) !== "assistant") break;
-      const previous = live.emittedTextByPartId.get(partID) ?? existing.text ?? "";
-      const { nextText, deltaToEmit } = appendOpenCodeAssistantTextDelta(previous, delta);
-      live.emittedTextByPartId.set(partID, nextText);
-      if (existing.type === "text" || existing.type === "reasoning") {
-        live.partById.set(partID, { ...existing, text: nextText });
+
+    const payloadSessionId = eventSessionId(event);
+    if (type === "message.removed") {
+      const messageID = stringField(properties, "messageID");
+      if (
+        messageID &&
+        (!payloadSessionId || live.messageSessionById.get(messageID) === payloadSessionId)
+      ) {
+        live.completedMessages.delete(messageID);
+        nativeOutputSink(outputWork, forgetStreamMessage)(live, messageID);
       }
-      const mapped = textDeltaEvent(existing, deltaToEmit);
-      if (mapped) emitNative(mapped);
-      break;
+      return;
     }
-    case "message.part.updated": {
-      const part = parsePart(properties.part);
-      if (!part) break;
-      live.partById.set(part.id, part);
-      if (part.messageID)
-        live.messageSessionById.set(part.messageID, payloadSessionId ?? live.openCodeSessionId);
-      if (nativeOutputSink(outputWork, roleForPart)(live, part) === "assistant") {
-        nativeOutputSink(outputWork, emitAssistantText)(live, part);
+    if (type === "session.deleted") {
+      const id = stringField(asRecord(properties.info), "id") ?? payloadSessionId;
+      if (id && id !== live.openCodeSessionId) {
+        const doomed = new Set([id]);
+        for (let changed = true; changed;) {
+          changed = false;
+          for (const [child, parent] of live.sessionParentById) {
+            if (parent && doomed.has(parent) && !doomed.has(child)) {
+              doomed.add(child);
+              changed = true;
+            }
+          }
+        }
+        for (const pending of live.approvals.values()) {
+          if (doomed.has(pending.sessionId)) {
+            pending.sessionDeleted = true;
+            pending.resolve("deny");
+          }
+        }
+        for (const pending of live.questions.values()) {
+          if (doomed.has(pending.sessionId)) {
+            pending.sessionDeleted = true;
+            pending.resolve({ kind: "skipped" });
+          }
+        }
+        for (const child of doomed) nativeOutputSink(outputWork, forgetSessionCache)(live, child);
       }
-      if (part.type === "tool") nativeOutputSink(outputWork, emitTool)(live, part);
-      break;
+      return;
     }
-    case "permission.asked": {
-      const id = stringField(properties, "id") ?? stringField(properties, "requestID");
-      if (!id) break;
-      if ([...live.approvals.values()].some((pending) => pending.id === id)) break;
-      const permission = stringField(properties, "permission") ?? "tool";
-      const patterns = Array.isArray(properties.patterns)
-        ? properties.patterns.filter((item): item is string => typeof item === "string")
-        : [];
-      const metadata = asRecord(properties.metadata) ?? {};
-      const callId =
-        stringField(asRecord(properties.tool), "callID") ??
-        stringField(properties, "callID") ??
-        stringField(properties, "toolCallId") ??
-        stringField(metadata, "callID") ??
-        stringField(metadata, "toolCallId");
-      const kind = toolKindFromName(permission);
-      const preview =
-        previewFromToolPart({
+    if (type === "message.part.removed") {
+      const id = stringField(properties, "partID");
+      const part = id ? live.partById.get(id) : undefined;
+      if (
+        id &&
+        (!payloadSessionId ||
+          (part?.messageID && live.messageSessionById.get(part.messageID) === payloadSessionId))
+      ) {
+        live.partById.delete(id);
+        live.emittedTextByPartId.delete(id);
+      }
+      return;
+    }
+    if (
+      payloadSessionId &&
+      ((type === "session.status" && stringField(asRecord(properties.status), "type") === "idle") ||
+        type === "session.idle")
+    ) {
+      nativeOutputSink(outputWork, retireSessionMessages)(live, payloadSessionId);
+    } else if (
+      payloadSessionId &&
+      (type.startsWith("message.") || type === "permission.asked" || type === "question.asked")
+    ) {
+      live.idleSessions.delete(payloadSessionId);
+    }
+    if (payloadSessionId && payloadSessionId !== live.openCodeSessionId) {
+      if (
+        type === "message.updated" ||
+        type === "message.part.updated" ||
+        type === "message.part.delta"
+      ) {
+        let knownParent: string | undefined = payloadSessionId;
+        const visited = new Set<string>();
+        while (
+          knownParent &&
+          knownParent !== live.openCodeSessionId &&
+          !visited.has(knownParent) &&
+          live.sessionParentById.has(knownParent)
+        ) {
+          visited.add(knownParent);
+          knownParent = live.sessionParentById.get(knownParent);
+        }
+        if (
+          knownParent !== live.openCodeSessionId &&
+          !(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId))
+        )
+          return;
+        if (live.muteUpdates || live.cancelled) return;
+        nativeOutputSink(outputWork, handleSubagentEvent)(live, payloadSessionId, type, properties);
+        return;
+      }
+      // Only blocking interactions are forwarded otherwise. In particular, a
+      // child's idle/error event must never finish the parent's active turn.
+      if (type !== "permission.asked" && type !== "question.asked") return;
+      const turn = live.turnDone;
+      if (!(await nativeOutputSink(outputWork, isDescendantSession)(live, payloadSessionId)))
+        return;
+      if (live.muteUpdates || live.turnDone !== turn) return;
+    } else if (live.client.generation === "v2") {
+      live.inbox.observe(type, properties);
+      if (nativeOutputSink(outputWork, gateAwaitedInbox)(live, type, properties)) return;
+    }
+
+    switch (type) {
+      case "message.updated": {
+        const info = asRecord(properties.info);
+        const id = stringField(info, "id");
+        const role = stringField(info, "role");
+        const agent = stringField(info, "agent");
+        const hidden = agent != null && KNOWN_HIDDEN_AGENTS.has(agent);
+        if (id && (role === "user" || role === "assistant")) {
+          live.messageRoleById.set(id, hidden ? "hidden" : role);
+          live.messageSessionById.set(id, live.openCodeSessionId);
+        }
+        // A compaction assistant's usage describes the summarization call, not
+        // the rebuilt context. Keep the previous meter value until a real turn
+        // reports the post-compaction window level.
+        if (role === "assistant" && !hidden) nativeOutputSink(outputWork, emitContext)(live, info);
+        if (id && asRecord(info?.time)?.completed != null) {
+          live.completedMessages.add(id);
+          nativeOutputSink(outputWork, pruneStreamCaches)(live);
+        }
+        break;
+      }
+      case "message.part.delta": {
+        const partID = stringField(properties, "partID");
+        const delta = streamTextDelta(properties.delta);
+        if (!partID || !delta) break;
+        const existing = live.partById.get(partID);
+        if (!existing || nativeOutputSink(outputWork, roleForPart)(live, existing) !== "assistant")
+          break;
+        const previous = live.emittedTextByPartId.get(partID) ?? existing.text ?? "";
+        const { nextText, deltaToEmit } = appendOpenCodeAssistantTextDelta(previous, delta);
+        live.emittedTextByPartId.set(partID, nextText);
+        if (existing.type === "text" || existing.type === "reasoning") {
+          live.partById.set(partID, { ...existing, text: nextText });
+        }
+        const mapped = textDeltaEvent(existing, deltaToEmit);
+        if (mapped) emitNative(mapped);
+        break;
+      }
+      case "message.part.updated": {
+        const part = parsePart(properties.part);
+        if (!part) break;
+        live.partById.set(part.id, part);
+        if (part.messageID)
+          live.messageSessionById.set(part.messageID, payloadSessionId ?? live.openCodeSessionId);
+        if (nativeOutputSink(outputWork, roleForPart)(live, part) === "assistant") {
+          nativeOutputSink(outputWork, emitAssistantText)(live, part);
+        }
+        if (part.type === "tool") nativeOutputSink(outputWork, emitTool)(live, part);
+        break;
+      }
+      case "permission.asked": {
+        const id = stringField(properties, "id") ?? stringField(properties, "requestID");
+        if (!id) break;
+        if ([...live.approvals.values()].some((pending) => pending.id === id)) break;
+        const permission = stringField(properties, "permission") ?? "tool";
+        const patterns = Array.isArray(properties.patterns)
+          ? properties.patterns.filter((item): item is string => typeof item === "string")
+          : [];
+        const metadata = asRecord(properties.metadata) ?? {};
+        const callId =
+          stringField(asRecord(properties.tool), "callID") ??
+          stringField(properties, "callID") ??
+          stringField(properties, "toolCallId") ??
+          stringField(metadata, "callID") ??
+          stringField(metadata, "toolCallId");
+        const kind = toolKindFromName(permission);
+        const preview =
+          previewFromToolPart({
+            id,
+            type: "tool",
+            tool: permission,
+            state: {
+              ...metadata,
+              input: metadata.input ?? (patterns[0] ? { path: patterns[0] } : undefined),
+            },
+          }) ??
+          (patterns[0]
+            ? previewFromToolPart({
+                id,
+                type: "tool",
+                tool: permission,
+                state: { input: { path: patterns[0], pattern: patterns[0] } },
+              })
+            : undefined);
+        const title =
+          composeToolTitle({
+            kind,
+            title: permissionTitle(permission, patterns),
+            command:
+              extractShellCommand(metadata.input) ??
+              (permission === "bash" ? patterns[0] : undefined),
+            skill: extractSkillName(metadata.input),
+            path: preview?.path,
+            query: preview?.query,
+            previewKind: preview?.kind,
+          }) || permissionTitle(permission, patterns);
+        if (live.planning) {
+          const decision = kind === "read" || kind === "search" ? "allow" : "deny";
+          await nativeOutputSink(outputWork, () =>
+            live.client.replyPermission(id, toOpenCodePermissionReply(decision)),
+          )();
+          break;
+        }
+        if (live.runtimeMode === "full-access") {
+          await nativeOutputSink(outputWork, () => live.client.replyPermission(id, "once"))();
+          break;
+        }
+        const uiId = live.nextApprovalUiId++;
+        const pending = nativeOutputSink(outputWork, waitApproval)(
+          live,
+          uiId,
           id,
-          type: "tool",
-          tool: permission,
-          state: {
-            ...metadata,
-            input: metadata.input ?? (patterns[0] ? { path: patterns[0] } : undefined),
-          },
-        }) ??
-        (patterns[0]
-          ? previewFromToolPart({
-              id,
-              type: "tool",
-              tool: permission,
-              state: { input: { path: patterns[0], pattern: patterns[0] } },
-            })
-          : undefined);
-      const title =
-        composeToolTitle({
-          kind,
-          title: permissionTitle(permission, patterns),
-          command:
-            extractShellCommand(metadata.input) ??
-            (permission === "bash" ? patterns[0] : undefined),
-          skill: extractSkillName(metadata.input),
-          path: preview?.path,
-          query: preview?.query,
-          previewKind: preview?.kind,
-        }) || permissionTitle(permission, patterns);
-      if (live.planning) {
-        const decision = kind === "read" || kind === "search" ? "allow" : "deny";
-        await nativeOutputSink(outputWork, () => live.client.replyPermission(id, toOpenCodePermissionReply(decision)))();
-        break;
-      }
-      if (live.runtimeMode === "full-access") {
-        await nativeOutputSink(outputWork, () => live.client.replyPermission(id, "once"))();
-        break;
-      }
-      const uiId = live.nextApprovalUiId++;
-      const pending = nativeOutputSink(outputWork, waitApproval)(live, uiId, id, payloadSessionId ?? live.openCodeSessionId);
-      if (callId) {
+          payloadSessionId ?? live.openCodeSessionId,
+        );
+        if (callId) {
+          emitNative({
+            type: "tool.updated",
+            callId,
+            title,
+            kind,
+            preview,
+          });
+        }
         emitNative({
-          type: "tool.updated",
-          callId,
+          type: "approval.requested",
+          requestId: uiId,
           title,
           kind,
+          callId,
           preview,
         });
-      }
-      emitNative({
-        type: "approval.requested",
-        requestId: uiId,
-        title,
-        kind,
-        callId,
-        preview,
-      });
-      await pending;
-      break;
-    }
-    case "question.asked": {
-      const id = stringField(properties, "id") ?? stringField(properties, "requestID");
-      if (!id) break;
-      if ([...live.questions.values()].some((pending) => pending.id === id)) break;
-      const questions = questionsFromUnknown(properties);
-      const uiId = live.nextApprovalUiId++;
-      const pending = nativeOutputSink(outputWork, waitQuestion)(
-        live,
-        uiId,
-        id,
-        questions,
-        payloadSessionId ?? live.openCodeSessionId,
-      );
-      nativeOutputSink(outputWork, showNextQuestion)(live);
-      await pending;
-      break;
-    }
-    case "session.status": {
-      const status = asRecord(properties.status);
-      const statusType = stringField(status, "type");
-      if (statusType === "retry") {
-        const message = stringField(status, "message");
-        if (message) emitNative({ type: "status", text: message });
+        await pending;
         break;
       }
-      if (statusType === "idle" && live.activeTurn) {
-        nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+      case "question.asked": {
+        const id = stringField(properties, "id") ?? stringField(properties, "requestID");
+        if (!id) break;
+        if ([...live.questions.values()].some((pending) => pending.id === id)) break;
+        const questions = questionsFromUnknown(properties);
+        const uiId = live.nextApprovalUiId++;
+        const pending = nativeOutputSink(outputWork, waitQuestion)(
+          live,
+          uiId,
+          id,
+          questions,
+          payloadSessionId ?? live.openCodeSessionId,
+        );
+        nativeOutputSink(outputWork, showNextQuestion)(live);
+        await pending;
+        break;
       }
-      break;
-    }
-    case "session.idle": {
-      // v1 also emits this deprecated event; its turns end on session.status.
-      if (live.client.generation === "v2" && live.activeTurn) {
-        nativeOutputSink(outputWork, finishActiveTurn)(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
+      case "session.status": {
+        const status = asRecord(properties.status);
+        const statusType = stringField(status, "type");
+        if (statusType === "retry") {
+          const message = stringField(status, "message");
+          if (message) emitNative({ type: "status", text: message });
+          break;
+        }
+        if (statusType === "idle" && live.activeTurn) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live, [
+            { type: "message.completed" },
+            { type: "reasoning.completed" },
+          ]);
+        }
+        break;
       }
-      break;
-    }
-    case "session.error": {
-      const message = sessionErrorMessage(properties.error);
-      emitNative({ type: "session.error", message });
-      // A stale v2 failure with nothing waiting must not be saved as the next
-      // turn's completion. v1 relies on that saved completion.
-      if (live.client.generation !== "v2" || live.turnDone) {
-        nativeOutputSink(outputWork, finishActiveTurn)(live);
+      case "session.idle": {
+        // v1 also emits this deprecated event; its turns end on session.status.
+        if (live.client.generation === "v2" && live.activeTurn) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live, [
+            { type: "message.completed" },
+            { type: "reasoning.completed" },
+          ]);
+        }
+        break;
       }
-      break;
+      case "session.error": {
+        const message = sessionErrorMessage(properties.error);
+        emitNative({ type: "session.error", message });
+        // A stale v2 failure with nothing waiting must not be saved as the next
+        // turn's completion. v1 relies on that saved completion.
+        if (live.client.generation !== "v2" || live.turnDone) {
+          nativeOutputSink(outputWork, finishActiveTurn)(live);
+        }
+        break;
+      }
+      default:
+        break;
     }
-    default:
-      break;
-  }
-
-});
+  });
 }
 
 async function isDescendantSession(live: Live, sessionId: string): Promise<boolean> {
-return runNativeOutputWork(async () => {
-  const visited = new Set<string>();
-  let current: string | undefined = sessionId;
-  while (current && !visited.has(current)) {
-    if (current === live.openCodeSessionId) return true;
-    visited.add(current);
-    if (!live.sessionParentById.has(current)) {
-      // Resumed children may predate the SSE subscription. Resolve their
-      // ancestry from the server instead of relying on session.created alone.
-      const session = await live.client.getSession(current);
-      live.sessionParentById.set(current, session.parentID);
-    }
-    current = live.sessionParentById.get(current);
-  }
-  return false;
-
-}, { additionalInput: true });
+  return runNativeOutputWork(
+    async () => {
+      const visited = new Set<string>();
+      let current: string | undefined = sessionId;
+      while (current && !visited.has(current)) {
+        if (current === live.openCodeSessionId) return true;
+        visited.add(current);
+        if (!live.sessionParentById.has(current)) {
+          // Resumed children may predate the SSE subscription. Resolve their
+          // ancestry from the server instead of relying on session.created alone.
+          const session = await live.client.getSession(current);
+          live.sessionParentById.set(current, session.parentID);
+        }
+        current = live.sessionParentById.get(current);
+      }
+      return false;
+    },
+    { additionalInput: true },
+  );
 }
 
 export function openCodeAgentForTurn(input: {
@@ -1518,18 +1546,24 @@ async function waitApproval(
   id: string,
   sessionId: string,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const decision = await new Promise<ApprovalDecision>((resolve) => {
-    live.approvals.set(uiId, { id, sessionId, resolve });
-  });
-  const sessionDeleted = live.approvals.get(uiId)?.sessionDeleted;
-  live.approvals.delete(uiId);
-  emitNative({ type: "approval.resolved", requestId: uiId, decision });
-  if (sessionDeleted) return;
-  await nativeOutputSink(outputWork, () => live.client.replyPermission(id, toOpenCodePermissionReply(decision)))();
-
-});
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const decision = await new Promise<ApprovalDecision>((resolve) => {
+        live.approvals.set(uiId, { id, sessionId, resolve });
+      });
+      const sessionDeleted = live.approvals.get(uiId)?.sessionDeleted;
+      live.approvals.delete(uiId);
+      emitNative({ type: "approval.resolved", requestId: uiId, decision });
+      if (sessionDeleted) return;
+      await nativeOutputSink(outputWork, () =>
+        live.client.replyPermission(id, toOpenCodePermissionReply(decision)),
+      )();
+    },
+    { additionalInput: true },
+  );
 }
 
 async function waitQuestion(
@@ -1539,49 +1573,60 @@ async function waitQuestion(
   questions: UserQuestion[],
   sessionId: string,
 ): Promise<void> {
-return runNativeOutputWork(async (outputWork) => {
-const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) => live.onEvent(event));
-  const event: Extract<HarnessEvent, {type:"question.asked"}> = {
-    type:"question.asked",requestId:uiId,title:questionPromptTitle(questions) || "OpenCode question",questions,behavior:"blocking",dismissAction:"decline",
-  };
-  captureNativeOutputCurrentEvent(event);
-  const reply = await new Promise<UserQuestionReply>((resolve) => {
-    live.questions.set(uiId, {
-      id,
-      sessionId,
-      questions,
-      event,
-      resolve,
-      deliver: async (reply) => {
-        try {
-          if (reply.kind === "answered")
-            await nativeOutputSink(outputWork, () => live.client.replyQuestion(
-              id,
-              questions.map((question) => selectedAnswerLabels(question, reply)),
-            ))();
-          else await nativeOutputSink(outputWork, () => live.client.rejectQuestion(id))();
-        } catch (error) {
-          if (error instanceof OpenCodeHttpError && [400, 422].includes(error.status)) {
-            throw new QuestionReplyValidationError(
-              "The provider rejected this answer. You can edit it and try again.",
-            );
-          }
-          throw error;
-        }
-      },
-    });
-  });
-  const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
-  live.questions.delete(uiId);
-  emitNative({
-    type: "question.resolved",
-    requestId: uiId,
-    decision: sessionDeleted || live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
-    ...(reply.kind === "answered" ? { reply } : {}),
-  });
-  nativeOutputSink(outputWork, showNextQuestion)(live);
-
-});
+  return runNativeOutputWork(
+    async (outputWork) => {
+      const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
+        live.onEvent(event),
+      );
+      const event: Extract<HarnessEvent, { type: "question.asked" }> = {
+        type: "question.asked",
+        requestId: uiId,
+        title: questionPromptTitle(questions) || "OpenCode question",
+        questions,
+        behavior: "blocking",
+        dismissAction: "decline",
+      };
+      captureNativeOutputCurrentEvent(event);
+      const reply = await new Promise<UserQuestionReply>((resolve) => {
+        live.questions.set(uiId, {
+          id,
+          sessionId,
+          questions,
+          event,
+          resolve,
+          deliver: async (reply) => {
+            try {
+              if (reply.kind === "answered")
+                await nativeOutputSink(outputWork, () =>
+                  live.client.replyQuestion(
+                    id,
+                    questions.map((question) => selectedAnswerLabels(question, reply)),
+                  ),
+                )();
+              else await nativeOutputSink(outputWork, () => live.client.rejectQuestion(id))();
+            } catch (error) {
+              if (error instanceof OpenCodeHttpError && [400, 422].includes(error.status)) {
+                throw new QuestionReplyValidationError(
+                  "The provider rejected this answer. You can edit it and try again.",
+                );
+              }
+              throw error;
+            }
+          },
+        });
+      });
+      const sessionDeleted = live.questions.get(uiId)?.sessionDeleted;
+      live.questions.delete(uiId);
+      emitNative({
+        type: "question.resolved",
+        requestId: uiId,
+        decision: sessionDeleted || live.cancelled || live.muteUpdates ? "cancelled" : reply.kind,
+        ...(reply.kind === "answered" ? { reply } : {}),
+      });
+      nativeOutputSink(outputWork, showNextQuestion)(live);
+    },
+    { additionalInput: true },
+  );
 }
 
 function showNextQuestion(live: Live): void {

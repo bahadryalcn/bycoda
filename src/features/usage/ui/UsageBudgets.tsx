@@ -131,7 +131,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
   return (
     <section className="mb-7 space-y-3" aria-label={t("Usage budgets")} aria-busy={pending}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-ui-body font-medium">{t("Usage budgets")}</h2>
+        <h2 className="text-ui-title font-medium">{t("Usage budgets")}</h2>
         <Button
           ref={addButton}
           onClick={() => {
@@ -197,7 +197,7 @@ function UsageBudgetsContent({ refresh }: { refresh: number }) {
         const format = (n: number) =>
           budget.metric === "tokens" ? formatUsageTokens(n) : `${n.toFixed(1)}%`;
         return (
-          <div key={budget.id} className="space-y-2 border-b border-stroke py-3">
+          <div key={budget.id} className="space-y-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
                 <h3 className="break-words text-ui-caption font-medium">{budget.label}</h3>
@@ -338,7 +338,7 @@ function BudgetEditor({
   };
   return (
     <form
-      className="space-y-3 border-y border-stroke py-3"
+      className="space-y-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-4"
       onSubmit={(event) => {
         event.preventDefault();
         const next = normalizeBudget({

@@ -6,8 +6,10 @@
 //! beyond the minimum cursor actually committed by its retained windows.
 //! The blocking request API belongs on Tauri's blocking command thread, not the UI.
 mod bulk;
+mod commit;
 mod connection;
 mod demand;
+pub(crate) mod native_profile;
 mod permits;
 mod schema;
 
@@ -41,6 +43,122 @@ fn native_profile_recovery(method: &str) -> bool {
             | "native.buffers.recovery.read"
             | "native.buffers.recovery.status"
     )
+}
+
+fn private_native_method(method: &str) -> bool {
+    method.starts_with("native.") || method.starts_with("devServers.bridge")
+}
+
+fn native_gateway_method(method: &str) -> bool {
+    matches!(
+        method,
+        "devServers.bridgeOpen"
+            | "devServers.bridgeWrite"
+            | "devServers.bridgeRead"
+            | "devServers.bridgeCheck"
+            | "devServers.bridgeClose"
+    )
+}
+
+fn native_device_method(method: &str) -> bool {
+    matches!(
+        method,
+        "devices.status"
+            | "devices.preflight"
+            | "devices.preview"
+            | "devices.preview.status"
+            | "devices.list"
+            | "devices.start"
+            | "devices.boot"
+            | "devices.capture"
+            | "devices.action"
+    )
+}
+
+fn native_delivery_epoch_method(method: &str) -> bool {
+    matches!(
+        method,
+        "native.delivery.epochs.open"
+            | "native.delivery.epochs.status"
+            | "native.delivery.epochs.compact"
+            | "native.delivery.epochs.close"
+    )
+}
+
+fn native_service_method(method: &str) -> bool {
+    matches!(
+        method,
+        "native.services.runtimeLogs.bridge.describe"
+            | "native.services.runtimeLogs.access.issue"
+            | "native.services.runtimeLogs.terminals.append"
+            | "native.services.conversation.bridge.describe"
+            | "native.services.conversation.access.issue"
+            | "native.services.conversation.desktop.take"
+            | "native.services.conversation.desktop.finish"
+            | "native.services.conversation.desktop.authorize"
+            | "native.services.social.bridge.describe"
+            | "native.services.social.access.issue"
+            | "native.services.social.native.status"
+            | "native.services.social.native.enroll"
+            | "native.services.social.native.register"
+            | "native.services.social.native.authority"
+            | "native.services.social.native.reset"
+            | "native.services.workspace.format"
+            | "native.services.upload.begin"
+            | "native.services.upload.append"
+            | "native.services.upload.commit"
+            | "native.services.upload.status"
+            | "native.services.upload.cancel"
+            | "native.services.delivery.apply"
+            | "native.services.delivery.status"
+            | "native.services.delivery.ack"
+            | "native.services.delivery.result.read"
+    ) || native_delivery_epoch_method(method)
+}
+
+pub(crate) fn native_peer_service_method(method: &str) -> bool {
+    matches!(
+        method,
+        "native.services.social.native.status"
+            | "native.services.social.native.enroll"
+            | "native.services.social.native.register"
+            | "native.services.social.native.authority"
+            | "native.services.social.native.reset"
+    )
+}
+
+fn native_workspace_method(method: &str) -> bool {
+    matches!(
+        method,
+        "native.turn.begin"
+            | "native.turn.end"
+            | "native.activity.start"
+            | "native.activity.end"
+            | "native.buffers.update"
+            | "native.buffers.retire"
+            | "native.buffers.reconcile"
+            | "native.buffers.recovery.list"
+            | "native.buffers.recovery.read"
+            | "native.buffers.recovery.status"
+            | "native.rewind.plan"
+            | "native.rewind.prepare"
+            | "native.rewind.apply"
+            | "native.rewind.status"
+            | "native.rewind.lookup"
+            | "native.rewind.cancelPreparation"
+            | "native.rewind.ack"
+            | "workspaces.cleanup.plan"
+            | "workspaces.cleanup.apply"
+            | "workspaces.cleanup.status"
+            | "native.buffers.upload.start"
+            | "native.buffers.upload.write"
+            | "native.buffers.upload.commit"
+            | "native.buffers.upload.status"
+            | "native.buffers.upload.abort"
+            | "native.buffers.delivery.apply"
+            | "native.buffers.delivery.status"
+            | "native.buffers.delivery.ack"
+    ) || native_delivery_epoch_method(method)
 }
 
 #[derive(Serialize)]
@@ -180,6 +298,9 @@ pub struct RequestOptions {
     pub command_id: Option<String>,
     /// May shorten, but cannot extend, the canonical method deadline.
     pub response_timeout: Option<Duration>,
+    /// Optional operation budget, including queue admission and socket send.
+    /// A relative response timeout must never extend this absolute deadline.
+    pub absolute_deadline: Option<Instant>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -488,6 +609,39 @@ pub struct PendingRequest {
     command_id: Option<String>,
     mutating: bool,
     wait: Duration,
+    absolute_deadline: Option<Instant>,
+}
+
+/// Allocation and disclosure accounting are complete before any retained reply
+/// gates are borrowed. Failed enqueue keeps the Request/Slot owned here so its
+/// cleanup runs only after those gates have been released by the caller.
+struct PreparedRequest {
+    request: Option<Request>,
+    pending: Option<PendingRequest>,
+    handle: Arc<Handle>,
+}
+
+impl PreparedRequest {
+    fn enqueue(&mut self) -> Result<PendingRequest, WsFailure> {
+        let request = self.request.as_ref().ok_or_else(|| {
+            WsFailure::local("RPC_WS_ADMISSION", "Native request was already enqueued")
+        })?;
+        if Instant::now() >= request.deadline {
+            return Err(WsFailure::local(
+                "RPC_WS_DEADLINE",
+                "Native operation deadline elapsed before enqueue",
+            ));
+        }
+        let request = self.request.take().expect("prepared request checked");
+        if let Err(error) = self.handle.tx.try_send(request) {
+            self.request = Some(error.into_inner());
+            return Err(WsFailure::local(
+                "RPC_WS_OVERLOAD",
+                "Native Host request queue is unavailable",
+            ));
+        }
+        Ok(self.pending.take().expect("prepared request owns its wait"))
+    }
 }
 
 /// Holds the transfer budget and native disclosure grant until the IPC adapter
@@ -504,8 +658,14 @@ impl PendingBulk {
 }
 
 impl PendingRequest {
+    fn wait_budget_at(&self, now: Instant) -> Duration {
+        self.absolute_deadline.map_or(self.wait, |deadline| {
+            deadline.saturating_duration_since(now)
+        })
+    }
+
     pub fn wait(self) -> Result<WsReply, WsFailure> {
-        match self.rx.recv_timeout(self.wait) {
+        match self.rx.recv_timeout(self.wait_budget_at(Instant::now())) {
             Ok(result) => result.and_then(WsReply::disclose),
             Err(_) => {
                 let ids = self
@@ -537,6 +697,17 @@ impl PendingRequest {
 pub struct HostWsBroker {
     connections: Mutex<HashMap<String, Arc<Handle>>>,
     next_generation: Arc<AtomicU64>,
+}
+
+#[derive(Clone, Copy)]
+enum RequestScope {
+    Window,
+    NativeProfile,
+    NativeWorkspace,
+    NativeGateway,
+    NativeService,
+    NativePeerService,
+    NativeDevice,
 }
 
 impl HostWsBroker {
@@ -646,7 +817,7 @@ impl HostWsBroker {
         Contracts::get().is_ok_and(|contracts| {
             let method = contracts.wire_method(method);
             method != "connection.hello"
-                && !native_profile_recovery(method)
+                && !private_native_method(method)
                 && contracts.methods.contains_key(method)
         })
     }
@@ -668,7 +839,7 @@ impl HostWsBroker {
         Contracts::get().is_ok_and(|contracts| {
             let method = contracts.wire_method(method);
             method != "connection.hello"
-                && !native_profile_recovery(method)
+                && !private_native_method(method)
                 && contracts
                     .methods
                     .get(method)
@@ -775,11 +946,52 @@ impl HostWsBroker {
         params: Value,
         options: RequestOptions,
     ) -> Result<PendingRequest, WsFailure> {
+        self.begin_request_scoped(
+            route,
+            consumer,
+            method,
+            params,
+            options,
+            RequestScope::Window,
+        )
+    }
+
+    fn begin_request_scoped(
+        &self,
+        route: &NativeRoute,
+        consumer: &str,
+        method: &str,
+        params: Value,
+        options: RequestOptions,
+        scope: RequestScope,
+    ) -> Result<PendingRequest, WsFailure> {
+        let mut prepared =
+            self.prepare_request_scoped(route, consumer, method, params, options, scope)?;
+        prepared.enqueue()
+    }
+
+    fn prepare_request_scoped(
+        &self,
+        route: &NativeRoute,
+        consumer: &str,
+        method: &str,
+        params: Value,
+        options: RequestOptions,
+        scope: RequestScope,
+    ) -> Result<PreparedRequest, WsFailure> {
         let contracts = Contracts::get().map_err(|_| {
             WsFailure::local("RPC_WS_SCHEMA", "Native Host contracts are unavailable")
         })?;
         let method = contracts.wire_method(method);
-        if native_profile_recovery(method) {
+        if match scope {
+            RequestScope::Window => private_native_method(method),
+            RequestScope::NativeProfile => !native_profile_recovery(method),
+            RequestScope::NativeWorkspace => !native_workspace_method(method),
+            RequestScope::NativeGateway => !native_gateway_method(method),
+            RequestScope::NativeService => !native_service_method(method),
+            RequestScope::NativePeerService => !native_peer_service_method(method),
+            RequestScope::NativeDevice => !native_device_method(method),
+        } {
             return Err(WsFailure::unsupported());
         }
         let Some(descriptor) = contracts.methods.get(method) else {
@@ -893,20 +1105,39 @@ impl HostWsBroker {
             .response_timeout
             .unwrap_or(descriptor.timeout)
             .min(descriptor.timeout);
-        let admission = contracts.duration("defaultAdmissionTimeoutMs");
         let now = Instant::now();
+        if options
+            .absolute_deadline
+            .is_some_and(|deadline| deadline <= now)
+        {
+            return Err(WsFailure::local(
+                "RPC_WS_DEADLINE",
+                "Native operation deadline elapsed before admission",
+            ));
+        }
+        let admission = contracts.duration("defaultAdmissionTimeoutMs");
+        let deadline = options
+            .absolute_deadline
+            .map_or(now + admission + timeout, |deadline| {
+                deadline.min(now + admission + timeout)
+            });
+        let admission_deadline = (now + admission).min(deadline);
         let (tx, rx) = mpsc::sync_channel(1);
         let wire_id = uuid::Uuid::new_v4().to_string();
-        let resource_scope = handle
-            .shared
-            .permits
-            .scope(consumer, &id, &params)
-            .map_err(|_| {
-                WsFailure::local(
-                    "RPC_WS_OVERLOAD",
-                    "Native resource disclosure scope limit reached",
-                )
-            })?;
+        let permits = &handle.shared.permits;
+        let resource_scope = if matches!(scope, RequestScope::NativeService)
+            && method == "native.services.delivery.result.read"
+        {
+            permits.service_result_scope(consumer, &id, &params)
+        } else {
+            permits.scope(consumer, &id, &params)
+        }
+        .map_err(|_| {
+            WsFailure::local(
+                "RPC_WS_OVERLOAD",
+                "Native resource disclosure scope limit reached",
+            )
+        })?;
         let subscription_epoch = if method == "subscriptions.open" {
             handle
                 .shared
@@ -935,8 +1166,8 @@ impl HostWsBroker {
             params,
             command_id: command_id.clone(),
             mutating: descriptor.mutating,
-            deadline: now + admission + timeout,
-            admission_deadline: now + admission,
+            deadline,
+            admission_deadline,
             timeout,
             reply: tx,
             download_cancel: None,
@@ -945,19 +1176,23 @@ impl HostWsBroker {
             resource_scope,
             _slot: slot,
         };
-        handle.tx.try_send(request).map_err(|_| {
-            WsFailure::local(
-                "RPC_WS_OVERLOAD",
-                "Native Host request queue is unavailable",
-            )
-        })?;
-        Ok(PendingRequest {
+        let pending = PendingRequest {
             rx,
             shared: handle.shared.clone(),
             id,
             command_id,
             mutating: descriptor.mutating,
-            wait: admission + timeout + Duration::from_millis(100),
+            absolute_deadline: options.absolute_deadline.map(|_| deadline),
+            wait: if options.absolute_deadline.is_some() {
+                deadline.saturating_duration_since(Instant::now())
+            } else {
+                admission + timeout + Duration::from_millis(100)
+            },
+        };
+        Ok(PreparedRequest {
+            request: Some(request),
+            pending: Some(pending),
+            handle,
         })
     }
 
@@ -1093,4 +1328,4 @@ fn generation(counter: &AtomicU64) -> Option<u64> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

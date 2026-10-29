@@ -8,7 +8,8 @@ import {
   linearTeamIdsForFetch,
   listLinearIssues,
   listLinearTeams,
-  loadHiddenLinearTeamIds,
+  readHiddenLinearTeamIds,
+  requireHiddenLinearTeamIds,
   type LinearIssue,
 } from "./linear";
 import {
@@ -17,7 +18,8 @@ import {
   jiraProjectIdsForFetch,
   listJiraIssues,
   listJiraProjects,
-  loadHiddenJiraProjectIds,
+  readHiddenJiraProjectIds,
+  requireHiddenJiraProjectIds,
   type JiraIssue,
 } from "./jira";
 import {
@@ -179,12 +181,30 @@ export type InboxListResult = {
   items: InboxItem[];
   errors: InboxProviderErrors;
   pendingProviders?: InboxProvider[];
+  /**
+   * Providers whose list read returned as many rows as it asked for. The
+   * list RPCs have no cursor or total, so a full page means older items may
+   * exist that were not loaded; it never means there are more.
+   */
+  limited?: InboxProvider[];
 };
 
 const INBOX_CACHE_FRESH_MS = INBOX_VISIBLE_POLL_MS;
 
 /** Closed history competes for the same slots, so an unfiltered fetch needs the wider page. */
 const INBOX_ALL_LIMIT = 100;
+
+/** Rows a list read returns when it names no limit (`git_github_work_items`, `jira_list_issues`). */
+const INBOX_DEFAULT_LIMIT = 40;
+
+function inboxRequestLimit(query: Pick<InboxQuery, "state">): number {
+  return query.state === "all" ? INBOX_ALL_LIMIT : INBOX_DEFAULT_LIMIT;
+}
+
+/** True when a read came back full, so older rows may have been left out. */
+export function inboxReadReachedLimit(rows: number, query: Pick<InboxQuery, "state">): boolean {
+  return rows >= inboxRequestLimit(query);
+}
 
 /** Repo lookups and list calls of one provider that run at once. */
 export const INBOX_PROVIDER_CONCURRENCY = 4;
@@ -218,7 +238,7 @@ type InboxListCache = InboxListResult & {
 };
 
 const inboxListCaches = new Map<string, InboxListCache>();
-type GithubInboxSource = { items: InboxItem[]; error?: string };
+type GithubInboxSource = { items: InboxItem[]; error?: string; limited?: boolean };
 // Query-scoped source receipts let a failed repository retain its own rows without
 // reviving removed rows from a repository that refreshed successfully.
 type InboxFetchResult = InboxListResult & { githubSources?: Map<string, GithubInboxSource> };
@@ -338,9 +358,15 @@ export function inboxListCacheKey(
     .map((project) => normalizeProjectPath(project.path))
     .sort()
     .join("|");
-  const teams = [...(query.linearHiddenTeamIds ?? [])].sort().join(",");
-  const jiraProjects = [...(query.jiraHiddenProjectIds ?? [])].sort().join(",");
+  // Unspecified scope is read from storage; an unreadable one gets its own key so
+  // it never serves or overwrites the unscoped list.
+  const teams = scopeKey(query.linearHiddenTeamIds ?? readHiddenLinearTeamIds());
+  const jiraProjects = scopeKey(query.jiraHiddenProjectIds ?? readHiddenJiraProjectIds());
   return `${query.assignedToMe ? 1 : 0}:${query.state}:${paths}:${teams}:${jiraProjects}:${query.search.trim()}:${[...(query.githubKinds ?? ["issue", "pr"])].sort().join(",")}:${query.jiraEnabled === false ? "no-jira" : "jira"}`;
+}
+
+function scopeKey(ids: readonly string[] | null): string {
+  return ids ? [...ids].sort().join(",") : "!unavailable";
 }
 
 export function peekInboxList(
@@ -350,7 +376,11 @@ export function peekInboxList(
   const key = inboxListCacheKey(projects, query);
   const inboxListCache = inboxListCaches.get(key);
   if (!inboxListCache) return null;
-  return { items: inboxListCache.items, errors: inboxListCache.errors };
+  return {
+    items: inboxListCache.items,
+    errors: inboxListCache.errors,
+    ...(inboxListCache.limited?.length ? { limited: inboxListCache.limited } : {}),
+  };
 }
 
 export function peekInboxItems(
@@ -957,7 +987,7 @@ async function fetchInboxItems(
 
   // Providers are independent, so a slow one does not hold the others back.
   // Each reports its own error; the merge below keeps the fixed provider order.
-  const fetchGithub = async (): Promise<{ items: InboxItem[]; error?: string; sources?: Map<string, GithubInboxSource> }> => {
+  const fetchGithub = async (): Promise<{ items: InboxItem[]; error?: string; limited?: boolean; sources?: Map<string, GithubInboxSource> }> => {
     if (query.githubKinds?.length === 0) return { items: [] };
     const discovery = await settleWithLimit(
       unique.map((project) => () => githubRepositories(project.path)),
@@ -988,14 +1018,18 @@ async function fetchInboxItems(
       try {
         const items = await listGithubWorkItems(project.path, project.repo,
           { ...query, kind }, { force: options?.force || options?.retryFailedOnly });
-        sources.set(key, { items: items.map((item) => ({
-          ...item, projectPath: project.path, provider: "github" as const,
-          repo: item.repo || project.repo,
-        })) });
+        sources.set(key, {
+          items: items.map((item) => ({
+            ...item, projectPath: project.path, provider: "github" as const,
+            repo: item.repo || project.repo,
+          })),
+          ...(inboxReadReachedLimit(items.length, query) ? { limited: true } : {}),
+        });
       } catch (error) {
         sources.set(key, {
           items: previous?.items ?? [],
           error: `${project.repo} (${kind}): ${inboxErrorMessage(error)}`,
+          ...(previous?.limited ? { limited: true } : {}),
         });
       }
     }));
@@ -1015,6 +1049,7 @@ async function fetchInboxItems(
     return {
       sources,
       items: dedupeInboxItems([...sources.values()].flatMap((source) => source.items), preferredPaths),
+      ...([...sources.values()].some((source) => source.limited) ? { limited: true } : {}),
       ...(errors.length ? { error: [...new Set(errors)].join("\n") } : {}),
     };
   };
@@ -1028,11 +1063,11 @@ async function fetchInboxItems(
     }
   };
 
-  const fetchJira = async (): Promise<{ items: InboxItem[]; error?: string }> => {
+  const fetchJira = async (): Promise<{ items: InboxItem[]; error?: string; limited?: boolean }> => {
     if (query.jiraEnabled === false) return { items: [] };
     try {
       if (!(await jiraConnected()).connected) return { items: [] };
-      return { items: await fetchJiraInboxItems(query) };
+      return await fetchJiraInboxItems(query);
     } catch (error) {
       return { items: [], error: inboxErrorMessage(error) };
     }
@@ -1046,19 +1081,24 @@ async function fetchInboxItems(
       ? fetchRepositoryInboxItems(provider, unique, query, preferredPaths)
       : { items: [] };
 
-  const jobs: [InboxProvider, () => Promise<{ items: InboxItem[]; error?: string; sources?: Map<string, GithubInboxSource> }>][] = [
+  type ProviderRead = { items: InboxItem[]; error?: string; limited?: boolean; sources?: Map<string, GithubInboxSource> };
+  const jobs: [InboxProvider, () => Promise<ProviderRead>][] = [
     ["github", fetchGithub],
     ["linear", fetchLinear],
     ["jira", fetchJira],
     ["gitlab", () => fetchRepositoryProvider("gitlab", gitlabConnected)],
     ["azuredevops", () => fetchRepositoryProvider("azuredevops", azureDevOpsConnected)],
   ];
-  const ready = new Map<InboxProvider, { items: InboxItem[]; error?: string }>();
+  const ready = new Map<InboxProvider, ProviderRead>();
   const previous = peekInboxList(projects, query);
   const [github, linear, jira, gitlab, azuredevops] = await Promise.all(
     jobs.map(async ([provider, work]) => {
-      const value: { items: InboxItem[]; error?: string; sources?: Map<string, GithubInboxSource> } = options?.retryFailedOnly && provider !== "github" && previous
-        ? { items: previous.items.filter((item) => item.provider === provider), error: previous.errors[provider] }
+      const value: ProviderRead = options?.retryFailedOnly && provider !== "github" && previous
+        ? {
+            items: previous.items.filter((item) => item.provider === provider),
+            error: previous.errors[provider],
+            ...(previous.limited?.includes(provider) ? { limited: true } : {}),
+          }
         : await work().catch((reason) => ({
         items: [] as InboxItem[],
         error: inboxErrorMessage(reason),
@@ -1075,12 +1115,15 @@ async function fetchInboxItems(
         ],
         preferredPaths,
       );
-      if (items.length || Object.keys(errors).length)
+      if (items.length || Object.keys(errors).length) {
+        const limited = jobs.map(([name]) => name).filter((name) => ready.get(name)?.limited);
         options?.onProgress?.({
           items,
           errors,
           pendingProviders: jobs.map(([name]) => name).filter((name) => !ready.has(name)),
+          ...(limited.length ? { limited } : {}),
         });
+      }
       return value;
     }),
   );
@@ -1090,6 +1133,7 @@ async function fetchInboxItems(
   if (jira.error) errors.jira = jira.error;
   if (gitlab.error) errors.gitlab = gitlab.error;
   if (azuredevops.error) errors.azuredevops = azuredevops.error;
+  const limited = jobs.map(([name]) => name).filter((name) => ready.get(name)?.limited);
 
   return {
     githubSources: github.sources,
@@ -1098,6 +1142,7 @@ async function fetchInboxItems(
       preferredPaths,
     ),
     errors,
+    ...(limited.length ? { limited } : {}),
   };
 }
 
@@ -1168,7 +1213,7 @@ async function fetchRepositoryInboxItems(
 }
 
 async function fetchLinearInboxItems(query: InboxQuery): Promise<InboxItem[]> {
-  const hiddenIds = query.linearHiddenTeamIds ?? loadHiddenLinearTeamIds();
+  const hiddenIds = query.linearHiddenTeamIds ?? requireHiddenLinearTeamIds();
   let teamIds: string[] | null = null;
   if (hiddenIds.length > 0) {
     teamIds = linearTeamIdsForFetch(await listLinearTeams(), hiddenIds);
@@ -1210,12 +1255,14 @@ function linearIssueToInboxItem(issue: LinearIssue): InboxItem {
   };
 }
 
-async function fetchJiraInboxItems(query: InboxQuery): Promise<InboxItem[]> {
-  const hiddenIds = query.jiraHiddenProjectIds ?? loadHiddenJiraProjectIds();
+async function fetchJiraInboxItems(
+  query: InboxQuery,
+): Promise<{ items: InboxItem[]; limited?: boolean }> {
+  const hiddenIds = query.jiraHiddenProjectIds ?? requireHiddenJiraProjectIds();
   let projectIds: string[] | null = null;
   if (hiddenIds.length > 0) {
     projectIds = jiraProjectIdsForFetch(await listJiraProjects(), hiddenIds);
-    if (projectIds?.length === 0) return [];
+    if (projectIds?.length === 0) return { items: [] };
   }
   const issues = await listJiraIssues({
     assignedToMe: query.assignedToMe,
@@ -1224,9 +1271,12 @@ async function fetchJiraInboxItems(query: InboxQuery): Promise<InboxItem[]> {
     limit: query.state === "all" ? INBOX_ALL_LIMIT : undefined,
   });
   const hidden = new Set(hiddenIds);
-  return issues
-    .filter((issue) => hidden.size === 0 || !hidden.has(issue.teamId))
-    .map(jiraIssueToInboxItem);
+  return {
+    items: issues
+      .filter((issue) => hidden.size === 0 || !hidden.has(issue.teamId))
+      .map(jiraIssueToInboxItem),
+    ...(inboxReadReachedLimit(issues.length, query) ? { limited: true } : {}),
+  };
 }
 
 function jiraIssueToInboxItem(issue: JiraIssue): InboxItem {

@@ -1,4 +1,8 @@
+import type { NativeDeviceOwnerPorts, DeviceResultAuthority } from "./native-devices/ports";
 import type { DevServersBridgeResult } from "../../src/shared/model/host-contracts/dev-servers";
+import type { NativeWorkspaceOwnerScope } from "./native-workspaces/ports";
+import type { NativeServiceOwnerPorts } from "./native-services/ports";
+import type { NativeDeliveryOwnerPorts } from "./native-delivery/ports";
 
 export class HostDomainAuthorizationError extends Error {
   readonly code = "HOST_DOMAIN_AUTHORIZATION";
@@ -12,7 +16,7 @@ export class HostDomainAuthorizationError extends Error {
 export class HostDomainOutcomeError extends Error {
   constructor(
     message: string,
-    readonly delivery: "accepted" | "unknown",
+    readonly delivery: "not-sent" | "accepted" | "unknown",
     options?: ErrorOptions,
   ) {
     super(message, options);
@@ -22,11 +26,16 @@ export class HostDomainOutcomeError extends Error {
 
 /** Authenticated request capabilities supplied by transport composition. */
 export interface HostDomainContext {
-  /** Native-profile owner port captured by authenticated transport, never wire data. */
-  nativeBufferRecovery?(
-    operation: import("../../src/shared/model/host-contracts/native-buffer-recovery").NativeBufferRecoveryOperation,
-    params: Record<string, unknown>,
-  ): Promise<unknown>;
+  nativeDelivery?: NativeDeliveryOwnerPorts;
+  nativeServices?: NativeServiceOwnerPorts;
+  nativeDevices?: NativeDeviceOwnerPorts;
+  /** Request-local result guards survive socket detachment in retained bulk entries. */
+  retainResultAuthority?(check: DeviceResultAuthority): void;
+  /** Actual Device owner admission; used for legacy HTTP uncertain outcomes. */
+  deviceEffectAdmitted?(): void;
+  /** Existing managed.withOwner capability, bound by authenticated composition.
+   * Retains owner authorization through completion, independent of socket wait. */
+  workspaceOwner?: NativeWorkspaceOwnerScope;
   authorized(): Promise<boolean>;
   /** Opaque authenticated identity; never a bearer credential. */
   readonly principalId?: string;

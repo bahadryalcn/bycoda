@@ -17,6 +17,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: mocks.invoke,
   convertFileSrc: (path: string) => `asset:${path}`,
 }));
+// Native window blur is a macOS-only effect, so the native assertions need the macOS flag on any host OS.
+vi.mock("../../../platform/tauri/platform", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../platform/tauri/platform")>()),
+  IS_MAC: true,
+}));
 vi.mock("../model/newThreadBackgroundEffects", () => ({
   applyPreparedNewThreadBackground: mocks.background,
   clearPreparedNewThreadBackground: mocks.clear,

@@ -245,7 +245,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     await click(t("More actions"));
     await click("Activity history");
     expect(nav.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Automations",
+      "Activity",
     );
     const history = container.querySelector(".social-history-page")!;
     expect(history.closest("[hidden]")).toBeNull();
@@ -262,7 +262,12 @@ describe("Sosyal Medya ürün ekranı", () => {
     await click(t("More actions"));
     await click("Activity history");
     expect(history.closest("[hidden]")).toBeNull();
-    await act(async () => filters.click());
+    // An active filter renders the shared trigger with its count, so query it again.
+    const activeFilters = history.querySelector<HTMLButtonElement>(
+      'button[aria-haspopup="dialog"]',
+    )!;
+    expect(activeFilters.textContent).toContain("1");
+    await act(async () => activeFilters.click());
     const retainedStatus = Array.from(document.body.querySelectorAll(".social-filter-panel label"))
       .find((label) => label.textContent?.startsWith("Send status"))!
       .querySelector("select")!;
@@ -277,7 +282,7 @@ describe("Sosyal Medya ürün ekranı", () => {
         }),
       );
     await act(async () => renderPanel(true));
-    await click("Campaigns");
+    await click("Prepare content");
     const input = labelledInput("Campaign name");
     expect(input).toBeTruthy();
     await act(async () => {
@@ -297,7 +302,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     );
     await act(async () => renderPanel(true));
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Campaigns",
+      "Prepare content",
     );
     expect(container.querySelector(".social-initial-loading")).toBeNull();
     expect(input.value).toBe("Korunan kampanya");
@@ -465,7 +470,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     ];
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Campaigns");
+    await click("Prepare content");
     mocks.snapshot.mockRejectedValue(new Error("Host offline"));
     await click("Refresh");
     expect(container.textContent).toContain("Saved campaign");
@@ -523,7 +528,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(platform).toBeTruthy();
     await chooseSocialValue(platform, "youtube");
     expect(container.querySelector('option[value="channel"]')?.textContent).toBe("Channel");
-    await click("Campaigns");
+    await click("Prepare content");
     const picker = container.querySelector<HTMLButtonElement>('[aria-label="Social accounts"]')!;
     await act(async () => picker.click());
     const target = Array.from(
@@ -540,11 +545,19 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(container.textContent).not.toContain("HTTPS image URL");
     expect(mocks.request).not.toHaveBeenCalled();
   });
-  it("altı bölüm görünür; açılış ve gezinme gerçek gönderimi etkinleştirmez", async () => {
+  it("yedi bölüm görünür; açılış ve gezinme gerçek gönderimi etkinleştirmez", async () => {
     await mount();
     expect(container.querySelector("[data-app-social][role=region]")).toBeTruthy();
     expect(container.querySelector('[role="dialog"]')).toBeNull();
-    for (const tab of ["Accounts", "Campaigns", "Inbox", "Audience", "Automations", "Settings"]) {
+    for (const tab of [
+      "Accounts",
+      "Prepare content",
+      "Inbox",
+      "Audience",
+      "Plans and replies",
+      "Activity",
+      "Settings",
+    ]) {
       await click(tab);
       expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
         tab,
@@ -556,7 +569,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(container.textContent).toContain("Draft mode · sending off");
     await click("Sending controls: Draft mode · sending off");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Automations",
+      "Plans and replies",
     );
     expect(container.textContent).toContain("Draft mode · sending off");
     expect(mocks.request).not.toHaveBeenCalled();
@@ -603,7 +616,7 @@ describe("Sosyal Medya ürün ekranı", () => {
   });
   it("host değiştirip dönünce kaydedilmemiş kampanya ve bölüm korunur", async () => {
     await mount();
-    await click("Campaigns");
+    await click("Prepare content");
     const input = labelledInput("Campaign name");
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -621,7 +634,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     expect(panelHidden(input)).toBe(false);
     expect(input.value).toBe("Host bir taslağı");
     expect(container.querySelector('[aria-current="page"] .social-nav-label')?.textContent).toBe(
-      "Campaigns",
+      "Prepare content",
     );
   });
   it("büyük koleksiyonlar sunucu sayfalarını açar ve formu yeniden bağlamaz", async () => {
@@ -632,7 +645,7 @@ describe("Sosyal Medya ürün ekranı", () => {
     };
     mocks.snapshot.mockResolvedValue(value);
     await mount();
-    await click("Campaigns");
+    await click("Prepare content");
     const input = labelledInput("Campaign name");
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -828,7 +841,7 @@ describe("Sosyal Medya ürün ekranı", () => {
       },
     ];
     await act(async () => finish(old));
-    await click("Campaigns");
+    await click("Prepare content");
     expect(container.textContent).not.toContain("Old host private campaign");
     expect(localStorage.getItem("bycoda.social.host")).toBe("two");
   });
@@ -860,7 +873,7 @@ it("pauses browser and OAuth polling outside the active panel and stops terminal
   mocks.browserStatus.mockResolvedValue({ status: "waiting" });
   await mount();
   await act(async () => vi.advanceTimersByTimeAsync(10));
-  await click("Campaigns");
+  await click("Prepare content");
   const oauthReads = mocks.oauthStatus.mock.calls.length;
   const browserReads = mocks.browserStatus.mock.calls.length;
   await act(async () => vi.advanceTimersByTimeAsync(20_000));

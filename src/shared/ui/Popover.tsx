@@ -50,6 +50,10 @@ export type PopoverDismissReason = "outside" | "escape";
  *   Needs `constrainHeight` (the default); content with nothing focusable inside
  *   should pass `tabIndex={0}` so keyboard users can scroll it.
  *
+ * Forms, filter panels and help text vary in height with locale, zoom and viewport, so they use
+ * `"scroll"` (InfoPopover and DateTimeRangePicker do). Menus and lists that already own a scroll rail
+ * (DropdownMenu, SearchableSelect, Select) keep `"intrinsic"`; never nest a second rail in a scrolling flow.
+ *
  * `data-popover-flow` on the content element reflects the active mode.
  */
 export type PopoverFlow = "intrinsic" | "scroll";
@@ -94,7 +98,7 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
 };
 
 const FRAME =
-  "isolate overflow-hidden rounded-(--ui-radius-popup) border border-stroke shadow-(--ui-elevation-floating)";
+  "isolate overflow-hidden rounded-(--ui-radius-popup) border border-(color:--ui-pane-border) shadow-(--ui-elevation-floating)";
 
 /** Inline so an opt-in scroll region wins over utility classes a consumer put on the content. */
 const SCROLL_STYLE: CSSProperties = { overflowY: "auto", overscrollBehavior: "contain" };

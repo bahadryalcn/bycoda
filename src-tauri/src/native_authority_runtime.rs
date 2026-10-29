@@ -54,10 +54,17 @@ struct NativeAuthorityRuntime {
     shared: Arc<Shared>,
     worker: Mutex<Option<JoinHandle<()>>>,
     checkpoints: Mutex<Option<Arc<crate::native_authority_checkpoint::NativeRendererCheckpoints>>>,
+    projection:
+        Mutex<Option<Arc<crate::native_projection_coordinator::NativeProjectionCoordinator>>>,
 }
 impl NativeAuthorityRuntime {
     fn shutdown(&self) {
         self.shared.cancel();
+        if let Ok(projection) = self.projection.lock() {
+            if let Some(service) = projection.as_ref() {
+                service.shutdown();
+            }
+        }
         if let Ok(checkpoints) = self.checkpoints.lock() {
             if let Some(service) = checkpoints.as_ref() {
                 service.shutdown();
@@ -88,6 +95,7 @@ pub(crate) fn start(app: &tauri::AppHandle) {
             shared: shared.clone(),
             worker: Mutex::new(None),
             checkpoints: Mutex::new(None),
+            projection: Mutex::new(None),
         }) {
             return;
         }
@@ -136,6 +144,22 @@ pub(crate) fn renderer_checkpoints(
         .ok_or_else(|| "NATIVE_CHECKPOINT_SOURCE_UNAVAILABLE".into())
 }
 
+pub(crate) fn projection_coordinator(
+    app: &tauri::AppHandle,
+) -> Result<Arc<crate::native_projection_coordinator::NativeProjectionCoordinator>, String> {
+    let runtime = app
+        .try_state::<NativeAuthorityRuntime>()
+        .ok_or("NATIVE_PROJECTION_SOURCE_UNAVAILABLE")?;
+    let projection = runtime
+        .projection
+        .lock()
+        .map_err(|_| "NATIVE_PROJECTION_SOURCE_UNAVAILABLE")?;
+    projection
+        .as_ref()
+        .cloned()
+        .ok_or_else(|| "NATIVE_PROJECTION_SOURCE_UNAVAILABLE".into())
+}
+
 fn run(app: tauri::AppHandle, shared: Arc<Shared>) {
     let mut retry = Duration::from_secs(5);
     while !shared.stopping() {
@@ -165,6 +189,14 @@ fn associate(app: &tauri::AppHandle, shared: &Shared) -> Result<(), ()> {
         )
         .map_err(|_| ())?,
     );
+    let projection = Arc::new(
+        crate::native_projection_coordinator::NativeProjectionCoordinator::new(
+            app.clone(),
+            &host.description.environment_id,
+            checkpoints.clone(),
+        )
+        .map_err(|_| ())?,
+    );
     {
         let runtime = app.try_state::<NativeAuthorityRuntime>().ok_or(())?;
         let mut current = runtime.checkpoints.lock().map_err(|_| ())?;
@@ -174,10 +206,19 @@ fn associate(app: &tauri::AppHandle, shared: &Shared) -> Result<(), ()> {
         if let Some(previous) = current.replace(checkpoints.clone()) {
             previous.shutdown();
         }
+        if let Some(previous) = runtime
+            .projection
+            .lock()
+            .map_err(|_| ())?
+            .replace(projection.clone())
+        {
+            previous.shutdown();
+        };
     }
     let _checkpoint_owner = CurrentCheckpoints {
         app: app.clone(),
         service: checkpoints,
+        projection: projection.clone(),
     };
     let profile = app.path().app_data_dir().map_err(|_| ())?;
     let deployment = crate::native_authority_deployment::provision(
@@ -203,8 +244,18 @@ fn associate(app: &tauri::AppHandle, shared: &Shared) -> Result<(), ()> {
     // The guard clears only the flag it owns; the current loop never overlaps
     // another endpoint, and cancellation does not release the endpoint permit.
     let clear = CurrentEndpoint { shared };
-    let mut endpoint =
-        SourceEndpoint::start(binding, cancel, SourceEndpointOptions::default()).map_err(|_| ())?;
+    let observer = Arc::new(
+        move |session: &str, migration: &str, generation: u64, cancellation: &PipeCancellation| {
+            projection.observe(session, migration, generation, cancellation)
+        },
+    );
+    let mut endpoint = SourceEndpoint::start_with_projection(
+        binding,
+        cancel,
+        SourceEndpointOptions::default(),
+        observer,
+    )
+    .map_err(|_| ())?;
     let descriptor = endpoint.descriptor();
     let registered = host.register(
         descriptor.address(),
@@ -250,15 +301,25 @@ struct CurrentEndpoint<'a> {
 struct CurrentCheckpoints {
     app: tauri::AppHandle,
     service: Arc<crate::native_authority_checkpoint::NativeRendererCheckpoints>,
+    projection: Arc<crate::native_projection_coordinator::NativeProjectionCoordinator>,
 }
 impl Drop for CurrentCheckpoints {
     fn drop(&mut self) {
+        self.projection.shutdown();
         self.service.shutdown();
         if let Some(runtime) = self.app.try_state::<NativeAuthorityRuntime>() {
             if let Ok(mut current) = runtime.checkpoints.lock() {
                 if current
                     .as_ref()
                     .is_some_and(|service| Arc::ptr_eq(service, &self.service))
+                {
+                    *current = None;
+                }
+            }
+            if let Ok(mut current) = runtime.projection.lock() {
+                if current
+                    .as_ref()
+                    .is_some_and(|service| Arc::ptr_eq(service, &self.projection))
                 {
                     *current = None;
                 }

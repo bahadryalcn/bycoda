@@ -53,6 +53,7 @@ export function InfoPopover({
           aria-label={name}
           tabIndex={-1}
           autoFocus
+          flow="scroll"
           onDismiss={() => setOpen(false)}
           className="flex flex-col gap-2 p-3 text-ui-secondary text-(--ui-text-secondary)"
         >

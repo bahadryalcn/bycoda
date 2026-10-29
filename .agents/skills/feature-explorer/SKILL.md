@@ -5,6 +5,40 @@ description: Explorer file tree inventory for root/worktree identity, compact he
 
 # Explorer and file-tree management
 
+## Owned file-editor input admission, 2026-10-29
+
+The source511 continuation adds a physical-window gate to the known mounted
+FileEditor source/merge roster. Actual document dispatch/update/state replacement
+and save/format/recovery callbacks consult it; readonly controls provide early
+feedback. Previously accepted format/save chains use private same-owner tickets.
+External reload, value, Git and theme changes are preserved and invalidate the
+round. Active or unsettled IME holds preparation without forcing a commit.
+
+The Native read/write/format blocking worker retains actual-window Buffers
+admission independently of its IPC waiter. This is neither filesystem durability
+nor complete Notes/editor-alias/actor coverage, and it does not complete the
+Native Buffers lane. Current verification packet:
+`temp/verification/2026-10-29-input-admission-root/`. User-facing behavior is
+described in `docs/guides/editor-draft-recovery.md`.
+
+## Mounted file-editor checkpoint data, 2026-10-29
+
+Nonvisual Host-migration integration adds passive actual source/merge editor
+inspection and a mounted roster in `features/files/data/mountedEditorClosure.ts`
+with `ui/useMountedEditorClosure.ts`. Existing `FileEditor` binding and single
+native-editor-drafts profile producer remain the persistence owner. Actual IME,
+format-before-save, native/remote save, load/recovery, baseline and readonly
+transitions hold or invalidate captures. Retired accepted work remains busy until
+the original promises finish; dead views are not reread.
+
+Native FULL compares claimed exact ACKs with the actual current stored row and
+preserves the original body/baseline in the immutable v2 checkpoint. Shared
+profile editors are not assigned to a logical session by cwd. This is not a disk
+save, filesystem durability, closed input admission or complete Buffers proof.
+Notes and other editor actors remain separate scope. See
+`temp/verification/2026-10-29-parent-buffers-editor/` and the Root packet; no new
+layout/style, installed application or release acceptance is claimed.
+
 ## H4 implementation packet, 2026-10-28
 
 Implementation and per-record review for EXP-01..09 are tracked in

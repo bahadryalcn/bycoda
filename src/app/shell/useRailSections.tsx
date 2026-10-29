@@ -32,63 +32,128 @@ import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 export const RAIL_DRAG_HANDLE = "cursor-grab touch-none";
 
 /**
- * Every section header is the same height, so the sections stay the same size
- * while one is dragged with only its header showing.
+ * Every section header is one compact 28px row (the shared compact control
+ * height, so it follows the density setting) with no extra block padding: the
+ * sections stay the same size while one is dragged with only its header
+ * showing.
  */
-export const RAIL_SECTION_HEADER = "group flex min-h-[30px] items-center gap-1 px-3 pb-1.5 pt-1";
+export const RAIL_SECTION_HEADER =
+  "group flex min-h-(--ui-control-height-compact) items-center gap-1 px-2";
 
-/** One header for every rail section: drag handle, collapse toggle, section actions and menu. */
+/** Label style shared by every section header, whether it collapses or not. */
+export const RAIL_SECTION_LABEL = "text-ui-caption font-medium text-(--ui-text-secondary)";
+
+/**
+ * The block around one section (header plus body). Two spacing roles live here, not in
+ * the ledger: an open section leaves 12px after its body, a collapsed one only a hairline
+ * so a closed rail stays a tight list of headers. Pass `data-collapsed` when closed.
+ */
+export const RAIL_SECTION_BLOCK =
+  "reorder-item rail-reorder-block mb-3 shrink-0 data-[collapsed]:mb-0.5";
+
+/**
+ * One header for every rail section. Anatomy, left to right: a flexible label track
+ * (optional leading icon, which turns into the collapse chevron on hover or focus; label;
+ * optional count) and a persistent right-aligned slot with the section's own actions and,
+ * when the section can be reordered, its options menu. Dragging starts anywhere on the
+ * header except that slot.
+ */
 export function RailSectionHeader({
   label,
   drag,
   collapsed = false,
   onToggleCollapsed,
+  controlsId,
+  icon,
+  count,
   actions,
 }: {
   label: string;
-  drag: RailSectionDrag;
+  /** Present when the section can be reordered; adds the drag handle, shortcuts and options menu. */
+  drag?: RailSectionDrag;
   collapsed?: boolean;
   onToggleCollapsed?: () => void;
+  /** Id of the element the toggle shows and hides. */
+  controlsId?: string;
+  /** Leading mark, for example a clock or a status dot. Without one the chevron is always shown. */
+  icon?: ReactNode;
+  count?: ReactNode;
   actions?: ReactNode;
 }) {
   const t = useT();
+  const chevron = collapsed ? (
+    <ChevronRight className="icon-xs shrink-0" />
+  ) : (
+    <ChevronDown className="icon-xs shrink-0" />
+  );
   return (
     <ActionHost
-      {...drag.headerProps}
-      tabIndex={0}
-      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-      title={t("Drag to reorder")}
-      className={`${RAIL_SECTION_HEADER} ${RAIL_DRAG_HANDLE} rounded-md outline-none focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
+      {...drag?.headerProps}
+      tabIndex={drag ? 0 : undefined}
+      aria-keyshortcuts={drag ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+      title={drag ? t("Drag to reorder") : undefined}
+      className={`${RAIL_SECTION_HEADER} ${drag ? RAIL_DRAG_HANDLE : ""} rounded-md outline-none focus-visible:bg-(--ui-surface-hover) @max-[140px]/rail:justify-center @max-[140px]/rail:px-0`}
     >
       {onToggleCollapsed ? (
         <Button
           variant="item"
           motion="none"
+          size="sm"
           aria-expanded={!collapsed}
+          aria-controls={controlsId}
           onClick={onToggleCollapsed}
-          className="min-w-0 flex-1 @max-[140px]/rail:hidden"
+          className={`min-w-0 flex-1 ${RAIL_SECTION_LABEL} ${
+            icon ? "@max-[140px]/rail:justify-center" : "@max-[140px]/rail:hidden"
+          }`}
         >
-          {collapsed ? (
-            <ChevronRight className="icon-xs shrink-0" />
+          {icon ? (
+            <>
+              <span className="inline-flex shrink-0 group-hover:hidden group-has-[button:focus-visible]:hidden">
+                {icon}
+              </span>
+              <span className="hidden shrink-0 group-hover:inline-flex group-has-[button:focus-visible]:inline-flex">
+                {chevron}
+              </span>
+            </>
           ) : (
-            <ChevronDown className="icon-xs shrink-0" />
+            chevron
           )}
-          <span className="truncate">{label}</span>
+          <span className="truncate @max-[140px]/rail:hidden">{label}</span>
+          {count != null ? (
+            <span className="ms-auto ps-1 text-ui-micro font-medium tabular-nums @max-[140px]/rail:hidden">
+              {count}
+            </span>
+          ) : null}
         </Button>
       ) : (
-        <span className="min-w-0 flex-1 truncate px-1 text-ui-caption font-medium text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+        <span
+          className={`min-w-0 flex-1 truncate px-2 ${RAIL_SECTION_LABEL} @max-[140px]/rail:hidden`}
+        >
           {label}
         </span>
       )}
-      {actions}
-      <span className="contents @max-[140px]/rail:hidden">
-        <SectionMenuButton label={label} onOpen={drag.openMenu} />
-      </span>
+      {actions || drag ? (
+        <div
+          data-no-drag=""
+          data-rail-section-actions=""
+          className="ms-auto flex shrink-0 cursor-default items-center gap-0.5"
+        >
+          {actions}
+          {drag ? (
+            <span className="contents @max-[140px]/rail:hidden">
+              <SectionMenuButton label={label} onOpen={drag.openMenu} />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
     </ActionHost>
   );
 }
 
-/** The "..." on a section header; it shows on hover or keyboard focus. */
+/**
+ * The "..." on a section header. Unlike row actions it is always visible, so the
+ * section menu never depends on hover; it sits in the header's trailing slot.
+ */
 export function SectionMenuButton({
   label,
   onOpen,
@@ -99,6 +164,7 @@ export function SectionMenuButton({
   const t = useT();
   return (
     <InlineAction
+      reveal="always"
       label={t("{p0} section options", { p0: label })}
       motion="none"
       type="button"

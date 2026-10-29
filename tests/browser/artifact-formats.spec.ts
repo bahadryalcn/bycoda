@@ -336,6 +336,12 @@ for (const dpr of [1, 2, 3]) {
         expect(metric.textOffset).toBeCloseTo(50 * zoom, 0);
         metrics.push({ zoom, ...metric });
         if (zoom === 5) {
+          // Zooming keeps the viewport centre, which scrolls the page's first line
+          // out of view; bring its start into the viewport before dragging over it.
+          await layer
+            .locator("span")
+            .first()
+            .evaluate((span) => span.scrollIntoView({ block: "center", inline: "start" }));
           const rangeBox = await layer
             .locator("span")
             .first()

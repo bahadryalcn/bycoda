@@ -1,4 +1,8 @@
-import { nativeOutputFrame, captureNativeOutputEvent, getNativeOutputEventOrigin } from "../../core/nativeOutputDelivery.testSupport";
+import {
+  nativeOutputFrame,
+  captureNativeOutputEvent,
+  getNativeOutputEventOrigin,
+} from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyHarnessEvent } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -96,7 +100,10 @@ async function startTurn(
     providerAccountId: options.providerAccountId,
     text: "explore the codebase",
     attachments: [],
-    onEvent: (event) => { captureNativeOutputEvent(sessionId, event); events.push(event); },
+    onEvent: (event) => {
+      captureNativeOutputEvent(sessionId, event);
+      events.push(event);
+    },
   });
 
   await waitFor(
@@ -2265,13 +2272,10 @@ describe("claude background tasks", () => {
       },
     });
     await waitFor(
-      () =>
-        events.some((e) => e.type === "tool.updated" && e.preview?.output === "first line\n"),
+      () => events.some((e) => e.type === "tool.updated" && e.preview?.output === "first line\n"),
       "live output",
     );
-    readHarnessTaskOutput.mockRejectedValue(
-      Object.assign(new Error("denied"), { code: "EACCES" }),
-    );
+    readHarnessTaskOutput.mockRejectedValue(Object.assign(new Error("denied"), { code: "EACCES" }));
     emitBashFinished();
     await waitFor(
       () =>
@@ -2859,15 +2863,32 @@ it("Claude çıkışı bekleyen onay ve soruyu çözer", async () => {
 });
 
 it("preserves the original control-request lineage after an asynchronous user decision", async () => {
- const {events,turn}=await startTurn("claude-causal");
- const frame=JSON.stringify({type:"control_request",request_id:"causal-permission",request:{subtype:"can_use_tool",tool_name:"Read",tool_use_id:"causal-read",input:{file_path:"/tmp/causal"}}});
- const inspect=nativeOutputFrame("claude-causal",frame,()=>onLine!(frame));
- const asked=events.find(e=>e.type==="approval.requested")!;
- expect(asked).toBeDefined();expect(inspect().pendingCausalWork).toBeGreaterThan(0);
- const origin=getNativeOutputEventOrigin(asked);expect(origin).not.toBeNull();
- respondClaudeApproval("claude-causal",asked.requestId,"allow");
- await waitFor(()=>events.some(e=>e.type==="approval.resolved"),"causal approval settlement");
- expect(getNativeOutputEventOrigin(events.find(e=>e.type==="approval.resolved")!)).toBe(origin);
- await vi.waitFor(()=>expect(inspect().pendingCausalWork).toBe(0));
- emit({type:"result",subtype:"success",session_id:"sess_1"});await turn;
+  const { events, turn } = await startTurn("claude-causal");
+  const frame = JSON.stringify({
+    type: "control_request",
+    request_id: "causal-permission",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "Read",
+      tool_use_id: "causal-read",
+      input: { file_path: "/tmp/causal" },
+    },
+  });
+  const inspect = nativeOutputFrame("claude-causal", frame, () => onLine!(frame));
+  const asked = events.find((e) => e.type === "approval.requested")!;
+  expect(asked).toBeDefined();
+  expect(inspect().pendingCausalWork).toBeGreaterThan(0);
+  const origin = getNativeOutputEventOrigin(asked);
+  expect(origin).not.toBeNull();
+  respondClaudeApproval("claude-causal", asked.requestId, "allow");
+  await waitFor(
+    () => events.some((e) => e.type === "approval.resolved"),
+    "causal approval settlement",
+  );
+  expect(getNativeOutputEventOrigin(events.find((e) => e.type === "approval.resolved")!)).toBe(
+    origin,
+  );
+  await vi.waitFor(() => expect(inspect().pendingCausalWork).toBe(0));
+  emit({ type: "result", subtype: "success", session_id: "sess_1" });
+  await turn;
 });

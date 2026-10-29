@@ -1,8 +1,8 @@
 .meter {
   --segment-0: var(--usage-color, var(--accent));
-  --segment-1: color-mix(in oklab, var(--accent) 62%, var(--surface));
-  --segment-2: color-mix(in oklab, var(--accent) 36%, var(--surface));
-  --segment-3: color-mix(in oklab, var(--accent) 22%, var(--surface));
+  --segment-1: var(--ui-chart-heat-3, var(--ui-tone-accent-fg));
+  --segment-2: var(--ui-chart-heat-2, var(--ui-tone-accent-fg));
+  --segment-3: var(--ui-chart-heat-1, var(--ui-tone-accent-fg));
   display: grid;
   min-width: 0;
   gap: var(--space-4);
@@ -57,14 +57,14 @@
   place-items: center;
 }
 .badge[data-status="near"] {
-  background: color-mix(in oklab, var(--warning) 14%, var(--surface));
+  background: var(--ui-tone-warning-subtle);
   color: var(--foreground);
 }
 .badge[data-status="near"] .badgeIcon {
   color: var(--warning);
 }
 .badge[data-status="over"] {
-  background: color-mix(in oklab, var(--danger) 12%, var(--surface));
+  background: var(--ui-tone-danger-subtle);
   color: var(--foreground);
 }
 .badge[data-status="over"] .badgeIcon {
@@ -114,7 +114,7 @@
   height: 14px;
   overflow: hidden;
   border-radius: var(--radius-pill);
-  background: color-mix(in oklab, var(--foreground) 7%, var(--surface));
+  background: var(--ui-surface-muted);
   isolation: isolate;
   -webkit-tap-highlight-color: transparent;
 }
@@ -236,7 +236,7 @@
   border-radius: 3px;
 }
 .swatch[data-index="free"] {
-  background: color-mix(in oklab, var(--foreground) 7%, var(--surface));
+  background: var(--ui-surface-muted);
   box-shadow: inset 0 0 0 1px var(--border-strong);
 }
 .keyIcon {
@@ -317,4 +317,31 @@
 
 .meter[data-compact] {
   gap: var(--space-2);
+}
+
+/* Segment fills are backgrounds, which forced-colors mode flattens; system colours and a track border keep them readable. */
+@media (forced-colors: active) {
+  .track {
+    border: 1px solid CanvasText;
+  }
+  .segment,
+  .swatch {
+    forced-color-adjust: none;
+  }
+  .segment[data-index="0"],
+  .swatch[data-index="0"] {
+    background: Highlight;
+  }
+  .segment[data-index="1"],
+  .swatch[data-index="1"] {
+    background: CanvasText;
+  }
+  .segment[data-index="2"],
+  .swatch[data-index="2"] {
+    background: LinkText;
+  }
+  .segment[data-index="3"],
+  .swatch[data-index="3"] {
+    background: GrayText;
+  }
 }

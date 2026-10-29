@@ -27,6 +27,20 @@ struct WindowSlot {
 }
 
 impl WindowSlot {
+    fn destroyed(&self) {
+        // Same ordering as capture/group consumption and Resource::close.
+        // Do not invalidate a physical owner halfway through its FULL callback.
+        match self.token.lock() {
+            Ok(token) => {
+                self.buffer_owner_valid.store(false, Ordering::Release);
+                let _ = self.barrier.observe_destroyed(&token);
+            }
+            Err(_) => {
+                self.buffer_owner_valid.store(false, Ordering::Release);
+                let _ = self.barrier.observe_unattributed_destruction();
+            }
+        }
+    }
     fn reloaded(&self) {
         if let Ok(mut token) = self.token.lock() {
             if let Ok(reloaded) = self.barrier.observe_reloaded(&token) {
@@ -77,6 +91,210 @@ impl NativeCheckpointWindow {
     pub(crate) fn incarnation(&self) -> uuid::Uuid {
         self.incarnation
     }
+
+    pub(crate) fn same_capture(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.slot, &other.slot)
+            && self.incarnation == other.incarnation
+            && self.store_instance == other.store_instance
+            && self.token.same_capture(&other.token)
+    }
+}
+
+/// A borrowed proof of the owner locks held by with_checked_checkpoint_resources.
+/// No Clone/Serde constructor, and the higher-ranked callback prevents escape.
+pub(crate) struct CheckedCheckpointWindow<'scope> {
+    owner: &'scope NativeCheckpointWindow,
+    _scope: &'scope (),
+}
+impl CheckedCheckpointWindow<'_> {
+    pub(crate) fn matches_store_instance(&self, instance: uuid::Uuid) -> bool {
+        self.owner.store_instance == instance
+    }
+
+    /// Derive only from the actual physical owner already locked by the group.
+    /// No resource-table or Store lookup may be performed under the FULL lock.
+    pub(crate) fn buffer_owner(&self) -> NativeBufferOwner {
+        NativeBufferOwner {
+            store_instance: self.owner.store_instance,
+            incarnation: self.owner.incarnation,
+            label: self.owner.token.label().to_owned(),
+        }
+    }
+
+    /// Pure capture comparison: callers already hold resource locks, then SQL.
+    /// Reacquiring either here would invert the checkpoint lock order.
+    pub(crate) fn matches(&self, captured: &NativeCheckpointWindow) -> bool {
+        Arc::ptr_eq(&self.owner.slot, &captured.slot)
+            && self.owner.incarnation == captured.incarnation
+            && self.owner.store_instance == captured.store_instance
+            && self.owner.token.same_capture(&captured.token)
+    }
+}
+
+/// Exact captures whose physical locks are held together. This is not a roster
+/// or migration proof; the caller must also hold the target barrier scope.
+pub(crate) struct CheckedCheckpointGroup<'scope> {
+    owners: &'scope [&'scope NativeCheckpointWindow],
+    _scope: &'scope (),
+}
+impl CheckedCheckpointGroup<'_> {
+    pub(crate) fn matches(&self, captured: &NativeCheckpointWindow) -> bool {
+        self.owners.iter().any(|owner| {
+            Arc::ptr_eq(&owner.slot, &captured.slot)
+                && owner.incarnation == captured.incarnation
+                && owner.store_instance == captured.store_instance
+                && owner.token.same_capture(&captured.token)
+        })
+    }
+    pub(crate) fn matches_store_instance(&self, instance: uuid::Uuid) -> bool {
+        self.owners
+            .iter()
+            .all(|owner| owner.store_instance == instance)
+    }
+    pub(crate) fn matches_closed_roster(
+        &self,
+        closed: &crate::session_store::window_barrier::target::ClosedTargetAdmission,
+    ) -> bool {
+        self.owners.iter().all(|owner| {
+            closed
+                .windows()
+                .iter()
+                .any(|token| token.same_capture(&owner.token))
+        })
+    }
+    pub(crate) fn checked_window<'a>(
+        &'a self,
+        owner: &'a NativeCheckpointWindow,
+    ) -> Option<CheckedCheckpointWindow<'a>> {
+        self.matches(owner).then_some(CheckedCheckpointWindow {
+            owner,
+            _scope: self._scope,
+        })
+    }
+
+    pub(crate) fn with_target_scope<T>(
+        &self,
+        recipient: &NativeCheckpointWindow,
+        closed: &crate::session_store::window_barrier::target::ClosedTargetAdmission,
+        consume: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        if !self.matches(recipient) || !self.matches_closed_roster(closed) {
+            return Err("NATIVE_CHECKPOINT_WRONG_ROSTER".into());
+        }
+        recipient
+            .slot
+            .barrier
+            .with_target_checkpoint_scope(closed, &recipient.token, |_| consume())
+            .map_err(|error| error.to_string())?
+    }
+
+    pub(crate) fn begin_target_checkpoint_before(
+        &self,
+        recipient: &NativeCheckpointWindow,
+        closed: &crate::session_store::window_barrier::target::ClosedTargetAdmission,
+        deadline: std::time::Instant,
+    ) -> Result<NativeOperation, String> {
+        if !self.matches(recipient) || !self.matches_closed_roster(closed) {
+            return Err("NATIVE_CHECKPOINT_WRONG_ROSTER".into());
+        }
+        recipient
+            .slot
+            .barrier
+            .begin_target_checkpoint_before(
+                closed,
+                &recipient.token,
+                NativeLane::Persistence,
+                deadline,
+            )
+            .map_err(|error| error.to_string())
+    }
+}
+
+/// Lock every original producer/recipient in one canonical order. Preparation
+/// resolves actual resource tables before this call and releases those table
+/// locks; no IPC, resource lookup or Store relocking is allowed in consume.
+pub(crate) fn with_checkpoint_owner_group<T>(
+    owners: &[&NativeCheckpointWindow],
+    instance: uuid::Uuid,
+    consume: impl for<'scope> FnOnce(CheckedCheckpointGroup<'scope>) -> Result<T, String>,
+) -> Result<T, String> {
+    if owners.is_empty() || owners.len() > 128 {
+        return Err("NATIVE_CHECKPOINT_OWNER_GROUP_CAPACITY".into());
+    }
+    let mut ordered = owners.to_vec();
+    ordered.sort_by_key(|owner| Arc::as_ptr(&owner.slot) as usize);
+    for pair in ordered.windows(2) {
+        if Arc::ptr_eq(&pair[0].slot, &pair[1].slot)
+            && (pair[0].incarnation != pair[1].incarnation
+                || pair[0].store_instance != pair[1].store_instance
+                || !pair[0].token.same_capture(&pair[1].token))
+        {
+            return Err("NATIVE_CHECKPOINT_WINDOW_CHANGED".into());
+        }
+    }
+    ordered.dedup_by(|a, b| Arc::ptr_eq(&a.slot, &b.slot));
+    if ordered.iter().any(|owner| owner.store_instance != instance) {
+        return Err("NATIVE_CHECKPOINT_SOURCE_CHANGED".into());
+    }
+    let tokens = ordered
+        .iter()
+        .map(|owner| {
+            owner
+                .slot
+                .token
+                .lock()
+                .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let incarnations = ordered
+        .iter()
+        .map(|owner| {
+            owner
+                .slot
+                .buffer_incarnation
+                .lock()
+                .map_err(|_| "NATIVE_CHECKPOINT_WINDOW_UNAVAILABLE".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (index, owner) in ordered.iter().enumerate() {
+        if !owner.slot.buffer_owner_valid.load(Ordering::Acquire)
+            || *incarnations[index] != owner.incarnation
+            || !tokens[index].same_capture(&owner.token)
+        {
+            return Err("NATIVE_CHECKPOINT_WINDOW_CHANGED".into());
+        }
+    }
+    let scope = ();
+    consume(CheckedCheckpointGroup {
+        owners: &ordered,
+        _scope: &scope,
+    })
+}
+
+// The atomic projection/FULL consumer is not installed yet. Do not fabricate a
+// runtime caller: this guard factory is exercised by the Native receipt tests.
+#[allow(dead_code)]
+pub(crate) fn with_checked_checkpoint_resources<T>(
+    owner: &NativeCheckpointWindow,
+    resources: &ResourceTable,
+    store_instance: uuid::Uuid,
+    consume: impl for<'scope> FnOnce(
+        &WindowBarrier,
+        &WindowToken,
+        CheckedCheckpointWindow<'scope>,
+    ) -> Result<T, String>,
+) -> Result<T, String> {
+    with_checkpoint_resources(owner, resources, store_instance, |barrier, token| {
+        let scope = ();
+        consume(
+            barrier,
+            token,
+            CheckedCheckpointWindow {
+                owner,
+                _scope: &scope,
+            },
+        )
+    })
 }
 
 pub(crate) fn capture_checkpoint_resources(
@@ -443,12 +661,7 @@ fn tracker(app: &AppHandle) -> Result<WindowBarrier, String> {
 fn destruction_callback(slot: Arc<WindowSlot>) -> impl Fn(&tauri::WindowEvent) + Send + 'static {
     move |event| {
         if matches!(event, tauri::WindowEvent::Destroyed) {
-            slot.buffer_owner_valid.store(false, Ordering::Release);
-            if let Ok(token) = slot.token.lock() {
-                let _ = slot.barrier.observe_destroyed(&token);
-            } else {
-                let _ = slot.barrier.observe_unattributed_destruction();
-            }
+            slot.destroyed();
         }
     }
 }
@@ -1090,5 +1303,70 @@ mod tests {
             123
         );
         assert!(barrier.close_admission().is_err());
+    }
+
+    #[test]
+    fn owner_group_deduplicates_exact_captures_and_rejects_replacement_and_store() {
+        let barrier = WindowBarrier::new();
+        let first = resources(&barrier, "first");
+        let second = resources(&barrier, "second");
+        let instance = uuid::Uuid::new_v4();
+        let a = capture_checkpoint_resources(&first, instance).unwrap();
+        let b = capture_checkpoint_resources(&second, instance).unwrap();
+        let closed = barrier.close_target_admission("session").unwrap();
+        with_checkpoint_owner_group(&[&b, &a, &b], instance, |group| {
+            assert!(group.matches(&a) && group.matches(&b));
+            assert!(group.matches_closed_roster(&closed));
+            assert!(group.checked_window(&a).unwrap().matches(&a));
+            assert!(group.matches_store_instance(instance));
+            Ok(())
+        })
+        .unwrap();
+        assert!(with_checkpoint_owner_group(&[&a], uuid::Uuid::new_v4(), |_| Ok(())).is_err());
+        barrier.reopen_target_admission(closed).unwrap();
+        slot(&first).unwrap().reloaded();
+        assert!(with_checkpoint_owner_group(&[&a, &b], instance, |_| Ok(())).is_err());
+        let current = capture_checkpoint_resources(&first, instance).unwrap();
+        assert!(with_checkpoint_owner_group(&[&a, &current], instance, |_| Ok(())).is_err());
+    }
+
+    #[test]
+    fn actual_destroyed_callback_waits_for_held_owner_group() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+        let barrier = WindowBarrier::new();
+        let resources = resources(&barrier, "held");
+        let instance = uuid::Uuid::new_v4();
+        let owner = capture_checkpoint_resources(&resources, instance).unwrap();
+        let physical = slot(&resources).unwrap();
+        let (entered, holding) = mpsc::channel();
+        let (release, released) = mpsc::channel();
+        let (attempt, attempted) = mpsc::channel();
+        let (done, destroyed) = mpsc::channel();
+        std::thread::scope(|scope| {
+            let owner_ref = &owner;
+            scope.spawn(move || {
+                with_checkpoint_owner_group(&[owner_ref], instance, |_| {
+                    entered.send(()).unwrap();
+                    released.recv().unwrap();
+                    Ok(())
+                })
+                .unwrap();
+            });
+            holding.recv().unwrap();
+            let destroyed_slot = physical.clone();
+            scope.spawn(move || {
+                attempt.send(()).unwrap();
+                destruction_callback(destroyed_slot)(&tauri::WindowEvent::Destroyed);
+                done.send(()).unwrap();
+            });
+            attempted.recv().unwrap();
+            assert!(destroyed.recv_timeout(Duration::from_millis(30)).is_err());
+            assert!(physical.buffer_owner_valid.load(Ordering::Acquire));
+            release.send(()).unwrap();
+            destroyed.recv_timeout(Duration::from_secs(2)).unwrap();
+        });
+        assert!(!physical.buffer_owner_valid.load(Ordering::Acquire));
+        assert!(with_checkpoint_owner_group(&[&owner], instance, |_| Ok(())).is_err());
     }
 }

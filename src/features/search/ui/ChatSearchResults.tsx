@@ -60,8 +60,9 @@ export function ChatFilterBar({
         aria-expanded={filterOpen}
         onClick={() => setFilterOpen((value) => !value)}
       >
-        <SlidersHorizontal className="size-3.5" />
+        <SlidersHorizontal className="icon-sm" />
         <span>{t(SCOPE_LABEL[filters.scope])}</span>
+        {active ? <Badge variant="dot" tone="info" label={t("Filters active")} /> : null}
       </Button>
       {filterOpen ? (
         <Popover anchor={trigger} align="end" onDismiss={() => setFilterOpen(false)}>
@@ -118,7 +119,7 @@ export function ChatFilterBar({
               />
               {t("Archived")}
             </label>
-            <Button variant="ghost" size="sm" onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}>
+            <Button variant="ghost" size="sm" disabled={!active} onClick={() => onChange({ ...DEFAULT_CHAT_FILTERS })}>
               {t("Reset")}
             </Button>
           </div>
@@ -209,7 +210,7 @@ export function ChatSearchResults({
     >
       {groups.map((group) => (
         <section key={group.key} aria-label={group.name} className="mb-1.5">
-          <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-ui-micro font-medium text-(--ui-text-secondary)">
+          <h3 className="flex items-center gap-1.5 px-2 pb-1 pt-2 text-ui-caption font-medium text-(--ui-text-secondary)">
             <Folder className="icon-xs shrink-0" strokeWidth={1.75} />
             <span className="min-w-0 flex-1 break-words" title={group.cwd}>{group.name}</span>
             {group.groupName ? (
@@ -235,7 +236,7 @@ export function ChatSearchResults({
                   title={`${session.title}\n${group.cwd}`}
                   onClick={() => row.entry && onOpen(row.entry)}
                 >
-                  <HarnessIcon harness={session.harness} className="size-3.5 shrink-0" />
+                  <HarnessIcon harness={session.harness} className="icon-sm shrink-0" />
                   <span className="app-search-result-title min-w-0 flex-1">
                     <Marked text={session.title} ranges={session.titleRanges} />
                   </span>
@@ -273,7 +274,7 @@ export function ChatSearchResults({
                       onClick={() => hitRow.entry && onOpen(hitRow.entry)}
                     >
                       <MessageSquare
-                        className="size-3 shrink-0 text-(--ui-text-secondary)"
+                        className="icon-xs shrink-0 text-(--ui-text-secondary)"
                         strokeWidth={1.75}
                       />
                       <span className={`app-search-result-copy ${hitRow.highlighted ? "app-search-result-identity" : "app-search-result-preview"}`}>

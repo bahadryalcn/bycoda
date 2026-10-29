@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{sync_channel, SyncSender};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tauri::AppHandle;
 
@@ -71,6 +72,96 @@ pub(crate) struct TerminalLogSender {
     sequence: AtomicU64,
 }
 
+trait LogService {
+    fn is_current(&self) -> bool;
+    fn append(&self, params: serde_json::Value) -> Result<(), String>;
+}
+impl LogService for Arc<crate::remote::NativeServiceChannel> {
+    fn is_current(&self) -> bool {
+        self.as_ref().is_current()
+    }
+    fn append(&self, params: serde_json::Value) -> Result<(), String> {
+        self.project("runtimeLogs.terminals.append", params, |_| Ok(()))
+    }
+}
+
+/// No issuer exists until selection succeeds. A Host starting late can recover
+/// logging, but once selected even an uncertain append cannot reselect it.
+struct PinnedLogService<S, F> {
+    selected: OnceLock<S>,
+    select: F,
+}
+impl<S: LogService, F: Fn() -> Result<S, String>> LogService for PinnedLogService<S, F> {
+    fn is_current(&self) -> bool {
+        self.selected.get().is_none_or(LogService::is_current)
+    }
+    fn append(&self, params: serde_json::Value) -> Result<(), String> {
+        if self.selected.get().is_none() {
+            let selected = (self.select)()?;
+            let _ = self.selected.set(selected);
+        }
+        self.selected
+            .get()
+            .ok_or("Terminal log issuer is unavailable")?
+            .append(params)
+    }
+}
+
+fn forward_logs(
+    service: &impl LogService,
+    receiver: Receiver<(u64, Vec<u8>)>,
+    cwd: &str,
+    terminal_id: &str,
+) {
+    let mut packet_sequence = 0_u64;
+    let mut expected_chunk = 0_u64;
+    let mut alt_screen = AltScreenFilter::default();
+    let mut send = |bytes: &[u8], interrupted: bool, closed: bool| {
+        let data = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+        let result = service.append(serde_json::json!({ "cwd": cwd, "terminalId": terminal_id,
+            "sequence": packet_sequence, "data": data, "interrupted": interrupted, "closed": closed }));
+        packet_sequence += 1;
+        let _ = result;
+    };
+    while let Ok(first) = receiver.recv() {
+        if !service.is_current() {
+            return;
+        }
+        let mut size = first.1.len();
+        let mut packets = vec![first];
+        let deadline = Instant::now() + LOG_FLUSH;
+        while size < LOG_BATCH_BYTES {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            match receiver.recv_timeout(remaining) {
+                Ok(packet) => {
+                    size += packet.1.len();
+                    packets.push(packet);
+                }
+                Err(_) => break,
+            }
+        }
+        let mut bytes = Vec::new();
+        let mut interrupted = false;
+        for (sequence, chunk) in packets {
+            let (kept, dropped) = alt_screen.filter(&chunk);
+            if sequence != expected_chunk || dropped {
+                if !bytes.is_empty() {
+                    send(&bytes, interrupted, false);
+                    bytes.clear();
+                }
+                interrupted = true;
+            }
+            expected_chunk = sequence + 1;
+            bytes.extend_from_slice(&kept);
+        }
+        if !bytes.is_empty() {
+            send(&bytes, interrupted, false);
+        }
+    }
+    // The close uses this same pinned service; an unknown append is not replayed.
+    send(&[], false, true);
+}
+
 impl TerminalLogSender {
     pub(crate) fn new(app: &AppHandle, cwd: &Path) -> Self {
         let (sender, receiver) = sync_channel::<(u64, Vec<u8>)>(32);
@@ -78,56 +169,14 @@ impl TerminalLogSender {
         let cwd = cwd.to_string_lossy().into_owned();
         let terminal_id = uuid::Uuid::new_v4().to_string();
         std::thread::spawn(move || {
-            let mut packet_sequence = 0_u64;
-            let mut expected_chunk = 0_u64;
-            let mut alt_screen = AltScreenFilter::default();
-            let mut send = |bytes: &[u8], interrupted: bool, closed: bool| {
-                let data =
-                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
-                let result = crate::remote::local_runtime_logs_rpc(
-                    &app,
-                    "runtimeLogs.terminals.append",
-                    serde_json::json!({ "cwd": cwd, "terminalId": terminal_id, "sequence": packet_sequence, "data": data, "interrupted": interrupted, "closed": closed }),
-                );
-                packet_sequence += 1;
-                let _ = result;
+            // Selection stays off the PTY reader and may recover from Host
+            // startup. Once selected, later pairing never receives this stream's
+            // packets or final close under the old identity.
+            let service = PinnedLogService {
+                selected: OnceLock::new(),
+                select: || crate::remote::NativeServiceChannel::connect(&app),
             };
-            while let Ok(first) = receiver.recv() {
-                let mut size = first.1.len();
-                let mut packets = vec![first];
-                // Batch busy output while keeping memory and RPC frequency bounded.
-                let deadline = Instant::now() + LOG_FLUSH;
-                while size < LOG_BATCH_BYTES {
-                    let remaining = deadline.saturating_duration_since(Instant::now());
-                    match receiver.recv_timeout(remaining) {
-                        Ok(packet) => {
-                            size += packet.1.len();
-                            packets.push(packet);
-                        }
-                        Err(_) => break,
-                    }
-                }
-                let mut bytes = Vec::new();
-                let mut interrupted = false;
-                for (sequence, chunk) in packets {
-                    let (kept, dropped) = alt_screen.filter(&chunk);
-                    // A gap or skipped screen output lets the host discard partial lines.
-                    if sequence != expected_chunk || dropped {
-                        if !bytes.is_empty() {
-                            send(&bytes, interrupted, false);
-                            bytes.clear();
-                        }
-                        interrupted = true;
-                    }
-                    expected_chunk = sequence + 1;
-                    bytes.extend_from_slice(&kept);
-                }
-                if !bytes.is_empty() {
-                    send(&bytes, interrupted, false);
-                }
-            }
-            // Even an empty stream closes cleanly; the host ignores unknown closures.
-            send(&[], false, true);
+            forward_logs(&service, receiver, &cwd, &terminal_id);
         });
         Self {
             sender,
@@ -147,7 +196,122 @@ impl TerminalLogSender {
 
 #[cfg(test)]
 mod tests {
-    use super::AltScreenFilter;
+    use super::*;
+
+    struct Logs {
+        current: std::cell::Cell<bool>,
+        packets: std::cell::RefCell<Vec<serde_json::Value>>,
+        retire: bool,
+    }
+    impl LogService for Logs {
+        fn is_current(&self) -> bool {
+            self.current.get()
+        }
+        fn append(&self, params: serde_json::Value) -> Result<(), String> {
+            if !self.current.get() {
+                return Err("retired".into());
+            }
+            self.packets.borrow_mut().push(params);
+            if self.retire {
+                self.current.set(false);
+            }
+            Err("delivery may be unknown".into())
+        }
+    }
+
+    #[test]
+    fn late_host_selection_recovers_logging_without_retargeting_an_admitted_stream() {
+        let attempts = std::cell::Cell::new(0);
+        let service = PinnedLogService {
+            selected: OnceLock::new(),
+            select: || {
+                attempts.set(attempts.get() + 1);
+                if attempts.get() == 1 {
+                    return Err("Host is still starting".into());
+                }
+                Ok(Logs {
+                    current: std::cell::Cell::new(true),
+                    packets: Default::default(),
+                    retire: false,
+                })
+            },
+        };
+        assert!(service.append(serde_json::json!({"sequence":0})).is_err());
+        assert!(
+            service.is_current(),
+            "no issuer was admitted; later output may select one"
+        );
+        assert!(service.append(serde_json::json!({"sequence":1})).is_err());
+        assert!(service.append(serde_json::json!({"sequence":2})).is_err());
+        assert_eq!(
+            attempts.get(),
+            2,
+            "unknown appends keep the original selected issuer"
+        );
+        let selected = service.selected.get().unwrap();
+        assert_eq!(
+            *selected.packets.borrow(),
+            vec![
+                serde_json::json!({"sequence":1}),
+                serde_json::json!({"sequence":2})
+            ]
+        );
+        selected.current.set(false);
+        assert!(!service.is_current());
+        assert!(service.append(serde_json::json!({"sequence":3})).is_err());
+        assert_eq!(
+            attempts.get(),
+            2,
+            "retirement must not choose a replacement Host"
+        );
+    }
+
+    #[test]
+    fn terminal_stream_keeps_original_sequence_without_replaying_unknown_append() {
+        let logs = Logs {
+            current: std::cell::Cell::new(true),
+            packets: Default::default(),
+            retire: false,
+        };
+        let (sender, receiver) = sync_channel(32);
+        sender.send((0, b"first".to_vec())).unwrap();
+        sender.send((1, b"second".to_vec())).unwrap();
+        drop(sender);
+        forward_logs(&logs, receiver, "/fixture", "original-terminal");
+        let packets = logs.packets.borrow();
+        assert_eq!(packets.len(), 2);
+        assert_eq!(packets[0]["sequence"], 0);
+        assert_eq!(packets[1]["sequence"], 1);
+        assert_eq!(packets[0]["terminalId"], "original-terminal");
+        assert_eq!(packets[1]["terminalId"], "original-terminal");
+        assert_eq!(packets[1]["closed"], true);
+        assert_eq!(
+            base64::Engine::decode(
+                &base64::engine::general_purpose::STANDARD,
+                packets[0]["data"].as_str().unwrap()
+            )
+            .unwrap(),
+            b"firstsecond"
+        );
+    }
+
+    #[test]
+    fn retired_terminal_stream_stops_before_forwarding_remaining_packets() {
+        let logs = Logs {
+            current: std::cell::Cell::new(true),
+            packets: Default::default(),
+            retire: true,
+        };
+        let (sender, receiver) = sync_channel(32);
+        sender.send((0, vec![b'x'; LOG_BATCH_BYTES])).unwrap();
+        sender.send((1, b"remaining".to_vec())).unwrap();
+        drop(sender);
+        forward_logs(&logs, receiver, "/fixture", "original-terminal");
+        let packets = logs.packets.borrow();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0]["sequence"], 0);
+        assert_eq!(packets[0]["closed"], false);
+    }
 
     #[test]
     fn alternate_screen_output_is_left_out() {

@@ -11,7 +11,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { Modal } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
-import { CircleHelp, RefreshCw, ListFilter } from "../../../shared/ui/icons";
+import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { remoteRequest } from "../../connections/model/connections";
 import { isLocalSyncMachine } from "../../connections/model/localSync";
@@ -417,10 +417,17 @@ export function ExternalMcpAccess({ cwd }: { cwd: string }) {
       </div>
       {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
       {loading && !data && <SettingsFeedback state="loading">{t("Loading tokens…")}</SettingsFeedback>}
-      <div className={styles.actions}>
-        <SearchInput appearance="field" aria-label={t("Search tokens")} placeholder={t("Search tokens")} value={query} onChange={(event) => setQuery(event.target.value)} />
-        <Button ref={filterAnchor} variant="ghost" iconOnly label={t("Filters")} selected={filter !== "all"} aria-expanded={filtersOpen} aria-haspopup="dialog" onClick={() => setFiltersOpen(!filtersOpen)}><ListFilter /></Button>
-        {data ? <span className={styles.metadata} role="status">{t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}</span> : null}
+      <div className={styles.toolbar}>
+        <div className={styles.search}>
+          <SearchInput appearance="field" aria-label={t("Search tokens")} placeholder={t("Search tokens")} value={query} onChange={(event) => setQuery(event.target.value)} />
+        </div>
+        <div className={styles.toolbarSlot}>
+          <Button ref={filterAnchor} variant="ghost" iconOnly label={t("Filters")} selected={filter !== "all"} aria-expanded={filtersOpen} aria-haspopup="dialog" onClick={() => setFiltersOpen(!filtersOpen)}><ListFilter /></Button>
+          {filter !== "all" || query ? (
+            <Button variant="ghost" iconOnly label={t("Reset filters")} onClick={() => { setFilter("all"); setQuery(""); }}><RotateCcw className="icon-sm" strokeWidth={1.75} /></Button>
+          ) : null}
+          {data ? <span className={`${styles.metadata} ${styles.count}`} role="status">{t("{p0} of {p1} tokens", { p0: shownTokens.length, p1: data.tokens.length })}</span> : null}
+        </div>
       </div>
       {filtersOpen ? <Popover anchor={filterAnchor} role="dialog" aria-label={t("Filter tokens")} onDismiss={() => setFiltersOpen(false)} width={260}>
         <div className={styles.help}>

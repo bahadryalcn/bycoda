@@ -3,6 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
+import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { TextField } from "../../../shared/ui/TextField";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -22,6 +23,7 @@ import {
   type CrewAppearance,
 } from "../model/crewAppearance";
 import {
+  candidateLabel,
   catalogCandidate,
   catalogModels,
   crewRosterIssues,
@@ -36,6 +38,7 @@ import {
   type CrewRosterIssues,
 } from "../model/crewRoster";
 import { CrewAppearancePicker } from "./CrewAppearancePicker";
+import { matchesMemberQuery, memberSearchHaystack } from "./CrewLibrarySearch";
 import { CrewDeleteButton } from "./CrewDeleteButton";
 import { CrewMemberForm, roleLabel } from "./CrewMemberForm";
 import { CrewMemberPicker, type MemberPickerMode } from "./CrewMemberPicker";
@@ -222,6 +225,8 @@ function ConnectedCrewEditor({
   const body = useRef<HTMLFieldSetElement>(null);
   const [bulkModel, setBulkModel] = useState("");
   const [bulkApplied, setBulkApplied] = useState<number | null>(null);
+  // Roster filter: display only, so it never changes the draft or what Save sends.
+  const [rosterQuery, setRosterQuery] = useState("");
   // Add members page. Picks and the unfinished new-member draft live here, not in the
   // page, so Back and a later Add keep them until the owner deliberately adds or
   // discards them (CR-E01).
@@ -393,7 +398,11 @@ function ConnectedCrewEditor({
           ? { ...current, role }
           : current,
     );
-    setAddMode((mode) => (data.agents.length ? mode : "new"));
+    // An empty library can only add new members; once it has profiles (for example one just
+    // saved from this dialog) an untouched draft opens on them, a started draft keeps its tab.
+    setAddMode((mode) =>
+      !data.agents.length ? "new" : memberDraftStarted(newMember) ? mode : "library",
+    );
     setPage({ kind: "add", role });
   };
   const addPicked = () => {
@@ -527,6 +536,24 @@ function ConnectedCrewEditor({
     </div>
   );
 
+  const rosterQueryActive = rosterQuery.trim().length > 0;
+  const memberMatches = (agent: CrewAgent) =>
+    !rosterQueryActive ||
+    matchesMemberQuery(
+      memberSearchHaystack(agent, {
+        role: roleLabel(agent.role),
+        model: memberModelSummary(data.catalog, agent),
+        candidates: agent.candidates.flatMap((candidate) => [
+          candidateLabel(data.catalog, candidate),
+          candidate.model,
+          candidate.harness,
+        ]),
+      }),
+      rosterQuery,
+    );
+  const rosterMatchCount = draft.agents.filter(memberMatches).length;
+  // A long roster earns a filter; a short one stays uncluttered.
+  const rosterSearchable = draft.agents.length > 6 || rosterQueryActive;
   const roster = (
     <div className="flex min-w-0 flex-col gap-4">
       {draft.agents.length === 0 ? (
@@ -554,7 +581,8 @@ function ConnectedCrewEditor({
         </div>
       ) : (
         sections.map((section) => {
-          const members = draft.agents.filter((agent) => agent.role === section.role);
+          const allMembers = draft.agents.filter((agent) => agent.role === section.role);
+          const members = allMembers.filter(memberMatches);
           return (
             <section
               key={section.role}
@@ -566,9 +594,9 @@ function ConnectedCrewEditor({
                   {section.title}
                 </h4>
                 <span className="min-w-0 flex-1 text-ui-caption tabular-nums text-(--ui-text-secondary)">
-                  {members.length}
+                  {rosterQueryActive ? `${members.length}/${allMembers.length}` : allMembers.length}
                 </span>
-                {members.length > 0 &&
+                {allMembers.length > 0 &&
                 (section.role === "specialist" || section.role === "advisor") ? (
                   <Button
                     variant="ghost"
@@ -586,7 +614,7 @@ function ConnectedCrewEditor({
                 </p>
               ) : null}
               {members.length ? (
-                <ul className="flex min-w-0 flex-col divide-y divide-(--ui-tone-neutral-border)">
+                <ul className="flex min-w-0 flex-col gap-px">
                   {members.map((agent) => {
                     const problem = issues.members[agent.id];
                     const summary =
@@ -657,6 +685,10 @@ function ConnectedCrewEditor({
                     );
                   })}
                 </ul>
+              ) : allMembers.length ? (
+                <p className="text-ui-caption text-(--ui-text-secondary)">
+                  {t("No matching members.")}
+                </p>
               ) : (
                 <Button
                   variant="secondary"
@@ -675,6 +707,11 @@ function ConnectedCrewEditor({
           );
         })
       )}
+      {rosterQueryActive && draft.agents.length > 0 ? (
+        <p role="status" className="sr-only">
+          {t("{p0} of {p1} members shown", { p0: rosterMatchCount, p1: draft.agents.length })}
+        </p>
+      ) : null}
       {issues.size === "large" ? (
         <p role="status" className="text-ui-caption text-danger">
           {t("A crew can have at most 20 members.")}
@@ -758,7 +795,7 @@ function ConnectedCrewEditor({
       appearanceSavedNow={!isNew}
       maintenance={
         latest ? (
-          <div className="flex flex-col gap-3 border-t border-(--ui-tone-neutral-border) pt-3">
+          <div className="flex flex-col gap-3 pt-2">
             <Button
               variant="ghost"
               className="self-start"
@@ -980,6 +1017,9 @@ function ConnectedCrewEditor({
               onDraftChange={(patch) => setNewMember((current) => ({ ...current, ...patch }))}
               role={page.role}
               nameError={addIssues && !newMember.name.trim() ? t("Add a name") : undefined}
+              modelError={
+                addIssues && !newMember.candidates.length ? t("Choose a model") : undefined
+              }
               libraryScope={newMemberScope}
               onLibraryScopeChange={setNewMemberScope}
               saveToLibrary={saveNewToLibrary}
@@ -1054,6 +1094,26 @@ function ConnectedCrewEditor({
                 </div>
               ) : null}
             </div>
+            {page.kind === "team" && draft.agents.length && rosterSearchable ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <SearchInput
+                  appearance="field"
+                  containerClassName="min-w-48 max-w-80 flex-1"
+                  aria-label={t("Search members by name, role, model or group")}
+                  placeholder={t("Search members by name, role, model or group")}
+                  value={rosterQuery}
+                  onChange={(event) => setRosterQuery(event.target.value)}
+                />
+                {rosterQueryActive ? (
+                  <span className="text-ui-caption tabular-nums text-(--ui-text-secondary)">
+                    {t("{p0} of {p1} members shown", {
+                      p0: rosterMatchCount,
+                      p1: draft.agents.length,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             {page.kind === "settings" ? settings : roster}
           </>
         )}
@@ -1140,6 +1200,7 @@ function MemberPage({
         groups={data.groupsSupported}
         groupSuggestions={groupNames}
         nameError={showIssues && !agent.name.trim() ? t("Add a name") : undefined}
+        modelError={showIssues && !agent.candidates.length ? t("Choose a model") : undefined}
         advancedExtra={
           crewSaved ? (
             <div className="flex flex-col gap-1">
@@ -1175,7 +1236,7 @@ function MemberPage({
       />
       <section
         aria-label={t("Member library")}
-        className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-(--ui-tone-neutral-border) p-3"
+        className="flex min-w-0 flex-wrap items-center gap-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-3"
       >
         <span className="min-w-0 flex-1 text-ui-body">
           <span className="block font-medium">{t("Member library")}</span>
