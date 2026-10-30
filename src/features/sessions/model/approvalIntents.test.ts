@@ -287,6 +287,9 @@ describe("source-issued approval occurrence identity", () => {
     expect(registry.approvalRequestDispatchStarted(token)).toBe(false);
     expect(native.wrapper).not.toHaveBeenCalled();
     expect(value.blocks[0].approval).not.toHaveProperty("occurrenceId");
+    expect(registry.readApprovalRefusal(token)).toBe(
+      "This request cannot be verified. Refresh the conversation or update its execution client.",
+    );
     expect(await capturedRows(parent)).toHaveLength(0);
     const gate = parent.begin("logical-root", { owner: {}, timeoutMs: 1000 });
     try {

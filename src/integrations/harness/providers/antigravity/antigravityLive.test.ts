@@ -1,5 +1,8 @@
 import { requestedApproval } from "../approvalOccurrence.testSupport";
-import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
+import {
+  exerciseOverlappingApproval,
+  exerciseApprovalActualWriteLifetime,
+} from "../approvalOverlap.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -61,7 +64,8 @@ vi.mock("../../core/child", () => ({
   writeChild: async (thread: string, line: string) => {
     const message = JSON.parse(line);
     mock.sent.push({ thread, ...message });
-    if (message.id === 993 && message.result && mock.heldApprovalWrite) await mock.heldApprovalWrite();
+    if (message.id === 993 && message.result && mock.heldApprovalWrite)
+      await mock.heldApprovalWrite();
     if (mock.blockWrites) return new Promise<void>(() => undefined);
     if (!message.method || message.id == null) return;
     if (mock.silent.has(message.method)) return;
@@ -153,8 +157,8 @@ const liveKey = () => childKeys().at(-1)!;
 const childListener = () => mock.listeners.get(liveKey())!;
 const genKey = expect.stringMatching(/^thread#\d+$/);
 
-function permission(kind = "execute", id = 100) {
-  childListener()(
+function permission(kind = "execute", id = 100, listener = childListener()) {
+  listener(
     JSON.stringify({
       jsonrpc: "2.0",
       id,
@@ -217,41 +221,72 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     resetHarnessModelOverlays();
   });
 
-  it.each([false, true])("retains Antigravity actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
-    const turn = provider.send(input);
-    const outcome = turn.catch(() => undefined);
-    await waitPrompt();
-    let frame = 0;
-    await exerciseApprovalActualWriteLifetime({
-      events, requestId: 993, cancelBeforeTimeout,
-      ask: () => nativeOutputFrame("thread", `actual-write-${++frame}`, () => permission("execute", 993)),
-      approve: nonce => provider.respond("thread", 993, "allow", nonce),
-      cancel: () => provider.cancel("thread"),
-      holdWrites: gate => { mock.heldApprovalWrite = gate; },
-      replies: () => mock.sent.filter(message => message.id === 993 && message.result).map(message => message.result),
-    });
-    if (!cancelBeforeTimeout) finishPrompt();
-    await outcome;
-  });
+  it.each([false, true])(
+    "retains Antigravity actual approval writes after timeout (cancel first: %s)",
+    async (cancelBeforeTimeout) => {
+      const turn = provider.send(input);
+      const outcome = turn.catch(() => undefined);
+      await waitPrompt();
+      const permissionListener = childListener();
+      let frame = 0;
+      await exerciseApprovalActualWriteLifetime({
+        events,
+        requestId: 993,
+        cancelBeforeTimeout,
+        closesOnUncancelledTimeout: true,
+        ask: () =>
+          nativeOutputFrame("thread", `actual-write-${++frame}`, () =>
+            permission("execute", 993, permissionListener),
+          ),
+        approve: (nonce) => provider.respond("thread", 993, "allow", nonce),
+        cancel: () => provider.cancel("thread"),
+        holdWrites: (gate) => {
+          mock.heldApprovalWrite = gate;
+        },
+        replies: () =>
+          mock.sent
+            .filter((message) => message.id === 993 && message.result)
+            .map((message) => message.result),
+      });
+      await outcome;
+    },
+  );
 
   it.each([false, true])(
     "fails closed on an overlapping Antigravity permission (allow already queued: %s)",
     async (allowBeforeDuplicate) => {
       const turn = provider.send(input);
       await waitPrompt();
+      const permissionListener = childListener();
       let frame = 0;
       await exerciseOverlappingApproval({
         events,
         requestId: 992,
         allowBeforeDuplicate,
         ask: () =>
-          nativeOutputFrame("thread", `overlap-${++frame}`, () => permission("execute", 992)),
+          nativeOutputFrame("thread", `overlap-${++frame}`, () =>
+            permission("execute", 992, permissionListener),
+          ),
         approve: (nonce, decision) => provider.respond("thread", 992, decision, nonce),
         replies: () =>
           mock.sent
             .filter((message) => message.id === 992 && message.result)
             .map((message) => message.result),
         deniedResult: { outcome: { outcome: "selected", optionId: "no" } },
+        // Ordinary subsequent activity retires the legitimate original-lineage watchdog.
+        afterResponses: () =>
+          permissionListener(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                update: {
+                  sessionUpdate: "agent_message_chunk",
+                  content: { type: "text", text: "Continuing" },
+                },
+              },
+            }),
+          ),
       });
       finishPrompt();
       await turn;
@@ -600,7 +635,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
         type: "approval.resolved",
         requestId: 100,
         occurrenceId: requestedApproval(events, 100).occurrenceId,
-        decision: "deny",
+        decision: "cancelled",
       }),
     );
     // The process has exited and its RPC client is closed. The UI approval

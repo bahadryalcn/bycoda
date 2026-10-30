@@ -85,8 +85,8 @@ export function rejectOverlappingApproval(
     pending.invalidated = true;
     pending("cancelled");
     pending.report("cancelled");
-    return writeCancellation(observePendingApprovalWrite(approvals, requestId, pending)).finally(() =>
-      releasePendingApproval(approvals, requestId, pending),
+    return writeCancellation(observePendingApprovalWrite(approvals, requestId, pending)).finally(
+      () => releasePendingApproval(approvals, requestId, pending),
     );
   } catch (error) {
     releasePendingApproval(approvals, requestId, pending);

@@ -262,6 +262,17 @@ function approvalSession(): Session {
       title: `Synthetic fixture effect ${requestId}`,
     });
   }
+  if (query.has("approvalLegacy")) {
+    // An old saved wire snapshot remains readable; response must not mint identity.
+    session = {
+      ...session,
+      blocks: session.blocks.map((block) => {
+        if (!block.approval) return block;
+        const { occurrenceId: _source, ...approval } = block.approval;
+        return { ...block, approval };
+      }),
+    };
+  }
   return session;
 }
 
@@ -285,7 +296,7 @@ function ApprovalFixture() {
       throw new Error("This synthetic decision owner supports only approval callbacks");
     };
     return {
-      approvalOccurrenceSupported: true,
+      approvalOccurrenceSupported: !query.has("approvalOldHost"),
       buildPlan: unsupported,
       submit: unsupported,
       saveDraft: unsupported,

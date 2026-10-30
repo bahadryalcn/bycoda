@@ -687,7 +687,11 @@ async function handlePermission(live: Live, id: number, params: unknown): Promis
           if (!Array.from(liveByThread.values()).includes(live)) return Promise.resolve();
           if (!ownsPendingApproval(live.approvals, id, pending)) {
             pending.report("cancelled");
-            return live.acp.respond(id, { outcome: { outcome: "cancelled" } }, observePendingApprovalWrite(live.approvals, id, pending));
+            return live.acp.respond(
+              id,
+              { outcome: { outcome: "cancelled" } },
+              observePendingApprovalWrite(live.approvals, id, pending),
+            );
           }
           return respondPermission(
             live,
@@ -704,10 +708,19 @@ async function handlePermission(live: Live, id: number, params: unknown): Promis
   );
 }
 
-async function respondPermission(live: Live, id: number, optionId: string, onActualWrite?: ApprovalActualWriteObserver): Promise<void> {
-  await live.acp.respond(id, {
-    outcome: { outcome: "selected", optionId },
-  }, onActualWrite);
+async function respondPermission(
+  live: Live,
+  id: number,
+  optionId: string,
+  onActualWrite?: ApprovalActualWriteObserver,
+): Promise<void> {
+  await live.acp.respond(
+    id,
+    {
+      outcome: { outcome: "selected", optionId },
+    },
+    onActualWrite,
+  );
 }
 
 function resolveApprovals(live: Live): void {

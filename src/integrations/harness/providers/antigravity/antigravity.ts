@@ -859,9 +859,13 @@ async function handlePermission(live: Live, id: number, params: unknown) {
               optionId = null;
             }
           }
-          return live.acp.respond(id, {
-            outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" },
-          }, pending ? observePendingApprovalWrite(live.approvals, id, pending) : undefined);
+          return live.acp.respond(
+            id,
+            {
+              outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" },
+            },
+            pending ? observePendingApprovalWrite(live.approvals, id, pending) : undefined,
+          );
         })();
       } finally {
         if (pending) releasePendingApproval(live.approvals, id, pending);

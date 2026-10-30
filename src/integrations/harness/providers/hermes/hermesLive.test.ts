@@ -1,5 +1,8 @@
 import { requestedApproval } from "../approvalOccurrence.testSupport";
-import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
+import {
+  exerciseOverlappingApproval,
+  exerciseApprovalActualWriteLifetime,
+} from "../approvalOverlap.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -91,37 +94,79 @@ describe("Hermes live ACP sequence", () => {
     heldFileRead = null;
   });
 
-  it.each([false, true])("retains Hermes actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
-    const sessionId = `hermes-write-${cancelBeforeTimeout}`;
-    const events: HarnessEvent[] = [];
-    const turn = sendHermesTurn({ sessionId, cwd: "/repo", model: "hermes:nous:hermes-4", runtimeMode: "supervised", text: "hi", attachments: [], onEvent: event => events.push(event) });
-    const outcome = turn.catch(() => undefined);
-    await initialize();
-    await newSession();
-    await waitFor(() => parse().some(message => message.method === "session/set_mode"), "session/set_mode");
-    reply(parse().find(message => message.method === "session/set_mode")!.id, {});
-    await waitFor(() => parse().some(message => message.method === "session/prompt"), "session/prompt");
-    const prompt = parse().find(message => message.method === "session/prompt")!;
-    let frame = 0;
-    await exerciseApprovalActualWriteLifetime({
-      events, requestId: 993, cancelBeforeTimeout,
-      ask: () => nativeOutputFrame(sessionId, `actual-write-${++frame}`, () => onLine!(JSON.stringify({ jsonrpc: "2.0", id: 993, method: "session/request_permission", params: { sessionId: "hermes-session-1", toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" }, options: [{ optionId: "allow_once", kind: "allow_once" }, { optionId: "deny", kind: "reject_once" }] } }))),
-      approve: nonce => respondHermesApproval(sessionId, 993, "allow", nonce),
-      cancel: () => cancelHermesTurn(sessionId),
-      holdWrites: gate => { heldApprovalWrite = gate; },
-      replies: () => parse().filter(message => message.id === 993 && message.result).map(message => message.result),
-    });
-    if (!cancelBeforeTimeout) reply(prompt.id, { stopReason: "end_turn" });
-    await outcome;
-    await stopHermesSession(sessionId);
-  });
+  it.each([false, true])(
+    "retains Hermes actual approval writes after timeout (cancel first: %s)",
+    async (cancelBeforeTimeout) => {
+      const sessionId = `hermes-write-${cancelBeforeTimeout}`;
+      const events: HarnessEvent[] = [];
+      const turn = sendHermesTurn({
+        sessionId,
+        cwd: "/repo",
+        model: "hermes:nous:hermes-4",
+        runtimeMode: "supervised",
+        text: "hi",
+        attachments: [],
+        onEvent: (event) => events.push(event),
+      });
+      const outcome = turn.catch(() => undefined);
+      await initialize();
+      await newSession();
+      await waitFor(
+        () => parse().some((message) => message.method === "session/set_mode"),
+        "session/set_mode",
+      );
+      reply(parse().find((message) => message.method === "session/set_mode")!.id, {});
+      await waitFor(
+        () => parse().some((message) => message.method === "session/prompt"),
+        "session/prompt",
+      );
+      const prompt = parse().find((message) => message.method === "session/prompt")!;
+      let frame = 0;
+      await exerciseApprovalActualWriteLifetime({
+        events,
+        requestId: 993,
+        cancelBeforeTimeout,
+        ask: () =>
+          nativeOutputFrame(sessionId, `actual-write-${++frame}`, () =>
+            onLine!(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: 993,
+                method: "session/request_permission",
+                params: {
+                  sessionId: "hermes-session-1",
+                  toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" },
+                  options: [
+                    { optionId: "allow_once", kind: "allow_once" },
+                    { optionId: "deny", kind: "reject_once" },
+                  ],
+                },
+              }),
+            ),
+          ),
+        approve: (nonce) => respondHermesApproval(sessionId, 993, "allow", nonce),
+        cancel: () => cancelHermesTurn(sessionId),
+        holdWrites: (gate) => {
+          heldApprovalWrite = gate;
+        },
+        replies: () =>
+          parse()
+            .filter((message) => message.id === 993 && message.result)
+            .map((message) => message.result),
+      });
+      if (!cancelBeforeTimeout) reply(prompt.id, { stopReason: "end_turn" });
+      await outcome;
+      await stopHermesSession(sessionId);
+    },
+  );
 
   it.each([false, true])(
     "fails closed on an overlapping Hermes permission (allow already queued: %s)",
     async (allowBeforeDuplicate) => {
+      const sessionId = `hermes-overlap-${allowBeforeDuplicate}`;
       const events: HarnessEvent[] = [];
       const turn = sendHermesTurn({
-        sessionId: "hermes-overlap",
+        sessionId: sessionId,
         cwd: "/repo",
         model: "hermes:nous:hermes-4",
         runtimeMode: "supervised",
@@ -147,7 +192,7 @@ describe("Hermes live ACP sequence", () => {
         requestId: 992,
         allowBeforeDuplicate,
         ask: () =>
-          nativeOutputFrame("hermes-overlap", `overlap-${++frame}`, () =>
+          nativeOutputFrame(sessionId, `overlap-${++frame}`, () =>
             onLine!(
               JSON.stringify({
                 jsonrpc: "2.0",
@@ -164,7 +209,7 @@ describe("Hermes live ACP sequence", () => {
               }),
             ),
           ),
-        approve: (nonce, decision) => respondHermesApproval("hermes-overlap", 992, decision, nonce),
+        approve: (nonce, decision) => respondHermesApproval(sessionId, 992, decision, nonce),
         replies: () =>
           parse()
             .filter((message) => message.id === 992 && message.result)
@@ -173,7 +218,7 @@ describe("Hermes live ACP sequence", () => {
       });
       reply(prompt.id, { stopReason: "end_turn" });
       await turn;
-      await stopHermesSession("hermes-overlap");
+      await stopHermesSession(sessionId);
     },
   );
 

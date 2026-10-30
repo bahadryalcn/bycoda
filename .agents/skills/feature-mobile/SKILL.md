@@ -5,6 +5,23 @@ description: "bycoda mobile feature map: Expo routes, pairing, projects, session
 
 # Mobile
 
+## Approval occurrence transport continuation, 2026-10-30
+
+Root Host-architecture scope preserves the separate mobile redesign. Active and
+legacy session producers capture the displayed source UUID and original primitive
+tuple; delegated Crew replies retain it across confirmation. Modern transport
+refuses missing identity or absent `sessions.approvalOccurrence.v1` before writing.
+The compatibility transport captures inputs before authenticated descriptor reads
+and shares the observed capability array with its canonical transport. No old
+command is upgraded by a later session read. Unknown dispatch reconciliation keeps
+the original command, machine, authority and occurrence and never auto-resends.
+Two actionable refusals use the existing shared error presentation and eight
+catalogs. Runtime boundary admits only the pure shared identity helper.
+
+Evidence: `temp/verification/2026-10-30-approval-occurrence/`. Source/type/unit proof
+does not imply native device, cross-device, installed or release acceptance. No
+mobile Git/index, build, install or release operation belongs to this scope.
+
 Purpose: connect a phone to the selected execution Host and preserve authenticated project/session controls across pairing, networking and recovery. Keywords: mobile, phone, Android, iOS, pairing, QR, LAN, Tailscale, private network, projects, sessions, terminal, PTY, Jira, preview, devices.
 
 ## Mobile redesign source delivery, 2026-10-29

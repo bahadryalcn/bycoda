@@ -1,4 +1,6 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+const captureRoot =
+  process.env.BYCODA_APPROVAL_VERIFICATION_DIR ?? "temp/verification/question-flow";
 
 for (const theme of ["light", "dark"] as const) {
   for (const width of [390, 1100]) {
@@ -9,7 +11,7 @@ for (const theme of ["light", "dark"] as const) {
       const form = page.locator("[data-question-form]");
       await expect(form.getByRole("status")).toHaveText("Waiting for your answer");
       await page.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-free-answer-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-free-answer-${theme}-${width}.png`,
         fullPage: true,
       });
       const answer = form.getByRole("textbox", { name: "Type your answer" });
@@ -65,7 +67,7 @@ for (const theme of ["light", "dark"] as const) {
         form.getByRole("button", { name: "Cancel question", exact: true }),
       ).not.toHaveAttribute("aria-busy", "true");
       await form.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-question-sending-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-question-sending-${theme}-${width}.png`,
       });
       await expect(form.locator('button[type="submit"]')).toHaveAttribute("aria-disabled", "true");
       await form
@@ -80,7 +82,7 @@ for (const theme of ["light", "dark"] as const) {
       await expect(submit).toBeDisabled();
       await expect(form.locator('[aria-busy="true"]')).toHaveCount(0);
       await form.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-question-queued-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-question-queued-${theme}-${width}.png`,
       });
       await page
         .getByRole("button", {
@@ -96,7 +98,7 @@ for (const theme of ["light", "dark"] as const) {
       await answer.focus();
       await expect(answer).toBeFocused();
       await page.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-unknown-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-unknown-${theme}-${width}.png`,
         fullPage: true,
       });
       await page.getByRole("button", { name: "Simulate not sent", exact: true }).click();
@@ -118,11 +120,11 @@ for (const theme of ["light", "dark"] as const) {
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
       expect(overflow).toBe(false);
       await page.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-answered-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-answered-${theme}-${width}.png`,
         fullPage: true,
       });
       await card.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-question-answer-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-question-answer-${theme}-${width}.png`,
       });
     });
   }
@@ -157,7 +159,7 @@ async function decisionCapture(page: Page, testInfo: TestInfo, name: string) {
     ),
   });
   await page.screenshot({
-    path: `temp/verification/2026-10-30-decision-inputs/${testInfo.project.name}-${name}.png`,
+    path: `${captureRoot}/${testInfo.project.name}-${name}.png`,
     fullPage: true,
     animations: "disabled",
   });
@@ -523,6 +525,44 @@ for (const theme of ["light", "dark"] as const) {
   }
 }
 
+for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    for (const variant of ["approvalOldHost", "approvalLegacy"]) {
+      test(`approval identity refusal ${variant} at ${width}px in ${theme}`, async ({
+        page,
+      }, testInfo) => {
+        await page.setViewportSize({ width, height: 950 });
+        await page.emulateMedia({ reducedMotion: "reduce" });
+        await page.goto(`/tests/browser/question-flow.html?theme=${theme}&approval&${variant}`);
+        await page.getByRole("button", { name: "Notifications", exact: true }).click();
+        const sheet = page.getByRole("dialog", { name: "Notifications", exact: true });
+        await sheet.getByRole("button", { name: "Allow", exact: true }).click();
+        const message =
+          variant === "approvalOldHost"
+            ? "Update the Host before responding"
+            : "Refresh the conversation or update its execution client";
+        await expect(sheet).toContainText(message);
+        await expect(page.getByLabel("Approval callback count", { exact: true })).toHaveText("0");
+        await decisionCapture(page, testInfo, `approval-refusal-${variant}-${theme}-${width}`);
+        await page.keyboard.press("Escape");
+        await expect(sheet).not.toBeVisible();
+        const transcript = page.getByRole("region", {
+          name: "Actual approval transcript",
+          exact: true,
+        });
+        await transcript.getByRole("button", { name: "Allow", exact: true }).first().click();
+        await expect(transcript).toContainText(message);
+        await expect(page.getByLabel("Approval callback count", { exact: true })).toHaveText("0");
+        await decisionCapture(
+          page,
+          testInfo,
+          `approval-refusal-${variant}-inline-${theme}-${width}`,
+        );
+      });
+    }
+  }
+}
+
 for (const [dismiss, language, theme, width] of [
   ["cancel", "tr", "dark", 390],
   ["decline", "en", "light", 1100],
@@ -548,7 +588,7 @@ for (const [dismiss, language, theme, width] of [
     await pending.press("Enter");
     await expect(page.getByLabel("Send count")).toHaveText("1");
     await form.screenshot({
-      path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-question-${dismiss}-pending-${theme}-${width}.png`,
+      path: `${captureRoot}/${test.info().project.name}-legacy-question-${dismiss}-pending-${theme}-${width}.png`,
     });
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
       false,
@@ -579,7 +619,7 @@ for (const theme of ["light", "dark"] as const) {
         form.getByRole("radio", { name: "Desktop and mobile", exact: true }),
       ).toBeChecked();
       await form.screenshot({
-        path: `temp/verification/2026-10-30-decision-inputs/${test.info().project.name}-legacy-question-active-${theme}-${width}.png`,
+        path: `${captureRoot}/${test.info().project.name}-legacy-question-active-${theme}-${width}.png`,
       });
       await form.getByText("Other", { exact: true }).click();
       const custom = form.getByRole("textbox", { name: "Type your answer" });

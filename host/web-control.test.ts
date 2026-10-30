@@ -193,3 +193,15 @@ it("refuses unsupported and legacy approval controls before RPC without declarin
     expect(runInContext("uncertain", page.context)).toBeUndefined();
   }
 });
+
+it("refuses a retained web approval button after its authenticated connection changes", async () => {
+  const page = approvalPage(
+    ["sessions.approvalOccurrence.v1"],
+    "12345678-1234-4123-8123-123456789abc",
+  );
+  runInContext("environment={capabilities:['sessions.approvalOccurrence.v1']}", page.context);
+  await page.allow.onclick!();
+  expect(page.requests).toEqual([]);
+  expect(page.getElementById("error").textContent).toContain("connection changed");
+  expect(runInContext("uncertain", page.context)).toBeUndefined();
+});

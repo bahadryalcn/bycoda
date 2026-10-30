@@ -11,6 +11,7 @@ export async function exerciseOverlappingApproval(input: {
   approve: (occurrenceId: string, decision: "allow" | "deny") => void;
   replies: () => unknown[];
   deniedResult: unknown;
+  afterResponses?: () => void;
 }): Promise<void> {
   const first = input.ask();
   const original = requestedApproval(input.events, input.requestId);
@@ -35,6 +36,7 @@ export async function exerciseOverlappingApproval(input: {
     occurrenceId: original.occurrenceId,
     decision: "cancelled",
   });
+  input.afterResponses?.();
   await vi.waitFor(() => {
     expect(first().pendingCausalWork).toBe(0);
     expect(duplicate().pendingCausalWork).toBe(0);
@@ -50,6 +52,7 @@ export async function exerciseOverlappingApproval(input: {
   input.approve(current.occurrenceId, "deny");
   await vi.waitFor(() => expect(input.replies()).toHaveLength(3));
   expect(input.replies()[2]).toEqual(input.deniedResult);
+  input.afterResponses?.();
   await vi.waitFor(() => expect(next().pendingCausalWork).toBe(0));
 }
 
@@ -62,10 +65,13 @@ export async function exerciseApprovalActualWriteLifetime(input: {
   cancel: () => Promise<void>;
   holdWrites: (gate: (() => Promise<void>) | null) => void;
   replies: () => unknown[];
+  closesOnUncancelledTimeout?: boolean;
 }): Promise<void> {
   const releases: Array<() => void> = [];
-  const flush = async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); };
-  input.holdWrites(() => new Promise<void>(resolve => releases.push(resolve)));
+  const flush = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+  };
+  input.holdWrites(() => new Promise<void>((resolve) => releases.push(resolve)));
   vi.useFakeTimers();
   try {
     const first = input.ask();
@@ -80,10 +86,22 @@ export async function exerciseApprovalActualWriteLifetime(input: {
     // The waiter has timed out; the actual write is still held in the bridge.
     const duplicate = input.ask();
     await flush();
-    expect(releases).toHaveLength(2);
-    expect(input.events.filter(event => event.type === "approval.requested" && event.requestId === input.requestId)).toHaveLength(1);
-    expect(input.replies()[1]).toEqual({ outcome: { outcome: "cancelled" } });
-    expect(input.events).toContainEqual({ type: "approval.resolved", requestId: input.requestId, occurrenceId: original.occurrenceId, decision: "cancelled" });
+    const closed = input.closesOnUncancelledTimeout && !input.cancelBeforeTimeout;
+    expect(releases).toHaveLength(closed ? 1 : 2);
+    expect(
+      input.events.filter(
+        (event) => event.type === "approval.requested" && event.requestId === input.requestId,
+      ),
+    ).toHaveLength(1);
+    if (!closed) {
+      expect(input.replies()[1]).toEqual({ outcome: { outcome: "cancelled" } });
+      expect(input.events).toContainEqual({
+        type: "approval.resolved",
+        requestId: input.requestId,
+        occurrenceId: original.occurrenceId,
+        decision: "cancelled",
+      });
+    }
 
     input.holdWrites(null);
     for (const release of releases) release();

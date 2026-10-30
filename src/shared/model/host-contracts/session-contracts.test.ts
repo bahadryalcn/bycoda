@@ -23,14 +23,28 @@ import {
 const base = { commandId: "command-a", sessionId: "session-a" };
 it("retains source identity in Crew reads and requires the original occurrence on delegated replies", () => {
   const occurrenceId = createApprovalOccurrenceId();
-  expect(CrewApprovalSchema.parse({ requestId: 7, occurrenceId })).toEqual({ requestId: 7, occurrenceId });
+  expect(CrewApprovalSchema.parse({ requestId: 7, occurrenceId })).toEqual({
+    requestId: 7,
+    occurrenceId,
+  });
   expect(CrewApprovalSchema.parse({ requestId: 7 })).toEqual({ requestId: 7 });
-  const reply = { runId: "crew-run", sessionId: "member", targetRunId: "member-run", requestId: "original-command",
-    approvalId: 7, approvalOccurrenceId: occurrenceId, decision: "deny" };
+  const reply = {
+    projectId: "crew-project",
+    runId: "crew-run",
+    sessionId: "member",
+    targetRunId: "member-run",
+    requestId: "original-command",
+    approvalId: 7,
+    approvalOccurrenceId: occurrenceId,
+    decision: "deny",
+  };
   expect(CrewsRespondParamsSchema.parse(reply)).toEqual(reply);
   const { approvalOccurrenceId: _source, ...legacy } = reply;
   expect(CrewsRespondParamsSchema.safeParse(legacy).success).toBe(false);
-  expect(CrewsRespondParamsSchema.safeParse({ ...reply, approvalOccurrenceId: occurrenceId + "\n" }).success).toBe(false);
+  expect(
+    CrewsRespondParamsSchema.safeParse({ ...reply, approvalOccurrenceId: occurrenceId + "\n" })
+      .success,
+  ).toBe(false);
 });
 it("lets only nested create first turns inherit an omitted session identity", () => {
   const create = {

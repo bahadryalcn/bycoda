@@ -865,14 +865,22 @@ async function handlePermission(live: Live, id: number, params: unknown) {
           if (!Array.from(liveByThread.values()).includes(live)) return Promise.resolve();
           if (!ownsPendingApproval(live.approvals, id, pending)) {
             pending.report("cancelled");
-            return live.acp.respond(id, { outcome: { outcome: "cancelled" } }, observePendingApprovalWrite(live.approvals, id, pending));
+            return live.acp.respond(
+              id,
+              { outcome: { outcome: "cancelled" } },
+              observePendingApprovalWrite(live.approvals, id, pending),
+            );
           }
-          return live.acp.respond(id, {
-            outcome: {
-              outcome: "selected",
-              optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+          return live.acp.respond(
+            id,
+            {
+              outcome: {
+                outcome: "selected",
+                optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+              },
             },
-          }, observePendingApprovalWrite(live.approvals, id, pending));
+            observePendingApprovalWrite(live.approvals, id, pending),
+          );
         })();
       } finally {
         releasePendingApproval(live.approvals, id, pending);

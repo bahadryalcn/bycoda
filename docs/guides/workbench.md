@@ -15,6 +15,13 @@ original operation. A changed request or connection is refused before dispatch;
 check its message and review the current request. A transport callback completing
 does not by itself confirm that the provider applied the decision.
 
+Each new approval carries the identity of the original execution request across
+desktop, web control, Crews and mobile. An old decision cannot answer a later
+request that reuses the same number. If the Host does not support this check,
+update it before responding. Older saved requests without this identity remain
+readable; refresh the conversation or update its execution client to obtain a
+verifiable request. The app does not add an identity to an old queued decision.
+
 Saved local conversations support [session links and Markdown references](local-session-references.md),
 including compact details and opening a cited conversation beside the current one.
 

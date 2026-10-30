@@ -45,12 +45,7 @@ export const CrewCandidateSchema = z.strictObject({
   qualitySource: z.enum(["owner-estimate", "review-history"]).optional(),
   samples: SafeCounterSchema.optional(),
 });
-export const CrewRoleSchema = z.enum([
-  "coordinator",
-  "specialist",
-  "reviewer",
-  "advisor",
-]);
+export const CrewRoleSchema = z.enum(["coordinator", "specialist", "reviewer", "advisor"]);
 export const CrewAgentSchema = z.strictObject({
   id: text,
   name: text,
@@ -255,10 +250,7 @@ export const CrewCatalogModelSchema = z.strictObject({
 });
 function providerMap<S extends z.ZodType>(schema: S) {
   const fields = Object.fromEntries(
-    SessionProviderSchema.options.map((provider) => [
-      provider,
-      schema.optional(),
-    ]),
+    SessionProviderSchema.options.map((provider) => [provider, schema.optional()]),
   ) as {
     [K in z.infer<typeof SessionProviderSchema>]: z.ZodOptional<S>;
   };

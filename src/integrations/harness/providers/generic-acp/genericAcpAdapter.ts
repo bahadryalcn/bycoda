@@ -1,5 +1,14 @@
 import { isApprovalOccurrenceId } from "../../../../shared/model/approvalOccurrence";
-import { createPendingApproval, cancelPendingApprovals, observePendingApprovalWrite, ownsPendingApproval, rejectOverlappingApproval, releasePendingApproval, type PendingApproval, type ApprovalActualWriteObserver } from "../pendingApproval";
+import {
+  createPendingApproval,
+  cancelPendingApprovals,
+  observePendingApprovalWrite,
+  ownsPendingApproval,
+  rejectOverlappingApproval,
+  releasePendingApproval,
+  type PendingApproval,
+  type ApprovalActualWriteObserver,
+} from "../pendingApproval";
 import {
   nativeOutputSink,
   retainNativeOutputEventOrigin,
@@ -17,6 +26,10 @@ import { setHarnessModels } from "../../../../features/sessions/model/models";
 import type { GenericAcpSummary } from "../../../../features/providers/model/genericAcp";
 import { textFromContent } from "../../../../shared/lib/contentText";
 
+type GenericPendingApproval = PendingApproval & {
+  options: { optionId: string; kind: string }[];
+  work: NativeOutputWork | null;
+};
 type Live = {
   client: AcpClient;
   providerId: string;
@@ -28,13 +41,7 @@ type Live = {
   planning: boolean;
   modes?: { currentModeId: string; availableModes: { id: string }[] };
   previousMode?: string;
-  approvals: Map<
-    number,
-    PendingApproval & {
-      options: { optionId: string; kind: string }[];
-      work: NativeOutputWork | null;
-    }
-  >;
+  approvals: Map<number, GenericPendingApproval>;
 };
 const lives = new Map<string, Live>();
 const resumes = new Map<string, { providerId: string; cwd: string }>();
@@ -45,19 +52,33 @@ function retireWaitingApprovals(live: Live): void {
   cancelPendingApprovals(live.approvals);
 }
 
-function servePendingApproval(sessionId: string, live: Live, id: number, pending: Live["approvals"] extends Map<number, infer P> ? P : never): void {
+function servePendingApproval(
+  sessionId: string,
+  live: Live,
+  id: number,
+  pending: GenericPendingApproval,
+): void {
   const waiter = nativeOutputSink(pending.work, async () => {
     try {
       const decision = await pending.decision;
       if (lives.get(sessionId) !== live) return;
       await nativeOutputSink(pending.work, () => {
         if (lives.get(sessionId) !== live) return Promise.resolve();
-        const option = ownsPendingApproval(live.approvals, id, pending) && decision !== "cancelled"
-          ? pending.options.find(entry => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"))
-          : undefined;
-        return live.client.respond(id, {
-          outcome: option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" },
-        }, observePendingApprovalWrite(live.approvals, id, pending));
+        const option =
+          ownsPendingApproval(live.approvals, id, pending) && decision !== "cancelled"
+            ? pending.options.find(
+                (entry) => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"),
+              )
+            : undefined;
+        return live.client.respond(
+          id,
+          {
+            outcome: option
+              ? { outcome: "selected", optionId: option.optionId }
+              : { outcome: "cancelled" },
+          },
+          observePendingApprovalWrite(live.approvals, id, pending),
+        );
       })();
       pending.report(decision);
     } finally {
@@ -168,7 +189,13 @@ export async function sendGenericAcpTurn(
         }
         if (state.approvals.has(id)) {
           const duplicateWork = captureNativeOutputWork({ additionalInput: true });
-          const overlap = rejectOverlappingApproval(state.approvals, id, nativeOutputSink(duplicateWork, (onActualWrite: ApprovalActualWriteObserver) => client.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite)));
+          const overlap = rejectOverlappingApproval(
+            state.approvals,
+            id,
+            nativeOutputSink(duplicateWork, (onActualWrite: ApprovalActualWriteObserver) =>
+              client.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite),
+            ),
+          );
           if (overlap) await trackNativeOutputWork(overlap, duplicateWork);
           return;
         }
@@ -194,10 +221,17 @@ export async function sendGenericAcpTurn(
           return;
         }
         const work = captureNativeOutputWork({ additionalInput: true });
-        const pending = Object.assign(createPendingApproval((occurrenceId, decision) => nativeOutputSink(work, () => state.onEvent({type: "approval.resolved", requestId: id, occurrenceId, decision}))()), {
-          options: permission.options ?? [],
-          work,
-        });
+        const pending = Object.assign(
+          createPendingApproval((occurrenceId, decision) =>
+            nativeOutputSink(work, () =>
+              state.onEvent({ type: "approval.resolved", requestId: id, occurrenceId, decision }),
+            )(),
+          ),
+          {
+            options: permission.options ?? [],
+            work,
+          },
+        );
         const { occurrenceId } = pending;
         state.approvals.set(id, pending);
         servePendingApproval(input.sessionId, state, id, pending);

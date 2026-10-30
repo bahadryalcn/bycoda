@@ -4,7 +4,10 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
+import {
+  exerciseOverlappingApproval,
+  exerciseApprovalActualWriteLifetime,
+} from "../approvalOverlap.testSupport";
 
 const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
@@ -143,24 +146,41 @@ beforeEach(() => {
   __cursorTestReset();
 });
 
-it.each([false, true])("retains Cursor actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
-  const { events, promptId, turn } = await startTurn("cursor-live");
-  const outcome = turn.catch(() => undefined);
-  let frame = 0;
-  await exerciseApprovalActualWriteLifetime({
-    events, requestId: 993, cancelBeforeTimeout,
-    ask: () => nativeOutputFrame("cursor-live", `actual-write-${++frame}`, () => request(993, "session/request_permission", {
-      sessionId: "cursor_1", toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" },
-      options: [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }],
-    })),
-    approve: nonce => respondCursorApproval("cursor-live", 993, "allow", nonce),
-    cancel: () => cancelCursorTurn("cursor-live"),
-    holdWrites: gate => { heldApprovalWrite = gate; },
-    replies: () => parse().filter(message => message.id === 993 && message.result).map(message => message.result),
-  });
-  if (!cancelBeforeTimeout) reply(promptId, { stopReason: "end_turn" });
-  await outcome;
-});
+it.each([false, true])(
+  "retains Cursor actual approval writes after timeout (cancel first: %s)",
+  async (cancelBeforeTimeout) => {
+    const { events, promptId, turn } = await startTurn("cursor-live");
+    const outcome = turn.catch(() => undefined);
+    let frame = 0;
+    await exerciseApprovalActualWriteLifetime({
+      events,
+      requestId: 993,
+      cancelBeforeTimeout,
+      ask: () =>
+        nativeOutputFrame("cursor-live", `actual-write-${++frame}`, () =>
+          request(993, "session/request_permission", {
+            sessionId: "cursor_1",
+            toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" },
+            options: [
+              { optionId: "allow-once", kind: "allow_once" },
+              { optionId: "reject-once", kind: "reject_once" },
+            ],
+          }),
+        ),
+      approve: (nonce) => respondCursorApproval("cursor-live", 993, "allow", nonce),
+      cancel: () => cancelCursorTurn("cursor-live"),
+      holdWrites: (gate) => {
+        heldApprovalWrite = gate;
+      },
+      replies: () =>
+        parse()
+          .filter((message) => message.id === 993 && message.result)
+          .map((message) => message.result),
+    });
+    if (!cancelBeforeTimeout) reply(promptId, { stopReason: "end_turn" });
+    await outcome;
+  },
+);
 
 it.each([false, true])(
   "fails closed on an overlapping Cursor permission (allow already queued: %s)",
@@ -822,7 +842,7 @@ it("Cursor exit settles the original approval without writing to the exited proc
       type: "approval.resolved",
       requestId: 92,
       occurrenceId: events.find((event) => event.type === "approval.requested")!.occurrenceId,
-      decision: "deny",
+      decision: "cancelled",
     });
     await waitFor(() => inspect().pendingCausalWork === 0, "original permission handler drained");
     expect(

@@ -29,6 +29,8 @@ export const APPROVAL_INTENT_MESSAGES = Object.freeze({
   unavailable: "Approval connection is unavailable. This decision was not sent.",
   occurrence:
     "This Host cannot verify which request you are answering. Update the Host before responding.",
+  unidentified:
+    "This request cannot be verified. Refresh the conversation or update its execution client.",
   unconfirmed: "Waiting for confirmation",
 });
 
@@ -666,7 +668,7 @@ export function createApprovalIntentRegistry(
     if (captured.route.remote && !captured.route.occurrenceSupported)
       return refuse(APPROVAL_INTENT_MESSAGES.occurrence);
     if (!isApprovalOccurrenceId(captured.occurrenceId))
-      return refuse(APPROVAL_INTENT_MESSAGES.changed);
+      return refuse(APPROVAL_INTENT_MESSAGES.unidentified);
     if (!state.owner!.recorded) return refuse(APPROVAL_INTENT_MESSAGES.capacity);
     // Unknown dispatch is never repeated, even if a later view reuses the numeric ID.
     if (

@@ -5,6 +5,30 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Source-owned approval occurrences, 2026-10-30
+
+Continuation of the original W00-W11/G01-G09/full26 goal. Actual TypeScript
+provider pending records issue public UUIDv4 occurrence identities. Session/event
+data retains `occurrenceId`; commands retain the original `approvalOccurrenceId`,
+commandId, run and authority. `sessions.approvalOccurrence.v1` gates replies only.
+Legacy reads remain optional; new effects refuse missing/unsupported identity.
+No response, heartbeat, recovered outbox or held Desktop retry mints an identity.
+
+Owned paths include common reducer/registry/contracts, actual provider owners,
+Host engine/DesktopLive/command service, Remote/Native callbacks, web control,
+delegated Crews, active and compatibility mobile transports and both mobile
+workspace producers. Desktop exact retries dedupe by original commandId; conflicting
+payloads refuse. Bounded acceptance fingerprints are in memory, not durable restart
+receipts. Callable ACP owners invalidate overlapping RPC IDs and retain original
+work; actual write lifetime is separate from the reply timeout waiter.
+
+Evidence and explicit unverified gates: `temp/verification/2026-10-30-approval-occurrence/`.
+This supersedes only the ID-only approval wire gap described in the historical
+source700 section below. Provider ACK, Native late-IPC process fencing, complete
+provider/actor conservation and the Native Buffers FULL cut remain unproved;
+qualified:false/applicationThrough:null and all26 remain open. Preserve the external
+`native_coordination` ownership of `src-tauri/src/bundled_host.rs` and App.tsx.
+
 ## Decision-input prerequisite, 2026-10-30
 
 Actual question drafts and approval decisions now enter explicit bounded Parent
