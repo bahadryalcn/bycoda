@@ -7,6 +7,7 @@ import {
   type ModelSettingChoice,
 } from "../../../../features/sessions/model/models";
 import {
+  createChildProcessHandle,
   killChild,
   resolveCodexBinary,
   spawnChild,
@@ -52,8 +53,9 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
   const { path } = await resolveCodexBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
+  const probeProcess = createChildProcessHandle(probeId);
   const rpc = new JsonRpcClient(
-    probeId,
+    probeProcess,
     {
       onRequest: (id) => {
         void rpc.respond(id, {}).catch(() => undefined);
@@ -64,18 +66,18 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
 
   const stop = async () => {
     rpc.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => rpc.pushLine(line),
     () => rpc.close(new Error("Codex probe exited")),
   );
 
   try {
-    await spawnChild(probeId, path, ["app-server"], cwd, undefined, "codex");
+    await spawnChild(probeProcess, path, ["app-server"], cwd, undefined, "codex");
     return await withTimeout(
       DISCOVERY_TIMEOUT_MS,
       async () => {

@@ -1,10 +1,9 @@
-import { writeChild } from "../../core/child";
+import { writeChild, invalidateChildOutput, type ChildProcessHandle } from "../../core/child";
 import { parseJsonLine, parseRpcResponse, stringField } from "./piProtocol";
 import {
   captureNativeOutputWork,
   nativeOutputSink,
   trackNativeOutputWork,
-  invalidateNativeOutputSession,
   type NativeOutputWork,
 } from "../../core/nativeOutputDelivery";
 
@@ -23,7 +22,7 @@ export class PiRpc {
   private closed = false;
 
   constructor(
-    private readonly sessionId: string,
+    private readonly process: ChildProcessHandle,
     private readonly onFrame: (rec: Record<string, unknown>) => void,
     private readonly label = "Pi",
   ) {}
@@ -86,7 +85,7 @@ export class PiRpc {
         },
       });
     });
-    void writeChild(this.sessionId, JSON.stringify(payload)).catch((error) => {
+    void writeChild(this.process, JSON.stringify(payload)).catch((error) => {
       const message = error instanceof Error ? error : new Error(String(error));
       const request = this.pending.get(id);
       this.pending.delete(id);
@@ -98,7 +97,7 @@ export class PiRpc {
   close(error?: Error) {
     if (this.closed) return;
     this.closed = true;
-    invalidateNativeOutputSession(this.sessionId, "pi-client-closed");
+    invalidateChildOutput(this.process, "pi-client-closed");
     const err = error ?? new Error(`${this.label} process exited`);
     for (const pending of this.pending.values()) pending.reject(err);
     this.pending.clear();

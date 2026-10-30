@@ -1095,7 +1095,10 @@ pub fn window_closed(app: &AppHandle, label: &str) {
     if !ids.is_empty() {
         crate::spawn_tracked_reap(app, move |handle| {
             for id in &ids {
-                let _ = crate::harness::harness_kill(handle.state(), id.clone());
+                let _ = crate::harness::kill_current_harness(
+                    &handle.state::<crate::harness::HarnessHost>(),
+                    id,
+                );
             }
         });
     }

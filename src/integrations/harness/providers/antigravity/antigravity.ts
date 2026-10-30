@@ -58,10 +58,12 @@ type SessionSetupResult = {
   configOptions?: unknown;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   threadId: string;
-  /** Generation-scoped child id (`thread#n`): a recycled process can never
-   *  deliver stdout to or take writes from a different generation. */
+  /** Logical child locator; physical ownership belongs to handle. */
   childKey: string;
   subagents: AcpSubagents;
   acp: AcpClient;
@@ -158,7 +160,10 @@ const { ensure: ensureLive } = createRecyclingLifecycle<SendTurnInput, Live>({
 // next send would queue behind the 45s session-request timeout. Registering
 // the in-flight setup lets user intent reject its wire calls and kill its
 // child immediately.
-const pendingSetupByThread = new Map<string, { acp: AcpClient; childKey: string }>();
+const pendingSetupByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; acp?: AcpClient; childKey: string }
+>();
 // Turns serialize per thread, not per Live: a recycled transport must not let
 // a queued send run concurrently on the replacement.
 const turnsByThread = new Map<string, Promise<void>>();
@@ -292,8 +297,8 @@ async function teardownLive(live: Live): Promise<void> {
   }
   settleLive(live);
   live.acp.close();
-  unwatchChild(live.childKey);
-  await killChild(live.childKey).catch(() => undefined);
+  unwatchChild(live.handle);
+  await killChild(live.handle).catch(() => undefined);
 }
 
 export async function stopAntigravitySession(sessionId: string): Promise<void> {
@@ -317,8 +322,8 @@ function abortPendingSetup(sessionId: string): void {
   // close() both rejects in-flight requests and makes any further request on
   // this client fail immediately — a cancelled setup cannot fall through the
   // resume/load/new ladder into another 45s wait.
-  pending.acp.close(new Error("cancelled"));
-  void killChild(pending.childKey).catch(() => undefined);
+  pending.acp?.close(new Error("cancelled"));
+  void killChild(pending.handle).catch(() => undefined);
 }
 
 export async function forgetAntigravitySession(sessionId: string): Promise<void> {
@@ -387,10 +392,11 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
   if (retired()) throw new Error("Antigravity session stopped during startup");
   const childKey = `${input.sessionId}#${childSeq++}`;
 
-  const { path, args } = await resolveAntigravityBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(childKey, handlers);
-  const pendingSetup = { acp, childKey };
+  const handle = createChildProcessHandle(childKey);
+  const pendingSetup: { handle: ChildProcessHandle; acp?: AcpClient; childKey: string } = {
+    handle,
+    childKey,
+  };
   pendingSetupByThread.set(input.sessionId, pendingSetup);
   const clearPending = () => {
     if (pendingSetupByThread.get(input.sessionId) === pendingSetup) {
@@ -398,73 +404,78 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
     }
   };
   const liveRef: { current: Live | null } = { current: null };
-
-  handlers.onNotification = (method, params) => {
-    const live = liveRef.current;
-    if (!live) return;
-    noteActivity(live);
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (live) noteActivity(live);
-    if (!live) {
-      void acp
-        .respondError(id, {
-          code: -32601,
-          message: `Method not found: ${method}`,
-        })
-        .catch(() => undefined);
-      return;
-    }
-    return handleRequest(live, id, method, params).catch((error) => {
-      // A reply that could not be written is a transport failure: the provider
-      // is still waiting for an answer that will never arrive. Fail the
-      // generation so the owning turn unwinds instead of hanging on the prompt
-      // deadline. Already-retired or cancelled generations stay quiet.
-      if (liveByThread.get(live.threadId) !== live || live.cancelled) return;
-      live.stale = true;
-      acp.close(error instanceof Error ? error : new Error(String(error)));
-    });
-  };
-
-  // startLive runs once per session, so these handlers outlive the turn that
-  // created them. Routing through the live record keeps them on the *current*
-  // turn's listener — capturing `input.onEvent` meant every exit and stderr
-  // error after turn 1 was addressed to a finished turn and silently dropped,
-  // leaving the session spinning on "Working…" forever.
-  const emit = (event: HarnessEvent) => {
-    (liveRef.current?.onEvent ?? input.onEvent)(event);
-  };
-
-  watchChild(
-    childKey,
-    (line) => acp.pushLine(line),
-    (code) => {
-      unwatchChild(childKey);
-      const live = liveRef.current;
-      if (liveByThread.get(input.sessionId) === live) {
-        liveByThread.delete(input.sessionId);
-      }
-      // Settle before closing so in-flight requests unwind as cancelled rather
-      // than surfacing a transport error for a dead process.
-      if (live) settleLive(live);
-      acp.close(new Error("Antigravity exited"));
-      // A generation retired by user intent settles quietly — no session.ended
-      // for a setup the user already cancelled or stopped.
-      if (live || !retired()) emit({ type: "session.ended", code });
-    },
-    (line) => {
-      console.debug("[bycoda] antigravity stderr", line);
-    },
-  );
-
   try {
+    const { path, args } = await resolveAntigravityBinary();
+    if (retired()) throw new Error("Antigravity session stopped during startup");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    pendingSetup.acp = acp;
+
+    handlers.onNotification = (method, params) => {
+      const live = liveRef.current;
+      if (!live) return;
+      noteActivity(live);
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (live) noteActivity(live);
+      if (!live) {
+        void acp
+          .respondError(id, {
+            code: -32601,
+            message: `Method not found: ${method}`,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      return handleRequest(live, id, method, params).catch((error) => {
+        // A reply that could not be written is a transport failure: the provider
+        // is still waiting for an answer that will never arrive. Fail the
+        // generation so the owning turn unwinds instead of hanging on the prompt
+        // deadline. Already-retired or cancelled generations stay quiet.
+        if (liveByThread.get(live.threadId) !== live || live.cancelled) return;
+        live.stale = true;
+        acp.close(error instanceof Error ? error : new Error(String(error)));
+      });
+    };
+
+    // startLive runs once per session, so these handlers outlive the turn that
+    // created them. Routing through the live record keeps them on the *current*
+    // turn's listener — capturing `input.onEvent` meant every exit and stderr
+    // error after turn 1 was addressed to a finished turn and silently dropped,
+    // leaving the session spinning on "Working…" forever.
+    const emit = (event: HarnessEvent) => {
+      (liveRef.current?.onEvent ?? input.onEvent)(event);
+    };
+
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        unwatchChild(handle);
+        const live = liveRef.current;
+        if (liveByThread.get(input.sessionId) === live) {
+          liveByThread.delete(input.sessionId);
+        }
+        // Settle before closing so in-flight requests unwind as cancelled rather
+        // than surfacing a transport error for a dead process.
+        if (live) settleLive(live);
+        acp.close(new Error("Antigravity exited"));
+        // A generation retired by user intent settles quietly — no session.ended
+        // for a setup the user already cancelled or stopped.
+        if (live || !retired()) emit({ type: "session.ended", code });
+      },
+      (line) => {
+        console.debug("[bycoda] antigravity stderr", line);
+      },
+    );
+
     // Binary resolution awaited above may have raced a stop/forget — re-check
     // before the child is ever spawned, not just after.
     if (retired()) throw new Error("Antigravity session stopped during startup");
     await spawnChild(
-      childKey,
+      handle,
       path,
       args,
       antigravitySpawnCwd(path, input.cwd),
@@ -554,6 +565,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
 
     const configOptions = readConfigOptions(setup?.configOptions);
     const live: Live = {
+      handle,
       threadId: input.sessionId,
       childKey,
       subagents: new AcpSubagents(),
@@ -594,9 +606,9 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
     // thread slot, so nothing here may touch the thread-keyed maps. A listener
     // that threw post-publish is the exception: drop the dead transport this
     // generation registered so the next send cannot reuse it.
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(childKey);
-    await killChild(childKey).catch(() => undefined);
+    pendingSetup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    unwatchChild(handle);
+    await killChild(handle).catch(() => undefined);
     if (liveRef.current != null && liveByThread.get(input.sessionId) === liveRef.current) {
       liveByThread.delete(input.sessionId);
     }

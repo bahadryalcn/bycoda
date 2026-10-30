@@ -26,10 +26,13 @@ Actions, with the JSON object each one takes:
   wait      {"timeoutSeconds":20}
             Block until a task changes state, or until the timeout (0-25).
             Returns at once when paused, stopped, or nothing is running or queued.
-  respond   {"taskId":"...","requestId":7,"decision":"allow"|"deny"}
+  respond   {"taskId":"...","requestId":7,"approvalOccurrenceId":"<from needsInput>",
+             "decision":"allow"|"deny"}
             Answer an approval an agent is blocked on. Agents never prompt the
             user; list, get and wait report the prompt as that task's
-            "needsInput", and it stays stopped until you decide.
+            "needsInput", and it stays stopped until you decide. Forward that
+            request's original approvalOccurrenceId; do not reuse a reply for
+            another request with the same number.
   answer    {"taskId":"...","requestId":9,"answers":{"<questionId>":["<optionId>"]}}
             Answer a question an agent asked, or pass "skip":true instead of
             "answers". The question and its options come from needsInput.

@@ -1,3 +1,4 @@
+import { processConstructions } from "../src/integrations/harness/providers/processConstruction.testSupport";
 import { beforeEach, expect, it, vi } from "vitest";
 
 const calls = vi.hoisted(() => ({
@@ -15,15 +16,21 @@ vi.mock("node:fs/promises", async (original) => ({
   ...(await original<typeof import("node:fs/promises")>()),
   mkdir: calls.mkdir,
 }));
-vi.mock("../src/integrations/harness/core/child", () => ({
-  resolveCodexBinary: calls.resolve,
-  spawnChild: calls.spawn,
-  killChild: calls.kill,
-  watchChild: calls.watch,
-  unwatchChild: calls.unwatch,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../src/integrations/harness/core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: calls.resolve,
+    spawnChild: calls.spawn,
+    killChild: calls.kill,
+    watchChild: calls.watch,
+    unwatchChild: calls.unwatch,
+  }),
+);
 vi.mock("../src/integrations/harness/core/jsonRpc", () => ({
   JsonRpcClient: class {
+    constructor(handle: import("../src/integrations/harness/core/child").ChildProcessHandle) {
+      processConstructions.client(handle);
+    }
     request = calls.request;
     notify = calls.notify;
     close = calls.close;
@@ -34,7 +41,7 @@ vi.mock("../src/integrations/harness/core/jsonRpc", () => ({
 import { probeNativeCodexImageCapability } from "./social-images";
 
 beforeEach(() => {
-  vi.resetAllMocks();
+  for (const value of Object.values(calls)) value.mockReset();
   calls.mkdir.mockResolvedValue(undefined);
   calls.resolve.mockResolvedValue({ path: "fixture-codex" });
   calls.spawn.mockResolvedValue(undefined);
@@ -105,6 +112,15 @@ it("does not read account data after authority is revoked during a feature RPC",
     "config/feature/list",
   ]);
   expect(calls.kill).toHaveBeenCalledOnce();
+  const original = processConstructions.created[0];
+  expect(original).toBeDefined();
+  for (const kind of ["client", "watch", "spawn", "unwatch", "kill"] as const) {
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === kind)
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+  }
 });
 
 it("retains legacy no-grant capability checks and ordinary unavailable results", async () => {

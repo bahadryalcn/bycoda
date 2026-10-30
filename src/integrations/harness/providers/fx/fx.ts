@@ -38,7 +38,10 @@ type SessionSetupResult = {
   configOptions?: unknown;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
   acpSessionId: string;
@@ -91,6 +94,7 @@ const CLIENT_CAPABILITIES = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -132,7 +136,7 @@ export async function sendFxTurn(input: SendTurnInput): Promise<void> {
     // its provider session id, but recycle the child so the next turn can
     // resume instead of inheriting a permanently wedged transport.
     if (liveByThread.get(input.sessionId) === live) {
-      await stopFxSession(input.sessionId);
+      await stopFxSession(input.sessionId, live.handle);
     }
     throw error;
   }
@@ -162,14 +166,28 @@ export async function cancelFxTurn(sessionId: string): Promise<void> {
   live.acp.rejectPending(new Error("cancelled"));
 }
 
-export async function stopFxSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopFxSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const candidate = liveByThread.get(sessionId);
+  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) live.muteUpdates = true;
   live?.acp.close();
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.acp?.close();
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetFxSession(sessionId: string): Promise<void> {
@@ -190,73 +208,82 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     existing.runtimeMode = input.runtimeMode;
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopFxSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canLoad = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveFxBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(input.sessionId, handlers);
-  const liveRef: { current: Live | null } = { current: null };
-  const muteGate = { current: false };
-
-  handlers.onNotification = (method, params) => {
-    if (muteGate.current) return;
-    const live = liveRef.current;
-    if (!live || live.muteUpdates) return;
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (!live) {
-      void acp
-        .respondError(id, {
-          code: -32601,
-          message: `Method not found: ${method}`,
-        })
-        .catch(() => undefined);
-      return;
-    }
-    return handleRequest(live, id, method, params).catch(() => {
-      console.warn("[bycoda] fx server request failed");
-    });
-  };
-
-  // ensureLive runs once per session, so these handlers outlive the turn that
-  // created them. Routing through the live record keeps them on the *current*
-  // turn's listener — capturing `input.onEvent` meant every exit and stderr
-  // error after turn 1 was addressed to a finished turn and silently dropped,
-  // leaving the session spinning on "Working…" forever.
-  const emit = (event: HarnessEvent) => {
-    (liveRef.current?.onEvent ?? input.onEvent)(event);
-  };
-
-  watchChild(
-    input.sessionId,
-    (line) => acp.pushLine(line),
-    (code) => {
-      acp.close(new Error("fx exited"));
-      liveByThread.delete(input.sessionId);
-      emit({ type: "session.ended", code });
-    },
-    (line) => {
-      console.debug("[bycoda] fx stderr", line);
-      if (/Fx needs access|AI Gateway|not start/i.test(line)) {
-        emit({ type: "session.error", message: line.trim() });
-      }
-    },
-  );
-
-  await spawnChild(input.sessionId, path, fxSpawnArgs(input.model), input.cwd, undefined, "fx");
-
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  startingByThread.set(input.sessionId, startup);
   try {
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await stopFxSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canLoad = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const { path } = await resolveFxBinary();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    startup.acp = acp;
+    const liveRef: { current: Live | null } = { current: null };
+    const muteGate = { current: false };
+
+    handlers.onNotification = (method, params) => {
+      if (muteGate.current) return;
+      const live = liveRef.current;
+      if (!live || live.muteUpdates) return;
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (!live) {
+        void acp
+          .respondError(id, {
+            code: -32601,
+            message: `Method not found: ${method}`,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      return handleRequest(live, id, method, params).catch(() => {
+        console.warn("[bycoda] fx server request failed");
+      });
+    };
+
+    // ensureLive runs once per session, so these handlers outlive the turn that
+    // created them. Routing through the live record keeps them on the *current*
+    // turn's listener — capturing `input.onEvent` meant every exit and stderr
+    // error after turn 1 was addressed to a finished turn and silently dropped,
+    // leaving the session spinning on "Working…" forever.
+    const emit = (event: HarnessEvent) => {
+      (liveRef.current?.onEvent ?? input.onEvent)(event);
+    };
+
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        acp.close(new Error("fx exited"));
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
+        emit({ type: "session.ended", code });
+      },
+      (line) => {
+        console.debug("[bycoda] fx stderr", line);
+        if (/Fx needs access|AI Gateway|not start/i.test(line)) {
+          emit({ type: "session.error", message: line.trim() });
+        }
+      },
+    );
+
+    await spawnChild(handle, path, fxSpawnArgs(input.model), input.cwd, undefined, "fx");
+
     try {
       await acp.request(
         "initialize",
@@ -316,7 +343,10 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     if (!acpSessionId) throw new Error("fx did not return a session id");
 
     const configOptions = readConfigOptions(setup?.configOptions);
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      handle,
       subagents: new AcpSubagents(),
       acp,
       acpSessionId,
@@ -343,9 +373,11 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    await stopFxSession(input.sessionId);
+    startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    await stopFxSession(input.sessionId, handle);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

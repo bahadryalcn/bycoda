@@ -42,6 +42,7 @@ pub struct HarnessAccount {
 #[serde(rename_all = "camelCase")]
 struct HarnessLines {
     session_id: String,
+    construction_id: String,
     lines: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     native_output: Option<OutputMetadata>,
@@ -51,6 +52,7 @@ struct HarnessLines {
 #[serde(rename_all = "camelCase")]
 struct HarnessExit {
     session_id: String,
+    construction_id: String,
     code: Option<i32>,
     pid: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -134,15 +136,58 @@ fn antigravity_args(transport: &str) -> Vec<String> {
     }
 }
 
+/// Source-issued correlation for one physical process, never an operation grant
+/// or proof that the provider consumed a frame.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessProcessReceipt {
+    version: u8,
+    backend: &'static str,
+    session_id: String,
+    pid: u32,
+    construction_id: String,
+}
+
 struct LiveChild {
     cwd: PathBuf,
     stdin: Mutex<ChildStdin>,
     pid: u32,
+    /// The actual process output stream's UUID, not the registry-wide process epoch.
+    construction_id: String,
     account: Option<HarnessAccount>,
     /// Windows that consume this child's output.
     owners: Arc<Owners>,
     output: Option<Arc<NativeOutputStream>>,
 }
+
+impl LiveChild {
+    fn receipt(&self, session_id: &str) -> HarnessProcessReceipt {
+        HarnessProcessReceipt {
+            version: 1,
+            backend: "native",
+            session_id: session_id.to_owned(),
+            pid: self.pid,
+            construction_id: self.construction_id.clone(),
+        }
+    }
+}
+
+fn require_process_construction(value: Option<&str>) -> Result<&str, String> {
+    let value = value.ok_or("NATIVE_PROCESS_CONSTRUCTION_REQUIRED")?;
+    let parsed = uuid::Uuid::parse_str(value).map_err(|_| "NATIVE_PROCESS_CONSTRUCTION_INVALID")?;
+    if value.len() != 36
+        || parsed.to_string() != value
+        || parsed.as_bytes()[6] >> 4 != 4
+        || parsed.as_bytes()[8] & 0xc0 != 0x80
+    {
+        return Err("NATIVE_PROCESS_CONSTRUCTION_INVALID".into());
+    }
+    Ok(value)
+}
+
+#[cfg(test)]
+#[path = "harness/process_construction_tests.rs"]
+mod process_construction_tests;
 
 struct LiveSse {
     stop: Arc<AtomicBool>,
@@ -579,6 +624,23 @@ impl HarnessHost {
         self.lock_inner().children.get(session_id).cloned()
     }
 
+    /// Match the original construction before selecting its physical stdin.
+    /// The short registry lock is never held across admission or pipe I/O.
+    fn get_original(
+        &self,
+        session_id: &str,
+        construction_id: Option<&str>,
+    ) -> Result<Arc<LiveChild>, String> {
+        let expected = require_process_construction(construction_id)?;
+        let inner = self.lock_inner();
+        let live = inner
+            .children
+            .get(session_id)
+            .filter(|live| live.construction_id == expected)
+            .ok_or("NATIVE_PROCESS_CONSTRUCTION_STALE")?;
+        Ok(Arc::clone(live))
+    }
+
     /// Stamp this spawn and drop any child already registered under the id.
     fn begin_spawn(&self, session_id: &str) -> (u64, u64, Option<Arc<LiveChild>>) {
         let mut inner = self.lock_inner();
@@ -702,6 +764,44 @@ impl HarnessHost {
         removed
     }
 
+    /// Targeted IPC cannot invalidate a newer spawn or stop its event stream.
+    fn kill_original_session(
+        &self,
+        session_id: &str,
+        construction_id: Option<&str>,
+    ) -> Result<Arc<LiveChild>, String> {
+        let expected = require_process_construction(construction_id)?;
+        let mut inner = self.lock_inner();
+        if !inner
+            .children
+            .get(session_id)
+            .is_some_and(|live| live.construction_id == expected)
+        {
+            return Err("NATIVE_PROCESS_CONSTRUCTION_STALE".into());
+        }
+        *inner.epochs.entry(session_id.to_owned()).or_insert(0) += 1;
+        crate::session_tools_bridge::revoke_session(session_id);
+        let live = inner.children.remove(session_id).unwrap();
+        // Detach while the matching child is still protected by `inner`.
+        // Cancelling this retained Arc later cannot select a replacement SSE.
+        let sse = self
+            .sse
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(session_id);
+        drop(inner);
+        if let Some(output) = &live.output {
+            output.cancelled();
+        }
+        if let Some(sse) = sse {
+            sse.stop.store(true, Ordering::SeqCst);
+            if let Some(output) = &sse.output {
+                output.cancelled();
+            }
+        }
+        Ok(live)
+    }
+
     pub(crate) fn retire_managed_session(&self, session_id: &str) -> Result<(), String> {
         let mut routes = vec![session_id.to_owned()];
         routes.extend(
@@ -764,13 +864,34 @@ impl HarnessHost {
         Ok(())
     }
 
-    fn remove_if_pid(&self, session_id: &str, pid: u32) -> Option<Arc<LiveChild>> {
+    fn remove_if_child(
+        &self,
+        session_id: &str,
+        expected: &Arc<LiveChild>,
+    ) -> Option<Arc<LiveChild>> {
         let mut inner = self.lock_inner();
-        if inner.children.get(session_id).map(|live| live.pid) != Some(pid) {
+        if !inner
+            .children
+            .get(session_id)
+            .is_some_and(|live| Arc::ptr_eq(live, expected))
+        {
             return None;
         }
         crate::session_tools_bridge::revoke_session(session_id);
-        inner.children.remove(session_id)
+        let removed = inner.children.remove(session_id);
+        let sse = self
+            .sse
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(session_id);
+        drop(inner);
+        if let Some(sse) = sse {
+            sse.stop.store(true, Ordering::SeqCst);
+            if let Some(output) = &sse.output {
+                output.cancelled();
+            }
+        }
+        removed
     }
 
     fn kill_account(&self, provider: &str, account_id: &str) {
@@ -1549,7 +1670,7 @@ pub fn harness_spawn(
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
-) -> Result<u32, String> {
+) -> Result<HarnessProcessReceipt, String> {
     let generic = generic_acp_id
         .as_deref()
         .map(|id| crate::generic_acp::launch_config(&app, id))
@@ -1683,11 +1804,13 @@ pub fn harness_spawn(
         cwd: workdir.clone(),
         stdin: Mutex::new(stdin),
         pid,
+        construction_id: output.epoch().to_owned(),
         account,
         owners: Arc::clone(&owners),
         output: Some(output.clone()),
     });
-    if let Some(rejected) = host.install_spawn(session_id.clone(), epoch, kill_all, live) {
+    let receipt = live.receipt(&session_id);
+    if let Some(rejected) = host.install_spawn(session_id.clone(), epoch, kill_all, live.clone()) {
         crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
         // A kill, or a newer spawn, won the race while this one was forking.
         // Returning `Ok` here would hand the caller a dead pid to store as the
@@ -1713,6 +1836,7 @@ pub fn harness_spawn(
     let (done_tx, done_rx) = mpsc::channel::<()>();
     let stdout_app = app.clone();
     let stdout_id = session_id.clone();
+    let stdout_construction_id = receipt.construction_id.clone();
     let stdout_done = done_tx.clone();
     let stdout_owners = Arc::clone(&owners);
     let stdout_credentials = tool_credentials.clone();
@@ -1731,6 +1855,7 @@ pub fn harness_spawn(
                 &lines,
                 |native_output| HarnessLines {
                     session_id: stdout_id.clone(),
+                    construction_id: stdout_construction_id.clone(),
                     lines: lines.clone(),
                     native_output,
                 },
@@ -1740,6 +1865,7 @@ pub fn harness_spawn(
 
     let stderr_app = app.clone();
     let stderr_id = session_id.clone();
+    let stderr_construction_id = receipt.construction_id.clone();
     let stderr_owners = Arc::clone(&owners);
     let stderr_output = output.clone();
     let stderr_reader = output.reader(1);
@@ -1756,6 +1882,7 @@ pub fn harness_spawn(
                 &lines,
                 |native_output| HarnessLines {
                     session_id: stderr_id.clone(),
+                    construction_id: stderr_construction_id.clone(),
                     lines: lines.clone(),
                     native_output,
                 },
@@ -1766,6 +1893,8 @@ pub fn harness_spawn(
     let wait_app = app.clone();
     let wait_id = session_id;
     let wait_pid = pid;
+    let wait_live = live;
+    let wait_construction_id = receipt.construction_id.clone();
     thread::spawn(move || {
         let exit = child.wait(&output, false);
         let code = exit.as_ref().ok().and_then(|status| status.code());
@@ -1773,9 +1902,7 @@ pub fn harness_spawn(
             .map_err(|e| e.to_string())
             .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
-            if host.remove_if_pid(&wait_id, wait_pid).is_some() {
-                host.stop_sse(&wait_id);
-            }
+            host.remove_if_child(&wait_id, &wait_live);
         }
         // Output first, then exit. A grandchild that inherited the pipes can
         // keep them open after the child is gone, so the wait is bounded.
@@ -1795,6 +1922,7 @@ pub fn harness_spawn(
             EXIT_EVENT,
             |native_output_state| HarnessExit {
                 session_id: wait_id.clone(),
+                construction_id: wait_construction_id.clone(),
                 code,
                 pid: wait_pid,
                 native_output_state: Some(native_output_state),
@@ -1803,7 +1931,7 @@ pub fn harness_spawn(
         output.terminal_delivery(terminal_sent);
     });
 
-    Ok(pid)
+    Ok(receipt)
 }
 
 pub(crate) fn provider_account_dir(
@@ -2219,12 +2347,11 @@ pub async fn harness_write(
     host: State<'_, HarnessHost>,
     session_id: String,
     line: String,
+    construction_id: Option<String>,
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
 ) -> Result<(), String> {
-    let live = host
-        .get(&session_id)
-        .ok_or_else(|| "Harness process is not running".to_string())?;
+    let live = host.get_original(&session_id, construction_id.as_deref())?;
     let gate = if let Some(output) = &live.output {
         output.control_gate(&app)?
     } else {
@@ -2246,7 +2373,7 @@ pub async fn harness_write(
     let line = crate::social_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::runtime_logs_bridge::authorize_acp_frame(&session_id, line);
     let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
-    let pid = live.pid;
+    let original = Arc::clone(&live);
     let result = tauri::async_runtime::spawn_blocking(move || {
         write_child_with_deadline_guarded(live, line, Duration::from_secs(12), Some(lease))
     })
@@ -2254,7 +2381,7 @@ pub async fn harness_write(
     .map_err(|e| format!("Harness write task failed: {e}"))?;
     if result.is_err() {
         // An old writer must not remove a replacement generation.
-        host.remove_if_pid(&session_id, pid);
+        host.remove_if_child(&session_id, &original);
     }
     result
 }
@@ -2586,9 +2713,21 @@ mod authority_tests {
 /// `async` dispatch keeps kill executable while a sibling `harness_write` is
 /// blocked on a wedged child's stdin.
 #[tauri::command(async)]
-pub fn harness_kill(host: State<'_, HarnessHost>, session_id: String) -> Result<(), String> {
-    host.stop_sse(&session_id);
-    if let Some(live) = host.kill_session(&session_id) {
+pub fn harness_kill(
+    host: State<'_, HarnessHost>,
+    session_id: String,
+    construction_id: Option<String>,
+) -> Result<(), String> {
+    let live = host.kill_original_session(&session_id, construction_id.as_deref())?;
+    terminate(live.pid);
+    Ok(())
+}
+
+/// Native administrative cleanup intentionally addresses the current session.
+/// This is not a receipt-free IPC fallback for callbacks from old children.
+pub(crate) fn kill_current_harness(host: &HarnessHost, session_id: &str) -> Result<(), String> {
+    host.stop_sse(session_id);
+    if let Some(live) = host.kill_session(session_id) {
         terminate(live.pid);
     }
     Ok(())
@@ -3618,6 +3757,7 @@ mod managed_retirement_tests {
             cwd: std::env::temp_dir(),
             stdin: Mutex::new(child.stdin.take().unwrap()),
             pid: child.id(),
+            construction_id: uuid::Uuid::new_v4().to_string(),
             account: None,
             owners: Arc::new(Owners::default()),
             output: None,
@@ -3698,6 +3838,7 @@ mod managed_retirement_tests {
             cwd: std::env::temp_dir(),
             stdin: Mutex::new(child.stdin.take().unwrap()),
             pid: child.id(),
+            construction_id: uuid::Uuid::new_v4().to_string(),
             account: None,
             owners: Arc::new(Owners::default()),
             output: None,
@@ -5479,6 +5620,7 @@ mod tests {
                 cwd: PathBuf::from("/test"),
                 stdin: Mutex::new(stdin),
                 pid,
+                construction_id: uuid::Uuid::new_v4().to_string(),
                 account: None,
                 owners: Arc::new(Owners::default()),
                 output: None,
@@ -5669,6 +5811,7 @@ mod tests {
                 cwd: PathBuf::from("/test"),
                 stdin: Mutex::new(stdin),
                 pid,
+                construction_id: uuid::Uuid::new_v4().to_string(),
                 account: None,
                 owners: Arc::new(Owners::default()),
                 output: None,

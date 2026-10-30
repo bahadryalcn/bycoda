@@ -6,6 +6,12 @@ A folder on a connected machine is a project in the rail, marked with a globe. E
 
 ## Create a Host conversation on this computer
 
+Use matching current desktop and Host builds. Delayed input or cleanup for an
+older provider process cannot target its replacement. A client without the
+original process receipt must update before targeted write/stop actions. If
+Native cleanup cannot identify the original running processes, it remains
+unconfirmed and keeps the workspace reserved for recovery.
+
 Existing Native conversations are not automatically moved to the Host. Draft
 checkpoint retention and a successful remote action are separate outcomes: a
 retained draft does not mean that a message was sent or applied. If an operation's

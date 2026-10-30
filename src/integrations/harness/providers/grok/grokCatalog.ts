@@ -2,6 +2,7 @@ import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
+  createChildProcessHandle,
   execChild,
   killChild,
   resolveGrokBinary,
@@ -62,7 +63,8 @@ async function discoverViaAcp(workingDirectory?: string) {
   const { path } = await resolveGrokBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = createChildProcessHandle(probeId);
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);
     },
@@ -70,18 +72,18 @@ async function discoverViaAcp(workingDirectory?: string) {
 
   const stop = async () => {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Grok Build probe exited")),
   );
 
   try {
-    await spawnChild(probeId, path, grokSpawnArgs({ model: "" }), cwd, undefined, "grok");
+    await spawnChild(probeProcess, path, grokSpawnArgs({ model: "" }), cwd, undefined, "grok");
     return await withTimeout(
       DISCOVERY_TIMEOUT_MS,
       async () => {

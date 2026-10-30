@@ -8,6 +8,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { JsonRpcClient } from "../src/integrations/harness/core/jsonRpc";
 import {
+  createChildProcessHandle,
   killChild,
   resolveCodexBinary,
   spawnChild,
@@ -194,12 +195,13 @@ function codexImages(directory: string, authorize?: () => Promise<void>): Social
     ) => Promise<T>,
   ): Promise<T> {
     const id = `social-image-${randomUUID()}`;
+    const imageProcess = createChildProcessHandle(id);
     let handler = (method: string, p: any) => {
       void method;
       void p;
     };
     const rpc = new JsonRpcClient(
-      id,
+      imageProcess,
       {
         onNotification: (m, p) => handler(m, p),
         onRequest: (requestId) => {
@@ -209,7 +211,7 @@ function codexImages(directory: string, authorize?: () => Promise<void>): Social
       { includeJsonrpc: false, defaultRequestTimeoutMs: 15000, label: "social-image" },
     );
     watchChild(
-      id,
+      imageProcess,
       (line) => rpc.pushLine(line),
       () => rpc.close(new Error("ImageGen process exited.")),
     );
@@ -220,7 +222,7 @@ function codexImages(directory: string, authorize?: () => Promise<void>): Social
       const binary = await resolveCodexBinary();
       await checkAuthority();
       await spawnChild(
-        id,
+        imageProcess,
         binary.path,
         ["app-server", "-c", "features.shell_tool=false", "-c", "mcp_servers={}"],
         directory,
@@ -242,8 +244,8 @@ function codexImages(directory: string, authorize?: () => Promise<void>): Social
       });
     } finally {
       rpc.close();
-      unwatchChild(id);
-      await killChild(id).catch(() => undefined);
+      unwatchChild(imageProcess);
+      await killChild(imageProcess).catch(() => undefined);
     }
   }
   return {

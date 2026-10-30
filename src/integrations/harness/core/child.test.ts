@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { UnlistenFn } from "@tauri-apps/api/event";
+import type { ChildProcessHandle } from "./child";
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (event: { payload: never }) => void>(),
@@ -9,6 +10,41 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
+
+function receipt(sessionId: string, pid = 42) {
+  return {
+    version: 1 as const,
+    backend: "native" as const,
+    sessionId,
+    pid,
+    constructionId: `00000000-0000-4000-8000-${pid.toString(16).padStart(12, "0")}`,
+  };
+}
+const fixtureHandles = new WeakMap<object, Map<string, ChildProcessHandle>>();
+function processHandle(child: typeof import("./child"), sessionId: string): ChildProcessHandle {
+  const handles = fixtureHandles.get(child) ?? new Map<string, ChildProcessHandle>();
+  fixtureHandles.set(child, handles);
+  let handle = handles.get(sessionId);
+  if (!handle) {
+    handle = child.createChildProcessHandle(sessionId);
+    handles.set(sessionId, handle);
+  }
+  return handle;
+}
+function emit(name: string, payload: Record<string, unknown>) {
+  const processEvent =
+    name.startsWith("harness-stdout") ||
+    name.startsWith("harness-stderr") ||
+    name === "harness-exit";
+  mocks.handlers.get(name)?.({
+    payload: {
+      ...(processEvent
+        ? { constructionId: receipt(String(payload.sessionId)).constructionId }
+        : {}),
+      ...payload,
+    } as never,
+  });
+}
 
 type Deferred<T> = {
   promise: Promise<T>;
@@ -37,6 +73,10 @@ function installResolvedListeners() {
 
 async function loadChild() {
   vi.resetModules();
+  if (!mocks.invoke.getMockImplementation())
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "harness_spawn" ? receipt(args.sessionId) : undefined,
+    );
   return import("./child");
 }
 
@@ -148,7 +188,7 @@ describe("child bridge", () => {
     "reconciles an early exit with reason=%s",
     async (reason) => {
       installResolvedListeners();
-      const spawned = deferred<number>();
+      const spawned = deferred<ReturnType<typeof receipt>>();
       mocks.invoke.mockImplementation((command: string) => {
         if (command === "harness_spawn") return spawned.promise;
         return Promise.resolve();
@@ -156,15 +196,26 @@ describe("child bridge", () => {
       const child = await loadChild();
       const release = await child.acquireHarnessBridge();
       const onExit = vi.fn();
-      child.watchChild("probe", vi.fn(), onExit);
+      child.watchChild(processHandle(child, "probe"), vi.fn(), onExit);
 
-      const spawning = child.spawnChild("probe", "pi", ["--mode", "rpc"], "/repo");
+      const spawning = child.spawnChild(
+        processHandle(child, "probe"),
+        "pi",
+        ["--mode", "rpc"],
+        "/repo",
+      );
       mocks.handlers.get("harness-exit")?.({
-        payload: { sessionId: "probe", code: 1, pid: 42, reason } as never,
+        payload: {
+          sessionId: "probe",
+          constructionId: receipt("probe").constructionId,
+          code: 1,
+          pid: 42,
+          reason,
+        } as never,
       });
       expect(onExit).not.toHaveBeenCalled();
 
-      spawned.resolve(42);
+      spawned.resolve(receipt("probe"));
       await spawning;
       if (reason) expect(onExit).toHaveBeenCalledWith(1, reason);
       else expect(onExit).toHaveBeenCalledWith(1);
@@ -239,19 +290,19 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
     const oldLines: string[] = [];
     const oldExit = vi.fn();
-    child.watchChild("thread#0", (line) => oldLines.push(line), oldExit);
+    child.watchChild(processHandle(child, "thread#0"), (line) => oldLines.push(line), oldExit);
+    await child.spawnChild(processHandle(child, "thread#0"), "agent", [], "/tmp");
     emit("harness-stdout", { sessionId: "thread#0", line: "gen0" });
     expect(oldLines).toEqual(["gen0"]);
 
     // Retire the generation, then register its replacement under a new key.
-    child.unwatchChild("thread#0");
+    child.unwatchChild(processHandle(child, "thread#0"));
     const newLines: string[] = [];
     const newExit = vi.fn();
-    child.watchChild("thread#1", (line) => newLines.push(line), newExit);
+    child.watchChild(processHandle(child, "thread#1"), (line) => newLines.push(line), newExit);
+    await child.spawnChild(processHandle(child, "thread#1"), "agent", [], "/tmp");
 
     // Late output from the killed process arrives under its own key and is
     // dropped — it can never reach the replacement's handlers.
@@ -272,8 +323,6 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
 
     // Events are broadcast to every window; this one never spawned "other".
     for (let i = 0; i < 5; i += 1) {
@@ -283,7 +332,7 @@ describe("child bridge", () => {
 
     const lines: string[] = [];
     const events: string[] = [];
-    child.watchChild("other", (line) => lines.push(line), vi.fn());
+    child.watchChild(processHandle(child, "other"), (line) => lines.push(line), vi.fn());
     child.watchSse("other", (data) => events.push(data));
     expect(lines).toEqual([]);
     expect(events).toEqual([]);
@@ -294,18 +343,18 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
-    mocks.invoke.mockResolvedValue(42);
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "harness_spawn" ? receipt(args.sessionId) : undefined,
+    );
 
-    await child.spawnChild("mine", "agent", [], "/tmp");
+    await child.spawnChild(processHandle(child, "mine"), "agent", [], "/tmp");
     emit("harness-stdout", { sessionId: "mine", line: "early" });
     await child.openHarnessSse("mine", "http://127.0.0.1:1/event");
     emit("harness-sse", { sessionId: "mine", data: "early-event" });
 
     const lines: string[] = [];
     const events: string[] = [];
-    child.watchChild("mine", (line) => lines.push(line), vi.fn());
+    child.watchChild(processHandle(child, "mine"), (line) => lines.push(line), vi.fn());
     child.watchSse("mine", (data) => events.push(data));
     expect(lines).toEqual(["early"]);
     expect(events).toEqual(["early-event"]);
@@ -316,18 +365,17 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
     const lines: string[] = [];
     const errors: string[] = [];
     const events: string[] = [];
     child.watchChild(
-      "batch",
+      processHandle(child, "batch"),
       (line) => lines.push(line),
       vi.fn(),
       (line) => errors.push(line),
     );
     child.watchSse("batch", (data) => events.push(data));
+    await child.spawnChild(processHandle(child, "batch"), "agent", [], "/tmp");
 
     emit("harness-stdout-lines", { sessionId: "batch", lines: ["a", "b"] });
     emit("harness-stdout-lines", { sessionId: "batch", lines: ["c"] });
@@ -343,11 +391,11 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
-    mocks.invoke.mockResolvedValue(42);
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "harness_spawn" ? receipt(args.sessionId) : undefined,
+    );
 
-    await child.spawnChild("burst", "agent", [], "/tmp");
+    await child.spawnChild(processHandle(child, "burst"), "agent", [], "/tmp");
     await child.openHarnessSse("burst", "http://127.0.0.1:1/event");
     const first = Array.from({ length: 800 }, (_, i) => `l${i}`);
     const second = Array.from({ length: 800 }, (_, i) => `l${800 + i}`);
@@ -359,13 +407,13 @@ describe("child bridge", () => {
 
     const lines: string[] = [];
     const events: string[] = [];
-    child.watchChild("burst", (line) => lines.push(line), vi.fn());
+    child.watchChild(processHandle(child, "burst"), (line) => lines.push(line), vi.fn());
     child.watchSse("burst", (data) => events.push(data));
     const expected = Array.from({ length: 1000 }, (_, i) => `l${600 + i}`);
     expect(lines).toEqual(expected);
     expect(events).toEqual(expected);
     const foreign: string[] = [];
-    child.watchChild("foreign", (line) => foreign.push(line), vi.fn());
+    child.watchChild(processHandle(child, "foreign"), (line) => foreign.push(line), vi.fn());
     expect(foreign).toEqual([]);
     release();
   });
@@ -402,17 +450,17 @@ describe("child bridge", () => {
     installResolvedListeners();
     const child = await loadChild();
     const release = await child.acquireHarnessBridge();
-    const emit = (name: string, payload: unknown) =>
-      mocks.handlers.get(name)?.({ payload: payload as never });
-    mocks.invoke.mockResolvedValue(42);
+    mocks.invoke.mockImplementation(async (command, args) =>
+      command === "harness_spawn" ? receipt(args.sessionId) : undefined,
+    );
 
-    child.watchChild("probe", vi.fn(), vi.fn());
-    await child.spawnChild("probe", "agent", [], "/tmp");
-    await child.killChild("probe");
+    child.watchChild(processHandle(child, "probe"), vi.fn(), vi.fn());
+    await child.spawnChild(processHandle(child, "probe"), "agent", [], "/tmp");
+    await child.killChild(processHandle(child, "probe"));
     emit("harness-stdout", { sessionId: "probe", line: "late" });
 
     const lines: string[] = [];
-    child.watchChild("probe", (line) => lines.push(line), vi.fn());
+    child.watchChild(child.createChildProcessHandle("probe"), (line) => lines.push(line), vi.fn());
     expect(lines).toEqual([]);
     release();
   });
@@ -421,10 +469,12 @@ describe("child bridge", () => {
 it("forwards an explicit logical locator after the existing guard slot without altering ordinary payloads", async () => {
   installResolvedListeners();
   const child = await loadChild();
-  mocks.invoke.mockResolvedValue(42);
+  mocks.invoke.mockImplementation(async (command, args) =>
+    command === "harness_spawn" ? receipt(args.sessionId) : undefined,
+  );
   const guard = vi.fn(async () => {});
   await child.spawnChild(
-    "logical#1",
+    processHandle(child, "logical#1"),
     "agent",
     [],
     "/tmp",
@@ -454,7 +504,7 @@ it("forwards an explicit logical locator after the existing guard slot without a
     "harness_sse_open",
     expect.objectContaining({ sessionId: "logical#2", logicalSessionId: "logical" }),
   );
-  await child.spawnChild("ordinary", "agent", [], "/tmp");
+  await child.spawnChild(processHandle(child, "ordinary"), "agent", [], "/tmp");
   expect(
     mocks.invoke.mock.calls.find(
       ([command, args]) => command === "harness_spawn" && args.sessionId === "ordinary",
@@ -467,12 +517,13 @@ it("retains an actual Native write IPC promise when its caller stops waiting", a
   const child = await loadChild();
   const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
   const held = deferred<void>();
+  await child.spawnChild(processHandle(child, "child-write-causal"), "agent", [], "/tmp");
   mocks.invoke.mockImplementation((command) =>
     command === "harness_write" ? held.promise : Promise.resolve(),
   );
   let actual!: Promise<void>;
   const inspect = nativeOutputFrame("child-write-causal", "input", () => {
-    actual = child.writeChild("child-write-causal", "reply");
+    actual = child.writeChild(processHandle(child, "child-write-causal"), "reply");
   });
   expect(inspect().pendingCausalWork).toBe(1);
   await Promise.race([actual, Promise.resolve("waiter cancelled")]);
@@ -480,4 +531,253 @@ it("retains an actual Native write IPC promise when its caller stops waiting", a
   held.resolve();
   await actual;
   expect(inspect().pendingCausalWork).toBe(0);
+});
+
+describe("original process construction handles", () => {
+  it("refuses old writes and keeps replacement watchers intact across old unwatch and kill, even with PID reuse", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const release = await child.acquireHarnessBridge();
+    const original = child.createChildProcessHandle("same");
+    const replacement = child.createChildProcessHandle("same");
+    const a = receipt("same");
+    const b = { ...receipt("same"), constructionId: receipt("same", 43).constructionId };
+    mocks.invoke.mockResolvedValueOnce(a).mockResolvedValueOnce(b);
+    await child.spawnChild(original, "agent", [], "/fixture");
+    const lines = vi.fn();
+    child.watchChild(replacement, lines, vi.fn());
+    await child.spawnChild(replacement, "agent", [], "/fixture");
+    expect(child.captureChildProcess("same")).toBe(replacement);
+    await expect(child.writeChild(original, "old body")).rejects.toThrow("retired");
+    child.unwatchChild(original);
+    await child.killChild(original);
+    emit("harness-stdout", { sessionId: "same", constructionId: a.constructionId, line: "old" });
+    emit("harness-stdout", {
+      sessionId: "same",
+      constructionId: undefined,
+      line: "missing identity cannot borrow the current receipt",
+      nativeOutput: { processId: 42, streamEpoch: b.constructionId },
+    });
+    emit("harness-stdout", { sessionId: "same", constructionId: b.constructionId, line: "new" });
+    expect(lines).toHaveBeenCalledExactlyOnceWith("new");
+    await child.writeChild(replacement, "current body", { environmentId: "owner", generation: 7 });
+    expect(mocks.invoke).toHaveBeenCalledWith("harness_kill", {
+      sessionId: "same",
+      constructionId: a.constructionId,
+    });
+    expect(mocks.invoke).toHaveBeenCalledWith("harness_write", {
+      sessionId: "same",
+      constructionId: b.constructionId,
+      line: "current body",
+      authorityEnvironmentId: "owner",
+      authorityGeneration: 7,
+    });
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "harness_write")).toHaveLength(
+      1,
+    );
+    expect(child.captureChildProcess("same")).toBe(replacement);
+    release();
+  });
+
+  it("waits for its own invoked spawn before kill without selecting an already accepted replacement", async () => {
+    const child = await loadChild();
+    const pending = deferred<ReturnType<typeof receipt>>();
+    const a = child.createChildProcessHandle("same");
+    const b = child.createChildProcessHandle("same");
+    mocks.invoke.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(receipt("same", 43));
+    const starting = child.spawnChild(a, "agent", [], "/fixture");
+    child.unwatchChild(a);
+    const stopped = child.killChild(a);
+    let stopSettled = false;
+    void stopped.then(() => {
+      stopSettled = true;
+    });
+    await child.spawnChild(b, "agent", [], "/fixture");
+    expect(stopSettled).toBe(false);
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "harness_kill")).toHaveLength(
+      0,
+    );
+    pending.resolve(receipt("same"));
+    await starting;
+    await stopped;
+    expect(mocks.invoke).toHaveBeenLastCalledWith("harness_kill", {
+      sessionId: "same",
+      constructionId: receipt("same").constructionId,
+    });
+    expect(child.captureChildProcess("same")).toBe(b);
+    await child.killChild(a);
+    expect(mocks.invoke.mock.calls.filter(([command]) => command === "harness_kill")).toHaveLength(
+      1,
+    );
+  });
+
+  it("cancels an unstarted original before scheduling or any keyed kill and cannot reuse that handle", async () => {
+    const child = await loadChild();
+    const original = child.createChildProcessHandle("cancelled");
+    await child.killChild(original);
+    await expect(child.spawnChild(original, "agent", [], "/fixture")).rejects.toThrow("cancelled");
+    await expect(child.writeChild(original, "never")).rejects.toThrow();
+    expect(mocks.invoke).not.toHaveBeenCalled();
+  });
+
+  it("snapshots explicit write authority before awaiting its original spawn receipt", async () => {
+    const child = await loadChild();
+    const original = child.createChildProcessHandle("authority");
+    const pending = deferred<ReturnType<typeof receipt>>();
+    mocks.invoke.mockReturnValueOnce(pending.promise);
+    const starting = child.spawnChild(original, "agent", [], "/fixture");
+    const scope = { environmentId: "original-owner", generation: 7 };
+    const writing = child.writeChild(original, "original body", scope);
+    scope.environmentId = "later-owner";
+    scope.generation = 8;
+    pending.resolve(receipt("authority"));
+    await starting;
+    await writing;
+    expect(mocks.invoke).toHaveBeenCalledWith("harness_write", {
+      sessionId: "authority",
+      constructionId: receipt("authority").constructionId,
+      line: "original body",
+      authorityEnvironmentId: "original-owner",
+      authorityGeneration: 7,
+    });
+  });
+
+  it("buffers early identified stdout, stderr and exit only until the exact receipt binds", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const release = await child.acquireHarnessBridge();
+    const original = child.createChildProcessHandle("early");
+    const lines = vi.fn();
+    const errors = vi.fn();
+    const exits = vi.fn();
+    child.watchChild(original, lines, exits, errors);
+    const pending = deferred<ReturnType<typeof receipt>>();
+    mocks.invoke.mockReturnValueOnce(pending.promise);
+    const starting = child.spawnChild(original, "agent", [], "/fixture");
+    emit("harness-stdout", { sessionId: "early", constructionId: undefined, line: "unidentified" });
+    emit("harness-stdout", {
+      sessionId: "early",
+      constructionId: receipt("early", 43).constructionId,
+      line: "foreign",
+    });
+    emit("harness-stdout", { sessionId: "early", line: "original" });
+    emit("harness-stderr", { sessionId: "early", line: "diagnostic" });
+    emit("harness-exit", { sessionId: "early", pid: 43, code: 9 });
+    emit("harness-exit", { sessionId: "early", pid: 42, code: 1, reason: "Original early exit" });
+    expect(lines).not.toHaveBeenCalled();
+    expect(errors).not.toHaveBeenCalled();
+    expect(exits).not.toHaveBeenCalled();
+    pending.resolve(receipt("early"));
+    await starting;
+    expect(lines).toHaveBeenCalledExactlyOnceWith("original");
+    expect(errors).toHaveBeenCalledExactlyOnceWith("diagnostic");
+    expect(exits).toHaveBeenCalledExactlyOnceWith(1, "Original early exit");
+    expect(child.captureChildProcess("early")).toBeUndefined();
+    await expect(child.writeChild(original, "after exit")).rejects.toThrow("retired");
+    release();
+  });
+
+  it("bounds pre-receipt frames rather than accumulating output until a delayed spawn returns", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const release = await child.acquireHarnessBridge();
+    const original = child.createChildProcessHandle("bounded");
+    const lines: string[] = [];
+    child.watchChild(original, (line) => lines.push(line), vi.fn());
+    const pending = deferred<ReturnType<typeof receipt>>();
+    mocks.invoke.mockReturnValueOnce(pending.promise);
+    const starting = child.spawnChild(original, "agent", [], "/fixture");
+    emit("harness-stdout-lines", {
+      sessionId: "bounded",
+      lines: Array.from({ length: 1600 }, (_, i) => String(i)),
+    });
+    emit("harness-stderr", {
+      sessionId: "bounded",
+      line: "x".repeat(child.MAX_BUFFERED_BYTES + 1),
+    });
+    pending.resolve(receipt("bounded"));
+    await starting;
+    expect(lines).toEqual(Array.from({ length: 1000 }, (_, i) => String(i + 600)));
+    release();
+  });
+
+  it.each([
+    42,
+    {},
+    { ...receipt("invalid"), backend: "host" },
+    { ...receipt("invalid"), constructionId: undefined },
+    { ...receipt("invalid"), sessionId: "foreign" },
+  ])(
+    "refuses an unsupported spawn receipt without upgrading a current PID: %j",
+    async (invalid) => {
+      const child = await loadChild();
+      const original = child.createChildProcessHandle("invalid");
+      mocks.invoke.mockResolvedValueOnce(invalid);
+      await expect(child.spawnChild(original, "agent", [], "/fixture")).rejects.toThrow();
+      await expect(child.writeChild(original, "never")).rejects.toThrow();
+      await expect(child.killChild(original)).rejects.toThrow();
+      expect(child.captureChildProcess("invalid")).toBeUndefined();
+      expect(mocks.invoke).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("captures the original backend invoke at creation rather than following later configuration", async () => {
+    const child = await loadChild();
+    const native = child.createChildProcessHandle("native-original");
+    const invoke = vi.fn(async (_command: string, args?: Record<string, unknown>) => ({
+      ...receipt(String(args?.sessionId)),
+      backend: "host" as const,
+    }));
+    child.configureChildBackend({ invoke: invoke as never, listen: async () => () => {} });
+    const host = child.createChildProcessHandle("host-original");
+    await child.spawnChild(native, "agent", [], "/fixture");
+    await child.spawnChild(host, "agent", [], "/fixture");
+    await child.writeChild(native, "native");
+    await child.writeChild(host, "host");
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "harness_write",
+      expect.objectContaining({ sessionId: "native-original" }),
+    );
+    expect(invoke).toHaveBeenCalledWith(
+      "harness_write",
+      expect.objectContaining({ sessionId: "host-original" }),
+    );
+    expect(invoke.mock.calls.some(([, args]) => args?.sessionId === "native-original")).toBe(false);
+  });
+
+  it("never resurrects an older ordinary receipt after its replacement already exited", async () => {
+    installResolvedListeners();
+    const child = await loadChild();
+    const release = await child.acquireHarnessBridge();
+    const old = child.createChildProcessHandle("same");
+    const current = child.createChildProcessHandle("same");
+    const pending = deferred<ReturnType<typeof receipt>>();
+    mocks.invoke.mockReturnValueOnce(pending.promise).mockResolvedValueOnce(receipt("same", 43));
+    const first = child.spawnChild(old, "agent", [], "/fixture");
+    await child.spawnChild(current, "agent", [], "/fixture");
+    emit("harness-exit", {
+      sessionId: "same",
+      constructionId: receipt("same", 43).constructionId,
+      pid: 43,
+      code: 0,
+    });
+    expect(child.captureChildProcess("same")).toBeUndefined();
+    pending.resolve(receipt("same"));
+    await first;
+    expect(child.captureChildProcess("same")).toBeUndefined();
+    await expect(child.writeChild(old, "old")).rejects.toThrow("retired");
+    release();
+  });
+
+  it("does not accept structural handles or bind one accepted handle twice", async () => {
+    const child = await loadChild();
+    await expect(
+      child.spawnChild({ sessionId: "forged" } as ChildProcessHandle, "agent", [], "/fixture"),
+    ).rejects.toThrow("original");
+    await expect(child.writeChild("forged" as never, "never")).rejects.toThrow("original");
+    const original = child.createChildProcessHandle("once");
+    await child.spawnChild(original, "agent", [], "/fixture");
+    await expect(child.spawnChild(original, "agent", [], "/fixture")).rejects.toThrow("single-use");
+    expect(mocks.invoke).toHaveBeenCalledTimes(1);
+  });
 });

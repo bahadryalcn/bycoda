@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isHarnessConstructionId } from "../../../shared/model/harnessProcess";
 
 // This is renderer delivery/application lineage. Native observations never become
 // an actor grant, a durable SQL receipt, or proof that a void parser has finished.
@@ -117,6 +118,9 @@ type Runtime = {
   hashJobs: number;
   overflow: boolean;
   unavailableSessions: Set<string>;
+  /** Exact original process invalidations, including sources not yet observed. */
+  constructionInvalidations: Map<string, string>;
+  constructionInvalidationFailure: string | null;
   origins: WeakMap<NativeOutputEventOrigin, readonly NativeOutputItem[]>;
   outcomes: Map<NativeOutputItem, Item>;
   works: WeakMap<NativeOutputWork, { active: boolean; origin: NativeOutputEventOrigin }>;
@@ -136,6 +140,8 @@ const runtime: Runtime = hot?.data.nativeOutputDelivery ?? {
   hashJobs: 0,
   overflow: false,
   unavailableSessions: new Set(),
+  constructionInvalidations: new Map(),
+  constructionInvalidationFailure: null,
   origins: new WeakMap(),
   outcomes: new Map(),
   works: new WeakMap(),
@@ -157,6 +163,17 @@ runtime.outcomes ??= new Map();
 runtime.works ??= new WeakMap();
 runtime.workJobs ??= 0;
 runtime.timers ??= new Map();
+// A pre-upgrade hot runtime cannot reconstruct invalidations it never retained.
+// Keep that history unknown; do not clear old session quarantine or source work.
+const constructionHistoryMissing = runtime.constructionInvalidations === undefined;
+runtime.constructionInvalidations ??= new Map();
+runtime.constructionInvalidationFailure ??= null;
+if (constructionHistoryMissing) {
+  runtime.constructionInvalidationFailure ??= "construction-invalidation-history-unavailable";
+  runtime.overflow = true;
+  for (const stream of runtime.streams.values())
+    unavailable(stream, runtime.constructionInvalidationFailure);
+}
 if (hot) hot.data.nativeOutputDelivery = runtime;
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
@@ -175,6 +192,14 @@ const matchesSession = (value: Source, sessionId: string) =>
 
 function key(value: Source): string {
   return JSON.stringify([value.processEpoch, value.streamEpoch]);
+}
+function constructionKey(sessionId: string, constructionId: string): string {
+  return JSON.stringify([sessionId, constructionId]);
+}
+function constructionInvalidation(value: Source): string | undefined {
+  return value.streamKind === "process"
+    ? runtime.constructionInvalidations.get(constructionKey(value.sessionId, value.streamEpoch))
+    : undefined;
 }
 function binding(value: Source): string {
   return JSON.stringify([
@@ -206,6 +231,8 @@ function record(value: Source): Stream | null {
   const previous = runtime.streams.get(id);
   if (previous) {
     if (previous.sourceKey !== binding(value)) unavailable(previous, "source-changed");
+    const invalidation = constructionInvalidation(value) ?? runtime.constructionInvalidationFailure;
+    if (invalidation) unavailable(previous, invalidation);
     return previous;
   }
   if (runtime.streams.size >= MAX_STREAMS) {
@@ -222,13 +249,51 @@ function record(value: Source): Stream | null {
     appliedEvents: 0,
     pending: new Map(),
     terminal: null,
-    unavailable: ownerKnown(value) ? null : "source-unavailable",
+    unavailable:
+      constructionInvalidation(value) ??
+      runtime.constructionInvalidationFailure ??
+      (ownerKnown(value) ? null : "source-unavailable"),
     causalPending: 0,
     causalFinished: 0,
     additionalInputs: 0,
   };
   runtime.streams.set(id, stream);
   return stream;
+}
+/** Original Native process correlation only: never a grant, current-route lookup,
+ * registry processEpoch, or a reason to clear an existing unknown-session flag. */
+export function invalidateNativeOutputConstruction(
+  sessionId: string,
+  constructionId: string,
+  reason: string,
+): void {
+  const retainedReason = identity.safeParse(reason).success
+    ? reason
+    : "process-construction-invalidated";
+  if (!identity.safeParse(sessionId).success || !isHarnessConstructionId(constructionId)) {
+    quarantineNativeOutputSession(sessionId, retainedReason);
+    return;
+  }
+  const id = constructionKey(sessionId, constructionId);
+  if (!runtime.constructionInvalidations.has(id)) {
+    // No eviction: even an already observed original can emit delayed metadata.
+    // Losing an unrecorded invalidation makes retention globally unknown instead.
+    if (runtime.constructionInvalidations.size >= MAX_STREAMS) {
+      runtime.overflow = true;
+      runtime.constructionInvalidationFailure ??= "construction-invalidation-capacity";
+      invalidateNativeOutputDelivery(runtime.constructionInvalidationFailure);
+      return;
+    }
+    runtime.constructionInvalidations.set(id, retainedReason);
+  }
+  const originalReason = runtime.constructionInvalidations.get(id)!;
+  for (const stream of runtime.streams.values())
+    if (
+      stream.source.streamKind === "process" &&
+      stream.source.sessionId === sessionId &&
+      stream.source.streamEpoch === constructionId
+    )
+      unavailable(stream, originalReason);
 }
 export function invalidateNativeOutputSession(sessionId: string, reason: string): void {
   let found = false;
@@ -239,6 +304,11 @@ export function invalidateNativeOutputSession(sessionId: string, reason: string)
     }
   if (!found) return;
   flagUnknownSession(sessionId);
+}
+/** An invoked source with no usable identity can emit its first metadata later. */
+export function quarantineNativeOutputSession(sessionId: string, reason: string): void {
+  flagUnknownSession(sessionId);
+  invalidateNativeOutputSession(sessionId, reason);
 }
 function flagUnknownSession(sessionId: string) {
   if (runtime.unavailableSessions.size < MAX_STREAMS) runtime.unavailableSessions.add(sessionId);

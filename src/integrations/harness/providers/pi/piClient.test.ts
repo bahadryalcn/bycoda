@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { processConstructions } from "../processConstruction.testSupport";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ writeChild: vi.fn() }));
 
-vi.mock("../../core/child", () => ({ writeChild: mocks.writeChild }));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () => processConstructions.mock({ writeChild: mocks.writeChild }));
 
 import { PiRpc } from "./piClient";
 
@@ -19,10 +21,53 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+it("keeps a deferred A write on A's handle after B uses the same logical locator", async () => {
+  // Actual PiRpc, explicit protocol transport fake; no Native receipt/fence is emulated.
+  const original = processConstructions.create("same-probe");
+  const first = new PiRpc(original, vi.fn());
+  const held = deferred<void>();
+  mocks.writeChild.mockResolvedValue(undefined);
+  mocks.writeChild.mockImplementationOnce(() => held.promise);
+  const a = first.request({ type: "get_state" });
+  void a.catch(() => undefined);
+  const replacement = processConstructions.create("same-probe");
+  const second = new PiRpc(replacement, vi.fn());
+  const b = second.request({ type: "get_state" });
+  void b.catch(() => undefined);
+  const response = (sessionId: string) => ({
+    type: "response",
+    id: "mc_1",
+    command: "get_state",
+    success: true,
+    data: { sessionId },
+  });
+  try {
+    second.pushLine(JSON.stringify(response("B")));
+    await expect(b).resolves.toEqual(response("B"));
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write")
+        .map((operation) => operation.handle),
+    ).toEqual([original, replacement]);
+    held.resolve();
+    first.pushLine(JSON.stringify(response("A")));
+    await expect(a).resolves.toEqual(response("A"));
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write")
+        .map((operation) => operation.handle),
+    ).toEqual([original, replacement]);
+  } finally {
+    held.resolve();
+    first.close();
+    second.close();
+  }
+});
+
 describe("PiRpc.request", () => {
   it("rejects when the transport write fails", async () => {
     mocks.writeChild.mockRejectedValue(new Error("write failed"));
-    const rpc = new PiRpc("probe", vi.fn());
+    const rpc = new PiRpc(processConstructions.create("probe"), vi.fn());
 
     await expect(rpc.request({ type: "get_commands" })).rejects.toThrow("write failed");
     rpc.close();
@@ -32,7 +77,7 @@ describe("PiRpc.request", () => {
     vi.useFakeTimers();
     const write = deferred<void>();
     mocks.writeChild.mockReturnValue(write.promise);
-    const rpc = new PiRpc("probe", vi.fn());
+    const rpc = new PiRpc(processConstructions.create("probe"), vi.fn());
     const request = rpc.request({ type: "get_commands" }, 100);
     const rejected = expect(request).rejects.toThrow("Pi get_commands timed out");
 
@@ -52,7 +97,7 @@ it.each(["cancel", "timeout"])(
     const sessionId = `pi-late-response-${retirement}`;
     const onFrame = vi.fn(),
       consume = vi.fn((value) => value);
-    const rpc = new PiRpc(sessionId, onFrame);
+    const rpc = new PiRpc(processConstructions.create(sessionId), onFrame);
     if (retirement === "timeout") vi.useFakeTimers();
     const actual = rpc.request({ type: "get_state" }, 100, consume);
     const rejected = expect(actual).rejects.toThrow(
@@ -84,7 +129,7 @@ it.each(["cancel", "timeout"])(
 it("preserves a bare ordinary request result while explicitly rejecting its untracked Native consumer", async () => {
   const { nativeOutputFrame } = await import("../../core/nativeOutputDelivery.testSupport");
   mocks.writeChild.mockResolvedValue(undefined);
-  const rpc = new PiRpc("pi-bare-response", vi.fn());
+  const rpc = new PiRpc(processConstructions.create("pi-bare-response"), vi.fn());
   const actual = rpc.request({ type: "get_state" });
   const response = {
     type: "response",
@@ -107,7 +152,8 @@ it("retains the actual async Pi response consumer after a close signal", async (
   const api = await import("../../core/nativeOutputDelivery");
   const { nativeOutputFrame } = await import("../../core/nativeOutputDelivery.testSupport");
   mocks.writeChild.mockResolvedValue(undefined);
-  const rpc = new PiRpc("pi-response-causal", vi.fn());
+  const process = processConstructions.create("pi-response-causal");
+  const rpc = new PiRpc(process, vi.fn());
   const held = deferred<void>();
   const event = {};
   const actual = rpc.request({ type: "get_session_stats" }, 15000, async (value, work) => {
@@ -131,7 +177,13 @@ it("retains the actual async Pi response consumer after a close signal", async (
   expect(api.getNativeOutputEventOrigin(event)).not.toBeNull();
   expect(inspect()).toMatchObject({
     pendingCausalWork: 0,
-    unavailableReason: "pi-client-closed",
     applicationThrough: null,
+  });
+  // This suite mocks the child boundary. Actual stream invalidation is exercised
+  // with the real child handle and PiRpc in child-process-handoff.test.ts.
+  expect(processConstructions.operations).toContainEqual({
+    kind: "invalidate",
+    handle: process,
+    args: ["pi-client-closed"],
   });
 });

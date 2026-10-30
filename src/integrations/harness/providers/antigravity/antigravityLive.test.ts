@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { requestedApproval } from "../approvalOccurrence.testSupport";
 import {
   exerciseOverlappingApproval,
@@ -44,92 +45,100 @@ const mock = vi.hoisted(() => {
   };
 });
 vi.mock("../../../../platform/tauri/fs", () => ({ homeDir: async () => "/home/test" }));
-vi.mock("../../core/child", () => ({
-  resolveAntigravityBinary: async () => {
-    if (mock.resolveGates) {
-      await new Promise<void>((resolve) => mock.resolveGates.push(resolve));
-    }
-    return { path: "/fake/agy_acp_server.par", args: ["--uid="] };
-  },
-  spawnChild: mock.spawn,
-  killChild: mock.kill,
-  unwatchChild: (id: string) => {
-    mock.listeners.delete(id);
-    mock.exits.delete(id);
-  },
-  watchChild: (id: string, line: (line: string) => void, exit?: (code: number | null) => void) => {
-    mock.listeners.set(id, line);
-    if (exit) mock.exits.set(id, exit);
-  },
-  writeChild: async (thread: string, line: string) => {
-    const message = JSON.parse(line);
-    mock.sent.push({ thread, ...message });
-    if (message.id === 993 && message.result && mock.heldApprovalWrite)
-      await mock.heldApprovalWrite();
-    if (mock.blockWrites) return new Promise<void>(() => undefined);
-    if (!message.method || message.id == null) return;
-    if (mock.silent.has(message.method)) return;
-    if (message.method === "session/prompt" && !mock.autoPrompt) return;
-    queueMicrotask(() => {
-      const method = message.method;
-      if (mock.fail.has(method)) {
-        mock.listeners.get(thread)?.(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            id: message.id,
-            error: {
-              code: -32601,
-              message: method === "session/new" ? "Authentication required" : "unsupported",
-            },
-          }),
-        );
-        return;
+
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveAntigravityBinary: async () => {
+      if (mock.resolveGates) {
+        await new Promise<void>((resolve) => mock.resolveGates.push(resolve));
       }
-      if (method === "session/load") {
-        mock.listeners.get(thread)?.(
-          JSON.stringify({
-            jsonrpc: "2.0",
-            method: "session/update",
-            params: {
-              update: { sessionUpdate: "agent_message_chunk", content: { text: "OLD HISTORY" } },
+      return { path: "/fake/agy_acp_server.par", args: ["--uid="] };
+    },
+    spawnChild: mock.spawn,
+    killChild: mock.kill,
+    unwatchChild: (id: string) => {
+      mock.listeners.delete(id);
+      mock.exits.delete(id);
+    },
+    watchChild: (
+      id: string,
+      line: (line: string) => void,
+      exit?: (code: number | null) => void,
+    ) => {
+      mock.listeners.set(id, line);
+      if (exit) mock.exits.set(id, exit);
+    },
+    writeChild: async (thread: string, line: string) => {
+      const message = JSON.parse(line);
+      mock.sent.push({ thread, ...message });
+      if (message.id === 993 && message.result && mock.heldApprovalWrite)
+        await mock.heldApprovalWrite();
+      if (mock.blockWrites) return new Promise<void>(() => undefined);
+      if (!message.method || message.id == null) return;
+      if (mock.silent.has(message.method)) return;
+      if (message.method === "session/prompt" && !mock.autoPrompt) return;
+      queueMicrotask(() => {
+        const method = message.method;
+        if (mock.fail.has(method)) {
+          mock.listeners.get(thread)?.(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: message.id,
+              error: {
+                code: -32601,
+                message: method === "session/new" ? "Authentication required" : "unsupported",
+              },
+            }),
+          );
+          return;
+        }
+        if (method === "session/load") {
+          mock.listeners.get(thread)?.(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              method: "session/update",
+              params: {
+                update: { sessionUpdate: "agent_message_chunk", content: { text: "OLD HISTORY" } },
+              },
+            }),
+          );
+        }
+        const setup = {
+          sessionId: "provider-session",
+          configOptions: mock.setupConfigOptions ?? [
+            {
+              id: "model",
+              category: "model",
+              currentValue: "m1",
+              options: [
+                { value: "m1", name: "Model One" },
+                { value: "m2", name: "Model Two" },
+              ],
             },
-          }),
-        );
-      }
-      const setup = {
-        sessionId: "provider-session",
-        configOptions: mock.setupConfigOptions ?? [
-          {
-            id: "model",
-            category: "model",
-            currentValue: "m1",
-            options: [
-              { value: "m1", name: "Model One" },
-              { value: "m2", name: "Model Two" },
-            ],
-          },
-          {
-            id: "thinking",
-            category: "thought_level",
-            currentValue: "low",
-            options: [
-              { value: "low", name: "Low" },
-              { value: "high", name: "High" },
-            ],
-          },
-        ],
-      };
-      const result = ["session/new", "session/load", "session/resume"].includes(method)
-        ? setup
-        : method === "session/prompt"
-          ? { stopReason: mock.promptStop }
-          : method === "session/set_config_option" && mock.setConfigResult != null
-            ? mock.setConfigResult
-            : {};
-      mock.listeners.get(thread)?.(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
-    });
-  },
-}));
+            {
+              id: "thinking",
+              category: "thought_level",
+              currentValue: "low",
+              options: [
+                { value: "low", name: "Low" },
+                { value: "high", name: "High" },
+              ],
+            },
+          ],
+        };
+        const result = ["session/new", "session/load", "session/resume"].includes(method)
+          ? setup
+          : method === "session/prompt"
+            ? { stopReason: mock.promptStop }
+            : method === "session/set_config_option" && mock.setConfigResult != null
+              ? mock.setConfigResult
+              : {};
+        mock.listeners.get(thread)?.(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+      });
+    },
+  }),
+);
 
 const agy = await import("./antigravity");
 const { refreshAntigravityCatalog } = await import("./antigravityCatalog");

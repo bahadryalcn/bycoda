@@ -20,6 +20,7 @@ import type { UserQuestionReply } from "../../../features/sessions/model/userQue
 import type { NativeCommandProvider } from "./nativeCommands";
 import { loadSkillRestrictions } from "../../../features/skills/model/skillPreferences";
 import { withSkillPolicy } from "./skillPolicy";
+import { captureChildProcess } from "./child";
 import type {
   ApprovalDecision,
   CompactContextInput,
@@ -610,17 +611,27 @@ export function retainedHarnessWriters(): string[] {
 
 /** Explicit Host ownership transfer; ordinary local turns never call this. */
 export function retireHarnessWriter(sessionId: string): Promise<void> {
+  const originalHarness = retainedWriters.get(sessionId);
+  const originalProcess = captureChildProcess(sessionId);
+  // Keep an attempted transfer's original writer; a timer is not cohort retirement.
+  if (originalHarness) cancelIdlePark(sessionId);
   return queueSessionOperation(sessionId, async () => {
     if (activeTurnSessions.has(sessionId) || adapterOperations.has(sessionId))
       throw new Error("The desktop session is still running. Retry after it finishes.");
-    const harness = retainedWriters.get(sessionId);
-    if (harness) {
-      cancelIdlePark(sessionId);
-      // Mute intentional exit events first; the native receipt survives kill.
-      await requireHarness(harness).stopSession(sessionId);
-      await invoke("harness_retire", { sessionId });
-      retainedWriters.delete(sessionId);
-    }
+    const currentProcess = captureChildProcess(sessionId);
+    if (
+      retainedWriters.get(sessionId) !== originalHarness ||
+      (currentProcess && currentProcess !== originalProcess)
+    )
+      throw new Error(
+        "This session's writer changed before transfer. Its current writer was retained.",
+      );
+    // A process handle does not close Native preparation, every logical alias,
+    // SSE and original managed-exit/Host-ack receipts. The session-only admin
+    // selector cannot prove this original cohort across queued IPC and awaits.
+    throw new Error(
+      "This session's complete execution cohort cannot be verified for transfer. Its original writer was retained.",
+    );
   });
 }
 

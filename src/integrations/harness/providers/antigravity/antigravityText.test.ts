@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
-  callbacks: new Map<string, (line: string) => void>(),
+  callbacks: new Map<object, (line: string) => void>(),
   spawn: vi.fn(),
   write: vi.fn(),
   kill: vi.fn(),
@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   acp: false,
 }));
 vi.mock("../../core/child", () => ({
+  // Protocol fixture only; actual Native source invalidation is exercised in Core.
+  invalidateChildOutput: () => undefined,
+  createChildProcessHandle: (sessionId: string) => Object.freeze({ sessionId }),
   acquireHarnessBridge: async () => mocks.release,
   prepareHarnessTextWorkspace: async () => ({
     cwd: "/private/text",
@@ -23,9 +26,9 @@ vi.mock("../../core/child", () => ({
   }),
   spawnChild: async (...args: unknown[]) => {
     mocks.spawn(...args);
-    if (!mocks.acp) mocks.callbacks.get(args[0] as string)!(JSON.stringify({ event: "init" }));
+    if (!mocks.acp) mocks.callbacks.get(args[0] as object)!(JSON.stringify({ event: "init" }));
   },
-  writeChild: async (id: string, text: string) => {
+  writeChild: async (id: object, text: string) => {
     mocks.write(id, text);
     const callback = mocks.callbacks.get(id)!;
     if (mocks.acp) {
@@ -85,10 +88,10 @@ vi.mock("../../core/child", () => ({
   killChild: async (...args: unknown[]) => {
     mocks.kill(...args);
   },
-  watchChild: (id: string, callback: (line: string) => void) => {
+  watchChild: (id: object, callback: (line: string) => void) => {
     mocks.callbacks.set(id, callback);
   },
-  unwatchChild: (id: string) => {
+  unwatchChild: (id: object) => {
     mocks.callbacks.delete(id);
   },
 }));
@@ -124,6 +127,9 @@ describe("isolated Antigravity text requests", () => {
       outcome: { outcome: "cancelled" },
     });
     expect(messages.find((item) => item.id === 101).error.code).toBe(-32601);
+    const original = mocks.spawn.mock.calls[0][0];
+    expect(mocks.write.mock.calls.every(([handle]) => handle === original)).toBe(true);
+    expect(mocks.kill.mock.calls.every(([handle]) => handle === original)).toBe(true);
   });
   it("ignores unrelated CLI configuration fallback diagnostics", async () => {
     mocks.log = "Failed to resolve GeminiDir, falling back to default";
@@ -144,6 +150,9 @@ describe("isolated Antigravity text requests", () => {
     expect(ANTIGRAVITY_TEXT_AGENT).toContain("excludeDefaultComponents: true");
     expect(ANTIGRAVITY_TEXT_AGENT).toContain("inheritMcp: false");
     expect(JSON.parse(mocks.write.mock.calls[0][1]).message.content).toBe("Translate hello");
+    const original = mocks.spawn.mock.calls[0][0];
+    expect(mocks.write.mock.calls.every(([handle]) => handle === original)).toBe(true);
+    expect(mocks.kill.mock.calls.every(([handle]) => handle === original)).toBe(true);
     expect(mocks.release).toHaveBeenCalledOnce();
     expect(mocks.callbacks.size).toBe(0);
   });

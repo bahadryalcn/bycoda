@@ -79,7 +79,10 @@ async function readBackgroundInput<T>(
     if (input.retired && !input.active) input.work?.fail("hermes-background-retired");
   }
 }
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   subagents: AcpSubagents;
   background: Map<string, RetainedBackgroundDispatch>;
   acp: AcpClient;
@@ -111,6 +114,7 @@ const CLIENT_CAPABILITIES = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -147,7 +151,7 @@ export async function sendHermesTurn(input: SendTurnInput): Promise<void> {
     await live.turns;
   } catch (error) {
     if (liveByThread.get(input.sessionId) === live) {
-      await stopHermesSession(input.sessionId);
+      await stopHermesSession(input.sessionId, live.handle);
     }
     throw error;
   }
@@ -201,10 +205,17 @@ export async function cancelHermesTurn(sessionId: string): Promise<void> {
   live.acp.rejectPending(new Error("cancelled"));
 }
 
-export async function stopHermesSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopHermesSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const candidate = liveByThread.get(sessionId);
+  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) {
     live.muteUpdates = true;
     live.cancelled = true;
@@ -212,8 +223,15 @@ export async function stopHermesSession(sessionId: string): Promise<void> {
     resolveApprovals(live);
   }
   live?.acp.close();
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.acp?.close();
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetHermesSession(sessionId: string): Promise<void> {
@@ -235,74 +253,83 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.planning = input.intent === "plan";
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopHermesSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canLoad = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
-
-  const { path } = await resolveHermesBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(input.sessionId, handlers);
-  const liveRef: { current: Live | null } = { current: null };
-  const muteGate = { current: false };
-
-  handlers.onNotification = (method, params) => {
-    if (muteGate.current) return;
-    const live = liveRef.current;
-    if (!live || live.muteUpdates) return;
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (!live) {
-      void acp
-        .respondError(id, {
-          code: -32601,
-          message: `Method not found: ${method}`,
-        })
-        .catch(() => undefined);
-      return;
-    }
-    return handleRequest(live, id, method, params).catch(() => {
-      console.warn("[bycoda] hermes server request failed");
-    });
-  };
-
-  const emit = (event: HarnessEvent) => {
-    (liveRef.current?.onEvent ?? input.onEvent)(event);
-  };
-  watchChild(
-    input.sessionId,
-    (line) => acp.pushLine(line),
-    (code) => {
-      const live = liveRef.current;
-      if (live) {
-        live.cancelled = true;
-        clearBackgroundInputs(live);
-      }
-      acp.close(new Error("Hermes Agent exited"));
-      liveByThread.delete(input.sessionId);
-      emit({ type: "session.ended", code });
-    },
-    (line) => {
-      console.debug("[bycoda] hermes stderr", line);
-      const message = hermesStderrAuthError(line);
-      if (message) {
-        emit({
-          type: "session.error",
-          message,
-        });
-      }
-    },
-  );
-
-  await spawnChild(input.sessionId, path, ["acp"], input.cwd, undefined, "hermes");
-
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  startingByThread.set(input.sessionId, startup);
   try {
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await stopHermesSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canLoad = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
+
+    const { path } = await resolveHermesBinary();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    startup.acp = acp;
+    const liveRef: { current: Live | null } = { current: null };
+    const muteGate = { current: false };
+
+    handlers.onNotification = (method, params) => {
+      if (muteGate.current) return;
+      const live = liveRef.current;
+      if (!live || live.muteUpdates) return;
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (!live) {
+        void acp
+          .respondError(id, {
+            code: -32601,
+            message: `Method not found: ${method}`,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      return handleRequest(live, id, method, params).catch(() => {
+        console.warn("[bycoda] hermes server request failed");
+      });
+    };
+
+    const emit = (event: HarnessEvent) => {
+      (liveRef.current?.onEvent ?? input.onEvent)(event);
+    };
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        const live = liveRef.current;
+        if (live) {
+          live.cancelled = true;
+          clearBackgroundInputs(live);
+        }
+        acp.close(new Error("Hermes Agent exited"));
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
+        emit({ type: "session.ended", code });
+      },
+      (line) => {
+        console.debug("[bycoda] hermes stderr", line);
+        const message = hermesStderrAuthError(line);
+        if (message) {
+          emit({
+            type: "session.error",
+            message,
+          });
+        }
+      },
+    );
+
+    await spawnChild(handle, path, ["acp"], input.cwd, undefined, "hermes");
+
     try {
       await acp.request(
         "initialize",
@@ -349,7 +376,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
     if (!acpSessionId) throw new Error("Hermes Agent did not return a session id");
 
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      handle,
       subagents: new AcpSubagents(),
       background: new Map(),
       acp,
@@ -375,9 +405,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    await stopHermesSession(input.sessionId);
+    startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    await stopHermesSession(input.sessionId, handle);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

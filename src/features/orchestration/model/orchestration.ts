@@ -3,6 +3,7 @@ import { HARNESSES, type HarnessId, type Session } from "../../sessions/model/se
 import { pathKey } from "../../../shared/lib/paths";
 import type { ApprovalDecision, HarnessEvent } from "../../../integrations/harness/core/types";
 import { pendingApprovalForSession } from "../../notifications/model/approvalToast";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import {
   validateOrchestrationSettings,
@@ -66,7 +67,12 @@ export type OrchestrationHost = {
   /** Redirect a worker mid-turn, without discarding what it has already done. */
   steer(id: string, text: string): Promise<void>;
   /** Answer on a worker's behalf; the lead, not the user, decides. */
-  respondApproval(id: string, requestId: number, decision: ApprovalDecision): void;
+  respondApproval(
+    id: string,
+    requestId: number,
+    decision: ApprovalDecision,
+    approvalOccurrenceId: string,
+  ): boolean | void;
   answerQuestion(id: string, requestId: number, reply: UserQuestionReply): void;
 };
 type Storage = {
@@ -190,7 +196,7 @@ const FIELDS = new Map<string, string[]>([
   ["review", ["taskId"]],
   ["finish", []],
   ["steer", ["taskId", "text"]],
-  ["respond", ["taskId", "requestId", "decision"]],
+  ["respond", ["taskId", "requestId", "decision", "approvalOccurrenceId"]],
   ["answer", ["taskId", "requestId", "answers", "skip"]],
 ]);
 function checkFields(action: string, input: Record<string, unknown>) {
@@ -739,6 +745,9 @@ export class Orchestrator {
     input: Record<string, unknown>,
   ): Promise<unknown> {
     checkFields(action, input);
+    // Freeze the caller's original scalar correlation before the command queue.
+    // A later mutation cannot upgrade an old input with a replacement's nonce.
+    if (action === "respond") input = { ...input };
     const signature = JSON.stringify({ action, input });
     const key = `${leadId}:${requestId}`;
     const receipts = this.persisted.get(leadId)?.requests;
@@ -817,6 +826,8 @@ export class Orchestrator {
     return {
       kind: pending.kind,
       requestId: pending.requestId,
+      approvalOccurrenceId:
+        pending.kind === "approval" ? pending.block?.approval?.occurrenceId : undefined,
       label: pending.label,
       detail:
         pending.kind === "approval"
@@ -1071,13 +1082,32 @@ export class Orchestrator {
           );
         if (input.requestId !== pending.requestId)
           throw new Error(`Stale requestId. ${target.title} is waiting on ${pending.requestId}.`);
+        if (
+          !isApprovalOccurrenceId(input.approvalOccurrenceId) ||
+          !isApprovalOccurrenceId(pending.approvalOccurrenceId) ||
+          input.approvalOccurrenceId !== pending.approvalOccurrenceId
+        )
+          throw new Error(
+            "This approval occurrence cannot be verified. Read the original approvalOccurrenceId from needsInput before responding.",
+          );
         const decision = text(input.decision, "decision", 16);
         if (decision !== "allow" && decision !== "deny")
           throw new Error('decision must be "allow" or "deny"');
-        this.host!.respondApproval(target.sessionId, pending.requestId, decision);
+        const dispatched = this.host!.respondApproval(
+          target.sessionId,
+          pending.requestId,
+          decision,
+          input.approvalOccurrenceId,
+        );
+        if (dispatched === false)
+          throw new Error(
+            "This approval decision was not dispatched. Its original request was retained.",
+          );
         return record(this.run(run.leadId)!, {
           taskId: target.id,
           decision,
+          approvalOccurrenceId: input.approvalOccurrenceId,
+          providerAck: "unproved",
         });
       }
       case "answer": {

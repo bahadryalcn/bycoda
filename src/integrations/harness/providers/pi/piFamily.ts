@@ -100,7 +100,10 @@ type InFlightTool = {
   finished?: boolean;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   bindingWork?: NativeOutputWork | null;
   bindingTracked?: boolean;
   bindingRetired?: boolean;
@@ -154,6 +157,7 @@ type Resume = {
 };
 
 type Startup = {
+  handle?: ChildProcessHandle;
   key: string;
   controller: AbortController;
   promise: Promise<Live>;
@@ -472,10 +476,14 @@ export function stopSession(flavor: PiFlavor, sessionId: string): Promise<void> 
   if (live) closeLive(live);
   if (starting?.live && starting.live !== live) closeLive(starting.live);
   const pending = stoppingByThread.get(sessionId);
-  if (pending) return pending;
-  unwatchChild(sessionId);
+  const handles = new Set([live?.handle, starting?.handle, starting?.live?.handle]);
   const stopping = Promise.all([
-    killChild(sessionId).catch(() => undefined),
+    pending?.catch(() => undefined),
+    ...[...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
     starting?.skillProbe?.catch(() => undefined),
   ])
     .then(() => undefined)
@@ -568,10 +576,10 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
         if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
         if (liveByThread.get(input.sessionId) === existing) liveByThread.delete(input.sessionId);
         closeLive(existing);
-        unwatchChild(input.sessionId);
+        unwatchChild(existing.handle);
         await startupWait(
           attempt,
-          killChild(input.sessionId).catch(() => undefined),
+          killChild(existing.handle).catch(() => undefined),
         );
       }
       attempt.controller.signal.throwIfAborted();
@@ -603,6 +611,8 @@ async function startLive(
   const state = stateFor(flavor);
   const { liveByThread } = state;
   attempt.controller.signal.throwIfAborted();
+  const handle = createChildProcessHandle(input.sessionId);
+  attempt.handle = handle;
   const { path } = await startupWait(attempt, state.resolveBinary());
   attempt.controller.signal.throwIfAborted();
   const native = nativeModelId(input.model);
@@ -610,7 +620,7 @@ async function startLive(
   const liveRef: { current: Live | null } = { current: null };
 
   const rpc = new PiRpc(
-    input.sessionId,
+    handle,
     (rec) => {
       const current = liveRef.current;
       if (!current) return;
@@ -620,6 +630,7 @@ async function startLive(
   );
 
   const live: Live = {
+    handle,
     skillPolicyKey: JSON.stringify(input.skillPolicy),
     rpc,
     cwd: input.cwd,
@@ -670,7 +681,7 @@ async function startLive(
     }
     attempt.controller.signal.throwIfAborted();
     watchChild(
-      input.sessionId,
+      handle,
       (line) => rpc.pushLine(line),
       (code) => {
         live.bindingRetired = true;
@@ -700,7 +711,7 @@ async function startLive(
     await startupWait(
       attempt,
       spawnChild(
-        input.sessionId,
+        handle,
         path,
         buildPiSpawnArgs(flavor, {
           resume,
@@ -739,13 +750,10 @@ async function startLive(
     return live;
   } catch (error) {
     closeLive(live);
-    // A public stop owns keyed cleanup after invalidating this attempt. Old
-    // continuations must never unwatch or kill a replacement startup.
-    if (state.startingByThread.get(input.sessionId) === attempt) {
-      if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
-      unwatchChild(input.sessionId);
-      await killChild(input.sessionId).catch(() => undefined);
-    }
+    // Physical cleanup stays on this attempt even after a successor owns the slot.
+    if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
+    unwatchChild(handle);
+    await killChild(handle).catch(() => undefined);
     throw error;
   }
 }
@@ -1200,7 +1208,7 @@ async function settleTurn(live: Live): Promise<void> {
 
 async function handleExtensionUi(
   flavor: PiFlavor,
-  sessionId: string,
+  _sessionId: string,
   live: Live,
   request: PiExtensionUiRequest,
 ): Promise<void> {
@@ -1219,7 +1227,7 @@ async function handleExtensionUi(
 
       if (live.cancelled || live.muteUpdates) {
         await nativeOutputSink(outputWork, writeChild)(
-          sessionId,
+          live.handle,
           JSON.stringify(extensionUiResponse(request, "deny")),
         ).catch(() => undefined);
         return;
@@ -1244,7 +1252,7 @@ async function handleExtensionUi(
                 } else value = reply.custom?.[request.id];
               }
               await nativeOutputSink(outputWork, writeChild)(
-                sessionId,
+                live.handle,
                 JSON.stringify({
                   type: "extension_ui_response",
                   id: request.id,
@@ -1328,7 +1336,7 @@ async function handleExtensionUi(
       emitNative({ type: "approval.resolved", requestId: uiId, occurrenceId, decision });
       if (!Array.from(stateFor(flavor).liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, writeChild)(
-        sessionId,
+        live.handle,
         JSON.stringify(extensionUiResponse(request, decision)),
       ).catch(() => undefined);
     },

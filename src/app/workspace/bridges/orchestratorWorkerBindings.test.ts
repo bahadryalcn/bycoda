@@ -5,6 +5,9 @@ const m = vi.hoisted(() => ({
   invoke: vi.fn(),
   listed: vi.fn(),
   sessions: [] as any[],
+  captureProcess: vi.fn(),
+  killProcess: vi.fn(),
+  stop: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: m.invoke }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
@@ -38,8 +41,13 @@ vi.mock("../../../features/workspaces/model/workspaceClient", () => ({
 }));
 vi.mock("../../../integrations/harness", () => ({
   bindHarnessSession: vi.fn(),
-  stopHarnessSession: vi.fn(),
+  stopHarnessSession: m.stop,
   forgetHarnessSession: vi.fn(),
+}));
+vi.mock("../../../integrations/harness/core/child", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../integrations/harness/core/child")>()),
+  captureChildProcess: m.captureProcess,
+  killChild: m.killProcess,
 }));
 vi.mock("../../../features/sessions/model/checkpoint", () => ({
   flushSessionCheckpoint: vi.fn(),
@@ -50,6 +58,7 @@ vi.mock("../../../features/sessions/model/checkpoint", () => ({
 }));
 import { newSession } from "../../../features/sessions/model/session";
 import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
+import { createChildProcessHandle } from "../../../integrations/harness/core/child";
 const run = { leadId: "lead", cwd: "/repo" } as any;
 const source = { baseCommit: "a".repeat(40), branchRef: "refs/heads/main", directory: "/repo" };
 const task = {
@@ -70,6 +79,9 @@ let managed: any;
 beforeEach(() => {
   vi.clearAllMocks();
   m.sessions = [];
+  m.captureProcess.mockReturnValue(createChildProcessHandle("worker"));
+  m.killProcess.mockReset().mockResolvedValue(undefined);
+  m.stop.mockReset().mockResolvedValue(undefined);
   managed = {
     id: "managed",
     owner: { kind: "session", id: "worker" },
@@ -346,4 +358,61 @@ it("retires an untouched cancelled managed worker while retaining any committed 
     expect.objectContaining({ workspaceId: "managed", expectedRevision: 1 }),
     { cwd: "/repo" },
   );
+});
+
+it("captures the original process before provider cleanup and never uses a session-only kill", async () => {
+  managed.state = "merged";
+  const original = createChildProcessHandle("worker");
+  m.captureProcess.mockReturnValue(original);
+  m.sessions = [{ ...newSession("codex", "/repo"), id: "worker" }];
+  m.stop.mockImplementationOnce(async () => {
+    m.captureProcess.mockReturnValue(undefined);
+  });
+  await expect(bindings().integrateWorker!(run, task)).resolves.toMatchObject({ files: [] });
+  expect(m.captureProcess.mock.invocationCallOrder[0]).toBeLessThan(
+    m.stop.mock.invocationCallOrder[0],
+  );
+  expect(m.killProcess).toHaveBeenCalledExactlyOnceWith(original);
+  expect(m.invoke).toHaveBeenCalledWith("control_turn_finished", { sessionId: "worker" });
+  expect(m.invoke).not.toHaveBeenCalledWith("harness_kill", expect.anything());
+});
+
+it("retains the workspace and withholds control completion when its original process is unknown", async () => {
+  m.captureProcess.mockReturnValue(undefined);
+  await expect(bindings().integrateWorker!(run, task)).rejects.toThrow(
+    "original process cannot be verified",
+  );
+  expect(m.killProcess).not.toHaveBeenCalled();
+  expect(m.invoke).not.toHaveBeenCalledWith("harness_kill", expect.anything());
+  expect(m.invoke).not.toHaveBeenCalledWith("control_turn_finished", expect.anything());
+  expect(m.request).not.toHaveBeenCalled();
+});
+
+it("does not acknowledge a replacement that appeared while the original provider stop was pending", async () => {
+  const original = createChildProcessHandle("worker");
+  const replacement = createChildProcessHandle("worker");
+  m.captureProcess.mockReturnValue(original);
+  m.sessions = [{ ...newSession("codex", "/repo"), id: "worker" }];
+  let finish!: () => void;
+  const held = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  m.stop.mockReturnValueOnce(held);
+  const pending = bindings().integrateWorker!(run, task).catch((error: Error) => error);
+  expect(m.stop).toHaveBeenCalledOnce();
+  m.captureProcess.mockReturnValue(replacement);
+  finish();
+  expect(await pending).toEqual(
+    expect.objectContaining({ message: expect.stringContaining("process changed") }),
+  );
+  expect(m.killProcess).not.toHaveBeenCalled();
+  expect(m.invoke).not.toHaveBeenCalledWith("control_turn_finished", expect.anything());
+  expect(m.request).not.toHaveBeenCalled();
+});
+
+it("does not acknowledge uncertain targeted cleanup or proceed to workspace delivery", async () => {
+  m.killProcess.mockRejectedValueOnce(new Error("Original process settlement unknown"));
+  await expect(bindings().integrateWorker!(run, task)).rejects.toThrow("settlement unknown");
+  expect(m.invoke).not.toHaveBeenCalledWith("control_turn_finished", expect.anything());
+  expect(m.request).not.toHaveBeenCalled();
 });

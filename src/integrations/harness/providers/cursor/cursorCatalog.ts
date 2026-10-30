@@ -8,6 +8,7 @@ import {
 } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
+  createChildProcessHandle,
   execChild,
   killChild,
   resolveCursorBinary,
@@ -59,7 +60,8 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
   const { path } = await resolveCursorBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = createChildProcessHandle(probeId);
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);
     },
@@ -67,18 +69,18 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
 
   const stop = async () => {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Cursor probe exited")),
   );
 
   try {
-    await spawnChild(probeId, path, ["acp"], cwd, undefined, "cursor");
+    await spawnChild(probeProcess, path, ["acp"], cwd, undefined, "cursor");
     return await withTimeout(
       DISCOVERY_TIMEOUT_MS,
       async () => {

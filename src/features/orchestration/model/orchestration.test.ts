@@ -15,6 +15,9 @@ import type { OrchestrationProposal } from "./orchestrationPlan";
 import { normalizeOrchestrationRun } from "./orchestrationState";
 import { previewFromToolPart } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
 
+const occurrenceA = "7e1c4dc0-6f53-4aa8-b8d8-000000000001";
+const occurrenceB = "7e1c4dc0-6f53-4aa8-b8d8-000000000002";
+
 function setup() {
   const saved = new Map<string, OrchestrationRun>();
   const store = {
@@ -1178,13 +1181,17 @@ describe("local orchestration", () => {
         id: "ask",
         role: "approval",
         text: "rm -rf build",
-        approval: { requestId: 7 },
+        approval: { requestId: 7, occurrenceId: occurrenceA },
       },
     ];
     const view = (await f.call("get", { taskId: f.tasks()[0].id })) as {
       needsInput?: { kind: string; requestId: number };
     };
-    expect(view.needsInput).toMatchObject({ kind: "approval", requestId: 7 });
+    expect(view.needsInput).toMatchObject({
+      kind: "approval",
+      requestId: 7,
+      approvalOccurrenceId: occurrenceA,
+    });
     // A stale or invented requestId must never decide a live prompt.
     await expect(
       f.call("respond", {
@@ -1198,14 +1205,183 @@ describe("local orchestration", () => {
         taskId: f.tasks()[0].id,
         requestId: 7,
         decision: "maybe",
+        approvalOccurrenceId: occurrenceA,
       }),
     ).rejects.toThrow('decision must be "allow" or "deny"');
     await f.call("respond", {
       taskId: f.tasks()[0].id,
       requestId: 7,
       decision: "deny",
+      approvalOccurrenceId: occurrenceA,
     });
-    expect(f.host.respondApproval).toHaveBeenCalledWith(worker.id, 7, "deny");
+    expect(f.host.respondApproval).toHaveBeenCalledWith(worker.id, 7, "deny", occurrenceA);
+  });
+
+  it("refuses missing or changed occurrence data before dispatch while retaining legacy request visibility", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "original",
+        role: "approval",
+        text: "Original request",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    for (const nonce of [undefined, "latest", occurrenceB, occurrenceA + "\n"])
+      await expect(
+        f.call("respond", {
+          taskId: f.tasks()[0].id,
+          requestId: 7,
+          decision: "allow",
+          approvalOccurrenceId: nonce,
+        }),
+      ).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+    worker.blocks[0].approval = { requestId: 7 };
+    expect(f.manager.pendingInput(f.tasks()[0])).toMatchObject({
+      kind: "approval",
+      requestId: 7,
+      approvalOccurrenceId: undefined,
+    });
+    await expect(
+      f.call("respond", {
+        taskId: f.tasks()[0].id,
+        requestId: 7,
+        decision: "allow",
+        approvalOccurrenceId: occurrenceA,
+      }),
+    ).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+    worker.blocks[0].approval = { requestId: 7, occurrenceId: occurrenceA };
+    await f.call("respond", {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    });
+    expect(f.host.respondApproval).toHaveBeenCalledExactlyOnceWith(
+      worker.id,
+      7,
+      "allow",
+      occurrenceA,
+    );
+  });
+
+  it("pins the original caller nonce before its action queue and cannot upgrade it to a same-ID replacement", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["queued-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    const input = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    };
+    const pending = f.call("respond", input).catch((error: Error) => error);
+    input.approvalOccurrenceId = occurrenceB;
+    worker.blocks = [
+      {
+        id: "B",
+        role: "approval",
+        text: "B",
+        approval: { requestId: 7, occurrenceId: occurrenceB },
+      },
+    ];
+    expect(await pending).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("occurrence") }),
+    );
+    expect(f.host.respondApproval).not.toHaveBeenCalled();
+  });
+
+  it("retains exact retry identity and reports callback dispatch without claiming provider acknowledgment", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["retry-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    const a = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "deny",
+      approvalOccurrenceId: occurrenceA,
+    };
+    const first = await f.call("respond", a, "exact-original");
+    expect(first).toMatchObject({
+      decision: "deny",
+      approvalOccurrenceId: occurrenceA,
+      providerAck: "unproved",
+    });
+    worker.blocks = [
+      {
+        id: "B",
+        role: "approval",
+        text: "B",
+        approval: { requestId: 7, occurrenceId: occurrenceB },
+      },
+    ];
+    expect(await f.call("respond", a, "exact-original")).toEqual(first);
+    await expect(
+      f.call("respond", { ...a, approvalOccurrenceId: occurrenceB }, "exact-original"),
+    ).rejects.toThrow("different input");
+    await expect(f.call("respond", a, "late-A")).rejects.toThrow("occurrence");
+    expect(f.host.respondApproval).toHaveBeenCalledExactlyOnceWith(
+      worker.id,
+      7,
+      "deny",
+      occurrenceA,
+    );
+  });
+
+  it("does not record success when the actual approval callback refuses before dispatch", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["refused-occurrence"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const worker = f.sessions.find((entry) => entry.id === f.tasks()[0].sessionId)!;
+    worker.blocks = [
+      {
+        id: "A",
+        role: "approval",
+        text: "A",
+        approval: { requestId: 7, occurrenceId: occurrenceA },
+      },
+    ];
+    vi.mocked(f.host.respondApproval).mockReturnValueOnce(false);
+    const input = {
+      taskId: f.tasks()[0].id,
+      requestId: 7,
+      decision: "allow",
+      approvalOccurrenceId: occurrenceA,
+    };
+    await expect(f.call("respond", input, "held-original")).rejects.toThrow("not dispatched");
+    expect(f.manager.run("lead")?.requests["held-original"]).toBeUndefined();
+    vi.mocked(f.host.respondApproval).mockReturnValueOnce(true);
+    expect(await f.call("respond", input, "released-original")).toMatchObject({
+      approvalOccurrenceId: occurrenceA,
+      providerAck: "unproved",
+    });
   });
   it("returns from wait immediately when a worker already needs input", async () => {
     vi.useFakeTimers();

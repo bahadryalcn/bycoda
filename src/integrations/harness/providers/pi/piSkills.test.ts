@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -17,16 +18,19 @@ const mocks = vi.hoisted(() => ({
   writeChild: vi.fn(),
 }));
 
-vi.mock("../../core/child", () => ({
-  acquireHarnessBridge: mocks.acquireHarnessBridge,
-  killChild: mocks.killChild,
-  resolveOmpBinary: mocks.resolveOmpBinary,
-  resolvePiBinary: mocks.resolveBinary,
-  spawnChild: mocks.spawnChild,
-  unwatchChild: mocks.unwatchChild,
-  watchChild: mocks.watchChild,
-  writeChild: mocks.writeChild,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    acquireHarnessBridge: mocks.acquireHarnessBridge,
+    killChild: mocks.killChild,
+    resolveOmpBinary: mocks.resolveOmpBinary,
+    resolvePiBinary: mocks.resolveBinary,
+    spawnChild: mocks.spawnChild,
+    unwatchChild: mocks.unwatchChild,
+    watchChild: mocks.watchChild,
+    writeChild: mocks.writeChild,
+  }),
+);
 
 vi.mock("./piClient", () => ({
   PiRpc: class {
@@ -34,7 +38,11 @@ vi.mock("./piClient", () => ({
     request = mocks.request;
     close = mocks.close;
 
-    constructor(_sessionId: string, onFrame: (record: Record<string, unknown>) => void) {
+    constructor(
+      handle: import("../../core/child").ChildProcessHandle,
+      onFrame: (record: Record<string, unknown>) => void,
+    ) {
+      processConstructions.client(handle);
       mocks.frames.push(onFrame);
     }
   },
@@ -318,6 +326,15 @@ describe("discoverPiSkills", () => {
     expect(mocks.close).toHaveBeenCalledOnce();
     expect(mocks.killChild).toHaveBeenCalledWith(childId);
     expect(mocks.releaseBridge).toHaveBeenCalledOnce();
+    const original = processConstructions.created.find((handle) => handle.sessionId === childId)!;
+    expect(original).toBeDefined();
+    for (const kind of ["client", "watch", "spawn", "unwatch", "kill"] as const) {
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === kind && operation.handle.sessionId === childId)
+          .map((operation) => operation.handle),
+      ).toEqual([original]);
+    }
     response.resolve({ data: { commands: [] } });
   });
 
@@ -410,6 +427,20 @@ describe("discoverPiSkills", () => {
       title: "Continue?",
     });
     await vi.waitFor(() => expect(mocks.writeChild).toHaveBeenCalledOnce());
+    const original = processConstructions.created.find((handle) => handle.sessionId === childId)!;
+    expect(original).toBeDefined();
+    expect(
+      processConstructions.operations
+        .filter(
+          (operation) => operation.kind === "client" && operation.handle.sessionId === childId,
+        )
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write" && operation.handle.sessionId === childId)
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
     expect(mocks.writeChild).toHaveBeenCalledWith(
       childId,
       JSON.stringify({

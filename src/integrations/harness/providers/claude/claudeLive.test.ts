@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -26,24 +27,27 @@ const writeChild = vi.fn(async (_id: string, line: string) => {
 });
 const readHarnessTaskOutput = vi.fn(async () => ({ text: "live output\n", truncated: false }));
 
-vi.mock("../../core/child", () => ({
-  resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
-  spawnChild,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (
-    _id: string,
-    line: (l: string) => void,
-    exit: (code?: number | null) => void,
-    stderr?: (line: string) => void,
-  ) => {
-    onLine = line;
-    onExit = exit;
-    onStderr = stderr;
-  },
-  writeChild,
-  readHarnessTaskOutput,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
+    spawnChild,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (
+      _id: string,
+      line: (l: string) => void,
+      exit: (code?: number | null) => void,
+      stderr?: (line: string) => void,
+    ) => {
+      onLine = line;
+      onExit = exit;
+      onStderr = stderr;
+    },
+    writeChild,
+    readHarnessTaskOutput,
+  }),
+);
 
 const {
   bindClaudeSession,
@@ -1235,11 +1239,91 @@ describe("claude session replay", () => {
   });
 });
 
+it("keeps an actual held A control write on its original handle while B is active", async () => {
+  // This is a protocol callback lifetime check; the fake does not enforce Native IPC fencing.
+  const first = await startTurn("s1");
+  const original = processConstructions.created[0];
+  emit({
+    type: "control_request",
+    request_id: "held-original-question",
+    request: {
+      subtype: "can_use_tool",
+      tool_name: "AskUserQuestion",
+      input: { questions: [{ question: "Scope?", options: [{ label: "Local" }] }] },
+    },
+  });
+  const question = first.events.find((event) => event.type === "question.asked")!;
+  expect(question).toBeDefined();
+  let release!: () => void;
+  let entered = false;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  writeChild.mockImplementationOnce(async (_locator, line) => {
+    entered = true;
+    sent.push(line);
+    await gate;
+  });
+  respondClaudeQuestion("s1", question.requestId, {
+    kind: "answered",
+    answers: { "Scope?": ["Local"] },
+  });
+  try {
+    await waitFor(() => entered, "original control write entered");
+    const originalWrite = processConstructions.operations.find(
+      (operation) =>
+        operation.kind === "write" &&
+        JSON.parse(operation.args[0] as string).response?.request_id === "held-original-question",
+    )!;
+    expect(originalWrite).toBeDefined();
+    expect(originalWrite.handle).toBe(original);
+    await stopClaudeSession("s1");
+    await first.turn;
+    sent.length = 0;
+    const second = await startTurn("s1");
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+    release();
+    await Promise.resolve();
+    await Promise.resolve();
+    const replies = processConstructions.operations.filter(
+      (operation) =>
+        operation.kind === "write" &&
+        JSON.parse(operation.args[0] as string).response?.request_id === "held-original-question",
+    );
+    expect(replies).toHaveLength(1);
+    expect(replies[0].handle).toBe(original);
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await second.turn;
+  } finally {
+    release();
+    await stopClaudeSession("s1");
+    await first.turn;
+  }
+});
+
 it("does not let an earlier Live approval occurrence resolve a replacement with the same UI ID", async () => {
   let previous: { requestId: number; occurrenceId?: string } | undefined;
   for (let generation = 0; generation < 2; generation++) {
     sent.length = 0;
+    const startupAt = processConstructions.operations.length;
     const { events, turn } = await startTurn("s1");
+    const construction = processConstructions.created.filter((handle) => handle.sessionId === "s1")[
+      generation
+    ]!;
+    expect(construction).toBeDefined();
+    for (const kind of ["watch", "spawn", "write"] as const) {
+      const startup = processConstructions.operations
+        .slice(startupAt)
+        .filter((operation) => operation.kind === kind);
+      expect(startup.length).toBeGreaterThan(0);
+      expect(startup.every((operation) => operation.handle === construction)).toBe(true);
+    }
     emit({
       type: "control_request",
       request_id: "approval-reused",
@@ -1273,6 +1357,15 @@ it("does not let an earlier Live approval occurrence resolve a replacement with 
     expect(replies()).toHaveLength(0);
     respondClaudeApproval("s1", asked.requestId, "deny", asked.occurrenceId);
     await waitFor(() => replies().length === 1, "source-owned reply");
+    expect(
+      processConstructions.operations
+        .filter(
+          (operation) =>
+            operation.kind === "write" &&
+            JSON.parse(operation.args[0] as string).response?.request_id === "approval-reused",
+        )
+        .at(-1)?.handle,
+    ).toBe(construction);
     expect(events).toContainEqual({
       type: "approval.resolved",
       requestId: asked.requestId,
@@ -1285,6 +1378,10 @@ it("does not let an earlier Live approval occurrence resolve a replacement with 
     emit({ type: "result", subtype: "success", session_id: "sess_1" });
     await turn;
     await stopClaudeSession("s1");
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
+    ).toBe(construction);
     __claudeTestReset();
   }
 });

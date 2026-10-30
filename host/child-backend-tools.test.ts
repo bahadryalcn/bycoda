@@ -7,6 +7,7 @@ import { HostChildBackend } from "./child-backend";
 import type { RuntimeLogAccess } from "./runtime-log-tools";
 import type { SocialService } from "./social";
 import { HOST_PROTOCOL_VERSION } from "../src/features/connections/model/protocol";
+import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
 
 it("gives actual surviving children stable scoped MCP/RPC routes, renews all groups, and retires replaced credentials", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bycoda-child-relay-"));
@@ -72,7 +73,7 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
   );
   const id = "session#2";
   const launch = () =>
-    backend.invoke<number>("harness_spawn", {
+    backend.invoke<HarnessProcessReceipt>("harness_spawn", {
       sessionId: id,
       command: script,
       args: [],
@@ -83,9 +84,15 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
     runtimeLogEnvironments: Map<string, NodeJS.ProcessEnv>;
     socialEnvironments: Map<string, NodeJS.ProcessEnv>;
   };
-  const send = async (group: string, marker: string, mcp = false) => {
+  const send = async (
+    receipt: HarnessProcessReceipt,
+    group: string,
+    marker: string,
+    mcp = false,
+  ) => {
     await backend.invoke("harness_write", {
       sessionId: id,
+      constructionId: receipt.constructionId,
       line: JSON.stringify({ group, id: marker, mcp }),
     });
     await vi.waitFor(() => expect(events.some((event) => event.id === marker)).toBe(true));
@@ -99,7 +106,7 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
       "harness_social_bridge",
     ])
       bridges.push(await backend.invoke<{ mcpUrl: string }>(command, { sessionId: id }));
-    await launch();
+    const original = await launch();
     for (const [index, group] of ["conversation", "runtime-logs", "social"].entries()) {
       const env =
         group === "conversation"
@@ -112,19 +119,19 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
       expect(`${env[`${prefix}_ENDPOINT`]}/mcp/${group}`).toBe(bridges[index].mcpUrl);
       expect(env[`${prefix}_TOKEN`]).not.toBe(valid.get(group));
       expect(issuers.get(group)).toHaveBeenCalledOnce();
-      expect((await send(group, `${group}-initial`)).status).toBe(200);
+      expect((await send(original, group, `${group}-initial`)).status).toBe(200);
       valid.delete(group); // Same rejection the real twelve-hour grant TTL returns.
-      expect((await send(group, `${group}-renewed`, true)).status).toBe(200);
+      expect((await send(original, group, `${group}-renewed`, true)).status).toBe(200);
       expect(issuers.get(group)).toHaveBeenCalledTimes(2);
       expect(issuers.get(group)).toHaveBeenLastCalledWith("session", undefined, scope);
     }
     delegated = true;
     valid.delete("social");
-    expect((await send("social", "social-moved")).status).toBe(502);
+    expect((await send(original, "social", "social-moved")).status).toBe(502);
     expect(issuers.get("social")).toHaveBeenCalledTimes(2);
     const old = { ...state.conversationEnvironments.get(id)! };
     delegated = false;
-    await launch();
+    const replacement = await launch();
     expect(state.conversationEnvironments.get(id)!.BYCODA_CONVERSATION_TOKEN).not.toBe(
       old.BYCODA_CONVERSATION_TOKEN,
     );
@@ -140,8 +147,11 @@ readline.createInterface({input:process.stdin}).on('line', async line => {
         })
       ).status,
     ).toBe(401);
-    expect((await send("conversation", "replacement")).status).toBe(200);
-    await backend.kill(id);
+    expect((await send(replacement, "conversation", "replacement")).status).toBe(200);
+    await backend.invoke("harness_kill", {
+      sessionId: id,
+      constructionId: replacement.constructionId,
+    });
     expect(state.conversationEnvironments.has(id)).toBe(false);
     expect(calls.length).toBeGreaterThanOrEqual(11);
   } finally {

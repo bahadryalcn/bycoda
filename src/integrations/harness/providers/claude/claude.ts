@@ -155,7 +155,11 @@ type BackgroundTask = {
   outputPath?: string;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  /** Transcript replay has no process; it must never acquire a current child. */
+  handle?: ChildProcessHandle;
   cwd: string;
   claudeSessionId: string;
   providerAccountId?: string;
@@ -226,6 +230,7 @@ const RESUME_GRACE_MS = 15_000;
 const STOPPED_DETAIL = "Stopped by you.";
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; live?: Live }>();
 const resumeByThread = new Map<string, Resume>();
 /**
  * Claude task lists outlive a Live: a restart that resumes the conversation
@@ -319,7 +324,7 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
 
-  await writeJson(input.sessionId, message);
+  await writeJson(live, message);
 }
 
 export function respondClaudeApproval(
@@ -374,14 +379,14 @@ export async function cancelClaudeTurn(sessionId: string): Promise<void> {
   // background. Otherwise it finishes later and wakes Claude up again.
   for (const taskId of live.backgroundTasks.keys()) {
     await writeJson(
-      sessionId,
+      live,
       buildControlRequest(nextControlId(live), {
         subtype: "stop_task",
         task_id: taskId,
       }),
     );
   }
-  await writeJson(sessionId, buildControlRequest(nextControlId(live), { subtype: "interrupt" }));
+  await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "interrupt" }));
   // A failed write leaves the turn active and observable so Stop can retry.
   live.cancelled = true;
   stopOutputWatches(live);
@@ -402,7 +407,7 @@ export async function stopClaudeBackgroundWork(sessionId: string, callId?: strin
     live.stoppedTasks.add(taskId);
     for (const id of callIds) live.stoppedCalls.add(id);
     await writeJson(
-      sessionId,
+      live,
       buildControlRequest(nextControlId(live), {
         subtype: "stop_task",
         task_id: taskId,
@@ -416,10 +421,19 @@ export async function stopClaudeBackgroundWork(sessionId: string, callId?: strin
   }
 }
 
-export async function stopClaudeSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopClaudeSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const candidate = liveByThread.get(sessionId);
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined) ??
+    startup?.live;
+  if (candidate === live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) stopOutputWatches(live);
   if (live) {
     live.muteUpdates = true;
@@ -434,8 +448,14 @@ export async function stopClaudeSession(sessionId: string): Promise<void> {
     live.initDone?.();
     live.initDone = null;
   }
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetClaudeSession(sessionId: string): Promise<void> {
@@ -645,6 +665,7 @@ function timestampOf(rec: Record<string, unknown>): number | undefined {
  * second copy that drifts as the streaming path grows.
  */
 function newLiveState(input: {
+  handle?: ChildProcessHandle;
   cwd: string;
   claudeSessionId: string;
   providerAccountId?: string;
@@ -655,6 +676,7 @@ function newLiveState(input: {
   claudeTasks?: Map<string, TaskListItem>;
 }): Live {
   return {
+    handle: input.handle,
     cwd: input.cwd,
     claudeSessionId: input.claudeSessionId,
     providerAccountId: input.providerAccountId,
@@ -713,101 +735,110 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.runtimeMode = input.runtimeMode;
     return existing;
   }
-  if (existing) {
-    // Model and launch-setting changes require a fresh Claude process, but
-    // they must resume the same provider conversation. Only a cwd change
-    // invalidates the stored session because Claude sessions are cwd-bound.
-    if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
-    await stopClaudeSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canResume =
-    resume != null &&
-    resume.cwd === input.cwd &&
-    sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
-  if (
-    resume &&
-    (resume.cwd !== input.cwd ||
-      !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
-  ) {
-    resumeByThread.delete(input.sessionId);
-  }
-  const { path } = await resolveClaudeBinaryImpl();
-  const liveRef: { current: Live | null } = { current: null };
-  const claudeSessionId = canResume && resume ? resume.sessionId : crypto.randomUUID();
-  const retained = tasksByThread.get(input.sessionId);
-  const claudeTasks =
-    retained?.providerSessionId === claudeSessionId
-      ? retained.tasks
-      : new Map<string, TaskListItem>();
-  tasksByThread.set(input.sessionId, {
-    providerSessionId: claudeSessionId,
-    tasks: claudeTasks,
-  });
-  const launch = launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId);
-
-  const live: Live = newLiveState({
-    cwd: input.cwd,
-    claudeSessionId,
-    providerAccountId: input.providerAccountId,
-    runtimeMode: input.runtimeMode,
-    planning,
-    settingsKey,
-    onEvent: input.onEvent,
-    claudeTasks,
-  });
-  liveRef.current = live;
-
-  watchChild(
-    input.sessionId,
-    (line) => {
-      const current = liveRef.current;
-      if (!current) return;
-      handleLine(input.sessionId, current, line);
-    },
-    (code, reason) => {
-      const current = liveRef.current;
-      if (liveByThread.get(input.sessionId) === current) {
-        liveByThread.delete(input.sessionId);
-      }
-      if (current) {
-        stopOutputWatches(current);
-        current.exitError ??= new Error(reason || "Claude Code exited");
-      }
-      if (!current?.muteUpdates) {
-        (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-      }
-      if (current?.exitError) current.turnFailed?.(current.exitError);
-      current?.initDone?.();
-      if (current) {
-        for (const pending of current.approvals.values()) pending.resolve("deny");
-        current.approvals.clear();
-        for (const pending of current.questions.values()) pending.resolve({ kind: "skipped" });
-        current.questions.clear();
-        current.turnDone = null;
-        current.turnFailed = null;
-        current.initDone = null;
-      }
-    },
-    (line) => {
-      const current = liveRef.current;
-      if (!current || current.muteUpdates) return;
-      // Only this explicit startup failure is actionable; ordinary CLI
-      // diagnostics must not turn a successful conversation into an error.
-      if (/No conversation found with session ID:/i.test(line)) {
-        current.exitError = new Error(
-          `${line.trim()}\nClaude could not restore the saved conversation in the current folder/account. Restore its Claude session file or start a new chat.`,
-        );
-      }
-    },
-  );
-
-  liveByThread.set(input.sessionId, live);
-
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; live?: Live } = { handle };
+  startingByThread.set(input.sessionId, startup);
   try {
+    if (existing) {
+      // Model and launch-setting changes require a fresh Claude process, but
+      // they must resume the same provider conversation. Only a cwd change
+      // invalidates the stored session because Claude sessions are cwd-bound.
+      if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
+      await stopClaudeSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canResume =
+      resume != null &&
+      resume.cwd === input.cwd &&
+      sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
+    if (
+      resume &&
+      (resume.cwd !== input.cwd ||
+        !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
+    ) {
+      resumeByThread.delete(input.sessionId);
+    }
+    const { path } = await resolveClaudeBinaryImpl();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const liveRef: { current: Live | null } = { current: null };
+    const claudeSessionId = canResume && resume ? resume.sessionId : crypto.randomUUID();
+    const retained = tasksByThread.get(input.sessionId);
+    const claudeTasks =
+      retained?.providerSessionId === claudeSessionId
+        ? retained.tasks
+        : new Map<string, TaskListItem>();
+    tasksByThread.set(input.sessionId, {
+      providerSessionId: claudeSessionId,
+      tasks: claudeTasks,
+    });
+    const launch = launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId);
+
+    const live: Live = newLiveState({
+      handle,
+      cwd: input.cwd,
+      claudeSessionId,
+      providerAccountId: input.providerAccountId,
+      runtimeMode: input.runtimeMode,
+      planning,
+      settingsKey,
+      onEvent: input.onEvent,
+      claudeTasks,
+    });
+    liveRef.current = live;
+    startup.live = live;
+
+    watchChild(
+      handle,
+      (line) => {
+        const current = liveRef.current;
+        if (!current) return;
+        handleLine(input.sessionId, current, line);
+      },
+      (code, reason) => {
+        const current = liveRef.current;
+        if (liveByThread.get(input.sessionId) === current) {
+          liveByThread.delete(input.sessionId);
+        }
+        if (current) {
+          stopOutputWatches(current);
+          current.exitError ??= new Error(reason || "Claude Code exited");
+        }
+        if (!current?.muteUpdates) {
+          (current?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+        }
+        if (current?.exitError) current.turnFailed?.(current.exitError);
+        current?.initDone?.();
+        if (current) {
+          for (const pending of current.approvals.values()) pending.resolve("deny");
+          current.approvals.clear();
+          for (const pending of current.questions.values()) pending.resolve({ kind: "skipped" });
+          current.questions.clear();
+          current.turnDone = null;
+          current.turnFailed = null;
+          current.initDone = null;
+        }
+      },
+      (line) => {
+        const current = liveRef.current;
+        if (!current || current.muteUpdates) return;
+        // Only this explicit startup failure is actionable; ordinary CLI
+        // diagnostics must not turn a successful conversation into an error.
+        if (/No conversation found with session ID:/i.test(line)) {
+          current.exitError = new Error(
+            `${line.trim()}\nClaude could not restore the saved conversation in the current folder/account. Restore its Claude session file or start a new chat.`,
+          );
+        }
+      },
+    );
+
+    liveByThread.set(input.sessionId, live);
+
     await spawnChild(
-      input.sessionId,
+      handle,
       path,
       buildClaudeSpawnArgs(launch),
       input.cwd,
@@ -815,17 +846,18 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       "claude",
     );
     if (live.exitError) throw live.exitError;
-    await writeJson(
-      input.sessionId,
-      buildControlRequest(nextControlId(live), { subtype: "initialize" }),
-    );
+    await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "initialize" }));
     await waitForInit(live, INIT_TIMEOUT_MS);
     if (live.exitError) throw live.exitError;
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    await stopClaudeSession(input.sessionId);
-    throw live.exitError ?? error;
+    await stopClaudeSession(input.sessionId, handle);
+    throw startup.live?.exitError ?? error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
@@ -865,7 +897,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   settlePendingTurn(live);
 
   try {
-    await writeJson(input.sessionId, message);
+    await writeJson(live, message);
     input.onAccepted?.();
     settlePendingTurn(live);
     await turnPromise;
@@ -1314,7 +1346,7 @@ function handleResult(live: Live, rec: Record<string, unknown>): void {
 }
 
 async function handleControlRequest(
-  sessionId: string,
+  _sessionId: string,
   live: Live,
   control: ClaudeControlRequest,
 ): Promise<void> {
@@ -1325,7 +1357,7 @@ async function handleControlRequest(
       );
       if (control.subtype !== "can_use_tool" && control.subtype !== "permission") {
         await nativeOutputSink(outputWork, writeJson)(
-          sessionId,
+          live,
           buildControlResponse(control.requestId, {}),
         );
         return;
@@ -1336,7 +1368,7 @@ async function handleControlRequest(
 
       if (live.cancelled || live.muteUpdates) {
         await nativeOutputSink(outputWork, writeJson)(
-          sessionId,
+          live,
           buildControlResponse(control.requestId, toClaudePermissionResult("deny", input)),
         ).catch(() => undefined);
         return;
@@ -1360,7 +1392,7 @@ async function handleControlRequest(
           },
           (reply) =>
             nativeOutputSink(outputWork, writeJson)(
-              sessionId,
+              live,
               buildControlResponse(
                 control.requestId,
                 reply.kind === "answered"
@@ -1391,7 +1423,7 @@ async function handleControlRequest(
         const plan = extractExitPlanModePlan(input);
         if (plan) emitNative({ type: "plan", text: plan });
         await nativeOutputSink(outputWork, writeJson)(
-          sessionId,
+          live,
           buildControlResponse(control.requestId, {
             behavior: "deny",
             message: plan
@@ -1408,7 +1440,7 @@ async function handleControlRequest(
         const kind = toolKindFromName(toolName);
         const decision = kind === "read" || kind === "search" ? "allow" : "deny";
         await nativeOutputSink(outputWork, writeJson)(
-          sessionId,
+          live,
           buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
         );
         return;
@@ -1416,7 +1448,7 @@ async function handleControlRequest(
 
       if (live.runtimeMode === "full-access") {
         await nativeOutputSink(outputWork, writeJson)(
-          sessionId,
+          live,
           buildControlResponse(control.requestId, toClaudePermissionResult("allow", input)),
         );
         return;
@@ -1447,7 +1479,7 @@ async function handleControlRequest(
       });
       if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, writeJson)(
-        sessionId,
+        live,
         buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
       );
     },
@@ -2190,8 +2222,9 @@ function nextControlId(live: Live): string {
   return `bycoda_${live.nextControlId}`;
 }
 
-function writeJson(sessionId: string, payload: Record<string, unknown>): Promise<void> {
-  return writeChild(sessionId, JSON.stringify(payload));
+function writeJson(live: Live, payload: Record<string, unknown>): Promise<void> {
+  if (!live.handle) return Promise.reject(new Error("An original Claude process is required"));
+  return writeChild(live.handle, JSON.stringify(payload));
 }
 
 function settingsKeyFor(input: HarnessSessionInput): string {

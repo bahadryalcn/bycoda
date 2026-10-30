@@ -1,6 +1,13 @@
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
-import { killChild, spawnChild, unwatchChild, watchChild } from "../../core/child";
+import {
+  createChildProcessHandle,
+  killChild,
+  spawnChild,
+  unwatchChild,
+  watchChild,
+  type ChildProcessHandle,
+} from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
 import {
@@ -19,6 +26,7 @@ const INIT_TIMEOUT_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 45_000;
 
 type LiveText = {
+  process: ChildProcessHandle;
   rpc: PiRpc;
   cwd: string;
   model?: string;
@@ -34,6 +42,7 @@ type LiveText = {
 
 type TextState = {
   live: LiveText | null;
+  starting: ChildProcessHandle | null;
   turns: Promise<void>;
 };
 
@@ -42,7 +51,7 @@ const stateByFlavor = new Map<string, TextState>();
 function stateFor(flavor: PiFlavor): TextState {
   let state = stateByFlavor.get(flavor.id);
   if (!state) {
-    state = { live: null, turns: Promise.resolve() };
+    state = { live: null, starting: null, turns: Promise.resolve() };
     stateByFlavor.set(flavor.id, state);
   }
   return state;
@@ -161,13 +170,13 @@ async function promptOnLive(
       if (typeof text === "string") output = text.trim();
     }
     if (!output) throw new Error(`${flavor.label} returned empty output.`);
-    await dropLive(flavor);
+    await dropLive(flavor, session);
     return output;
   } catch (error) {
     session.turnDone = null;
     session.turnFailed = null;
     await session.rpc.request({ type: "abort" }).catch(() => undefined);
-    await dropLive(flavor);
+    await dropLive(flavor, session);
     throw error;
   } finally {
     session.collecting = false;
@@ -196,7 +205,6 @@ async function ensureLive(
   ) {
     return current;
   }
-  await dropLive(flavor);
   return startLive(flavor, cwd, model, modelSettings);
 }
 
@@ -207,11 +215,13 @@ async function startLive(
   modelSettings?: Record<string, string>,
 ): Promise<LiveText> {
   const state = stateFor(flavor);
+  const stopping = dropLive(flavor);
   const childId = flavor.textChildId;
-  const { path } = await flavor.resolveBinary();
+  const textProcess = createChildProcessHandle(childId);
+  state.starting = textProcess;
   const liveRef: { current: LiveText | null } = { current: null };
   const rpc = new PiRpc(
-    childId,
+    textProcess,
     (rec) => {
       const current = liveRef.current;
       if (current) handleFrame(current, rec);
@@ -219,6 +229,7 @@ async function startLive(
     flavor.label,
   );
   const session: LiveText = {
+    process: textProcess,
     rpc,
     cwd,
     model,
@@ -234,7 +245,7 @@ async function startLive(
   liveRef.current = session;
 
   watchChild(
-    childId,
+    textProcess,
     (line) => rpc.pushLine(line),
     () => {
       session.closed = true;
@@ -248,8 +259,11 @@ async function startLive(
   );
 
   try {
+    await stopping;
+    const { path } = await flavor.resolveBinary();
+    if (state.starting !== textProcess) throw new Error(`${flavor.label} text startup cancelled`);
     await spawnChild(
-      childId,
+      textProcess,
       path,
       buildPiSpawnArgs(flavor, {
         isolated: true,
@@ -260,22 +274,27 @@ async function startLive(
       flavor.id,
     );
     await rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS);
+    if (state.starting !== textProcess || session.closed)
+      throw new Error(`${flavor.label} text startup cancelled`);
     state.live = session;
     return session;
   } catch (error) {
     session.closed = true;
     rpc.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(childId);
-    await killChild(childId).catch(() => undefined);
+    unwatchChild(textProcess);
+    await killChild(textProcess).catch(() => undefined);
     throw error;
+  } finally {
+    if (state.starting === textProcess) state.starting = null;
   }
 }
 
-async function dropLive(flavor: PiFlavor): Promise<void> {
+async function dropLive(flavor: PiFlavor, expected?: LiveText): Promise<void> {
   const state = stateFor(flavor);
-  const current = state.live;
-  const childId = flavor.textChildId;
-  state.live = null;
+  const current = expected ?? state.live;
+  const starting = expected ? null : state.starting;
+  if (!expected || state.live === expected) state.live = null;
+  if (!expected) state.starting = null;
   if (current) {
     current.closed = true;
     current.rpc.close();
@@ -283,8 +302,12 @@ async function dropLive(flavor: PiFlavor): Promise<void> {
     current.turnDone = null;
     current.turnFailed = null;
   }
-  unwatchChild(childId);
-  await killChild(childId).catch(() => undefined);
+  const original = new Set([current?.process, starting]);
+  for (const process of original) {
+    if (!process) continue;
+    unwatchChild(process);
+    await killChild(process).catch(() => undefined);
+  }
 }
 
 function handleFrame(session: LiveText, rec: Record<string, unknown>) {

@@ -30,7 +30,10 @@ type GenericPendingApproval = PendingApproval & {
   options: { optionId: string; kind: string }[];
   work: NativeOutputWork | null;
 };
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   client: AcpClient;
   providerId: string;
   configId: string;
@@ -45,8 +48,7 @@ type Live = {
 };
 const lives = new Map<string, Live>();
 const resumes = new Map<string, { providerId: string; cwd: string }>();
-const starting = new Set<string>();
-const cancelled = new Set<string>();
+const starting = new Map<string, Live>();
 
 function retireWaitingApprovals(live: Live): void {
   cancelPendingApprovals(live.approvals);
@@ -88,30 +90,37 @@ function servePendingApproval(
   void trackNativeOutputWork(waiter, pending.work).catch(() => undefined);
 }
 
-async function stop(sessionId: string): Promise<void> {
-  const live = lives.get(sessionId);
-  lives.delete(sessionId);
-  if (live) {
-    live.cancelled = true;
-    live.client.close(new Error("ACP process stopped"));
-    retireWaitingApprovals(live);
+async function stop(sessionId: string, expectedHandle?: ChildProcessHandle): Promise<void> {
+  const current = lives.get(sessionId);
+  const live = !expectedHandle || current?.handle === expectedHandle ? current : undefined;
+  const preparing = starting.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) lives.delete(sessionId);
+  if (startup) starting.delete(sessionId);
+  for (const owner of new Set([live, startup])) {
+    if (!owner) continue;
+    owner.cancelled = true;
+    owner.client.close(new Error("ACP process stopped"));
+    retireWaitingApprovals(owner);
   }
-  await killChild(sessionId);
+  await Promise.all(
+    [...new Set([live?.handle, startup?.handle, expectedHandle])].map((handle) =>
+      handle ? killChild(handle) : Promise.resolve(),
+    ),
+  );
 }
 async function cancel(sessionId: string): Promise<void> {
   const live = lives.get(sessionId);
   if (!live) {
-    if (starting.has(sessionId)) {
-      cancelled.add(sessionId);
-      await killChild(sessionId);
-    }
+    const startup = starting.get(sessionId);
+    if (startup) await stop(sessionId, startup.handle);
     return;
   }
   live.cancelled = true;
   retireWaitingApprovals(live);
   await live.client.notify("session/cancel", { sessionId: live.providerId }).catch(() => undefined);
   // A noncompliant agent must not leave the turn waiting forever.
-  await stop(sessionId);
+  await stop(sessionId, live.handle);
 }
 
 export async function sendGenericAcpTurn(
@@ -126,15 +135,16 @@ export async function sendGenericAcpTurn(
     if (!configId) throw new Error("Choose a configured ACP agent in Settings first");
     let live = lives.get(input.sessionId);
     if (live && (live.configId !== configId || live.cwd !== input.cwd)) {
-      await stop(input.sessionId);
+      await stop(input.sessionId, live.handle);
       resumes.delete(input.sessionId);
       live = undefined;
     }
     if (!live) {
-      starting.add(input.sessionId);
+      const handle = createChildProcessHandle(input.sessionId);
       const handlers: AcpHandlers = {};
-      const client = new AcpClient(input.sessionId, handlers);
+      const client = new AcpClient(handle, handlers);
       const state: Live = {
+        handle,
         client,
         configId,
         cwd: input.cwd,
@@ -145,6 +155,7 @@ export async function sendGenericAcpTurn(
         planning: input.intent === "plan",
         approvals: new Map(),
       };
+      starting.set(input.sessionId, state);
       handlers.onNotification = (method, params) => {
         if (method !== "session/update" || state.cancelled || state.replaying) return;
         const update = (params as { update?: Record<string, unknown> })?.update;
@@ -244,7 +255,7 @@ export async function sendGenericAcpTurn(
         });
       };
       watchChild(
-        input.sessionId,
+        handle,
         (line) => client.pushLine(line),
         (code) => {
           state.cancelled = true;
@@ -256,16 +267,10 @@ export async function sendGenericAcpTurn(
       );
       try {
         if (program)
-          await spawnChild(
-            input.sessionId,
-            program.path,
-            program.args,
-            input.cwd,
-            undefined,
-            "opencode",
-          );
-        else await spawnChild(input.sessionId, "", [], input.cwd, undefined, undefined, configId);
-        if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
+          await spawnChild(handle, program.path, program.args, input.cwd, undefined, "opencode");
+        else await spawnChild(handle, "", [], input.cwd, undefined, undefined, configId);
+        if (state.cancelled || starting.get(input.sessionId) !== state)
+          throw new Error("ACP startup cancelled");
         const initialized = await client.request<{
           agentCapabilities?: { loadSession?: boolean };
           authMethods?: { id: string; name?: string }[];
@@ -309,7 +314,8 @@ export async function sendGenericAcpTurn(
           state.providerId = setup.sessionId;
           state.modes = setup.modes;
         }
-        if (cancelled.delete(input.sessionId)) throw new Error("ACP startup cancelled");
+        if (state.cancelled || starting.get(input.sessionId) !== state)
+          throw new Error("ACP startup cancelled");
         lives.set(input.sessionId, state);
         live = state;
         resumes.set(input.sessionId, { providerId: state.providerId, cwd: input.cwd });
@@ -318,11 +324,10 @@ export async function sendGenericAcpTurn(
         state.cancelled = true;
         retireWaitingApprovals(state);
         client.close(error instanceof Error ? error : undefined);
-        await killChild(input.sessionId);
+        await killChild(handle).catch(() => undefined);
         throw error;
       } finally {
-        starting.delete(input.sessionId);
-        cancelled.delete(input.sessionId);
+        if (starting.get(input.sessionId) === state) starting.delete(input.sessionId);
       }
     }
     live.onEvent = input.onEvent;
@@ -418,7 +423,6 @@ export const genericAcpAdapter: HarnessAdapter = {
   stopSession: stop,
   forgetSession: async (id) => {
     resumes.delete(id);
-    cancelled.delete(id);
     await stop(id);
   },
   bindSession: (id, providerId, cwd) => {

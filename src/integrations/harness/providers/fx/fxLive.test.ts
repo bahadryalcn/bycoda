@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -9,19 +10,22 @@ const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
 
-vi.mock("../../core/child", () => ({
-  resolveFxBinary: async () => ({ path: "/fake/fx" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
-    onLine = line;
-    onExit = exit;
-  },
-  writeChild: async (_id: string, line: string) => {
-    sent.push(line);
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveFxBinary: async () => ({ path: "/fake/fx" }),
+    spawnChild: async () => undefined,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
+      onLine = line;
+      onExit = exit;
+    },
+    writeChild: async (_id: string, line: string) => {
+      sent.push(line);
+    },
+  }),
+);
 
 const { sendFxTurn, stopFxSession } = await import("./fx");
 import type { HarnessEvent } from "../../core/types";

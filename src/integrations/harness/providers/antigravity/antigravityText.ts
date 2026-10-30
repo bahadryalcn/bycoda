@@ -1,6 +1,7 @@
 import { AcpClient } from "../../core/acp";
 import {
   acquireHarnessBridge,
+  createChildProcessHandle,
   killChild,
   prepareHarnessTextWorkspace,
   readHarnessTextFile,
@@ -9,6 +10,7 @@ import {
   unwatchChild,
   watchChild,
   writeChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import type { TextPromptInput } from "../../core/registry";
 import {
@@ -40,20 +42,25 @@ export async function runAntigravityTextPrompt(input: TextPromptInput): Promise<
   input.signal?.throwIfAborted();
   const release = await acquireHarnessBridge();
   const id = `bycoda-antigravity-text-${crypto.randomUUID()}`;
+  const child = createChildProcessHandle(id);
   try {
     const binary = await resolveAntigravityBinary();
     input.signal?.throwIfAborted();
     return binary.transport === "stream-json"
-      ? await runStreamText(id, binary.path, input)
-      : await runAcpText(id, binary, input);
+      ? await runStreamText(child, binary.path, input)
+      : await runAcpText(child, binary, input);
   } finally {
-    unwatchChild(id);
-    await killChild(id).catch(() => undefined);
+    unwatchChild(child);
+    await killChild(child).catch(() => undefined);
     release();
   }
 }
 
-async function runStreamText(id: string, path: string, input: TextPromptInput): Promise<string> {
+async function runStreamText(
+  child: ChildProcessHandle,
+  path: string,
+  input: TextPromptInput,
+): Promise<string> {
   const workspace = await prepareHarnessTextWorkspace(ANTIGRAVITY_TEXT_AGENT);
   input.signal?.throwIfAborted();
   async function verifyAgent() {
@@ -73,15 +80,15 @@ async function runStreamText(id: string, path: string, input: TextPromptInput): 
   let finished = false;
   const abort = () => {
     fail(new Error("Antigravity text request cancelled"));
-    void killChild(id).catch(() => undefined);
+    void killChild(child).catch(() => undefined);
   };
   const timer = setTimeout(() => {
     fail(new Error("Antigravity text request timed out"));
-    void killChild(id).catch(() => undefined);
+    void killChild(child).catch(() => undefined);
   }, input.timeoutMs ?? 90_000);
   input.signal?.addEventListener("abort", abort, { once: true });
   watchChild(
-    id,
+    child,
     (line) => {
       let event: Record<string, unknown> | null;
       try {
@@ -96,14 +103,14 @@ async function runStreamText(id: string, path: string, input: TextPromptInput): 
           .then(() => {
             input.signal?.throwIfAborted();
             return writeChild(
-              id,
+              child,
               JSON.stringify({ event: "user", message: { role: "user", content: input.prompt } }) +
                 "\n",
             );
           })
           .catch((error) => {
             fail(error instanceof Error ? error : new Error(String(error)));
-            void killChild(id).catch(() => undefined);
+            void killChild(child).catch(() => undefined);
           });
       }
       const step = asRecord(event.step_update);
@@ -112,7 +119,7 @@ async function runStreamText(id: string, path: string, input: TextPromptInput): 
         (step?.step_type === "tool" || step?.step_type === "subagent")
       ) {
         fail(new Error("Antigravity text request attempted to use a tool"));
-        void killChild(id).catch(() => undefined);
+        void killChild(child).catch(() => undefined);
       }
       if (event.event === "result") {
         const response = asRecord(event.result);
@@ -140,7 +147,7 @@ async function runStreamText(id: string, path: string, input: TextPromptInput): 
   );
   try {
     await spawnChild(
-      id,
+      child,
       path,
       [
         "--agent",
@@ -168,20 +175,20 @@ async function runStreamText(id: string, path: string, input: TextPromptInput): 
 }
 
 async function runAcpText(
-  id: string,
+  child: ChildProcessHandle,
   binary: { path: string; args: string[] },
   input: TextPromptInput,
 ): Promise<string> {
   const workspace = await prepareHarnessTextWorkspace(ANTIGRAVITY_TEXT_AGENT);
   input.signal?.throwIfAborted();
   let output = "";
-  const acp = new AcpClient(id, {
+  const acp = new AcpClient(child, {
     onNotification(method, params) {
       if (method !== "session/update") return;
       const update = asRecord(asRecord(params)?.update);
       if (update?.sessionUpdate === "tool_call" || update?.sessionUpdate === "tool_call_update") {
         acp.close(new Error("Antigravity text request attempted to use a tool"));
-        void killChild(id).catch(() => undefined);
+        void killChild(child).catch(() => undefined);
         return;
       }
       const content = asRecord(update?.content);
@@ -205,21 +212,21 @@ async function runAcpText(
   });
   const abort = () => {
     acp.close(new Error("Antigravity text request cancelled"));
-    void killChild(id).catch(() => undefined);
+    void killChild(child).catch(() => undefined);
   };
   const timer = setTimeout(() => {
     acp.close(new Error("Antigravity text request timed out"));
-    void killChild(id).catch(() => undefined);
+    void killChild(child).catch(() => undefined);
   }, input.timeoutMs ?? 90_000);
   input.signal?.addEventListener("abort", abort, { once: true });
   watchChild(
-    id,
+    child,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Antigravity text helper exited")),
   );
   try {
     await spawnChild(
-      id,
+      child,
       binary.path,
       binary.args,
       antigravitySpawnCwd(binary.path, workspace.cwd),

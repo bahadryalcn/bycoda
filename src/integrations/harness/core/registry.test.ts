@@ -330,7 +330,7 @@ describe("harness registry", () => {
     expect(stopSession).toHaveBeenCalledExactlyOnceWith(input.sessionId);
   });
 
-  it("releases a warm lightweight worktree writer on explicit ownership transfer", async () => {
+  it("retains a warm lightweight writer when the original complete Native cohort cannot be proved", async () => {
     vi.useFakeTimers();
     const stopSession = vi.fn(async () => {});
     registerHarness(stub("codex", { stopSession }));
@@ -346,20 +346,17 @@ describe("harness registry", () => {
     });
     expect(stopSession).not.toHaveBeenCalled();
     expect(retainedHarnessWriters()).toContain("lightweight-transfer");
-    await retireHarnessWriter("lightweight-transfer");
-    expect(nativeInvoke).toHaveBeenCalledWith("harness_retire", {
-      sessionId: "lightweight-transfer",
-    });
-    expect(stopSession.mock.invocationCallOrder[0]).toBeLessThan(
-      nativeInvoke.mock.invocationCallOrder.at(-1)!,
+    await expect(retireHarnessWriter("lightweight-transfer")).rejects.toThrow(
+      "complete execution cohort",
     );
-    expect(retainedHarnessWriters()).not.toContain("lightweight-transfer");
-    expect(stopSession).toHaveBeenCalledExactlyOnceWith("lightweight-transfer");
+    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
+    expect(retainedHarnessWriters()).toContain("lightweight-transfer");
+    expect(stopSession).not.toHaveBeenCalled();
     await vi.advanceTimersByTimeAsync(HARNESS_IDLE_PARK_MS);
-    expect(stopSession).toHaveBeenCalledOnce();
+    expect(stopSession).not.toHaveBeenCalled();
   });
 
-  it("retains ownership when native writer retirement cannot be confirmed", async () => {
+  it("does not retry a session-admin retirement or release an unknown original writer", async () => {
     const stopSession = vi.fn(async () => {});
     registerHarness(stub("codex", { stopSession }));
     await sendHarnessTurn({
@@ -372,12 +369,58 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
       lightweightWorktree: true,
     });
-    nativeInvoke.mockRejectedValueOnce(new Error("process exit unknown"));
-    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow("process exit unknown");
+    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow(
+      "complete execution cohort",
+    );
     expect(retainedHarnessWriters()).toContain("failed-retirement");
-    expect(stopSession).toHaveBeenCalledOnce();
-    await retireHarnessWriter("failed-retirement");
-    expect(retainedHarnessWriters()).not.toContain("failed-retirement");
+    expect(stopSession).not.toHaveBeenCalled();
+    await expect(retireHarnessWriter("failed-retirement")).rejects.toThrow(
+      "complete execution cohort",
+    );
+    expect(retainedHarnessWriters()).toContain("failed-retirement");
+    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
+  });
+
+  it("does not select a writer created after a transfer was queued without an original owner", async () => {
+    let started!: () => void;
+    let finish!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const held = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const stopSession = vi.fn(async () => {});
+    registerHarness(
+      stub("codex", {
+        stopSession,
+        sendTurn: async () => {
+          started();
+          await held;
+        },
+      }),
+    );
+    const sending = sendHarnessTurn({
+      harness: "codex",
+      sessionId: "queued-transfer",
+      cwd: "/tmp/worktree",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      text: "original turn",
+      onEvent: vi.fn(),
+      lightweightWorktree: true,
+    });
+    const transferring = retireHarnessWriter("queued-transfer").catch((error: Error) => error);
+    await entered;
+    finish();
+    await sending;
+    expect(await transferring).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("writer changed") }),
+    );
+    expect(retainedHarnessWriters()).toContain("queued-transfer");
+    expect(stopSession).not.toHaveBeenCalled();
+    expect(nativeInvoke).not.toHaveBeenCalledWith("harness_retire", expect.anything());
+    resetHarnessIdlePark();
   });
 
   it.each([

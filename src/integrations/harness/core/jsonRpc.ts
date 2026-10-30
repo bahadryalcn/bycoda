@@ -1,10 +1,9 @@
-import { writeChild } from "./child";
+import { writeChild, invalidateChildOutput, type ChildProcessHandle } from "./child";
 import { DeliveryUnknownError, type DeliverySettlement } from "../../../shared/lib/deliveryUnknown";
 import {
   captureNativeOutputWork,
   nativeOutputSink,
   trackNativeOutputWork,
-  invalidateNativeOutputSession,
   type NativeOutputWork,
 } from "./nativeOutputDelivery";
 
@@ -71,12 +70,14 @@ export class JsonRpcClient {
   private readonly label: string;
   private readonly defaultRequestTimeoutMs: number;
   private readonly serverRequests = new Map<string, string>();
+  private readonly sessionId: string;
 
   constructor(
-    private readonly sessionId: string,
+    private readonly child: ChildProcessHandle,
     private readonly handlers: JsonRpcHandlers,
     options: JsonRpcClientOptions = {},
   ) {
+    this.sessionId = child.sessionId;
     this.includeJsonrpc = options.includeJsonrpc !== false;
     this.label = options.label ?? "rpc";
     this.defaultRequestTimeoutMs = options.defaultRequestTimeoutMs ?? 0;
@@ -112,7 +113,7 @@ export class JsonRpcClient {
   close(error?: Error) {
     if (this.closed) return;
     this.closed = true;
-    invalidateNativeOutputSession(this.sessionId, "rpc-client-closed");
+    invalidateChildOutput(this.child, "rpc-client-closed");
     this.serverRequests.clear();
     const err = error ?? new Error("Harness process exited");
     this.rejectPending(err);
@@ -120,7 +121,7 @@ export class JsonRpcClient {
 
   /** Drop in-flight client requests so a cancelled turn can unwind. */
   rejectPending(error?: Error) {
-    if (this.pending.size) invalidateNativeOutputSession(this.sessionId, "rpc-pending-rejected");
+    if (this.pending.size) invalidateChildOutput(this.child, "rpc-pending-rejected");
     const err = error ?? new Error("cancelled");
     for (const [, pending] of this.pending) pending.reject(err);
     this.pending.clear();
@@ -324,7 +325,7 @@ export class JsonRpcClient {
     const writeWork = captureNativeOutputWork();
     let actualWrite: Promise<void>;
     try {
-      actualWrite = trackNativeOutputWork(writeChild(this.sessionId, line), writeWork);
+      actualWrite = trackNativeOutputWork(writeChild(this.child, line), writeWork);
     } catch (error) {
       writeWork?.fail("rpc-write-rejected");
       throw error;

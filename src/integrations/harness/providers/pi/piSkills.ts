@@ -1,5 +1,6 @@
 import {
   acquireHarnessBridge,
+  createChildProcessHandle,
   killChild,
   spawnChild,
   unwatchChild,
@@ -70,10 +71,11 @@ async function discoverCommands(
     else releaseBridge = release;
   });
   const childId = `bycoda-${flavor.id}-skills-${crypto.randomUUID()}`;
+  const skillProcess = createChildProcessHandle(childId);
   const replyToUi = (record: Record<string, unknown>) => {
     const request = parseExtensionUiRequest(record);
     if (!request || !needsExtensionUiReply(request)) return;
-    void writeChild(childId, JSON.stringify(extensionUiResponse(request, "deny"))).catch(
+    void writeChild(skillProcess, JSON.stringify(extensionUiResponse(request, "deny"))).catch(
       () => undefined,
     );
   };
@@ -82,17 +84,17 @@ async function discoverCommands(
   try {
     await probeWait(signal, acquired);
     signal?.throwIfAborted();
-    rpc = new PiRpc(childId, replyToUi, flavor.label);
+    rpc = new PiRpc(skillProcess, replyToUi, flavor.label);
     const client = rpc;
     watchChild(
-      childId,
+      skillProcess,
       (line) => client.pushLine(line),
       () => client.close(new Error(`${flavor.label} skill probe exited`)),
     );
     await probeWait(
       signal,
       spawnChild(
-        childId,
+        skillProcess,
         path,
         buildPiSpawnArgs(flavor, { noSession: true }),
         cwd,
@@ -106,8 +108,8 @@ async function discoverCommands(
   } finally {
     if (rpc) {
       rpc.close();
-      unwatchChild(childId);
-      await killChild(childId).catch(() => undefined);
+      unwatchChild(skillProcess);
+      await killChild(skillProcess).catch(() => undefined);
     }
     releaseBridge?.();
   }

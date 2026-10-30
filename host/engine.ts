@@ -2243,39 +2243,58 @@ export class HostEngine {
                     ],
                   },
                 };
-                effect = (saved) => {
-                  const handoffBlock = handoffText
-                    ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
-                    : "";
-                  // Codex parses /goal only as the first token; context travels separately.
-                  this.run(
-                    saved,
-                    command.type === "compact"
-                      ? null
-                      : codexGoal
-                        ? command.text
-                        : handoffPromptPrepared
-                          ? `${handoffBlock}${turnText}`
-                          : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
-                    turnIntent,
-                    attachments,
-                    command.resumeAtReset,
-                    handoffFrom,
-                    rewindReplay,
-                    codexGoal
-                      ? withShellContext(
-                          shellRuns,
-                          `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
-                        ).trim()
-                      : "",
-                    command.commandId,
-                    handoffPromptPrepared,
-                    prepareSendPolicy,
+                effect = async (saved) =>
+                  this.store.db.scope(() =>
+                    this.operations.run(saved.session.id, async () => {
+                      await this.store.assertAuthority(saved.session.id, saved.authorityGeneration);
+                      const current = await this.store.session(saved.session.id);
+                      if (
+                        this.closing ||
+                        current.runId !== saved.runId ||
+                        current.status !== "running" ||
+                        current.authorityGeneration !== saved.authorityGeneration
+                      )
+                        throw new Error("Accepted provider turn changed before dispatch");
+                      // Naming can commit after acceptance but before this callback.
+                      // Seed the same accepted run from its current revision while holding
+                      // both owners; nothing may interleave before run installs live state.
+                      const handoffBlock = handoffText
+                        ? `<previous_agent_context>\n${handoffText}\n</previous_agent_context>\n\n`
+                        : "";
+                      // Install synchronously while the owners are held, but let the
+                      // provider's async lifetime start outside this short SQL scope.
+                      this.store.db.outsideScope(() => {
+                        // Codex parses /goal only as the first token; context travels separately.
+                        this.run(
+                          current,
+                          command.type === "compact"
+                            ? null
+                            : codexGoal
+                              ? command.text
+                              : handoffPromptPrepared
+                                ? `${handoffBlock}${turnText}`
+                                : withShellContext(shellRuns, `${handoffBlock}${turnText}`),
+                          turnIntent,
+                          attachments,
+                          command.resumeAtReset,
+                          handoffFrom,
+                          rewindReplay,
+                          codexGoal
+                            ? withShellContext(
+                                shellRuns,
+                                `${handoffBlock}${command.type === "send" && command.noteCard ? composeNoteContext(command.noteCard, "") : ""}`,
+                              ).trim()
+                            : "",
+                          command.commandId,
+                          handoffPromptPrepared,
+                          prepareSendPolicy,
+                        );
+                        if (firstTurn && command.type === "send") {
+                          this.generateFirstTurnNames(current, command.text, placeholderTitle);
+                        }
+                      });
+                    }),
                   );
-                  if (firstTurn && command.type === "send") {
-                    this.generateFirstTurnNames(saved, command.text, placeholderTitle);
-                  }
-                };
               } else {
                 if (value.runId !== command.runId || value.status !== "running")
                   throw new Error("This request belongs to a finished or replaced turn");

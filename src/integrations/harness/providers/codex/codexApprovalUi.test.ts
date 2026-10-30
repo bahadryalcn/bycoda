@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { processConstructions } from "../processConstruction.testSupport";
 import { act, createElement, Fragment } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +17,6 @@ import {
 } from "../../../../features/notifications/model/notifications";
 import { applyHarnessEvent } from "../../core/apply";
 import type { HarnessEvent } from "../../core/types";
-import type * as ChildModule from "../../core/child";
 
 const sent: Array<Record<string, unknown>> = [];
 let onLine: (line: string) => void;
@@ -29,9 +29,11 @@ vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => false,
   invoke,
 }));
+
+beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", async (importOriginal) => {
-  const actual = await importOriginal<typeof ChildModule>();
-  return {
+  const actual = await importOriginal<typeof import("../../core/child")>();
+  return processConstructions.mock({
     ...actual,
     resolveCodexBinary: async () => ({ path: "/fake/codex" }),
     spawnChild: async () => undefined,
@@ -43,7 +45,7 @@ vi.mock("../../core/child", async (importOriginal) => {
     writeChild: async (_id: string, line: string) => {
       sent.push(JSON.parse(line));
     },
-  };
+  });
 });
 const { codexAdapter } = await import("./codexAdapter");
 const { __codexTestReset } = await import("./codex");

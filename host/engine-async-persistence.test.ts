@@ -6,6 +6,8 @@ import { join, dirname, basename, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
+import type { SendTurnInput } from "../src/integrations/harness/core/types";
+import { formatSessionTitle } from "../src/features/sessions/model/session";
 
 function removeFixture(folder: string): void {
   const target = resolve(folder);
@@ -13,6 +15,261 @@ function removeFixture(folder: string): void {
     throw new Error("Unexpected fixture directory");
   rmSync(target, { recursive: true, force: true });
 }
+
+async function captureCommittedDispatch<T>(store: HostStore, accept: () => Promise<T>) {
+  const effects: Array<() => void | Promise<void>> = [];
+  const commit = vi.spyOn(store, "afterCommit").mockImplementation((effect) => {
+    effects.push(effect);
+  });
+  let receipt: T;
+  try {
+    receipt = await accept();
+  } finally {
+    commit.mockRestore();
+  }
+  // Summary/cache notifications precede the actual command dispatch, as in the
+  // existing committed-approval latch. All SQL and receipt writes remain real.
+  const dispatch = effects.pop();
+  expect(dispatch).toBeDefined();
+  for (const effect of effects) await effect();
+  return { receipt, dispatch: dispatch! };
+}
+
+it("seeds a committed follow-up from the revision advanced by a late first-turn title", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
+  const store = new HostStore(join(folder, "host.db"));
+  const turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
+  let releaseTitle!: (value: { title: string; workItem: null }) => void;
+  const title = new Promise<{ title: string; workItem: null }>((resolve) => {
+    releaseTitle = resolve;
+  });
+  let releaseDispatch!: () => void;
+  const dispatchGate = new Promise<void>((resolve) => {
+    releaseDispatch = resolve;
+  });
+  const provider = {
+    send: vi.fn(async (input: SendTurnInput) => {
+      await new Promise<void>((finish) => turns.push({ input, finish }));
+    }),
+    stop: async () => {
+      for (const turn of turns) turn.finish();
+    },
+    cancel: async () => {},
+    bind() {},
+    approve() {},
+    answer() {},
+    generateTitle: vi.fn(() => title),
+  };
+  const engine = new HostEngine(store, { codex: provider });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  const assertAuthority = store.assertAuthority.bind(store);
+  let restoreAuthority = () => {};
+  let dispatching: Promise<void> | undefined;
+  try {
+    const project = await engine.openProject(folder);
+    const { sessionId } = await engine.command({
+      type: "create",
+      commandId: "title-race-create",
+      projectId: project.id,
+      harness: "codex",
+      model: "codex:test",
+      runtimeMode: "supervised",
+    });
+    const first = await engine.command({
+      type: "send",
+      commandId: "title-race-A",
+      sessionId,
+      text: "First turn",
+    });
+    await vi.waitFor(() => {
+      expect(turns).toHaveLength(1);
+      expect(provider.generateTitle).toHaveBeenCalledOnce();
+    });
+    turns[0].input.onEvent({ type: "message.delta", text: "A completed" });
+    turns[0].finish();
+    await engine.waitForRun(sessionId, first.runId);
+    const settledA = await store.session(sessionId);
+    expect(settledA.status).toBe("idle");
+
+    const { receipt, dispatch } = await captureCommittedDispatch(store, () =>
+      engine.command({
+        type: "send",
+        commandId: "title-race-B",
+        sessionId,
+        text: "Second turn",
+      }),
+    );
+    expect(receipt.revision).toBe(settledA.revision + 1);
+    expect(await store.receiptStatus("title-race-B")).toEqual(receipt);
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect((await store.session(sessionId)).runId).toBe(receipt.runId);
+
+    let entered!: () => void;
+    const authorityEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let firstAuthority = true;
+    const authority = vi.spyOn(store, "assertAuthority").mockImplementation(async (...args) => {
+      const current = await assertAuthority(...args);
+      if (firstAuthority) {
+        firstAuthority = false;
+        entered();
+        // The outer committed authority check has released its SQL owner. A's
+        // independent title is therefore free to commit before B installs live.
+        await dispatchGate;
+      }
+      return current;
+    });
+    restoreAuthority = () => authority.mockRestore();
+    dispatching = Promise.resolve(dispatch());
+    void dispatching.catch(() => {});
+    await authorityEntered;
+    restoreAuthority();
+    releaseTitle({ title: "Late first-turn title", workItem: null });
+    const expectedTitle = formatSessionTitle("codex", "Late first-turn title");
+    await vi.waitFor(async () => {
+      const named = await store.session(sessionId);
+      expect(named.session.title).toBe(expectedTitle);
+      expect(named.revision).toBe(receipt.revision + 1);
+      expect(named.runId).toBe(receipt.runId);
+      expect(named.status).toBe("running");
+    });
+    expect(provider.send).toHaveBeenCalledOnce();
+    releaseDispatch();
+    await dispatching;
+    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    expect(turns[1].input.sessionId).toBe(sessionId);
+    expect(turns[1].input.text).toContain("Second turn");
+    turns[1].input.onEvent({ type: "turn.started", providerTurnId: "turn-B" });
+    await vi.waitFor(async () => {
+      const started = await store.session(sessionId);
+      expect(started.revision).toBe(receipt.revision + 2);
+      expect(started.session.blocks.at(-1)?.providerTurnId).toBe("turn-B");
+    });
+    turns[1].input.onEvent({ type: "message.delta", text: "B completed" });
+    turns[1].finish();
+    await engine.waitForRun(sessionId, receipt.runId);
+    const settledB = await store.session(sessionId);
+    expect(settledB.status).toBe("idle");
+    expect(settledB.revision).toBe(receipt.revision + 4);
+    expect(settledB.session.title).toBe(expectedTitle);
+    expect(
+      settledB.session.blocks
+        .filter((block) => block.role === "assistant")
+        .map((block) => block.text),
+    ).toEqual(["A completed", "B completed"]);
+    expect(provider.generateTitle).toHaveBeenCalledOnce();
+    const rows = await store.db
+      .prepare(
+        "SELECT revision, payload FROM events WHERE session_id=? AND revision>? ORDER BY revision",
+      )
+      .all(sessionId, receipt.revision);
+    expect(rows.map((row) => Number(row.revision))).toEqual([
+      receipt.revision + 1,
+      receipt.revision + 2,
+      receipt.revision + 3,
+      receipt.revision + 4,
+    ]);
+    expect(rows.map((row) => JSON.parse(String(row.payload)).type)).toEqual([
+      "session.generatedTitle",
+      "events",
+      "events",
+      "settled",
+    ]);
+    expect(errors).not.toHaveBeenCalled();
+  } finally {
+    restoreAuthority();
+    releaseDispatch();
+    releaseTitle({ title: "cleanup", workItem: null });
+    await dispatching?.catch(() => {});
+    for (const turn of turns) turn.finish();
+    await engine.close();
+    await store.close();
+    errors.mockRestore();
+    removeFixture(folder);
+  }
+});
+
+it.each(["run", "status"] as const)(
+  "refuses a committed startup whose accepted %s changed and permits a later explicit send",
+  async (changed) => {
+    const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
+    const store = new HostStore(join(folder, "host.db"));
+    const provider = {
+      send: vi.fn(async (input: SendTurnInput) => {
+        input.onEvent({ type: "message.delta", text: "Fresh explicit turn" });
+      }),
+      stop: async () => {},
+      cancel: async () => {},
+      bind() {},
+      approve() {},
+      answer() {},
+    };
+    const engine = new HostEngine(store, { codex: provider });
+    try {
+      const project = await engine.openProject(folder);
+      const { sessionId } = await engine.command({
+        type: "create",
+        commandId: "changed-create",
+        projectId: project.id,
+        harness: "codex",
+        model: "codex:test",
+        runtimeMode: "supervised",
+      });
+      const { receipt, dispatch } = await captureCommittedDispatch(store, () =>
+        engine.command({ type: "send", commandId: "changed-send", sessionId, text: "Held turn" }),
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+      const accepted = await store.session(sessionId);
+      expect(accepted.runId).toBe(receipt.runId);
+      expect(accepted.status).toBe("running");
+      // Real SQLite mutation supplies the state that the committed effect must
+      // re-read; no provider, revision allocator or authority check is mocked.
+      const replacement = await store.save(
+        {
+          ...accepted,
+          revision: accepted.revision + 1,
+          ...(changed === "run" ? { runId: "replacement-run" } : { status: "idle" as const }),
+        },
+        { type: "fixture.acceptedTurnChanged", changed },
+      );
+      await expect(Promise.resolve(dispatch())).rejects.toThrow(
+        "Accepted provider turn changed before dispatch",
+      );
+      expect(provider.send).not.toHaveBeenCalled();
+      expect(await store.session(sessionId)).toEqual(replacement);
+      expect(await store.receiptStatus("changed-send")).toEqual(receipt);
+      if (replacement.status === "running") {
+        await store.save(
+          {
+            ...replacement,
+            revision: replacement.revision + 1,
+            status: "idle",
+            runId: undefined,
+          },
+          { type: "fixture.replacementSettled" },
+        );
+      }
+      const fresh = await engine.command({
+        type: "send",
+        commandId: "fresh-explicit-send",
+        sessionId,
+        text: "Fresh request",
+      });
+      await vi.waitFor(() => expect(provider.send).toHaveBeenCalledOnce());
+      await engine.waitForRun(sessionId, fresh.runId);
+      const settled = await store.session(sessionId);
+      expect(settled.status).toBe("idle");
+      expect(settled.session.blocks.at(-1)?.text).toBe("Fresh explicit turn");
+      expect(provider.send.mock.calls[0][0].text).toContain("Fresh request");
+      expect(fresh.runId).not.toBe(receipt.runId);
+    } finally {
+      await engine.close();
+      await store.close();
+      removeFixture(folder);
+    }
+  },
+);
 
 it("joins the other accepted turns before reporting a provider shutdown failure", async () => {
   const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));

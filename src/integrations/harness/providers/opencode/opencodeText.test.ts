@@ -1,15 +1,22 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HarnessEvent } from "../../core/types";
+import { MINIMUM_OPENCODE_V2_VERSION } from "./opencodeProtocol";
 
 let onStdout: ((line: string) => void) | undefined;
 let onSseEvent: ((event: Record<string, unknown>) => void) | undefined;
 let finishPrompt: ((value: { status: number; body: string }) => void) | undefined;
 let promptStarted = false;
+const processIo = vi.hoisted(() => ({
+  create: vi.fn((sessionId: string) => Object.freeze({ sessionId })),
+  spawn: vi.fn(),
+  kill: vi.fn(),
+  version: "opencode 1.14.19",
+}));
 
 const harnessHttp = vi.fn(
   async (input: { url: string; method: string }): Promise<{ status: number; body: string }> => {
     const url = new URL(input.url);
-    if (input.method === "POST" && url.pathname === "/session") {
+    if (input.method === "POST" && ["/session", "/api/session"].includes(url.pathname)) {
       return { status: 200, body: JSON.stringify({ id: "text_session" }) };
     }
     if (input.method === "POST" && url.pathname === "/session/text_session/message") {
@@ -23,26 +30,34 @@ const harnessHttp = vi.fn(
 );
 
 vi.mock("../../core/child", () => ({
+  createChildProcessHandle: processIo.create,
   closeHarnessSse: async () => undefined,
-  execChild: async () => "opencode 1.14.19",
+  execChild: async () => processIo.version,
   freeHarnessPort: async () => 4096,
   harnessHttp,
-  killChild: async () => undefined,
+  killChild: async (...args: unknown[]) => {
+    processIo.kill(...args);
+  },
   openHarnessSse: async () => undefined,
   resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
-  spawnChild: async () => {
+  spawnChild: async (...args: unknown[]) => {
+    processIo.spawn(...args);
     onStdout?.("opencode server listening on http://127.0.0.1:4096");
   },
   unwatchChild: () => undefined,
-  watchChild: (_id: string, stdout: (line: string) => void) => {
+  watchChild: (_id: object, stdout: (line: string) => void) => {
     onStdout = stdout;
   },
   watchSse: (_id: string, event: (data: string) => void) => {
     onSseEvent = (value) => event(JSON.stringify(value));
   },
 }));
+vi.mock("./opencodeService", () => ({
+  resolveOpenCodeV2Service: async () => ({ url: "http://127.0.0.1:4096", password: "fixture" }),
+}));
 
-const { runOpenCodeTextPrompt, stopOpenCodeTextPrompt } = await import("./opencodeText");
+const { runOpenCodeTextPrompt, stopOpenCodeTextPrompt, warmupOpenCodeText } =
+  await import("./opencodeText");
 
 async function waitFor(predicate: () => boolean, label: string) {
   for (let index = 0; index < 200; index += 1) {
@@ -94,6 +109,10 @@ beforeEach(() => {
   finishPrompt = undefined;
   promptStarted = false;
   harnessHttp.mockClear();
+  processIo.create.mockClear();
+  processIo.spawn.mockClear();
+  processIo.kill.mockClear();
+  processIo.version = "opencode 1.14.19";
 });
 
 afterEach(async () => {
@@ -134,6 +153,24 @@ it("forwards only incremental OpenCode assistant text", async () => {
     { type: "message.delta", text: "Hel" },
     { type: "message.delta", text: "lo" },
   ]);
+  const original = processIo.create.mock.results[0].value;
+  expect(processIo.spawn.mock.calls[0][0]).toBe(original);
+  expect(processIo.kill).toHaveBeenCalledWith(original);
+});
+
+it("does not invent or terminate a child for an external OpenCode v2 service", async () => {
+  processIo.version = `opencode ${MINIMUM_OPENCODE_V2_VERSION}`;
+  await warmupOpenCodeText("/repo");
+  expect(harnessHttp).toHaveBeenCalledWith(
+    expect.objectContaining({
+      method: "POST",
+      url: expect.stringContaining("/api/session"),
+    }),
+  );
+  await stopOpenCodeTextPrompt();
+  expect(processIo.create).not.toHaveBeenCalled();
+  expect(processIo.spawn).not.toHaveBeenCalled();
+  expect(processIo.kill).not.toHaveBeenCalled();
 });
 
 it("does not replay a delta after a stale snapshot", async () => {

@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { requestedApproval } from "../approvalOccurrence.testSupport";
 import {
   exerciseOverlappingApproval,
@@ -17,32 +18,35 @@ let onStderr: ((line: string) => void) | undefined;
 const textFiles = new Map<string, string>();
 let heldFileRead: ((path: string) => Promise<string>) | null = null;
 
-vi.mock("../../core/child", () => ({
-  resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (
-    _id: string,
-    line: (value: string) => void,
-    _exit: (code: number | null) => void,
-    stderr: (value: string) => void,
-  ) => {
-    onLine = line;
-    onStderr = stderr;
-  },
-  writeChild: async (_id: string, line: string) => {
-    sent.push(line);
-    const message = JSON.parse(line);
-    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
-  },
-  readHarnessTextFile: async (path: string) => {
-    if (heldFileRead) return heldFileRead(path);
-    const content = textFiles.get(path);
-    if (content == null) throw new Error(`missing ${path}`);
-    return content;
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
+    spawnChild: async () => undefined,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (
+      _id: string,
+      line: (value: string) => void,
+      _exit: (code: number | null) => void,
+      stderr: (value: string) => void,
+    ) => {
+      onLine = line;
+      onStderr = stderr;
+    },
+    writeChild: async (_id: string, line: string) => {
+      sent.push(line);
+      const message = JSON.parse(line);
+      if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
+    },
+    readHarnessTextFile: async (path: string) => {
+      if (heldFileRead) return heldFileRead(path);
+      const content = textFiles.get(path);
+      if (content == null) throw new Error(`missing ${path}`);
+      return content;
+    },
+  }),
+);
 
 const {
   bindHermesSession,

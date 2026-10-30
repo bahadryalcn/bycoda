@@ -1,23 +1,29 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { processConstructions } from "../processConstruction.testSupport";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import { runCodexTextPrompt } from "./codexText";
 
 const state = vi.hoisted(() => ({ streamed: false, starts: [] as Record<string, unknown>[] }));
 vi.mock("../../../../features/sessions/model/models", () => ({
   modelsFor: () => [{ nativeId: "available-model" }],
 }));
-vi.mock("../../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "codex" }),
-  spawnChild: vi.fn(async () => {}),
-  killChild: vi.fn(async () => {}),
-  watchChild: vi.fn(),
-  unwatchChild: vi.fn(),
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "codex" }),
+    spawnChild: vi.fn(async () => {}),
+    killChild: vi.fn(async () => {}),
+    watchChild: vi.fn(),
+    unwatchChild: vi.fn(),
+  }),
+);
 vi.mock("../../core/jsonRpc", () => ({
   JsonRpcClient: class {
     constructor(
-      _id: string,
+      handle: import("../../core/child").ChildProcessHandle,
       private handlers: { onNotification: (method: string, params: unknown) => void },
-    ) {}
+    ) {
+      processConstructions.client(handle);
+    }
     close() {}
     async notify() {}
     async request(method: string, params: Record<string, unknown>) {

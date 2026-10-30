@@ -2,11 +2,13 @@ import { continueAfterFailure, settledTail } from "../../../../shared/lib/promis
 import { modelsFor } from "../../../../features/sessions/model/models";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
+  createChildProcessHandle,
   killChild,
   resolveCodexBinary,
   spawnChild,
   unwatchChild,
   watchChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import {
   asRecord,
@@ -32,6 +34,7 @@ const TEXT_MODEL = "gpt-5.6-luna";
 const TEXT_EFFORT = "low";
 
 type LiveText = {
+  process: ChildProcessHandle;
   rpc: JsonRpcClient;
   cwd: string;
   providerAccountId?: string;
@@ -49,6 +52,7 @@ type LiveText = {
 };
 
 let live: LiveText | null = null;
+let starting: ChildProcessHandle | null = null;
 let turns: Promise<void> = Promise.resolve();
 
 function pickTextModel(requested?: string): string {
@@ -161,7 +165,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     await session.rpc
       .request("turn/interrupt", { threadId: session.threadId }, INTERRUPT_TIMEOUT_MS)
       .catch(() => undefined);
-    if (session.closed) await dropLive();
+    if (session.closed) await dropLive(session);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -171,7 +175,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
     session.collecting = false;
     session.turnDone = null;
     session.turnFailed = null;
-    await dropLive();
+    await dropLive(session);
   }
 }
 async function ensureLive(input: {
@@ -204,7 +208,6 @@ async function ensureLive(input: {
       return live;
     }
     if (live.providerAccountId !== input.providerAccountId) {
-      await dropLive();
       const started = await startLive(
         input.cwd,
         input.providerAccountId,
@@ -217,15 +220,17 @@ async function ensureLive(input: {
       input.onThreadId?.(started.threadId);
       return started;
     }
+    const current = live;
     try {
-      live.model = model;
-      live.effort = effort;
-      live.serviceTier = serviceTier;
-      await openThread(live, input.cwd, requestedThreadId, ephemeral);
-      input.onThreadId?.(live.threadId);
-      return live;
+      current.model = model;
+      current.effort = effort;
+      current.serviceTier = serviceTier;
+      await openThread(current, input.cwd, requestedThreadId, ephemeral);
+      if (live !== current || current.closed) throw new Error("Codex text generator stopped");
+      input.onThreadId?.(current.threadId);
+      return current;
     } catch (error) {
-      await dropLive();
+      await dropLive(current);
       throw error;
     }
   }
@@ -251,11 +256,12 @@ async function startLive(
   requestedThreadId?: string,
   ephemeral = true,
 ): Promise<LiveText> {
-  await dropLive();
-  const { path } = await resolveCodexBinary();
+  const stopping = dropLive();
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID);
+  starting = textProcess;
   const sessionRef: { session: LiveText | null } = { session: null };
   const rpc = new JsonRpcClient(
-    TEXT_CHILD_ID,
+    textProcess,
     {
       onNotification: (method, params) => {
         handleNotification(sessionRef.session, method, params);
@@ -268,6 +274,7 @@ async function startLive(
   );
 
   const session: LiveText = {
+    process: textProcess,
     rpc,
     cwd,
     providerAccountId,
@@ -286,7 +293,7 @@ async function startLive(
   sessionRef.session = session;
 
   watchChild(
-    TEXT_CHILD_ID,
+    textProcess,
     (line) => rpc.pushLine(line),
     () => {
       session.closed = true;
@@ -299,8 +306,11 @@ async function startLive(
   );
 
   try {
+    await stopping;
+    const { path } = await resolveCodexBinary();
+    if (starting !== textProcess) throw new Error("Codex text startup cancelled");
     await spawnChild(
-      TEXT_CHILD_ID,
+      textProcess,
       path,
       ["app-server"],
       cwd,
@@ -324,14 +334,17 @@ async function startLive(
     );
     await rpc.notify("initialized", undefined);
     await openThread(session, cwd, requestedThreadId, ephemeral);
+    if (starting !== textProcess || session.closed) throw new Error("Codex text startup cancelled");
     live = session;
     return session;
   } catch (error) {
     session.closed = true;
     rpc.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(TEXT_CHILD_ID);
-    await killChild(TEXT_CHILD_ID).catch(() => undefined);
+    unwatchChild(textProcess);
+    await killChild(textProcess).catch(() => undefined);
     throw error;
+  } finally {
+    if (starting === textProcess) starting = null;
   }
 }
 
@@ -386,15 +399,20 @@ async function openThread(
   session.threadId = threadId;
   session.ephemeral = ephemeral;
 }
-async function dropLive(): Promise<void> {
-  const current = live;
-  live = null;
+async function dropLive(expected?: LiveText): Promise<void> {
+  const current = expected ?? live;
+  const pending = expected ? null : starting;
+  if (!expected || live === expected) live = null;
+  if (!expected) starting = null;
   if (current) {
     current.closed = true;
     current.rpc.close();
   }
-  unwatchChild(TEXT_CHILD_ID);
-  await killChild(TEXT_CHILD_ID).catch(() => undefined);
+  for (const process of new Set([current?.process, pending])) {
+    if (!process) continue;
+    unwatchChild(process);
+    await killChild(process).catch(() => undefined);
+  }
 }
 
 function handleNotification(session: LiveText | null, method: string, params: unknown): void {

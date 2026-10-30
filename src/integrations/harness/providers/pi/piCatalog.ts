@@ -1,6 +1,12 @@
 import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
-import { killChild, spawnChild, unwatchChild, watchChild } from "../../core/child";
+import {
+  createChildProcessHandle,
+  killChild,
+  spawnChild,
+  unwatchChild,
+  watchChild,
+} from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
 import { buildPiSpawnArgs, modelsFromRpcData } from "./piProtocol";
@@ -46,7 +52,8 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const { path } = await flavor.resolveBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${flavor.probeChildId}-${crypto.randomUUID()}`;
-  const rpc = new PiRpc(probeId, () => undefined, flavor.label);
+  const probeProcess = createChildProcessHandle(probeId);
+  const rpc = new PiRpc(probeProcess, () => undefined, flavor.label);
   const models = new Map<string, AgentModel>();
   const collectedModels = () =>
     [...models.values()].sort((left, right) => left.name.localeCompare(right.name));
@@ -61,12 +68,12 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
     if (pollTimer !== undefined) clearTimeout(pollTimer);
     wakePoll?.();
     rpc.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => rpc.pushLine(line),
     () => {
       exitError = new Error(`${flavor.label} catalog probe exited`);
@@ -79,7 +86,7 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const timeoutError = new Error(`${flavor.label} model discovery timed out`);
   try {
     await spawnChild(
-      probeId,
+      probeProcess,
       path,
       buildPiSpawnArgs(flavor, {
         noSession: true,

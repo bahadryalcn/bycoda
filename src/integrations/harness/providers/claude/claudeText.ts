@@ -1,12 +1,14 @@
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import {
+  createChildProcessHandle,
   killChild,
   resolveClaudeBinary,
   spawnChild,
   unwatchChild,
   watchChild,
   writeChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import { isAgentToolName } from "../../core/preview";
 import {
@@ -58,6 +60,7 @@ type InFlightTool = {
 };
 
 type LiveText = {
+  child: ChildProcessHandle;
   cwd: string;
   providerAccountId?: string;
   model: string;
@@ -75,6 +78,8 @@ type LiveText = {
 };
 
 let live: LiveText | null = null;
+let pendingSetup: LiveText | null = null;
+let stopGeneration = 0;
 let turns: Promise<void> = Promise.resolve();
 
 function textSettings(
@@ -127,6 +132,7 @@ function pickTextModel(requested?: string): string {
 }
 
 export async function stopClaudeTextPrompt(): Promise<void> {
+  stopGeneration += 1;
   await dropLive();
 }
 
@@ -198,7 +204,7 @@ async function promptOnLive(input: {
     });
 
     await writeChild(
-      TEXT_CHILD_ID,
+      session.child,
       JSON.stringify(
         buildClaudeUserMessage({
           text: input.prompt,
@@ -222,7 +228,7 @@ async function promptOnLive(input: {
     if (!output) throw new Error("Claude returned empty output.");
     return output;
   } catch (error) {
-    if (session.closed) await dropLive();
+    if (session.closed) await dropLive(session);
     throw error;
   } finally {
     clearTimeout(timeout);
@@ -232,7 +238,7 @@ async function promptOnLive(input: {
     session.collecting = false;
     session.turnDone = null;
     session.turnFailed = null;
-    await dropLive();
+    await dropLive(session);
   }
 }
 
@@ -254,7 +260,9 @@ async function ensureLive(
   ) {
     return live;
   }
+  const generation = stopGeneration;
   await dropLive();
+  if (stopGeneration !== generation) throw new Error("Claude text generator stopped");
   return startLive(cwd, providerAccountId, model, settings);
 }
 
@@ -264,8 +272,8 @@ async function startLive(
   model = pickTextModel(),
   settings = textSettings(model),
 ): Promise<LiveText> {
-  const { path } = await resolveClaudeBinary();
   const session: LiveText = {
+    child: createChildProcessHandle(TEXT_CHILD_ID),
     cwd,
     providerAccountId,
     model,
@@ -280,24 +288,26 @@ async function startLive(
     toolsByIndex: new Map(),
     toolsById: new Map(),
   };
-
-  watchChild(
-    TEXT_CHILD_ID,
-    (line) => handleLine(session, line),
-    () => {
-      session.closed = true;
-      if (live === session) live = null;
-      session.turnFailed?.(new Error("Claude text generator exited"));
-      session.readyDone?.();
-      session.turnDone = null;
-      session.turnFailed = null;
-      session.readyDone = null;
-    },
-  );
-
+  pendingSetup = session;
   try {
+    const { path } = await resolveClaudeBinary();
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
+    watchChild(
+      session.child,
+      (line) => handleLine(session, line),
+      () => {
+        session.closed = true;
+        if (live === session) live = null;
+        session.turnFailed?.(new Error("Claude text generator exited"));
+        session.readyDone?.();
+        session.turnDone = null;
+        session.turnFailed = null;
+        session.readyDone = null;
+      },
+    );
     await spawnChild(
-      TEXT_CHILD_ID,
+      session.child,
       path,
       buildClaudeSpawnArgs({
         isolated: true,
@@ -313,30 +323,34 @@ async function startLive(
       { provider: "claude", id: providerAccountId ?? "default" },
       "claude",
     );
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
+    pendingSetup = null;
     live = session;
     await waitForReady(session, INIT_TIMEOUT_MS);
     return session;
   } catch (error) {
-    session.closed = true;
-    unwatchChild(TEXT_CHILD_ID);
-    await killChild(TEXT_CHILD_ID).catch(() => undefined);
+    await dropLive(session);
     throw error;
   }
 }
 
-async function dropLive(): Promise<void> {
-  const current = live;
-  live = null;
-  if (current) {
+async function dropLive(expected?: LiveText): Promise<void> {
+  const targets = expected
+    ? [expected]
+    : [...new Set([live, pendingSetup].filter((entry): entry is LiveText => entry !== null))];
+  for (const current of targets) {
+    if (live === current) live = null;
+    if (pendingSetup === current) pendingSetup = null;
     current.closed = true;
     current.readyDone?.();
     current.turnFailed?.(new Error("Claude text generator stopped"));
     current.turnDone = null;
     current.turnFailed = null;
     current.readyDone = null;
+    unwatchChild(current.child);
   }
-  unwatchChild(TEXT_CHILD_ID);
-  await killChild(TEXT_CHILD_ID).catch(() => undefined);
+  await Promise.all(targets.map((current) => killChild(current.child).catch(() => undefined)));
 }
 
 function handleLine(session: LiveText, line: string): void {

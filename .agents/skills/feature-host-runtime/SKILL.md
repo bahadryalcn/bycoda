@@ -24,10 +24,38 @@ work; actual write lifetime is separate from the reply timeout waiter.
 
 Evidence and explicit unverified gates: `temp/verification/2026-10-30-approval-occurrence/`.
 This supersedes only the ID-only approval wire gap described in the historical
-source700 section below. Provider ACK, Native late-IPC process fencing, complete
+source700 section below. Provider ACK, complete physical process lifetime closure,
 provider/actor conservation and the Native Buffers FULL cut remain unproved;
 qualified:false/applicationThrough:null and all26 remain open. Preserve the external
 `native_coordination` ownership of `src-tauri/src/bundled_host.rs` and App.tsx.
+
+## Original process construction, 2026-10-30
+
+Native and Node Host spawn now return a strict source-issued receipt containing
+backend, physical route, PID and per-process construction UUID. Native uses the
+actual process output stream epoch, never the registry process epoch. Targeted
+stdin and kill require this original construction at the receiver before effects.
+Renderer clients, main providers, text caches, catalogs, login, quota and image
+probes retain one opaque handle through startup, writes and deferred cleanup.
+Old receipts, bare PIDs and session-only targeted requests refuse; they are not
+upgraded by looking up the current process. Explicit administrative shutdown is
+separate. Original output invalidation cannot taint a replacement's metadata;
+unidentified invoked sources retain uncertainty even before their first output.
+
+Logical Native retirement waits for a complete owner-bound cohort prerequisite;
+unknown orphans cannot acknowledge managed cleanup. Orchestrator approval tools
+require the original source approvalOccurrenceId and use actual Parent retention.
+Committed send/compact dispatch also reads the same accepted run's current SQL
+revision under the database and session operation owners before synchronous live
+installation. Provider/naming work starts outside that short SQL scope, so a
+late title cannot seed an old revision or inherit an already closed SQL owner.
+
+Evidence and accepted scoped checks are recorded in
+`temp/verification/2026-10-30-native-process-identity/`.
+These are correlation and caller-lifetime changes, not provider ACK, physical
+callback completion after backend timeout, OS process termination attestation,
+HTTP/SSE endpoint binding, Native Buffers FULL closure or migration completion.
+Keep all26 and qualified:false/applicationThrough:null/default/history gates.
 
 ## Decision-input prerequisite, 2026-10-30
 

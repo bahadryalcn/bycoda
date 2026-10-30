@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -15,20 +16,27 @@ const mocks = vi.hoisted(() => ({
   frames: [] as Array<(record: Record<string, unknown>) => void>,
 }));
 
-vi.mock("../../core/child", () => ({
-  killChild: mocks.killChild,
-  resolveOmpBinary: mocks.resolveBinary,
-  resolvePiBinary: mocks.resolveBinary,
-  spawnChild: mocks.spawnChild,
-  unwatchChild: vi.fn(),
-  watchChild: vi.fn(),
-  writeChild: vi.fn(),
-  acquireHarnessBridge: mocks.acquireHarnessBridge,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    killChild: mocks.killChild,
+    resolveOmpBinary: mocks.resolveBinary,
+    resolvePiBinary: mocks.resolveBinary,
+    spawnChild: mocks.spawnChild,
+    unwatchChild: vi.fn(),
+    watchChild: vi.fn(),
+    writeChild: vi.fn(),
+    acquireHarnessBridge: mocks.acquireHarnessBridge,
+  }),
+);
 
 vi.mock("./piClient", () => ({
   PiRpc: class {
-    constructor(_sessionId: string, onFrame: (record: Record<string, unknown>) => void) {
+    constructor(
+      handle: import("../../core/child").ChildProcessHandle,
+      onFrame: (record: Record<string, unknown>) => void,
+    ) {
+      processConstructions.client(handle);
       mocks.frames.push(onFrame);
     }
 
@@ -126,6 +134,17 @@ describe("Pi live session", () => {
             true,
           ),
         );
+        const construction = processConstructions.created.filter(
+          (handle) => handle.sessionId === sessionId,
+        )[generation]!;
+        expect(construction).toBeDefined();
+        for (const kind of ["client", "watch", "spawn"] as const) {
+          expect(
+            processConstructions.operations
+              .filter((operation) => operation.kind === kind)
+              .map((operation) => operation.handle),
+          ).toContain(construction);
+        }
         const frame = mocks.frames.at(-1)!;
         frame({
           type: "extension_ui_request",
@@ -151,6 +170,7 @@ describe("Pi live session", () => {
         expect(writeChild).not.toHaveBeenCalled();
         respondApproval(flavor, sessionId, asked.requestId, "deny", asked.occurrenceId);
         await vi.waitFor(() => expect(writeChild).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(writeChild).mock.calls[0][0]).toBe(construction);
         expect(events).toContainEqual({
           type: "approval.resolved",
           requestId: asked.requestId,
@@ -164,6 +184,10 @@ describe("Pi live session", () => {
         frame({ type: "agent_end" });
         await done;
         await stopSession(flavor, sessionId);
+        expect(
+          processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+            ?.handle,
+        ).toBe(construction);
       }
     },
   );
@@ -291,9 +315,30 @@ describe("Pi live session", () => {
     "cancels %s requests queued behind an earlier stop before preparation begins",
     async (flavor) => {
       const kill = deferred<void>();
-      mocks.killChild.mockReturnValueOnce(kill.promise);
       const sessionId = `${flavor.id}-held-stop`;
+      await compactContext(flavor, {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised",
+        onEvent: () => undefined,
+      });
+      const original = processConstructions.created.find(
+        (handle) => handle.sessionId === sessionId,
+      )!;
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "client")
+          .map((operation) => operation.handle),
+      ).toContain(original);
+      mocks.resolveBinary.mockClear();
+      mocks.spawnChild.mockClear();
+      mocks.killChild.mockReturnValueOnce(kill.promise);
       const firstStop = stopSession(flavor, sessionId);
+      expect(
+        processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+          ?.handle,
+      ).toBe(original);
       const work = sendTurn(flavor, {
         sessionId,
         cwd: "/repo",

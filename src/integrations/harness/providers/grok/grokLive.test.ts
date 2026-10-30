@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { requestedApproval } from "../approvalOccurrence.testSupport";
 import {
   exerciseOverlappingApproval,
@@ -15,21 +16,24 @@ let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
 
-vi.mock("../../core/child", () => ({
-  resolveGrokBinary: async () => ({ path: "/fake/grok" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
-    onLine = line;
-    onExit = exit;
-  },
-  writeChild: async (_id: string, line: string) => {
-    sent.push(line);
-    const message = JSON.parse(line);
-    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveGrokBinary: async () => ({ path: "/fake/grok" }),
+    spawnChild: async () => undefined,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (l: string) => void, exit: (c: number | null) => void) => {
+      onLine = line;
+      onExit = exit;
+    },
+    writeChild: async (_id: string, line: string) => {
+      sent.push(line);
+      const message = JSON.parse(line);
+      if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
+    },
+  }),
+);
 
 const { compactGrokContext, sendGrokTurn, respondGrokApproval, stopGrokSession, cancelGrokTurn } =
   await import("./grok");

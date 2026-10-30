@@ -97,6 +97,201 @@ function terminal(
 }
 const load = () => import("./nativeOutputDelivery");
 
+it.each([false, true])(
+  "invalidates only original A while same-route B remains retained (B exited: %s)",
+  async (bExited) => {
+    const api = await load();
+    const a = wire("stdout", ["A"]);
+    const b = wire("stdout", ["B"], {
+      streamEpoch: "55555555-5555-4555-8555-555555555555",
+    });
+    const [aItem] = api.observeNativeOutputBatch("session", "stdout", ["A"], a)!;
+    const [bItem] = api.observeNativeOutputBatch("session", "stdout", ["B"], b)!;
+    let aWork!: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>;
+    let bWork!: NonNullable<ReturnType<typeof api.captureNativeOutputWork>>;
+    api.deliverNativeOutputItem(aItem, () => {
+      aWork = api.captureNativeOutputWork()!;
+    });
+    api.deliverNativeOutputItem(bItem, () => {
+      bWork = api.captureNativeOutputWork()!;
+    });
+    await vi.waitFor(() => {
+      expect(
+        api
+          .inspectNativeOutputDelivery("session")
+          .streams.every((stream) => stream.receivedThrough === 1),
+      ).toBe(true);
+    });
+    if (bExited) api.observeNativeOutputState("session", terminal(b));
+    const before = api
+      .inspectNativeOutputDelivery("session")
+      .streams.find((stream) => stream.streamEpoch === b.streamEpoch);
+    api.invalidateNativeOutputConstruction("session", a.streamEpoch, "original-A-closed");
+    const after = api.inspectNativeOutputDelivery("session");
+    expect(after.streams.find((stream) => stream.streamEpoch === a.streamEpoch)).toMatchObject({
+      unavailableReason: "original-A-closed",
+      pendingCausalWork: 1,
+    });
+    expect(after.streams.find((stream) => stream.streamEpoch === b.streamEpoch)).toEqual(before);
+    expect(after.retentionUnavailable).toBe(false);
+    expect(after.qualified).toBe(false);
+    aWork.finish();
+    bWork.finish();
+  },
+);
+
+it("retains original invalidation before delayed A metadata or terminal without poisoning B", async () => {
+  const api = await load();
+  const a = wire("stdout", ["late-A"]);
+  const b = wire("stdout", ["B"], { streamEpoch: "55555555-5555-4555-8555-555555555555" });
+  const [bItem] = api.observeNativeOutputBatch("session", "stdout", ["B"], b)!;
+  api.deliverNativeOutputItem(bItem, () => api.markNativeOutputSupportedNoEffect("fixture-read"));
+  await vi.waitFor(() =>
+    expect(api.inspectNativeOutputDelivery("session").streams[0].receivedThrough).toBe(1),
+  );
+  const before = api.inspectNativeOutputDelivery("session").streams[0];
+  api.invalidateNativeOutputConstruction("session", a.streamEpoch, "A-retired-before-metadata");
+  api.invalidateNativeOutputConstruction("session", a.streamEpoch, "later-duplicate-reason");
+  api.observeNativeOutputState("session", terminal(a, { state: "unsealed", lastSequence: 0 }));
+  expect(api.observeNativeOutputBatch("session", "stdout", ["late-A"], a)).toBeUndefined();
+  const after = api.inspectNativeOutputDelivery("session");
+  expect(
+    after.streams.find((stream) => stream.streamEpoch === a.streamEpoch)?.unavailableReason,
+  ).toBe("A-retired-before-metadata");
+  expect(after.streams.find((stream) => stream.streamEpoch === b.streamEpoch)).toEqual(before);
+  expect(after.retentionUnavailable).toBe(false);
+});
+
+it("matches the exact process route and stream epoch rather than registry epoch, logical alias or SSE", async () => {
+  const api = await load();
+  const process = wire("stdout", ["A"]);
+  const alias = wire("stdout", ["alias"], {
+    sessionId: "session#other",
+    logicalSessionId: "session",
+    processEpoch: "55555555-5555-4555-8555-555555555555",
+  });
+  const sse = wire("sse", ["event"], {
+    processEpoch: "66666666-6666-4666-8666-666666666666",
+  });
+  for (const metadata of [process, alias, sse]) {
+    const items = metadata === process ? ["A"] : metadata === alias ? ["alias"] : ["event"];
+    const tokens = api.observeNativeOutputBatch(
+      metadata.sessionId,
+      metadata.channel,
+      items,
+      metadata,
+    )!;
+    for (const item of tokens)
+      api.deliverNativeOutputItem(item, () =>
+        api.markNativeOutputSupportedNoEffect("fixture-read"),
+      );
+  }
+  await vi.waitFor(() =>
+    expect(
+      api
+        .inspectNativeOutputDelivery("session")
+        .streams.every((stream) => stream.receivedThrough === 1),
+    ).toBe(true),
+  );
+  const before = api.inspectNativeOutputDelivery("session");
+  api.invalidateNativeOutputConstruction(
+    "session",
+    ids.processEpoch,
+    "registry-is-not-construction",
+  );
+  expect(api.inspectNativeOutputDelivery("session")).toEqual(before);
+  api.invalidateNativeOutputConstruction("session", process.streamEpoch, "A-only");
+  const after = api.inspectNativeOutputDelivery("session");
+  expect(
+    after.streams.find((stream) => stream.processEpoch === process.processEpoch)?.unavailableReason,
+  ).toBe("A-only");
+  expect(after.streams.filter((stream) => stream.processEpoch !== process.processEpoch)).toEqual(
+    before.streams.filter((stream) => stream.processEpoch !== process.processEpoch),
+  );
+});
+
+it("preserves legacy session quarantine while known construction invalidation remains scoped", async () => {
+  const api = await load();
+  const metadata = wire("stdout", ["legacy-owner"]);
+  api.observeNativeOutputBatch("session", "stdout", ["legacy-owner"], metadata);
+  api.invalidateNativeOutputConstruction(
+    "session",
+    "legacy-missing-construction",
+    "legacy-unknown",
+  );
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({ retentionUnavailable: true });
+  api.invalidateNativeOutputConstruction("session", metadata.streamEpoch, "known-original");
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    retentionUnavailable: true,
+    streams: [{ unavailableReason: "legacy-unknown" }],
+  });
+});
+
+it("retains unidentified invocation quarantine before its first metadata without upgrading a later exact identity", async () => {
+  const api = await load();
+  api.quarantineNativeOutputSession("session", "invoked-source-unknown");
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    retentionUnavailable: true,
+    streams: [],
+  });
+  const metadata = wire("stdout", ["late-source"]);
+  api.observeNativeOutputBatch("session", "stdout", ["late-source"], metadata);
+  api.invalidateNativeOutputConstruction("session", metadata.streamEpoch, "later-exact-identity");
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    retentionUnavailable: true,
+    qualified: false,
+  });
+});
+
+it("does not lose delayed construction quarantine when tracker ownership is globally retired", async () => {
+  const api = await load();
+  const a = wire("stdout", ["late-A"]);
+  const b = wire("stdout", ["B"], { streamEpoch: "55555555-5555-4555-8555-555555555555" });
+  api.observeNativeOutputBatch("session", "stdout", ["B"], b);
+  api.invalidateNativeOutputConstruction("session", a.streamEpoch, "A-original-retired");
+  // This is the same conservative invalidation invoked by the HMR disposer.
+  api.invalidateNativeOutputDelivery("tracker-reloaded");
+  api.observeNativeOutputBatch("session", "stdout", ["late-A"], a);
+  const observed = api.inspectNativeOutputDelivery("session");
+  expect(
+    observed.streams.find((stream) => stream.streamEpoch === a.streamEpoch)?.unavailableReason,
+  ).toBe("A-original-retired");
+  expect(
+    observed.streams.find((stream) => stream.streamEpoch === b.streamEpoch)?.unavailableReason,
+  ).toBe("tracker-reloaded");
+  expect(observed.qualified).toBe(false);
+});
+
+it("keeps unresolved construction tombstones at capacity and quarantines overflow and future sources", async () => {
+  const api = await load();
+  const b = wire("stdout", ["B"]);
+  api.observeNativeOutputBatch("session", "stdout", ["B"], b);
+  const construction = (index: number) =>
+    `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+  for (let index = 0; index < 512; index++)
+    api.invalidateNativeOutputConstruction("session", construction(index), `retired-${index}`);
+  expect(api.inspectNativeOutputDelivery("session").retentionUnavailable).toBe(false);
+  api.invalidateNativeOutputConstruction("session", construction(512), "unretained-overflow");
+  expect(api.inspectNativeOutputDelivery("session")).toMatchObject({
+    retentionUnavailable: true,
+    streams: [{ unavailableReason: "construction-invalidation-capacity" }],
+  });
+  const delayed = wire("stdout", ["late-A"], { streamEpoch: construction(0) });
+  api.observeNativeOutputBatch("session", "stdout", ["late-A"], delayed);
+  const future = wire("stdout", ["new-source"], { streamEpoch: construction(513) });
+  api.observeNativeOutputBatch("session", "stdout", ["new-source"], future);
+  const observed = api.inspectNativeOutputDelivery("session");
+  expect(
+    observed.streams.find((stream) => stream.streamEpoch === delayed.streamEpoch)
+      ?.unavailableReason,
+  ).toBe("retired-0");
+  expect(
+    observed.streams.find((stream) => stream.streamEpoch === future.streamEpoch)?.unavailableReason,
+  ).toBe("construction-invalidation-capacity");
+  expect(observed.retentionUnavailable).toBe(true);
+  expect(observed.qualified).toBe(false);
+});
+
 it("joins retained original inputs atomically and preserves all constituents through alias/projection", async () => {
   const api = await load();
   const lines = ["first-fragment", "completing-fragment"];

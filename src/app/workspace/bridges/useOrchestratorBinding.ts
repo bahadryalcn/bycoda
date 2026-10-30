@@ -2,7 +2,11 @@ import type { Dispatch, SetStateAction } from "react";
 import { useEffect, useLayoutEffect } from "react";
 import type { SubmitOptions } from "../helpers/types";
 import type { OrchestrationState } from "./useOrchestrationState";
-import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
+import {
+  assertOriginalWorkerProcess,
+  createOrchestratorWorkerBindings,
+  finishOriginalWorkerProcess,
+} from "./orchestratorWorkerBindings";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   type Attachment,
@@ -30,12 +34,18 @@ import {
   canSteerHarness,
   appendSteerUser,
   steerHarnessTurn,
-  respondHarnessApproval,
   respondHarnessQuestion,
   stopHarnessSession,
 } from "../../../integrations/harness";
 import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
-import { invoke } from "@tauri-apps/api/core";
+import { captureChildProcess } from "../../../integrations/harness/core/child";
+import { pendingApprovalForSession } from "../../../features/notifications/model/approvalToast";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
+import {
+  approvalRequestDispatchStarted,
+  captureApprovalRequest,
+  submitApprovalIntent,
+} from "../../../features/sessions/model/approvalIntents";
 
 export interface OrchestratorBindingDeps {
   tabs: WorkspaceTab[];
@@ -151,27 +161,46 @@ export function useOrchestratorBinding({
           text,
         });
       },
-      respondApproval: (id, requestId, decision) => {
+      respondApproval: (id, requestId, decision, approvalOccurrenceId) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
-        if (session) respondHarnessApproval(session.harness, id, requestId, decision);
+        const pending = session && pendingApprovalForSession(session);
+        if (
+          !session ||
+          pending?.kind !== "approval" ||
+          pending.requestId !== requestId ||
+          !isApprovalOccurrenceId(approvalOccurrenceId) ||
+          pending.block?.approval?.occurrenceId !== approvalOccurrenceId
+        )
+          return false;
+        // The caller supplies its original viewed nonce. Capture only this exact
+        // accepted source, never whichever numeric request exists after an await.
+        const token = captureApprovalRequest(session, requestId);
+        if (!token) return false;
+        const outcome = submitApprovalIntent(session, requestId, decision, token, () =>
+          sessionsRef.current.find((entry) => entry.id === id),
+        );
+        if (typeof outcome !== "boolean") void outcome.catch(() => undefined);
+        return approvalRequestDispatchStarted(token);
       },
       answerQuestion: (id, requestId, reply) => {
         const session = sessionsRef.current.find((entry) => entry.id === id);
         if (session) respondHarnessQuestion(session.harness, id, requestId, reply);
       },
       stop: async (id) => {
+        const originalProcess = captureChildProcess(id);
         const session = sessionsRef.current.find((entry) => entry.id === id);
+        assertOriginalWorkerProcess(id, originalProcess);
         onStop(id, true);
+        assertOriginalWorkerProcess(id, originalProcess);
         try {
           if (session)
             await Promise.all(
               sessionChildHarnesses(session).map((harness) => stopHarnessSession(harness, id)),
             );
         } finally {
-          // Also reap processes left behind by a renderer reload, before the
-          // corresponding session has been restored in this window.
-          await invoke("harness_kill", { sessionId: id });
-          await invoke("control_turn_finished", { sessionId: id });
+          // A reload without its original process observation remains unknown.
+          // Never acknowledge completion by killing whichever process is current.
+          await finishOriginalWorkerProcess(id, originalProcess);
         }
       },
     });

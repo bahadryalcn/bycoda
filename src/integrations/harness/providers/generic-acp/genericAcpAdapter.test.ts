@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { requestedApproval } from "../approvalOccurrence.testSupport";
 import {
   exerciseOverlappingApproval,
@@ -30,7 +31,8 @@ const mock = vi.hoisted(() => ({
 }));
 vi.mock("../../core/acp", () => ({
   AcpClient: class {
-    constructor(_id: string, handlers: AcpHandlers) {
+    constructor(handle: import("../../core/child").ChildProcessHandle, handlers: AcpHandlers) {
+      processConstructions.client(handle);
       mock.handlers = handlers;
     }
     request = mock.request;
@@ -40,18 +42,27 @@ vi.mock("../../core/acp", () => ({
     notify = mock.notify;
   },
 }));
-vi.mock("../../core/child", () => ({
-  spawnChild: vi.fn(),
-  watchChild: (_id: string, _line: (line: string) => void, exit: (code: number | null) => void) => {
-    mock.onExit = exit;
-  },
-  killChild: vi.fn(),
-  invokeProviderCommand: async () => [],
-}));
+
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    spawnChild: vi.fn(),
+    watchChild: (
+      _id: string,
+      _line: (line: string) => void,
+      exit: (code: number | null) => void,
+    ) => {
+      mock.onExit = exit;
+    },
+    killChild: vi.fn(async () => undefined),
+    invokeProviderCommand: async () => [],
+  }),
+);
 import {
   sendGenericAcpTurn,
   forgetGenericAcpSession,
   bindGenericAcpSession,
+  cancelGenericAcpTurn,
 } from "./genericAcpAdapter";
 import { applyHarnessEvent } from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
@@ -98,6 +109,53 @@ beforeEach(() => {
 });
 afterEach(async () => {
   await forgetGenericAcpSession("generic-plan");
+});
+
+it("keeps deferred cancel cleanup on A's original constructor handle after B starts", async () => {
+  // Protocol fake: this proves provider ownership, not a Native process fence.
+  await sendGenericAcpTurn(input("build"));
+  const original = processConstructions.created[0];
+  expect(original).toBeDefined();
+  for (const kind of ["client", "watch", "spawn"] as const) {
+    const boundary = processConstructions.operations.filter((operation) => operation.kind === kind);
+    expect(boundary).toHaveLength(1);
+    expect(boundary[0].handle).toBe(original);
+  }
+  let release!: () => void;
+  let entered = false;
+  mock.notify.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        entered = true;
+        release = resolve;
+      }),
+  );
+  const cancelling = cancelGenericAcpTurn("generic-plan");
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    await forgetGenericAcpSession("generic-plan");
+    await sendGenericAcpTurn(input("build"));
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    const cleanupAt = processConstructions.operations.length;
+    release();
+    await cancelling;
+    const cleanup = processConstructions.operations
+      .slice(cleanupAt)
+      .filter((operation) => operation.kind === "kill");
+    expect(cleanup).toHaveLength(1);
+    expect(cleanup[0].handle).toBe(original);
+    await sendGenericAcpTurn(input("build"));
+    expect(processConstructions.created).toHaveLength(2);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "client").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+  } finally {
+    release?.();
+    await cancelling;
+  }
 });
 
 it("switches to advertised plan mode and restores the prior mode for Build", async () => {

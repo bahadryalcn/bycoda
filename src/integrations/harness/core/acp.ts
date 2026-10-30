@@ -8,6 +8,7 @@ import { socialAcpServers, socialBridge } from "./socialBridge";
 import { runtimeLogsAcpServers, runtimeLogsBridge } from "./runtimeLogsBridge";
 import { conversationToolsAcpServers, conversationToolsBridge } from "./conversationToolsBridge";
 import type { NativeOutputWork } from "./nativeOutputDelivery";
+import type { ChildProcessHandle } from "./child";
 
 export type { JsonRpcMessage };
 
@@ -28,11 +29,13 @@ export type AcpHandlers = {
 /** ACP JSON-RPC client — thin wrapper preserving the Cursor numeric-id API. */
 export class AcpClient {
   private readonly rpc: JsonRpcClient;
+  private readonly sessionId: string;
 
   constructor(
-    private readonly sessionId: string,
+    child: ChildProcessHandle,
     private readonly handlers: AcpHandlers,
   ) {
+    this.sessionId = child.sessionId;
     const rpcHandlers: JsonRpcHandlers = {
       onNotification: (method, params, work) =>
         this.handlers.onNotification?.(method, params, work),
@@ -41,7 +44,7 @@ export class AcpClient {
         return this.handlers.onRequest?.(numeric, method, params, work);
       },
     };
-    this.rpc = new JsonRpcClient(sessionId, rpcHandlers, {
+    this.rpc = new JsonRpcClient(child, rpcHandlers, {
       includeJsonrpc: true,
       label: "acp",
     });

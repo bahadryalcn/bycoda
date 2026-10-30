@@ -63,6 +63,17 @@ async function readHistory(page: Page, deltaY = -1800) {
 async function open(page: Page, query: Record<string, string> = {}, light = false) {
   await page.goto(url(query, light));
   await expect(field(page)).toBeVisible();
+  // The transcript renders its history progressively (later in WebKit); wait until it has
+  // settled so the reader's first scroll happens over the full history, not an empty start.
+  let previous = -1;
+  await expect
+    .poll(async () => {
+      const height = await scroller(page).evaluate((el) => el.scrollHeight);
+      const settled = height === previous && height > 2 * (await state(page)).viewport;
+      previous = height;
+      return settled;
+    })
+    .toBe(true);
   await expect.poll(async () => (await state(page)).distance).toBeLessThan(2);
 }
 
@@ -464,3 +475,19 @@ for (const density of ["compact", "comfortable", "touch"]) {
     }
   }
 }
+
+test.describe("touch input", () => {
+  test.use({ hasTouch: true });
+  test("a tap on the compact composer focuses the same draft without sending", async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 800 });
+    await open(page, { draft: "short" });
+    await readHistory(page);
+    const before = await field(page).inputValue();
+    const box = (await page.locator("[data-composer-box]").boundingBox())!;
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + 2);
+    await expect(reading(page)).toHaveCount(0);
+    await expect(field(page)).toHaveValue(before);
+    expect((await fixtureEvents(page)).sends).toBe(0);
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible();
+  });
+});

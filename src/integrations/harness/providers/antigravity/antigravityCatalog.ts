@@ -2,6 +2,7 @@ import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
+  createChildProcessHandle,
   execChild,
   killChild,
   resolveAntigravityBinary,
@@ -40,7 +41,8 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
   }
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = createChildProcessHandle(probeId);
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       const response =
         method === "session/request_permission"
@@ -53,12 +55,19 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
     },
   });
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Antigravity probe exited")),
   );
   try {
-    await spawnChild(probeId, path, args, antigravitySpawnCwd(path, cwd), undefined, "antigravity");
+    await spawnChild(
+      probeProcess,
+      path,
+      args,
+      antigravitySpawnCwd(path, cwd),
+      undefined,
+      "antigravity",
+    );
     await acp.request(
       "initialize",
       {
@@ -79,7 +88,7 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
     return modelsFromSessionNew(created);
   } finally {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   }
 }

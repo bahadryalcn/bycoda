@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -16,15 +17,18 @@ vi.mock("../../../../platform/tauri/fs", () => ({
 vi.mock("../../../../features/sessions/model/models", () => ({
   setHarnessModels: mocks.setHarnessModels,
 }));
-vi.mock("../../core/child", () => ({
-  killChild: mocks.killChild,
-  resolveOmpBinary: mocks.resolveBinary,
-  resolvePiBinary: mocks.resolveBinary,
-  spawnChild: mocks.spawnChild,
-  unwatchChild: mocks.unwatchChild,
-  watchChild: mocks.watchChild,
-  writeChild: mocks.writeChild,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    killChild: mocks.killChild,
+    resolveOmpBinary: mocks.resolveBinary,
+    resolvePiBinary: mocks.resolveBinary,
+    spawnChild: mocks.spawnChild,
+    unwatchChild: mocks.unwatchChild,
+    watchChild: mocks.watchChild,
+    writeChild: mocks.writeChild,
+  }),
+);
 import { discoverOmpModels, discoverPiModels, refreshPiCatalog } from "./piCatalog";
 
 const builtin = { provider: "meta", id: "shared-id", name: "Built-in" };
@@ -62,6 +66,22 @@ function expectStopped() {
   expect(mocks.unwatchChild).toHaveBeenCalledExactlyOnceWith(probeId);
   expect(mocks.killChild).toHaveBeenCalledExactlyOnceWith(probeId);
   expect(vi.getTimerCount()).toBe(0);
+  const original = processConstructions.operations
+    .filter((operation) => operation.kind === "watch" && operation.handle.sessionId === probeId)
+    .at(-1)!.handle;
+  expect(processConstructions.created).toContain(original);
+  for (const kind of ["spawn", "unwatch", "kill"] as const) {
+    const boundary = processConstructions.operations.filter(
+      (operation) => operation.kind === kind && operation.handle === original,
+    );
+    expect(boundary.length).toBeGreaterThan(0);
+    expect(boundary.every((operation) => operation.handle === original)).toBe(true);
+  }
+  expect(
+    processConstructions.operations.filter(
+      (operation) => operation.kind === "write" && operation.handle === original,
+    ),
+  ).toHaveLength(mocks.writeChild.mock.calls.length);
 }
 
 beforeEach(() => {

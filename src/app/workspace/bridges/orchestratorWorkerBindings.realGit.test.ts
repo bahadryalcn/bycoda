@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { HostEngine } from "../../../../host/engine";
 import { createManagedWorkspaceRuntime } from "../../../../host/managed-workspace-runtime";
 import { HostStore } from "../../../../host/store";
@@ -26,6 +26,8 @@ const m = vi.hoisted(() => ({
   context: vi.fn(),
   listed: vi.fn(),
   sessions: [] as Session[],
+  captureProcess: vi.fn(),
+  killProcess: vi.fn(async () => {}),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../features/sessions/data/sessionStore", () => ({
@@ -60,6 +62,11 @@ vi.mock("../../../integrations/harness", () => ({
   stopHarnessSession: vi.fn(),
   forgetHarnessSession: vi.fn(),
 }));
+vi.mock("../../../integrations/harness/core/child", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../integrations/harness/core/child")>()),
+  captureChildProcess: m.captureProcess,
+  killChild: m.killProcess,
+}));
 vi.mock("../../../features/sessions/model/checkpoint", () => ({
   flushSessionCheckpoint: vi.fn(),
   sessionCheckpointCleanupSafe: vi.fn(),
@@ -70,6 +77,20 @@ vi.mock("../../../features/sessions/model/checkpoint", () => ({
 import { newSession } from "../../../features/sessions/model/session";
 import { workspaceIdentity } from "../../../features/orchestration/model/orchestration";
 import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
+import { createChildProcessHandle } from "../../../integrations/harness/core/child";
+
+beforeEach(() => {
+  // Native transport remains a fixture; actual Host/Git delivery below is unchanged.
+  const handles = new Map<string, ReturnType<typeof createChildProcessHandle>>();
+  m.captureProcess.mockImplementation((id: string) => {
+    let handle = handles.get(id);
+    if (!handle) {
+      handle = createChildProcessHandle(id);
+      handles.set(id, handle);
+    }
+    return handle;
+  });
+});
 
 // Only the renderer/native transport is mocked. Preparation, persisted identity,
 // owner approval, merge and post-delivery review use production Host services and Git.

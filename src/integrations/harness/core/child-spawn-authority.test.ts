@@ -1,4 +1,15 @@
 import { afterEach, expect, it, vi } from "vitest";
+import type { ChildProcessHandle } from "./child";
+
+function receipt(sessionId: string, pid = 42, backend: "native" | "host" = "host") {
+  return {
+    version: 1 as const,
+    backend,
+    sessionId,
+    pid,
+    constructionId: `00000000-0000-4000-8000-${pid.toString(16).padStart(12, "0")}`,
+  };
+}
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -30,9 +41,11 @@ function deferred() {
 async function fixture(headless: boolean) {
   vi.resetModules();
   for (const mock of [mocks.social, mocks.logs, mocks.conversation]) mock.mockResolvedValue(null);
-  mocks.invoke.mockResolvedValue(42);
+  mocks.invoke.mockImplementation(async (_command, args) => receipt(args.sessionId, 42, "native"));
   const child = await import("./child");
-  const invoke = vi.fn(async (_command: string, _args?: Record<string, unknown>) => 42);
+  const invoke = vi.fn(async (_command: string, args?: Record<string, unknown>) =>
+    receipt(String(args?.sessionId)),
+  );
   const handlers = new Map<string, (event: { payload: never }) => void>();
   if (headless)
     child.configureChildBackend({
@@ -44,21 +57,38 @@ async function fixture(headless: boolean) {
         };
       }),
     });
-  return { child, invoke, handlers };
+  return {
+    child,
+    invoke,
+    handlers,
+    exited: vi.fn(),
+    handles: [] as ChildProcessHandle[],
+    latest: undefined as ChildProcessHandle | undefined,
+  };
+}
+
+function newProcess(f: Awaited<ReturnType<typeof fixture>>, sessionId = "same-owned-child") {
+  const handle = f.child.createChildProcessHandle(sessionId);
+  f.handles.push(handle);
+  f.latest = handle;
+  f.child.watchChild(handle, vi.fn(), f.exited);
+  return handle;
+}
+function unwatchAll(f: Awaited<ReturnType<typeof fixture>>) {
+  for (const handle of f.handles) f.child.unwatchChild(handle);
 }
 
 async function watchedIncumbent() {
   const f = await fixture(true);
   const releaseBridge = await f.child.acquireHarnessBridge();
-  const exited = vi.fn();
-  f.child.watchChild("same-owned-child", vi.fn(), exited);
-  await f.child.spawnChild("same-owned-child", "agent", [], "/fixture");
-  return { ...f, exited, releaseBridge };
+  const incumbent = newProcess(f);
+  await f.child.spawnChild(incumbent, "agent", [], "/fixture");
+  return { ...f, releaseBridge };
 }
 
 function restrictedSpawn(f: Awaited<ReturnType<typeof fixture>>, guard = async () => {}) {
   return f.child.spawnChild(
-    "same-owned-child",
+    newProcess(f),
     "agent",
     [],
     "/fixture",
@@ -72,7 +102,13 @@ function restrictedSpawn(f: Awaited<ReturnType<typeof fixture>>, guard = async (
 
 function emitExit(f: Awaited<ReturnType<typeof fixture>>, pid: number, reason?: string) {
   f.handlers.get("harness-exit")?.({
-    payload: { sessionId: "same-owned-child", pid, code: reason ? 1 : 0, reason } as never,
+    payload: {
+      sessionId: "same-owned-child",
+      constructionId: receipt("same-owned-child", pid).constructionId,
+      pid,
+      code: reason ? 1 : 0,
+      reason,
+    } as never,
   });
 }
 afterEach(() => {
@@ -80,11 +116,49 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("snapshots explicit spawn authority before the original asynchronous restriction and bridges", async () => {
+  const f = await fixture(true);
+  const entered = deferred();
+  const release = deferred();
+  const scope = { environmentId: "original-owner", generation: 7 };
+  let first = true;
+  const spawning = f.child.spawnChild(
+    newProcess(f, "authority"),
+    "codex",
+    [],
+    "/fixture",
+    undefined,
+    "codex",
+    undefined,
+    scope,
+    async () => {
+      if (first) {
+        first = false;
+        entered.resolve();
+        await release.promise;
+      }
+    },
+  );
+  await entered.promise;
+  scope.environmentId = "later-owner";
+  scope.generation = 8;
+  release.resolve();
+  await spawning;
+  expect(f.invoke).toHaveBeenCalledWith(
+    "harness_spawn",
+    expect.objectContaining({
+      sessionId: "authority",
+      authorityEnvironmentId: "original-owner",
+      authorityGeneration: 7,
+    }),
+  );
+});
+
 it("rejects before bridge preparation or process invocation when the restrictive callback denies", async () => {
   const f = await fixture(true);
   await expect(
     f.child.spawnChild(
-      "owned-probe",
+      newProcess(f, "owned-probe"),
       "codex",
       ["app-server"],
       "/fixture",
@@ -120,7 +194,7 @@ it.each(["social", "logs", "conversation"] as const)(
       if (!authorized) throw new Error("Probe grant revoked");
     });
     const pending = f.child.spawnChild(
-      "owned-probe",
+      newProcess(f, "owned-probe"),
       "codex",
       ["app-server"],
       "/fixture",
@@ -144,7 +218,7 @@ it("passes the restrictive function only to the configured in-process backend", 
   const f = await fixture(true);
   const beforeSpawn = vi.fn(async () => undefined);
   await f.child.spawnChild(
-    "owned-probe",
+    newProcess(f, "owned-probe"),
     "codex",
     ["app-server"],
     "/fixture",
@@ -171,7 +245,7 @@ it("never serializes the optional function into desktop IPC arguments", async ()
   const f = await fixture(false);
   const beforeSpawn = vi.fn(async () => undefined);
   await f.child.spawnChild(
-    "owned-probe",
+    newProcess(f, "owned-probe"),
     "codex",
     ["app-server"],
     "/fixture",
@@ -193,10 +267,10 @@ it("never serializes the optional function into desktop IPC arguments", async ()
 it("preserves the incumbent child's exit generation when a delayed replacement is denied", async () => {
   const f = await fixture(true);
   const releaseBridge = await f.child.acquireHarnessBridge();
-  const exited = vi.fn();
-  f.child.watchChild("same-owned-child", vi.fn(), exited);
+  const exited = f.exited;
+  const incumbent = newProcess(f);
   try {
-    await f.child.spawnChild("same-owned-child", "agent", [], "/fixture");
+    await f.child.spawnChild(incumbent, "agent", [], "/fixture");
     const entered = deferred();
     const release = deferred();
     mocks.social.mockImplementationOnce(async () => {
@@ -206,7 +280,7 @@ it("preserves the incumbent child's exit generation when a delayed replacement i
     });
     let authorized = true;
     const pending = f.child.spawnChild(
-      "same-owned-child",
+      newProcess(f),
       "codex",
       ["app-server"],
       "/fixture",
@@ -225,11 +299,16 @@ it("preserves the incumbent child's exit generation when a delayed replacement i
     await denied;
     expect(f.invoke).toHaveBeenCalledTimes(1);
     f.handlers.get("harness-exit")?.({
-      payload: { sessionId: "same-owned-child", pid: 42, code: 0 } as never,
+      payload: {
+        sessionId: "same-owned-child",
+        constructionId: receipt("same-owned-child").constructionId,
+        pid: 42,
+        code: 0,
+      } as never,
     });
     expect(exited).toHaveBeenCalledExactlyOnceWith(0);
   } finally {
-    f.child.unwatchChild("same-owned-child");
+    unwatchAll(f);
     releaseBridge();
   }
 });
@@ -248,7 +327,7 @@ it.each(["during preparation", "after rejection"])(
       if (typeof restriction !== "function")
         throw new Error("In-process authorization is required");
       await restriction();
-      return 43;
+      return receipt("same-owned-child", 43);
     });
     const pending = restrictedSpawn(f, async () => {
       if (!authorized) throw new Error("Probe grant revoked");
@@ -267,7 +346,7 @@ it.each(["during preparation", "after rejection"])(
       expect(f.exited).toHaveBeenCalledExactlyOnceWith(0);
     } finally {
       release.resolve();
-      f.child.unwatchChild("same-owned-child");
+      unwatchAll(f);
       f.releaseBridge();
     }
   },
@@ -280,7 +359,7 @@ it("reconciles a guarded candidate's early exit while retaining its incumbent du
   f.invoke.mockImplementationOnce(async () => {
     entered.resolve();
     await release.promise;
-    return 43;
+    return receipt("same-owned-child", 43);
   });
   const pending = restrictedSpawn(f);
   try {
@@ -294,7 +373,7 @@ it("reconciles a guarded candidate's early exit while retaining its incumbent du
     expect(f.exited).toHaveBeenCalledOnce();
   } finally {
     release.resolve();
-    f.child.unwatchChild("same-owned-child");
+    unwatchAll(f);
     f.releaseBridge();
   }
 });
@@ -310,9 +389,9 @@ it.each(["reject", "succeed"])(
         entered.resolve();
         await release.promise;
         if (outcome === "reject") throw new Error("Old replacement revoked");
-        return 43;
+        return receipt("same-owned-child", 43);
       })
-      .mockResolvedValueOnce(44);
+      .mockResolvedValueOnce(receipt("same-owned-child", 44));
     const old = restrictedSpawn(f).catch((error) => error);
     try {
       await entered.promise;
@@ -326,7 +405,7 @@ it.each(["reject", "succeed"])(
       expect(f.exited).toHaveBeenCalledExactlyOnceWith(0);
     } finally {
       release.resolve();
-      f.child.unwatchChild("same-owned-child");
+      unwatchAll(f);
       f.releaseBridge();
     }
   },
@@ -340,7 +419,7 @@ it("keeps an older accepted guarded PID when the newer request fails without spa
     .mockImplementationOnce(async () => {
       entered.resolve();
       await release.promise;
-      return 43;
+      return receipt("same-owned-child", 43);
     })
     .mockRejectedValueOnce(new Error("Newer replacement revoked"));
   const old = restrictedSpawn(f);
@@ -353,7 +432,7 @@ it("keeps an older accepted guarded PID when the newer request fails without spa
     expect(f.exited).toHaveBeenCalledExactlyOnceWith(0);
   } finally {
     release.resolve();
-    f.child.unwatchChild("same-owned-child");
+    unwatchAll(f);
     f.releaseBridge();
   }
 });
@@ -363,31 +442,32 @@ it.each(["unwatch", "kill", "killAll"])(
   async (cleanup) => {
     const f = await fixture(true);
     const releaseBridge = await f.child.acquireHarnessBridge();
-    const exited = vi.fn();
-    f.child.watchChild("same-owned-child", vi.fn(), exited);
+    const exited = f.exited;
     const entered = deferred();
     const release = deferred();
     f.invoke.mockImplementationOnce(async () => {
       entered.resolve();
       await release.promise;
-      return 43;
+      return receipt("same-owned-child", 43);
     });
     const pending = restrictedSpawn(f);
     try {
       await entered.promise;
-      if (cleanup === "unwatch") f.child.unwatchChild("same-owned-child");
-      else if (cleanup === "kill") await f.child.killChild("same-owned-child");
+      let stopped: Promise<void> | undefined;
+      if (cleanup === "unwatch") f.child.unwatchChild(f.latest!);
+      else if (cleanup === "kill") stopped = f.child.killChild(f.latest!);
       else await f.child.killAllChildren();
       const replacementExit = vi.fn();
-      f.child.watchChild("same-owned-child", vi.fn(), replacementExit);
+      f.child.watchChild(newProcess(f), vi.fn(), replacementExit);
       release.resolve();
       await pending;
+      await stopped;
       emitExit(f, 43);
       expect(exited).not.toHaveBeenCalled();
       expect(replacementExit).not.toHaveBeenCalled();
     } finally {
       release.resolve();
-      f.child.unwatchChild("same-owned-child");
+      unwatchAll(f);
       releaseBridge();
     }
   },
@@ -414,7 +494,7 @@ it.each(["grant", "bridge"])(
         return null;
       });
     const pending = f.child.spawnChild(
-      "same-owned-child",
+      newProcess(f),
       "codex",
       [],
       "/fixture",
@@ -427,13 +507,13 @@ it.each(["grant", "bridge"])(
     const retired = expect(pending).rejects.toThrow("startup cancelled");
     try {
       await entered.promise;
-      f.child.unwatchChild("same-owned-child");
+      unwatchAll(f);
       release.resolve();
       await retired;
       expect(f.invoke).toHaveBeenCalledTimes(1);
     } finally {
       release.resolve();
-      f.child.unwatchChild("same-owned-child");
+      unwatchAll(f);
       f.releaseBridge();
     }
   },
@@ -447,13 +527,13 @@ it("retires a held guarded invoke when the ordinary spawn path publishes a newer
     .mockImplementationOnce(async () => {
       entered.resolve();
       await release.promise;
-      return 43;
+      return receipt("same-owned-child", 43);
     })
-    .mockResolvedValueOnce(44);
+    .mockResolvedValueOnce(receipt("same-owned-child", 44));
   const old = restrictedSpawn(f);
   try {
     await entered.promise;
-    await f.child.spawnChild("same-owned-child", "agent", [], "/fixture");
+    await f.child.spawnChild(newProcess(f), "agent", [], "/fixture");
     release.resolve();
     await old;
     emitExit(f, 43);
@@ -462,7 +542,7 @@ it("retires a held guarded invoke when the ordinary spawn path publishes a newer
     expect(f.exited).toHaveBeenCalledExactlyOnceWith(0);
   } finally {
     release.resolve();
-    f.child.unwatchChild("same-owned-child");
+    unwatchAll(f);
     f.releaseBridge();
   }
 });

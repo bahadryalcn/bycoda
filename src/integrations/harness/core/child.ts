@@ -1,11 +1,18 @@
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen, type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  isHarnessConstructionId,
+  requireHarnessProcessReceipt,
+  type HarnessProcessReceipt,
+} from "../../../shared/model/harnessProcess";
 import { configureGeneratedImageStorage } from "./generatedImages";
 import {
   deliverNativeOutputItem,
   discardNativeOutputItems,
   invalidateNativeOutputDelivery,
   invalidateNativeOutputSession,
+  invalidateNativeOutputConstruction,
+  quarantineNativeOutputSession,
   observeNativeOutputBatch,
   observeNativeOutputState,
   captureNativeOutputWork,
@@ -103,13 +110,24 @@ function listen<T>(event: string, handler: (event: { payload: T }) => void): Pro
   return label ? tauriListen(event, handler, { target: label }) : tauriListen(event, handler);
 }
 
-type LinePayload = { sessionId: string; line: string; nativeOutput?: unknown };
-type LinesPayload = { sessionId: string; lines: string[]; nativeOutput?: unknown };
+type LinePayload = {
+  sessionId: string;
+  constructionId?: unknown;
+  line: string;
+  nativeOutput?: unknown;
+};
+type LinesPayload = {
+  sessionId: string;
+  constructionId?: unknown;
+  lines: string[];
+  nativeOutput?: unknown;
+};
 type SseBatchPayload = { sessionId: string; data: string[]; nativeOutput?: unknown };
 type ExitPayload = {
   sessionId: string;
   code: number | null;
   pid?: number;
+  constructionId?: unknown;
   reason?: string;
   nativeOutputState?: unknown;
 };
@@ -121,10 +139,6 @@ type ExitHandler = (code: number | null, reason?: string) => void;
 type SseHandler = (data: string) => void;
 type SseEndHandler = (error?: string) => void;
 
-const lineHandlers = new Map<string, LineHandler>();
-const exitHandlers = new Map<string, ExitHandler>();
-const lineBuffer = new Map<string, Buffered>();
-const stderrHandlers = new Map<string, LineHandler>();
 const sseHandlers = new Map<string, SseHandler>();
 const sseEndHandlers = new Map<string, SseEndHandler>();
 const sseBuffer = new Map<string, Buffered>();
@@ -132,12 +146,42 @@ const sseBuffer = new Map<string, Buffered>();
 // it does not know the owner). Only ids this window spawned or opened may
 // buffer while unwatched; anything else would be held until the bridge
 // is torn down, since nothing here ever watches or unwatches it.
-const ownedChildren = new Set<string>();
 const ownedSse = new Set<string>();
-const livePid = new Map<string, number>();
-type ChildExit = { code: number | null; pid: number; reason?: string };
-const pendingExit = new Map<string, ChildExit[]>();
-type GuardedSpawnAttempt = { generation: number; invoking: boolean; exits: ChildExit[] };
+declare const childProcessBrand: unique symbol;
+/** A private construction, not a session-to-current-process selector or operation grant. */
+export type ChildProcessHandle = Readonly<{ sessionId: string; [childProcessBrand]: true }>;
+type ProcessFrame = {
+  constructionId: string;
+  body:
+    | { kind: "stdout" | "stderr"; line: string; nativeItem?: NativeOutputItem }
+    | { kind: "exit"; code: number | null; pid?: number; reason?: string };
+  references: number;
+  consumed: boolean;
+};
+type ChildProcessState = {
+  handle: ChildProcessHandle;
+  invoke: ChildBackend["invoke"];
+  backend: HarnessProcessReceipt["backend"];
+  ready: Promise<HarnessProcessReceipt>;
+  resolve: (receipt: HarnessProcessReceipt) => void;
+  reject: (error: unknown) => void;
+  phase: "new" | "preparing" | "invoking" | "bound" | "failed";
+  cancelled: boolean;
+  retired: boolean;
+  exited: boolean;
+  order: number;
+  receipt?: HarnessProcessReceipt;
+  kill?: Promise<void>;
+  handlers?: { line: LineHandler; exit: ExitHandler; stderr?: LineHandler };
+  early: ProcessFrame[];
+  earlyBytes: number;
+};
+const processStates = new WeakMap<ChildProcessHandle, ChildProcessState>();
+const processRoutes = new Map<string, Set<ChildProcessState>>();
+const currentChildren = new Map<string, ChildProcessHandle>();
+const lineBuffer = new Map<ChildProcessState, Buffered>();
+let spawnOrder = 0;
+type GuardedSpawnAttempt = { generation: number };
 type GuardedSpawnGroup = {
   latest: number;
   published: number;
@@ -146,6 +190,186 @@ type GuardedSpawnGroup = {
 // Only restrictive in-process starts use this state. Retiring the group also
 // fences work still awaiting its grant/bridges, without restoring a killed PID.
 const guardedSpawns = new Map<string, GuardedSpawnGroup>();
+
+export function createChildProcessHandle(sessionId: string): ChildProcessHandle {
+  if (typeof sessionId !== "string" || !sessionId || sessionId.length > 512)
+    throw new Error("Invalid harness process locator");
+  const handle = Object.freeze({ sessionId }) as ChildProcessHandle;
+  let resolve!: ChildProcessState["resolve"];
+  let reject!: ChildProcessState["reject"];
+  const ready = new Promise<HarnessProcessReceipt>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  // A cancelled/failed construction need not have a write waiter yet.
+  void ready.catch(() => undefined);
+  processStates.set(handle, {
+    handle,
+    invoke: backend ? backend.invoke.bind(backend) : tauriInvoke,
+    backend: backend ? "host" : "native",
+    ready,
+    resolve,
+    reject,
+    phase: "new",
+    cancelled: false,
+    retired: false,
+    exited: false,
+    order: 0,
+    early: [],
+    earlyBytes: 0,
+  });
+  return handle;
+}
+
+/** Fresh owner intent only. Deferred writers and finalizers retain their original handle. */
+export function captureChildProcess(sessionId: string): ChildProcessHandle | undefined {
+  const handle = currentChildren.get(sessionId);
+  const state = handle && processStates.get(handle);
+  return state && !state.cancelled && !state.retired && !state.exited ? handle : undefined;
+}
+
+function childState(handle: ChildProcessHandle): ChildProcessState {
+  const state = processStates.get(handle);
+  if (!state) throw new Error("An original harness process handle is required");
+  return state;
+}
+
+/** Retire only this construction's Native output, never a replacement found by route. */
+export function invalidateChildOutput(handle: ChildProcessHandle, reason: string): void {
+  const state = childState(handle);
+  if (state.backend !== "native" || state.order === 0) return;
+  const invalidate = (receipt: HarnessProcessReceipt) =>
+    invalidateNativeOutputConstruction(handle.sessionId, receipt.constructionId, reason);
+  if (state.receipt) invalidate(state.receipt);
+  else {
+    // The actual invoked spawn may still return after local close/cancellation.
+    // Only its own receipt can select a stream; unknown remains quarantined.
+    void state.ready.then(invalidate, () =>
+      quarantineNativeOutputSession(handle.sessionId, reason),
+    );
+  }
+}
+
+function registerProcess(state: ChildProcessState): void {
+  const routes = processRoutes.get(state.handle.sessionId) ?? new Set<ChildProcessState>();
+  routes.add(state);
+  processRoutes.set(state.handle.sessionId, routes);
+}
+
+function releaseFrame(frame: ProcessFrame): void {
+  frame.references -= 1;
+  if (
+    frame.references === 0 &&
+    !frame.consumed &&
+    frame.body.kind !== "exit" &&
+    frame.body.nativeItem
+  )
+    discardNativeOutputItems([frame.body.nativeItem], "child-construction-unmatched");
+}
+
+function clearEarly(state: ChildProcessState): void {
+  for (const frame of state.early) releaseFrame(frame);
+  state.early = [];
+  state.earlyBytes = 0;
+}
+
+function detachProcess(state: ChildProcessState): void {
+  state.handlers = undefined;
+  const buffered = lineBuffer.get(state);
+  if (buffered?.nativeItems) discardNativeOutputItems(buffered.nativeItems, "child-unwatched");
+  lineBuffer.delete(state);
+  clearEarly(state);
+  const routes = processRoutes.get(state.handle.sessionId);
+  routes?.delete(state);
+  if (!routes?.size) processRoutes.delete(state.handle.sessionId);
+  if (currentChildren.get(state.handle.sessionId) === state.handle)
+    currentChildren.delete(state.handle.sessionId);
+}
+
+function deliverProcessFrame(state: ChildProcessState, frame: ProcessFrame): void {
+  if (
+    frame.consumed ||
+    state.cancelled ||
+    state.retired ||
+    state.receipt?.constructionId !== frame.constructionId
+  )
+    return;
+  const body = frame.body;
+  if (body.kind === "exit") {
+    if (state.exited || !isCurrentChildExit(state.receipt.pid, body.pid)) return;
+    frame.consumed = true;
+    state.exited = true;
+    if (currentChildren.get(state.handle.sessionId) === state.handle)
+      currentChildren.delete(state.handle.sessionId);
+    if (body.reason) state.handlers?.exit(body.code, body.reason);
+    else state.handlers?.exit(body.code);
+    return;
+  }
+  frame.consumed = true;
+  const handler = body.kind === "stdout" ? state.handlers?.line : state.handlers?.stderr;
+  if (handler) deliverNativeOutputItem(body.nativeItem, () => handler(body.line));
+  else if (body.kind === "stdout")
+    pushBounded(
+      lineBuffer,
+      state,
+      [body.line],
+      MAX_BUFFERED_BYTES,
+      body.nativeItem ? [body.nativeItem] : undefined,
+    );
+  else if (body.nativeItem) discardNativeOutputItems([body.nativeItem], "unwatched-stderr");
+}
+
+function routeProcessFrame(sessionId: string, frame: ProcessFrame): void {
+  const routes = processRoutes.get(sessionId);
+  const bound =
+    routes &&
+    [...routes].find(
+      (state) =>
+        !state.cancelled &&
+        !state.retired &&
+        state.receipt?.constructionId === frame.constructionId,
+    );
+  if (bound) {
+    deliverProcessFrame(bound, frame);
+  } else {
+    for (const state of routes ?? []) {
+      if (state.cancelled || state.retired || state.phase !== "invoking") continue;
+      const bytes = frame.body.kind === "exit" ? 0 : frame.body.line.length;
+      if (bytes > MAX_BUFFERED_BYTES) continue;
+      frame.references += 1;
+      state.early.push(frame);
+      state.earlyBytes += bytes;
+      while (state.early.length > MAX_BUFFERED || state.earlyBytes > MAX_BUFFERED_BYTES) {
+        const dropped = state.early.shift()!;
+        state.earlyBytes -= dropped.body.kind === "exit" ? 0 : dropped.body.line.length;
+        releaseFrame(dropped);
+      }
+    }
+  }
+  if (!frame.references && !frame.consumed && frame.body.kind !== "exit" && frame.body.nativeItem)
+    discardNativeOutputItems([frame.body.nativeItem], "child-construction-unmatched");
+}
+
+function receiveProcessLines(
+  sessionId: string,
+  constructionId: unknown,
+  channel: "stdout" | "stderr",
+  lines: readonly string[],
+  metadata?: unknown,
+): void {
+  const nativeItems = observeNativeOutputBatch(sessionId, channel, lines, metadata);
+  if (!isHarnessConstructionId(constructionId)) {
+    if (nativeItems) discardNativeOutputItems(nativeItems, "child-construction-missing");
+    return;
+  }
+  for (const [index, line] of lines.entries())
+    routeProcessFrame(sessionId, {
+      constructionId,
+      body: { kind: channel, line, nativeItem: nativeItems?.[index] },
+      references: 0,
+      consumed: false,
+    });
+}
 
 /** True when this exit belongs to the child we currently have spawned. */
 export function isCurrentChildExit(
@@ -171,9 +395,9 @@ let teardownTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Drops the oldest items past either bound; the newest item always stays,
  * even when it alone exceeds the byte bound. */
-export function pushBounded(
-  map: Map<string, Buffered>,
-  sessionId: string,
+export function pushBounded<Key>(
+  map: Map<Key, Buffered>,
+  sessionId: Key,
   items: readonly string[],
   maxBytes = MAX_BUFFERED_BYTES,
   nativeItems?: readonly NativeOutputItem[],
@@ -199,29 +423,6 @@ export function pushBounded(
     queued.bytes = kept;
   }
   map.set(sessionId, queued);
-}
-
-// The desktop emits batches; a headless host still emits one line per event.
-function deliverStdout(sessionId: string, lines: readonly string[], metadata?: unknown) {
-  const nativeItems = observeNativeOutputBatch(sessionId, "stdout", lines, metadata);
-  const handler = lineHandlers.get(sessionId);
-  if (handler) {
-    for (const [index, line] of lines.entries())
-      deliverNativeOutputItem(nativeItems?.[index], () => handler(line));
-    return;
-  }
-  if (ownedChildren.has(sessionId))
-    pushBounded(lineBuffer, sessionId, lines, MAX_BUFFERED_BYTES, nativeItems);
-  else if (nativeItems) discardNativeOutputItems(nativeItems, "unowned-buffer");
-}
-
-function deliverStderr(sessionId: string, lines: readonly string[], metadata?: unknown) {
-  const nativeItems = observeNativeOutputBatch(sessionId, "stderr", lines, metadata);
-  const handler = stderrHandlers.get(sessionId);
-  if (handler)
-    for (const [index, line] of lines.entries())
-      deliverNativeOutputItem(nativeItems?.[index], () => handler(line));
-  if (!handler && nativeItems) discardNativeOutputItems(nativeItems, "unwatched-stderr");
 }
 
 function deliverSse(sessionId: string, data: readonly string[], metadata?: unknown) {
@@ -255,49 +456,59 @@ function ensureBridge() {
   const installation = Promise.all([
     register(
       listen<LinesPayload>("harness-stdout-lines", (event) => {
-        deliverStdout(event.payload.sessionId, event.payload.lines, event.payload.nativeOutput);
+        receiveProcessLines(
+          event.payload.sessionId,
+          event.payload.constructionId,
+          "stdout",
+          event.payload.lines,
+          event.payload.nativeOutput,
+        );
       }),
     ),
     register(
       listen<LinePayload>("harness-stdout", (event) => {
-        deliverStdout(event.payload.sessionId, [event.payload.line], event.payload.nativeOutput);
+        receiveProcessLines(
+          event.payload.sessionId,
+          event.payload.constructionId,
+          "stdout",
+          [event.payload.line],
+          event.payload.nativeOutput,
+        );
       }),
     ),
     register(
       listen<LinesPayload>("harness-stderr-lines", (event) => {
-        deliverStderr(event.payload.sessionId, event.payload.lines, event.payload.nativeOutput);
+        receiveProcessLines(
+          event.payload.sessionId,
+          event.payload.constructionId,
+          "stderr",
+          event.payload.lines,
+          event.payload.nativeOutput,
+        );
       }),
     ),
     register(
       listen<LinePayload>("harness-stderr", (event) => {
-        deliverStderr(event.payload.sessionId, [event.payload.line], event.payload.nativeOutput);
+        receiveProcessLines(
+          event.payload.sessionId,
+          event.payload.constructionId,
+          "stderr",
+          [event.payload.line],
+          event.payload.nativeOutput,
+        );
       }),
     ),
     register(
       listen<ExitPayload>("harness-exit", (event) => {
         observeNativeOutputState(event.payload.sessionId, event.payload.nativeOutputState);
-        const { sessionId, code, pid, reason } = event.payload;
-        const handler = exitHandlers.get(sessionId);
-        if (!handler || pid == null || pid <= 0) return;
-        const currentPid = livePid.get(sessionId);
-        if (isCurrentChildExit(currentPid, pid)) {
-          livePid.delete(sessionId);
-          if (reason) handler(code, reason);
-          else handler(code);
-          return;
-        }
-        let buffered = false;
-        for (const attempt of guardedSpawns.get(sessionId)?.attempts ?? []) {
-          if (!attempt.invoking) continue;
-          attempt.exits.push({ code, pid, reason });
-          if (attempt.exits.length > 8) attempt.exits.splice(0, attempt.exits.length - 8);
-          buffered = true;
-        }
-        if (buffered || currentPid != null) return;
-        const exits = pendingExit.get(sessionId) ?? [];
-        exits.push({ code, pid, reason });
-        if (exits.length > 8) exits.splice(0, exits.length - 8);
-        pendingExit.set(sessionId, exits);
+        const { sessionId, constructionId, code, pid, reason } = event.payload;
+        if (!isHarnessConstructionId(constructionId)) return;
+        routeProcessFrame(sessionId, {
+          constructionId,
+          body: { kind: "exit", code, pid, reason },
+          references: 0,
+          consumed: false,
+        });
       }),
     ),
     register(
@@ -340,17 +551,18 @@ function teardownBridge() {
   const pending = bridge;
   bridge = null;
   bridgeAttempt = null;
-  lineHandlers.clear();
-  exitHandlers.clear();
-  lineBuffer.clear();
-  stderrHandlers.clear();
+  for (const routes of [...processRoutes.values()])
+    for (const state of [...routes]) {
+      state.cancelled = true;
+      if (state.phase === "new" || state.phase === "preparing")
+        state.reject(new Error("Harness bridge retired"));
+      detachProcess(state);
+    }
   sseHandlers.clear();
   sseEndHandlers.clear();
   sseBuffer.clear();
-  ownedChildren.clear();
   ownedSse.clear();
-  livePid.clear();
-  pendingExit.clear();
+  currentChildren.clear();
   guardedSpawns.clear();
   void pending?.then((fns) => fns.forEach((fn) => fn())).catch(() => undefined);
 }
@@ -397,30 +609,30 @@ if (import.meta.hot) {
 }
 
 export function watchChild(
-  sessionId: string,
+  handle: ChildProcessHandle,
   onLine: LineHandler,
   onExit: ExitHandler,
   onStderr?: LineHandler,
 ) {
-  const queued = lineBuffer.get(sessionId);
-  lineBuffer.delete(sessionId);
-  lineHandlers.set(sessionId, onLine);
-  exitHandlers.set(sessionId, onExit);
-  if (onStderr) stderrHandlers.set(sessionId, onStderr);
+  const state = childState(handle);
+  if (state.cancelled || state.retired || state.phase === "failed")
+    throw new Error("Harness process construction retired");
+  registerProcess(state);
+  const queued = lineBuffer.get(state);
+  lineBuffer.delete(state);
+  state.handlers = { line: onLine, exit: onExit, stderr: onStderr };
   if (queued)
     for (const [index, line] of queued.items.entries())
       deliverNativeOutputItem(queued.nativeItems?.[index] ?? undefined, () => onLine(line));
 }
 
-export function unwatchChild(sessionId: string) {
-  invalidateNativeOutputSession(sessionId, "child-unwatched");
-  guardedSpawns.delete(sessionId);
-  lineHandlers.delete(sessionId);
-  exitHandlers.delete(sessionId);
-  lineBuffer.delete(sessionId);
-  ownedChildren.delete(sessionId);
-  stderrHandlers.delete(sessionId);
-  pendingExit.delete(sessionId);
+export function unwatchChild(handle: ChildProcessHandle) {
+  const state = childState(handle);
+  invalidateChildOutput(handle, "child-unwatched");
+  state.cancelled = true;
+  if (state.phase === "new" || state.phase === "preparing")
+    state.reject(new Error("Harness process construction retired"));
+  detachProcess(state);
 }
 
 export function watchSse(sessionId: string, onData: SseHandler, onEnd?: SseEndHandler) {
@@ -448,7 +660,7 @@ const nativeAuthorityArgs = (scope?: NativeAuthorityScope) =>
     : {};
 
 export async function spawnChild(
-  sessionId: string,
+  handle: ChildProcessHandle,
   command: string,
   args: string[],
   cwd: string,
@@ -459,6 +671,13 @@ export async function spawnChild(
   beforeSpawn?: () => Promise<void>,
   logicalSessionId?: string,
 ): Promise<void> {
+  const state = childState(handle);
+  const { sessionId } = handle;
+  const authorityArgs = nativeAuthorityArgs(authority);
+  if (state.phase !== "new" || state.cancelled)
+    throw new Error("Harness process construction is single-use or cancelled");
+  state.phase = "preparing";
+  registerProcess(state);
   const group = beforeSpawn
     ? (guardedSpawns.get(sessionId) ?? {
         latest: 0,
@@ -466,11 +685,10 @@ export async function spawnChild(
         attempts: new Set<GuardedSpawnAttempt>(),
       })
     : undefined;
-  const attempt: GuardedSpawnAttempt | undefined = group
-    ? { generation: 0, invoking: false, exits: [] }
-    : undefined;
+  const attempt: GuardedSpawnAttempt | undefined = group ? { generation: 0 } : undefined;
   const checkGuarded = () => {
-    if (guardedSpawns.get(sessionId) !== group) throw new Error("Provider startup cancelled");
+    if (state.cancelled || state.retired || (group && guardedSpawns.get(sessionId) !== group))
+      throw new Error("Provider startup cancelled");
   };
   if (group && attempt) {
     guardedSpawns.set(sessionId, group);
@@ -479,11 +697,9 @@ export async function spawnChild(
     // Preserve the ordinary spawn path. Its newer start retires only pending
     // restrictive attempts, which must never overwrite its eventual PID.
     guardedSpawns.delete(sessionId);
-    livePid.delete(sessionId);
-    pendingExit.delete(sessionId);
-    ownedChildren.add(sessionId);
   }
   try {
+    checkGuarded();
     if (beforeSpawn && group && attempt) {
       await beforeSpawn();
       checkGuarded();
@@ -510,12 +726,13 @@ export async function spawnChild(
       await beforeSpawn();
       checkGuarded();
       if (group.latest !== attempt.generation) throw new Error("Provider startup cancelled");
-      // The backend can still deny after its own asynchronous preparation.
-      // Keep the incumbent's exit routing until an actual PID is returned.
-      attempt.invoking = true;
-      ownedChildren.add(sessionId);
     }
-    const pid = await invoke<number>("harness_spawn", {
+    checkGuarded();
+    if (!Number.isSafeInteger(spawnOrder + 1))
+      throw new Error("Provider startup generation exhausted");
+    state.order = ++spawnOrder;
+    state.phase = "invoking";
+    const raw = await state.invoke<unknown>("harness_spawn", {
       sessionId,
       command,
       args: launchArgs,
@@ -525,35 +742,52 @@ export async function spawnChild(
       binaryPath,
       genericAcpId,
       ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
-      ...nativeAuthorityArgs(authority),
+      ...authorityArgs,
       // Functions are in-process restrictions, never desktop IPC/wire arguments.
-      ...(backend && beforeSpawn ? { beforeSpawn } : {}),
+      ...(state.backend === "host" && beforeSpawn ? { beforeSpawn } : {}),
     });
-    if (typeof pid !== "number" || pid <= 0) return;
-    if (group && attempt) {
-      if (guardedSpawns.get(sessionId) !== group || attempt.generation < group.published) return;
-      // A newer failed request does not discard an already accepted older PID.
-      // A newer successful request, kill or unwatch cannot be overwritten.
-      group.published = attempt.generation;
-      livePid.set(sessionId, pid);
-      pendingExit.delete(sessionId);
-      const exited = attempt.exits.find((event) => event.pid === pid);
-      if (!exited) return;
-      livePid.delete(sessionId);
-      const handler = exitHandlers.get(sessionId);
-      if (exited.reason) handler?.(exited.code, exited.reason);
-      else handler?.(exited.code);
-      return;
+    const receipt = requireHarnessProcessReceipt(raw, sessionId, state.backend);
+    state.receipt = receipt;
+    state.phase = "bound";
+    const previous = currentChildren.get(sessionId);
+    const previousState = previous && processStates.get(previous);
+    const superseded =
+      state.retired ||
+      (group &&
+        attempt &&
+        (guardedSpawns.get(sessionId) !== group || attempt.generation < group.published)) ||
+      (previousState && previousState.order > state.order);
+    if (!state.cancelled && !superseded) {
+      if (group && attempt) group.published = attempt.generation;
+      // Retain the witness on every older original, including pending replies.
+      // A successor exiting before that reply arrives cannot resurrect it.
+      for (const previous of [...(processRoutes.get(sessionId) ?? [])])
+        if (previous !== state && previous.order > 0 && previous.order < state.order) {
+          previous.retired = true;
+          detachProcess(previous);
+        }
+      currentChildren.set(sessionId, handle);
+    } else if (superseded) {
+      state.retired = true;
     }
-    livePid.set(sessionId, pid);
-    const exits = pendingExit.get(sessionId);
-    pendingExit.delete(sessionId);
-    const exited = exits?.find((event) => event.pid === pid);
-    if (!exited) return;
-    livePid.delete(sessionId);
-    const handler = exitHandlers.get(sessionId);
-    if (exited.reason) handler?.(exited.code, exited.reason);
-    else handler?.(exited.code);
+    // Resolve only this receipt. A queued kill can now target it even after cancellation.
+    state.resolve(receipt);
+    const early = state.early;
+    state.early = [];
+    state.earlyBytes = 0;
+    try {
+      for (const frame of early) deliverProcessFrame(state, frame);
+    } finally {
+      for (const frame of early) releaseFrame(frame);
+    }
+    if (state.cancelled || state.retired) detachProcess(state);
+  } catch (error) {
+    if (!state.receipt) {
+      state.phase = "failed";
+      state.reject(error);
+      detachProcess(state);
+    }
+    throw error;
   } finally {
     if (group && attempt) {
       group.attempts.delete(attempt);
@@ -564,44 +798,65 @@ export async function spawnChild(
 }
 
 export function writeChild(
-  sessionId: string,
+  handle: ChildProcessHandle,
   line: string,
   authority?: NativeAuthorityScope,
 ): Promise<void> {
   const work = captureNativeOutputWork();
+  const authorityArgs = nativeAuthorityArgs(authority);
   try {
+    const state = childState(handle);
+    const write = (receipt: HarnessProcessReceipt) => {
+      if (state.cancelled || state.retired || state.exited)
+        throw new Error("Harness process construction retired");
+      return state.invoke<void>("harness_write", {
+        sessionId: handle.sessionId,
+        constructionId: receipt.constructionId,
+        line,
+        ...authorityArgs,
+      });
+    };
     return trackNativeOutputWork(
-      invoke<void>("harness_write", { sessionId, line, ...nativeAuthorityArgs(authority) }),
+      state.receipt ? write(state.receipt) : state.ready.then(write),
       work,
     );
   } catch (error) {
     work?.fail("child-write-rejected");
-    throw error;
+    return Promise.reject(error);
   }
 }
 
-export function killChild(sessionId: string): Promise<void> {
-  livePid.delete(sessionId);
-  pendingExit.delete(sessionId);
-  unwatchChild(sessionId);
-  return invoke("harness_kill", { sessionId });
+export function killChild(handle: ChildProcessHandle): Promise<void> {
+  const state = childState(handle);
+  if (state.kill) return state.kill;
+  const beforeInvoke = state.phase === "new" || state.phase === "preparing";
+  unwatchChild(handle);
+  if (beforeInvoke) return (state.kill = Promise.resolve());
+  const kill = (receipt: HarnessProcessReceipt) =>
+    state.invoke<void>("harness_kill", {
+      sessionId: handle.sessionId,
+      constructionId: receipt.constructionId,
+    });
+  state.kill = state.receipt ? kill(state.receipt) : state.ready.then(kill);
+  return state.kill;
 }
 
 export function killAllChildren(): Promise<void> {
   // A naturally ended child can still have undelivered buffered output here.
   // Native kill_all cannot cancel that already-removed lifetime for us.
   invalidateNativeOutputDelivery("children-reset");
-  lineHandlers.clear();
-  exitHandlers.clear();
-  lineBuffer.clear();
-  stderrHandlers.clear();
+  for (const routes of [...processRoutes.values()])
+    for (const state of [...routes]) {
+      state.cancelled = true;
+      if (state.phase === "new" || state.phase === "preparing")
+        state.reject(new Error("Harness children reset"));
+      detachProcess(state);
+    }
   sseHandlers.clear();
   sseEndHandlers.clear();
   sseBuffer.clear();
-  ownedChildren.clear();
   ownedSse.clear();
-  livePid.clear();
-  pendingExit.clear();
+  currentChildren.clear();
   guardedSpawns.clear();
   return invoke("harness_kill_all");
 }

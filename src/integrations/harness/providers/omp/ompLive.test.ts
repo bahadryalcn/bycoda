@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const transport = vi.hoisted(() => ({
@@ -14,16 +15,19 @@ const transport = vi.hoisted(() => ({
   stateSessionId: undefined as string | undefined,
 }));
 
-vi.mock("../../core/child", () => ({
-  resolveOmpBinary: async () => ({ path: "/fake/omp" }),
-  resolvePiBinary: async () => ({ path: "/fake/pi" }),
-  acquireHarnessBridge: async () => () => undefined,
-  spawnChild: transport.spawnChild,
-  killChild: async () => undefined,
-  unwatchChild: (id: string) => transport.watchers.delete(id),
-  watchChild: (id: string, onLine: (line: string) => void) => transport.watchers.set(id, onLine),
-  writeChild: transport.writeChild,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveOmpBinary: async () => ({ path: "/fake/omp" }),
+    resolvePiBinary: async () => ({ path: "/fake/pi" }),
+    acquireHarnessBridge: async () => () => undefined,
+    spawnChild: transport.spawnChild,
+    killChild: async () => undefined,
+    unwatchChild: (id: string) => transport.watchers.delete(id),
+    watchChild: (id: string, onLine: (line: string) => void) => transport.watchers.set(id, onLine),
+    writeChild: transport.writeChild,
+  }),
+);
 
 import {
   cancelOmpTurn,

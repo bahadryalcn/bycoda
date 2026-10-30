@@ -1,12 +1,15 @@
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { AcpClient } from "../../core/acp";
 import {
+  captureChildProcess,
+  createChildProcessHandle,
   execChild,
   killChild,
   resolveGrokBinary,
   spawnChild,
   unwatchChild,
   watchChild,
+  type ChildProcessHandle,
 } from "../../core/child";
 import { grokAuthMethodId, grokEffort, grokTextSpawnArgs, TEXT_MODEL } from "./grokProtocol";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
@@ -23,6 +26,7 @@ const CLIENT_CAPABILITIES = {
 };
 
 type LiveText = {
+  process: ChildProcessHandle;
   acp: AcpClient;
   binaryPath: string;
   cwd: string;
@@ -36,13 +40,15 @@ type LiveText = {
 };
 
 let live: LiveText | null = null;
+let starting: ChildProcessHandle | null = null;
 let turns: Promise<void> = Promise.resolve();
 
 export async function stopGrokTextPrompt(childId?: string): Promise<void> {
+  const extra = childId && childId !== TEXT_CHILD_ID ? captureChildProcess(childId) : undefined;
   await dropLive();
-  if (childId && childId !== TEXT_CHILD_ID) {
-    unwatchChild(childId);
-    await killChild(childId).catch(() => undefined);
+  if (extra) {
+    unwatchChild(extra);
+    await killChild(extra).catch(() => undefined);
   }
 }
 
@@ -106,13 +112,13 @@ async function promptOnLive(input: {
     await session.acp
       .notify("session/cancel", { sessionId: session.acpSessionId })
       .catch(() => undefined);
-    if (session.closed) await dropLive();
+    if (session.closed) await dropLive(session);
     throw error;
   } finally {
     abort.detach();
     session.collecting = false;
     session.onEvent = undefined;
-    await dropLive();
+    await dropLive(session);
   }
 }
 
@@ -141,10 +147,11 @@ async function startLive(
   model = TEXT_MODEL,
   modelSettings?: Record<string, string>,
 ): Promise<LiveText> {
-  await dropLive();
-  const { path } = await resolveGrokBinary();
+  const stopping = dropLive();
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID);
+  starting = textProcess;
   const acpRef: { session: LiveText | null } = { session: null };
-  const acp = new AcpClient(TEXT_CHILD_ID, {
+  const acp = new AcpClient(textProcess, {
     onNotification: (method, params) => {
       const session = acpRef.session;
       if (!session || method !== "session/update" || !session.collecting) return;
@@ -158,8 +165,9 @@ async function startLive(
     },
   });
   const session: LiveText = {
+    process: textProcess,
     acp,
-    binaryPath: path,
+    binaryPath: "",
     cwd,
     model,
     settingsKey: modelSettingsKey(modelSettings),
@@ -172,7 +180,7 @@ async function startLive(
   acpRef.session = session;
 
   watchChild(
-    TEXT_CHILD_ID,
+    textProcess,
     (line) => acp.pushLine(line),
     () => {
       session.closed = true;
@@ -182,7 +190,11 @@ async function startLive(
   );
 
   try {
-    await spawnChild(TEXT_CHILD_ID, path, grokTextSpawnArgs(), cwd, undefined, "grok");
+    await stopping;
+    const { path } = await resolveGrokBinary();
+    session.binaryPath = path;
+    if (starting !== textProcess) throw new Error("Grok text startup cancelled");
+    await spawnChild(textProcess, path, grokTextSpawnArgs(), cwd, undefined, "grok");
     const init = await acp.request(
       "initialize",
       {
@@ -199,15 +211,18 @@ async function startLive(
         .catch(() => undefined);
     }
     await openSession(session, cwd, model, modelSettings);
+    if (starting !== textProcess || session.closed) throw new Error("Grok text startup cancelled");
     live = session;
     return session;
   } catch (error) {
     session.closed = true;
     acp.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(TEXT_CHILD_ID);
-    await killChild(TEXT_CHILD_ID).catch(() => undefined);
+    unwatchChild(textProcess);
+    await killChild(textProcess).catch(() => undefined);
     await deleteTextSession(session);
     throw error;
+  } finally {
+    if (starting === textProcess) starting = null;
   }
 }
 
@@ -245,15 +260,20 @@ async function openSession(
   session.settingsKey = modelSettingsKey(modelSettings);
 }
 
-async function dropLive(): Promise<void> {
-  const current = live;
-  live = null;
+async function dropLive(expected?: LiveText): Promise<void> {
+  const current = expected ?? live;
+  const pending = expected ? null : starting;
+  if (!expected || live === expected) live = null;
+  if (!expected) starting = null;
   if (current) {
     current.closed = true;
     current.acp.close();
   }
-  unwatchChild(TEXT_CHILD_ID);
-  await killChild(TEXT_CHILD_ID).catch(() => undefined);
+  for (const process of new Set([current?.process, pending])) {
+    if (!process) continue;
+    unwatchChild(process);
+    await killChild(process).catch(() => undefined);
+  }
   // Stop the writer first so it cannot recreate the session after deletion.
   if (current) await deleteTextSession(current);
 }

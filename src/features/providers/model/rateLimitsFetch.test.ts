@@ -1,3 +1,4 @@
+import { processConstructions } from "../../../integrations/harness/providers/processConstruction.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const child = vi.hoisted(() => ({
@@ -10,27 +11,33 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("../../../platform/tauri/fs", () => ({
   homeDir: async () => "/home/test",
 }));
-vi.mock("../../../integrations/harness/core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/bin/codex" }),
-  spawnChild: async (
-    _id: string,
-    _path: string,
-    _args: string[],
-    _cwd: string,
-    account: { id: string },
-  ) => {
-    child.live += 1;
-    child.maxLive = Math.max(child.maxLive, child.live);
-    child.spawned.push(account.id);
-  },
-  watchChild: () => undefined,
-  unwatchChild: () => {
-    child.live = Math.max(0, child.live - 1);
-  },
-  killChild: async () => undefined,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../../integrations/harness/core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "/bin/codex" }),
+    spawnChild: async (
+      _id: string,
+      _path: string,
+      _args: string[],
+      _cwd: string,
+      account: { id: string },
+    ) => {
+      child.live += 1;
+      child.maxLive = Math.max(child.maxLive, child.live);
+      child.spawned.push(account.id);
+    },
+    watchChild: () => undefined,
+    unwatchChild: () => {
+      child.live = Math.max(0, child.live - 1);
+    },
+    killChild: async () => undefined,
+  }),
+);
 vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
   JsonRpcClient: class {
+    constructor(handle: import("../../../integrations/harness/core/child").ChildProcessHandle) {
+      processConstructions.client(handle);
+    }
     close() {}
     pushLine() {}
     respond() {
@@ -70,5 +77,16 @@ describe("fetchCodexRateLimits", () => {
     expect(child.maxLive).toBe(1);
     expect(child.spawned).toEqual(["default", "account-work", "account-personal"]);
     expect(results.map((result) => result.session?.usedPercent)).toEqual([10, 10, 10]);
+    expect(processConstructions.created).toHaveLength(3);
+    expect(new Set(processConstructions.created).size).toBe(3);
+    for (const original of processConstructions.created) {
+      for (const kind of ["client", "watch", "spawn", "unwatch", "kill"] as const) {
+        expect(
+          processConstructions.operations.filter(
+            (operation) => operation.kind === kind && operation.handle === original,
+          ),
+        ).toHaveLength(1);
+      }
+    }
   });
 });

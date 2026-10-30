@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -21,17 +22,20 @@ const saveGeneratedImage = vi.hoisted(() =>
 );
 const deleteGeneratedImages = vi.hoisted(() => vi.fn(async () => undefined));
 
-vi.mock("../../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/fake/codex" }),
-  spawnChild: async () => undefined,
-  killChild,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (l: string) => void, exit: typeof onExit) => {
-    onLine = line;
-    onExit = exit;
-  },
-  writeChild,
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "/fake/codex" }),
+    spawnChild: async () => undefined,
+    killChild,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (l: string) => void, exit: typeof onExit) => {
+      onLine = line;
+      onExit = exit;
+    },
+    writeChild,
+  }),
+);
 
 vi.mock("../../../../platform/tauri/generatedImages", () => ({
   saveGeneratedImage,
@@ -1357,7 +1361,19 @@ describe("codex live turn sequence", () => {
     let previous: { requestId: number; occurrenceId?: string } | undefined;
     for (let generation = 0; generation < 2; generation++) {
       sent.length = 0;
+      const startupAt = processConstructions.operations.length;
       const { events, turn } = await startTurn("codex-live");
+      const construction = processConstructions.created.filter(
+        (handle) => handle.sessionId === "codex-live",
+      )[generation]!;
+      expect(construction).toBeDefined();
+      for (const kind of ["watch", "spawn", "write"] as const) {
+        const startup = processConstructions.operations
+          .slice(startupAt)
+          .filter((operation) => operation.kind === kind);
+        expect(startup.length).toBeGreaterThan(0);
+        expect(startup.every((operation) => operation.handle === construction)).toBe(true);
+      }
       onLine!(
         JSON.stringify({
           id: 991,
@@ -1387,6 +1403,14 @@ describe("codex live turn sequence", () => {
       const responses = parse().filter((message) => message.id === 991);
       expect(responses).toHaveLength(1);
       expect(responses[0].result).toEqual({ decision: "decline" });
+      expect(
+        processConstructions.operations
+          .filter(
+            (operation) =>
+              operation.kind === "write" && JSON.parse(operation.args[0] as string).id === 991,
+          )
+          .at(-1)?.handle,
+      ).toBe(construction);
       expect(events).toContainEqual({
         type: "approval.resolved",
         requestId: asked.requestId,
@@ -1399,6 +1423,10 @@ describe("codex live turn sequence", () => {
       notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
       await turn;
       await stopCodexSession("codex-live");
+      expect(
+        processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+          ?.handle,
+      ).toBe(construction);
       __codexTestReset();
     }
   });

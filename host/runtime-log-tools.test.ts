@@ -10,6 +10,7 @@ import type { AddressInfo } from "node:net";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
 import { HostChildBackend } from "./child-backend";
+import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
 import { RuntimeLogsService } from "./runtime-logs";
 import {
   authorizeRuntimeLogsAcpFrame,
@@ -290,14 +291,15 @@ readline.createInterface({input:process.stdin}).on('line', line => console.log(l
       rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     });
     const bridge = await backend.invoke<{ command: string; mcpUrl: string }>(
-      "harness_runtime_logs_bridge", { sessionId: s.sessionId },
+      "harness_runtime_logs_bridge",
+      { sessionId: s.sessionId },
     );
     expect(bridge).toMatchObject({ command: process.execPath });
     expect(new URL(bridge.mcpUrl).hostname).toBe("127.0.0.1");
     expect(
       await backend.invoke("harness_runtime_logs_bridge", { sessionId: "isolated-title" }),
     ).toBeNull();
-    await backend.invoke("harness_spawn", {
+    const originalProcess = await backend.invoke<HarnessProcessReceipt>("harness_spawn", {
       sessionId: `${s.sessionId}#2`,
       command: script,
       args: [],
@@ -310,6 +312,7 @@ readline.createInterface({input:process.stdin}).on('line', line => console.log(l
     });
     await backend.invoke("harness_write", {
       sessionId: `${s.sessionId}#2`,
+      constructionId: originalProcess.constructionId,
       line: JSON.stringify({
         method: "session/new",
         params: { mcpServers: [{ name: "bycoda-runtime-logs", command: "node", env: [] }] },

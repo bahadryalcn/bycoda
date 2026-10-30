@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 type Request = {
@@ -19,56 +20,65 @@ function receive(message: unknown) {
   onLine?.(JSON.stringify(message));
 }
 
-vi.mock("../../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/fake/codex" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (value: string) => void) => {
-    onLine = line;
-  },
-  writeChild: async (_id: string, line: string) => {
-    const request = JSON.parse(line) as Request;
-    sent.push(request);
-    if (request.id === undefined) return;
-    if (request.method === "thread/start") {
-      receive({
-        id: request.id,
-        result: { thread: { id: `thread_${++threadCount}` } },
-      });
-    } else if (request.method === "thread/resume") {
-      receive(
-        missingResume
-          ? { id: request.id, error: { message: "thread not found" } }
-          : {
-              id: request.id,
-              result: { thread: { id: request.params?.threadId } },
-            },
-      );
-    } else if (request.method === "turn/start") {
-      receive({ id: request.id, result: { turn: { id: "turn_1" } } });
-      if (stallTurn) return;
-      setTimeout(() => {
+beforeEach(() => {
+  processConstructions.reset();
+  resolveCodexBinary.mockReset().mockResolvedValue({ path: "/fake/codex" });
+  killChild.mockReset().mockResolvedValue(undefined);
+});
+const resolveCodexBinary = vi.fn(async () => ({ path: "/fake/codex" }));
+const killChild = vi.fn(async () => undefined);
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary,
+    spawnChild: async () => undefined,
+    killChild,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (value: string) => void) => {
+      onLine = line;
+    },
+    writeChild: async (_id: string, line: string) => {
+      const request = JSON.parse(line) as Request;
+      sent.push(request);
+      if (request.id === undefined) return;
+      if (request.method === "thread/start") {
         receive({
-          method: "item/agentMessage/delta",
-          params: { delta: output },
+          id: request.id,
+          result: { thread: { id: `thread_${++threadCount}` } },
         });
-        receive({
-          method: "turn/completed",
-          params: {
-            turn: {
-              id: "turn_1",
-              status: failTurn ? "failed" : "completed",
-              ...(failTurn ? { error: { message: "Generation failed" } } : {}),
+      } else if (request.method === "thread/resume") {
+        receive(
+          missingResume
+            ? { id: request.id, error: { message: "thread not found" } }
+            : {
+                id: request.id,
+                result: { thread: { id: request.params?.threadId } },
+              },
+        );
+      } else if (request.method === "turn/start") {
+        receive({ id: request.id, result: { turn: { id: "turn_1" } } });
+        if (stallTurn) return;
+        setTimeout(() => {
+          receive({
+            method: "item/agentMessage/delta",
+            params: { delta: output },
+          });
+          receive({
+            method: "turn/completed",
+            params: {
+              turn: {
+                id: "turn_1",
+                status: failTurn ? "failed" : "completed",
+                ...(failTurn ? { error: { message: "Generation failed" } } : {}),
+              },
             },
-          },
-        });
-      }, 0);
-    } else if (request.method !== "turn/interrupt" || !stallInterrupt) {
-      receive({ id: request.id, result: {} });
-    }
-  },
-}));
+          });
+        }, 0);
+      } else if (request.method !== "turn/interrupt" || !stallInterrupt) {
+        receive({ id: request.id, result: {} });
+      }
+    },
+  }),
+);
 
 vi.mock("../../../../platform/tauri/fs", () => ({
   gitStagedContext: async () => ({
@@ -108,6 +118,166 @@ beforeEach(() => {
 afterEach(async () => {
   await stopCodexTextPrompt();
   vi.useRealTimers();
+});
+
+it("cancels account B while original account A teardown is still held", async () => {
+  // Real JSON-RPC client over a protocol fake; no physical process receipt is emulated.
+  await warmupCodexText("/repo");
+  const original = processConstructions.created[0];
+  expect(original).toBeDefined();
+  expect(
+    processConstructions.operations
+      .filter((operation) => operation.kind === "spawn")
+      .map((operation) => operation.handle),
+  ).toEqual([original]);
+  let release!: () => void;
+  let entered = false;
+  let released = false;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  killChild.mockImplementationOnce(async () => {
+    entered = true;
+    await held;
+  });
+  sent.length = 0;
+  const switching = runCodexTextPrompt({
+    cwd: "/repo",
+    providerAccountId: "account-B",
+    prompt: "Never dispatch B",
+  }).then(
+    (value) => ({ value, error: undefined }),
+    (error: unknown) => ({ value: undefined, error }),
+  );
+  try {
+    await vi.waitFor(() => expect(entered).toBe(true));
+    const cancelled = processConstructions.created[1];
+    const stopping = stopCodexTextPrompt();
+    await stopping;
+    expect(released).toBe(false);
+    // B must already own a cancellable handle before A's asynchronous kill finishes.
+    expect(cancelled).toBeDefined();
+    expect(cancelled).not.toBe(original);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "watch")
+        .map((operation) => operation.handle),
+    ).toEqual([original, cancelled]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original, cancelled]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "spawn")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    expect(sent).toEqual([]);
+    released = true;
+    release();
+    expect((await switching).error).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("startup cancelled") }),
+    );
+    expect(processConstructions.created).toEqual([original, cancelled]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "spawn")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    expect(sent).toEqual([]);
+    await expect(
+      runCodexTextPrompt({
+        cwd: "/repo",
+        providerAccountId: "account-C",
+        prompt: "Explicit fresh C",
+      }),
+    ).resolves.toBe("Generated text");
+    const fresh = processConstructions.created[2];
+    expect(fresh).toBeDefined();
+    expect(fresh).not.toBe(original);
+    expect(fresh).not.toBe(cancelled);
+    const spawned = processConstructions.operations.filter(
+      (operation) => operation.kind === "spawn",
+    );
+    expect(spawned.map((operation) => operation.handle)).toEqual([original, fresh]);
+    expect(spawned[1].args[3]).toEqual({ provider: "codex", id: "account-C" });
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write" && operation.handle !== original)
+        .every((operation) => operation.handle === fresh),
+    ).toBe(true);
+    expect(sent.some((request) => request.method === "turn/start")).toBe(true);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
+    ).toBe(fresh);
+  } finally {
+    released = true;
+    release();
+    await stopCodexTextPrompt();
+    await switching;
+  }
+});
+
+it("cancels A before binary resolution and lets B use its own original helper handle", async () => {
+  let release!: (value: { path: string }) => void;
+  resolveCodexBinary.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+  );
+  const first = runCodexTextPrompt({ cwd: "/repo", prompt: "Never dispatch A" }).then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  let second: Promise<string> | undefined;
+  try {
+    await vi.waitFor(() => expect(resolveCodexBinary).toHaveBeenCalledOnce());
+    const original = processConstructions.created[0];
+    expect(original).toBeDefined();
+    await stopCodexTextPrompt();
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn"),
+    ).toEqual([]);
+    expect(sent).toEqual([]);
+    second = runCodexTextPrompt({ cwd: "/repo", prompt: "Dispatch B" });
+    void second.catch(() => undefined);
+    release({ path: "/late/codex-A" });
+    expect(await first).toEqual(
+      expect.objectContaining({ message: expect.stringContaining("startup cancelled") }),
+    );
+    expect(await second).toBe("Generated text");
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    const spawned = processConstructions.operations.filter(
+      (operation) => operation.kind === "spawn",
+    );
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0].handle).toBe(replacement);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "write")
+        .every((operation) => operation.handle === replacement),
+    ).toBe(true);
+    const spawnAt = processConstructions.operations.findIndex(
+      (operation) => operation.kind === "spawn" && operation.handle === replacement,
+    );
+    const originalCleanup = processConstructions.operations
+      .slice(0, spawnAt)
+      .filter((operation) => operation.kind === "kill");
+    expect(originalCleanup.length).toBeGreaterThan(0);
+    expect(originalCleanup.every((operation) => operation.handle === original)).toBe(true);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+  } finally {
+    release?.({ path: "/late/codex-A" });
+    await stopCodexTextPrompt();
+  }
 });
 
 it.each(["timeout", "abort"] as const)(

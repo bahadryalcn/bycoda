@@ -6,6 +6,27 @@ phone does not move its provider process, workspace or history authority.
 
 ## Source implementation
 
+Provider process startup returns the original backend's strict construction
+receipt. Targeted stdin and kill compare that construction before selecting a
+physical child. Clients create one handle before startup and retain it through
+pending writes, replies and cleanup. A delayed operation for an old process
+cannot be redirected to a replacement with the same conversation key. Native's
+construction is its actual output stream epoch; the registry epoch and PID are
+not substitutes. Old clients without a receipt must update before these actions.
+
+Process output invalidation uses the same original construction. A missing
+identity after an invoked start retains uncertainty even if output arrives later.
+Explicit administrative shutdown and HTTP/SSE routes have separate semantics.
+These checks do not prove provider consumption, backend callback completion after
+a write timeout, or OS process-group termination. Unknown Native orphans and
+logical retirement without a complete owner-bound cohort remain held rather than
+being reported as successfully cleaned up.
+
+Committed send/compact dispatch reacquires the database and session operation
+owners, verifies the same accepted run and authority, and seeds provider state
+from the current stored revision before releasing either owner. A delayed title
+update cannot be overwritten by the older command snapshot at provider onset.
+
 Native reminder commands and their process-owned timer claim actual Persistence
 admission before SQL. A closed timer tick leaves due rows untouched and returns
 to the same loop. An accepted tick retains admission through final notification;

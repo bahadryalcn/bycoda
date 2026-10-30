@@ -68,7 +68,10 @@ import {
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
   acpSessionId: string;
@@ -104,6 +107,7 @@ const CLIENT_CAPABILITIES = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -139,7 +143,7 @@ export async function sendGrokTurn(input: SendTurnInput): Promise<void> {
     await live.turns;
   } catch (error) {
     if (liveByThread.get(input.sessionId) === live) {
-      await stopGrokSession(input.sessionId);
+      await stopGrokSession(input.sessionId, live.handle);
     }
     throw error;
   }
@@ -228,10 +232,17 @@ export async function cancelGrokTurn(sessionId: string): Promise<void> {
   live.acp.rejectPending(new Error("cancelled"));
 }
 
-export async function stopGrokSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopGrokSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const candidate = liveByThread.get(sessionId);
+  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) {
     live.muteUpdates = true;
     cancelPendingApprovals(live.approvals);
@@ -239,8 +250,15 @@ export async function stopGrokSession(sessionId: string): Promise<void> {
     live.questions.clear();
   }
   live?.acp.close();
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.acp?.close();
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetGrokSession(sessionId: string): Promise<void> {
@@ -268,82 +286,91 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.runtimeMode = input.runtimeMode;
     return existing;
   }
-  if (existing) {
-    await stopGrokSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canLoad = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveGrokBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(input.sessionId, handlers);
-  const liveRef: { current: Live | null } = { current: null };
-  const muteGate = { current: false };
-
-  handlers.onNotification = (method, params) => {
-    if (muteGate.current) return;
-    const live = liveRef.current;
-    if (!live || live.muteUpdates) return;
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (!live) {
-      void acp
-        .respondError(id, {
-          code: -32601,
-          message: `Method not found: ${method}`,
-        })
-        .catch(() => undefined);
-      return;
-    }
-    return handleRequest(live, id, method, params).catch(() => {
-      console.warn("[bycoda] grok server request failed");
-    });
-  };
-
-  const emit = (event: HarnessEvent) => {
-    (liveRef.current?.onEvent ?? input.onEvent)(event);
-  };
-
-  watchChild(
-    input.sessionId,
-    (line) => acp.pushLine(line),
-    (code) => {
-      acp.close(new Error("Grok Build exited"));
-      liveByThread.delete(input.sessionId);
-      emit({ type: "session.ended", code });
-    },
-    (line) => {
-      console.debug("[bycoda] grok stderr", line);
-      if (/not authenticated|Authentication required|XAI_API_KEY/i.test(line)) {
-        emit({
-          type: "session.error",
-          message: `${line.trim()}\n\n${AUTH_HELP}`,
-        });
-      }
-    },
-  );
-
-  await spawnChild(
-    input.sessionId,
-    path,
-    grokSpawnArgs({
-      model: input.model,
-      effort: grokEffort(input.modelSettings),
-      fullAccess: wantFullAccess,
-      plan: wantPlanning,
-    }),
-    input.cwd,
-    undefined,
-    "grok",
-  );
-
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  startingByThread.set(input.sessionId, startup);
   try {
+    if (existing) {
+      await stopGrokSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canLoad = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const { path } = await resolveGrokBinary();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    startup.acp = acp;
+    const liveRef: { current: Live | null } = { current: null };
+    const muteGate = { current: false };
+
+    handlers.onNotification = (method, params) => {
+      if (muteGate.current) return;
+      const live = liveRef.current;
+      if (!live || live.muteUpdates) return;
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (!live) {
+        void acp
+          .respondError(id, {
+            code: -32601,
+            message: `Method not found: ${method}`,
+          })
+          .catch(() => undefined);
+        return;
+      }
+      return handleRequest(live, id, method, params).catch(() => {
+        console.warn("[bycoda] grok server request failed");
+      });
+    };
+
+    const emit = (event: HarnessEvent) => {
+      (liveRef.current?.onEvent ?? input.onEvent)(event);
+    };
+
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        acp.close(new Error("Grok Build exited"));
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
+        emit({ type: "session.ended", code });
+      },
+      (line) => {
+        console.debug("[bycoda] grok stderr", line);
+        if (/not authenticated|Authentication required|XAI_API_KEY/i.test(line)) {
+          emit({
+            type: "session.error",
+            message: `${line.trim()}\n\n${AUTH_HELP}`,
+          });
+        }
+      },
+    );
+
+    await spawnChild(
+      handle,
+      path,
+      grokSpawnArgs({
+        model: input.model,
+        effort: grokEffort(input.modelSettings),
+        fullAccess: wantFullAccess,
+        plan: wantPlanning,
+      }),
+      input.cwd,
+      undefined,
+      "grok",
+    );
+
     let init: unknown;
     try {
       init = await acp.request(
@@ -418,7 +445,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
     if (!acpSessionId) throw new Error("Grok Build did not return a session id");
 
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      handle,
       subagents: new AcpSubagents(),
       acp,
       acpSessionId,
@@ -448,9 +478,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    await stopGrokSession(input.sessionId);
+    startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    await stopGrokSession(input.sessionId, handle);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

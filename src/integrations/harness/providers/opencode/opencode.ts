@@ -125,7 +125,11 @@ type PendingQuestion = QuestionDelivery & {
   resolve: (reply: UserQuestionReply) => void;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  /** v2 uses an external service and owns no child process. */
+  handle?: ChildProcessHandle;
   client: OpenCodeClient;
   openCodeSessionId: string;
   cwd: string;
@@ -178,7 +182,9 @@ type Resume = {
 const SERVER_TIMEOUT_MS = 30_000;
 // Matches the v1 summarize request timeout.
 const COMPACTION_TIMEOUT_MS = 30 * 60_000;
+type OpenCodeStartup = { handle?: ChildProcessHandle; live?: Live; cancelled: boolean };
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, OpenCodeStartup>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -395,14 +401,32 @@ export async function cancelOpenCodeTurn(sessionId: string): Promise<void> {
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
-export async function stopOpenCodeSession(sessionId: string): Promise<void> {
-  if (socialAcpSessions.has(sessionId)) {
+export async function stopOpenCodeSession(
+  sessionId: string,
+  expectedOwner?: Live | OpenCodeStartup,
+): Promise<void> {
+  if (!expectedOwner && socialAcpSessions.has(sessionId)) {
     await stopGenericAcpSession(sessionId);
     return;
   }
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+  if (!expectedOwner) cancelledThreads.delete(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedOwner || preparing === expectedOwner ? preparing : undefined;
+  const candidate = liveByThread.get(sessionId);
+  const originalLive =
+    expectedOwner && ("client" in expectedOwner ? expectedOwner : expectedOwner.live);
+  const live =
+    (!expectedOwner || candidate === expectedOwner ? candidate : undefined) ??
+    startup?.live ??
+    originalLive;
+  if (expectedOwner && !("client" in expectedOwner)) expectedOwner.cancelled = true;
+  if (candidate === live) liveByThread.delete(sessionId);
+  if (startup) {
+    startup.cancelled = true;
+    startingByThread.delete(sessionId);
+  }
+  const handles = new Set([live?.handle, startup?.handle, expectedOwner?.handle]);
+  const ownsEvents = () => !liveByThread.has(sessionId) && !startingByThread.has(sessionId);
   if (live) {
     live.muteUpdates = true;
     for (const [, pending] of live.approvals) pending.resolve("deny");
@@ -414,14 +438,19 @@ export async function stopOpenCodeSession(sessionId: string): Promise<void> {
     live.turnDone = null;
     live.turnFailed = null;
     await live.client.abortSession(live.openCodeSessionId);
-    await live.client.closeEvents(sessionId);
+    if (ownsEvents()) await live.client.closeEvents(sessionId);
   } else {
     // A stream or server that ended on its own already dropped `live`, but
     // its SSE handlers still hold it until the stream is closed.
-    await closeHarnessSse(sessionId).catch(() => undefined);
+    if (ownsEvents()) await closeHarnessSse(sessionId).catch(() => undefined);
   }
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetOpenCodeSession(sessionId: string): Promise<void> {
@@ -459,68 +488,83 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.runtimeMode = input.runtimeMode;
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopOpenCodeSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canResume = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveOpenCodeBinaryImpl();
-  const generation = await assertOpenCodeVersion(path, input.cwd);
-
-  const liveRef: { current: Live | null } = { current: null };
-  const service = generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd) : undefined;
-  let serverUrl = service?.url ?? "";
-  let serverExited: number | null | undefined;
-
-  if (generation === "v1") {
-    watchChild(
-      input.sessionId,
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
-      (code) => {
-        serverExited = code;
-        liveByThread.delete(input.sessionId);
-        const live = liveRef.current;
-        if (!live?.muteUpdates) {
-          (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-        }
-        if (live) live.muteUpdates = true;
-        live?.turnFailed?.(new Error("OpenCode server exited"));
-        if (live) {
-          for (const pending of live.approvals.values()) pending.resolve("deny");
-          live.approvals.clear();
-          for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
-          live.questions.clear();
-          live.turnDone = null;
-          live.turnFailed = null;
-        }
-      },
-      (line) => {
-        const parsed = parseServerUrlFromOutput(line);
-        if (parsed) serverUrl = parsed;
-      },
-    );
-
-    const port = await freeHarnessPort();
-    await spawnChild(
-      input.sessionId,
-      path,
-      ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
-      input.cwd,
-      undefined,
-      "opencode",
-    );
-  }
-
+  const startup: OpenCodeStartup = { cancelled: false };
+  startingByThread.set(input.sessionId, startup);
+  const checkStartup = () => {
+    if (startup.cancelled || startingByThread.get(input.sessionId) !== startup)
+      throw new Error("OpenCode startup cancelled");
+  };
   try {
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await stopOpenCodeSession(input.sessionId, existing);
+      checkStartup();
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canResume = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const { path } = await resolveOpenCodeBinaryImpl();
+    checkStartup();
+    const generation = await assertOpenCodeVersion(path, input.cwd);
+    checkStartup();
+
+    const liveRef: { current: Live | null } = { current: null };
+    const service =
+      generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd) : undefined;
+    let serverUrl = service?.url ?? "";
+    let serverExited: number | null | undefined;
+
+    if (generation === "v1") {
+      checkStartup();
+      const handle = createChildProcessHandle(input.sessionId);
+      startup.handle = handle;
+      watchChild(
+        handle,
+        (line) => {
+          const parsed = parseServerUrlFromOutput(line);
+          if (parsed) serverUrl = parsed;
+        },
+        (code) => {
+          serverExited = code;
+          if (liveByThread.get(input.sessionId)?.handle === handle)
+            liveByThread.delete(input.sessionId);
+          const live = liveRef.current;
+          if (!live?.muteUpdates) {
+            (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+          }
+          if (live) live.muteUpdates = true;
+          live?.turnFailed?.(new Error("OpenCode server exited"));
+          if (live) {
+            for (const pending of live.approvals.values()) pending.resolve("deny");
+            live.approvals.clear();
+            for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
+            live.questions.clear();
+            live.turnDone = null;
+            live.turnFailed = null;
+          }
+        },
+        (line) => {
+          const parsed = parseServerUrlFromOutput(line);
+          if (parsed) serverUrl = parsed;
+        },
+      );
+
+      const port = await freeHarnessPort();
+      await spawnChild(
+        handle,
+        path,
+        ["serve", `--hostname=127.0.0.1`, `--port=${port}`],
+        input.cwd,
+        undefined,
+        "opencode",
+      );
+    }
+
+    checkStartup();
     const url =
       generation === "v2"
         ? serverUrl
@@ -529,6 +573,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
             () => serverExited,
             SERVER_TIMEOUT_MS,
           );
+    checkStartup();
     const client = new OpenCodeClient(
       url,
       input.cwd,
@@ -548,7 +593,9 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       );
     }
 
+    checkStartup();
     const live: Live = {
+      handle: startup.handle,
       client,
       openCodeSessionId: openCodeSession.id,
       cwd: input.cwd,
@@ -581,6 +628,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       awaitedInbox: null,
     };
     liveRef.current = live;
+    startup.live = live;
     liveByThread.set(input.sessionId, live);
     resumeByThread.set(input.sessionId, {
       sessionId: openCodeSession.id,
@@ -615,7 +663,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         // prompt_async has no response body to await; the SSE stream is its
         // only completion channel. Reusing a Live after this point accepts the
         // next prompt but can never observe it, which looks like a dead thread.
-        liveByThread.delete(input.sessionId);
+        if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
         const failed = live.turnFailed;
         live.turnDone = null;
         live.turnFailed = null;
@@ -624,8 +672,8 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         live.approvals.clear();
         for (const pending of live.questions.values()) pending.resolve({ kind: "skipped" });
         live.questions.clear();
-        unwatchChild(input.sessionId);
-        void killChild(input.sessionId)
+        if (live.handle) unwatchChild(live.handle);
+        void (live.handle ? killChild(live.handle) : Promise.resolve())
           .catch(() => undefined)
           .then(() => {
             if (failed) {
@@ -637,6 +685,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       },
     );
 
+    checkStartup();
     live.onEvent({
       type: "session.providerBound",
       providerSessionId: openCodeSession.id,
@@ -644,8 +693,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    await stopOpenCodeSession(input.sessionId);
+    await stopOpenCodeSession(input.sessionId, startup);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

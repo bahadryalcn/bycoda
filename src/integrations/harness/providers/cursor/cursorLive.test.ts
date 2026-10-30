@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -14,21 +15,24 @@ let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number) => void) | undefined;
 
-vi.mock("../../core/child", () => ({
-  resolveCursorBinary: async () => ({ path: "/fake/cursor-agent" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (value: string) => void, exit: (code: number) => void) => {
-    onLine = line;
-    onExit = exit;
-  },
-  writeChild: async (_id: string, line: string) => {
-    sent.push(line);
-    const message = JSON.parse(line);
-    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCursorBinary: async () => ({ path: "/fake/cursor-agent" }),
+    spawnChild: async () => undefined,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (value: string) => void, exit: (code: number) => void) => {
+      onLine = line;
+      onExit = exit;
+    },
+    writeChild: async (_id: string, line: string) => {
+      sent.push(line);
+      const message = JSON.parse(line);
+      if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
+    },
+  }),
+);
 
 const stores = vi.hoisted(() => ({ tools: vi.fn(), subagents: vi.fn() }));
 vi.mock("./cursorStore", () => ({

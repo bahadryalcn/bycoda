@@ -43,6 +43,11 @@ import {
   forgetSessionCheckpoint,
   notifyReviewChanged,
 } from "../../../features/sessions/model/checkpoint";
+import {
+  captureChildProcess,
+  killChild,
+  type ChildProcessHandle,
+} from "../../../integrations/harness/core/child";
 
 export interface OrchestratorWorkerBindingDeps {
   checkOpenWorktreeFiles: (path: string) => void;
@@ -52,6 +57,30 @@ export interface OrchestratorWorkerBindingDeps {
 }
 
 type OrchestratorBindingConfig = Parameters<typeof orchestrator.bind>[0];
+
+/** A replacement observation is only a refusal witness, never a new cleanup target. */
+export function assertOriginalWorkerProcess(
+  sessionId: string,
+  original: ChildProcessHandle | undefined,
+): asserts original is ChildProcessHandle {
+  if (!original || original.sessionId !== sessionId)
+    throw new Error(
+      "This worker's original process cannot be verified. Its completion is unknown; its workspace was retained.",
+    );
+  const current = captureChildProcess(sessionId);
+  if (current && current !== original)
+    throw new Error("This worker's process changed during cleanup. Its workspace was retained.");
+}
+
+export async function finishOriginalWorkerProcess(
+  sessionId: string,
+  original: ChildProcessHandle | undefined,
+): Promise<void> {
+  assertOriginalWorkerProcess(sessionId, original);
+  await killChild(original);
+  assertOriginalWorkerProcess(sessionId, original);
+  await invoke("control_turn_finished", { sessionId });
+}
 
 async function selectedLeadSource(run: OrchestrationRun, saved?: OrchestrationWorkspace) {
   const directory = orchestrationCheckoutCwd(run);
@@ -285,6 +314,7 @@ export function createOrchestratorWorkerBindings({
       return { scratchDir, workspace };
     },
     integrateWorker: async (run, task) => {
+      const originalProcess = captureChildProcess(task.sessionId);
       const fromCwd = task.workspace?.checkoutCwd;
       if (!fromCwd) throw new Error("This worker's isolated checkout is unavailable");
       const session = sessionsRef.current.find((entry) => entry.id === task.sessionId);
@@ -294,8 +324,7 @@ export function createOrchestratorWorkerBindings({
             stopHarnessSession(harness, task.sessionId),
           ),
         );
-      await invoke("harness_kill", { sessionId: task.sessionId });
-      await invoke("control_turn_finished", { sessionId: task.sessionId });
+      await finishOriginalWorkerProcess(task.sessionId, originalProcess);
       await flushSessionCheckpoint(task.sessionId);
       const workspaceId = task.workspace?.managedWorkspaceId;
       if (!workspaceId)
@@ -353,6 +382,7 @@ export function createOrchestratorWorkerBindings({
       return { files: [], alreadyApplied: 0 };
     },
     cleanupWorker: async (run, task, onlyIfUnchanged) => {
+      const originalProcess = captureChildProcess(task.sessionId);
       const workspace = task.workspace;
       if (!workspace || workspace.kind !== "worktree") return true;
       const path = workspace.checkoutCwd;
@@ -437,7 +467,9 @@ export function createOrchestratorWorkerBindings({
       }
 
       if (exists) {
+        assertOriginalWorkerProcess(task.sessionId, originalProcess);
         onStop(task.sessionId, true);
+        assertOriginalWorkerProcess(task.sessionId, originalProcess);
         const session = sessionsRef.current.find((entry) => entry.id === task.sessionId);
         if (session) {
           await Promise.all(
@@ -446,10 +478,7 @@ export function createOrchestratorWorkerBindings({
             ),
           );
         }
-        await invoke("harness_kill", { sessionId: task.sessionId });
-        await invoke("control_turn_finished", {
-          sessionId: task.sessionId,
-        });
+        await finishOriginalWorkerProcess(task.sessionId, originalProcess);
         await flushSessionWrites();
         checkOpenWorktreeFiles(path);
         const removed = await removeOrchestrationWorktree(orchestrationCheckoutCwd(run), path);

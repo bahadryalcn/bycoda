@@ -76,17 +76,19 @@ async function runHarnessLogin(
     throw new Error(`${HARNESS_TITLE[harness]} does not offer a single browser sign-in flow.`);
   }
 
+  const childId = loginChildId(harness, accountId);
+  const previous = child.captureChildProcess(childId);
   const [{ path }, cwd] = await Promise.all([resolve(), homeDir()]);
   signal?.throwIfAborted();
-  const childId = loginChildId(harness, accountId);
-  await child.killChild(childId).catch(() => undefined);
+  if (previous) await child.killChild(previous).catch(() => undefined);
   signal?.throwIfAborted();
+  const loginProcess = child.createChildProcessHandle(childId);
 
   return new Promise<void>((resolve, reject) => {
     let settled = false;
     let lastError = "";
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let spawn: Promise<void>;
+    let spawn: ReturnType<typeof child.spawnChild>;
     let cancelling = false;
 
     const finish = (error?: Error) => {
@@ -94,7 +96,7 @@ async function runHarnessLogin(
       settled = true;
       if (timer) clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
-      child.unwatchChild(childId);
+      child.unwatchChild(loginProcess);
       if (error) reject(error);
       else resolve();
     };
@@ -107,7 +109,7 @@ async function runHarnessLogin(
       // cancellation cannot leave a late-spawned login process behind.
       void spawn
         .catch(() => undefined)
-        .then(() => child.killChild(childId))
+        .then(() => child.killChild(loginProcess))
         .then(
           () => finish(new DOMException("Sign-in cancelled", "AbortError")),
           () => finish(new Error("Could not stop sign-in. Please try again.")),
@@ -115,7 +117,7 @@ async function runHarnessLogin(
     };
 
     child.watchChild(
-      childId,
+      loginProcess,
       () => undefined,
       (code) => {
         if (cancelling) return;
@@ -141,7 +143,7 @@ async function runHarnessLogin(
       // quick retry can be spawned under the same id and then killed by this
       // timeout's late cleanup.
       void child
-        .killChild(childId)
+        .killChild(loginProcess)
         .catch(() => undefined)
         .finally(() => {
           finish(new Error(`${HARNESS_TITLE[harness]} sign-in timed out. Please try again.`));
@@ -153,8 +155,8 @@ async function runHarnessLogin(
         ? { provider: harness, id: accountId }
         : undefined;
     spawn = account
-      ? child.spawnChild(childId, path, [...args], cwd, account, harness)
-      : child.spawnChild(childId, path, [...args], cwd, undefined, harness);
+      ? child.spawnChild(loginProcess, path, [...args], cwd, account, harness)
+      : child.spawnChild(loginProcess, path, [...args], cwd, undefined, harness);
     void spawn.catch((error) => {
       if (cancelling) return;
       const message = error instanceof Error ? error.message : String(error);

@@ -6,6 +6,7 @@ import {
   type ModelSetting,
 } from "../../../../features/sessions/model/models";
 import {
+  createChildProcessHandle,
   execChild,
   killChild,
   resolveClaudeBinary,
@@ -260,6 +261,7 @@ async function discoverViaListModels(
   const cwd = workingDirectory ?? (await homeDir());
   const sessionId = crypto.randomUUID();
   const probeId = `${PROBE_ID}-${sessionId}`;
+  const child = createChildProcessHandle(probeId);
 
   let listed: ((models: AgentModel[]) => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
@@ -273,7 +275,7 @@ async function discoverViaListModels(
     if (asked) return;
     asked = true;
     void writeChild(
-      probeId,
+      child,
       JSON.stringify(buildControlRequest(LIST_MODELS_REQUEST_ID, { subtype: "list_models" })),
     ).catch((error: unknown) => {
       failed?.(error instanceof Error ? error : new Error(String(error)));
@@ -281,12 +283,12 @@ async function discoverViaListModels(
   };
 
   const stop = async () => {
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(child);
+    await killChild(child).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    child,
     (line) => {
       const rec = parseJsonLine(line);
       if (!rec) return;
@@ -301,7 +303,7 @@ async function discoverViaListModels(
 
   try {
     await spawnChild(
-      probeId,
+      child,
       path,
       buildClaudeSpawnArgs({ isolated: true, sessionId }),
       cwd,
@@ -313,7 +315,7 @@ async function discoverViaListModels(
       DISCOVERY_TIMEOUT_MS,
       (async () => {
         await writeChild(
-          probeId,
+          child,
           JSON.stringify(buildControlRequest(INIT_REQUEST_ID, { subtype: "initialize" })),
         );
         return pending;

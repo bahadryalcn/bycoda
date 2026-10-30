@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, writeFile, readFile, rm, access } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
+import type { HarnessProcessReceipt } from "../src/shared/model/harnessProcess";
 import type { SocialService } from "./social";
 
 vi.mock("node:child_process", async (importOriginal) => {
@@ -130,7 +131,7 @@ it("does not fork or publish prepared tool/account secrets after a deferred prep
 
 it("does not retire an existing owned child when a replacement's deferred preparation is revoked", async () => {
   const f = await fixture();
-  const incumbent = await f.backend.invoke<number>("harness_spawn", f.args);
+  const incumbent = await f.backend.invoke<HarnessProcessReceipt>("harness_spawn", f.args);
   await vi.waitFor(async () => expect(await readFile(f.marker, "utf8")).toBe("started\n"));
   vi.mocked(spawn).mockClear();
   vi.mocked(providerAccountEnvironment).mockClear();
@@ -159,8 +160,8 @@ it("does not retire an existing owned child when a replacement's deferred prepar
     await denied;
     expect(spawn).not.toHaveBeenCalled();
     expect(providerAccountEnvironment).not.toHaveBeenCalled();
-    expect(f.internal.children.get(f.args.sessionId)?.pid).toBe(incumbent);
-    expect(() => process.kill(incumbent, 0)).not.toThrow();
+    expect(f.internal.children.get(f.args.sessionId)?.pid).toBe(incumbent.pid);
+    expect(() => process.kill(incumbent.pid, 0)).not.toThrow();
     expect(await readFile(f.marker, "utf8")).toBe("started\n");
   } finally {
     release.resolve();

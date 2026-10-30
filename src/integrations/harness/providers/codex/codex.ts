@@ -112,7 +112,10 @@ type PendingQuestion = QuestionDelivery & {
   resolve: (reply: UserQuestionReply | "cancelled") => void;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   sessionId: string;
   rpc: JsonRpcClient;
   threadId: string;
@@ -187,6 +190,7 @@ type Resume = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; rpc?: JsonRpcClient }>();
 const resumeByThread = new Map<string, Resume>();
 const cancellationEpoch = new Map<string, number>();
 
@@ -238,7 +242,7 @@ export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
       // Rejected/completed turns leave a reusable app-server. A transport
       // timeout has unknown acceptance state, so recycle it to isolate late events.
       if (error instanceof Error && /timed out/i.test(error.message)) {
-        await stopCodexSession(input.sessionId);
+        await stopCodexSession(input.sessionId, live.handle);
       }
       throw error;
     }
@@ -500,7 +504,7 @@ export async function cancelCodexTurn(sessionId: string): Promise<void> {
   if (live.pendingTurnStart && !turnId) {
     // No interrupt target exists yet. Retire this transport so the pending
     // request cannot start work or accept the prompt after Stop returns.
-    await stopCodexSession(sessionId);
+    await stopCodexSession(sessionId, live.handle);
   } else if (turnId) {
     await live.rpc
       .request("turn/interrupt", {
@@ -512,9 +516,16 @@ export async function cancelCodexTurn(sessionId: string): Promise<void> {
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
-export async function stopCodexSession(sessionId: string): Promise<void> {
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopCodexSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  const candidate = liveByThread.get(sessionId);
+  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) {
     live.muteUpdates = true;
     live.turnGeneration += 1;
@@ -527,8 +538,15 @@ export async function stopCodexSession(sessionId: string): Promise<void> {
     live.turnFailed = null;
     live.rpc.close();
   }
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.rpc?.close();
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 export async function forgetCodexSession(sessionId: string): Promise<void> {
@@ -564,137 +582,150 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.onEvent = input.onEvent;
     return existing;
   }
-  if (existing) {
-    // Codex may retain the thread's sandbox network policy across turns.
-    // Switch it when this session gains /operator access or loses agent
-    // control, so its local CLI socket matches the current policy.
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; rpc?: JsonRpcClient } = { handle };
+  startingByThread.set(input.sessionId, startup);
+  try {
+    if (existing) {
+      // Codex may retain the thread's sandbox network policy across turns.
+      // Switch it when this session gains /operator access or loses agent
+      // control, so its local CLI socket matches the current policy.
+      if (
+        existing.cwd !== input.cwd ||
+        !sameProviderAccountId(existing.providerAccountId, input.providerAccountId)
+      ) {
+        resumeByThread.delete(input.sessionId);
+      }
+      await stopCodexSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canResume =
+      resume != null &&
+      resume.cwd === input.cwd &&
+      sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
     if (
-      existing.cwd !== input.cwd ||
-      !sameProviderAccountId(existing.providerAccountId, input.providerAccountId)
+      resume &&
+      (resume.cwd !== input.cwd ||
+        !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
     ) {
       resumeByThread.delete(input.sessionId);
     }
-    await stopCodexSession(input.sessionId);
-  }
 
-  const resume = resumeByThread.get(input.sessionId);
-  const canResume =
-    resume != null &&
-    resume.cwd === input.cwd &&
-    sameProviderAccountId(resume.providerAccountId, input.providerAccountId);
-  if (
-    resume &&
-    (resume.cwd !== input.cwd ||
-      !sameProviderAccountId(resume.providerAccountId, input.providerAccountId))
-  ) {
-    resumeByThread.delete(input.sessionId);
-  }
+    const { path } = await resolveCodexBinaryImpl();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const liveRef: { current: Live | null } = { current: null };
 
-  const { path } = await resolveCodexBinaryImpl();
-  const liveRef: { current: Live | null } = { current: null };
-
-  const rpc = new JsonRpcClient(
-    input.sessionId,
-    {
-      onNotification: (method, params, work) => {
-        const live = liveRef.current;
-        if (!live || live.muteUpdates) {
-          work?.fail("codex-notification-retired");
-          return;
-        }
-        if (live.notificationQueue) {
-          const turnGeneration = live.turnGeneration;
-          const queued = live.notificationQueue
-            .catch(() => undefined)
-            .then(
-              nativeOutputSink(work ?? null, () => {
-                if (live.muteUpdates || live.cancelled || turnGeneration !== live.turnGeneration) {
-                  work?.fail("codex-notification-retired");
-                  return;
-                }
-                return handleNotification(live, method, params, work ?? null);
-              }),
+    const rpc = new JsonRpcClient(
+      handle,
+      {
+        onNotification: (method, params, work) => {
+          const live = liveRef.current;
+          if (!live || live.muteUpdates) {
+            work?.fail("codex-notification-retired");
+            return;
+          }
+          if (live.notificationQueue) {
+            const turnGeneration = live.turnGeneration;
+            const queued = live.notificationQueue
+              .catch(() => undefined)
+              .then(
+                nativeOutputSink(work ?? null, () => {
+                  if (
+                    live.muteUpdates ||
+                    live.cancelled ||
+                    turnGeneration !== live.turnGeneration
+                  ) {
+                    work?.fail("codex-notification-retired");
+                    return;
+                  }
+                  return handleNotification(live, method, params, work ?? null);
+                }),
+              );
+            trackNotificationQueue(
+              live,
+              queued.catch(() => undefined),
             );
+            return queued;
+          }
+          const result = handleNotification(live, method, params, work ?? null);
+          if (!result) return;
           trackNotificationQueue(
             live,
-            queued.catch(() => undefined),
+            result.catch(() => undefined),
           );
-          return queued;
-        }
-        const result = handleNotification(live, method, params, work ?? null);
-        if (!result) return;
-        trackNotificationQueue(
-          live,
-          result.catch(() => undefined),
-        );
-        return result;
+          return result;
+        },
+        onRequest: (id, method, params, work) => {
+          const live = liveRef.current;
+          const turn = live?.turnDone;
+          // The external clock can be requested before thread/start or resume
+          // returns, so it must not depend on the live session being bound.
+          const response =
+            method === "currentTime/read"
+              ? rpc.respond(id, { currentTimeAt: Math.floor(Date.now() / 1000) })
+              : live
+                ? handleServerRequest(live, id, method, params)
+                : undefined;
+          return response?.catch(
+            nativeOutputSink(work ?? null, (error: unknown) => {
+              if (live?.muteUpdates || (live && live.turnDone !== turn)) return;
+              const failure = error instanceof Error ? error : new Error(String(error));
+              rpc.close(failure);
+              if (live?.turnFailed) {
+                live.turnFailed(failure);
+              } else {
+                (live?.onEvent ?? input.onEvent)({
+                  type: "session.error",
+                  message: failure.message,
+                });
+              }
+            }),
+          );
+        },
       },
-      onRequest: (id, method, params, work) => {
+      { includeJsonrpc: false, label: "codex", defaultRequestTimeoutMs: 60_000 },
+    );
+
+    startup.rpc = rpc;
+    watchChild(
+      handle,
+      (line) => rpc.pushLine(line),
+      (code, reason) => {
+        const error = new Error(
+          reason ?? `Codex app-server exited${code == null ? "" : ` (exit code ${code})`}`,
+        );
+        rpc.close(error);
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
         const live = liveRef.current;
-        const turn = live?.turnDone;
-        // The external clock can be requested before thread/start or resume
-        // returns, so it must not depend on the live session being bound.
-        const response =
-          method === "currentTime/read"
-            ? rpc.respond(id, { currentTimeAt: Math.floor(Date.now() / 1000) })
-            : live
-              ? handleServerRequest(live, id, method, params)
-              : undefined;
-        return response?.catch(
-          nativeOutputSink(work ?? null, (error: unknown) => {
-            if (live?.muteUpdates || (live && live.turnDone !== turn)) return;
-            const failure = error instanceof Error ? error : new Error(String(error));
-            rpc.close(failure);
-            if (live?.turnFailed) {
-              live.turnFailed(failure);
-            } else {
-              (live?.onEvent ?? input.onEvent)({
-                type: "session.error",
-                message: failure.message,
-              });
-            }
-          }),
-        );
+        if (!live?.muteUpdates) {
+          (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+        }
+        live?.turnFailed?.(error);
+        if (live) {
+          clearServerRequests(live);
+          live.turnDone = null;
+          live.turnFailed = null;
+        }
       },
-    },
-    { includeJsonrpc: false, label: "codex", defaultRequestTimeoutMs: 60_000 },
-  );
+    );
 
-  watchChild(
-    input.sessionId,
-    (line) => rpc.pushLine(line),
-    (code, reason) => {
-      const error = new Error(
-        reason ?? `Codex app-server exited${code == null ? "" : ` (exit code ${code})`}`,
-      );
-      rpc.close(error);
-      liveByThread.delete(input.sessionId);
-      const live = liveRef.current;
-      if (!live?.muteUpdates) {
-        (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-      }
-      live?.turnFailed?.(error);
-      if (live) {
-        clearServerRequests(live);
-        live.turnDone = null;
-        live.turnFailed = null;
-      }
-    },
-  );
+    await spawnChild(
+      handle,
+      path,
+      ["app-server"],
+      input.cwd,
+      {
+        provider: "codex",
+        id: input.providerAccountId ?? "default",
+      },
+      "codex",
+    );
 
-  await spawnChild(
-    input.sessionId,
-    path,
-    ["app-server"],
-    input.cwd,
-    {
-      provider: "codex",
-      id: input.providerAccountId ?? "default",
-    },
-    "codex",
-  );
-
-  try {
     await rpc.request("initialize", {
       clientInfo: {
         name: "bycoda",
@@ -790,7 +821,10 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     if (!threadId) throw new Error("Codex did not return a thread id");
 
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      handle,
       sessionId: input.sessionId,
       rpc,
       threadId,
@@ -848,9 +882,11 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     void loadCodexSkills(live, input.sessionId);
     return live;
   } catch (error) {
-    rpc.close(error instanceof Error ? error : new Error(String(error)));
-    await stopCodexSession(input.sessionId);
+    startup.rpc?.close(error instanceof Error ? error : new Error(String(error)));
+    await stopCodexSession(input.sessionId, handle);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

@@ -111,7 +111,10 @@ type PendingToolEnrichment = {
   attempts: number;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
   acpSessionId: string;
@@ -150,6 +153,7 @@ type Resume = {
 };
 
 const liveByThread = new Map<string, Live>();
+const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
 const resumeByThread = new Map<string, Resume>();
 const cancelledThreads = new Set<string>();
 
@@ -266,10 +270,17 @@ export async function cancelCursorTurn(sessionId: string): Promise<void> {
 }
 
 /** Kill the Cursor process but keep the ACP session id so we can session/load. */
-export async function stopCursorSession(sessionId: string): Promise<void> {
-  cancelledThreads.delete(sessionId);
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+export async function stopCursorSession(
+  sessionId: string,
+  expectedHandle?: ChildProcessHandle,
+): Promise<void> {
+  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const candidate = liveByThread.get(sessionId);
+  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const preparing = startingByThread.get(sessionId);
+  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  if (live) liveByThread.delete(sessionId);
+  if (startup) startingByThread.delete(sessionId);
   if (live) {
     live.muteUpdates = true;
     live.promptActive = false;
@@ -283,8 +294,15 @@ export async function stopCursorSession(sessionId: string): Promise<void> {
     live.questions.clear();
   }
   live?.acp.close();
-  unwatchChild(sessionId);
-  await killChild(sessionId).catch(() => undefined);
+  startup?.acp?.close();
+  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
+  await Promise.all(
+    [...handles].map(async (handle) => {
+      if (!handle) return;
+      unwatchChild(handle);
+      await killChild(handle).catch(() => undefined);
+    }),
+  );
 }
 
 /** Delete or idle detach — drop the Cursor conversation too. */
@@ -309,60 +327,69 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     existing.planning = input.intent === "plan";
     return existing;
   }
-  if (existing) {
-    resumeByThread.delete(input.sessionId);
-    await stopCursorSession(input.sessionId);
-  }
-
-  const resume = resumeByThread.get(input.sessionId);
-  const canLoad = resume != null && resume.cwd === input.cwd;
-  if (resume && resume.cwd !== input.cwd) {
-    resumeByThread.delete(input.sessionId);
-  }
-
-  const { path } = await resolveCursorBinary();
-  const handlers: AcpHandlers = {};
-  const acp = new AcpClient(input.sessionId, handlers);
-  const liveRef: { current: Live | null } = { current: null };
-  const muteGate = { current: false };
-
-  handlers.onNotification = (method, params) => {
-    if (muteGate.current) return;
-    const live = liveRef.current;
-    if (!live || live.muteUpdates) return;
-    handleNotification(live, method, params);
-  };
-  handlers.onRequest = (id, method, params) => {
-    const live = liveRef.current;
-    if (!live) return;
-    return handleRequest(live, id, method, params).catch(() => {
-      console.warn("[bycoda] cursor server request failed");
-    });
-  };
-
-  watchChild(
-    input.sessionId,
-    (line) => acp.pushLine(line),
-    (code) => {
-      acp.close(new Error("Cursor CLI exited"));
-      liveByThread.delete(input.sessionId);
-      const live = liveRef.current;
-      if (live) {
-        live.promptActive = false;
-        cancelPendingApprovals(live.approvals);
-        for (const resolve of live.questions.values()) resolve({ kind: "skipped" });
-        live.questions.clear();
-        retireCursorSubagentPolling(live);
-      }
-      if (!live?.muteUpdates) {
-        (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
-      }
-    },
-  );
-
-  await spawnChild(input.sessionId, path, ["acp"], input.cwd, undefined, "cursor");
-
+  const handle = createChildProcessHandle(input.sessionId);
+  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  startingByThread.set(input.sessionId, startup);
   try {
+    if (existing) {
+      resumeByThread.delete(input.sessionId);
+      await stopCursorSession(input.sessionId, existing.handle);
+      if (startingByThread.get(input.sessionId) !== startup)
+        throw new Error("Provider startup cancelled");
+    }
+
+    const resume = resumeByThread.get(input.sessionId);
+    const canLoad = resume != null && resume.cwd === input.cwd;
+    if (resume && resume.cwd !== input.cwd) {
+      resumeByThread.delete(input.sessionId);
+    }
+
+    const { path } = await resolveCursorBinary();
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
+    const handlers: AcpHandlers = {};
+    const acp = new AcpClient(handle, handlers);
+    startup.acp = acp;
+    const liveRef: { current: Live | null } = { current: null };
+    const muteGate = { current: false };
+
+    handlers.onNotification = (method, params) => {
+      if (muteGate.current) return;
+      const live = liveRef.current;
+      if (!live || live.muteUpdates) return;
+      handleNotification(live, method, params);
+    };
+    handlers.onRequest = (id, method, params) => {
+      const live = liveRef.current;
+      if (!live) return;
+      return handleRequest(live, id, method, params).catch(() => {
+        console.warn("[bycoda] cursor server request failed");
+      });
+    };
+
+    watchChild(
+      handle,
+      (line) => acp.pushLine(line),
+      (code) => {
+        acp.close(new Error("Cursor CLI exited"));
+        if (liveByThread.get(input.sessionId)?.handle === handle)
+          liveByThread.delete(input.sessionId);
+        const live = liveRef.current;
+        if (live) {
+          live.promptActive = false;
+          cancelPendingApprovals(live.approvals);
+          for (const resolve of live.questions.values()) resolve({ kind: "skipped" });
+          live.questions.clear();
+          retireCursorSubagentPolling(live);
+        }
+        if (!live?.muteUpdates) {
+          (live?.onEvent ?? input.onEvent)({ type: "session.ended", code });
+        }
+      },
+    );
+
+    await spawnChild(handle, path, ["acp"], input.cwd, undefined, "cursor");
+
     await acp.request(
       "initialize",
       {
@@ -422,7 +449,10 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     }
     if (!acpSessionId) throw new Error("Cursor did not return a session id");
 
+    if (startingByThread.get(input.sessionId) !== startup)
+      throw new Error("Provider startup cancelled");
     const live: Live = {
+      handle,
       subagents: new AcpSubagents(),
       acp,
       acpSessionId,
@@ -463,9 +493,11 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    await stopCursorSession(input.sessionId);
+    startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
+    await stopCursorSession(input.sessionId, handle);
     throw error;
+  } finally {
+    if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 

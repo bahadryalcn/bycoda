@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -87,34 +88,37 @@ const harnessHttp = vi.fn(
   },
 );
 
-vi.mock("../../core/child", () => ({
-  closeHarnessSse,
-  execChild: async (_command: string, args: string[]) =>
-    args[0] !== "service"
-      ? openCodeVersion
-      : args[1] === "get"
-        ? "secret"
-        : "http://127.0.0.1:4096",
-  freeHarnessPort: async () => 4096,
-  harnessHttp,
-  killChild,
-  openHarnessSse: async () => undefined,
-  resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
-  spawnChild,
-  unwatchChild: () => undefined,
-  watchChild: (
-    _id: string,
-    stdout: (line: string) => void,
-    exit: (code: number | null) => void,
-  ) => {
-    onStdout = stdout;
-    onChildExit = exit;
-  },
-  watchSse: (_id: string, event: (data: string) => void, end?: (error?: string) => void) => {
-    onSseEvent = (value) => event(JSON.stringify(value));
-    onSseEnd = end;
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    closeHarnessSse,
+    execChild: async (_command: string, args: string[]) =>
+      args[0] !== "service"
+        ? openCodeVersion
+        : args[1] === "get"
+          ? "secret"
+          : "http://127.0.0.1:4096",
+    freeHarnessPort: async () => 4096,
+    harnessHttp,
+    killChild,
+    openHarnessSse: async () => undefined,
+    resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
+    spawnChild,
+    unwatchChild: () => undefined,
+    watchChild: (
+      _id: string,
+      stdout: (line: string) => void,
+      exit: (code: number | null) => void,
+    ) => {
+      onStdout = stdout;
+      onChildExit = exit;
+    },
+    watchSse: (_id: string, event: (data: string) => void, end?: (error?: string) => void) => {
+      onSseEvent = (value) => event(JSON.stringify(value));
+      onSseEnd = end;
+    },
+  }),
+);
 
 const {
   __openCodeTestReset,
@@ -307,6 +311,7 @@ it("uses the v2 API and completes from a v2 event envelope", async () => {
     ]),
   );
   expect(spawnChild).not.toHaveBeenCalled();
+  expect(processConstructions.created).toEqual([]);
   onSseEvent?.({
     id: "evt_idle",
     type: "session.idle",
@@ -1667,21 +1672,86 @@ it("closes the event stream after the server exits on its own", async () => {
 
   await stopOpenCodeSession("opencode-live");
   expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
-  expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
+  // Natural exit removed the owner; Stop cannot reconstruct a process from its locator.
+  expect(killChild).not.toHaveBeenCalled();
 });
 
-it("still kills the child when closing an ended stream fails", async () => {
+it("keeps delayed A shutdown on its captured child after B has started", async () => {
+  // HTTP/SSE protocol fake; actual Native receipt enforcement is tested elsewhere.
+  const first = await startTurn([]);
+  const original = processConstructions.created[0];
+  expect(original).toBeDefined();
+  const request = harnessHttp.getMockImplementation()!;
+  let release!: () => void;
+  let entered = false;
+  harnessHttp.mockImplementation(async (input) => {
+    if (
+      !entered &&
+      input.method === "POST" &&
+      new URL(input.url).pathname === "/session/session_1/abort"
+    ) {
+      entered = true;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    }
+    return request(input);
+  });
+  const stopping = stopOpenCodeSession("opencode-live");
+  let replacementTurn: Promise<void> | undefined;
+  try {
+    await waitFor(() => entered, "original abort admitted");
+    await first.done;
+    harnessHttp.mockClear();
+    const second = await startTurn([]);
+    replacementTurn = second.done;
+    const replacement = processConstructions.created[1];
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    const cleanupAt = processConstructions.operations.length;
+    release();
+    await stopping;
+    const cleanup = processConstructions.operations
+      .slice(cleanupAt)
+      .filter((operation) => operation.kind === "kill");
+    expect(cleanup).toHaveLength(1);
+    expect(cleanup[0].handle).toBe(original);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn").at(-1)
+        ?.handle,
+    ).toBe(replacement);
+    idle();
+    await second.done;
+    expect(processConstructions.created).toHaveLength(2);
+  } finally {
+    release?.();
+    await stopping;
+    harnessHttp.mockImplementation(request);
+    await stopOpenCodeSession("opencode-live");
+    await replacementTurn;
+  }
+});
+
+it("keeps the original child retirement when closing its ended stream fails", async () => {
   const events: HarnessEvent[] = [];
   const { done } = await startTurn(events);
   onSseEnd?.("stream closed");
   await expect(done).rejects.toThrow("stream closed");
+  const original = processConstructions.created.find(
+    (handle) => handle.sessionId === "opencode-live",
+  )!;
+  const retired = processConstructions.operations.filter((operation) => operation.kind === "kill");
+  expect(retired).toHaveLength(1);
+  expect(retired[0].handle).toBe(original);
   closeHarnessSse.mockClear();
-  killChild.mockClear();
   closeHarnessSse.mockRejectedValueOnce(new Error("SSE close failed"));
 
   await expect(stopOpenCodeSession("opencode-live")).resolves.toBeUndefined();
   expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
   expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
+  expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toEqual(
+    retired,
+  );
 });
 
 it("cache sınırı aktif delta ve alt ajan onay rotasını korur", async () => {

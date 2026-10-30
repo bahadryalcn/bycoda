@@ -25,10 +25,12 @@ type Turn = {
   onAccepted?: () => void;
 };
 
+import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
+
 type Live = {
+  handle: ChildProcessHandle;
   sessionId: string;
-  /** Generation-scoped child id: output of a retired process never reaches a
-   *  newer one, whatever order the events arrive in. */
+  /** Logical child locator; physical ownership belongs to handle. */
   childKey: string;
   cwd: string;
   /** Everything fixed at spawn; a turn that wants different values recycles. */
@@ -99,7 +101,7 @@ async function runTurn(
   beginStreamTurn(live.state);
   await new Promise<void>((resolve, reject) => {
     live.turn = { resolve, reject, onAccepted: input.onAccepted };
-    writeChild(live.childKey, line).catch((error: unknown) =>
+    writeChild(live.handle, line).catch((error: unknown) =>
       finishTurn(live, error instanceof Error ? error : new Error(String(error))),
     );
   });
@@ -138,6 +140,7 @@ async function ensureLive(
     conversationId: resume?.conversationId,
   });
   const childKey = `${sessionId}#${childSeq++}`;
+  const handle = createChildProcessHandle(childKey);
   let ready!: Live["ready"];
   const readiness = new Promise<void>((resolve, reject) => {
     ready = { resolve, reject };
@@ -146,6 +149,7 @@ async function ensureLive(
   // surface as an unhandled one.
   readiness.catch(() => undefined);
   const live: Live = {
+    handle,
     sessionId,
     childKey,
     cwd: input.cwd,
@@ -160,7 +164,7 @@ async function ensureLive(
   };
   liveBySession.set(sessionId, live);
   watchChild(
-    childKey,
+    handle,
     (text) => onLine(live, text),
     (code) => onExit(live, code),
     (text) => {
@@ -172,7 +176,7 @@ async function ensureLive(
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await spawnChild(
-      childKey,
+      handle,
       path,
       args,
       input.cwd,
@@ -259,7 +263,7 @@ function onLine(live: Live, line: string): void {
 }
 
 function onExit(live: Live, code: number | null): void {
-  unwatchChild(live.childKey);
+  unwatchChild(live.handle);
   if (liveBySession.get(live.sessionId) === live) {
     liveBySession.delete(live.sessionId);
   }
@@ -307,11 +311,11 @@ async function teardown(live: Live): Promise<void> {
     liveBySession.delete(live.sessionId);
   }
   live.retired = true;
-  unwatchChild(live.childKey);
+  unwatchChild(live.handle);
   live.ready.reject(new Error("Antigravity session stopped."));
   // A cancelled turn settles quietly; the caller already knows.
   finishTurn(live);
-  await killChild(live.childKey).catch(() => undefined);
+  await killChild(live.handle).catch(() => undefined);
 }
 
 export async function cancelAntigravityStreamTurn(sessionId: string): Promise<void> {

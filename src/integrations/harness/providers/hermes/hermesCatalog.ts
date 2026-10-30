@@ -2,6 +2,7 @@ import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
+  createChildProcessHandle,
   killChild,
   resolveHermesBinary,
   spawnChild,
@@ -35,7 +36,8 @@ export async function discoverHermesModels(workingDirectory?: string): Promise<A
   const { path } = await resolveHermesBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const acp = new AcpClient(probeId, {
+  const probeProcess = createChildProcessHandle(probeId);
+  const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       void acp
         .respondError(id, {
@@ -48,18 +50,18 @@ export async function discoverHermesModels(workingDirectory?: string): Promise<A
 
   const stop = async () => {
     acp.close();
-    unwatchChild(probeId);
-    await killChild(probeId).catch(() => undefined);
+    unwatchChild(probeProcess);
+    await killChild(probeProcess).catch(() => undefined);
   };
 
   watchChild(
-    probeId,
+    probeProcess,
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Hermes catalog probe exited")),
   );
 
   try {
-    await spawnChild(probeId, path, ["acp"], cwd, undefined, "hermes");
+    await spawnChild(probeProcess, path, ["acp"], cwd, undefined, "hermes");
     return await withTimeout(
       DISCOVERY_TIMEOUT_MS,
       async () => {

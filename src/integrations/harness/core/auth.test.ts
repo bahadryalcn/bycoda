@@ -1,3 +1,4 @@
+import { processConstructions } from "../providers/processConstruction.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const child = vi.hoisted(() => ({
@@ -12,7 +13,8 @@ const child = vi.hoisted(() => ({
   resolveFxBinary: vi.fn(async () => ({ path: "/bin/fx" })),
 }));
 
-vi.mock("./child", () => child);
+beforeEach(() => processConstructions.reset());
+vi.mock("./child", () => processConstructions.mock(child));
 vi.mock("../../../platform/tauri/fs", () => ({ homeDir: vi.fn(async () => "/home/alice") }));
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ label: "test-window" }),
@@ -106,6 +108,15 @@ describe("harness login", () => {
       | undefined;
     onExit?.(0);
     await expect(login).resolves.toBeUndefined();
+    const original = processConstructions.created[0];
+    expect(original.sessionId).toBe("bycoda-provider-login-test-window-claude");
+    for (const kind of ["watch", "spawn", "unwatch"] as const) {
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === kind)
+          .map((operation) => operation.handle),
+      ).toEqual([original]);
+    }
   });
 
   it("isolates a named Codex account during sign-in", async () => {
@@ -151,13 +162,25 @@ describe("harness login", () => {
     expect(child.killChild).toHaveBeenLastCalledWith(
       "bycoda-provider-login-test-window-codex-account-work",
     );
-    expect(child.killChild).toHaveBeenCalledTimes(2);
+    expect(child.killChild).toHaveBeenCalledTimes(1);
+    const original = processConstructions.created[0];
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
 
     const retry = loginHarness("codex", "account-work");
     await vi.waitFor(() => expect(child.spawnChild).toHaveBeenCalledTimes(2));
     const onExit = child.watchChild.mock.calls[1]?.[2] as (code: number) => void;
     onExit(0);
     await retry;
+    const replacement = processConstructions.created[1];
+    expect(replacement).not.toBe(original);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "spawn").at(-1)
+        ?.handle,
+    ).toBe(replacement);
   });
 
   it("waits for an in-progress spawn before cancelling and ignores its success exit", async () => {
@@ -176,10 +199,17 @@ describe("harness login", () => {
     const onExit = child.watchChild.mock.calls[0]?.[2] as (code: number) => void;
     onExit(0);
     await Promise.resolve();
-    expect(child.killChild).toHaveBeenCalledTimes(1);
+    expect(child.killChild).not.toHaveBeenCalled();
+    const original = processConstructions.created[0];
+    expect(original).toBeDefined();
     spawned();
     await cancelled;
-    expect(child.killChild).toHaveBeenCalledTimes(2);
+    expect(child.killChild).toHaveBeenCalledTimes(1);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
   });
 
   it("does not spawn when cancelled during binary resolution", async () => {
@@ -197,6 +227,7 @@ describe("harness login", () => {
     resolved({ path: "/bin/codex" });
     await cancelled;
     expect(child.spawnChild).not.toHaveBeenCalled();
+    expect(processConstructions.created).toEqual([]);
   });
 
   it("does not invent one login flow for multi-provider harnesses", async () => {

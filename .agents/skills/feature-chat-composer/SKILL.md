@@ -40,8 +40,8 @@ Source delivered in the shared checkout; no commit. Fixture evidence only, no na
   "Retry copy"/"Retry save" danger icon plus an inline `role=alert` reason. `CopyTurnButton` sound now plays
   after the copy resolves. Adapter (`arc/floating-button-group`) gained typed `tone`, `tooltip` and
   `render(renderTrigger)` for popup triggers.
-- Checks: browser suite `composer-compact` (registered in `tests/browser/suites.json`, 15 passed through
-  `browser-tests.mjs`); unit tests `composerReading`, `useComposerEngagement`, `useComposerDockMotion`,
+- Checks: browser suite `composer-compact` (registered in `tests/browser/suites.json`, chromium 30/30 and webkit 29 + 1 Chromium-only skip through
+  `browser-tests.mjs`; includes density, Chromium IME, drag and touch tap cases); unit tests `composerReading`, `useComposerEngagement`, `useComposerDockMotion`,
   `composerResize`, `AgentTranscriptReading`, `TranscriptMessageActions`, `AgentTranscript.copy`.
   Screenshots: `temp/verification/v2-001/`, `temp/verification/v2-002/`.
 - Not verified: real IME session, OS file drop, WebKit/native rendering, density variants.

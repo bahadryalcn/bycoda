@@ -1,6 +1,7 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { randomUUID } from "node:crypto";
 import {
   SessionToolsRelay,
   type SessionToolGroup,
@@ -18,6 +19,11 @@ import { GenericAcpService } from "./generic-acp";
 import type { GenericAcpConfig } from "../src/features/providers/model/genericAcp";
 import { saveHostGeneratedImage, deleteHostGeneratedImages } from "./generated-images";
 import type { ChildBackend } from "../src/integrations/harness/core/child";
+import {
+  isHarnessConstructionId,
+  requireHarnessProcessReceipt,
+  type HarnessProcessReceipt,
+} from "../src/shared/model/harnessProcess";
 import { isRemoteProvider, type RemoteProvider } from "../src/features/connections/model/protocol";
 import { binaryNames, providerLaunch, resolveProvider } from "./process";
 import { providerAccountEnvironment } from "./provider-accounts";
@@ -169,8 +175,13 @@ export class HostChildBackend implements ChildBackend {
   }
   private events = new EventEmitter();
   private children = new Map<string, ChildProcessWithoutNullStreams>();
+  private readonly constructions = new Map<
+    string,
+    { sessionId: string; child: ChildProcessWithoutNullStreams }
+  >();
+  private readonly retirements = new WeakMap<ChildProcessWithoutNullStreams, Promise<void>>();
   private starts = new Map<string, object>();
-  private startWork = new Set<Promise<number>>();
+  private startWork = new Set<Promise<HarnessProcessReceipt>>();
   private streams = new Map<string, AbortController>();
   private closing = false;
   private closePromise?: Promise<void>;
@@ -399,8 +410,8 @@ export class HostChildBackend implements ChildBackend {
       case "harness_spawn":
         return (await this.start(id, args)) as T;
       case "harness_write": {
-        const child = this.children.get(id);
-        if (!child || child.stdin.destroyed) throw new Error("Provider process is not running");
+        const child = this.requireChild(id, args.constructionId);
+        if (child.stdin.destroyed) throw new Error("Provider process is not running");
         await new Promise<void>((resolve, reject) => {
           const timer = setTimeout(() => {
             reject(
@@ -409,7 +420,7 @@ export class HostChildBackend implements ChildBackend {
               ),
             );
             // Retire only this generation; a replacement must never be killed.
-            if (this.children.get(id) === child) void this.kill(id);
+            void this.retireChild(id, child);
           }, 12_000);
           child.stdin.write(
             `${authorizeConversationAcpFrame(
@@ -429,7 +440,7 @@ export class HostChildBackend implements ChildBackend {
         return undefined as T;
       }
       case "harness_kill":
-        await this.kill(id);
+        await this.retireChild(id, this.requireChild(id, args.constructionId));
         return undefined as T;
       case "harness_kill_all":
         await this.close();
@@ -500,14 +511,17 @@ export class HostChildBackend implements ChildBackend {
     }
   }
 
-  private start(id: string, args: Record<string, unknown>): Promise<number> {
+  private start(id: string, args: Record<string, unknown>): Promise<HarnessProcessReceipt> {
     const work = this.startOwned(id, args);
     this.startWork.add(work);
     void work.finally(() => this.startWork.delete(work)).catch(() => undefined);
     return work;
   }
 
-  private async startOwned(id: string, args: Record<string, unknown>): Promise<number> {
+  private async startOwned(
+    id: string,
+    args: Record<string, unknown>,
+  ): Promise<HarnessProcessReceipt> {
     if (this.closing) throw new Error("Host is stopping");
     const beforeSpawn = args.beforeSpawn;
     if (beforeSpawn !== undefined && typeof beforeSpawn !== "function")
@@ -598,6 +612,8 @@ export class HostChildBackend implements ChildBackend {
           env: { ...env, BYCODA_HOST: "1" },
         },
       );
+      const constructionId = randomUUID();
+      this.constructions.set(constructionId, { sessionId: id, child });
       ownedChild = child;
       this.children.set(id, child);
       this.activeTools.set(id, tools);
@@ -609,17 +625,19 @@ export class HostChildBackend implements ChildBackend {
       const overflow = (reason: string) => {
         if (exitReason) return;
         exitReason = reason;
-        void this.kill(id);
+        void this.retireChild(id, child);
       };
-      this.lines(child, id, "stdout", overflow);
-      this.lines(child, id, "stderr", overflow);
+      this.lines(child, id, constructionId, "stdout", overflow);
+      this.lines(child, id, constructionId, "stderr", overflow);
       child.on("close", (code) => {
+        this.constructions.delete(constructionId);
         if (this.children.get(id) === child) {
           this.children.delete(id);
           this.releaseActiveTools(id);
         }
         this.emit("harness-exit", {
           sessionId: id,
+          constructionId,
           code,
           pid: child.pid,
           ...(exitReason ? { reason: exitReason } : {}),
@@ -630,8 +648,13 @@ export class HostChildBackend implements ChildBackend {
         child.once("error", reject);
       });
       check();
+      const receipt = requireHarnessProcessReceipt(
+        { version: 1, backend: "host", sessionId: id, pid: child.pid, constructionId },
+        id,
+        "host",
+      );
       published = true;
-      return child.pid!;
+      return receipt;
     } finally {
       if (!published && tools) {
         if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
@@ -787,6 +810,7 @@ export class HostChildBackend implements ChildBackend {
   private lines(
     child: ChildProcessWithoutNullStreams,
     id: string,
+    constructionId: string,
     stream: "stdout" | "stderr",
     onOverflow: (reason: string) => void,
   ): void {
@@ -802,6 +826,7 @@ export class HostChildBackend implements ChildBackend {
         for (const token of tokens) line = line.replaceAll(token, "[session credential redacted]");
         this.emit(`harness-${stream}`, {
           sessionId: id,
+          constructionId,
           line,
         });
       },
@@ -832,11 +857,44 @@ export class HostChildBackend implements ChildBackend {
     await this.killCurrent(id);
   }
 
+  private requireChild(id: string, constructionId: unknown): ChildProcessWithoutNullStreams {
+    if (!isHarnessConstructionId(constructionId))
+      throw new Error("Provider process identity is required.");
+    const construction = this.constructions.get(constructionId);
+    if (
+      !construction ||
+      construction.sessionId !== id ||
+      this.children.get(id) !== construction.child
+    )
+      throw new Error("Provider process identity changed or is no longer running.");
+    return construction.child;
+  }
+
   private async killCurrent(id: string): Promise<void> {
-    this.releaseActiveTools(id);
     const child = this.children.get(id);
-    if (!child) return;
-    this.children.delete(id);
+    if (!child) {
+      this.releaseActiveTools(id);
+      return;
+    }
+    await this.retireChild(id, child);
+  }
+
+  private retireChild(id: string, child: ChildProcessWithoutNullStreams): Promise<void> {
+    // Original callbacks may arrive after replacement. They can retire only
+    // their captured process, never a newer child or pending startup by ID.
+    if (this.children.get(id) === child) {
+      this.children.delete(id);
+      this.releaseActiveTools(id);
+    }
+    const existing = this.retirements.get(child);
+    if (existing) return existing;
+    const work = this.stopChild(child);
+    this.retirements.set(child, work);
+    return work;
+  }
+
+  private async stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
+    if (child.exitCode !== null || child.signalCode !== null) return;
     if (process.platform === "win32") {
       // Kill descendants while the leader still exists. Closing stdin first
       // can let the leader exit, making its remaining children untraceable.

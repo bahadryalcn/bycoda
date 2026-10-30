@@ -1,13 +1,18 @@
 import { expect, it, vi } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
 import { readFileSync, existsSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import type { SocialService } from "./social";
+import { PROVIDER_STDERR_LINE_BYTES } from "./provider-lines";
+import {
+  requireHarnessProcessReceipt,
+  type HarnessProcessReceipt,
+} from "../src/shared/model/harnessProcess";
 
 function startupGate<T>() {
   let resolve!: (value: T) => void;
@@ -16,6 +21,261 @@ function startupGate<T>() {
   });
   return { promise, resolve };
 }
+
+async function constructionFixture() {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-child-construction-"));
+  const file = join(directory, "provider.cjs");
+  writeFileSync(
+    file,
+    `const label=process.argv[2];
+console.log(JSON.stringify({ready:label}));
+console.error(JSON.stringify({ready:label}));
+require('node:readline').createInterface({input:process.stdin}).on('line',line=>console.log(JSON.stringify({label,line})));
+setInterval(()=>{},1000);`,
+  );
+  const backend = new HostChildBackend();
+  const sessionId = "same-physical-slot";
+  const output: Array<{
+    stream: "stdout" | "stderr";
+    sessionId: string;
+    constructionId: string;
+    line: string;
+  }> = [];
+  const exits: Array<{ sessionId: string; constructionId: string; pid: number }> = [];
+  const stateWaiters = new Set<() => void>();
+  const changed = () => {
+    for (const check of [...stateWaiters]) check();
+  };
+  const waitForState = (ready: () => boolean) =>
+    new Promise<void>((resolve) => {
+      const check = () => {
+        if (!ready()) return;
+        stateWaiters.delete(check);
+        resolve();
+      };
+      stateWaiters.add(check);
+      check();
+    });
+  const unlisten = await Promise.all([
+    ...(["stdout", "stderr"] as const).map((stream) =>
+      backend.listen<{ sessionId: string; constructionId: string; line: string }>(
+        `harness-${stream}`,
+        ({ payload }) => {
+          output.push({ stream, ...payload });
+          changed();
+        },
+      ),
+    ),
+    backend.listen<{ sessionId: string; constructionId: string; pid: number }>(
+      "harness-exit",
+      ({ payload }) => {
+        exits.push(payload);
+        changed();
+      },
+    ),
+  ]);
+  const internal = backend as unknown as {
+    children: Map<string, ChildProcessWithoutNullStreams>;
+  };
+  const launch = async (label: string) => {
+    const receipt = requireHarnessProcessReceipt(
+      await backend.invoke<unknown>("harness_spawn", {
+        sessionId,
+        command: file,
+        args: [label],
+        cwd: directory,
+      }),
+      sessionId,
+      "host",
+    );
+    await waitForState(() =>
+      ["stdout", "stderr"].every((stream) =>
+        output.some(
+          (event) =>
+            event.stream === stream &&
+            event.sessionId === sessionId &&
+            event.constructionId === receipt.constructionId &&
+            event.line === JSON.stringify({ ready: label }),
+        ),
+      ),
+    );
+    return receipt;
+  };
+  const echo = async (receipt: HarnessProcessReceipt, label: string) => {
+    const line = `accepted-${label}`;
+    await backend.invoke("harness_write", {
+      sessionId,
+      constructionId: receipt.constructionId,
+      line,
+    });
+    await waitForState(() =>
+      output.some(
+        (event) =>
+          event.stream === "stdout" &&
+          event.sessionId === sessionId &&
+          event.constructionId === receipt.constructionId &&
+          event.line === JSON.stringify({ label, line }),
+      ),
+    );
+  };
+  return {
+    backend,
+    sessionId,
+    internal,
+    output,
+    exits,
+    launch,
+    echo,
+    waitForState,
+    async close() {
+      for (const release of unlisten) release();
+      await backend.close();
+      rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    },
+  };
+}
+
+it("requires the original construction before writing or killing a replaced real child", async () => {
+  const f = await constructionFixture();
+  try {
+    const original = await f.launch("A");
+    const replacement = await f.launch("B");
+    expect(Object.keys(replacement).sort()).toEqual([
+      "backend",
+      "constructionId",
+      "pid",
+      "sessionId",
+      "version",
+    ]);
+    expect(Object.isFrozen(replacement)).toBe(true);
+    expect(replacement.constructionId).not.toBe(original.constructionId);
+    const current = f.internal.children.get(f.sessionId)!;
+    const writes = vi.spyOn(current.stdin, "write");
+    const line = { toString: vi.fn(() => "must-not-be-rewritten-or-written") };
+    const stale = [
+      { sessionId: f.sessionId },
+      { sessionId: f.sessionId, constructionId: original.constructionId },
+      { sessionId: f.sessionId, constructionId: replacement.pid },
+      { sessionId: f.sessionId, constructionId: `${replacement.constructionId}\n` },
+      { sessionId: "another-session", constructionId: replacement.constructionId },
+      { sessionId: f.sessionId, constructionId: "11111111-1111-4111-8111-111111111111" },
+    ];
+    for (const args of stale) {
+      await expect(f.backend.invoke("harness_write", { ...args, line })).rejects.toThrow(
+        /identity/,
+      );
+      await expect(f.backend.invoke("harness_kill", args)).rejects.toThrow(/identity/);
+    }
+    expect(line.toString).not.toHaveBeenCalled();
+    expect(writes).not.toHaveBeenCalled();
+    expect(f.internal.children.get(f.sessionId)).toBe(current);
+    expect(() => process.kill(replacement.pid, 0)).not.toThrow();
+    writes.mockRestore();
+    await f.echo(replacement, "B");
+    await f.backend.invoke("harness_kill", {
+      sessionId: f.sessionId,
+      constructionId: replacement.constructionId,
+    });
+    await f.waitForState(() =>
+      [original, replacement].every((receipt) =>
+        f.exits.some(
+          (event) =>
+            event.sessionId === f.sessionId &&
+            event.constructionId === receipt.constructionId &&
+            event.pid === receipt.pid,
+        ),
+      ),
+    );
+    expect(f.internal.children.has(f.sessionId)).toBe(false);
+  } finally {
+    await f.close();
+  }
+});
+
+it("does not let an old child's delayed overflow retire the replacement", async () => {
+  const f = await constructionFixture();
+  try {
+    await f.launch("A");
+    const oldChild = f.internal.children.get(f.sessionId)!;
+    const replacement = await f.launch("B");
+    const current = f.internal.children.get(f.sessionId)!;
+    const adminKill = vi.spyOn(f.backend, "kill");
+    // Exercise the installed callback on the actual old ChildProcess stream.
+    oldChild.stderr.emit("data", "x".repeat(PROVIDER_STDERR_LINE_BYTES + 1));
+    expect(adminKill).not.toHaveBeenCalled();
+    expect(f.internal.children.get(f.sessionId)).toBe(current);
+    await f.echo(replacement, "B");
+    adminKill.mockRestore();
+  } finally {
+    await f.close();
+  }
+});
+
+it("retains an original stdin callback lifetime and its timeout cannot retire a replacement", async () => {
+  const f = await constructionFixture();
+  let finishWrite: ((error?: Error | null) => void) | undefined;
+  let writeResult: Promise<{ error?: unknown }> | undefined;
+  try {
+    const original = await f.launch("A");
+    const oldChild = f.internal.children.get(f.sessionId)!;
+    let fireTimeout: (() => void) | undefined;
+    const originalSetTimeout = globalThis.setTimeout;
+    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+      callback: (...args: unknown[]) => void,
+      delay?: number,
+      ...args: unknown[]
+    ) => {
+      if (delay === 12_000) fireTimeout = () => callback(...args);
+      return originalSetTimeout(callback, delay, ...args);
+    }) as typeof setTimeout);
+    const write = vi.spyOn(oldChild.stdin, "write").mockImplementation(((
+      _line: unknown,
+      callback: (error?: Error | null) => void,
+    ) => {
+      finishWrite = callback;
+      return true;
+    }) as typeof oldChild.stdin.write);
+    let settled = false;
+    try {
+      writeResult = f.backend
+        .invoke("harness_write", {
+          sessionId: f.sessionId,
+          constructionId: original.constructionId,
+          line: "held-original-write",
+        })
+        .then(
+          () => {
+            settled = true;
+            return {};
+          },
+          (error: unknown) => {
+            settled = true;
+            return { error };
+          },
+        );
+    } finally {
+      timer.mockRestore();
+      write.mockRestore();
+    }
+    expect(finishWrite).toBeTypeOf("function");
+    expect(fireTimeout).toBeTypeOf("function");
+    const replacement = await f.launch("B");
+    const current = f.internal.children.get(f.sessionId)!;
+    expect(settled).toBe(false);
+    fireTimeout!();
+    expect((await writeResult).error).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("stdin write timed out"),
+      }),
+    );
+    expect(f.internal.children.get(f.sessionId)).toBe(current);
+    await f.echo(replacement, "B");
+  } finally {
+    finishWrite?.();
+    await writeResult;
+    await f.close();
+  }
+});
 
 it("invalidates a pending launch on per-ID kill and drains accepted preparation during close", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-cancel-start-"));
@@ -111,7 +371,7 @@ it("lets a replacement start while old grant preparation is held without stale l
   const rejected = expect(old).rejects.toThrow("startup cancelled");
   try {
     await entered.promise;
-    const replacement = await backend.invoke<number>("harness_spawn", {
+    const replacement = await backend.invoke<HarnessProcessReceipt>("harness_spawn", {
       sessionId: "same",
       command: file,
       args: [],
@@ -126,8 +386,8 @@ it("lets a replacement start while old grant preparation is held without stale l
       children: Map<string, { pid?: number }>;
     };
     expect(state.socialEnvironments.get("same")?.BYCODA_SOCIAL_TOKEN).toBe(current.token);
-    expect(state.children.get("same")?.pid).toBe(replacement);
-    expect(() => process.kill(replacement, 0)).not.toThrow();
+    expect(state.children.get("same")?.pid).toBe(replacement.pid);
+    expect(() => process.kill(replacement.pid, 0)).not.toThrow();
   } finally {
     release.resolve({ ...current, token: "fixture-old-token" });
     await rejected;
