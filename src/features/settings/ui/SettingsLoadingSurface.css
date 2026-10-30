@@ -1,0 +1,86 @@
+/* First-load placeholder for the Settings dialog. It reuses the loaded view's frame (a 200px
+   category rail, a header row and the shared 80rem column with the same paddings), so the real
+   view replaces it without moving the dialog or the title. Only the skeleton shapes are delayed:
+   a warm chunk never flashes them, while the title stays visible from the first frame. */
+.settings-loading {
+  display: flex;
+  flex: 1 1 0;
+  min-block-size: 0;
+  min-inline-size: 0;
+  background: var(--color-background-base);
+  container-type: inline-size;
+  container-name: settings-loading;
+}
+.settings-loading-rail {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 16px;
+  inline-size: 200px;
+  padding: 16px 16px 24px;
+  background: var(--ui-surface-panel);
+  border-inline-end: 1px solid var(--ui-pane-border);
+}
+.settings-loading-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-block-size: 0;
+  min-inline-size: 0;
+  inline-size: 100%;
+  max-inline-size: 80rem;
+  margin-inline: auto;
+}
+.settings-loading-header {
+  padding: 16px 3rem 4px 32px;
+}
+.settings-loading-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  /* The loaded page bar's title row is one compact control tall; match it so content does not shift. */
+  line-height: var(--ui-control-height-compact);
+  color: var(--color-content);
+}
+.settings-loading-body {
+  padding: 8px 32px 48px;
+}
+.settings-loading-note {
+  margin: 12px 0 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+.settings-loading-shapes {
+  animation: settings-loading-reveal 160ms linear 150ms both;
+}
+@keyframes settings-loading-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-loading-shapes {
+    animation: settings-loading-reveal 1ms linear 150ms both;
+  }
+}
+/* Narrow dialogs replace the rail with the category picker in the header, as the loaded view does. */
+@container settings-loading (max-width: 760px) {
+  .settings-loading {
+    flex-direction: column;
+  }
+  .settings-loading-rail {
+    display: none;
+  }
+  .settings-loading-header {
+    padding-inline-start: 16px;
+  }
+  .settings-loading-body {
+    padding-inline: 16px;
+  }
+}

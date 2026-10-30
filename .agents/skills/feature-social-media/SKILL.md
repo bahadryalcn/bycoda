@@ -254,3 +254,23 @@ provider/platform/account contact, no build or install.
   grants and history, removes the saved sign-in and pauses the account.
 - Inbox shows one auto-refresh control; campaign post results lead only when something was
   dispatched or needs recovery.
+
+## VIS 2026-10-30 (waves 5-7, uncommitted at time of writing)
+
+- Owner-only, draft-only Host bridges (request-id idempotent, untrusted input quoted,
+  never send/activate/change consent): `replies.suggest`, `plans.suggest`,
+  `rules.simplify`, `facts.suggest`, `contacts.suggestTags` (`host/social.ts`,
+  `host/social-suggestions.ts`, `host/social-generation.ts`; tests in
+  `host/social*.test.ts`). Not in `SOCIAL_TOOLS`.
+- Review UIs: `PlanSuggestion.tsx` (accept -> unsaved draft on Review step, saved
+  paused by owner), `RuleSimplifyReview.tsx` (accept -> new paused rule; original
+  untouched unless "Pause the original rule too"), `FactSuggestions.tsx` (accept ->
+  draft row, verified only on save), `ContactTagSuggestions.tsx` (import draft or
+  `contacts.upsert` tags only).
+- Stepped plan/rule dialogs (shared `Stepper` + Modal footer slot via
+  `SocialDialog`/`ComposerActions`); Content entries Write / Generate from a brief /
+  Edit existing with a truthful context line; preview -> check -> approval -> next.
+- Shared `ModelPicker` through `SocialModelField.tsx` (`presentation="field"`,
+  inherit choice). React Compiler lint clean in `src/features/social`.
+- Evidence: `temp/verification/vis-social*/`; social.spec 52/52 (private build).
+  Live provider/platform and native app not exercised.

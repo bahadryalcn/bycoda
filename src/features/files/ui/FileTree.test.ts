@@ -247,6 +247,72 @@ describe("NameRow filesystem collision ownership", () => {
   });
 });
 
+describe("NameRow IME composition", () => {
+  const mount = async () => {
+    const onCommit = vi.fn().mockResolvedValue(undefined);
+    const onCancel = vi.fn();
+    const outside = vi.fn();
+    document.addEventListener("keydown", outside);
+    await act(async () =>
+      root.render(
+        createElement(NameRow, { depth: 0, isDir: false, siblings: [], onCommit, onCancel }),
+      ),
+    );
+    const input = container.querySelector<HTMLInputElement>("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
+        input,
+        "notes.md",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    return { input, onCommit, onCancel, outside, finish: () => document.removeEventListener("keydown", outside) };
+  };
+  const key = (input: HTMLInputElement, init: KeyboardEventInit & { keyCode?: number }) =>
+    act(async () => {
+      input.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ...init }));
+    });
+
+  it("ignores Enter and Escape while the IME owns them and keeps the edit open", async () => {
+    const { input, onCommit, onCancel, outside, finish } = await mount();
+    await act(async () => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await key(input, { key: "Enter", isComposing: true, keyCode: 229 });
+    await key(input, { key: "Escape", isComposing: true, keyCode: 229 });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    expect(container.contains(input)).toBe(true);
+    expect(input.value).toBe("notes.md");
+    // The keys are not preventDefault-ed (the IME needs them) and stay inside the field.
+    expect(outside).not.toHaveBeenCalled();
+    finish();
+  });
+
+  it("treats the WebKit confirming keydown (keyCode 229 after compositionend) as IME input", async () => {
+    const { input, onCommit, onCancel, finish } = await mount();
+    await act(async () => input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true })));
+    await act(async () => input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })));
+    await key(input, { key: "Enter", isComposing: false, keyCode: 229 });
+    await key(input, { key: "Escape", isComposing: false, keyCode: 229 });
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(onCancel).not.toHaveBeenCalled();
+    finish();
+  });
+
+  it("commits once on Enter after composition ended and cancels on a plain Escape", async () => {
+    const first = await mount();
+    await act(async () => first.input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "x" })));
+    await key(first.input, { key: "Enter", isComposing: false, keyCode: 13 });
+    expect(first.onCommit).toHaveBeenCalledExactlyOnceWith("notes.md");
+    first.finish();
+    await act(async () => root.render(null));
+    const second = await mount();
+    await key(second.input, { key: "Escape", isComposing: false, keyCode: 27 });
+    expect(second.onCancel).toHaveBeenCalledTimes(1);
+    expect(second.onCommit).not.toHaveBeenCalled();
+    second.finish();
+  });
+});
+
 describe("FileTree render isolation", () => {
   it.each(["New File", "New Folder", "Rename"])(
     "commits %s once and retries only the failed listing",
@@ -675,8 +741,13 @@ describe("FileTree accepts files from outside the tree", () => {
         payload: { type: "over", position: { x: 10, y: 10 } },
       });
     });
-    expect(target.getAttribute("data-tree-drop-target")).toBe("true");
+    // The shared drop mark and cursor badge replace the row's own external-drop highlight.
+    expect(target.getAttribute("data-drop-indicator")).toBe("inside");
+    expect(target.getAttribute("data-tree-drop-target")).toBeNull();
+    expect(document.querySelector(".pointer-drop-hint")?.textContent).toBe("Copy files into docs");
     await nativeDrop(["/Users/me/Desktop/a.txt"]);
+    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(target.getAttribute("data-drop-indicator")).toBeNull();
     expect(copied).toEqual([{ from: "/Users/me/Desktop/a.txt", destParent: `${cwd}/docs` }]);
     expect(target.className).not.toContain("bg-selection");
   });

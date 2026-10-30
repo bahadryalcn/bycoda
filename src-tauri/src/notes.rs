@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+#[cfg(test)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{params, Connection, OptionalExtension};
@@ -367,10 +368,7 @@ fn save_note_image_sync(
         return Err("Not a file".into());
     }
     if meta.len() > IMAGE_MAX_BYTES {
-        return Err(format!(
-            "Image is too large (maximum {} MB).",
-            IMAGE_MAX_BYTES / 1024 / 1024
-        ));
+        return Err(image_size_error());
     }
 
     let names = note_image_names(&source)?;
@@ -403,16 +401,80 @@ fn copy_note_image(
     (display_name, safe_name): (String, String),
     grant: impl FnOnce(&Path) -> Result<(), String>,
 ) -> Result<NoteImageAsset, String> {
+    copy_note_image_with_sync(
+        source,
+        dir,
+        allowed_root,
+        note_id,
+        (display_name, safe_name),
+        std::fs::File::sync_all,
+        grant,
+    )
+}
+
+fn image_size_error() -> String {
+    format!(
+        "Image is too large (maximum {} MB).",
+        IMAGE_MAX_BYTES / 1024 / 1024
+    )
+}
+
+/// A source can grow after its metadata was read. Limit the actual stream too;
+/// an oversized or uncertain copy is never synchronized, granted or published.
+fn write_note_image_data(
+    source: impl std::io::Read,
+    destination: &mut std::fs::File,
+) -> Result<(), String> {
+    let copied = std::io::copy(&mut source.take(IMAGE_MAX_BYTES + 1), destination)
+        .map_err(|error| error.to_string())?;
+    if copied > IMAGE_MAX_BYTES {
+        return Err(image_size_error());
+    }
+    Ok(())
+}
+
+/// Only the private native worker supplies sync/grant. Sync is explicit here so
+/// tests can hold the real file flush and verify the original admission lifetime.
+/// File-byte acknowledgement is not a directory/power-loss or migration receipt.
+fn copy_note_image_with_sync(
+    source: &Path,
+    dir: &Path,
+    allowed_root: &Path,
+    note_id: &str,
+    (display_name, safe_name): (String, String),
+    sync: impl FnOnce(&std::fs::File) -> std::io::Result<()>,
+    grant: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<NoteImageAsset, String> {
+    let input =
+        std::fs::File::open(source).map_err(|error| format!("{}: {error}", source.display()))?;
+    let metadata = input.metadata().map_err(|error| error.to_string())?;
+    if !metadata.is_file() {
+        return Err("Not a file".into());
+    }
+    if metadata.len() > IMAGE_MAX_BYTES {
+        return Err(image_size_error());
+    }
     crate::file_access::produced_target(dir, allowed_root, NOTE_ASSET_DIR)?;
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let stamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let stored_name = format!("{stamp}-{safe_name}");
+    // Each accepted copy owns a fresh file. A clock collision or concurrent save
+    // must never truncate a previously returned asset.
+    let stored_name = format!("{}-{safe_name}", uuid::Uuid::new_v4());
     let destination = dir.join(&stored_name);
     crate::file_access::produced_target(&destination, allowed_root, NOTE_ASSET_DIR)?;
-    std::fs::copy(source, &destination).map_err(|e| format!("{}: {e}", destination.display()))?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut output = options
+        .open(&destination)
+        .map_err(|error| format!("{}: {error}", destination.display()))?;
+    write_note_image_data(input, &mut output)?;
+    // Keep an uncertain private copy if copy/sync/grant fails. No pathname-based
+    // cleanup may delete a replacement, and no failure fabricates a public ACK.
+    sync(&output).map_err(|error| format!("{}: {error}", destination.display()))?;
     grant(&destination)?;
     Ok(NoteImageAsset {
         name: display_name,

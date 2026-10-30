@@ -131,7 +131,7 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 async function render(
-  component: typeof Audience | typeof Campaigns | typeof Rules,
+  component: typeof Audience | typeof Campaigns | typeof QueryRules,
   value: SocialSnapshot,
 ) {
   await act(async () => root.render(createElement(component, props(value))));
@@ -539,7 +539,7 @@ describe("Social management workflows", () => {
   });
   it("cannot save an automation with a fact removed from its project", async () => {
     const value = snapshot();
-    await render(Rules, value);
+    await render(QueryRules, value);
     const factLabel = Array.from(container.querySelectorAll("label")).find((item) =>
       item.textContent?.trim().startsWith("Allowed reply fact"),
     )!;
@@ -551,17 +551,294 @@ describe("Social management workflows", () => {
       "fact-a",
     );
     expect(factSelect.value).toBe("fact-a");
+    await change(control("Name"), "Rule");
+    await change(control("Incoming phrase"), "price");
+    await click("Next");
+    await click("Next");
     const save = () =>
       Array.from(container.querySelectorAll("button")).find(
         (item) => item.textContent === "Save paused rule",
       )!;
     expect(save().disabled).toBe(false);
-    await render(Rules, {
+    await render(QueryRules, {
       ...value,
       profiles: value.profiles.map((profile) => ({ ...profile, facts: [] })),
     });
     expect(save().disabled).toBe(true);
+    expect(container.textContent).toContain("Add a verified fact for this project.");
   });
 });
+
+/** Reply-rule dialog (VIS-007.3): one state owner, three steps, same payload as the old single form. */
+describe("Reply rule steps", () => {
+  const onOpenContent = vi.fn();
+  const stepButton = (label: string) =>
+    container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
+  const next = () =>
+    Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+      (item) => item.textContent === "Next",
+    )!;
+  const reason = () =>
+    container.querySelector(".social-rule-nav .social-rule-reason")?.textContent ?? "";
+  async function renderRules(value: SocialSnapshot) {
+    await act(async () =>
+      root.render(createElement(QueryRules, { ...props(value), onOpenContent })),
+    );
+  }
+  async function fillContent(name = "Rule A", phrase = "price?", scope: ParentNode = container) {
+    await change(control("Name", scope), name);
+    await change(control("Incoming phrase", scope), phrase);
+    const label = Array.from(scope.querySelectorAll("label")).find((item) =>
+      item.textContent?.trim().startsWith("Allowed reply fact"),
+    )!;
+    await chooseSocialValue(
+      label.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')!,
+      "fact-a",
+    );
+  }
+  beforeEach(() => onOpenContent.mockReset());
+
+  it("keeps every value while moving back and forth and summarises it before saving", async () => {
+    await renderRules(snapshot());
+    await fillContent();
+    await click("Next");
+    expect(stepButton("2 Behaviour").closest("li")?.getAttribute("aria-current")).toBe("step");
+    await change(control("Mode"), "approval");
+    await change(control("Daily limit"), "7");
+    await change(control("Stop phrases"), "a, b ,");
+    await click("Back");
+    expect(control("Name").value).toBe("Rule A");
+    expect(control("Incoming phrase").value).toBe("price?");
+    expect(container.querySelector<HTMLSelectElement>("select[required]")?.value).toBe("fact-a");
+    await click("Next");
+    expect(control("Mode").value).toBe("approval");
+    expect(control("Daily limit").value).toBe("7");
+    expect(control("Stop phrases").value).toBe("a, b ,");
+    await click("Next");
+    const summary = container.querySelector('dl[aria-label="Rule summary"]')!.textContent!;
+    for (const part of [
+      "Rule A",
+      "Test account",
+      "Alpha project",
+      "Incoming comment",
+      "Send with user approval",
+      "Topic",
+      "1 answer",
+      "price?",
+      "up to 7 a day",
+      "a, b",
+    ])
+      expect(summary).toContain(part);
+    expect(request.mock.calls.some((call) => call[0] === "automations.create")).toBe(false);
+    // The step indicator returns to earlier steps without losing anything.
+    await act(async () => stepButton("1 Account and content").click());
+    expect(control("Name").value).toBe("Rule A");
+  });
+
+  it("shows blockers in their own step and disables Next with the reason", async () => {
+    await renderRules(snapshot());
+    expect(next().disabled).toBe(true);
+    expect(reason()).toContain("Enter a rule name.");
+    expect(reason()).toContain("Select the verified fact");
+    expect(stepButton("2 Behaviour").getAttribute("aria-disabled")).toBe("true");
+    await fillContent();
+    expect(next().disabled).toBe(false);
+    expect(reason()).toBe("");
+    await click("Next");
+    await change(control("Daily limit"), "0");
+    expect(next().disabled).toBe(true);
+    expect(reason()).toContain("whole daily limit from 1 to 100");
+    expect(container.textContent).toContain("Enter a whole number from 1 to 100.");
+    expect(stepButton("3 Review").getAttribute("aria-disabled")).toBe("true");
+    await change(control("Daily limit"), "2.5");
+    expect(next().disabled).toBe(true);
+    await change(control("Daily limit"), "100");
+    expect(next().disabled).toBe(false);
+    // Automatic mode without a reply grant is a Behaviour blocker.
+    await change(control("Mode"), "automatic");
+    expect(next().disabled).toBe(false);
+    const value = snapshot();
+    value.accounts[0].grants.a = ["read", "draft"];
+    await renderRules(value);
+    expect(container.textContent).toContain(
+      "Automatic sending needs a supported account and reply permission for this project.",
+    );
+    expect(next().disabled).toBe(true);
+    expect(reason()).toContain("Automatic sending needs");
+    // An account without draft access is a first-step blocker.
+    const noDraft = snapshot();
+    noDraft.accounts[0].grants.a = ["read"];
+    await click("Back");
+    await renderRules(noDraft);
+    expect(reason()).toContain("No account with draft access for the selected project.");
+    expect(next().disabled).toBe(true);
+  });
+
+  it("resolves a missing verified fact in the first step and keeps the draft through the detour", async () => {
+    const empty = snapshot();
+    empty.profiles = empty.profiles.map((profile) => ({ ...profile, facts: [] }));
+    await renderRules(empty);
+    await change(control("Name"), "Unfinished");
+    await change(control("Incoming phrase"), "price?");
+    expect(container.textContent).toContain("Add a verified fact before creating a rule");
+    expect(reason()).toContain("Add a verified fact for this project.");
+    expect(next().disabled).toBe(true);
+    await click("Manage verified facts");
+    expect(onOpenContent).toHaveBeenCalledWith("a");
+    // The owner added a fact elsewhere; the parked draft is still here and complete.
+    await renderRules(snapshot());
+    expect(control("Name").value).toBe("Unfinished");
+    expect(control("Incoming phrase").value).toBe("price?");
+    expect(container.textContent).not.toContain("Add a verified fact before creating a rule");
+    expect(request.mock.calls.some((call) => call[0] === "automations.create")).toBe(false);
+  });
+
+  it("keeps the draft and the current step when the dialog is closed and reopened", async () => {
+    await renderRules(snapshot());
+    await click("Create automation rule");
+    const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog).toBeTruthy();
+    const press = async (text: string) =>
+      act(async () =>
+        Array.from(document.body.querySelectorAll("button"))
+          .find((item) => item.textContent === text)!
+          .click(),
+      );
+    await fillContent("Kept", "keep?", dialog);
+    await press("Next");
+    await change(control("Daily limit", dialog), "9");
+    await act(async () => closeComposer(dialog.querySelector("form")!));
+    expect(document.body.querySelector('[role="dialog"]')).toBeFalsy();
+    await click("Create automation rule");
+    const reopened = document.body.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(control("Daily limit", reopened).value).toBe("9");
+    await press("Back");
+    expect(control("Name", reopened).value).toBe("Kept");
+    expect(control("Incoming phrase", reopened).value).toBe("keep?");
+  });
+
+  it("saves paused with exactly the payload of the former single form and then starts a clean draft", async () => {
+    await renderRules(snapshot());
+    await fillContent("Support rule", "price?");
+    await change(control("Trigger"), "message");
+    await click("Next");
+    await change(control("Mode"), "approval");
+    await change(control("Daily limit"), "7");
+    await change(control("Stop phrases"), "refund, lawsuit ,, ");
+    await click("Next");
+    await click("Save paused rule");
+    const calls = request.mock.calls.filter((call) => call[0] === "automations.create");
+    expect(calls).toHaveLength(1);
+    expect(JSON.stringify(calls[0][1])).toBe(
+      JSON.stringify({
+        name: "Support rule",
+        accountId: "account",
+        projectId: "a",
+        mode: "approval",
+        trigger: "message",
+        topics: ["Topic"],
+        dailyLimit: 7,
+        stopWords: ["refund", "lawsuit"],
+        answers: [{ keyword: "price?", factId: "fact-a" }],
+      }),
+    );
+    expect(request.mock.calls.some((call) => call[0] === "automations.activate")).toBe(false);
+    expect(control("Name").value).toBe("");
+  });
+
+  it("keeps the draft when saving fails and advances with Enter without saving", async () => {
+    await renderRules(snapshot());
+    await fillContent();
+    await submit(container.querySelector("form")!);
+    expect(control("Daily limit").value).toBe("10");
+    expect(request.mock.calls.some((call) => call[0] === "automations.create")).toBe(false);
+    await submit(container.querySelector("form")!);
+    request.mockImplementation(async (action: string) => {
+      if (action === "automations.create") throw new Error("Offline");
+      return action === "policy.get" ? { effective: {} } : {};
+    });
+    await click("Save paused rule");
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (item) => item.textContent === "Save paused rule",
+      ),
+    ).toBe(true);
+    await click("Back");
+    await click("Back");
+    expect(control("Name").value).toBe("Rule A");
+  });
+
+  it("keeps pausing existing rules available whatever the dialog step", async () => {
+    const value = snapshot();
+    value.rules = [
+      {
+        id: "r1",
+        name: "Live rule",
+        accountId: "account",
+        projectId: "a",
+        mode: "draft",
+        trigger: "comment",
+        topics: ["Topic"],
+        dailyLimit: 5,
+        enabled: true,
+        stopWords: [],
+        answers: [{ keyword: "x", factId: "fact-a" }],
+      },
+    ];
+    await renderRules(value);
+    await fillContent();
+    await click("Next");
+    const pause = Array.from(container.querySelectorAll("button")).find(
+      (item) => item.textContent === "Pause rule",
+    )!;
+    expect(pause.disabled).toBe(false);
+    await act(async () => pause.click());
+    expect(request).toHaveBeenCalledWith("automations.pause", { id: "r1" });
+  });
+
+  it("states why the AI simplify entry is unavailable", async () => {
+    const simplify = () =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (item) => item.textContent === "Simplify with AI",
+      )!;
+    const rule = {
+      id: "r1",
+      name: "Live rule",
+      accountId: "account",
+      projectId: "a",
+      mode: "draft" as const,
+      trigger: "comment" as const,
+      topics: ["Topic"],
+      dailyLimit: 5,
+      enabled: false,
+      stopWords: [],
+      answers: [{ keyword: "x", factId: "fact-a" }],
+    };
+    await renderRules(snapshot());
+    expect(simplify().disabled).toBe(true);
+    expect(container.textContent).toContain("Create a reply rule first.");
+    const offline = { ...snapshot(), rules: [rule], hostOnline: false };
+    await renderRules(offline);
+    expect(simplify().disabled).toBe(true);
+    expect(container.textContent).toContain("The computer is offline.");
+    request.mockImplementation(async (action: string) =>
+      action === "policy.get" ? { effective: {} } : {},
+    );
+    await renderRules({ ...snapshot(), rules: [rule] });
+    await act(async () => undefined);
+    expect(simplify().disabled).toBe(true);
+    expect(container.textContent).toContain("Choose a text agent in Settings first.");
+    request.mockImplementation(async (action: string) =>
+      action === "policy.get" ? { effective: { agent: { provider: "codex", model: "m" } } } : {},
+    );
+    await renderRules({ ...snapshot(), rules: [{ ...rule, id: "r2" }] });
+    await act(async () => undefined);
+    await act(async () => undefined);
+    expect(simplify().disabled).toBe(false);
+    expect(container.querySelector(".social-rule-list-reason")).toBeFalsy();
+  });
+});
+
+const QueryRules = withQueryClient(Rules);
 
 const Campaigns = withQueryClient(QueryCampaigns);

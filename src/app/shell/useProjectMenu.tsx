@@ -406,7 +406,9 @@ export function useProjectMenu({
       )
     );
   };
-  const [groupMenu, setGroupMenu] = useState<(Point & { id: string }) | null>(null);
+  const [groupMenu, setGroupMenu] = useState<(Point & { id: string; move?: ProjectMenuMove }) | null>(
+    null,
+  );
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [fetchAll, setFetchAll] = useState<(Point & { id: string; paths: string[] }) | null>(null);
   const [notificationMenu, setNotificationMenu] = useState<
@@ -501,13 +503,13 @@ export function useProjectMenu({
     setProjectMenu({ x, y, path, projectKey: projectKey(path), onSelectForBulk, move });
   };
 
-  const openGroupMenu = (id: string, x: number, y: number) => {
+  const openGroupMenu = (id: string, x: number, y: number, move?: ProjectMenuMove) => {
     captureTrigger();
     onOpen?.();
     setProjectMenu(null);
     setNotificationMenu(null);
     setFetchAll(null);
-    setGroupMenu({ x, y, id });
+    setGroupMenu({ x, y, id, move });
   };
 
   const createGroup = (x: number, y: number, projectPath?: string) => {
@@ -1114,6 +1116,15 @@ export function useProjectMenu({
             captureTrigger(
               document.querySelector<HTMLElement>('button[aria-label="Manage hidden groups"]'),
             );
+            return;
+          }
+          // Up/down go through the group's own sortable (announced, same order rules as a drag).
+          if (action === "move-group-up" && groupMenu.move?.up) {
+            groupMenu.move.up();
+            return;
+          }
+          if (action === "move-group-down" && groupMenu.move?.down) {
+            groupMenu.move.down();
             return;
           }
           if (action.startsWith("move-group-")) {

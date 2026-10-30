@@ -131,7 +131,7 @@ export function NativeContextMenu({
   const submenuHasIcons = !!submenuItems?.some((item) => item.kind === "item" && item.icon != null);
 
   useEffect(() => {
-    if (submenuSearch) searchRef.current?.focus();
+    if (submenuSearch) searchRef.current?.focus({ preventScroll: true });
   }, [submenu?.index, submenuSearch?.placeholder]);
 
   useEffect(() => {
@@ -150,7 +150,7 @@ export function NativeContextMenu({
   const closeSubmenu = () => {
     cancelClose();
     if (submenuRef.current?.contains(document.activeElement)) {
-      menuRef.current?.focus();
+      menuRef.current?.focus({ preventScroll: true });
     }
     setSubmenu(null);
     setSubmenuActive(-1);
@@ -316,7 +316,7 @@ export function NativeContextMenu({
           keyboardMove.current = false;
           if (inSubmenu) {
             setSubmenuActive(index);
-            if (!submenuSearch) submenuRef.current?.focus();
+            if (!submenuSearch) submenuRef.current?.focus({ preventScroll: true });
             return;
           }
           setActive(index);
@@ -334,8 +334,8 @@ export function NativeContextMenu({
             cancelClose();
             setSubmenu({ index, anchor: e.currentTarget });
             setSubmenuActive(0);
-            if (item.submenuSearch) searchRef.current?.focus();
-            else submenuRef.current?.focus();
+            if (item.submenuSearch) searchRef.current?.focus({ preventScroll: true });
+            else submenuRef.current?.focus({ preventScroll: true });
           } else {
             onPick(item.id);
           }
@@ -433,7 +433,8 @@ export function NativeContextMenu({
           layer={LAYER.submenu}
           autoFocus
           onFocus={(event) => {
-            if (submenuSearch && event.target === event.currentTarget) searchRef.current?.focus();
+            if (submenuSearch && event.target === event.currentTarget)
+              searchRef.current?.focus({ preventScroll: true });
           }}
           role="menu"
           tabIndex={-1}

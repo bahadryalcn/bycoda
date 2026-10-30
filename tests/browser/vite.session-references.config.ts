@@ -10,7 +10,9 @@ export default defineConfig({
       resolveId(source, importer) {
         if (
           /(?:^|\/)useReadOnlyHostSession(?:\.ts)?$/.test(source) &&
-          /\/AgentTabView\.tsx(?:\?|$)/.test(importer?.replaceAll("\\", "/") ?? "")
+          /\/AgentTabView\.tsx(?:\?|$)/.test(
+            importer?.replaceAll("\\", "/") ?? "",
+          )
         )
           return fileURLToPath(
             new URL("./session-references-host-reader.ts", import.meta.url),

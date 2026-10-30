@@ -298,9 +298,19 @@ test.describe("popover content flow", () => {
     expect(await log(page)).toEqual(["popover-dismiss:outside"]);
   });
 
-  test("the default stays intrinsic and clipped; short content stays natural", async ({ page }) => {
+  test("the default scrolls instead of clipping, explicit intrinsic clips; short content stays natural", async ({
+    page,
+  }) => {
     await setup(page, "dark", 1280, 600);
     await page.getByTestId("popover-clip").click();
+    const bounded = page.getByTestId("popover-surface");
+    expect(await bounded.getAttribute("data-popover-flow")).toBe("auto");
+    expect(await bounded.evaluate((el) => getComputedStyle(el).overflowY)).toBe("auto");
+    expect(await bounded.evaluate((el) => getComputedStyle(el).overflowX)).toBe("hidden");
+    await bounded.evaluate((el) => (el.scrollTop = el.scrollHeight));
+    await expect(bounded.locator("button").last()).toBeInViewport();
+    await page.keyboard.press("Escape");
+    await page.getByTestId("popover-hard-clip").click();
     const clip = page.getByTestId("popover-surface");
     expect(await clip.getAttribute("data-popover-flow")).toBe("intrinsic");
     expect(await clip.evaluate((el) => getComputedStyle(el).overflowY)).toBe("visible");

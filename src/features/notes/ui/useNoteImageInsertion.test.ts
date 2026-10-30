@@ -216,3 +216,89 @@ it("reports an unavailable input owner unless it is closed", async () => {
   expect(pickImageFiles).not.toHaveBeenCalled();
   expect(api.imageBusy).toBe(false);
 });
+
+const dropBadge = () => document.querySelector(".pointer-drop-hint")?.textContent ?? null;
+function dragEvent(zone: HTMLElement, types: string[], count = types.length) {
+  const dataTransfer = {
+    types: ["Files"],
+    files: [],
+    items: types.slice(0, count).map((type) => ({ kind: "file", type })),
+    dropEffect: "none",
+  };
+  return {
+    event: {
+      preventDefault: vi.fn(),
+      clientX: 20,
+      clientY: 20,
+      currentTarget: zone,
+      relatedTarget: null,
+      dataTransfer,
+    } as never,
+    dataTransfer,
+  };
+}
+
+it("marks the editor body and says Insert image for a dragged image", () => {
+  setup();
+  const zone = document.createElement("div");
+  document.body.append(zone);
+  const { event, dataTransfer } = dragEvent(zone, ["image/png"]);
+  act(() => api.dropZoneHandlers.onDragOver(event));
+  expect(dropBadge()).toBe("Insert image");
+  expect(zone.dataset.dropIndicator).toBe("inside");
+  expect(dataTransfer.dropEffect).toBe("copy");
+  // The in-editor overlay flag stays off: the shared mark and badge are the only feedback.
+  expect(api.imageDrag).toBe(false);
+
+  act(() => api.dropZoneHandlers.onDragLeave(event));
+  expect(dropBadge()).toBeNull();
+  expect(zone.dataset.dropIndicator).toBeUndefined();
+
+  const many = dragEvent(zone, ["image/png", "image/jpeg", ""]);
+  act(() => api.dropZoneHandlers.onDragOver(many.event));
+  expect(dropBadge()).toBe("Insert 3 images");
+  act(() => window.dispatchEvent(new Event("blur")));
+  expect(dropBadge()).toBeNull();
+  zone.remove();
+});
+
+it("refuses files that are not images and says why", () => {
+  setup();
+  const zone = document.createElement("div");
+  document.body.append(zone);
+  const { event, dataTransfer } = dragEvent(zone, ["application/pdf"]);
+  act(() => api.dropZoneHandlers.onDragOver(event));
+  expect(dropBadge()).toBe("Only images can be inserted here");
+  expect(zone.dataset.dropIndicator).toBe("blocked");
+  expect(dataTransfer.dropEffect).toBe("none");
+  act(() => api.dropZoneHandlers.onDrop({ ...(event as object), preventDefault: vi.fn() } as never));
+  expect(dropBadge()).toBeNull();
+  zone.remove();
+});
+
+it("blocks a second drop while an image is still being inserted, and ignores plain text drags", async () => {
+  setup();
+  const zone = document.createElement("div");
+  document.body.append(zone);
+  const picker = deferred<string[] | null>();
+  pickImageFiles.mockReturnValue(picker.promise);
+  let pending!: Promise<void>;
+  act(() => {
+    pending = api.insertImage();
+  });
+  const { event } = dragEvent(zone, ["image/png"]);
+  act(() => api.dropZoneHandlers.onDragOver(event));
+  expect(dropBadge()).toBe("Wait for the current image to finish inserting");
+  act(() => api.dropZoneHandlers.onDragLeave(event));
+
+  const text = { ...(event as object), dataTransfer: { types: ["text/plain"], files: [], items: [] } };
+  act(() => api.dropZoneHandlers.onDragOver(text as never));
+  expect(dropBadge()).toBeNull();
+  expect(zone.dataset.dropIndicator).toBeUndefined();
+
+  picker.resolve(null);
+  await act(async () => {
+    await pending;
+  });
+  zone.remove();
+});

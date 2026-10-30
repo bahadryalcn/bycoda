@@ -2016,6 +2016,10 @@
           {
             "additionalProperties": false,
             "properties": {
+              "approvalOccurrenceId": {
+                "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                "type": "string"
+              },
               "authorityGeneration": {
                 "maximum": 9007199254740991,
                 "minimum": 1,
@@ -5098,6 +5102,10 @@
                       "additionalProperties": false,
                       "properties": {
                         "decided": { "enum": ["allow", "deny", "cancelled"], "type": "string" },
+                        "occurrenceId": {
+                          "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                          "type": "string"
+                        },
                         "requestId": {
                           "maximum": 9007199254740991,
                           "minimum": 0,
@@ -10228,6 +10236,10 @@
         "additionalProperties": false,
         "properties": {
           "approvalId": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+          "approvalOccurrenceId": {
+            "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+            "type": "string"
+          },
           "decision": { "enum": ["allow", "deny"], "type": "string" },
           "projectId": { "type": "string" },
           "requestId": { "type": "string" },
@@ -10235,7 +10247,15 @@
           "sessionId": { "type": "string" },
           "targetRunId": { "type": "string" }
         },
-        "required": ["projectId", "runId", "sessionId", "requestId", "approvalId", "decision"],
+        "required": [
+          "projectId",
+          "runId",
+          "sessionId",
+          "requestId",
+          "approvalId",
+          "approvalOccurrenceId",
+          "decision"
+        ],
         "type": "object"
       },
       "requiredCapability": "transport.ws.crews.v2",
@@ -38667,6 +38687,10 @@
         {
           "additionalProperties": false,
           "properties": {
+            "approvalOccurrenceId": {
+              "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+              "type": "string"
+            },
             "authorityGeneration": { "maximum": 9007199254740991, "minimum": 1, "type": "integer" },
             "commandId": {
               "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -42527,6 +42551,10 @@
               "additionalProperties": false,
               "properties": {
                 "approvalId": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                "approvalOccurrenceId": {
+                  "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                  "type": "string"
+                },
                 "decision": { "enum": ["allow", "deny"], "type": "string" },
                 "projectId": { "type": "string" },
                 "requestId": { "type": "string" },
@@ -42540,6 +42568,7 @@
                 "sessionId",
                 "requestId",
                 "approvalId",
+                "approvalOccurrenceId",
                 "decision"
               ],
               "type": "object"
@@ -50594,6 +50623,10 @@
                 {
                   "additionalProperties": false,
                   "properties": {
+                    "approvalOccurrenceId": {
+                      "pattern": "^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}(?![\\s\\S])",
+                      "type": "string"
+                    },
                     "authorityGeneration": {
                       "maximum": 9007199254740991,
                       "minimum": 1,
@@ -51347,5 +51380,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "64688892d06dc5a41a4447921f25e8f8aa461cf4fb555db1f21d5ef16ee1b8f7"
+  "schemaHash": "99e514b39a7b622fab99dd1224d7a69b78fa268a27a68e14e5c51dffdbf7b865"
 }

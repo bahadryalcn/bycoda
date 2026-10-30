@@ -7,6 +7,7 @@ import type {
   PointerEvent,
 } from "react";
 import { Button, type ButtonProps } from "./Button";
+import { MoreHorizontal } from "./icons";
 import styles from "./ActionHost.module.css";
 
 export type ActionHostProps = ComponentPropsWithRef<"div"> & {
@@ -63,6 +64,43 @@ const activationKeys = new Set(["Enter", " ", "Spacebar"]);
  */
 export function InlineAction({ reveal = "interaction", ...props }: InlineActionProps) {
   return <InlineActionButton {...props} reveal={reveal} inset="icon" iconOnly />;
+}
+
+export type InlineMoreActionProps = Omit<
+  InlineActionProps,
+  "children" | "onClick" | "aria-haspopup" | "aria-expanded"
+> & {
+  /** Names the object the menu acts on, for example "Actions for server.ts". */
+  label: string;
+  /** The menu opened from this action is showing. Omit when the caller cannot tell. */
+  expanded?: boolean;
+  /** Opens the row's own menu at this anchor, with the same target and permissions as its context menu. */
+  onOpen: (anchor: HTMLButtonElement) => void;
+};
+
+/**
+ * The row's overflow entry: secondary actions that are not frequent enough to stay
+ * direct. It opens the same menu as right-click and the context-menu key, so touch and
+ * keyboard users reach the same target. Frequent actions stay direct `InlineAction`s
+ * and status (counts, Git state, connection) stays visible in the row, never in this menu.
+ */
+export function InlineMoreAction({
+  expanded,
+  onOpen,
+  reveal,
+  ...props
+}: InlineMoreActionProps) {
+  return (
+    <InlineAction
+      {...props}
+      reveal={reveal}
+      aria-haspopup="menu"
+      aria-expanded={expanded}
+      onClick={(event) => onOpen(event.currentTarget)}
+    >
+      <MoreHorizontal className="icon-sm" strokeWidth={1.75} aria-hidden />
+    </InlineAction>
+  );
 }
 
 export type InlineTextActionProps = Omit<InlineActionButtonProps, "label"> & {

@@ -107,7 +107,7 @@ import {
   removeAttachmentFromText,
   tokensForIncoming,
 } from "../model/attachmentTokens";
-import { COMPOSER_MAX_HEIGHT, resizeComposer } from "../model/composerResize";
+import { composerMaxHeight, resizeComposer } from "../model/composerResize";
 import { createComposerResizeFrame } from "./composerResizeFrame";
 import {
   isFileReferenceText,
@@ -306,6 +306,12 @@ type Props = {
   focusToken?: number;
   shell?: boolean;
   compact?: boolean;
+  /**
+   * Reading mode: the reader is away from the end of the transcript and not
+   * using the composer. The same mounted field shrinks to its content and the
+   * secondary workspace row is tucked away; nothing is remounted or copied.
+   */
+  reading?: boolean;
   placeholder?: string;
   inputAriaLabel?: string;
   disabled?: boolean;
@@ -1018,6 +1024,7 @@ export const Composer = memo(function Composer({
   hotkeys = false,
   shell = false,
   compact = false,
+  reading = false,
   placeholder,
   inputAriaLabel,
   disabled = false,
@@ -1501,6 +1508,26 @@ export const Composer = memo(function Composer({
     // The indent can rewrap the first line after the input already resized.
     if (ref.current) resizeComposer(ref.current);
   }, [modeIndent]);
+  useLayoutEffect(() => {
+    // Reading mode swaps the field's minimum rows and height ceiling in place;
+    // measure the same textarea again, keeping its value, caret and history.
+    const el = ref.current;
+    if (el) resizeComposer(el);
+    if (!reading) return;
+    // The compact ceiling follows the window height.
+    let frame = 0;
+    const onResize = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        if (ref.current?.isConnected) resizeComposer(ref.current);
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [reading]);
   const { mentionIndex, rankedFiles } = useComposerMentionSources({
     executionCwd,
     remote,
@@ -2102,12 +2129,13 @@ export const Composer = memo(function Composer({
     ref.current?.focus();
   }, [disabled, focused, question, busy, focusToken]);
 
-  const fileDrag = useComposerFileDrop({
+  useComposerFileDrop({
     enabled,
     disabled,
     attachmentsSupported,
     boxRef,
     sinkRef: attachmentSink,
+    attachmentsRef,
     readDroppedAttachments,
     setPasteError,
   });
@@ -2123,7 +2151,7 @@ export const Composer = memo(function Composer({
       if (ref.current) {
         ref.current.value = text;
         ref.current.style.height = "auto";
-        ref.current.style.height = `${Math.min(ref.current.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+        ref.current.style.height = `${Math.min(ref.current.scrollHeight, composerMaxHeight(ref.current))}px`;
       }
 
       const nextIds = new Set(nextAttachments.map((file) => file.id));
@@ -3174,6 +3202,10 @@ export const Composer = memo(function Composer({
       : []),
   ];
 
+  // Reading mode tucks the workspace row away unless it has something to say.
+  const workspaceNeedsAttention =
+    !!workspaceCreationError || workspaceCreation.pending || !!worktreeRemoved;
+
   // The project picker belongs to the execution context under the writing
   // surface, beside workspace and branch, not inside the box.
   const projectContextPicker =
@@ -3196,6 +3228,7 @@ export const Composer = memo(function Composer({
       data-composer
       data-usage-guide="composer"
       data-usage-guide-active={hotkeys ? "true" : undefined}
+      data-composer-reading={reading ? "true" : undefined}
       className={`relative shrink-0 ${shell || compact ? "" : "p-1.5 pt-0"}`}
       onMouseDown={disabled ? undefined : onFocus}
       onKeyDownCapture={disabled ? undefined : onComposerKeyDown}
@@ -3519,15 +3552,8 @@ export const Composer = memo(function Composer({
           data-ui-focus-group=""
           onPointerDown={focusFromComposerSpace}
           data-composer-editing={resendEdited ? "" : undefined}
-          data-composer-dragging={fileDrag ? "" : undefined}
           className={`relative z-10 rounded-xl border ${resendEdited ? "edit-last-turn-composer" : ""}`}
         >
-          {fileDrag ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-xl bg-(--ui-tone-accent-subtle) text-ui-caption text-(--ui-text-secondary)">
-              {t("Drop files to attach")}
-            </div>
-          ) : null}
-
           {attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2">
               {attachments.map((file, index) => (
@@ -3607,7 +3633,7 @@ export const Composer = memo(function Composer({
               data-composer-empty={navigationEmpty ? "true" : undefined}
               data-composer-plain={plainDraft ? "true" : undefined}
               style={{ textIndent: modeIndent }}
-              rows={2}
+              rows={reading ? 1 : 2}
               spellCheck={spelling}
               autoCorrect={spelling ? "on" : "off"}
               defaultValue={mountDraft}
@@ -4052,6 +4078,8 @@ export const Composer = memo(function Composer({
         </div>
         {!hideTopBar && hideBranchPicker && projectContextPicker ? (
           <div
+            data-composer-secondary=""
+            data-composer-attention={workspaceNeedsAttention ? "" : undefined}
             role="group"
             aria-label={t("Chat workspace")}
             className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-2 pb-1 pt-1.5"
@@ -4062,6 +4090,8 @@ export const Composer = memo(function Composer({
         {!hideTopBar && !hideBranchPicker ? (
           <div
             data-composer-workspace
+            data-composer-secondary=""
+            data-composer-attention={workspaceNeedsAttention ? "" : undefined}
             onPointerDown={focusFromComposerSpace}
             role="group"
             aria-label={t("Chat workspace")}

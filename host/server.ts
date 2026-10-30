@@ -1553,6 +1553,7 @@ export async function createHostServer(
       capabilities: [
         HOST_WS_READ_CAPABILITY,
         "transport.ws.sessions.v2",
+        "sessions.approvalOccurrence.v1",
         "transport.ws.queue.v2",
         "transport.ws.files.v2",
         "transport.ws.terminals.v2",
@@ -5074,6 +5075,7 @@ export async function createHostServer(
       "native.delivery.epochs.v2",
       "transport.ws.workspaces.cleanup.v1",
       "transport.ws.sessions.v2",
+      "sessions.approvalOccurrence.v1",
       "transport.ws.queue.v2",
       "transport.ws.files.v2",
       "transport.ws.terminals.v2",

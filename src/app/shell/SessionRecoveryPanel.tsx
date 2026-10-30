@@ -441,7 +441,7 @@ export function SessionRecoveryPanel({
                             : status === "interrupted" || status === "input" || status === "retrying"
                               ? "font-medium text-warning"
                               : status === "working"
-                                ? "font-medium text-accent"
+                                ? "font-medium text-(--ui-tone-info-fg)"
                                 : status === "done"
                                   ? "text-success"
                                   : ""

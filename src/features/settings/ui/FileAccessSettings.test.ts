@@ -79,3 +79,30 @@ it("refreshes changed permissions on window focus through a read-only operation"
   expect(container.textContent).toContain("Selected folders only");
   expect(configureFileAccess).not.toHaveBeenCalled();
 });
+
+it("keeps the last known access visible and says so when a refresh fails", async () => {
+  vi.mocked(getFileAccessMode)
+    .mockResolvedValueOnce("all-files")
+    .mockRejectedValueOnce(new Error("Status read failed"));
+  await act(async () => root.render(createElement(FileAccessSettings)));
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Status unavailable");
+  expect(container.textContent).toContain("Last known access");
+  expect(container.querySelector('[role="alert"]')?.textContent).toContain("Status read failed");
+});
+
+it("ignores a read that finishes after the surface closed", async () => {
+  let finish!: (mode: "all-files") => void;
+  vi.mocked(getFileAccessMode).mockReturnValueOnce(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  await act(async () => root.render(createElement(FileAccessSettings)));
+  expect(container.textContent).toContain("Loading…");
+  await act(async () => root.unmount());
+  await act(async () => finish("all-files"));
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});

@@ -4,12 +4,10 @@ import {
   NativeCaptureJsonError,
   stringifyNativeCaptureJson,
 } from "../../../shared/lib/native-capture-json";
-import {
-  encodeNativeRawCapture,
-  NATIVE_RAW_CAPTURE_LIMITS,
-} from "./nativeRawCapture";
+import { encodeNativeRawCapture, NATIVE_RAW_CAPTURE_LIMITS } from "./nativeRawCapture";
 
 export type NativeProducerKind =
+  | "approval-decision"
   | "question-draft"
   | "session-parent"
   | "composer-parent"
@@ -49,8 +47,7 @@ const capacity = (): never => {
 };
 const safe = (value: unknown, minimum = 0): value is number =>
   typeof value === "number" && Number.isSafeInteger(value) && value >= minimum;
-const own = (value: object, key: PropertyKey) =>
-  Object.prototype.hasOwnProperty.call(value, key);
+const own = (value: object, key: PropertyKey) => Object.prototype.hasOwnProperty.call(value, key);
 function dataField(value: object, name: string): unknown {
   const property = Object.getOwnPropertyDescriptor(value, name);
   if (!property?.enumerable || !("value" in property)) return invalid();
@@ -70,6 +67,7 @@ export function encodeNativeProducerCapture(
   const allIds = new Set<number>();
   const producers = [];
   const parentKinds = new Set<NativeProducerKind>([
+    "approval-decision",
     "question-draft",
     "session-parent",
     "composer-parent",
@@ -81,14 +79,7 @@ export function encodeNativeProducerCapture(
     Reflect.ownKeys(inputs).some(
       (key) =>
         typeof key !== "string" ||
-        ![
-          "parent",
-          "editor",
-          "notes",
-          "missingCoverage",
-          "current",
-          "release",
-        ].includes(key),
+        !["parent", "editor", "notes", "missingCoverage", "current", "release"].includes(key),
     )
   )
     return invalid();
@@ -111,8 +102,7 @@ export function encodeNativeProducerCapture(
       Reflect.ownKeys(snapshots).length !== snapshots.length + 1
     )
       return invalid();
-    if (snapshots.length > NATIVE_RAW_CAPTURE_LIMITS.snapshots)
-      return capacity();
+    if (snapshots.length > NATIVE_RAW_CAPTURE_LIMITS.snapshots) return capacity();
     epochs[family] = epoch;
     for (let position = 0; position < snapshots.length; position++) {
       const property = Object.getOwnPropertyDescriptor(snapshots, position);
@@ -144,9 +134,7 @@ export function encodeNativeProducerCapture(
             : !parentKinds.has(kind)
       )
         return invalid();
-      const assigned = own(entry, "sessionId")
-        ? dataField(entry, "sessionId")
-        : undefined;
+      const assigned = own(entry, "sessionId") ? dataField(entry, "sessionId") : undefined;
       if (assigned !== undefined && assigned !== sessionId) return invalid();
       producers.push({
         id,
@@ -157,10 +145,7 @@ export function encodeNativeProducerCapture(
       });
     }
   }
-  if (
-    composer.snapshots.length + producers.length >
-    NATIVE_RAW_CAPTURE_LIMITS.snapshots
-  )
+  if (composer.snapshots.length + producers.length > NATIVE_RAW_CAPTURE_LIMITS.snapshots)
     return capacity();
   return stringifyNativeCaptureJson({
     ...composer,

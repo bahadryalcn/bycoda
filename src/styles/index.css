@@ -466,6 +466,13 @@ html.theme-light {
   --ui-control-checkbox-size: 1rem;
   --ui-disabled-opacity: 0.5;
   --ui-overlay-backdrop: var(--palette-oklch_0_08_0_none_0_68);
+  /* Modal focus layer. The blur softens the work beneath, so it carries a lighter dim than the
+     plain scrim (kept as the readable fallback). Light, dark and custom themes share these values:
+     the blur follows the theme glass budget (0 under the no-blur performance mode) and the dim
+     derives from the one scrim role. A dialog opened above another keeps only the nested tint. */
+  --ui-overlay-backdrop-blur: min(4px, var(--glass-blur));
+  --ui-overlay-backdrop-soft: color-mix(in oklab, var(--ui-overlay-backdrop) 60%, transparent);
+  --ui-overlay-backdrop-nested: color-mix(in oklab, var(--ui-overlay-backdrop) 24%, transparent);
   --ui-focus-ring-color: var(--ui-interaction-ink);
   --ui-focus-width: 2px;
   --ui-focus-offset: 2px;
@@ -4095,8 +4102,54 @@ html.theme-light .btw-burst {
   }
 }
 
+/* The one modal scrim (Modal, sheets, GitGraphDialog, ImageLightbox). It is a sibling layer behind
+   the dialog, so only the background blurs; the dialog, its fields and the menus above stay sharp.
+   Without backdrop-filter support, or under forced colors, reduced transparency and the no-blur
+   performance mode, the full plain scrim remains as the readable dim. */
 .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
   animation: modal-backdrop-in var(--motion-reorder-duration) var(--motion-ease-out) backwards;
+}
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .modal-backdrop {
+    background: var(--ui-overlay-backdrop-soft);
+    -webkit-backdrop-filter: blur(var(--ui-overlay-backdrop-blur));
+    backdrop-filter: blur(var(--ui-overlay-backdrop-blur));
+  }
+}
+
+/* Dialogs stack in DOM order: only the lowest layer dims and blurs the work beneath; a dialog above
+   another adds a light tint over the one below. Media viewers keep the full dim for legibility. */
+[data-modal-layer] ~ [data-modal-layer] .modal-backdrop {
+  background: var(--ui-overlay-backdrop-nested);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-modal-layer="media"] .modal-backdrop,
+[data-modal-layer] ~ [data-modal-layer="media"] .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
+}
+
+html[data-performance-no-blur] .modal-backdrop {
+  background: var(--ui-overlay-backdrop);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+@media (forced-colors: active), (prefers-reduced-transparency: reduce) {
+  .modal-backdrop {
+    background: var(--ui-overlay-backdrop);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .modal-backdrop {
+    forced-color-adjust: none;
+  }
 }
 
 .modal-panel {

@@ -6,6 +6,20 @@
   },
   "suites": [
     {
+      "id": "composer-compact",
+      "config": "tests/browser/playwright.composer-compact.config.ts",
+      "files": ["composer-compact.spec.ts"],
+      "fixture": {
+        "config": "tests/browser/vite.composer-compact.config.ts",
+        "mode": "preview",
+        "path": "/tests/browser/composer-compact.html"
+      },
+      "projects": [
+        { "name": "chromium", "browser": "chromium", "files": ["composer-compact.spec.ts"] },
+        { "name": "webkit", "browser": "webkit", "files": ["composer-compact.spec.ts"] }
+      ]
+    },
+    {
       "id": "session-references",
       "config": "tests/browser/playwright.session-references.config.ts",
       "files": ["session-references.spec.ts"],

@@ -811,10 +811,9 @@ function ConnectedCrewEditor({
       appearanceSavedNow={!isNew}
       maintenance={
         latest ? (
-          <div className="flex flex-col gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="ghost"
-              className="self-start"
               disabled={pending}
               onClick={() => {
                 const id = crypto.randomUUID();
@@ -893,7 +892,9 @@ function ConnectedCrewEditor({
             onClick={addPicked}
           >
             {addMode === "library"
-              ? t("Add {p0} members", { p0: livePicked.length })
+              ? livePicked.length === 1
+                ? t("Add 1 member")
+                : t("Add {p0} members", { p0: livePicked.length })
               : t("Add to crew")}
           </Button>
         </div>
@@ -958,7 +959,12 @@ function ConnectedCrewEditor({
         disabled={pending}
         className="@container/crew-editor flex min-w-0 flex-col gap-4 border-0 p-4 pt-2"
       >
-        {error ? <Alert tone="danger">{error}</Alert> : null}
+        {error ? (
+          // A failed save must be seen even when the roster is scrolled far down.
+          <div ref={(element) => element?.scrollIntoView({ block: "nearest" })}>
+            <Alert tone="danger">{error}</Alert>
+          </div>
+        ) : null}
         {data.catalogError ? (
           <Alert tone="warning">
             {data.catalogError}

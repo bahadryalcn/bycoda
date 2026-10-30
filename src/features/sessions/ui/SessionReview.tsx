@@ -326,7 +326,7 @@ function FileRow({
 }) {
   useLocale();
   const name = basename(file.relative);
-  const { menu, ...menuHandlers } = useChangedFileMenu({
+  const { menu, openFrom: _openFrom, isOpen: _isOpen, ...menuHandlers } = useChangedFileMenu({
     path: file.path,
     relative: file.relative,
     deleted: file.status === "deleted",

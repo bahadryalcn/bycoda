@@ -22,7 +22,7 @@ import {
 } from "../model/publishingPlanForm";
 import { SocialBusyContext } from "./socialContext";
 import { SocialMultiSelect } from "./SocialMultiSelect";
-import { Notice, StatusBadge, names } from "./socialShared";
+import { ComposerActions, Notice, StatusBadge, names } from "./socialShared";
 import "./social-assistant.css";
 import "./social-plans.css";
 
@@ -208,6 +208,7 @@ export function PlanSuggestionPanel({
   onOpenSettings?: (event: MouseEvent<HTMLElement>) => void;
 }) {
   useLocale();
+  const formId = useId();
   const locked = useContext(SocialBusyContext);
   const [phase, setPhase] = useState<Phase>("ask");
   const [instructions, setInstructions] = useState("");
@@ -434,7 +435,10 @@ export function PlanSuggestionPanel({
             {reason}
           </p>
         ) : null}
-        <div className="social-assistant-actions">
+        <ComposerActions>
+          <Button variant="ghost" type="button" disabled={locked} onClick={discard}>
+            {t("Discard suggestion")}
+          </Button>
           <Button
             type="button"
             disabled={locked || !!reason || !account}
@@ -450,16 +454,14 @@ export function PlanSuggestionPanel({
           >
             {t("Use as plan draft")}
           </Button>
-          <Button variant="ghost" type="button" disabled={locked} onClick={discard}>
-            {t("Discard suggestion")}
-          </Button>
-        </div>
+        </ComposerActions>
       </div>
     );
   }
 
   return (
     <form
+      id={formId}
       className="social-plan-suggest"
       aria-label={t("Ask AI to suggest a plan")}
       onSubmit={(event) => {
@@ -551,8 +553,25 @@ export function PlanSuggestionPanel({
           ) : null}
         </Notice>
       ) : null}
-      <div className="social-assistant-actions">
+      <ComposerActions>
+        {working ? (
+          <>
+            <span role="status" className="social-assistant-progress">
+              {t("Asking {p0}… nothing is saved yet.", {
+                p0: agentLabel(agent) || t("the AI"),
+              })}
+            </span>
+            <Button variant="ghost" type="button" onClick={stop}>
+              {t("Stop waiting")}
+            </Button>
+          </>
+        ) : (
+          <Button variant="ghost" type="button" disabled={locked} onClick={onClose}>
+            {t("Back to the plan")}
+          </Button>
+        )}
         <Button
+          form={formId}
           type="submit"
           loading={working}
           disabled={!canAsk}
@@ -560,23 +579,7 @@ export function PlanSuggestionPanel({
         >
           {t("Suggest a plan")}
         </Button>
-        {working ? (
-          <>
-            <Button variant="ghost" type="button" onClick={stop}>
-              {t("Stop waiting")}
-            </Button>
-            <span role="status" className="social-assistant-progress">
-              {t("Asking {p0}… nothing is saved yet.", {
-                p0: agentLabel(agent) || t("the AI"),
-              })}
-            </span>
-          </>
-        ) : (
-          <Button variant="ghost" type="button" disabled={locked} onClick={onClose}>
-            {t("Back to the plan")}
-          </Button>
-        )}
-      </div>
+      </ComposerActions>
     </form>
   );
 }

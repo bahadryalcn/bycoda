@@ -10,7 +10,7 @@ import { SettingsView } from "../surfaces/lazySurfaces";
 import "./WorkspaceSettingsSurface.css";
 import { NavigationBoundary } from "../../shell/NavigationBoundary";
 import { RecoveryBoundary } from "../../../shared/ui/RecoveryBoundary";
-import { LoaderCircle } from "../../../shared/ui/icons";
+import { SettingsLoadingSurface } from "../../../features/settings/ui/SettingsLoadingSurface";
 
 type SettingsProps = ComponentProps<typeof SettingsView>;
 type QuickDeleteProps = ComponentProps<typeof QuickDeleteWorktreeDialog>;
@@ -175,19 +175,10 @@ function WorkspaceSettingsSurfaceComponent({
             className="bycoda-settings-dialog-body"
             data-settings-dialog-mode={maximized ? "maximized" : "standard"}
           >
-            {/* Loading and failure stay inside the dialog; the window chrome is not repeated. */}
+            {/* Loading and failure stay inside the dialog; the window chrome is not repeated and the
+                known section title stays visible while the view loads. */}
             <RecoveryBoundary onBack={onCloseSettings}>
-              <Suspense
-                fallback={
-                  <div
-                    role="status"
-                    className="flex flex-1 items-center justify-center gap-2 text-ui-secondary text-(--ui-text-secondary)"
-                  >
-                    <LoaderCircle aria-hidden="true" className="icon-sm animate-spin" />
-                    {t("Loading Settings…")}
-                  </div>
-                }
-              >
+              <Suspense fallback={<SettingsLoadingSurface section={settingsSection} />}>
                 {settingsView(true)}
               </Suspense>
             </RecoveryBoundary>

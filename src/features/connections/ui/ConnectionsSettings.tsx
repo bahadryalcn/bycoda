@@ -143,6 +143,17 @@ function SyncLine({ machineId }: { machineId: string }) {
   );
 }
 
+/** Short address that tells same-named machines apart; empty when the name is already unique. */
+function machineContext(machines: readonly RemoteMachine[], machine: RemoteMachine): string {
+  const shared = machines.some((other) => other.id !== machine.id && other.name === machine.name);
+  return shared ? (machine.ssh?.target ?? machine.endpoint) : "";
+}
+
+function machineLabel(machines: readonly RemoteMachine[], machine: RemoteMachine): string {
+  const context = machineContext(machines, machine);
+  return context ? `${machine.name} (${context})` : machine.name;
+}
+
 export function ConnectionsSettings() {
   useLocale();
   const [view, setView] = useState("machines");
@@ -757,7 +768,17 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                   <Internet aria-hidden className="icon-lg shrink-0 text-(--ui-text-muted)" />
                   <div className="min-w-0 flex-1 basis-48">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate text-ui-secondary font-medium">{machine.name}</span>
+                      <span className="truncate text-ui-secondary font-medium" title={machine.name}>
+                        {machine.name}
+                      </span>
+                      {machineContext(machines, machine) ? (
+                        <span
+                          className="min-w-0 truncate text-ui-caption text-(--ui-text-muted)"
+                          title={machineContext(machines, machine)}
+                        >
+                          {machineContext(machines, machine)}
+                        </span>
+                      ) : null}
                       <Badge size="sm" className="shrink-0">
                         {isLocalSyncMachine(machine) ? t("Local") : t("Remote computer")}
                       </Badge>
@@ -833,7 +854,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
                     <Button
                       iconOnly
                       variant="ghost"
-                      label={t("Actions for {p0}", { p0: machine.name })}
+                      label={t("Actions for {p0}", { p0: machineLabel(machines, machine) })}
                       aria-haspopup="menu"
                       aria-expanded={rowMenu?.machine.id === machine.id}
                       disabled={busy || revoking}
@@ -867,7 +888,7 @@ ${t("The new address is saved. Edit it again, or choose Reconnect to retry.")}`
         {rowMenu ? (
           <DropdownMenu
             anchor={rowMenu.anchor}
-            label={t("Actions for {p0}", { p0: rowMenu.machine.name })}
+            label={t("Actions for {p0}", { p0: machineLabel(machines, rowMenu.machine) })}
             items={[
               ...(rowMenu.machine.ssh
                 ? [

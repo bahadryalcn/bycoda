@@ -1,4 +1,5 @@
 import { useContext as useSocialContext } from "react";
+import "./social-composer.css";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
@@ -13,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type FormEvent,
   type ReactNode,
 } from "react";
@@ -29,7 +31,7 @@ import {
   Plus,
   X,
 } from "../../../shared/ui/icons";
-import { SocialFeedbackContext } from "./socialContext";
+import { ComposerFooterContext, SocialFeedbackContext } from "./socialContext";
 import { SocialMultiSelect } from "./SocialMultiSelect";
 import type { HostProject } from "../../connections/model/protocol";
 import type { SocialSnapshot, SocialCollection, SocialCollectionFilter } from "../model/social";
@@ -256,6 +258,38 @@ function ComposerModalSlot({ onSlot }: { onSlot: (slot: ComposerSlot) => void })
 }
 
 /**
+ * A dialog form's actions. Inside a Composer dialog they render into the shared Modal footer, so
+ * they stay visible while the content scrolls; elsewhere they follow the content inline. Submit
+ * buttons outside the form element need the form's `id` in their `form` attribute.
+ */
+export function ComposerActions({
+  children,
+  className = "social-assistant-actions",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  const footer = useSocialContext(ComposerFooterContext);
+  return footer ? createPortal(children, footer) : <div className={className}>{children}</div>;
+}
+
+/** A shared Modal whose footer receives the `ComposerActions` of the content it shows. */
+export function SocialDialog({
+  children,
+  ...props
+}: Omit<ComponentProps<typeof Modal>, "footer" | "footerAlign">) {
+  const [footerElement, setFooterElement] = useState<HTMLElement | null>(null);
+  return (
+    <Modal
+      {...props}
+      footer={<div ref={setFooterElement} className="social-composer-footer" />}
+    >
+      <ComposerFooterContext.Provider value={footerElement}>{children}</ComposerFooterContext.Provider>
+    </Modal>
+  );
+}
+
+/**
  * Opens its form in the shared Modal. The form lives in one persistent host element that
  * is parked in the page while closed, so unfinished drafts and refs survive close/reopen.
  */
@@ -295,6 +329,7 @@ export function Composer({
     if (!open) setTokenOpens(tokenOpens + 1);
   }
   const [slot, setSlot] = useState<ComposerSlot>({ element: null, parent: null, layer: 0 });
+  const [footerElement, setFooterElement] = useState<HTMLElement | null>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const stash = useRef<HTMLDivElement>(null);
   const notifyOpened = useEffectEvent(() => onOpen?.());
@@ -354,7 +389,13 @@ export function Composer({
       </Button>
       <div ref={stash} hidden />
       {open ? (
-        <Modal title={title} description={description} size="lg" onClose={closeComposerDialog}>
+        <Modal
+          title={title}
+          description={description}
+          size="lg"
+          onClose={closeComposerDialog}
+          footer={<div ref={setFooterElement} className="social-composer-footer" />}
+        >
           <ComposerModalSlot onSlot={setSlot} />
         </Modal>
       ) : null}
@@ -362,12 +403,14 @@ export function Composer({
         ? createPortal(
             <OverlayMenuLayer.Provider value={slot.layer}>
               <OverlayParent.Provider value={slot.parent}>
-                {feedback.error ? (
-                  <Notice kind="error" title={t("Operation could not be completed")}>
-                    {feedback.error}
-                  </Notice>
-                ) : null}
-                {children}
+                <ComposerFooterContext.Provider value={open ? footerElement : null}>
+                  {feedback.error ? (
+                    <Notice kind="error" title={t("Operation could not be completed")}>
+                      {feedback.error}
+                    </Notice>
+                  ) : null}
+                  {children}
+                </ComposerFooterContext.Provider>
               </OverlayParent.Provider>
             </OverlayMenuLayer.Provider>,
             host,

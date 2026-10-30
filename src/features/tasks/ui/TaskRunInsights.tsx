@@ -117,27 +117,31 @@ function EvaluationEditor({ task, onSaveEvaluation }: Props) {
         />
         <span>{t("I accept this result for quality comparison")}</span>
       </label>
-      <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
-        <NumberField
-          label={t("My review time (minutes)")}
-          min={0}
-          max={52_560_000}
-          step="any"
-          required
-          value={minutes}
-          disabled={busy}
-          onChange={(event) => setMinutes(event.currentTarget.value)}
-        />
-        <NumberField
-          label={t("Corrections I needed")}
-          min={0}
-          max={1_000_000}
-          step={1}
-          required
-          value={corrections}
-          disabled={busy}
-          onChange={(event) => setCorrections(event.currentTarget.value)}
-        />
+      {/* Two fields share a row only when this panel is wide enough (a detail side pane is
+          narrower than the window), so the count follows the pane, not the viewport. */}
+      <div className="@container min-w-0">
+        <div className="grid min-w-0 grid-cols-1 gap-2 @xs:grid-cols-2">
+          <NumberField
+            label={t("My review time (minutes)")}
+            min={0}
+            max={52_560_000}
+            step="any"
+            required
+            value={minutes}
+            disabled={busy}
+            onChange={(event) => setMinutes(event.currentTarget.value)}
+          />
+          <NumberField
+            label={t("Corrections I needed")}
+            min={0}
+            max={1_000_000}
+            step={1}
+            required
+            value={corrections}
+            disabled={busy}
+            onChange={(event) => setCorrections(event.currentTarget.value)}
+          />
+        </div>
       </div>
       <p className="text-ui-micro text-(--ui-text-secondary)">
         {t(

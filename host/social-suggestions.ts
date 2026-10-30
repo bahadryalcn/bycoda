@@ -5,11 +5,19 @@ import type {
   SocialRule,
 } from "../src/features/social/model/social";
 import type {
+  ContactTagProposal,
+  ContactTagSuggestion,
   FactCandidate,
   PlanSuggestion,
   RuleChange,
   RuleDraft,
   RuleSimplifyProposal,
+} from "../src/features/social/model/socialSuggestions";
+import {
+  CONTACT_TAG_MAX_LENGTH,
+  CONTACT_TAG_PER_CONTACT_MAX,
+  CONTACT_TAG_REQUEST_MAX,
+  CONTACT_TAGS_MAX,
 } from "../src/features/social/model/socialSuggestions";
 import type { SocialTextGenerator } from "./social-generation";
 import { parsePublishingSchedule } from "./social-schedule";
@@ -502,4 +510,155 @@ export function validateFactAnswer(
     });
   }
   return { suggestions, skipped };
+}
+
+// ---------------------------------------------------------------------------------------------
+// contacts.suggestTags
+// ---------------------------------------------------------------------------------------------
+
+const CONTACT_REASON_MAX = 300;
+const CONTACT_VOCABULARY_MAX = 50;
+
+/** One contact as the model sees it: `key` is a Host-assigned short id, never the stored id. */
+export type ContactTagSubject = {
+  /** The saved contact's id or the import row's `ref`; echoed back in the result. */
+  ref: string;
+  key: string;
+  name: string;
+  handle?: string;
+  profileUrl?: string;
+  language?: string;
+  tags: string[];
+};
+export type ContactTagSegment = {
+  id: string;
+  name: string;
+  tags: string[];
+  language?: string;
+};
+
+export function contactTagPrompt(input: {
+  platform: string;
+  subjects: ContactTagSubject[];
+  vocabulary: string[];
+  instructions?: string;
+}): string {
+  return [
+    `Propose short organising labels (tags) for the owner's contacts. You have no authority to message, publish, approve or change anyone's consent or opt-out, use tools, read files, fetch secrets or contact anyone. Return JSON only: {"contacts":[{"key":"c1","tags":[{"tag":"...","reason":"..."}]}]}.`,
+    `Use only the keys given. Give each contact at most ${CONTACT_TAG_PER_CONTACT_MAX} tags, each at most ${CONTACT_TAG_MAX_LENGTH} characters, lowercase where possible, and reuse an existing label spelling when one fits. reason is one short sentence that points to the contact's own data (name, handle, language, current tags) or the owner's instructions. Leave a contact out when the data does not support a label; never guess. Never label sensitive personal traits (health, religion, ethnicity, politics, sexual orientation, finances, minors). Do not repeat a tag the contact already has.`,
+    DATA_RULE,
+    `Platform: ${JSON.stringify(input.platform)}`,
+    `Existing labels in this project: ${JSON.stringify(input.vocabulary)}`,
+    `Owner instructions: ${JSON.stringify(input.instructions ?? "")}`,
+    `Contacts: ${JSON.stringify(
+      input.subjects.map((subject) => ({
+        key: subject.key,
+        name: subject.name,
+        ...(subject.handle ? { handle: subject.handle } : {}),
+        ...(subject.profileUrl ? { profileUrl: subject.profileUrl } : {}),
+        ...(subject.language ? { language: subject.language } : {}),
+        currentTags: subject.tags,
+      })),
+    )}`,
+  ].join("\n");
+}
+
+/** The labels already used by the project's contacts, segments and the rows themselves, most used first. */
+export function contactTagVocabulary(
+  tagLists: string[][],
+  segments: ContactTagSegment[],
+): string[] {
+  const counts = new Map<string, { tag: string; count: number }>();
+  for (const tag of [...tagLists.flat(), ...segments.flatMap((segment) => segment.tags)]) {
+    const text = collapse(tag);
+    if (!text || text.length > CONTACT_TAG_MAX_LENGTH) continue;
+    const key = text.toLocaleLowerCase();
+    const entry = counts.get(key);
+    if (entry) entry.count++;
+    else counts.set(key, { tag: text, count: 1 });
+  }
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+    .slice(0, CONTACT_VOCABULARY_MAX)
+    .map((entry) => entry.tag);
+}
+
+export function validateContactTagAnswer(
+  answer: Record<string, unknown>,
+  subjects: ContactTagSubject[],
+  vocabulary: string[],
+  segments: ContactTagSegment[],
+): {
+  proposals: ContactTagProposal[];
+  unchangedRefs: string[];
+  notes: string[];
+} {
+  const what = "contact labels";
+  if (!onlyKeys(answer, ["contacts"])) throw unusable(what, "it contained unexpected fields");
+  if (!Array.isArray(answer.contacts) || answer.contacts.length > CONTACT_TAG_REQUEST_MAX * 2)
+    throw unusable(what, "the contact list was missing or too long");
+  const byKey = new Map(subjects.map((subject) => [subject.key, subject]));
+  const spelling = new Map(vocabulary.map((tag) => [tag.toLocaleLowerCase(), tag]));
+  const proposed = new Map<string, ContactTagProposal>();
+  let dropped = 0;
+  for (const raw of answer.contacts) {
+    const item = plain(raw) && onlyKeys(raw, ["key", "tags"]) ? raw : undefined;
+    const subject = typeof item?.key === "string" ? byKey.get(item.key) : undefined;
+    if (!item || !subject || proposed.has(subject.ref) || !Array.isArray(item.tags)) {
+      dropped++;
+      continue;
+    }
+    const have = new Set(subject.tags.map((tag) => tag.toLocaleLowerCase()));
+    const room = Math.min(CONTACT_TAG_PER_CONTACT_MAX, CONTACT_TAGS_MAX - subject.tags.length);
+    const tags: ContactTagSuggestion[] = [];
+    for (const entry of item.tags.slice(0, 40)) {
+      if (tags.length >= room) break;
+      const candidate = plain(entry) && onlyKeys(entry, ["tag", "reason"]) ? entry : undefined;
+      const label = clean(candidate?.tag, CONTACT_TAG_MAX_LENGTH);
+      const reason = clean(candidate?.reason, CONTACT_REASON_MAX);
+      if (!label || !reason) {
+        dropped++;
+        continue;
+      }
+      const text = collapse(label);
+      const folded = text.toLocaleLowerCase();
+      if (have.has(folded)) continue;
+      have.add(folded);
+      const known = spelling.get(folded);
+      tags.push({ tag: known ?? text, reason: collapse(reason), isNew: !known });
+    }
+    if (!tags.length) continue;
+    const finalTags = new Set([...subject.tags, ...tags.map((entry) => entry.tag)]);
+    const before = new Set(subject.tags);
+    proposed.set(subject.ref, {
+      ref: subject.ref,
+      name: subject.name,
+      currentTags: subject.tags,
+      tags,
+      // Only segments that this change newly satisfies: it is what the owner gains by accepting.
+      segments: segments
+        .filter(
+          (segment) =>
+            segment.tags.length > 0 &&
+            (!segment.language || segment.language === subject.language) &&
+            segment.tags.every((tag) => finalTags.has(tag)) &&
+            !segment.tags.every((tag) => before.has(tag)),
+        )
+        .map((segment) => ({ id: segment.id, name: segment.name })),
+    });
+  }
+  const proposals = subjects
+    .map((subject) => proposed.get(subject.ref))
+    .filter((proposal): proposal is ContactTagProposal => !!proposal);
+  return {
+    proposals,
+    unchangedRefs: subjects.filter((subject) => !proposed.has(subject.ref)).map((subject) => subject.ref),
+    notes: dropped
+      ? [
+          dropped === 1
+            ? "1 AI suggestion was dropped because it could not be used."
+            : `${dropped} AI suggestions were dropped because they could not be used.`,
+        ]
+      : [],
+  };
 }

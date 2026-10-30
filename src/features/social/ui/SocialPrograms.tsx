@@ -119,6 +119,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
         ) : null}
         {!detail && selectedProgram ? (
           <ProgramDetailPending
+            hideHeading={collectionManaged}
             summary={selectedSummary}
             error={detailError}
             refreshing={detailQuery.isFetching}
@@ -127,6 +128,7 @@ export function SocialPrograms({ client, snapshot, projects, initialProject, run
         ) : null}
         {detail ? (
           <ProgramDetailPanel
+            hideHeading={collectionManaged}
             detail={detail}
             error={detailError}
             refreshing={detailQuery.isFetching}

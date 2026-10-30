@@ -1,8 +1,12 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useRef } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useComposerDockMotion } from "./useComposerDockMotion";
+import {
+  readingMotionFrames,
+  useComposerDockMotion,
+  useComposerReadingMotion,
+} from "./useComposerDockMotion";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -74,6 +78,82 @@ describe("useComposerDockMotion", () => {
     motion.captureLaunch();
     render(true);
 
+    expect(animate).not.toHaveBeenCalled();
+  });
+});
+
+describe("readingMotionFrames", () => {
+  it("eases only the occupied height between the two layouts", () => {
+    expect(readingMotionFrames(180, 96)).toEqual([{ height: "180px" }, { height: "96px" }]);
+  });
+
+  it("skips unmeasured, unchanged and sub-pixel changes", () => {
+    expect(readingMotionFrames(0, 96)).toBeNull();
+    expect(readingMotionFrames(96, 96)).toBeNull();
+    expect(readingMotionFrames(96, 97)).toBeNull();
+  });
+});
+
+describe("useComposerReadingMotion", () => {
+  let height = 180;
+  function ReadingHarness({ reading }: { reading: boolean }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useComposerReadingMotion(ref, true, reading);
+    return createElement("div", { ref, "data-slot": "reading" });
+  }
+  function renderReading(reading: boolean) {
+    act(() => root.render(createElement(ReadingHarness, { reading })));
+  }
+  beforeEach(() => {
+    height = 180;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(() => height);
+    animate = vi.fn(() => ({ cancel: vi.fn(), addEventListener: vi.fn() }));
+    HTMLElement.prototype.animate = animate as never;
+  });
+
+  it("animates the dock height from the previous layout when reading mode toggles", () => {
+    renderReading(false);
+    height = 96;
+    renderReading(true);
+    expect(animate).toHaveBeenCalledTimes(1);
+    expect(animate.mock.calls[0][0]).toEqual([{ height: "180px" }, { height: "96px" }]);
+    expect(container.querySelector<HTMLElement>("[data-slot=reading]")!.style.overflowY).toBe(
+      "clip",
+    );
+  });
+
+  it("does not animate on first render or when the mode is unchanged", () => {
+    renderReading(false);
+    renderReading(false);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("changes the layout without a transition under reduced motion", () => {
+    reduce = true;
+    renderReading(false);
+    height = 96;
+    renderReading(true);
+    expect(animate).not.toHaveBeenCalled();
+  });
+
+  it("asks anchored popovers to re-read their trigger when the swap moves it", () => {
+    const scrolled = vi.fn();
+    window.addEventListener("scroll", scrolled, true);
+    renderReading(false);
+    height = 96;
+    renderReading(true);
+    window.removeEventListener("scroll", scrolled, true);
+    expect(scrolled).toHaveBeenCalled();
+  });
+
+  it("does not ease the swap while a menu is open", () => {
+    renderReading(false);
+    const menu = document.createElement("div");
+    menu.dataset.popoverSide = "top";
+    document.body.append(menu);
+    height = 96;
+    renderReading(true);
+    menu.remove();
     expect(animate).not.toHaveBeenCalled();
   });
 });

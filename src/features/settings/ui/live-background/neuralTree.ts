@@ -1,4 +1,9 @@
 import type { LiveBackgroundPalette, LiveBackgroundScene } from "./types";
+import { themePalette } from "../../../../shared/theme/palette";
+
+/** The shared scrim colour at an alpha, as #RRGGBBAA for canvas. */
+const scrimAt = (alpha: number) =>
+  `${themePalette.scrim}${Math.round(alpha * 255).toString(16).padStart(2, "0")}`;
 
 /**
  * A luminous dendrite: one deterministic branching structure grows from the
@@ -138,7 +143,7 @@ function readRgb(color: string): Rgb | null {
   probe.height = 1;
   const ctx = probe.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.fillStyle = "#000";
+  ctx.fillStyle = themePalette.scrim;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 1, 1);
   const data = ctx.getImageData(0, 0, 1, 1).data;
@@ -379,9 +384,9 @@ export function createNeuralTreeScene(palette: LiveBackgroundPalette): LiveBackg
       const ry = height * 0.62;
       ctx.scale(rx / ry, 1);
       const relief = ctx.createRadialGradient(0, 0, 0, 0, 0, ry);
-      relief.addColorStop(0, "rgba(0,0,0,0.55)");
-      relief.addColorStop(0.55, "rgba(0,0,0,0.32)");
-      relief.addColorStop(1, "rgba(0,0,0,0)");
+      relief.addColorStop(0, scrimAt(0.55));
+      relief.addColorStop(0.55, scrimAt(0.32));
+      relief.addColorStop(1, scrimAt(0));
       ctx.fillStyle = relief;
       ctx.fillRect(-ry, -ry, ry * 2, ry * 2);
       ctx.restore();

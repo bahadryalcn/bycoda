@@ -109,6 +109,75 @@ async function setup(costLimit?: number) {
   };
 }
 describe("host crews", () => {
+  it("preserves a delegated approval's source occurrence and refuses reused or missing identities", async () => {
+    const f = await setup();
+    const definition = (await f.service.list(f.project.id)).definitions[0]!;
+    await f.service.save(
+      {
+        ...f.definition,
+        policy: { ...f.definition.policy, delegateApprovals: true },
+      },
+      definition.updatedAt,
+    );
+    await f.start();
+    await f.assign();
+    f.rows[0].sessionId = "worker-session";
+    const occurrenceA = "12345678-1234-4123-8123-123456789abc";
+    const occurrenceB = "abcdef12-1234-4123-9123-123456789abc";
+    const approval = { requestId: 7, occurrenceId: occurrenceB };
+    vi.mocked(f.store.session).mockImplementation(
+      () =>
+        ({
+          projectId: f.project.id,
+          runId: "worker-run",
+          status: "running",
+          session: { blocks: [{ id: "permission", approval }] },
+        }) as ReturnType<HostStore["session"]>,
+    );
+    const input = {
+      runId: "run",
+      sessionId: "worker-session",
+      targetRunId: "worker-run",
+      requestId: "original-command",
+      approvalId: 7,
+      decision: "deny",
+    };
+    f.engine.command.mockClear();
+    await expect(f.service.call("crews.respond", input, f.project.id)).rejects.toThrow(
+      "request changed",
+    );
+    await expect(
+      f.service.call(
+        "crews.respond",
+        { ...input, approvalOccurrenceId: occurrenceA },
+        f.project.id,
+      ),
+    ).rejects.toThrow("no longer pending");
+    expect(f.engine.command).not.toHaveBeenCalled();
+    await f.service.call(
+      "crews.respond",
+      { ...input, approvalOccurrenceId: occurrenceB },
+      f.project.id,
+    );
+    expect(f.engine.command).toHaveBeenCalledExactlyOnceWith({
+      type: "approve",
+      commandId: "original-command",
+      sessionId: "worker-session",
+      runId: "worker-run",
+      requestId: 7,
+      approvalOccurrenceId: occurrenceB,
+      decision: "deny",
+    });
+    approval.occurrenceId = occurrenceA;
+    await expect(
+      f.service.call(
+        "crews.respond",
+        { ...input, requestId: "another-command", approvalOccurrenceId: occurrenceB },
+        f.project.id,
+      ),
+    ).rejects.toThrow("no longer pending");
+    expect(f.engine.command).toHaveBeenCalledTimes(1);
+  });
   it("keeps bounded previous conversation identities while redacting attempt prose", async () => {
     const f = await setup();
     await f.start();
@@ -127,8 +196,14 @@ describe("host crews", () => {
     const task = (await f.service.list(f.project.id)).runs[0].tasks[0];
     expect(task.attemptHistory).toHaveLength(20);
     expect(task.attemptHistory?.at(-1)).toMatchObject({
-      attempt: 24, at: 2400, workerSessionId: "worker-24", reviewerSessionId: "reviewer-24",
-      verdict: "pass", workerSummary: "", note: "", findings: [],
+      attempt: 24,
+      at: 2400,
+      workerSessionId: "worker-24",
+      reviewerSessionId: "reviewer-24",
+      verdict: "pass",
+      workerSummary: "",
+      note: "",
+      findings: [],
     });
     expect(JSON.stringify(task)).not.toContain("private");
     expect(f.rows[0].attemptHistory[24].workerSummary).toBe("private worker prose");
@@ -145,32 +220,62 @@ describe("host crews", () => {
   it("rejects actions authenticated for a different project", async () => {
     const f = await setup();
     await f.start();
-    await expect(f.service.call("crews.stop", { runId: "run" }, f.project.id,
-      { ...f.principal, projectId: "foreign" })).rejects.toThrow("another project");
+    await expect(
+      f.service.call("crews.stop", { runId: "run" }, f.project.id, {
+        ...f.principal,
+        projectId: "foreign",
+      }),
+    ).rejects.toThrow("another project");
     expect((await f.service.list(f.project.id)).runs[0].status).toBe("active");
   });
   it("keeps finished work immutable to new requests while replaying an existing request", async () => {
     const f = await setup();
     await f.start();
-    await f.service.call("crews.request", { runId: "run", requestId: "existing", text: "Question" }, f.project.id);
+    await f.service.call(
+      "crews.request",
+      { runId: "run", requestId: "existing", text: "Question" },
+      f.project.id,
+    );
     await f.service.call("crews.resolve", { runId: "run", requestId: "existing" }, f.project.id);
     await f.service.call("crews.finish", { runId: "run" }, f.project.id);
-    await expect(f.service.call("crews.request", { runId: "run", requestId: "late", text: "New question" }, f.project.id))
-      .rejects.toThrow("finished");
-    expect(await f.service.call("crews.request", { runId: "run", requestId: "existing", text: "Question" }, f.project.id))
-      .toMatchObject({ id: "existing" });
+    await expect(
+      f.service.call(
+        "crews.request",
+        { runId: "run", requestId: "late", text: "New question" },
+        f.project.id,
+      ),
+    ).rejects.toThrow("finished");
+    expect(
+      await f.service.call(
+        "crews.request",
+        { runId: "run", requestId: "existing", text: "Question" },
+        f.project.id,
+      ),
+    ).toMatchObject({ id: "existing" });
   });
   it("preserves concurrent requests and treats a repeated request ID as one request", async () => {
     const f = await setup();
     await f.start();
-    await Promise.all(Array.from({ length: 8 }, (_, index) => f.service.call(
-      "crews.request", { runId: "run", requestId: `request-${index}`, text: `Question ${index}` },
-      f.project.id, f.principal,
-    )));
-    await Promise.all([0, 1].map(() => f.service.call(
-      "crews.request", { runId: "run", requestId: "same", text: "Question" },
-      f.project.id, f.principal,
-    )));
+    await Promise.all(
+      Array.from({ length: 8 }, (_, index) =>
+        f.service.call(
+          "crews.request",
+          { runId: "run", requestId: `request-${index}`, text: `Question ${index}` },
+          f.project.id,
+          f.principal,
+        ),
+      ),
+    );
+    await Promise.all(
+      [0, 1].map(() =>
+        f.service.call(
+          "crews.request",
+          { runId: "run", requestId: "same", text: "Question" },
+          f.project.id,
+          f.principal,
+        ),
+      ),
+    );
     expect((await f.service.list(f.project.id)).runs[0].messages).toHaveLength(9);
   });
   it("does not turn a transient coordinator read failure into a missing-session pause", async () => {
@@ -182,28 +287,41 @@ describe("host crews", () => {
     expect(run.status).toBe("active");
     expect(run.error).toBeUndefined();
   });
-  it.each(["idle", "interrupted"] as const)("resumes %s planning with one durable continuation without repeating it", async (status) => {
-    const f = await setup();
-    await f.start();
-    const coordinator = await f.store.session("lead-session");
-    vi.mocked(f.store.session).mockResolvedValue({ ...coordinator, status });
-    await f.service.call("crews.pause", { runId: "run" }, f.project.id);
-    f.engine.command.mockClear();
-    await f.service.call("crews.resume", { runId: "run" }, f.project.id);
-    await f.service.tick();
-    expect(f.engine.command).toHaveBeenCalledWith(expect.objectContaining({
-      type: "send", sessionId: "lead-session", text: expect.stringContaining("Resume crew work"),
-    }));
-    expect(f.engine.command).toHaveBeenCalledTimes(1);
-    await f.service.call("crews.resume", { runId: "run" }, f.project.id);
-    await f.service.tick();
-    expect(f.engine.command).toHaveBeenCalledTimes(1);
-  });
+  it.each(["idle", "interrupted"] as const)(
+    "resumes %s planning with one durable continuation without repeating it",
+    async (status) => {
+      const f = await setup();
+      await f.start();
+      const coordinator = await f.store.session("lead-session");
+      vi.mocked(f.store.session).mockResolvedValue({ ...coordinator, status });
+      await f.service.call("crews.pause", { runId: "run" }, f.project.id);
+      f.engine.command.mockClear();
+      await f.service.call("crews.resume", { runId: "run" }, f.project.id);
+      await f.service.tick();
+      expect(f.engine.command).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "send",
+          sessionId: "lead-session",
+          text: expect.stringContaining("Resume crew work"),
+        }),
+      );
+      expect(f.engine.command).toHaveBeenCalledTimes(1);
+      await f.service.call("crews.resume", { runId: "run" }, f.project.id);
+      await f.service.tick();
+      expect(f.engine.command).toHaveBeenCalledTimes(1);
+    },
+  );
   it("resumes an uncertain pending delivery with its original receipt identity", async () => {
     const f = await setup();
     await f.start();
-    await f.service.call("crews.request", { runId: "run", requestId: "first", text: "Need help" }, f.project.id);
-    f.engine.command.mockImplementationOnce(() => { throw new Error("Unknown delivery"); });
+    await f.service.call(
+      "crews.request",
+      { runId: "run", requestId: "first", text: "Need help" },
+      f.project.id,
+    );
+    f.engine.command.mockImplementationOnce(() => {
+      throw new Error("Unknown delivery");
+    });
     await expect(f.service.tick()).rejects.toThrow("Unknown delivery");
     const original = f.engine.command.mock.calls.at(-1)?.[0];
     await f.service.call("crews.pause", { runId: "run" }, f.project.id);
@@ -215,8 +333,12 @@ describe("host crews", () => {
     const f = await setup();
     let release!: () => void;
     let started!: () => void;
-    const sent = new Promise<void>((resolve) => { release = resolve; });
-    const sending = new Promise<void>((resolve) => { started = resolve; });
+    const sent = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     f.engine.command.mockImplementation(async (input) => {
       if (input.type === "send") {
         started();
@@ -228,24 +350,37 @@ describe("host crews", () => {
     await sending;
     await f.service.call("crews.stop", { runId: "launch-run" }, f.project.id);
     vi.mocked(f.store.session).mockResolvedValue({
-      status: "running", runId: "coordinator-run",
+      status: "running",
+      runId: "coordinator-run",
     } as Awaited<ReturnType<HostStore["session"]>>);
     release();
     await starting;
     expect((await f.service.list(f.project.id)).runs[0]).toMatchObject({
-      status: "paused", coordinatorSessionId: "coordinator",
+      status: "paused",
+      coordinatorSessionId: "coordinator",
     });
-    expect(f.engine.command).toHaveBeenCalledWith(expect.objectContaining({
-      type: "cancel", sessionId: "coordinator", runId: "coordinator-run",
-    }));
+    expect(f.engine.command).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cancel",
+        sessionId: "coordinator",
+        runId: "coordinator-run",
+      }),
+    );
   });
   it("does not send an initial coordinator prompt if paused while preparing the session", async () => {
     const f = await setup();
     let release!: () => void;
     let started!: () => void;
-    const prepared = new Promise<void>((resolve) => { release = resolve; });
-    const preparing = new Promise<void>((resolve) => { started = resolve; });
-    f.engine.updateSession.mockImplementationOnce(async () => { started(); await prepared; });
+    const prepared = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const preparing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    f.engine.updateSession.mockImplementationOnce(async () => {
+      started();
+      await prepared;
+    });
     const starting = f.service.startRun(f.project.id, "crew", "Start", "launch-run", "supervised");
     await preparing;
     await f.service.call("crews.stop", { runId: "launch-run" }, f.project.id);
@@ -540,8 +675,12 @@ describe("host crews", () => {
     );
     let release!: () => void;
     let started!: () => void;
-    const delivered = new Promise<void>((resolve) => { release = resolve; });
-    const sending = new Promise<void>((resolve) => { started = resolve; });
+    const delivered = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const sending = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     f.engine.command.mockImplementationOnce(async () => {
       started();
       await delivered;
@@ -756,7 +895,9 @@ describe("crew work deletion", () => {
     await f.assign();
     f.rows[0].sessionId = "earlier-worker";
     f.rows[0].startedAt = 10;
-    const cancel = vi.fn(async (id: string) => { f.rows.find((task) => task.id === id)!.status = "blocked"; });
+    const cancel = vi.fn(async (id: string) => {
+      f.rows.find((task) => task.id === id)!.status = "blocked";
+    });
     const move = vi.fn();
     Object.assign(f.tasks, { cancel, move });
     await f.service.call("crews.stop", { runId: "run" }, f.project.id);
@@ -771,11 +912,23 @@ describe("crew work deletion", () => {
     const run = (await f.service.list(f.project.id)).runs[0];
     let release!: () => void;
     let started!: () => void;
-    const held = new Promise<void>((resolve) => { release = resolve; });
-    const checking = new Promise<void>((resolve) => { started = resolve; });
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const checking = new Promise<void>((resolve) => {
+      started = resolve;
+    });
     const original = await f.store.session("lead-session");
-    vi.mocked(f.store.session).mockImplementationOnce(async () => { started(); await held; return original; });
-    const deleting = f.service.call("crews.deleteRun", { runId: "run", expectedUpdatedAt: run.updatedAt }, f.project.id);
+    vi.mocked(f.store.session).mockImplementationOnce(async () => {
+      started();
+      await held;
+      return original;
+    });
+    const deleting = f.service.call(
+      "crews.deleteRun",
+      { runId: "run", expectedUpdatedAt: run.updatedAt },
+      f.project.id,
+    );
     const failed = expect(deleting).rejects.toThrow("changed");
     await checking;
     await f.service.call("crews.resume", { runId: "run" }, f.project.id);
@@ -803,9 +956,9 @@ describe("crew work deletion", () => {
     } as Awaited<ReturnType<HostStore["session"]>>);
     f.engine.command.mockClear();
 
-    await expect(
-      f.service.call("crews.stop", { runId: "run" }, f.project.id),
-    ).rejects.toThrow("some conversations could not be stopped");
+    await expect(f.service.call("crews.stop", { runId: "run" }, f.project.id)).rejects.toThrow(
+      "some conversations could not be stopped",
+    );
 
     expect(move).toHaveBeenCalledWith(f.rows[1].id, "blocked");
     expect(f.engine.command).toHaveBeenCalledWith(

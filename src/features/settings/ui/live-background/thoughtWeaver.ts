@@ -1,4 +1,5 @@
 import type { LiveBackgroundPalette, LiveBackgroundScene } from "./types";
+import { themePalette } from "../../../../shared/theme/palette";
 
 /**
  * Woven ribbons drift through the lower pane. Each ribbon is made of fine
@@ -75,7 +76,7 @@ function readRgb(color: string): Rgb | null {
   probe.height = 1;
   const ctx = probe.getContext("2d", { willReadFrequently: true });
   if (!ctx) return null;
-  ctx.fillStyle = "#000";
+  ctx.fillStyle = themePalette.scrim;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, 1, 1);
   const data = ctx.getImageData(0, 0, 1, 1).data;

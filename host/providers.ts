@@ -49,7 +49,12 @@ export interface HostProvider {
   /** Exact provider task only; omission must never mean cancel the whole turn. */
   stopItem?(id: string, callId: string): Promise<void>;
   bind(id: string, providerId: string, cwd: string, providerAccountId?: string): void;
-  approve(id: string, request: number, decision: ApprovalDecision): void;
+  approve(
+    id: string,
+    request: number,
+    decision: ApprovalDecision,
+    approvalOccurrenceId?: string,
+  ): void;
   answer(id: string, request: number, reply: UserQuestionReply): void;
   generateTitle?(input: {
     sessionId: string;

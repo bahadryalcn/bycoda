@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { t, useLocale } from "../../../shared/i18n";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
 import type { PopoverAnchor } from "../../../shared/ui/Popover";
@@ -9,7 +9,6 @@ import {
   Bot,
   Copy,
   Globe,
-  MoreHorizontal,
   Pencil,
   Play,
   Plus,
@@ -386,24 +385,15 @@ export function CrewRailSection({
                 >
                   <Play className="icon-sm" strokeWidth={1.75} />
                 </InlineAction>
-                <InlineAction
+                <InlineMoreAction
                   label={t("{p0} options", { p0: crew.name })}
                   tooltip={t("More actions")}
                   motion="none"
                   type="button"
                   data-no-drag
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.kind === "crew" && menu.crewId === crew.id}
-                  onClick={(event) =>
-                    setMenu({
-                      kind: "crew",
-                      crewId: crew.id,
-                      anchor: event.currentTarget,
-                    })
-                  }
-                >
-                  <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-                </InlineAction>
+                  expanded={menu?.kind === "crew" && menu.crewId === crew.id}
+                  onOpen={(anchor) => setMenu({ kind: "crew", crewId: crew.id, anchor })}
+                />
               </span>
             </ActionHost>
           );

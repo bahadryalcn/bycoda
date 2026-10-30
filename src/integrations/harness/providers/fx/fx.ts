@@ -147,6 +147,7 @@ export function respondFxApproval(
   _sessionId: string,
   _requestId: number,
   _decision: ApprovalDecision,
+  _approvalOccurrenceId?: string,
 ) {}
 
 export async function cancelFxTurn(sessionId: string): Promise<void> {

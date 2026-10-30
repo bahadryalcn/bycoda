@@ -3,7 +3,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import type { BoardTask } from "../model/taskClient";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
 import { t, useLocale } from "../../../shared/i18n";
-import { type ComponentProps, useState } from "react";
+import { type ComponentProps, type ReactNode, useState } from "react";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { taskSessionIds } from "../model/backgroundSession";
 import { TaskCard } from "./TaskBoardCard";
@@ -46,6 +46,7 @@ export function TaskBoardColumns({
   actionsFor,
   onOpen,
   onTaskDrop,
+  empty,
 }: {
   tasks: BoardTask[];
   visibleTasks: BoardTask[];
@@ -63,6 +64,8 @@ export function TaskBoardColumns({
   actionsFor: ComponentProps<typeof TaskCard>["actionsFor"];
   onOpen: (key: string) => void;
   onTaskDrop: (task: BoardTask, column: TaskColumn, before?: BoardTask) => Promise<void>;
+  /** Shown instead of the columns when no task is visible; the board owner knows why. */
+  empty: ReactNode;
 }) {
   useLocale();
   const [draggedKey, setDraggedKey] = useState<string | null>(null);
@@ -107,14 +110,7 @@ export function TaskBoardColumns({
           />
         </div>
       ) : null}
-      {tasks.length === 0 ? (
-        <EmptyState
-          icon={null}
-          description={t(
-            visibleTasks.length ? "No tasks match your search or filters." : "Nothing to do yet",
-          )}
-        />
-      ) : null}
+      {tasks.length === 0 ? empty : null}
       {tasks.length > 0 ? (
         <div className="task-board-columns">
           {TASK_COLUMNS.map((status) => {

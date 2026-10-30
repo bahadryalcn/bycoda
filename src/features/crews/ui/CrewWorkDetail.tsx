@@ -104,6 +104,17 @@ export function CrewWorkDetail({
     crewActivityKnown(run) &&
     !running &&
     !run.tasks.some((task) => task.status === "queued");
+  // The running action is named next to its controls, not only by a spinner.
+  const pendingText =
+    pendingAction === `pause:${run.id}`
+      ? run.status === "paused"
+        ? t("Resuming…")
+        : t("Pausing…")
+      : pendingAction === `stop:${run.id}`
+        ? t("Stopping…")
+        : pendingAction === `delete:${run.id}`
+          ? t("Deleting…")
+          : "";
   const openCoordinator = (key: string) => (
     <Button
       variant="link"
@@ -167,27 +178,6 @@ export function CrewWorkDetail({
           ))}
         </div>
       ) : null}
-      {request.kind === "full" ? (
-        request.text !== title ? (
-          <details className="mt-3 text-ui-secondary">
-            <summary className="cursor-pointer font-medium text-(--ui-text-secondary)">
-              {t("Work request")}
-            </summary>
-            <p className="mt-2 max-w-[46rem] whitespace-pre-wrap break-words text-content [overflow-wrap:anywhere] leading-relaxed">
-              {request.text}
-            </p>
-          </details>
-        ) : null
-      ) : (
-        <p
-          data-crew-request-note={request.kind}
-          className="mt-2 text-ui-caption text-(--ui-text-secondary)"
-        >
-          {request.kind === "first-line"
-            ? t("Only the request's first line is available from this Host.")
-            : t("The request text is not available from this Host.")}
-        </p>
-      )}
       <div className="mt-4 flex flex-wrap items-center gap-1">
         {run.status !== "finished" ? (
           <>
@@ -230,29 +220,12 @@ export function CrewWorkDetail({
                 {t("Stop work")}
               </Button>
             ) : null}
+            {pendingText ? (
+              <span role="status" className="ms-1 text-ui-caption text-(--ui-text-secondary)">
+                {pendingText}
+              </span>
+            ) : null}
           </>
-        ) : null}
-        {canDelete ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={pending || !canRemove}
-            loading={pendingAction === `delete:${run.id}`}
-            className="ms-auto"
-            startIcon={<Trash2 className="icon-sm" />}
-            tooltip={!canRemove ? t("Stop work before deleting it.") : t("Delete work")}
-            onClick={() =>
-              void confirm({
-                title: t("Delete work"),
-                message: `${title}\n${t("Remove this work from the list? The crew, tasks and conversations are kept.")}`,
-                confirmLabel: t("Delete work"),
-              }).then((ok) => {
-                if (ok) onDelete();
-              })
-            }
-          >
-            {t("Delete work")}
-          </Button>
         ) : null}
       </div>
       {error ? (
@@ -273,7 +246,52 @@ export function CrewWorkDetail({
         pendingAction={pendingAction}
         onOpen={onOpen}
       />
+      {/* Technical metadata stays reachable but quiet, after the actionable parts. */}
+      {request.kind === "full" ? (
+        request.text !== title ? (
+          <details className="mt-4 text-ui-secondary">
+            <summary className="cursor-pointer font-medium text-(--ui-text-secondary)">
+              {t("Work request")}
+            </summary>
+            <p className="mt-2 max-w-[46rem] whitespace-pre-wrap break-words text-content [overflow-wrap:anywhere] leading-relaxed">
+              {request.text}
+            </p>
+          </details>
+        ) : null
+      ) : (
+        <p
+          data-crew-request-note={request.kind}
+          className="mt-2 text-ui-caption text-(--ui-text-secondary)"
+        >
+          {request.kind === "first-line"
+            ? t("Only the request's first line is available from this Host.")
+            : t("The request text is not available from this Host.")}
+        </p>
+      )}
       <CrewWorkTeam run={run} catalog={catalog} savedCrew={savedCrew} />
+      {canDelete ? (
+        <div className="mt-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={pending || !canRemove}
+            loading={pendingAction === `delete:${run.id}`}
+            startIcon={<Trash2 className="icon-sm" />}
+            tooltip={!canRemove ? t("Stop work before deleting it.") : t("Delete work")}
+            onClick={() =>
+              void confirm({
+                title: t("Delete work"),
+                message: `${title}\n${t("Remove this work from the list? The crew, tasks and conversations are kept.")}`,
+                confirmLabel: t("Delete work"),
+              }).then((ok) => {
+                if (ok) onDelete();
+              })
+            }
+          >
+            {t("Delete work")}
+          </Button>
+        </div>
+      ) : null}
       {dialog}
     </section>
   );

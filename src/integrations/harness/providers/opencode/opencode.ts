@@ -1,4 +1,8 @@
 import {
+  createApprovalOccurrenceId,
+  isApprovalOccurrenceId,
+} from "../../../../shared/model/approvalOccurrence";
+import {
   runNativeOutputWork,
   nativeOutputSink,
   captureNativeOutputCurrentEvent,
@@ -106,6 +110,7 @@ import {
 } from "../../../../features/sessions/model/userQuestion";
 
 type PendingApproval = {
+  occurrenceId: string;
   id: string;
   sessionId: string;
   sessionDeleted?: boolean;
@@ -335,14 +340,23 @@ export function respondOpenCodeApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
   if (socialAcpSessions.has(sessionId)) {
-    respondGenericAcpApproval(sessionId, requestId, decision);
+    respondGenericAcpApproval(sessionId, requestId, decision, approvalOccurrenceId);
     return;
   }
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
-  if (!pending) return;
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
   pending.resolve(decision);
 }
 
@@ -1154,11 +1168,13 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
           break;
         }
         const uiId = live.nextApprovalUiId++;
+        const occurrenceId = createApprovalOccurrenceId();
         const pending = nativeOutputSink(outputWork, waitApproval)(
           live,
           uiId,
           id,
           payloadSessionId ?? live.openCodeSessionId,
+          occurrenceId,
         );
         if (callId) {
           emitNative({
@@ -1172,6 +1188,7 @@ async function handleEvent(live: Live, event: Record<string, unknown>): Promise<
         emitNative({
           type: "approval.requested",
           requestId: uiId,
+          occurrenceId,
           title,
           kind,
           callId,
@@ -1545,19 +1562,23 @@ async function waitApproval(
   uiId: number,
   id: string,
   sessionId: string,
+  occurrenceId: string,
 ): Promise<void> {
   return runNativeOutputWork(
     async (outputWork) => {
       const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
         live.onEvent(event),
       );
+      let original!: PendingApproval;
       const decision = await new Promise<ApprovalDecision>((resolve) => {
-        live.approvals.set(uiId, { id, sessionId, resolve });
+        original = { id, sessionId, occurrenceId, resolve };
+        live.approvals.set(uiId, original);
       });
-      const sessionDeleted = live.approvals.get(uiId)?.sessionDeleted;
-      live.approvals.delete(uiId);
-      emitNative({ type: "approval.resolved", requestId: uiId, decision });
+      const sessionDeleted = original.sessionDeleted;
+      if (live.approvals.get(uiId) === original) live.approvals.delete(uiId);
+      emitNative({ type: "approval.resolved", requestId: uiId, occurrenceId, decision });
       if (sessionDeleted) return;
+      if (!Array.from(liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, () =>
         live.client.replyPermission(id, toOpenCodePermissionReply(decision)),
       )();

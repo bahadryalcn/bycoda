@@ -25,7 +25,17 @@ function notice(id: string, kind: Notice["kind"] = "approval", requestId = 1): N
       model: "",
       modelSettings: {},
       runtimeMode: "supervised",
-      blocks: [],
+      blocks:
+        kind === "approval"
+          ? [
+              {
+                id: `approval-${id}-${requestId}`,
+                role: "approval",
+                text: `Request ${id}`,
+                approval: { requestId },
+              },
+            ]
+          : [],
     },
   };
 }
@@ -383,7 +393,7 @@ it("hides muted project approval popups while another project's controls remain 
     (item) => item.textContent === "Allow",
   )!;
   act(() => allow.click());
-  expect(onApproval).toHaveBeenCalledWith("work", 1, "allow");
+  expect(onApproval).toHaveBeenCalledWith("work", 1, "allow", expect.any(Object));
 });
 
 it("immediately hides an existing question when its notification category is disabled", async () => {
@@ -449,7 +459,7 @@ function renderWith(notices: Notice[], props: Partial<ComponentProps<typeof Appr
   root.render(createElement(ApprovalToasts, { notices, onApproval, onFocusSession, ...props }));
 }
 
-it("keeps an unconfirmed approval retryable and blocks a second decision while it is pending", async () => {
+it("retains an uncertain approval and blocks repeated decisions after the callback rejects", async () => {
   let reject!: (error: Error) => void;
   const decide = vi.fn(
     () =>
@@ -464,17 +474,19 @@ it("keeps an unconfirmed approval retryable and blocks a second decision while i
   expect(decide).toHaveBeenCalledTimes(1);
   expect(button("Deny").disabled).toBe(true);
   await act(async () => reject(new Error("offline")));
-  expect(document.body.textContent).toContain("The decision may not have been delivered");
-  expect(allow().disabled).toBe(false);
+  expect(document.body.textContent).toContain("Waiting for confirmation");
+  expect(allow().disabled).toBe(true);
   act(() => allow().click());
-  expect(decide).toHaveBeenCalledTimes(2);
+  expect(decide).toHaveBeenCalledTimes(1);
 });
 
-it("treats a false approval result as undelivered", async () => {
+it("shows a pre-dispatch refusal without claiming delivery", async () => {
   const decide = vi.fn(async () => false);
   await act(async () => renderWith([notice("work")], { onApproval: decide }));
   await act(async () => button("Deny").click());
-  expect(document.body.textContent).toContain("The decision may not have been delivered");
+  expect(document.body.textContent).toContain(
+    "Decision was not sent. Check the request and try again.",
+  );
 });
 
 it("keeps history when the durable clear fails and offers a retry", async () => {
@@ -527,7 +539,9 @@ it("keeps an expanded history entry open when newer arrivals are added", () => {
   details.open = true;
   act(() => render([notice("second", "question")]));
   expect(document.querySelectorAll(".notification-history-details")).toHaveLength(2);
-  const reused = [...document.querySelectorAll<HTMLDetailsElement>(".notification-history-details")];
+  const reused = [
+    ...document.querySelectorAll<HTMLDetailsElement>(".notification-history-details"),
+  ];
   expect(reused).toContain(details);
   expect(details.open).toBe(true);
 });

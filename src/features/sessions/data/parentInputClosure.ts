@@ -14,6 +14,7 @@ import {
 } from "../../../shared/lib/native-capture-json";
 
 export type ParentInputKind =
+  | "approval-decision"
   | "question-draft"
   | "session-parent"
   | "composer-parent"
@@ -22,6 +23,8 @@ export type ParentInputKind =
 export type ParentInputAdapter = {
   kind: ParentInputKind;
   sessionId?: string;
+  /** Explicit shared-profile data; an absent session alone never selects this scope. */
+  scope?: "profile";
   snapshot(): Record<string, unknown>;
   composing?(): boolean;
   ownsCurrent?(): boolean;
@@ -74,6 +77,13 @@ type Binding = {
   observedCharge?: number;
   observationFailed?: boolean;
 };
+type InputScope = Pick<ParentInputAdapter, "sessionId" | "scope">;
+function includesTarget(source: InputScope, sessionId: string): boolean {
+  return source.scope === "profile" || source.sessionId === sessionId;
+}
+function sameInputScope(a: InputScope, b: InputScope): boolean {
+  return a.scope === b.scope && a.sessionId === b.sessionId;
+}
 export type ParentInputCapture = Readonly<{
   registryEpoch: number;
   snapshots: readonly ParentInputSnapshot[];
@@ -168,17 +178,32 @@ export class ParentInputRegistry {
   private bindings = new Map<number, Binding>();
   private closes = new Map<string, Close>();
   private listeners = new Set<() => void>();
-  private jobs = new Map<object, { sessionId?: string; done: Promise<void> }>();
+  private jobs = new Map<object, InputScope & { done: Promise<void> }>();
   private overflowJobs = 0;
   private implementation = 0;
-  private applyingScope?: string;
-  private lineages?: WeakMap<ParentAdmission, { sessionId?: string; active(): boolean }>;
-  private originalLineage(admission: ParentAdmission, sessionId?: string) {
+  // A string remains compatible with an original scoped ticket across module reload.
+  private applyingScope?: string | InputScope;
+  private lineages?: WeakMap<ParentAdmission, InputScope & { active(): boolean }>;
+  private originalLineage(admission: ParentAdmission, sessionId?: string, scope?: "profile") {
     const lineage = this.lineages?.get(admission);
-    return !!sessionId && lineage?.sessionId === sessionId && lineage.active();
+    return (
+      !!lineage &&
+      (!!sessionId || scope === "profile") &&
+      sameInputScope(lineage, { sessionId, scope }) &&
+      lineage.active()
+    );
   }
-  canPublish(sessionId?: string) {
-    return !this.closed(sessionId) || (!!sessionId && this.applyingScope === sessionId);
+  canPublish(sessionId?: string, scope?: "profile") {
+    const applying =
+      typeof this.applyingScope === "string"
+        ? { sessionId: this.applyingScope }
+        : this.applyingScope;
+    return (
+      !this.closed(sessionId, scope) ||
+      (!!applying &&
+        (!!sessionId || scope === "profile") &&
+        sameInputScope(applying, { sessionId, scope }))
+    );
   }
   private overflow = 0;
   private exhausted = false;
@@ -187,7 +212,11 @@ export class ParentInputRegistry {
   private observedBytes = 0;
   private leases = 0;
   private failedRecords = 0;
-  private readonly limits: Readonly<{ records: number; leases: number; bytes: number }>;
+  private readonly limits: Readonly<{
+    records: number;
+    leases: number;
+    bytes: number;
+  }>;
 
   constructor(limits: Partial<{ records: number; leases: number; bytes: number }> = {}) {
     this.limits = Object.freeze({ ...PARENT_INPUT_LIMITS, ...limits });
@@ -227,7 +256,10 @@ export class ParentInputRegistry {
       this.listeners.delete(listener);
     };
   };
-  closed = (sessionId?: string) => !!sessionId && this.closes.get(sessionId)?.gated === true;
+  closed = (sessionId?: string, scope?: "profile") =>
+    scope === "profile"
+      ? [...this.closes.values()].some((close) => close.gated && !close.released)
+      : !!sessionId && this.closes.get(sessionId)?.gated === true;
   private notify() {
     const listeners = Array.from(this.listeners);
     for (const listener of listeners) listener();
@@ -236,11 +268,9 @@ export class ParentInputRegistry {
       for (const wake of waking) wake();
     }
   }
-  private invalidate(sessionId?: string) {
-    if (sessionId) {
-      const close = this.closes.get(sessionId);
-      if (close) close.invalid = true;
-    }
+  private invalidate(sessionId?: string, scope?: "profile") {
+    for (const close of this.closes.values())
+      if (includesTarget({ sessionId, scope }, close.sessionId)) close.invalid = true;
     this.notify();
   }
   invalidateForModuleReload() {
@@ -252,8 +282,9 @@ export class ParentInputRegistry {
   private overflowAdmission(
     sessionId: string | undefined,
     owns: () => boolean,
+    scope?: "profile",
   ): ParentAdmission | null {
-    if (this.closed(sessionId)) return null;
+    if (this.closed(sessionId, scope)) return null;
     this.overflowJobs++;
     let finished = false;
     let running = false;
@@ -272,12 +303,12 @@ export class ParentInputRegistry {
       resume: () => {
         if (!finished || resumed || !owns()) return null;
         resumed = true;
-        return this.overflowAdmission(sessionId, owns);
+        return this.overflowAdmission(sessionId, owns, scope);
       },
       apply: <T>(operation: () => T) => {
         if (finished || !owns()) throw new Error("Parent admission owner changed");
         const previous = this.applyingScope;
-        this.applyingScope = sessionId;
+        this.applyingScope = { sessionId, scope };
         try {
           return operation();
         } finally {
@@ -314,7 +345,7 @@ export class ParentInputRegistry {
     if (this.closes.has(sessionId)) throw new Error("Parent input closure busy");
     if (this.closes.size >= PARENT_INPUT_LIMITS.leases) capacity();
     const composing = [...this.bindings.values()].some(
-      (entry) => entry.adapter.sessionId === sessionId && entry.adapter.composing?.(),
+      (entry) => includesTarget(entry.adapter, sessionId) && entry.adapter.composing?.(),
     );
     const close: Close = {
       sessionId,
@@ -340,7 +371,8 @@ export class ParentInputRegistry {
       performance.now() < close.deadline &&
       this.closes.get(sessionId) === close &&
       ![...this.bindings.values()].some(
-        (entry) => entry.adapter.sessionId === sessionId && entry.adapter.ownsCurrent?.() === false,
+        (entry) =>
+          includesTarget(entry.adapter, sessionId) && entry.adapter.ownsCurrent?.() === false,
       ) &&
       (!close.lease || close.lease.current());
     const assert = () => {
@@ -353,7 +385,7 @@ export class ParentInputRegistry {
           assert();
           while (
             this.overflowJobs ||
-            [...this.jobs.values()].some((job) => job.sessionId === sessionId)
+            [...this.jobs.values()].some((job) => includesTarget(job, sessionId))
           ) {
             await new Promise<void>((resolve) => {
               close.wake.add(resolve);
@@ -361,7 +393,7 @@ export class ParentInputRegistry {
                 if (
                   !current() ||
                   (!this.overflowJobs &&
-                    ![...this.jobs.values()].some((job) => job.sessionId === sessionId))
+                    ![...this.jobs.values()].some((job) => includesTarget(job, sessionId)))
                 )
                   resolve();
               });
@@ -370,7 +402,7 @@ export class ParentInputRegistry {
             assert();
           }
           for (const entry of this.bindings.values())
-            if (entry.adapter.sessionId === sessionId && entry.adapter.composing?.()) {
+            if (includesTarget(entry.adapter, sessionId) && entry.adapter.composing?.()) {
               close.invalid = true;
               throw new Error("Parent input closure composing");
             }
@@ -414,14 +446,19 @@ export class ParentInputRegistry {
   register(adapter: ParentInputAdapter) {
     const original = adapter;
     const sessionId = adapter.sessionId;
+    const scope = adapter.scope;
+    const validScope = scope === undefined || (scope === "profile" && sessionId === undefined);
     const kind = adapter.kind;
     adapter = {
       sessionId,
+      scope,
       kind,
       snapshot: () => original.snapshot(),
       composing: () => !!original.composing?.(),
       ownsCurrent: () =>
         original.sessionId === sessionId &&
+        original.scope === scope &&
+        validScope &&
         original.kind === kind &&
         original.ownsCurrent?.() !== false,
       get missingCoverage() {
@@ -429,6 +466,7 @@ export class ParentInputRegistry {
       },
     };
     if (
+      !validScope ||
       this.bindings.size >= this.limits.records ||
       this.exhausted ||
       !Number.isSafeInteger(this.nextId + 1)
@@ -438,7 +476,7 @@ export class ParentInputRegistry {
       if (Number.isSafeInteger(this.overflow + 1)) this.overflow++;
       else this.exhausted = true;
       this.changed();
-      this.invalidate(adapter.sessionId);
+      this.invalidate(adapter.sessionId, adapter.scope);
       let retired = false;
       let applying = 0;
       const wrapOverflow = (admitted: ParentAdmission): ParentAdmission => {
@@ -466,6 +504,7 @@ export class ParentInputRegistry {
         };
         (this.lineages ??= new WeakMap()).set(wrapped, {
           sessionId: adapter.sessionId,
+          scope: adapter.scope,
           active: () => active > 0 && !admitted.settled && adapter.ownsCurrent?.() !== false,
         });
         return wrapped;
@@ -475,6 +514,7 @@ export class ParentInputRegistry {
         const admitted = this.overflowAdmission(
           adapter.sessionId,
           () => adapter.ownsCurrent?.() !== false,
+          adapter.scope,
         );
         if (!admitted) return null;
         return wrapOverflow(admitted);
@@ -482,16 +522,17 @@ export class ParentInputRegistry {
       return {
         recorded: false,
         observe: (_notified = false) => {},
-        canMutate: () => applying > 0 || (!retired && !this.closed(adapter.sessionId)),
+        canMutate: () =>
+          applying > 0 || (!retired && !this.closed(adapter.sessionId, adapter.scope)),
         committed: () => {
-          if (!retired) this.invalidate(adapter.sessionId);
+          if (!retired) this.invalidate(adapter.sessionId, adapter.scope);
         },
         admit: admitOverflow,
         continue: <T>(admission: ParentAdmission, operation: () => T): T | false => {
           if (
             retired ||
             adapter.ownsCurrent?.() === false ||
-            !this.originalLineage(admission, adapter.sessionId)
+            !this.originalLineage(admission, adapter.sessionId, adapter.scope)
           )
             return false;
           applying++;
@@ -499,32 +540,41 @@ export class ParentInputRegistry {
             return operation();
           } finally {
             applying--;
-            this.invalidate(adapter.sessionId);
+            this.invalidate(adapter.sessionId, adapter.scope);
           }
         },
         changed: () => {
-          if (!retired) this.changed();
+          if (!retired) {
+            this.changed();
+            this.invalidate(adapter.sessionId, adapter.scope);
+          }
         },
         release: () => {
           if (!retired) {
             retired = true;
             this.overflow--;
             this.changed();
+            this.invalidate(adapter.sessionId, adapter.scope);
           }
         },
       };
     }
     const id = ++this.nextId;
-    const entry: Binding = { adapter, revision: 0, retired: false, applying: 0 };
+    const entry: Binding = {
+      adapter,
+      revision: 0,
+      retired: false,
+      applying: 0,
+    };
     this.bindings.set(id, entry);
     this.changed();
-    this.invalidate(adapter.sessionId);
+    this.invalidate(adapter.sessionId, adapter.scope);
     let retired = false;
     const mutate = (accepted: boolean) => {
       if (!Number.isSafeInteger(entry.revision + 1)) this.exhausted = true;
       else entry.revision++;
       this.changed();
-      if (!accepted) this.invalidate(adapter.sessionId);
+      if (!accepted) this.invalidate(adapter.sessionId, adapter.scope);
     };
     const observe = (notified = false) => {
       if (retired) return;
@@ -546,23 +596,35 @@ export class ParentInputRegistry {
         entry.observationFailed = true;
         // Observation must never throw into ordinary edits. This exact record
         // is held until a later bounded observation succeeds or it retires.
-        this.invalidate(adapter.sessionId);
+        this.invalidate(adapter.sessionId, adapter.scope);
       }
     };
     const admit = (resuming = false): ParentAdmission | null => {
-      if (resuming ? adapter.ownsCurrent?.() === false : retired || this.closed(adapter.sessionId))
+      if (
+        resuming
+          ? adapter.ownsCurrent?.() === false
+          : retired || this.closed(adapter.sessionId, adapter.scope)
+      )
         return null;
       // Recovery is an old lineage, not permission to keep an already captured
       // observation current while another actual attempt is being admitted.
-      if (resuming && adapter.sessionId && this.closes.get(adapter.sessionId)?.lease)
-        this.invalidate(adapter.sessionId);
+      if (resuming) {
+        for (const close of this.closes.values())
+          if (close.lease && includesTarget(adapter, close.sessionId)) close.invalid = true;
+        this.notify();
+      }
       const key = {};
       let finish!: () => void;
       const done = new Promise<void>((resolve) => {
         finish = resolve;
       });
       const tracked = this.jobs.size < 64;
-      if (tracked) this.jobs.set(key, { sessionId: adapter.sessionId, done });
+      if (tracked)
+        this.jobs.set(key, {
+          sessionId: adapter.sessionId,
+          scope: adapter.scope,
+          done,
+        });
       else this.overflowJobs++;
       let settled = false;
       let running = false;
@@ -591,7 +653,10 @@ export class ParentInputRegistry {
           entry.applying++;
           active++;
           const previousScope = this.applyingScope;
-          this.applyingScope = adapter.sessionId;
+          this.applyingScope = {
+            sessionId: adapter.sessionId,
+            scope: adapter.scope,
+          };
           try {
             const result = operation();
             mutate(true);
@@ -618,6 +683,7 @@ export class ParentInputRegistry {
       };
       (this.lineages ??= new WeakMap()).set(admission, {
         sessionId: adapter.sessionId,
+        scope: adapter.scope,
         active: () => active > 0 && !settled && adapter.ownsCurrent?.() !== false,
       });
       return admission;
@@ -625,13 +691,14 @@ export class ParentInputRegistry {
     return {
       recorded: true,
       observe,
-      canMutate: () => entry.applying > 0 || (!retired && !this.closed(adapter.sessionId)),
+      canMutate: () =>
+        entry.applying > 0 || (!retired && !this.closed(adapter.sessionId, adapter.scope)),
       admit: () => admit(),
       continue: <T>(admission: ParentAdmission, operation: () => T): T | false => {
         if (
           retired ||
           adapter.ownsCurrent?.() === false ||
-          !this.originalLineage(admission, adapter.sessionId)
+          !this.originalLineage(admission, adapter.sessionId, adapter.scope)
         )
           return false;
         entry.applying++;
@@ -658,7 +725,7 @@ export class ParentInputRegistry {
         if (entry.observationFailed) this.failedRecords--;
         this.bindings.delete(id);
         this.changed();
-        this.invalidate(adapter.sessionId);
+        this.invalidate(adapter.sessionId, adapter.scope);
       },
     };
   }
@@ -732,11 +799,17 @@ export class ParentInputRegistry {
     if (this.exhausted || this.overflow || this.leases >= this.limits.leases) capacity();
     const epoch = this.epoch;
     const implementation = this.implementation;
-    const roster = [...this.bindings].filter(([, entry]) => entry.adapter.sessionId === sessionId);
+    const roster = [...this.bindings].filter(([, entry]) =>
+      includesTarget(entry.adapter, sessionId),
+    );
     if (roster.length > 256) throw new Error("Parent input capture capacity exceeded");
     const read = () => {
       const missing = new Set(["parent-producer-admission-closure", "decision-conservation"]);
-      if ([...this.bindings.values()].some(({ adapter }) => !adapter.sessionId))
+      if (
+        [...this.bindings.values()].some(
+          ({ adapter }) => !adapter.sessionId && adapter.scope !== "profile",
+        )
+      )
         missing.add("unassigned-parent-input-scope");
       const snapshots = roster.map(([id, entry]) => {
         if (entry.observationFailed) capacity();
@@ -757,7 +830,7 @@ export class ParentInputRegistry {
           id,
           revision: entry.revision,
           kind: entry.adapter.kind,
-          sessionId,
+          ...(entry.adapter.sessionId === undefined ? {} : { sessionId: entry.adapter.sessionId }),
           snapshot: input,
         };
       });
@@ -778,8 +851,8 @@ export class ParentInputRegistry {
       if (released || this.exhausted || this.overflow || implementation !== this.implementation)
         return false;
       try {
-        const currentRoster = [...this.bindings].filter(
-          ([, entry]) => entry.adapter.sessionId === sessionId,
+        const currentRoster = [...this.bindings].filter(([, entry]) =>
+          includesTarget(entry.adapter, sessionId),
         );
         if (
           currentRoster.length !== roster.length ||
@@ -833,13 +906,15 @@ export const beginParentInputClosure = (
   sessionId: string,
   options: { owner: object; timeoutMs: number; signal?: AbortSignal },
 ) => registry.begin(sessionId, options);
-export const canMutateParentInputs = (sessionId?: string) => !registry.closed(sessionId);
+export const canMutateParentInputs = (sessionId?: string, scope?: "profile") =>
+  !registry.closed(sessionId, scope);
 /** Only explicit draft/cache data sinks use this synchronous original-work lineage. */
-export const canPublishParentInput = (sessionId?: string) => registry.canPublish(sessionId);
-export function useParentInputsClosed(sessionId?: string): boolean {
+export const canPublishParentInput = (sessionId?: string, scope?: "profile") =>
+  registry.canPublish(sessionId, scope);
+export function useParentInputsClosed(sessionId?: string, scope?: "profile"): boolean {
   return useSyncExternalStore(
     registry.subscribe,
-    () => registry.closed(sessionId),
+    () => registry.closed(sessionId, scope),
     () => false,
   );
 }
@@ -899,11 +974,13 @@ export function useParentInputClosure(
     const owner = registerParentInput({
       kind: adapter.kind,
       sessionId: adapter.sessionId,
+      scope: adapter.scope,
       snapshot: () => latest.current.snapshot(),
       composing: () => composing.current || !!latest.current.composing?.(),
       ownsCurrent: () =>
         binding.current === owner &&
         latest.current.sessionId === adapter.sessionId &&
+        latest.current.scope === adapter.scope &&
         latest.current.kind === adapter.kind,
       get missingCoverage() {
         return latest.current.missingCoverage;
@@ -916,7 +993,7 @@ export function useParentInputClosure(
       // Old admitted callbacks keep this retired handle; a replacement mount
       // replaces it and cannot inherit its apply capability.
     };
-  }, [adapter.kind, adapter.sessionId]);
+  }, [adapter.kind, adapter.sessionId, adapter.scope]);
   // Presentation clocks/streamed transcript renders are not input mutations.
   // Compare explicit producer fields; mutable-ref producers also call changed()
   // synchronously at acceptance/application. Capture/current make bounded copies.
@@ -960,7 +1037,9 @@ export function useParentInputClosure(
   return useMemo(
     () =>
       parentInputHandle(changed, {
-        canMutate: () => binding.current?.canMutate() ?? !registry.closed(latest.current.sessionId),
+        canMutate: () =>
+          binding.current?.canMutate() ??
+          !registry.closed(latest.current.sessionId, latest.current.scope),
         admit: () => binding.current?.admit() ?? null,
         continue: (admission, operation) =>
           binding.current ? binding.current.continue(admission, operation) : false,

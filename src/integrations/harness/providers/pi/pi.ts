@@ -45,8 +45,9 @@ export function respondPiApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
-  respondApproval(PI_FLAVOR, sessionId, requestId, decision);
+  respondApproval(PI_FLAVOR, sessionId, requestId, decision, approvalOccurrenceId);
 }
 
 export function cancelPiTurn(sessionId: string): Promise<void> {

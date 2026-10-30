@@ -7,6 +7,7 @@ export type {
   FloatingButtonGroupAction,
   FloatingButtonGroupItem,
   FloatingButtonGroupProps,
+  FloatingButtonGroupTriggerProps,
 } from "./arc/floating-button-group/floating-button-group";
 
 /** Contextual commands only. Placement, selection and async lifecycle stay with the caller. */

@@ -139,6 +139,7 @@ export type HarnessEvent =
   | {
       type: "approval.requested";
       requestId: number;
+      occurrenceId?: string;
       title: string;
       kind?: string;
       callId?: string;
@@ -147,6 +148,7 @@ export type HarnessEvent =
   | {
       type: "approval.resolved";
       requestId: number;
+      occurrenceId?: string;
       /** "cancelled" = a PermissionRequest hook decided before the user could. */
       decision: "allow" | "deny" | "cancelled";
     }

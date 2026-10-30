@@ -36,6 +36,7 @@ import {
 } from "react";
 import { leafName, validateFileName, type NameIssue } from "../model/fileName";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
+import { isImeComposition } from "../../../shared/lib/keyboard";
 import { loadShowExcludedFiles, saveShowExcludedFiles, SHOW_EXCLUDED_FILES_DEFAULT, subscribeShowExcludedFiles } from "../../settings/model/appearance";
 import {
   createParentOf,
@@ -188,34 +189,43 @@ function createTreeStore(initial: TreeStateValue) {
 const TreeStateCtx = createContext<TreeStore | null>(null);
 const TreeActionsCtx = createContext<TreeActions | null>(null);
 
+/**
+ * The snapshot reader for one directory: it keeps returning the previous state object until
+ * something its immediate rows read has changed. The memo is private to that directory.
+ */
+function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEntry[] | null) {
+  let previous = store.getSnapshot();
+  return () => {
+    const next = store.getSnapshot();
+    const changed =
+      next.showExcludedFiles !== previous.showExcludedFiles ||
+      (next.creating?.parent === parent ? next.creating : null) !==
+        (previous.creating?.parent === parent ? previous.creating : null) ||
+      (entries ?? []).some(
+        ({ path, isDir }) =>
+          next.expanded.has(path) !== previous.expanded.has(path) ||
+          next.selectedPaths.has(path) !== previous.selectedPaths.has(path) ||
+          (next.renaming === path) !== (previous.renaming === path) ||
+          next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
+          (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
+          (isDir ? next.gitStatuses?.dirs.get(path) : next.gitStatuses?.files.get(path)) !==
+            (isDir
+              ? previous.gitStatuses?.dirs.get(path)
+              : previous.gitStatuses?.files.get(path)),
+      );
+    if (changed) previous = next;
+    return previous;
+  };
+}
+
 /** A directory observes only the state read by its immediate rows. */
 function useTreeState(parent: string, entries: FsEntry[] | null): TreeStateValue {
   const store = useContext(TreeStateCtx);
   if (!store) throw new Error("TreeStateCtx missing");
-  const snapshot = useMemo(() => {
-    let previous = store.getSnapshot();
-    return () => {
-      const next = store.getSnapshot();
-      const changed =
-        next.showExcludedFiles !== previous.showExcludedFiles ||
-        (next.creating?.parent === parent ? next.creating : null) !==
-          (previous.creating?.parent === parent ? previous.creating : null) ||
-        (entries ?? []).some(
-          ({ path, isDir }) =>
-            next.expanded.has(path) !== previous.expanded.has(path) ||
-            next.selectedPaths.has(path) !== previous.selectedPaths.has(path) ||
-            (next.renaming === path) !== (previous.renaming === path) ||
-            next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
-            (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
-            (isDir ? next.gitStatuses?.dirs.get(path) : next.gitStatuses?.files.get(path)) !==
-              (isDir
-                ? previous.gitStatuses?.dirs.get(path)
-                : previous.gitStatuses?.files.get(path)),
-        );
-      if (changed) previous = next;
-      return previous;
-    };
-  }, [store, parent, entries]);
+  const snapshot = useMemo(
+    () => createDirectorySnapshot(store, parent, entries),
+    [store, parent, entries],
+  );
   return useSyncExternalStore(store.subscribe, snapshot, snapshot);
 }
 
@@ -243,6 +253,11 @@ async function copyText(text: string) {
       if (focused instanceof HTMLElement && focused.isConnected) focused.focus({ preventScroll: true });
     }
   }
+}
+
+/** Click suppression after a drag reads the clock only in event handlers. */
+function clickStillSuppressed(until: number): boolean {
+  return performance.now() < until;
 }
 
 function FileTreeInner({
@@ -286,7 +301,9 @@ function FileTreeInner({
   const [children, setChildren] = useState<FsEntry[] | null>(() => peekDir(cwd));
   const [error, setError] = useState<string | null>(null);
   const [rootRefreshing, setRootRefreshing] = useState(false);
-  const [rootUpdatedAt, setRootUpdatedAt] = useState<number>();
+  const [rootUpdatedAt, setRootUpdatedAt] = useState<number | undefined>(() =>
+    peekDir(cwd) ? verifiedDirAt(cwd) : undefined,
+  );
   const rootRefreshRequest = useRef(0);
   useEffect(
     () => () => {
@@ -323,7 +340,9 @@ function FileTreeInner({
     loadShowExcludedFiles,
   );
   const creatingRef = useRef(creating);
-  creatingRef.current = creating;
+  useLayoutEffect(() => {
+    creatingRef.current = creating;
+  }, [creating]);
   const fileDragCleanup = useRef<(() => void) | null>(null);
   const suppressFileClickUntil = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -655,7 +674,7 @@ function FileTreeInner({
     window.addEventListener("blur", onCancel);
   };
 
-  const consumeFileClick = () => performance.now() < suppressFileClickUntil.current;
+  const consumeFileClick = () => clickStillSuppressed(suppressFileClickUntil.current);
 
   useEffect(() => () => fileDragCleanup.current?.(), []);
 
@@ -810,18 +829,23 @@ function FileTreeInner({
     return () => scrollParent.removeEventListener("scroll", onScroll, true);
   }, [menu]);
 
-  useFileTreeExternalDrop({ cwd, rootRef, dropFilesRef, setDragOverPath });
+  useFileTreeExternalDrop({ cwd, rootRef, dropFilesRef, setDragOverPath, operationRunning });
 
   useFileTreePolling(cwd, visible);
 
-  useEffect(() => {
-    const hit = peekDir(cwd);
-    if (hit) {
-      setChildren(hit);
+  // A cached listing (first read or any later change to it) is adopted while rendering, so the
+  // tree never paints a stale listing for a frame; only a cache miss needs the effect below.
+  const [adoptedListing, setAdoptedListing] = useState(rootListing);
+  if (rootListing !== adoptedListing) {
+    setAdoptedListing(rootListing);
+    if (rootListing) {
+      setChildren(rootListing);
       setRootUpdatedAt(verifiedDirAt(cwd));
       setError(null);
-      return;
     }
+  }
+  useEffect(() => {
+    if (peekDir(cwd)) return;
     let cancelled = false;
     const request = rootRefreshRequest.current;
     void listCachedDir(cwd)
@@ -892,18 +916,21 @@ function FileTreeInner({
   };
 
   const latestActions = useRef<TreeActions>(null as unknown as TreeActions);
-  latestActions.current = {
-    onToggle: toggle,
-    onSelect,
-    onFilePointerDown,
-    consumeFileClick,
-    onOpenFile,
-    onCreateCommit,
-    onCreateCancel,
-    onRenameCommit,
-    onRenameCancel,
-    onItemContextMenu,
-  };
+  // Rebuilt every render, so the stable `actions` wrappers below always call the latest closures.
+  useLayoutEffect(() => {
+    latestActions.current = {
+      onToggle: toggle,
+      onSelect,
+      onFilePointerDown,
+      consumeFileClick,
+      onOpenFile,
+      onCreateCommit,
+      onCreateCancel,
+      onRenameCommit,
+      onRenameCancel,
+      onItemContextMenu,
+    };
+  });
   const actions = useMemo<TreeActions>(
     () => ({
       onToggle: (path) => latestActions.current.onToggle(path),
@@ -1387,8 +1414,8 @@ const TreeNode = memo(function TreeNode({
   const [loaded, setLoaded] = useState<FsEntry[] | null>(() =>
     entry.isDir ? peekDir(entry.path) : null,
   );
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // How the current read of this folder ended; null while it is still in flight (or not started).
+  const [settled, setSettled] = useState<{ error: string | null } | null>(null);
   const [retry, setRetry] = useState(0);
   // Only an open folder watches the cache, and only for its own listing: a
   // change elsewhere leaves this snapshot's identity (and this node) alone.
@@ -1399,31 +1426,30 @@ const TreeNode = memo(function TreeNode({
     () => (watching ? peekDir(entry.path) : null),
   );
   const children = cached ?? loaded;
+  const loading = entry.isDir && open && !cached && settled === null;
+  const loadError = settled?.error ?? null;
   const gitColor = gitStatus ? GIT_STATUS_COLOR[gitStatus] : undefined;
   const gitMark = gitStatus ? GIT_STATUS_MARK[gitStatus] : undefined;
 
   useEffect(() => {
     if (!entry.isDir || !open || cached) return;
     let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
     void listCachedDir(entry.path)
       .then((entries) => {
         if (!cancelled) {
           setLoaded(entries);
-          setLoadError(null);
+          setSettled({ error: null });
         }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
-          setLoadError(err instanceof Error ? err.message : String(err));
+          setSettled({ error: err instanceof Error ? err.message : String(err) });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
+      // The next read (reopen, retry, cache change) starts from "loading" with no old error.
+      setSettled(null);
     };
   }, [entry.isDir, entry.path, open, cached, retry]);
 
@@ -1648,7 +1674,13 @@ export function NameRow({
             setSubmitError(null);
           }}
           onKeyDown={(e) => {
-            if (e.nativeEvent.isComposing) return;
+            // Enter/Escape that drive an IME (candidate confirm/dismiss) belong to the IME. WebKit
+            // reports the confirming keydown after compositionend, with keyCode 229 only. The
+            // default action stays, and the key must not reach shortcuts or panes outside the field.
+            if (isImeComposition(e.nativeEvent)) {
+              e.stopPropagation();
+              return;
+            }
             if (e.key === "Enter") {
               e.preventDefault();
               e.stopPropagation();

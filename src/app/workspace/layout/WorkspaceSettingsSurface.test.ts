@@ -7,10 +7,12 @@ import {
   type WorkspaceSettingsSurfaceProps,
 } from "./WorkspaceSettingsSurface";
 
-const { manage, remove, view } = vi.hoisted(() => ({
+const { manage, remove, view, loading } = vi.hoisted(() => ({
   manage: vi.fn(),
   remove: vi.fn(),
   view: vi.fn(),
+  /** While set, the lazy Settings view is still loading (it suspends). */
+  loading: { promise: null as Promise<never> | null },
 }));
 vi.mock("../../../features/source-control/ui/WorktreesPage", () => ({
   WorktreesPage: (props: unknown) => {
@@ -38,13 +40,17 @@ vi.mock("../../../shared/ui/Modal", () => ({
 vi.mock("../../../shared/i18n/git", () => ({ t: (key: string) => key, useLocale: () => "en" }));
 vi.mock("../surfaces/lazySurfaces", () => ({
   SettingsView: (props: unknown) => {
+    if (loading.promise) throw loading.promise;
     view(props);
     return null;
   },
   preloadToolSurface: vi.fn(),
 }));
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  loading.promise = null;
+});
 
 function props(deletePath?: string): WorkspaceSettingsSurfaceProps {
   return {
@@ -128,4 +134,19 @@ it("shows Settings in the shared Modal with maximize and no duplicate window chr
   expect(shown.embedded).toBe(true);
   expect(shown.maximized).toBe(false);
   expect(typeof shown.onToggleMaximize).toBe("function");
+});
+
+it("keeps the dialog title and section visible while the Settings view is still loading", () => {
+  loading.promise = new Promise<never>(() => {});
+  const html = renderToStaticMarkup(
+    createElement(WorkspaceSettingsSurface, {
+      ...settingsProps("dialog"),
+      settingsSection: "appearance",
+    } as WorkspaceSettingsSurfaceProps),
+  );
+  // The Modal (title and close action) is already mounted; the placeholder names the section.
+  expect(html).toContain('data-modal="Settings"');
+  expect(html).toContain("data-settings-loading");
+  expect(html).toContain("Appearance");
+  expect(view).not.toHaveBeenCalled();
 });

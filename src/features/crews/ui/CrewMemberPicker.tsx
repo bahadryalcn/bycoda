@@ -101,10 +101,17 @@ export function CrewMemberPicker({
       {mode === "library" ? (
         data.agents.length === 0 ? (
           <EmptyState
+            context="panel"
+            kind="empty"
             title={t("Your member library is empty")}
             description={t(
               "Create a member once and reuse it in other crews and projects on this host.",
             )}
+            action={
+              <Button variant="primary" onClick={() => onModeChange("new")}>
+                {t("New member")}
+              </Button>
+            }
           />
         ) : (
           <>

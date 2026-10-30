@@ -290,7 +290,11 @@ fn read_run(conn: &Connection, id: &str) -> Result<Option<RunStatus>, String> {
         )
         .optional()
         .map_err(|e| e.to_string())?;
-    raw.map(|raw| decode_run(&raw)).transpose()
+    let found = raw.map(|raw| decode_run(&raw)).transpose()?;
+    if found.as_ref().is_some_and(|status| status.run_id != id) {
+        return Err("Execution belongs to another native window or run".into());
+    }
+    Ok(found)
 }
 fn summary(status: &RunStatus) -> &'static str {
     if !status.finished() {
@@ -616,18 +620,20 @@ impl RunPersistence for DesktopPersistence {
         Ok(())
     }
     fn load(&self, owner: &str, id: &str) -> Result<Option<RunStatus>, String> {
-        let state = self.app.state::<SessionStore>();
-        let conn = state.lock_conn()?;
-        let found = read_run(&conn, id)?;
-        if found.as_ref().is_some_and(|s| s.owner != owner) {
-            return Err("Execution belongs to another native window".into());
-        }
-        if found.as_ref().is_some_and(|s| !s.finished()) {
-            recover_run(&conn, id)?;
-            return read_run(&conn, id);
-        }
-        Ok(found)
+        load_run_with(&self.app.state::<SessionStore>(), owner, id)
     }
+}
+fn load_run_with(store: &SessionStore, owner: &str, id: &str) -> Result<Option<RunStatus>, String> {
+    let conn = store.lock_conn()?;
+    let found = read_run(&conn, id)?;
+    if found.as_ref().is_some_and(|s| s.owner != owner) {
+        return Err("Execution belongs to another native window".into());
+    }
+    if found.as_ref().is_some_and(|s| !s.finished()) {
+        recover_run(&conn, id)?;
+        return read_run(&conn, id);
+    }
+    Ok(found)
 }
 fn persistence(app: &AppHandle) -> Arc<dyn RunPersistence> {
     Arc::new(DesktopPersistence {
@@ -700,22 +706,50 @@ pub(crate) fn ssh_runbooks_list(store: State<'_, SessionStore>) -> Result<Vec<Pr
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_save(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     profile: Profile,
     expected_revision: Option<u64>,
 ) -> Result<Profile, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_save_with(&store, profile, expected_revision, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_save_with(
+    store: &SessionStore,
+    profile: Profile,
+    expected_revision: Option<u64>,
+    notify: impl FnOnce(),
+) -> Result<Profile, String> {
     let conn = store.lock_conn()?;
     let saved = save(&conn, &profile, expected_revision)?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(saved)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_remove(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
     expected_revision: u64,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_remove_with(&store, id, expected_revision, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_remove_with(
+    store: &SessionStore,
+    id: String,
+    expected_revision: u64,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -724,7 +758,7 @@ pub(crate) fn ssh_runbook_remove(
     remove(&tx, &id, expected_revision)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(())
 }
 #[tauri::command(async)]
@@ -778,62 +812,79 @@ pub(crate) fn ssh_runbook_start(
     intent_id: Option<String>,
     proxy_approvals: Option<Vec<ProxyApproval>>,
 ) -> Result<RunStatus, String> {
-    let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    validate_id(&run_id, "run")?;
-    let (profile, mut targets) = resolve(&app, &automation_id, expected_revision)?;
-    // Duplicate durable requests return metadata without consuming credentials again.
-    let review_digest = ssh_execution::digest(&profile.snapshot(), &targets, profile.limits)?;
-    if let Ok(status) = executions.status(window.label(), &run_id, persistence(&app).as_ref()) {
-        if status.automation_id != automation_id
-            || status.revision != expected_revision
-            || status.digest != review_digest
-        {
-            return Err("Run identifier belongs to another execution".into());
-        }
-        return Ok(status);
-    }
-    let mut seen = std::collections::HashSet::new();
-    for approval in proxy_approvals.unwrap_or_default() {
-        if !seen.insert(approval.server_id.clone()) {
-            return Err("Duplicate target proxy approval".into());
-        }
-        let target = targets
-            .iter_mut()
-            .find(|t| t.server_id == approval.server_id)
-            .ok_or("Unknown proxy approval target")?;
-        let operation = crate::ssh_http_proxy_credentials::ProxyOperation::Runbook {
-            run_id: run_id.clone(),
-            automation_id: automation_id.clone(),
-            revision: expected_revision,
-            review_digest: review_digest.clone(),
-            server_id: target.server_id.clone(),
-        };
-        target.proxy_grant = Some(Arc::new(credentials.consume(
+    let mut admission = Some(crate::native_window_lifecycle::admit_window_persistence(
+        &window,
+    )?);
+    let result = (|| {
+        let owner_lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        validate_id(&run_id, "run")?;
+        let (profile, mut targets) = resolve(&app, &automation_id, expected_revision)?;
+        // Duplicate durable requests return metadata without consuming credentials again.
+        let review_digest = ssh_execution::digest(&profile.snapshot(), &targets, profile.limits)?;
+        if let Some(status) = existing_run(
+            executions.inner().as_ref(),
             window.label(),
-            &approval.ticket_id,
-            Some(&target.server_id),
-            &target.endpoint,
-            &operation,
-        )?));
+            &run_id,
+            persistence(&app).as_ref(),
+        )? {
+            if status.automation_id != automation_id
+                || status.revision != expected_revision
+                || status.digest != review_digest
+            {
+                return Err("Run identifier belongs to another execution".into());
+            }
+            return Ok(status);
+        }
+        let mut seen = std::collections::HashSet::new();
+        for approval in proxy_approvals.unwrap_or_default() {
+            if !seen.insert(approval.server_id.clone()) {
+                return Err("Duplicate target proxy approval".into());
+            }
+            let target = targets
+                .iter_mut()
+                .find(|t| t.server_id == approval.server_id)
+                .ok_or("Unknown proxy approval target")?;
+            let operation = crate::ssh_http_proxy_credentials::ProxyOperation::Runbook {
+                run_id: run_id.clone(),
+                automation_id: automation_id.clone(),
+                revision: expected_revision,
+                review_digest: review_digest.clone(),
+                server_id: target.server_id.clone(),
+            };
+            target.proxy_grant = Some(Arc::new(credentials.consume(
+                window.label(),
+                &approval.ticket_id,
+                Some(&target.server_id),
+                &target.endpoint,
+                &operation,
+            )?));
+        }
+        if let Some(id) = intent_id.as_deref() {
+            validate_intent(&*app.state::<SessionStore>().lock_conn()?, id, &profile)?;
+        }
+        owner_lease.with_live(|| {
+            executions.inner().start(
+                &reviews,
+                window.label(),
+                &review_id,
+                run_id,
+                profile.snapshot(),
+                targets,
+                profile.limits,
+                Arc::new(DesktopPersistence {
+                    app: app.clone(),
+                    intent_id,
+                }),
+                admission
+                    .take()
+                    .ok_or("SSH persistence admission already transferred")?,
+            )
+        })
+    })();
+    match admission {
+        Some(admission) => admission.finish(result),
+        None => result, // The accepted engine owns the original admission through its workers.
     }
-    if let Some(id) = intent_id.as_deref() {
-        validate_intent(&*app.state::<SessionStore>().lock_conn()?, id, &profile)?;
-    }
-    owner_lease.with_live(|| {
-        executions.inner().start(
-            &reviews,
-            window.label(),
-            &review_id,
-            run_id,
-            profile.snapshot(),
-            targets,
-            profile.limits,
-            Arc::new(DesktopPersistence {
-                app: app.clone(),
-                intent_id,
-            }),
-        )
-    })
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -845,25 +896,50 @@ pub(crate) struct ProxyApproval {
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_pending_intents(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
+) -> Result<Vec<Intent>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let _ = app;
+        ssh_runbook_pending_intents_with(&store, now_millis)
+    })
+}
+
+fn ssh_runbook_pending_intents_with(
+    store: &SessionStore,
+    now: impl FnOnce() -> i64,
 ) -> Result<Vec<Intent>, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
         .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
         .map_err(|e| e.to_string())?;
-    let result = pending_intents(&tx, now_millis())?;
+    let result = pending_intents(&tx, now())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app;
     Ok(result)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_trigger_intent(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_revision: u64,
     server_id: String,
+) -> Result<Intent, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_trigger_intent_with(&store, automation_id, expected_revision, server_id, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_trigger_intent_with(
+    store: &SessionStore,
+    automation_id: String,
+    expected_revision: u64,
+    server_id: String,
+    notify: impl FnOnce(),
 ) -> Result<Intent, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -881,14 +957,27 @@ pub(crate) fn ssh_runbook_trigger_intent(
     let intent = create_intent(&tx, &profile, "startup", Some(server_id), now_millis())?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(intent)
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_dismiss_intent(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     intent_id: String,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        ssh_runbook_dismiss_intent_with(&store, intent_id, || {
+            let _ = app.emit(crate::automations::CHANGED, ());
+        })
+    })
+}
+
+fn ssh_runbook_dismiss_intent_with(
+    store: &SessionStore,
+    intent_id: String,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     let mut conn = store.lock_conn()?;
     let tx = conn
@@ -902,9 +991,56 @@ pub(crate) fn ssh_runbook_dismiss_intent(
     write_intent(&tx, &intent, false)?;
     tx.commit().map_err(|e| e.to_string())?;
     drop(conn);
-    let _ = app.emit(crate::automations::CHANGED, ());
+    notify();
     Ok(())
 }
+// Only a successful missing durable lookup can continue a fresh start. Errors
+// preserve the original unknown/foreign-owner result before credentials are consumed.
+fn existing_run(
+    executions: &ssh_execution::SshExecutions,
+    owner: &str,
+    run_id: &str,
+    persistence: &dyn RunPersistence,
+) -> Result<Option<RunStatus>, String> {
+    match executions.cached_status(owner, run_id)? {
+        Some(status) => Ok(Some(status)),
+        None => load_existing_run(persistence, owner, run_id),
+    }
+}
+
+fn load_existing_run(
+    persistence: &dyn RunPersistence,
+    owner: &str,
+    run_id: &str,
+) -> Result<Option<RunStatus>, String> {
+    let found = persistence.load(owner, run_id)?;
+    if found
+        .as_ref()
+        .is_some_and(|status| status.owner != owner || status.run_id != run_id)
+    {
+        return Err("Execution belongs to another native window or run".into());
+    }
+    Ok(found)
+}
+
+fn status_with(
+    executions: &ssh_execution::SshExecutions,
+    owner: &str,
+    run_id: &str,
+    persistence: &dyn RunPersistence,
+    admit: impl FnOnce() -> Result<crate::native_window_lifecycle::NativeWriteAdmission, String>,
+) -> Result<RunStatus, String> {
+    validate_id(run_id, "run")?;
+    if let Some(status) = executions.cached_status(owner, run_id)? {
+        return Ok(status); // Pure original-run control remains usable while admission is closed.
+    }
+    let admission = admit()?;
+    admission.finish(
+        load_existing_run(persistence, owner, run_id)
+            .and_then(|found| found.ok_or_else(|| "Execution not found".into())),
+    )
+}
+
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_status(
     app: AppHandle,
@@ -912,8 +1048,13 @@ pub(crate) fn ssh_runbook_status(
     executions: State<'_, Arc<ssh_execution::SshExecutions>>,
     run_id: String,
 ) -> Result<RunStatus, String> {
-    validate_id(&run_id, "run")?;
-    executions.status(window.label(), &run_id, persistence(&app).as_ref())
+    status_with(
+        executions.inner().as_ref(),
+        window.label(),
+        &run_id,
+        persistence(&app).as_ref(),
+        || crate::native_window_lifecycle::admit_window_persistence(&window),
+    )
 }
 #[tauri::command(async)]
 pub(crate) fn ssh_runbook_cancel(
@@ -935,18 +1076,63 @@ pub(crate) fn ssh_runbook_abandon_missing(
     automation_id: String,
     revision: u64,
 ) -> Result<(), String> {
-    let lease = crate::ssh_window_lifecycle::capture(window.label())?;
-    lease.with_live(|| {
-        let mut conn = store.lock_conn()?;
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|e| e.to_string())?;
-        abandon_missing(&tx, window.label(), &run_id, &automation_id, revision)?;
-        tx.commit().map_err(|e| e.to_string())?;
-        drop(conn);
-        let _ = app.emit(crate::automations::CHANGED, ());
-        Ok(())
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        let lease = crate::ssh_window_lifecycle::capture(window.label())?;
+        lease.with_live(|| {
+            ssh_runbook_abandon_missing_with(
+                &store,
+                window.label(),
+                &run_id,
+                &automation_id,
+                revision,
+                || {
+                    let _ = app.emit(crate::automations::CHANGED, ());
+                },
+            )
+        })
     })
+}
+
+fn ssh_runbook_abandon_missing_with(
+    store: &SessionStore,
+    owner: &str,
+    run_id: &str,
+    automation_id: &str,
+    revision: u64,
+    notify: impl FnOnce(),
+) -> Result<(), String> {
+    let mut conn = store.lock_conn()?;
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| e.to_string())?;
+    abandon_missing(&tx, owner, run_id, automation_id, revision)?;
+    tx.commit().map_err(|e| e.to_string())?;
+    drop(conn);
+    notify();
+    Ok(())
+}
+
+#[cfg(test)]
+mod admission_tests;
+
+#[cfg(test)]
+pub(crate) fn test_claim_run(conn: &Connection, status: &RunStatus) -> Result<ClaimResult, String> {
+    claim(conn, status)
+}
+
+#[cfg(test)]
+pub(crate) fn test_save_runbook(conn: &Connection, profile: &Profile) -> Result<Profile, String> {
+    save(conn, profile, None)
+}
+
+#[cfg(test)]
+pub(crate) fn test_update_run(conn: &Connection, status: &RunStatus) -> Result<(), String> {
+    update(conn, status)
+}
+
+#[cfg(test)]
+pub(crate) fn test_read_run(conn: &Connection, id: &str) -> Result<Option<RunStatus>, String> {
+    read_run(conn, id)
 }
 
 #[cfg(test)]

@@ -484,3 +484,19 @@ owner decision (CR-S03), installed action-icon visibility reproduction (CR-I01),
 roster search (CR-E02), compact shared settings Group/Row variant (H3), browser
 fixture variant without `launch`. Browser selectors in `tests/browser/crews.spec.ts`
 were updated for the new labels but not run.
+
+## VIS 2026-10-30 (UI refinements, uncommitted at time of writing)
+
+- Delivered: work view shows a list column only for more than one piece of work;
+  below 640 px list or detail with "Back to work list"; detail leads with status,
+  decisions/blockers/acceptance and next action; pending action labels
+  ("Pausing…"); editor level titles + back; member rows with role/model/first
+  instruction line; Fixed/Automatic caption with policy count; library row grid
+  and "Add N members"; "Apply to N members"; crews-local two-column working
+  settings with "Edit model rules"; fixed-model picker uses the shared
+  `ModelPicker` `presentation="field"`; working strip character (PacingUncle)
+  mapping/fallback locked by tests (no record/invalid -> classic uncle).
+- Browser fixture params: `longRoster`, `manyRuns`, `singleRun`, `saveError`,
+  `failOperation` (`tests/browser/crews.tsx`); `crews.spec.ts` 41/41 chromium via
+  a temp build/preview config. WebKit, real Host and native app not run.
+- Evidence: `temp/verification/vis-crews/`, `vis-crews-2/`.

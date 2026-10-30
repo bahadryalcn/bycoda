@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{Emitter, Manager, State};
 use uuid::Uuid;
 
 use crate::session_store::{now_millis, validate_id, SessionStore};
@@ -760,9 +760,21 @@ pub fn automations_list(store: State<'_, SessionStore>) -> Result<Vec<Automation
 
 #[tauri::command(async)]
 pub fn automations_upsert(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation: AutomationUpsert,
+) -> Result<Automation, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_upsert_with(&store, automation, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_upsert_with(
+    store: &SessionStore,
+    automation: AutomationUpsert,
+    notify: impl FnOnce(),
 ) -> Result<Automation, String> {
     let now = now_millis();
     validate_upsert(&automation, now)?;
@@ -821,15 +833,27 @@ pub fn automations_upsert(
     };
     write_automation(&conn, &saved)?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(saved)
 }
 
 #[tauri::command(async)]
 pub fn automations_delete(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     id: String,
+) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_delete_with(&store, id, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_delete_with(
+    store: &SessionStore,
+    id: String,
+    notify: impl FnOnce(),
 ) -> Result<(), String> {
     validate_id(&id, "automation")?;
     let conn = store.lock_conn()?;
@@ -840,7 +864,7 @@ pub fn automations_delete(
     conn.execute("DELETE FROM automations WHERE id = ?1", [id])
         .map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(())
 }
 
@@ -862,10 +886,23 @@ pub fn automation_runs_list(
 
 #[tauri::command(async)]
 pub fn automation_runs_recover(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     started_before: i64,
     now: i64,
+) -> Result<Vec<DueAutomationRun>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automation_runs_recover_with(&store, started_before, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automation_runs_recover_with(
+    store: &SessionStore,
+    started_before: i64,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<Vec<DueAutomationRun>, String> {
     let mut conn = store.lock_conn()?;
     let tx = conn.transaction().map_err(|error| error.to_string())?;
@@ -937,17 +974,30 @@ pub fn automation_runs_recover(
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
     if changed || !due.is_empty() {
-        let _ = app.emit(CHANGED, ());
+        notify();
     }
     Ok(due)
 }
 
 #[tauri::command(async)]
 pub fn automation_run_now(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     now: i64,
+) -> Result<AutomationRun, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automation_run_now_with(&store, automation_id, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automation_run_now_with(
+    store: &SessionStore,
+    automation_id: String,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<AutomationRun, String> {
     validate_id(&automation_id, "automation")?;
     let mut conn = store.lock_conn()?;
@@ -964,18 +1014,40 @@ pub fn automation_run_now(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(run)
 }
 
 #[tauri::command(async)]
 pub fn automations_claim_due(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     automation_id: String,
     expected_next_run_at: i64,
     next_run_at: i64,
     now: i64,
+) -> Result<Option<DueAutomationRun>, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automations_claim_due_with(
+            &store,
+            automation_id,
+            expected_next_run_at,
+            next_run_at,
+            now,
+            || {
+                let _ = window.app_handle().emit(CHANGED, ());
+            },
+        )
+    })
+}
+
+fn automations_claim_due_with(
+    store: &SessionStore,
+    automation_id: String,
+    expected_next_run_at: i64,
+    next_run_at: i64,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
     if next_run_at <= expected_next_run_at {
@@ -1026,18 +1098,33 @@ pub fn automations_claim_due(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(Some(DueAutomationRun { automation, run }))
 }
 
 #[tauri::command(async)]
 pub fn automations_claim_event(
-    app: AppHandle,
     window: tauri::WebviewWindow,
     store: State<'_, SessionStore>,
     automation_id: String,
     claim: AutomationEventClaim,
     now: i64,
+) -> Result<Option<DueAutomationRun>, String> {
+    let native_window = window.as_ref().window();
+    crate::native_window_lifecycle::persistence_write(&native_window, || {
+        automations_claim_event_with(&store, window.label(), automation_id, claim, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automations_claim_event_with(
+    store: &SessionStore,
+    window_label: &str,
+    automation_id: String,
+    claim: AutomationEventClaim,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<Option<DueAutomationRun>, String> {
     validate_id(&automation_id, "automation")?;
     validate_event_key(&claim.event_key)?;
@@ -1074,7 +1161,7 @@ pub fn automations_claim_event(
         .as_deref()
         .map(|token| {
             Uuid::parse_str(token)
-                .map(|token| format!("{}:{token}", window.label()))
+                .map(|token| format!("{}:{token}", window_label))
                 .map_err(|_| "Invalid automation claim recovery token.".to_string())
         })
         .transpose()?;
@@ -1110,19 +1197,35 @@ pub fn automations_claim_event(
     trim_history(&tx, &automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(Some(DueAutomationRun { automation, run }))
 }
 
 #[tauri::command(async)]
 pub fn automation_run_update(
-    app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     run_id: String,
     status: String,
     session_id: Option<String>,
     error: Option<String>,
     now: i64,
+) -> Result<AutomationRun, String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        automation_run_update_with(&store, run_id, status, session_id, error, now, || {
+            let _ = window.app_handle().emit(CHANGED, ());
+        })
+    })
+}
+
+fn automation_run_update_with(
+    store: &SessionStore,
+    run_id: String,
+    status: String,
+    session_id: Option<String>,
+    error: Option<String>,
+    now: i64,
+    notify: impl FnOnce(),
 ) -> Result<AutomationRun, String> {
     validate_id(&run_id, "automation run")?;
     if let Some(session_id) = session_id.as_deref() {
@@ -1172,9 +1275,12 @@ pub fn automation_run_update(
     trim_history(&tx, &run.automation_id)?;
     tx.commit().map_err(|error| error.to_string())?;
     drop(conn);
-    let _ = app.emit(CHANGED, ());
+    notify();
     Ok(run)
 }
+
+#[cfg(test)]
+mod admission_tests;
 
 #[cfg(test)]
 mod tests {

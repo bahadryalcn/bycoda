@@ -66,7 +66,8 @@ const controls = {
     });
   },
 };
-Object.assign(window, { quickFixtureCalls: calls, quickFixture: controls });
+// `quickFixtureEmit` lets a spec deliver synthesized tauri://drag-* events through the mocked event bus.
+Object.assign(window, { quickFixtureCalls: calls, quickFixture: controls, quickFixtureEmit: emit });
 let nextSequence = 1;
 mockIPC(
   async (command, args) => {

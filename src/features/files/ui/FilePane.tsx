@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { lazySurface } from "../../../shared/ui/lazySurface";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { memo, useSyncExternalStore } from "react";
 import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
@@ -40,30 +41,41 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 import { PlanSelection } from "./PlanSelection";
 import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
 
-const CommitDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/CommitDiff");
-  return { default: module.CommitDiff };
-});
-const FileEditor = lazySurface(async () => {
-  const module = await import("./FileEditor");
-  return { default: module.FileEditor };
-});
-const MediaView = lazySurface(async () => ({ default: (await import("./MediaView")).MediaView }));
-const DelimitedFileView = lazySurface(async () => ({
-  default: (await import("./DelimitedFileView")).DelimitedFileView,
-}));
-const SessionChangesDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/SessionChangesDiff");
-  return { default: module.SessionChangesDiff };
-});
-const TerminalView = lazySurface(async () => {
-  const module = await import("../../terminal/ui/TerminalView");
-  return { default: module.TerminalView };
-});
-const WorkingTreeDiff = lazySurface(async () => {
-  const module = await import("../../source-control/ui/WorkingTreeDiff");
-  return { default: module.WorkingTreeDiff };
-});
+/** A pane that is still loading keeps its place with an indeterminate placeholder, not a blank area. */
+const paneLoading = { fallback: <SurfaceLoading /> };
+
+const CommitDiff = lazySurface(
+  async () => ({ default: (await import("../../source-control/ui/CommitDiff")).CommitDiff }),
+  paneLoading,
+);
+const FileEditor = lazySurface(
+  async () => ({ default: (await import("./FileEditor")).FileEditor }),
+  paneLoading,
+);
+const MediaView = lazySurface(
+  async () => ({ default: (await import("./MediaView")).MediaView }),
+  paneLoading,
+);
+const DelimitedFileView = lazySurface(
+  async () => ({ default: (await import("./DelimitedFileView")).DelimitedFileView }),
+  paneLoading,
+);
+const SessionChangesDiff = lazySurface(
+  async () => ({
+    default: (await import("../../source-control/ui/SessionChangesDiff")).SessionChangesDiff,
+  }),
+  paneLoading,
+);
+const TerminalView = lazySurface(
+  async () => ({ default: (await import("../../terminal/ui/TerminalView")).TerminalView }),
+  paneLoading,
+);
+const WorkingTreeDiff = lazySurface(
+  async () => ({
+    default: (await import("../../source-control/ui/WorkingTreeDiff")).WorkingTreeDiff,
+  }),
+  paneLoading,
+);
 
 type Props = {
   pane: EditorPane;

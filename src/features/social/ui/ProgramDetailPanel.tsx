@@ -20,7 +20,9 @@ export function ProgramDetailPending({
   error,
   refreshing,
   onRetry,
+  hideHeading = false,
 }: {
+  hideHeading?: boolean;
   summary?: SocialProgram;
   error: unknown;
   refreshing: boolean;
@@ -34,18 +36,20 @@ export function ProgramDetailPending({
       aria-label={selectedSummary?.name ?? t("Selected program")}
       aria-busy={!detailError}
     >
-      <header className="social-record-heading">
-        <h3>{selectedSummary?.name ?? t("Selected program")}</h3>
-        {selectedSummary ? (
-          <span className="social-muted">
-            {selectedSummary.enabled
-              ? t("Active")
-              : selectedSummary.cancelled
-                ? t("Cancelled")
-                : t("Paused")}
-          </span>
-        ) : null}
-      </header>
+      {hideHeading ? null : (
+        <header className="social-record-heading">
+          <h3>{selectedSummary?.name ?? t("Selected program")}</h3>
+          {selectedSummary ? (
+            <span className="social-muted">
+              {selectedSummary.enabled
+                ? t("Active")
+                : selectedSummary.cancelled
+                  ? t("Cancelled")
+                  : t("Paused")}
+            </span>
+          ) : null}
+        </header>
+      )}
       {detailError ? (
         <Notice kind="error" title={t("Could not load this program")}>
           {String(detailError)}{" "}
@@ -81,7 +85,10 @@ export function ProgramDetailPanel({
   onBulkLinkChange,
   onEdit,
   onDetailChange,
+  hideHeading = false,
 }: {
+  /** The content context line already names the program and its state. */
+  hideHeading?: boolean;
   detail: ProgramDetail;
   error: unknown;
   refreshing: boolean;
@@ -105,12 +112,14 @@ export function ProgramDetailPanel({
   const locale = useLocale();
   return (
     <section className="social-program-detail">
-      <header className="social-record-heading">
-        <h3>{detail.program.name}</h3>
-        <span className="social-muted">
-          {detail.program.enabled ? t("Active") : t("Paused")}
-        </span>
-      </header>
+      {hideHeading ? null : (
+        <header className="social-record-heading">
+          <h3>{detail.program.name}</h3>
+          <span className="social-muted">
+            {detail.program.enabled ? t("Active") : t("Paused")}
+          </span>
+        </header>
+      )}
       {detailError ? (
         <Notice kind="error" title={t("Could not refresh this program")}>
           {String(detailError)}{" "}

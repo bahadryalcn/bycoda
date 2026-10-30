@@ -1,0 +1,105 @@
+// @vitest-environment happy-dom
+import { act, createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { afterEach, expect, it, vi } from "vitest";
+import { ProjectRail } from "./ProjectRail";
+
+type Stats = { files: number; additions: number; deletions: number } | null;
+const stats = new Map<string, Stats>();
+
+vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
+  invoke: vi.fn(async () => undefined),
+}));
+vi.mock("../../features/source-control/hooks/useProjectDiffStats", () => ({
+  useProjectDiffStats: (cwd: string) => stats.get(cwd) ?? null,
+  useProjectsDiffStats: (cwds: string[]) => cwds.map((cwd) => stats.get(cwd) ?? null),
+}));
+vi.mock("./SidebarUpdate", () => ({ SidebarUpdateFooter: () => null }));
+
+let cleanup: (() => void) | undefined;
+afterEach(() => {
+  cleanup?.();
+  cleanup = undefined;
+  stats.clear();
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
+
+async function renderRail(paths: string[]) {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  localStorage.clear();
+  localStorage.setItem("bycoda.language", "en");
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () =>
+    root.render(
+      createElement(ProjectRail, {
+        cwd: paths[0],
+        recents: paths.map((path, index) => ({ path, openedAt: 100 - index })),
+        onSelectProject: vi.fn(),
+        onOpenProject: vi.fn(),
+      }),
+    ),
+  );
+  cleanup = () => {
+    act(() => root.unmount());
+    container.remove();
+  };
+  return container;
+}
+
+const rowButton = (container: HTMLElement, path: string) =>
+  container.querySelector<HTMLButtonElement>(`[data-project-path="${path}"] > button`)!;
+
+it("keeps wide detail and compact mark in one decorative slot, with the full change in the name and tooltip", async () => {
+  stats.set("/work/both", { files: 3, additions: 120149, deletions: 1344 });
+  const container = await renderRail(["/work/both"]);
+  const button = rowButton(container, "/work/both");
+  const mark = button.querySelector<HTMLElement>("[data-project-git]")!;
+  expect(mark.querySelector("[data-git-detail]")?.textContent).toBe("+120,149-1,344");
+  expect(mark.querySelector("[data-git-compact] [data-git-count]")?.textContent).toBe("3");
+  expect(mark.hasAttribute("data-git-bucket")).toBe(true);
+  // Decorative: the button's accessible name and tooltip carry files and lines separately.
+  expect(mark.querySelector("[data-git-detail]")?.getAttribute("aria-hidden")).toBe("true");
+  expect(button.getAttribute("aria-label")).toBe(
+    "both, 3 changed files, 120,149 lines added, 1,344 lines removed",
+  );
+  expect(button.title).toContain("3 files · +120,149 -1,344 uncommitted");
+  expect(button.title).not.toContain("\n");
+  expect(button.querySelectorAll("button")).toHaveLength(0);
+});
+
+it("shows file-only changes (binary or untracked) in the compact form without invented lines", async () => {
+  stats.set("/work/binary", { files: 4, additions: 0, deletions: 0 });
+  const container = await renderRail(["/work/binary"]);
+  const button = rowButton(container, "/work/binary");
+  const mark = button.querySelector<HTMLElement>("[data-project-git]")!;
+  expect(mark.querySelector("[data-git-detail]")).toBeNull();
+  expect(mark.hasAttribute("data-git-bucket")).toBe(false);
+  expect(mark.querySelector("[data-git-count]")?.textContent).toBe("4");
+  expect(button.getAttribute("aria-label")).toBe("binary, 4 changed files");
+});
+
+it("shows no Git mark and no clean claim without data, a failed read or a clean tree", async () => {
+  stats.set("/work/tidy", { files: 0, additions: 0, deletions: 0 });
+  // "/work/unknown" has no stats entry: not loaded or unreachable.
+  const container = await renderRail(["/work/tidy", "/work/unknown"]);
+  for (const name of ["tidy", "unknown"]) {
+    const button = rowButton(container, `/work/${name}`);
+    expect(button.querySelector("[data-project-git]")).toBeNull();
+    expect(button.getAttribute("aria-label")).toBe(name);
+    expect(button.title).not.toMatch(/uncommitted|clean/i);
+  }
+});
+
+it("adds the parent folder to same-named local projects only", async () => {
+  const container = await renderRail(["/work/app", "/clients/acme/app", "/work/site"]);
+  expect(rowButton(container, "/work/app").getAttribute("aria-label")).toBe("app (work)");
+  expect(rowButton(container, "/clients/acme/app").getAttribute("aria-label")).toBe("app (acme)");
+  expect(rowButton(container, "/work/site").getAttribute("aria-label")).toBe("site");
+  // The stored name is untouched: the visible name is still just "app".
+  expect(rowButton(container, "/work/app").textContent).toContain("app");
+  expect(rowButton(container, "/work/app").title).toBe("app · /work/app");
+});

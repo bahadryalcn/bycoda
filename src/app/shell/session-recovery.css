@@ -50,6 +50,13 @@
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
+/* A short window keeps the footer actions on screen even while a result alert is shown: the list
+   gives up its reserved height first. */
+@media (max-height: 560px) {
+  .recovery-body {
+    min-block-size: 4rem;
+  }
+}
 .recovery-footer {
   display: flex;
   flex-direction: column;

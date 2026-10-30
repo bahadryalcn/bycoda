@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COMPOSER_MAX_HEIGHT, resizeComposer } from "./composerResize";
+import {
+  COMPOSER_MAX_HEIGHT,
+  composerMaxHeight,
+  readingComposerMaxHeight,
+  resizeComposer,
+} from "./composerResize";
 
 function field(scrollHeight: number, height = "") {
   return { style: { height }, scrollHeight };
@@ -73,5 +78,23 @@ describe("resizeComposer", () => {
     const el = field(0, "88px");
     resizeComposer(el);
     expect(el.style.height).toBe("88px");
+  });
+
+  it("uses the viewport-relative reading ceiling only inside a reading composer", () => {
+    const reading = { ...field(400), closest: (selector: string) => selector.includes("reading") };
+    const normal = { ...field(400), closest: () => null };
+    resizeComposer(reading);
+    resizeComposer(normal);
+    expect(reading.style.height).toBe(`${composerMaxHeight(reading)}px`);
+    expect(reading.style.height).not.toBe(`${COMPOSER_MAX_HEIGHT}px`);
+    expect(normal.style.height).toBe(`${COMPOSER_MAX_HEIGHT}px`);
+  });
+
+  it("keeps a short draft unclipped and scales the reading ceiling with the window", () => {
+    expect(readingComposerMaxHeight(300)).toBe(68);
+    expect(readingComposerMaxHeight(560)).toBe(112);
+    expect(readingComposerMaxHeight(800)).toBe(132);
+    expect(readingComposerMaxHeight(2000)).toBe(132);
+    expect(readingComposerMaxHeight(2000)).toBeLessThan(COMPOSER_MAX_HEIGHT);
   });
 });

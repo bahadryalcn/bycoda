@@ -40,7 +40,8 @@ for (const width of [390, 1000])
         () => (window as unknown as { savedFixtureNotes: string[] }).savedFixtureNotes[0],
       ),
     ).toContain("stream-acceptance-marker");
-    await expect(actions.getByRole("status")).toContainText("Saved to Notes");
+    // The spoken result sits next to the icon-only toolbar, in the same action group.
+    await expect(actions.locator("..").getByRole("status")).toContainText("Saved to Notes");
     const copy = actions.getByRole("button", { name: "Copy response", exact: true });
     const icon = copy.locator("svg").first();
     const frame = await copy.boundingBox(),

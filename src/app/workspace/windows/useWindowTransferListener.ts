@@ -19,6 +19,10 @@ import {
   removeWindowTransfer,
   restoreTransferredDrafts,
 } from "../../model/windowTransfer";
+import {
+  publishWindowTransferNotice,
+  rejectedTransferMessage,
+} from "../../model/windowTransferNotice";
 import { windowDropPointToClient } from "../../model/windowTransferPopout";
 import type { TabActivation } from "../tabs/useTabActivation";
 
@@ -213,6 +217,8 @@ export function useWindowTransferListener(deps: WindowTransferListenerDeps): voi
           await invoke("window_transfer_ready", { transferId });
         } catch (error) {
           rollback?.();
+          // The user hears about the refusal even if the native reject call is slow.
+          publishWindowTransferNotice("danger", rejectedTransferMessage(error));
           await invoke("reject_window_transfer", {
             transferId,
             reason: String(error),

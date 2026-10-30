@@ -445,13 +445,16 @@ function SessionRow({
           />
         ) : null}
         {time ? (
-          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+          <span
+            data-action-yield=""
+            className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)"
+          >
             {time}
           </span>
         ) : null}
       </Button>
       {row.pinnable ? (
-        // Takes no width at rest; appears on hover, focus or selection (shared collapse slot).
+        // Takes no width at rest; on hover, focus or selection it sits over the time (shared collapse slot, data-action-yield).
         <div data-action-slot="collapse" className="flex shrink-0 items-center">
           <InlineAction
             motion="none"

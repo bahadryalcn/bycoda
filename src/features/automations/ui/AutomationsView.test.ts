@@ -103,6 +103,37 @@ it("shows the cached automation list immediately and refreshes it without a load
   expect(container.querySelector('[aria-label="Open Daily review"]')).toBeNull();
 });
 
+it("reports an unreadable automation list as unavailable with a retry instead of first use", async () => {
+  invoke.mockRejectedValue(new Error("automations.json is locked"));
+  await act(async () =>
+    root.render(
+      createElement(AutomationsView, {
+        cwd: "/work/project",
+        recents: [],
+        onClose: vi.fn(),
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+      }),
+    ),
+  );
+  await act(async () => {});
+  const unavailable = container.querySelector('[data-kind="unavailable"]');
+  expect(unavailable?.textContent).toContain("Automations unavailable");
+  expect(unavailable?.textContent).toContain("automations.json is locked");
+  expect(container.textContent).not.toContain("Create your first automation");
+  // The detail is shown once, not again in a banner.
+  expect(container.textContent?.match(/automations\.json is locked/g)).toHaveLength(1);
+  invoke.mockReset();
+  invoke.mockResolvedValue([]);
+  const retry = Array.from(unavailable!.querySelectorAll("button")).find(
+    (node) => node.textContent?.trim() === "Retry",
+  )!;
+  await act(async () => retry.click());
+  await act(async () => {});
+  expect(container.querySelector('[data-kind="unavailable"]')).toBeNull();
+  expect(container.textContent).toContain("Create your first automation");
+});
+
 it("invalidates the cached list when an automation changes", async () => {
   invoke.mockResolvedValue([]);
   await listAutomations();

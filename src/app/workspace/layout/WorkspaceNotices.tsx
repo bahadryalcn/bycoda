@@ -5,6 +5,7 @@ import { SyncMergedNotice } from "../../../features/sync/ui/SyncMergedNotice";
 import type { useSessionReminders } from "../../../features/notifications/hooks/useSessionReminders";
 import type { SettingsAnchor } from "../../../features/settings/ui/SettingsView";
 import type { SettingsSectionId } from "../../../features/settings/model/settings";
+import { WindowTransferNotice } from "../windows/WindowTransferNotice";
 
 export interface WorkspaceNoticesProps {
   setHarnessUpdateHeight: Dispatch<SetStateAction<number>>;
@@ -38,6 +39,7 @@ export function WorkspaceNotices({
         onHeightChange={setReminderNoticesHeight}
       />
       <SyncMergedNotice />
+      <WindowTransferNotice />
     </>
   );
 }

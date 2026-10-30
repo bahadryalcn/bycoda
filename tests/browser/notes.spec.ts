@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files, textDrag } from "./external-drop";
 
 test("image picker keeps progress on its button and note content readable", async ({
   page,
@@ -540,3 +541,48 @@ test("bounds a thousand large notes while fetching selected details and moving k
     path: `temp/verification/2026-10-12-performance-fixes/notes/${testInfo.project.name}-large-library.png`,
   });
 });
+
+for (const theme of ["light", "dark"] as const) {
+  test(`external drop: the note editor shows Insert image, refuses other files and leaves text drops alone ${theme}`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto(`/tests/browser/notes.html?theme=${theme}`);
+    const zone = page.locator('[data-external-drop-owner="note-images"]');
+    await expect(zone).toBeVisible();
+    await page.getByRole("tab", { name: "Split", exact: true }).click();
+
+    // A text drag keeps the editor's own caret and text-drop behaviour: no mark, no badge.
+    await textDrag(zone, "dragover");
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+
+    await fileDrag(zone, "dragover", files(1));
+    await expect(zone).toHaveAttribute("data-drop-indicator", "inside");
+    await expect(dropBadge(page)).toHaveText("Insert image");
+    await expect(dropAnnouncer(page)).toHaveText("Insert image");
+    await expect(dropMarks(page)).toHaveCount(1);
+    // The old in-editor overlay sentence is not drawn next to the badge.
+    await expect(zone.getByText("Drop images here")).toHaveCount(0);
+    await page.screenshot({ path: `temp/verification/vis-dnd-4/notes-insert-image-${theme}.png` });
+
+    await fileDrag(zone, "dragover", files(3));
+    await expect(dropBadge(page)).toHaveText("Insert 3 images");
+
+    await fileDrag(zone, "dragover", [{ name: "report.pdf", type: "application/pdf" }]);
+    await expect(zone).toHaveAttribute("data-drop-indicator", "blocked");
+    await expect(dropBadge(page)).toHaveText("Only images can be inserted here");
+    await expect(dropBadge(page)).toHaveAttribute("data-action", "blocked");
+    await page.screenshot({ path: `temp/verification/vis-dnd-4/notes-blocked-${theme}.png` });
+
+    await page.keyboard.press("Escape");
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+    await fileDrag(zone, "dragover", files(1));
+    await fileDrag(zone, "dragleave", files(1), { x: 1, y: 1 });
+    await expect(dropMarks(page)).toHaveCount(0);
+    await fileDrag(zone, "dragover", files(1));
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(dropBadge(page)).toHaveCount(0);
+  });
+}

@@ -46,8 +46,9 @@ export function respondOmpApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
-  respondApproval(OMP_FLAVOR, sessionId, requestId, decision);
+  respondApproval(OMP_FLAVOR, sessionId, requestId, decision, approvalOccurrenceId);
 }
 
 export function cancelOmpTurn(sessionId: string): Promise<void> {

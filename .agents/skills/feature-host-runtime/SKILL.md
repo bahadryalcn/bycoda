@@ -5,6 +5,119 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Decision-input prerequisite, 2026-10-30
+
+Actual question drafts and approval decisions now enter explicit bounded Parent
+retention. Approval tokens pin rendered request objects, presented and source
+contexts, actual adapter/remote registration and method, and current owner route.
+True returned Promise lifetime is drained; Native's void wrapper remains unknown.
+Guarded accepted Host snapshot chains or actual Native approval.resolved events
+can represent the original resolution without granting provider ACK. Desktop live
+captures the original local request before heartbeat await; the legacy ID-only
+wire still cannot prove the remote user's viewed occurrence across heartbeats.
+The renderer encoder and Native raw parser accept approval-decision only as Parent
+data, preserving physical-profile absence of sessionId and all qualification
+limits. Native Buffers remains missing: no FULL same-round lane completion,
+provider closure, actor census, default/history promotion or source retirement.
+Evidence: `temp/verification/2026-10-30-decision-inputs/`.
+
+## Remaining Native writer prerequisites, 2026-10-30
+
+Four further actual writer families now join the existing Native admission
+boundaries. These changes do not finish the Native Buffers lane or its census.
+
+| Family                             | Source / actual lifetime                                                                                                                                                                                                                                                                                                                                                |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Reminders set/clear                | reminders.rs: original injected Window Persistence before original validation/SQL; clocks retain their original post-lock position; SQL unlock precedes CHANGED while admission is still held.                                                                                                                                                                          |
+| Reminders process tick             | Same App-managed WindowBarrier before due-row claim; closed admission defers without SQL/notification and preserves the existing5s loop. One accepted process admission spans fired COMMIT, CHANGED, fresh preference/stale-row reads and final notification. Failed reads differ from deliberately absent preferences; unknown outcomes never reset/replay fired rows. |
+| SSH group defaults and inheritance | ssh_configuration.rs: all three writers admit actual Window Persistence before path/store/SQL/JSON work. Original connections.store-to-SQL order and revision/digest checks retained; both mutexes drop before emit under the original admission.                                                                                                                       |
+| Control save and worker attachment | control.rs: original global Persistence before atomic run/worker/sidebar SQL, actual Buffers admission before original grant check/private0700 scratch work. Stop/disable/reaper and downstream provider authority remain separate existing controls.                                                                                                                   |
+| Notes image copy                   | notes.rs: actual opened-source and streaming size checks; unique create_new file, real file-byte sync before original grant. Failed uncertain private copies are retained without ACK/replay or pathname cleanup.                                                                                                                                                       |
+
+The structural continuation confirmed that existing raw-v3 retention finishes
+only the Persistence operation. A complete Buffers cut still needs required
+source/actor closure plus a same-round, owner/source-bound immutable FULL SQL
+receipt and readback; roster_complete:false or a subset cannot finish that lane.
+Do not manufacture a second successful lane operation from partial data.
+
+Known input gaps are explicit: unfinished question-cache eviction at the65th
+lineage and approval pending/error choice data outside Parent capture. Existing
+question raw producers and runtime/access-mode capture already work. Their
+repairs require coordinated model/control work with the active UI owner.
+
+Current exact source/checks belong to
+`temp/verification/2026-10-30-native-buffer-continuation/`; prior source656 is
+historical after these edits. Backend-only T2, zero changed UI surfaces. Test
+results remain unverified until Root records actual checks; source parsing and
+peer review are separate evidence. Missing coverage, qualified:false,
+applicationThrough:null, default/history and full26 gates remain unchanged.
+
+## SSH runbook Persistence ownership, 2026-10-30
+
+The source now admits six scalar runbook writers through the actual Window's
+global Persistence lane: save, remove, pending-intent materialization, startup
+intent creation, dismissal and missing-run abandonment. Abandonment also retains
+its original SSH window-generation lease. Validation, revisions, transactions,
+review/proxy permissions, no-replay markers and unlocked notifications remain.
+
+Start captures the original owned admission before recovery or review/credential
+consumption. Durable lookup errors propagate before those credentials can be
+consumed. The accepted engine supervisor owns that admission through every
+target worker, stdin/process cleanup and final persistence callback. A cached
+Batch holds metadata and actual-completion flags, not a live admission. Actual
+completion also controls the active-run bound and cache pruning. Spawn refusal,
+worker unwind or persistence/observation failure cannot fabricate idle proof.
+
+Cached status and cancellation remain controls of the original accepted work
+during closure. Only the fallback durable status recovery needs fresh actual
+caller admission. Definitions and preview retain their existing readonly/review
+contracts; a review is not SQL write authority. Local SSH exit is not proof of
+remote script termination, and an uncertain original is never replayed.
+
+| Surface                        | Source / preserved boundary                                                         |
+| ------------------------------ | ----------------------------------------------------------------------------------- |
+| Six scalar mutations           | ssh_runbooks.rs command wrappers and private original SQL operations                |
+| Start, duplicate and recovery  | ssh_runbooks.rs, ssh_execution.rs; exact owner/run/revision/digest                  |
+| Status and Stop                | cached_status vs guarded durable load; existing cancellation flags                  |
+| Background and process cleanup | ssh_execution.rs original supervisor/worker joins and local process ownership       |
+| Caller resource ownership      | native_window_lifecycle.rs admit_window_persistence; same existing Persistence path |
+| Readonly/review controls       | ssh_runbooks_list and ssh_runbook_preview; existing SSH generation/review gates     |
+
+Backend-only T2, zero changed UI surfaces. Current checks and exact source scope
+are recorded in `temp/verification/2026-10-30-ssh-persistence/`; pending checks
+remain pending until Root records their actual results. The prior source643
+checkpoint is historical after these edits. Full writer/alias/decision coverage,
+both Native lanes, installed GUI/provider/device/SSH and all26 acceptance remain
+open. Qualification, default and history migration gates are unchanged.
+
+## Native Automation actors and actual Host/Native composition, 2026-10-30
+
+The seven Native Automation mutators now enter the existing global Persistence
+admission path before validation or SQL: upsert, delete, recovery, manual run,
+time claim, event claim and run update. The actual caller Window supplies the
+scope; the event-claim command retains its original WebviewWindow restriction
+and original webview label for recovery ownership. SQL/SSH/CAS/claim behavior is
+kept in private operation bodies. Notifications run after SQL unlock while the
+original admission remains live. The connection mutex itself is not a gate.
+
+The Native test now starts a separate real Node Host with the production worker
+against SessionStore::open's actual Notes/FTS schema. Two original reservations
+drain through the production Native HostNotesFenceOwner, fresh writes fail in
+both Closing and Closed, attested reads remain available, and only original
+Native retirement permits a new write. This exercises backend composition; it
+does not prove the renderer roster, public RPC, GUI or complete writer census.
+
+The two Desktop provider-onset controls now synchronize on the actual provider
+callback. Evidence showed accepted/running precedes asynchronous checkpoint and
+runtime preparation; the previous one-second poll was not a startup contract.
+All lease/adoption/fencing assertions and existing test deadlines remain. A held
+actual checkpoint-preparation control proves exclusion before provider onset.
+
+Current evidence: `temp/verification/2026-10-30-native-actor-closure/`, plus the
+linked Automation and Desktop onset packets. The SSH ownership
+implementation has a separate current evidence packet. Fixed missing coverage and qualified/default/history
+promotion flags remain unchanged; all26 migration acceptance remains open.
+
 ## Host Notes participating-writer integration, 2026-10-30
 
 The current source connects the private Node port to actual Host Notes jobs.

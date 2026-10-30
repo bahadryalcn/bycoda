@@ -198,13 +198,14 @@ export function QuickComposer({
   const busy = uiBusy || owner.launching;
   const submitting = useRef(false);
   const attachmentsSupported = harnessSupportsAttachments(choice.harness);
+  const frameRef = useRef<HTMLDivElement>(null);
   const attachments = useQuickAttachments(
     attachmentsSupported && !busy,
     setError,
     (added, previous) => insertPromptText(tokensForIncoming(previous, added)),
     owner,
+    frameRef,
   );
-  const frameRef = useRef<HTMLDivElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLButtonElement>(null);
   const promptRef = useRef<HTMLTextAreaElement>(null);
@@ -595,11 +596,6 @@ export function QuickComposer({
       >
         <X className="size-3" />
       </Button>
-      {attachments.dragging ? (
-        <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center rounded-(--ui-radius-popup) border border-dashed border-accent bg-background-base/90 text-sm text-accent">
-          {t("Drop to attach")}
-        </div>
-      ) : null}
       <div className="flex shrink-0 items-center gap-2 px-5 pt-3 pr-9">
         <QuickWorkspaceControls
           key={cwd}

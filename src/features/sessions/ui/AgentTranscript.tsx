@@ -1,4 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
+import { ApprovalDecisionProvider, type ApprovalDispatch } from "./ApprovalDecisionContext";
 import { InlineVisual } from "./InlineVisual";
 import { Badge } from "../../../shared/ui/Badge";
 import { Timestamp } from "../../../shared/ui/Timestamp";
@@ -68,11 +69,11 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { Popover } from "../../../shared/ui/Popover";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import {
-  ExpandingButtonGroup,
-  type ExpandingButtonGroupItem,
-  type ExpandingButtonGroupTriggerProps,
-} from "../../../shared/ui/ExpandingButtonGroup";
+import type {
+  FloatingButtonGroupAction,
+  FloatingButtonGroupTriggerProps,
+} from "../../../shared/ui/FloatingButtonGroup";
+import { TurnOutputActions } from "./TranscriptMessageActions";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
   isHarnessAuthBlock,
@@ -143,6 +144,8 @@ import {
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
 
 type Props = {
+  /** Travels with the element when TranscriptPool renders it in its outlet. */
+  approvalContext?: { session: import("../model/session").Session; dispatch: ApprovalDispatch };
   sessionId?: string;
   blocks: Block[];
   busy?: boolean;
@@ -184,6 +187,8 @@ type Props = {
   onRewindMessage?: (block: Block, action: "edit" | "return") => void;
   editingLastTurn?: boolean;
   onJumpToBottomChange?: (show: boolean) => void;
+  /** The reader scrolled away from the end (latched), as opposed to content growing. */
+  onReadingChange?: (reading: boolean) => void;
 
   onJumpToBottomReady?: (jump: (() => void) | null) => void;
   /** Passes a function that renders the turn that holds a block. The render completes before the function returns. */
@@ -247,6 +252,7 @@ function AgentTranscriptComponent({
   onRewindMessage,
   editingLastTurn = false,
   onJumpToBottomChange,
+  onReadingChange,
   onJumpToBottomReady,
   onRevealReady,
   onNavigateReady,
@@ -386,6 +392,7 @@ function AgentTranscriptComponent({
     onPromptChange: introducePrompt,
     onJumpToBottomChange,
     onJumpToBottomReady,
+    onReadingChange,
     onScrollerChange,
   });
   const { scroller, scrollerEl, setScroller, wasVisible } = follow;
@@ -705,7 +712,15 @@ export const AgentTranscript = memo(function AgentTranscript(props: Props) {
     ) : (
       <AgentTranscriptComponent {...props} />
     );
-  return <Activity mode={props.visible === false ? "hidden" : "visible"}>{transcript}</Activity>;
+  return (
+    <Activity mode={props.visible === false ? "hidden" : "visible"}>
+      {props.approvalContext ? (
+        <ApprovalDecisionProvider {...props.approvalContext}>{transcript}</ApprovalDecisionProvider>
+      ) : (
+        transcript
+      )}
+    </Activity>
+  );
 });
 
 type TurnProps = {
@@ -1300,7 +1315,7 @@ function TurnDuration({
                         renderTrigger={renderTrigger}
                       />
                     ),
-                  } satisfies ExpandingButtonGroupItem,
+                  } satisfies FloatingButtonGroupAction,
                 ]
               : []),
             ...(fromHarness && onSecondOpinion
@@ -1319,7 +1334,7 @@ function TurnDuration({
                         renderTrigger={renderTrigger}
                       />
                     ),
-                  } satisfies ExpandingButtonGroupItem,
+                  } satisfies FloatingButtonGroupAction,
                 ]
               : []),
             ...(metrics && hasTurnMetrics(metrics)
@@ -1335,7 +1350,7 @@ function TurnDuration({
                         renderTrigger={renderTrigger}
                       />
                     ),
-                  } satisfies ExpandingButtonGroupItem,
+                  } satisfies FloatingButtonGroupAction,
                 ]
               : []),
           ]}
@@ -1369,7 +1384,7 @@ function TurnMetricsBadge({
 }: {
   metrics?: TurnMetrics;
   elapsedMs: number | null;
-  renderTrigger?: (props: ExpandingButtonGroupTriggerProps) => ReactNode;
+  renderTrigger?: (props: FloatingButtonGroupTriggerProps) => ReactNode;
 }) {
   const t = useT();
   const root = useRef<HTMLDivElement>(null);
@@ -1473,85 +1488,6 @@ function formatMetricCount(value: number): string {
   }).format(Math.max(0, Math.round(value)));
 }
 
-/** One action group; model menus and metric details retain their own state and overlays. */
-function TurnOutputActions({
-  getText,
-  onSave,
-  extraItems = [],
-}: {
-  getText?: () => string;
-  onSave?: (text: string) => void | Promise<void>;
-  extraItems?: ExpandingButtonGroupItem[];
-}) {
-  const t = useT();
-  // A failure belongs to the text it was raised for: new text shows no error.
-  const [failure, setFailure] = useState<{ source: unknown; message: string } | null>(null);
-  const error = failure && failure.source === getText ? failure.message : null;
-
-  const handleAction = async (action: "copy" | "save") => {
-    if (!getText) return false;
-    setFailure(null);
-    try {
-      if (action === "copy") {
-        await copyMessage(getText());
-      } else {
-        await onSave?.(getText());
-      }
-      playCue("copy");
-      return true;
-    } catch (cause) {
-      setFailure({
-        source: getText,
-        message:
-          (action === "copy" ? t("Copy failed. ") : t("Could not save note. ")) +
-          (cause instanceof Error ? cause.message : String(cause)),
-      });
-      return false;
-    }
-  };
-  if (!getText && extraItems.length === 0) return null;
-  return (
-    <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1">
-      <ExpandingButtonGroup
-        label={t("Message actions")}
-        size="sm"
-        fit
-        confirmDuration={2000}
-        items={[
-          ...(getText
-            ? [
-                {
-                  id: "copy",
-                  label: t("Copy response"),
-                  icon: <Copy />,
-                  doneLabel: t("Copied"),
-                  onSelect: () => handleAction("copy"),
-                },
-              ]
-            : []),
-          ...(getText && onSave
-            ? [
-                {
-                  id: "save",
-                  label: t("Save as note"),
-                  icon: <FilePlusCorner />,
-                  doneLabel: t("Saved to Notes"),
-                  onSelect: () => handleAction("save"),
-                },
-              ]
-            : []),
-          ...extraItems,
-        ]}
-      />
-      {error ? (
-        <span role="alert" className="max-w-xs text-xs text-(--ui-text-secondary)">
-          {error}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
 function CopyTurnButton({
   text,
   getText,
@@ -1598,9 +1534,10 @@ function CopyTurnButton({
         }
         onClick={(event) => {
           event.stopPropagation();
-          runCopy(() => {
+          runCopy(async () => {
+            await copyMessage(text ?? getText?.() ?? "", attachments);
+            // The confirmation sound belongs to a copy that actually landed.
             playCue("copy");
-            return copyMessage(text ?? getText?.() ?? "", attachments);
           });
         }}
       >

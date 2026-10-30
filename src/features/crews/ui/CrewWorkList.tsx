@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Search } from "../../../shared/ui/icons";
@@ -6,7 +7,7 @@ import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import type { CrewRunView } from "../model/crewClient";
 import { crewProgressLabel } from "../model/crewPresentation";
 import { crewRunTitle } from "../model/crewRoster";
-import { CrewWorkBadges, CrewWorkUpdated } from "./CrewWorkState";
+import { CrewWorkStatusText, CrewWorkUpdated } from "./CrewWorkState";
 
 export type CrewWorkView = "ongoing" | "finished";
 
@@ -42,6 +43,14 @@ export function CrewWorkList({
   onSelect: (id: string) => void;
 }) {
   useLocale();
+  const listRef = useRef<HTMLDivElement>(null);
+  // Opening a work that sits below the fold keeps it visible in the list.
+  useEffect(() => {
+    if (!selectedId) return;
+    listRef.current
+      ?.querySelector<HTMLElement>(`[data-crew-work-choice="${CSS.escape(selectedId)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+  }, [selectedId]);
   // Selection resolves from the unfiltered view, so the detail can show work the
   // search hides; say so instead of leaving an unexplained gap.
   const selectedHidden =
@@ -81,7 +90,8 @@ export function CrewWorkList({
         ) : null}
       </div>
       <div
-        className="max-h-48 overflow-y-auto px-2 pb-2 @min-[640px]/crew-management:max-h-[55vh]"
+        ref={listRef}
+        className="overflow-y-auto px-2 pb-2 @min-[640px]/crew-management:max-h-[55vh]"
         role="list"
         aria-label={t("Work list")}
       >
@@ -102,11 +112,13 @@ export function CrewWorkList({
                 <span className="block line-clamp-2 break-words font-medium">
                   {crewRunTitle(run)}
                 </span>
-                <span className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                  <CrewWorkBadges run={run} />
-                </span>
-                <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-ui-caption text-(--ui-text-secondary)">
+                {/* Status first, then the quiet metadata: progress and last change. */}
+                <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-ui-caption text-(--ui-text-secondary)">
+                  <CrewWorkStatusText run={run} />
+                  <span aria-hidden="true">·</span>
                   <span className="tabular-nums">{crewProgressLabel(run)}</span>
+                </span>
+                <span className="mt-0.5 block">
                   <CrewWorkUpdated value={run.updatedAt} />
                 </span>
               </span>

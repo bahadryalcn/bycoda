@@ -16,6 +16,7 @@ import { lockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
 import { cumulativeCssZoom } from "../lib/cssZoom";
 import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
+import styles from "./Popover.module.css";
 import {
   placePopover,
   type AnchorRect,
@@ -40,9 +41,13 @@ export type PopoverDismissReason = "outside" | "escape";
 /**
  * How a popover's content meets its height bound.
  *
- * - `"intrinsic"` (default): the content keeps its natural height. When the
- *   bound (`maxHeight`, or the room left in the viewport) is smaller, the frame
- *   clips it, so the content must scroll itself (DropdownMenu does) or be short.
+ * - `"auto"` (default): the content keeps its natural height and, only when the
+ *   bound (`maxHeight`, or the room left in the viewport) is smaller, the content
+ *   element scrolls instead of the frame clipping it, so a short window never hides
+ *   the last row. Low priority (components layer): a consumer's own inner rail or
+ *   `overflow-*` utility wins, so menus and lists that own a rail are unchanged.
+ * - `"intrinsic"`: the content keeps its natural height and the frame clips it.
+ *   Only for content that must never scroll (tooltips, previews sized by the bound).
  * - `"scroll"`: the popover owns one vertical scroll region. The content region
  *   is capped at the bound, scrolls on wheel, touch and keyboard, contains
  *   overscroll (no page scroll chaining or rubber-band) and never reads as an
@@ -51,12 +56,13 @@ export type PopoverDismissReason = "outside" | "escape";
  *   should pass `tabIndex={0}` so keyboard users can scroll it.
  *
  * Forms, filter panels and help text vary in height with locale, zoom and viewport, so they use
- * `"scroll"` (InfoPopover and DateTimeRangePicker do). Menus and lists that already own a scroll rail
- * (DropdownMenu, SearchableSelect, Select) keep `"intrinsic"`; never nest a second rail in a scrolling flow.
+ * `"scroll"` (InfoPopover and DateTimeRangePicker do) when they want the strict single region.
+ * Menus and lists that already own a scroll rail (DropdownMenu, SearchableSelect, Select) keep the
+ * default; never nest a second rail in a `"scroll"` flow.
  *
  * `data-popover-flow` on the content element reflects the active mode.
  */
-export type PopoverFlow = "intrinsic" | "scroll";
+export type PopoverFlow = "auto" | "intrinsic" | "scroll";
 
 type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   anchor: PopoverAnchor;
@@ -69,7 +75,7 @@ type Props = Omit<ComponentPropsWithoutRef<"div">, "style"> & {
   maxHeight?: number;
   /** Defaults to true. Disable for intrinsic-height surfaces like context menus. */
   constrainHeight?: boolean;
-  /** Content flow inside the height bound. Defaults to `"intrinsic"`; see {@link PopoverFlow}. */
+  /** Content flow inside the height bound. Defaults to `"auto"`; see {@link PopoverFlow}. */
   flow?: PopoverFlow;
   /** Defaults to `LAYER.popover`; a flyout off an open popover wants higher. */
   layer?: number;
@@ -196,7 +202,7 @@ function NativePopover({
   dismissOnEscape = true,
   restoreFocus = true,
   passive = false,
-  flow = "intrinsic",
+  flow = "auto",
   ...props
 }: Props & { host: HTMLElement }) {
   const surface = useRef<HTMLDivElement | null>(null);
@@ -260,7 +266,7 @@ function NativePopover({
         ...(flow === "scroll" ? SCROLL_STYLE : null),
         ...style,
       }}
-      className={`relative w-full outline-none ${className ?? ""}`}
+      className={`${flow === "auto" ? `${styles.bounded} ` : ""}relative w-full outline-none ${className ?? ""}`}
     >
       <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
     </div>,
@@ -278,7 +284,7 @@ function WebPopover({
   minHeight,
   maxHeight,
   constrainHeight = true,
-  flow = "intrinsic",
+  flow = "auto",
   layer = LAYER.popover,
   bare = false,
   solid = false,
@@ -310,6 +316,7 @@ function WebPopover({
   );
   const surface = useRef<HTMLDivElement | null>(null);
   const scrolls = constrainHeight && flow === "scroll";
+  const bounded = constrainHeight && flow === "auto";
   useScrollFlow(surface, scrolls ? "scroll" : "intrinsic");
   const [position, setPosition] = useState<PopoverPosition | null>(null);
   const anchorRef = useRef(anchor);
@@ -469,14 +476,14 @@ function WebPopover({
           else if (ref) ref.current = el;
         }}
         data-popover-side={position?.side ?? side}
-        data-popover-flow={scrolls ? "scroll" : "intrinsic"}
+        data-popover-flow={scrolls ? "scroll" : bounded ? "auto" : "intrinsic"}
         style={{
           ...(contentMaxHeight != null ? { maxHeight: contentMaxHeight } : {}),
           ...(scrolls ? SCROLL_STYLE : null),
           transformOrigin: origin(position?.side ?? side, align),
           ...style,
         }}
-        className={`${position && motion !== "none" ? "popover-open " : ""}relative z-[1] outline-none ${className ?? ""}`}
+        className={`${position && motion !== "none" ? "popover-open " : ""}${bounded ? `${styles.bounded} ` : ""}relative z-[1] outline-none ${className ?? ""}`}
       >
         <OverlayParent.Provider value={overlayId}>{children}</OverlayParent.Provider>
       </div>

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { dropAnnouncer, dropBadge, dropMarks, fileDrag, files } from "./external-drop";
 for (const [theme, width] of [
   ["light", 390],
   ["dark", 1000],
@@ -216,4 +217,61 @@ for (const theme of ["light", "dark"]) {
       expect(await count("quick_composer_submit")).toBe(0);
     });
   }
+}
+
+for (const theme of ["light", "dark"] as const) {
+  test(`external drop: the quick composer frame carries one mark and one badge ${theme}`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`/tests/browser/quick-composer.html?theme=${theme}`);
+    const frame = page.locator('[data-external-drop-owner="quick-attachments"]');
+    await expect(page.getByRole("textbox", { name: "Prompt", exact: true })).toBeFocused();
+
+    // DOM drag: the mark sits on the frame, the badge names the action, nothing else repeats it.
+    await fileDrag(frame, "dragover", files(2));
+    await expect(frame).toHaveAttribute("data-drop-indicator", "inside");
+    await expect(dropBadge(page)).toHaveText("Attach 2 files");
+    await expect(dropAnnouncer(page)).toHaveText("Attach 2 files");
+    await expect(dropMarks(page)).toHaveCount(1);
+    await expect(page.getByText("Drop to attach")).toHaveCount(0);
+    await page.screenshot({ path: `temp/verification/vis-dnd-4/quick-attach-2-${theme}.png` });
+
+    await page.keyboard.press("Escape");
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+    await fileDrag(frame, "dragover", files(1));
+    await expect(dropBadge(page)).toHaveText("Attach 1 file");
+    await fileDrag(frame, "dragleave", files(1), { x: 1, y: 1 });
+    await expect(dropBadge(page)).toHaveCount(0);
+
+    // Synthesized tauri://drag-* events through the mocked event bus (the native handler, not a
+    // real OS drag): enter carries the paths, leave ends it.
+    const box = await frame.boundingBox();
+    await page.evaluate(
+      ({ x, y }) =>
+        (
+          window as unknown as {
+            quickFixtureEmit: (name: string, payload: unknown) => Promise<void>;
+          }
+        ).quickFixtureEmit("tauri://drag-enter", {
+          paths: ["C:/fixture/a.png", "C:/fixture/b.png", "C:/fixture/c.png"],
+          position: { x, y },
+        }),
+      { x: box!.x + 100, y: box!.y + 60 },
+    );
+    await expect(dropBadge(page)).toHaveText("Attach 3 files");
+    await expect(frame).toHaveAttribute("data-drop-indicator", "inside");
+    await page.evaluate(() =>
+      (
+        window as unknown as {
+          quickFixtureEmit: (name: string, payload: unknown) => Promise<void>;
+        }
+      ).quickFixtureEmit("tauri://drag-leave", {}),
+    );
+    await expect(dropBadge(page)).toHaveCount(0);
+    await expect(dropMarks(page)).toHaveCount(0);
+    expect(errors).toEqual([]);
+  });
 }

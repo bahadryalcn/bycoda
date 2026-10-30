@@ -483,6 +483,7 @@ ${query}`;
           </Button>
         </div>
       </div>
+      {servers.length > 0 || loading || query || effectiveFilter !== "all" || showAllProviders ? (
       <div className={styles.toolbar}>
         <div className={styles.search}>
           <TextField
@@ -509,6 +510,7 @@ ${query}`;
           <span className={styles.filterLabel}>{MCP_PROVIDER_LABELS[effectiveFilter]}</span>
         ) : null}
       </div>
+      ) : null}
       {filtersOpen ? (
         <Popover
           anchor={filterAnchor}
@@ -580,7 +582,22 @@ ${query}`;
       {loading && servers.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
       ) : visible.length === 0 && !error ? (
-        <SettingsFeedback state="empty">
+        <SettingsFeedback
+          state="empty"
+          action={
+            servers.length > 0 && (query.trim() || effectiveFilter !== "all") ? (
+              <Button
+                onClick={() => {
+                  setFilter("all");
+                  setQuery("");
+                  setShowAllProviders(false);
+                }}
+              >
+                {t("Reset filters")}
+              </Button>
+            ) : undefined
+          }
+        >
           {query.trim()
             ? t("No MCP servers match your search.")
             : effectiveFilter === "all"

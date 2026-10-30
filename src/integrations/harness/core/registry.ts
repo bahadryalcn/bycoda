@@ -80,7 +80,12 @@ export type HarnessAdapter = {
    * Only a harness whose protocol can stop a task by id offers it.
    */
   stopBackgroundWork?(sessionId: string, callId?: string): Promise<void>;
-  respondApproval(sessionId: string, requestId: number, decision: ApprovalDecision): void;
+  respondApproval(
+    sessionId: string,
+    requestId: number,
+    decision: ApprovalDecision,
+    approvalOccurrenceId?: string,
+  ): void;
   respondQuestion?(sessionId: string, requestId: number, reply: UserQuestionReply): void;
   /** Keep a timed question open once the user starts answering it. */
   keepQuestionOpen?(sessionId: string, requestId: number): void;
@@ -568,8 +573,9 @@ export function respondHarnessApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
-  getHarness(harness)?.respondApproval(sessionId, requestId, decision);
+  getHarness(harness)?.respondApproval(sessionId, requestId, decision, approvalOccurrenceId);
 }
 
 export function respondHarnessQuestion(

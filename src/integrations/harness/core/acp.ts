@@ -116,8 +116,12 @@ export class AcpClient {
     return this.rpc.notify(method, params);
   }
 
-  respond(id: number, result: unknown): Promise<void> {
-    return this.rpc.respond(id as JsonRpcId, result);
+  respond(
+    id: number,
+    result: unknown,
+    onActualWrite?: (write: Promise<void>) => void,
+  ): Promise<void> {
+    return this.rpc.respond(id as JsonRpcId, result, onActualWrite);
   }
 
   respondError(

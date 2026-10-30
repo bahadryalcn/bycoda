@@ -1,6 +1,7 @@
 import { EngineOperations } from "./engine-operations";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
+import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { parseProviderAccountId } from "../src/features/providers/model/providerAccountId";
 import { assertHostProviderAccount } from "./provider-accounts";
 import { readFile, realpath, stat } from "node:fs/promises";
@@ -436,15 +437,21 @@ function parseCommandBody(input: unknown): HostCommand {
   if (!Number.isSafeInteger(v.requestId) || Number(v.requestId) < 0)
     throw new Error("Invalid request ID");
   const requestId = Number(v.requestId);
-  if (v.type === "approve" && (v.decision === "allow" || v.decision === "deny"))
+  if (v.type === "approve" && (v.decision === "allow" || v.decision === "deny")) {
+    if (!isApprovalOccurrenceId(v.approvalOccurrenceId))
+      throw new Error(
+        "Approval request identity is missing or invalid. Refresh this request before responding.",
+      );
     return {
       type: "approve",
       commandId,
       sessionId,
       runId,
       requestId,
+      approvalOccurrenceId: v.approvalOccurrenceId,
       decision: v.decision,
     };
+  }
   if (v.type === "answer") {
     const reply = v.reply as { kind?: string; answers?: unknown; custom?: unknown } | undefined;
     if (reply?.kind === "skipped")
@@ -2452,21 +2459,70 @@ export class HostEngine {
                       });
                   };
                 } else if (command.type === "approve") {
-                  const pending = value.session.blocks.some(
+                  const pending = value.session.blocks.filter(
                     (block) =>
                       block.approval?.requestId === command.requestId && !block.approval.decided,
                   );
-                  if (!pending) throw new Error("Approval is already resolved");
+                  if (pending.length !== 1)
+                    throw new Error("Approval is already resolved or ambiguous");
+                  if (pending[0].approval?.occurrenceId !== command.approvalOccurrenceId)
+                    throw new Error("This approval request changed. Refresh it before responding.");
+                  const active = this.running.get(command.sessionId);
+                  const liveOwner = this.live.get(command.sessionId);
+                  if (
+                    !active ||
+                    active.runId !== command.runId ||
+                    active.cancelled ||
+                    active.ending ||
+                    !liveOwner
+                  )
+                    throw new Error("This request belongs to a finished or replaced turn");
+                  const blockId = pending[0].id;
+                  const authorityGeneration = value.authorityGeneration;
                   value = {
                     ...value,
                     session: applyHarnessEvent(value.session, {
                       type: "approval.resolved",
                       requestId: command.requestId,
+                      occurrenceId: command.approvalOccurrenceId,
                       decision: command.decision,
                     }),
                   };
-                  effect = () =>
-                    provider.approve(command.sessionId, command.requestId, command.decision);
+                  effect = () => {
+                    const current = this.live.get(command.sessionId);
+                    const requests = current?.value.session.blocks.filter(
+                      (block) =>
+                        block.id === blockId && block.approval?.requestId === command.requestId,
+                    );
+                    if (
+                      this.running.get(command.sessionId) !== active ||
+                      active.cancelled ||
+                      active.ending ||
+                      current !== liveOwner ||
+                      current.value.runId !== command.runId ||
+                      current.value.status !== "running" ||
+                      current.value.authorityGeneration !== authorityGeneration ||
+                      this.provider(current.value.session.harness) !== provider ||
+                      requests?.length !== 1 ||
+                      requests[0].approval?.occurrenceId !== command.approvalOccurrenceId ||
+                      requests[0].approval?.decided !== command.decision ||
+                      current.value.session.blocks.some(
+                        (block) =>
+                          block.approval?.requestId === command.requestId &&
+                          !block.approval.decided,
+                      )
+                    )
+                      throw new Error(
+                        "The original approval source changed before provider dispatch",
+                      );
+                    // No await between the final original-source guard and the callback.
+                    provider.approve(
+                      command.sessionId,
+                      command.requestId,
+                      command.decision,
+                      command.approvalOccurrenceId,
+                    );
+                  };
                 } else {
                   if (value.session.pendingQuestion?.requestId !== command.requestId)
                     throw new Error("Question is already resolved");

@@ -1353,6 +1353,56 @@ describe("codex live turn sequence", () => {
     await turn;
   });
 
+  it("binds reused approval UI IDs to the original pending occurrence across actual Live replacements", async () => {
+    let previous: { requestId: number; occurrenceId?: string } | undefined;
+    for (let generation = 0; generation < 2; generation++) {
+      sent.length = 0;
+      const { events, turn } = await startTurn("codex-live");
+      onLine!(
+        JSON.stringify({
+          id: 991,
+          method: "item/commandExecution/requestApproval",
+          params: { itemId: "reused-command", command: "git status" },
+        }),
+      );
+      await waitFor(
+        () => events.some((event) => event.type === "approval.requested"),
+        "source approval",
+      );
+      const asked = events.find(
+        (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+          event.type === "approval.requested",
+      )!;
+      expect(asked.occurrenceId).toMatch(/^[0-9a-f-]{36}$/);
+      respondCodexApproval("codex-live", asked.requestId, "allow");
+      if (previous) {
+        expect(asked.requestId).toBe(previous.requestId);
+        expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+        respondCodexApproval("codex-live", asked.requestId, "allow", previous.occurrenceId);
+      }
+      await Promise.resolve();
+      expect(parse().some((message) => message.id === 991)).toBe(false);
+      respondCodexApproval("codex-live", asked.requestId, "deny", asked.occurrenceId);
+      await waitFor(() => parse().some((message) => message.id === 991), "original approval reply");
+      const responses = parse().filter((message) => message.id === 991);
+      expect(responses).toHaveLength(1);
+      expect(responses[0].result).toEqual({ decision: "decline" });
+      expect(events).toContainEqual({
+        type: "approval.resolved",
+        requestId: asked.requestId,
+        occurrenceId: asked.occurrenceId,
+        decision: "deny",
+      });
+      respondCodexApproval("codex-live", asked.requestId, "allow", asked.occurrenceId);
+      expect(parse().filter((message) => message.id === 991)).toHaveLength(1);
+      previous = asked;
+      notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+      await turn;
+      await stopCodexSession("codex-live");
+      __codexTestReset();
+    }
+  });
+
   it("still waits for an explicit command decision in supervised mode", async () => {
     const { events, turn } = await startTurn("codex-live");
     onLine!(
@@ -1366,7 +1416,7 @@ describe("codex live turn sequence", () => {
     expect(parse().some((m) => m.id === 91)).toBe(false);
     const request = events.find((e) => e.type === "approval.requested")!;
     if (request.type !== "approval.requested") throw new Error("missing approval");
-    respondCodexApproval("codex-live", request.requestId, "deny");
+    respondCodexApproval("codex-live", request.requestId, "deny", request.occurrenceId);
     await waitFor(() => parse().some((m) => m.id === 91), "denial");
     expect(parse().find((m) => m.id === 91)?.result).toEqual({
       decision: "decline",
@@ -1416,7 +1466,7 @@ describe("codex live turn sequence", () => {
       await Promise.resolve();
       expect(withoutTurnIdentity(events)).toEqual(withoutTurnIdentity(before));
       expect(settled).not.toHaveBeenCalled();
-      respondCodexApproval("codex-live", approval.requestId, decision);
+      respondCodexApproval("codex-live", approval.requestId, decision, approval.occurrenceId);
       await waitFor(
         () => parse().some((message) => message.id === "child_approval"),
         "child decision",
@@ -1463,6 +1513,7 @@ describe("codex live turn sequence", () => {
     expect(events).toContainEqual({
       type: "approval.resolved",
       requestId: approval.requestId,
+      occurrenceId: approval.occurrenceId,
       decision: "cancelled",
     });
     expect(parse().some((message) => message.id === "child_approval")).toBe(false);
@@ -1491,7 +1542,7 @@ describe("codex live turn sequence", () => {
         }),
       );
       const approval = events.find((event) => event.type === "approval.requested")!;
-      respondCodexApproval("codex-live", approval.requestId, decision);
+      respondCodexApproval("codex-live", approval.requestId, decision, approval.occurrenceId);
       await waitFor(
         () => parse().some((message) => message.id === "child_permissions"),
         "filesystem permission response",
@@ -1565,7 +1616,7 @@ describe("codex live turn sequence", () => {
       outcome = error;
     });
     writeChild.mockRejectedValueOnce(new Error("Broken pipe"));
-    respondCodexApproval("codex-live", approval.requestId, "allow");
+    respondCodexApproval("codex-live", approval.requestId, "allow", approval.occurrenceId);
     await waitFor(() => outcome instanceof Error, "failed permission delivery");
     expect(outcome).toMatchObject({ message: "Broken pipe" });
     expect(events).toContainEqual({
@@ -1852,7 +1903,7 @@ describe("codex live turn sequence", () => {
       "plan MCP approval UI",
     );
     const approval = events.find((event) => event.type === "approval.requested")!;
-    respondCodexApproval("codex-live", approval.requestId, "allow");
+    respondCodexApproval("codex-live", approval.requestId, "allow", approval.occurrenceId);
     await waitFor(() => parse().some((message) => message.id === 91), "MCP response");
     expect(parse().find((message) => message.id === 91)?.result).toEqual({
       action: "accept",
@@ -2097,9 +2148,10 @@ describe("codex live turn sequence", () => {
     expect(events).toContainEqual({
       type: "approval.resolved",
       requestId: request.requestId,
+      occurrenceId: request.occurrenceId,
       decision: "cancelled",
     });
-    respondCodexApproval("codex-live", request.requestId, "allow");
+    respondCodexApproval("codex-live", request.requestId, "allow", request.occurrenceId);
     expect(parse().some((m) => m.id === 91)).toBe(false);
     notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
     await turn;
@@ -2129,7 +2181,7 @@ describe("codex live turn sequence", () => {
     );
     expect(parse().some((m) => m.id === 91)).toBe(false);
     const request = events.find((event) => event.type === "approval.requested")!;
-    respondCodexApproval("codex-live", request.requestId, "deny");
+    respondCodexApproval("codex-live", request.requestId, "deny", request.occurrenceId);
     await waitFor(() => parse().some((m) => m.id === 91), "current turn decision");
     expect(parse().find((m) => m.id === 91)?.result).toEqual({
       decision: "decline",

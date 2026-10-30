@@ -1,4 +1,4 @@
-import { useContext, useRef, useState, type ReactNode } from "react";
+import { useContext, useId, useRef, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
@@ -20,7 +20,7 @@ import type {
   RuleSimplifySuggestion,
 } from "../model/socialSuggestions";
 import { SocialBusyContext } from "./socialContext";
-import { Notice, StatusBadge, names, type Run } from "./socialShared";
+import { ComposerActions, Notice, StatusBadge, type Run } from "./socialShared";
 import "./social-rules.css";
 
 /**
@@ -482,6 +482,7 @@ function SimplifyAsk({
   onClose: () => void;
   onOpenSettings?: () => void;
 }) {
+  const formId = useId();
   const locked = useContext(SocialBusyContext);
   const asking = session.phase === "asking";
   const canAsk = !session.blocked && !!session.picked.length && !asking && !locked;
@@ -494,6 +495,7 @@ function SimplifyAsk({
     session.blocked || (!session.picked.length && session.scope ? t("Select at least one rule.") : "");
   return (
     <form
+      id={formId}
       className="social-rule-ask"
       aria-label={t("Simplify rules with AI")}
       onSubmit={(event) => {
@@ -571,8 +573,23 @@ function SimplifyAsk({
           <p>{session.error}</p>
         </Notice>
       ) : null}
-      <div className="social-rule-actions">
+      <ComposerActions className="social-rule-actions">
+        {asking ? (
+          <>
+            <span role="status" className="social-rule-note">
+              {t("Asking {p0}… nothing is changed yet.", { p0: agentLabel })}
+            </span>
+            <Button variant="ghost" type="button" onClick={session.stop}>
+              {t("Stop waiting")}
+            </Button>
+          </>
+        ) : (
+          <Button variant="ghost" type="button" disabled={locked} onClick={onClose}>
+            {t("Close")}
+          </Button>
+        )}
         <Button
+          form={formId}
           type="submit"
           loading={asking}
           disabled={!canAsk}
@@ -580,21 +597,7 @@ function SimplifyAsk({
         >
           {session.error ? t("Try again") : t("Suggest simpler rules")}
         </Button>
-        {asking ? (
-          <>
-            <Button variant="ghost" type="button" onClick={session.stop}>
-              {t("Stop waiting")}
-            </Button>
-            <span role="status" className="social-rule-note">
-              {t("Asking {p0}… nothing is changed yet.", { p0: agentLabel })}
-            </span>
-          </>
-        ) : (
-          <Button variant="ghost" type="button" disabled={locked} onClick={onClose}>
-            {t("Close")}
-          </Button>
-        )}
-      </div>
+      </ComposerActions>
     </form>
   );
 }
@@ -634,15 +637,6 @@ function SimplifyResults({
         <strong role="status">
           {t("{p0} of {p1} rules would change", { p0: suggestion.proposals.length, p1: total })}
         </strong>
-        {suggestion.proposals.length ? (
-          <Button
-            type="button"
-            disabled={locked || !session.validCount}
-            onClick={() => void session.acceptAll()}
-          >
-            {t("Accept all valid ({p0})", { p0: session.validCount })}
-          </Button>
-        ) : null}
       </div>
       {suggestion.proposals.length ? null : (
         <p className="social-rule-note">{t("Nothing to simplify. Your rules stay as they are.")}</p>
@@ -653,7 +647,7 @@ function SimplifyResults({
       {suggestion.unchangedRuleIds.length ? (
         <details className="social-rule-unchanged">
           <summary>
-            {t("{p0} rules stay as they are", { p0: suggestion.unchangedRuleIds.length })}
+            {t("Rules that stay as they are · {p0}", { p0: suggestion.unchangedRuleIds.length })}
           </summary>
           <ul>
             {suggestion.unchangedRuleIds.map((id) => (
@@ -673,14 +667,23 @@ function SimplifyResults({
           </ul>
         </Notice>
       ) : null}
-      <div className="social-rule-actions">
-        <Button variant="secondary" type="button" disabled={locked} onClick={session.restart}>
-          {t("Ask again")}
-        </Button>
+      <ComposerActions className="social-rule-actions">
         <Button variant="ghost" type="button" disabled={locked} onClick={onClose}>
           {t("Close")}
         </Button>
-      </div>
+        <Button variant="secondary" type="button" disabled={locked} onClick={session.restart}>
+          {t("Ask again")}
+        </Button>
+        {suggestion.proposals.length ? (
+          <Button
+            type="button"
+            disabled={locked || !session.validCount}
+            onClick={() => void session.acceptAll()}
+          >
+            {t("Accept all valid ({p0})", { p0: session.validCount })}
+          </Button>
+        ) : null}
+      </ComposerActions>
     </div>
   );
 }

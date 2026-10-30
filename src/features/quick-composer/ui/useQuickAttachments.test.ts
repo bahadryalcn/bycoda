@@ -19,12 +19,16 @@ let api: ReturnType<typeof useQuickAttachments>;
 let root: Root;
 let container: HTMLDivElement;
 let supported = true;
-let nativeEvent: (event: { payload: { type: string; paths?: string[] } }) => void;
+let nativeEvent: (event: {
+  payload: { type: string; paths?: string[]; position?: { x: number; y: number } };
+}) => void;
+const dropBadge = () => document.querySelector(".pointer-drop-hint")?.textContent ?? null;
+const frame = document.createElement("div");
 const onError = vi.fn();
 /** What a file manager would have put on the native clipboard. */
 let clipboardPaths: string[];
 function Harness() {
-  api = useQuickAttachments(supported, onError);
+  api = useQuickAttachments(supported, onError, undefined, undefined, { current: frame });
   return null;
 }
 beforeEach(() => {
@@ -53,13 +57,14 @@ beforeEach(() => {
     return native.stop;
   });
   container = document.createElement("div");
-  document.body.append(container);
+  document.body.append(container, frame);
   root = createRoot(container);
   act(() => root.render(createElement(Harness)));
 });
 afterEach(() => {
   act(() => root.unmount());
   container.remove();
+  frame.remove();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
@@ -267,13 +272,15 @@ it("leaves a whitespace-only paste to the webview", async () => {
 
 it("accepts a native drop and suppresses its duplicate DOM drop", async () => {
   await act(async () => {
-    nativeEvent({ payload: { type: "enter" } });
+    nativeEvent({ payload: { type: "enter", paths: ["/tmp/image.png"] } });
   });
-  expect(api.dragging).toBe(true);
+  expect(dropBadge()).toBe("Attach 1 file");
+  expect(frame.dataset.dropIndicator).toBe("inside");
   await act(async () => {
     nativeEvent({ payload: { type: "drop", paths: ["/tmp/image.png"] } });
   });
-  expect(api.dragging).toBe(false);
+  expect(dropBadge()).toBeNull();
+  expect(frame.dataset.dropIndicator).toBeUndefined();
   expect(api.files).toHaveLength(1);
   await act(async () => {
     api.onDrop({
@@ -386,4 +393,52 @@ it("releases a capture when image inspection fails", async () => {
   expect(invoke).toHaveBeenCalledWith("quick_composer_release_capture", {
     paths: ["/tmp/Screenshot.png"],
   });
+});
+
+const fileItems = (count: number) =>
+  Array.from({ length: count }, () => ({ kind: "file", type: "image/png" }));
+const dragOver = (count: number) =>
+  api.onDragOver({
+    preventDefault: vi.fn(),
+    clientX: 10,
+    clientY: 10,
+    dataTransfer: { types: ["Files"], items: fileItems(count), files: [], dropEffect: "none" },
+  } as never);
+
+it("counts DOM files in the badge and clears it on leave, Escape, blur and unmount", () => {
+  act(() => dragOver(2));
+  expect(dropBadge()).toBe("Attach 2 files");
+  expect(frame.dataset.dropIndicator).toBe("inside");
+  expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+  act(() => api.onDragLeave({ relatedTarget: null, currentTarget: frame } as never));
+  expect(dropBadge()).toBeNull();
+
+  act(() => dragOver(1));
+  act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+  expect(dropBadge()).toBeNull();
+
+  act(() => dragOver(1));
+  act(() => window.dispatchEvent(new Event("blur")));
+  expect(dropBadge()).toBeNull();
+  expect(frame.dataset.dropIndicator).toBeUndefined();
+
+  act(() => dragOver(1));
+  act(() => root.unmount());
+  expect(dropBadge()).toBeNull();
+  root = createRoot(container);
+});
+
+it("names the provider limit and refuses the drop effect", () => {
+  supported = false;
+  act(() => root.render(createElement(Harness)));
+  const event = {
+    preventDefault: vi.fn(),
+    clientX: 10,
+    clientY: 10,
+    dataTransfer: { types: ["Files"], items: fileItems(1), files: [], dropEffect: "copy" },
+  };
+  act(() => api.onDragOver(event as never));
+  expect(dropBadge()).toBe("This provider does not support attachments");
+  expect(frame.dataset.dropIndicator).toBe("blocked");
+  expect(event.dataTransfer.dropEffect).toBe("none");
 });

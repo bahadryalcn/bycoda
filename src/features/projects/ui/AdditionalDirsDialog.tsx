@@ -33,6 +33,11 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
     (path, index, all) => all.findIndex((other) => pathKey(other) === pathKey(path)) === index,
   );
 
+  const needle = query.trim().toLocaleLowerCase();
+  const visible = candidates.filter((path) =>
+    `${basename(path)} ${path}`.toLocaleLowerCase().includes(needle),
+  );
+
   const toggle = (path: string) => {
     const next = selectedKeys.has(pathKey(path))
       ? selected.filter((dir) => pathKey(dir) !== pathKey(path))
@@ -66,15 +71,18 @@ export function AdditionalDirsDialog({ project, name, onClose }: Props) {
         <EmptyState
           description={t("Put this project in a group with other projects to offer them here.")}
         />
+      ) : visible.length === 0 ? (
+        <EmptyState
+          context="panel"
+          kind="filtered"
+          icon={null}
+          description={t("No folders match your search.")}
+          onReset={() => setQuery("")}
+          resetLabel={t("Clear search")}
+        />
       ) : (
         <ul className="min-h-0 overflow-y-auto p-2">
-          {candidates
-            .filter((path) =>
-              `${basename(path)} ${path}`
-                .toLocaleLowerCase()
-                .includes(query.trim().toLocaleLowerCase()),
-            )
-            .map((path) => (
+          {visible.map((path) => (
               <li key={pathKey(path)}>
                 <label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-[var(--ui-surface-hover)]">
                   <Checkbox

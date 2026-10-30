@@ -5,6 +5,30 @@ description: Notes library and editing inventory for project grouping, full-body
 
 # Notes
 
+## Native image byte acknowledgement, 2026-10-30
+
+The original admitted Native image job now validates the opened source file and
+bounds the actual copy stream to20MiB plus one rejection sentinel. Each copy
+creates a fresh UUID-named file with create_new (0600 on Unix), so concurrent
+same-name saves cannot truncate an already returned asset. Real file sync
+precedes the original produced-file grant and public Markdown path. Display
+names, the note-assets/note-id path shape and legacy stored paths remain.
+
+A copy, sync or grant failure preserves the original error and uncertain private
+file rather than granting it, acknowledging success, retrying or deleting a
+possible replacement by pathname. Existing actual Native admission covers this
+whole worker even if its public waiter is dropped. File-byte sync alone does
+not prove directory-entry/power-loss durability, Notes-row/image graph atomicity,
+cross-device migration or a complete Native Buffers cut.
+
+Current source/test scope is in
+`temp/verification/2026-10-30-native-buffer-continuation/notes-assets/`.
+Five new owned-file/barrier tests cover flush ordering, failure, source size and
+growth, and concurrent immutable copies. Check execution remains pending until
+Root records results; rustfmt parsing is not compilation or installed proof.
+The external V2 owner retains Notes UI edits. This source continuation changes
+no UI surface or renderer authority.
+
 ## Input-conservation continuation, 2026-10-29
 
 Uncommitted shared main at761196a6, source0.6.94. Known renderer inputs now join

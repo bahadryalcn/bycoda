@@ -63,6 +63,8 @@ import {
   stopSession,
 } from "./piFamily";
 import { OMP_FLAVOR, PI_FLAVOR } from "./piFlavor";
+import { respondApproval } from "./piFamily";
+import { writeChild } from "../../core/child";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -99,6 +101,72 @@ describe("Pi live session", () => {
       return { data: {} };
     });
   });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "keeps %s approval decisions bound through a replacement Live and reused UI ID",
+    async (flavor) => {
+      let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+      const sessionId = `${flavor.id}-approval-occurrence`;
+      vi.mocked(writeChild).mockResolvedValue(undefined);
+      for (let generation = 0; generation < 2; generation++) {
+        mocks.request.mockClear();
+        vi.mocked(writeChild).mockClear();
+        const events: HarnessEvent[] = [];
+        const done = sendTurn(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          text: "hi",
+          attachments: [],
+          onEvent: (event) => events.push(event),
+        });
+        await vi.waitFor(() =>
+          expect(mocks.request.mock.calls.some(([command]) => command.type === "prompt")).toBe(
+            true,
+          ),
+        );
+        const frame = mocks.frames.at(-1)!;
+        frame({
+          type: "extension_ui_request",
+          id: "reused-confirm",
+          method: "confirm",
+          title: "Continue?",
+          message: "Original request",
+        });
+        await vi.waitFor(() =>
+          expect(events.some((event) => event.type === "approval.requested")).toBe(true),
+        );
+        const asked = events.find(
+          (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+            event.type === "approval.requested",
+        )!;
+        respondApproval(flavor, sessionId, asked.requestId, "allow");
+        if (previous) {
+          expect(asked.requestId).toBe(previous.requestId);
+          expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+          respondApproval(flavor, sessionId, asked.requestId, "allow", previous.occurrenceId);
+        }
+        await Promise.resolve();
+        expect(writeChild).not.toHaveBeenCalled();
+        respondApproval(flavor, sessionId, asked.requestId, "deny", asked.occurrenceId);
+        await vi.waitFor(() => expect(writeChild).toHaveBeenCalledTimes(1));
+        expect(events).toContainEqual({
+          type: "approval.resolved",
+          requestId: asked.requestId,
+          occurrenceId: asked.occurrenceId,
+          decision: "deny",
+        });
+        respondApproval(flavor, sessionId, asked.requestId, "allow", asked.occurrenceId);
+        await Promise.resolve();
+        expect(writeChild).toHaveBeenCalledTimes(1);
+        previous = asked;
+        frame({ type: "agent_end" });
+        await done;
+        await stopSession(flavor, sessionId);
+      }
+    },
+  );
 
   it.each([PI_FLAVOR, OMP_FLAVOR])(
     "holds %s agent-end continuation until the actual stats read ends",

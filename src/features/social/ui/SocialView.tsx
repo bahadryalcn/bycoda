@@ -659,7 +659,10 @@ function WorkspacePanels({
               {...feedback}
               active={active && tab === "Automations" && automationMode === "publish"}
             >
-              <PublishingPlans {...props("plans")} />
+              <PublishingPlans
+                {...props("plans")}
+                onOpenAccounts={() => onNavigate("Accounts")}
+              />
             </RetainedSocialPanel>
           ) : null}
           {host.snapshots.has("rules") ? (

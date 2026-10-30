@@ -17,7 +17,11 @@ import {
   setHarnessModels,
   defaultModelSettings,
 } from "../../src/features/sessions/model/models";
-import type { HarnessId, RuntimeMode } from "../../src/features/sessions/model/session";
+import {
+  setHarnessAttachmentsSupported,
+  type HarnessId,
+  type RuntimeMode,
+} from "../../src/features/sessions/model/session";
 import { modelsForClaudeVersion } from "../../src/integrations/harness/providers/claude/claudeCatalog";
 import { parseCodexModelList } from "../../src/integrations/harness/providers/codex/codexCatalog";
 import { languageReady } from "../../src/shared/i18n";
@@ -52,6 +56,9 @@ const source = {
   refresh: () => {},
 };
 const accountPicker = new URLSearchParams(location.search).has("accounts");
+// A provider whose transport takes text only: files dragged over the composer are refused with a reason.
+if (new URLSearchParams(location.search).has("no-attachments"))
+  setHarnessAttachmentsSupported("claude", false);
 const welcome = new URLSearchParams(location.search).has("welcome");
 const withCrew = new URLSearchParams(location.search).has("crew");
 const withFooter = new URLSearchParams(location.search).has("footer");

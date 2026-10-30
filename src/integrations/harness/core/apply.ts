@@ -1,5 +1,12 @@
 import { trimAndCapText } from "../../../shared/lib/cappedText";
-import { inlineVisualFromResult, isInlineVisualRenderTool } from "../../../features/sessions/model/inlineVisual";
+import {
+  approvalOccurrenceForEvent,
+  isApprovalOccurrenceId,
+} from "../../../shared/model/approvalOccurrence";
+import {
+  inlineVisualFromResult,
+  isInlineVisualRenderTool,
+} from "../../../features/sessions/model/inlineVisual";
 import { hasReadableText } from "../../../features/sessions/model/transcriptActivity";
 import { executionUserIndex } from "../../../features/sessions/model/executionTurn";
 import { boundedToolPreview } from "../../../features/sessions/model/toolInspection";
@@ -151,10 +158,25 @@ export function applyHarnessEvent(
     case "approval.requested":
       return attachApproval(session, event);
     case "approval.resolved": {
+      // An unidentified legacy event can resolve only one current pending request;
+      // never rewrite older decided blocks when a provider reuses its numeric ID.
+      if (event.occurrenceId !== undefined && !isApprovalOccurrenceId(event.occurrenceId))
+        throw new Error("Invalid approval occurrence identity");
+      const pending = session.blocks.filter(
+        (block) =>
+          block.approval?.requestId === event.requestId &&
+          (event.occurrenceId !== undefined
+            ? block.approval.occurrenceId === event.occurrenceId
+            : !block.approval.decided),
+      );
+      if (pending.length !== 1) return session;
       const changed: Block[] = [];
       const blocks = session.blocks.map((block) => {
         if (
           block.approval?.requestId !== event.requestId ||
+          (event.occurrenceId !== undefined
+            ? block.approval.occurrenceId !== event.occurrenceId
+            : block !== pending[0]) ||
           block.approval.decided === event.decision
         )
           return block;
@@ -1005,6 +1027,10 @@ function attachApproval(
   session: Session,
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): Session {
+  const occurrenceId = approvalOccurrenceForEvent(event);
+  // An actual source event/replay never creates two owners or resurrects a
+  // decided occurrence. Equal content on another event is not this identity.
+  if (session.blocks.some((block) => block.approval?.occurrenceId === occurrenceId)) return session;
   const index = findToolForApproval(session, event);
   if (index >= 0) {
     const blocks = session.blocks.slice();
@@ -1035,7 +1061,7 @@ function attachApproval(
               ...(preview ? { preview } : {}),
             }
           : prev.tool,
-      approval: { requestId: event.requestId },
+      approval: { requestId: event.requestId, occurrenceId },
     };
     registerBlockChanges(session.blocks, blocks, [blocks[index]]);
     return { ...session, blocks };
@@ -1053,7 +1079,7 @@ function attachApproval(
       kind: event.kind,
       ...(preview ? { preview } : {}),
     },
-    approval: { requestId: event.requestId },
+    approval: { requestId: event.requestId, occurrenceId },
   });
 }
 
@@ -1062,7 +1088,9 @@ function findToolForApproval(
   event: Extract<HarnessEvent, { type: "approval.requested" }>,
 ): number {
   if (event.callId) {
-    const byId = session.blocks.findIndex((block) => block.tool?.callId === event.callId);
+    const byId = session.blocks.findIndex(
+      (block) => block.tool?.callId === event.callId && !block.approval,
+    );
     // An explicit call id is authoritative; title similarity is not identity.
     return byId;
   }
@@ -1104,10 +1132,15 @@ function upsertTool(
   },
 ): Session {
   const index = findToolIndex(session, patch);
-  const inlineVisual = !patch.streaming && !patch.detailTruncated &&
-    isInlineVisualRenderTool(patch.title ?? (index >= 0 ? session.blocks[index].tool?.title : undefined)) &&
+  const inlineVisual =
+    !patch.streaming &&
+    !patch.detailTruncated &&
+    isInlineVisualRenderTool(
+      patch.title ?? (index >= 0 ? session.blocks[index].tool?.title : undefined),
+    ) &&
     !/error|fail|reject|cancel/i.test(patch.status ?? "")
-    ? inlineVisualFromResult(patch.detail) : undefined;
+      ? inlineVisualFromResult(patch.detail)
+      : undefined;
   const prompt = capAgentPrompt(patch.agentPrompt);
   if (index < 0) {
     const capped = capToolDetailMeta(patch.detail);

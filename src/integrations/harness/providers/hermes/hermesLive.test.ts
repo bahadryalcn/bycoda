@@ -1,3 +1,5 @@
+import { requestedApproval } from "../approvalOccurrence.testSupport";
+import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -6,6 +8,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sent: string[] = [];
+let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onStderr: ((line: string) => void) | undefined;
 const textFiles = new Map<string, string>();
@@ -27,6 +30,8 @@ vi.mock("../../core/child", () => ({
   },
   writeChild: async (_id: string, line: string) => {
     sent.push(line);
+    const message = JSON.parse(line);
+    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
   },
   readHarnessTextFile: async (path: string) => {
     if (heldFileRead) return heldFileRead(path);
@@ -79,11 +84,98 @@ async function newSession() {
 describe("Hermes live ACP sequence", () => {
   beforeEach(() => {
     sent.length = 0;
+    heldApprovalWrite = null;
     onLine = undefined;
     onStderr = undefined;
     textFiles.clear();
     heldFileRead = null;
   });
+
+  it.each([false, true])("retains Hermes actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
+    const sessionId = `hermes-write-${cancelBeforeTimeout}`;
+    const events: HarnessEvent[] = [];
+    const turn = sendHermesTurn({ sessionId, cwd: "/repo", model: "hermes:nous:hermes-4", runtimeMode: "supervised", text: "hi", attachments: [], onEvent: event => events.push(event) });
+    const outcome = turn.catch(() => undefined);
+    await initialize();
+    await newSession();
+    await waitFor(() => parse().some(message => message.method === "session/set_mode"), "session/set_mode");
+    reply(parse().find(message => message.method === "session/set_mode")!.id, {});
+    await waitFor(() => parse().some(message => message.method === "session/prompt"), "session/prompt");
+    const prompt = parse().find(message => message.method === "session/prompt")!;
+    let frame = 0;
+    await exerciseApprovalActualWriteLifetime({
+      events, requestId: 993, cancelBeforeTimeout,
+      ask: () => nativeOutputFrame(sessionId, `actual-write-${++frame}`, () => onLine!(JSON.stringify({ jsonrpc: "2.0", id: 993, method: "session/request_permission", params: { sessionId: "hermes-session-1", toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" }, options: [{ optionId: "allow_once", kind: "allow_once" }, { optionId: "deny", kind: "reject_once" }] } }))),
+      approve: nonce => respondHermesApproval(sessionId, 993, "allow", nonce),
+      cancel: () => cancelHermesTurn(sessionId),
+      holdWrites: gate => { heldApprovalWrite = gate; },
+      replies: () => parse().filter(message => message.id === 993 && message.result).map(message => message.result),
+    });
+    if (!cancelBeforeTimeout) reply(prompt.id, { stopReason: "end_turn" });
+    await outcome;
+    await stopHermesSession(sessionId);
+  });
+
+  it.each([false, true])(
+    "fails closed on an overlapping Hermes permission (allow already queued: %s)",
+    async (allowBeforeDuplicate) => {
+      const events: HarnessEvent[] = [];
+      const turn = sendHermesTurn({
+        sessionId: "hermes-overlap",
+        cwd: "/repo",
+        model: "hermes:nous:hermes-4",
+        runtimeMode: "supervised",
+        text: "hi",
+        attachments: [],
+        onEvent: (event) => events.push(event),
+      });
+      await initialize();
+      await newSession();
+      await waitFor(
+        () => parse().some((message) => message.method === "session/set_mode"),
+        "session/set_mode",
+      );
+      reply(parse().find((message) => message.method === "session/set_mode")!.id, {});
+      await waitFor(
+        () => parse().some((message) => message.method === "session/prompt"),
+        "session/prompt",
+      );
+      const prompt = parse().find((message) => message.method === "session/prompt")!;
+      let frame = 0;
+      await exerciseOverlappingApproval({
+        events,
+        requestId: 992,
+        allowBeforeDuplicate,
+        ask: () =>
+          nativeOutputFrame("hermes-overlap", `overlap-${++frame}`, () =>
+            onLine!(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: 992,
+                method: "session/request_permission",
+                params: {
+                  sessionId: "hermes-session-1",
+                  toolCall: { toolCallId: "overlap", title: "Run git status", kind: "execute" },
+                  options: [
+                    { optionId: "allow_once", kind: "allow_once" },
+                    { optionId: "deny", kind: "reject_once" },
+                  ],
+                },
+              }),
+            ),
+          ),
+        approve: (nonce, decision) => respondHermesApproval("hermes-overlap", 992, decision, nonce),
+        replies: () =>
+          parse()
+            .filter((message) => message.id === 992 && message.result)
+            .map((message) => message.result),
+        deniedResult: { outcome: { outcome: "selected", optionId: "deny" } },
+      });
+      reply(prompt.id, { stopReason: "end_turn" });
+      await turn;
+      await stopHermesSession("hermes-overlap");
+    },
+  );
 
   it("starts Hermes ACP, selects model and mode, and sends attachments", async () => {
     const events: HarnessEvent[] = [];
@@ -241,13 +333,54 @@ describe("Hermes live ACP sequence", () => {
       () => events.some((event) => event.type === "approval.requested"),
       "approval.requested",
     );
+    const original = requestedApproval(events, 91);
     respondHermesApproval("hermes-live-permission", 91, "allow");
+    expect(parse().some((message) => message.id === 91 && message.result)).toBe(false);
+    respondHermesApproval("hermes-live-permission", 91, "allow", original.occurrenceId);
     await waitFor(
       () => parse().some((message) => message.id === 91 && message.result),
       "permission response",
     );
     const response = parse().find((message) => message.id === 91 && message.result)!;
     expect(response.result.outcome.optionId).toBe("allow_once");
+    onLine!(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 91,
+        method: "session/request_permission",
+        params: {
+          sessionId: "hermes-session-1",
+          toolCall: { title: "Run second command", kind: "execute", toolCallId: "tool-2" },
+          options: [
+            { optionId: "allow_once", kind: "allow_once" },
+            { optionId: "deny", kind: "reject_once" },
+          ],
+        },
+      }),
+    );
+    await waitFor(
+      () => events.filter((event) => event.type === "approval.requested").length === 2,
+      "replacement permission",
+    );
+    const current = requestedApproval(events, 91);
+    expect(current.occurrenceId).not.toBe(original.occurrenceId);
+    respondHermesApproval("hermes-live-permission", 91, "allow", original.occurrenceId);
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 91 && message.result)).toHaveLength(1);
+    respondHermesApproval("hermes-live-permission", 91, "deny", current.occurrenceId);
+    await waitFor(
+      () => parse().filter((message) => message.id === 91 && message.result).length === 2,
+      "matching replacement reply",
+    );
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: 91,
+      occurrenceId: current.occurrenceId,
+      decision: "deny",
+    });
+    respondHermesApproval("hermes-live-permission", 91, "allow", current.occurrenceId);
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 91 && message.result)).toHaveLength(2);
     reply(prompt.id, { stopReason: "end_turn" });
 
     await turn;

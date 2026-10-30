@@ -1,3 +1,5 @@
+// The React-free core keeps this model usable from the headless Host bundle.
+import { t } from "../../../shared/i18n/core";
 import { themePalette } from "../../../shared/theme/palette";
 import type { HarnessId } from "../../sessions/model/session";
 
@@ -334,7 +336,7 @@ export function providerAccountLabel(
     providerAccounts(provider).find(
       (account) => account.id === (accountId ?? DEFAULT_PROVIDER_ACCOUNT_ID),
     )?.label ??
-    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID ? "Removed account" : "Default account")
+    (accountId && accountId !== DEFAULT_PROVIDER_ACCOUNT_ID ? t("Removed account") : t("Default account"))
   );
 }
 

@@ -76,3 +76,60 @@
     overflow: visible;
   }
 }
+
+/* Overlay form of the collapse slot (fine pointers only). A row that marks trailing
+   secondary metadata (a time, a count, an empty gutter) with `data-action-yield` keeps
+   that metadata where it is and takes no width for the actions at rest. While the row is
+   hovered, keyboard focused, selected or has one of the actions' menus open, the actions
+   sit over the end of the row and the yielding element turns transparent. It keeps its
+   layout box and its text for assistive technology, so no other content moves, and the
+   row's own highlight shows behind the actions. Status (dots, badges, Git, connection)
+   must never be marked as yielding. The yielding element is as wide as the slot, so the
+   actions never land on anything else. Rows with no yielding element keep the
+   expanding form above, and touch keeps the actions always visible beside the text.
+   `data-action-anchor="end"` aligns the actions to the row's last line. */
+@media (hover: hover) and (pointer: fine) {
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(:global([data-action-yield]))
+    :global([data-action-slot="collapse"]) {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-end: 0;
+    align-items: center;
+    max-inline-size: none;
+    margin: 0;
+    overflow: visible;
+    pointer-events: none;
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):has(:global([data-action-yield]))
+    :global([data-action-slot="collapse"][data-action-anchor="end"]) {
+    align-items: flex-end;
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])) :global([data-action-yield]) {
+    min-inline-size: 1.5rem;
+    text-align: end;
+    transition: opacity var(--duration-fast) var(--ease-standard);
+  }
+  :global([data-action-host]):has(:global([data-action-slot="collapse"])):is(
+      :hover,
+      :has(:focus-visible),
+      [data-selected],
+      :has(:global([data-action-slot="collapse"]) [aria-expanded="true"])
+    )
+    :global([data-action-yield]) {
+    opacity: 0;
+  }
+  :global([data-action-host]):has(:global([data-action-yield])):is(
+      :hover,
+      :has(:focus-visible),
+      [data-selected],
+      :has(:global([data-action-slot="collapse"]) [aria-expanded="true"])
+    )
+    :global([data-action-slot="collapse"]) {
+    pointer-events: auto;
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  :global([data-action-host]) :global([data-action-yield]) {
+    transition: none;
+  }
+}

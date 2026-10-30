@@ -272,7 +272,10 @@ test("file-only recovery persists a separate permanent tab, preserves an existin
   await page.keyboard.insertText("Existing unsaved view\n");
   await expect(existing).toContainText("Existing unsaved view");
   await openCatalog(page);
-  await expect(page.getByRole("tab", { name: /File drafts/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: /File drafts/ })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await openCopy(page);
   const state = await snapshot(page);
   expect(state.tabs).toHaveLength(2);

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { createApprovalOccurrenceId } from "../approvalOccurrence";
+import { CrewApprovalSchema, CrewsRespondParamsSchema } from "./crews";
 import { createHash } from "node:crypto";
 import {
   CommandDispatchParamsSchema,
@@ -19,6 +21,17 @@ import {
 } from "./index";
 
 const base = { commandId: "command-a", sessionId: "session-a" };
+it("retains source identity in Crew reads and requires the original occurrence on delegated replies", () => {
+  const occurrenceId = createApprovalOccurrenceId();
+  expect(CrewApprovalSchema.parse({ requestId: 7, occurrenceId })).toEqual({ requestId: 7, occurrenceId });
+  expect(CrewApprovalSchema.parse({ requestId: 7 })).toEqual({ requestId: 7 });
+  const reply = { runId: "crew-run", sessionId: "member", targetRunId: "member-run", requestId: "original-command",
+    approvalId: 7, approvalOccurrenceId: occurrenceId, decision: "deny" };
+  expect(CrewsRespondParamsSchema.parse(reply)).toEqual(reply);
+  const { approvalOccurrenceId: _source, ...legacy } = reply;
+  expect(CrewsRespondParamsSchema.safeParse(legacy).success).toBe(false);
+  expect(CrewsRespondParamsSchema.safeParse({ ...reply, approvalOccurrenceId: occurrenceId + "\n" }).success).toBe(false);
+});
 it("lets only nested create first turns inherit an omitted session identity", () => {
   const create = {
     type: "create",
@@ -283,4 +296,31 @@ describe("session wire contracts", () => {
     expect(hostRpcSupported("connection.hello", [])).toBe(true);
     expect(hostRpcSupported("unknown.method", capabilities)).toBe(false);
   });
+});
+it("preserves the original approval occurrence on the strict wire and rejects malformed provenance", () => {
+  const approvalOccurrenceId = createApprovalOccurrenceId();
+  const command = {
+    type: "approve",
+    commandId: "original-command",
+    sessionId: "session",
+    runId: "run",
+    requestId: 7,
+    decision: "allow",
+    approvalOccurrenceId,
+  };
+  expect(CommandDispatchParamsSchema.parse(command)).toEqual(command);
+  for (const value of ["", "request-7", approvalOccurrenceId.toUpperCase(), null, 7]) {
+    expect(
+      CommandDispatchParamsSchema.safeParse({ ...command, approvalOccurrenceId: value }).success,
+    ).toBe(false);
+  }
+  // Transport compatibility does not grant semantic approval admission.
+  const { approvalOccurrenceId: _original, ...legacy } = command;
+  expect(CommandDispatchParamsSchema.safeParse(legacy).success).toBe(true);
+  expect(
+    CommandDispatchParamsSchema.safeParse({
+      ...command,
+      unexpectedApprovalIdentity: approvalOccurrenceId,
+    }).success,
+  ).toBe(false);
 });

@@ -6,11 +6,14 @@ import type { SocialBrowserWorkflow } from "../../src/features/social/model/soci
 async function selectSection(page: Page, name: string) {
   const label = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "iu");
   const tab = page
-    .getByRole("navigation", { name: "Sosyal Medya bölümleri" })
+    .getByRole("navigation", { name: /^(Sosyal Medya bölümleri|Social Media sections)$/ })
     .getByRole("button", { name: label });
+  const compact = page.getByRole("button", { name: /^(Sosyal Medya bölümleri|Social Media sections):/ });
+  // The section list renders after the first paint: wait for whichever form is shown.
+  await expect(tab.or(compact).first()).toBeVisible();
   if (await tab.isVisible()) await tab.click();
   else {
-    await page.getByRole("button", { name: /^Sosyal Medya bölümleri:/ }).click();
+    await compact.click();
     await page.getByRole("option", { name: label }).click();
   }
 }
@@ -2114,10 +2117,10 @@ for (const width of [390, 1440])
     await page.goto("/tests/browser/social.html?programs=1");
     await selectSection(page, "İçerik hazırla");
     await page
-      .locator(".social-campaign-modes")
+      .locator(".social-content-head")
       .getByRole("button", { name: "Özetten içerik üret", exact: true })
       .click();
-    const modesBounds = await page.locator(".social-campaign-modes").boundingBox();
+    const modesBounds = await page.locator(".social-content-head").boundingBox();
     const programsBounds = await page.locator(".social-programs:visible").boundingBox();
     expect(programsBounds!.y).toBeGreaterThanOrEqual(modesBounds!.y + modesBounds!.height);
     const editor = page.getByRole("region", { name: "Özetten içerik üret", exact: true });
@@ -2194,7 +2197,7 @@ async function seedWorkflow(page: import("@playwright/test").Page) {
     fixture.socialFixtureSeed();
     fixture.socialFixtureWorkflow();
   });
-  await page.getByRole("button", { name: "Yenile", exact: true }).click();
+  await page.getByRole("button", { name: /^(Yenile|Refresh)$/ }).click();
 }
 
 test("editing a contact keeps one disabled account payload in native FormData", async ({
@@ -2382,35 +2385,56 @@ test("history shows distinct outcomes, filters and keeps state after leaving Soc
 test("owner creates and explicitly activates a daily 2–5 hour publishing plan", async ({
   page,
 }, testInfo) => {
+  // The stepped dialog uses copy that the Turkish catalog does not carry yet: run this flow in English.
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
   await seedWorkflow(page);
-  await selectSection(page, "Planlar ve yanıtlar");
+  await selectSection(page, "Plans and replies");
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Otomatik yayın planı oluştur", exact: true }).click();
-  const editor = page.getByRole("dialog", { name: "Otomatik yayın planı oluştur", exact: true });
+  await page.getByRole("button", { name: "Create automatic publishing plan", exact: true }).click();
+  const editor = page.getByRole("dialog", {
+    name: "Create automatic publishing plan",
+    exact: true,
+  });
   await expect(editor).toBeVisible();
-  await editor.getByLabel("Plan adı", { exact: true }).fill("Günlük ürün yayınları");
-  await editor.getByRole("button", { name: "09:00–18:00 · 2–5 saat arayla", exact: true }).click();
-  await editor.getByLabel("Saat dilimi", { exact: true }).fill("Europe/Istanbul");
+  // Step 1: account and content. Next is held back until the pool is chosen, with the reason shown here.
+  await editor.getByLabel("Plan name", { exact: true }).fill("Daily product posts");
+  const next = editor.getByRole("button", { name: "Next", exact: true });
+  await expect(next).toBeDisabled();
   await editor
-    .getByRole("button", { name: "Paylaşılacak kampanyalar · seçtiğiniz sırayla", exact: true })
+    .getByRole("button", { name: "Campaigns to share · in the order you pick", exact: true })
     .click();
   await page
     .getByRole("dialog", {
-      name: "Paylaşılacak kampanyalar · seçtiğiniz sırayla seçimi",
+      name: "Campaigns to share · in the order you pick selection",
       exact: true,
     })
     .getByRole("option")
     .click();
-  await page.getByRole("button", { name: "Tamam", exact: true }).click();
-  await expect(editor.getByText(/Her kampanya bir kez paylaşılır/)).toBeVisible();
-  await editor.getByRole("button", { name: "Planı durdurulmuş kaydet", exact: true }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(next).toBeEnabled();
+  await next.click();
+  // Step 2: schedule. Values entered here survive Back/Next.
+  await editor.getByRole("button", { name: "09:00–18:00 · every 2–5 hours", exact: true }).click();
+  await editor.getByLabel("Time zone", { exact: true }).fill("Europe/Istanbul");
+  await editor.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(editor.getByLabel("Plan name", { exact: true })).toHaveValue("Daily product posts");
+  await editor.getByRole("button", { name: "Next", exact: true }).click();
+  await expect(editor.getByLabel("Time zone", { exact: true })).toHaveValue("Europe/Istanbul");
+  await editor.getByRole("button", { name: "Review plan", exact: true }).click();
+  // Step 3: review. Saving is separate from enabling and always saves paused.
+  await expect(editor.getByRole("group", { name: "Review the plan", exact: true })).toBeVisible();
+  await editor.getByRole("button", { name: "Save plan as paused", exact: true }).click();
   await expect(editor).not.toBeVisible();
-  const activate = page.getByRole("button", { name: "Otomatik yayını etkinleştir", exact: true });
+  const activate = page.getByRole("button", { name: "Enable automatic publishing", exact: true });
   await expect(activate).toBeDisabled();
-  await page.getByLabel(/Bu hesap, saatler ve onaylı içerik havuzuyla otomatik yayın/).check();
+  await page.getByLabel(/I approve automatic publishing with this account, these times and the approved content pool/).check();
   await activate.click();
-  await expect(page.getByRole("button", { name: "Planı durdur", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Yanıt kuralları", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Pause plan", exact: true })).toBeVisible();
+  // The one-time-sharing explanation now lives in the header help popover, not in the dialog.
+  await page.getByRole("button", { name: "How publishing plans work", exact: true }).click();
+  await expect(page.getByText(/Each campaign is shared once/)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Reply rules", exact: true })).toBeInViewport();
   const calls = await page.evaluate(
     () =>
       (
@@ -2789,7 +2813,8 @@ test("all creation forms and verified project information stay readable at deskt
       const editor = page.getByRole("dialog", { name: title, exact: true });
       if (planForm) {
         await expect(editor.getByLabel("Plan adı", { exact: true })).toBeVisible();
-        await expect(editor.getByLabel("Saat dilimi", { exact: true })).toBeVisible();
+        // The dialog is stepped: only the first step's footer action is present.
+        await expect(editor.locator('button[type="submit"]')).toHaveCount(1);
       }
       await expect(editor).toBeVisible();
       expect(
@@ -3022,4 +3047,379 @@ test("a reply suggestion lands in the reply editor as an editable draft and send
   await reply.fill("Edited by the owner");
   await expect(reply).toHaveValue("Edited by the owner");
   await expect(editor.getByRole("button", { name: /Save draft/ })).toBeVisible();
+});
+
+// Fixture only: the AI review flows run in English, with content, reply rules and a fake text agent.
+async function seedAi(page: Page) {
+  await page.addInitScript(() => localStorage.setItem("bycoda.language", "en"));
+  await page.goto("/tests/browser/social.html?programs=1");
+  await page.evaluate(() => {
+    const fixture = window as unknown as Record<string, () => void>;
+    fixture.socialFixtureSeed();
+    fixture.socialFixtureSeedAi();
+    fixture.socialFixtureWorkflow();
+  });
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+}
+
+type FixtureCall = { args: { params?: { action?: string; input?: Record<string, unknown> } } };
+async function fixtureActions(page: Page) {
+  const calls = await page.evaluate(
+    () => (window as unknown as { socialFixtureCalls: FixtureCall[] }).socialFixtureCalls,
+  );
+  return calls.flatMap((call) =>
+    call.args.params?.action
+      ? [{ action: call.args.params.action, input: call.args.params.input ?? {} }]
+      : [],
+  );
+}
+const AI_WRITES = [
+  "publishing-plans.create",
+  "publishing-plans.activate",
+  "automations.create",
+  "automations.pause",
+  "automations.activate",
+  "profiles.save",
+];
+async function aiWrites(page: Page) {
+  return (await fixtureActions(page)).filter((call) => AI_WRITES.includes(call.action));
+}
+
+test("AI plan suggestion is reviewed and edited, then loaded as an unsaved draft before the owner saves it paused", async ({
+  page,
+}, testInfo) => {
+  await seedAi(page);
+  await selectSection(page, "Plans and replies");
+  await page.getByRole("button", { name: "Create automatic publishing plan", exact: true }).click();
+  const editor = page.getByRole("dialog", {
+    name: "Create automatic publishing plan",
+    exact: true,
+  });
+  await editor.getByRole("button", { name: "Ask AI to suggest a plan", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("plan-ask.png"), animations: "disabled" });
+  await editor.getByRole("button", { name: "Suggest a plan", exact: true }).click();
+  const review = editor.getByRole("group", { name: "AI plan suggestion", exact: true });
+  await expect(review.getByText("Suggested paused plan")).toBeVisible();
+  await expect(review.getByLabel("Plan name", { exact: true })).toHaveValue(
+    "Weekday announcements (AI draft)",
+  );
+  const pool = review.getByRole("list", { name: "Sharing order" });
+  await expect(pool.getByRole("listitem")).toHaveCount(3);
+  await expect(review.getByText("Why this plan")).toBeVisible();
+  // Asking and reviewing write nothing.
+  expect(await aiWrites(page)).toEqual([]);
+  // The owner edits the proposal before using it: remove one campaign from the pool.
+  await review.getByRole("button", { name: "Remove campaign 3", exact: true }).click();
+  await expect(pool.getByRole("listitem")).toHaveCount(2);
+  await page.screenshot({ path: testInfo.outputPath("plan-review.png"), animations: "disabled" });
+  await editor.getByRole("button", { name: "Use as plan draft", exact: true }).click();
+  // The draft is loaded on the Review step, still unsaved and not enabled.
+  await expect(editor.getByRole("group", { name: "Review the plan", exact: true })).toBeVisible();
+  expect(await aiWrites(page)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("plan-draft.png"), animations: "disabled" });
+  await editor.getByRole("button", { name: "Save plan as paused", exact: true }).click();
+  await expect(editor).not.toBeVisible();
+  const writes = await aiWrites(page);
+  expect(writes.map((call) => call.action)).toEqual(["publishing-plans.create"]);
+  expect(writes[0].input.name).toBe("Weekday announcements (AI draft)");
+  expect(writes[0].input.campaignIds).toHaveLength(2);
+  const suggest = (await fixtureActions(page)).find((call) => call.action === "plans.suggest");
+  expect(suggest?.input).toMatchObject({ accountId: "x", projectId: "demo" });
+});
+
+test("AI rule simplification shows a diff; accepting creates a new paused rule and leaves the original alone", async ({
+  page,
+}, testInfo) => {
+  await seedAi(page);
+  await selectSection(page, "Plans and replies");
+  await page.getByRole("button", { name: "Reply rules", exact: true }).click();
+  await page.getByRole("button", { name: "Simplify with AI", exact: true }).click();
+  await page.screenshot({ path: testInfo.outputPath("rules-ask.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "Suggest simpler rules", exact: true }).click();
+  const review = page.getByRole("group", { name: "AI rule review", exact: true });
+  await expect(review.getByText("Accepting creates a new paused rule", { exact: true })).toBeVisible();
+  await expect(review.getByText(/1 of 2 rules would change/)).toBeVisible();
+  const proposal = review.getByRole("article", { name: "Proposal for Support questions" });
+  await expect(proposal).toBeVisible();
+  expect(await aiWrites(page)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("rules-review.png"), animations: "disabled" });
+  await proposal.getByRole("button", { name: "Accept", exact: true }).click();
+  await expect(review.getByText(/was created and is paused/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("rules-accepted.png"), animations: "disabled" });
+  const writes = await aiWrites(page);
+  expect(writes.map((call) => call.action)).toEqual(["automations.create"]);
+  expect(writes[0].input).toMatchObject({
+    name: "Support questions (simplified)",
+    accountId: "x",
+    projectId: "demo",
+    mode: "approval",
+    trigger: "message",
+    dailyLimit: 5,
+  });
+  // Stop phrases are only ever merged, never dropped.
+  expect(writes[0].input.stopWords).toEqual(["refund", "lawsuit"]);
+});
+
+test("AI fact suggestions stay unverified until the owner accepts one and saves the product knowledge", async ({
+  page,
+}, testInfo) => {
+  await seedAi(page);
+  await selectSection(page, "Prepare content");
+  await page.getByRole("button", { name: "Manage", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Product knowledge", exact: true });
+  await dialog.getByRole("button", { name: "Suggest facts from text", exact: true }).click();
+  await dialog
+    .getByLabel("Source text", { exact: true })
+    .fill(
+      "The starter plan costs 12 euros per month. Support answers within one business day. The app runs on Windows and macOS.",
+    );
+  await dialog.getByLabel("Source label", { exact: true }).fill("Pricing page, pasted today");
+  await page.screenshot({ path: testInfo.outputPath("facts-ask.png"), animations: "disabled" });
+  await dialog.getByRole("button", { name: "Suggest facts", exact: true }).click();
+  const review = dialog.getByRole("region", { name: "Suggestions - not verified yet" });
+  await expect(review).toBeVisible();
+  await expect(review.getByText(/Accepting only adds a fact to your draft/)).toBeVisible();
+  await expect(review.getByText(/dropped because the text does not support/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("facts-review.png"), animations: "disabled" });
+  expect(await aiWrites(page)).toEqual([]);
+  await review.getByRole("button", { name: "Accept", exact: true }).first().click();
+  await expect(dialog.getByText("Added - save to verify").first()).toBeVisible();
+  // Accepting only changes the draft: nothing is written until the owner saves.
+  expect(await aiWrites(page)).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("facts-accepted.png"), animations: "disabled" });
+  await dialog.getByRole("button", { name: "Save added facts", exact: true }).click();
+  await expect.poll(async () => (await aiWrites(page)).length).toBe(1);
+  const save = (await aiWrites(page))[0];
+  expect(save.action).toBe("profiles.save");
+  const facts = save.input.facts as { text: string; source: string }[];
+  expect(facts.some((fact) => fact.text === "Demo bilgi")).toBe(true);
+  const added = facts.find((fact) => fact.text.startsWith("The starter plan"));
+  expect(added?.source).toContain("Pricing page, pasted today");
+  expect(added?.source).toContain("accepted by owner");
+});
+
+async function expectInViewport(page: Page, locator: Locator) {
+  const box = await locator.boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(box, "the control is rendered").not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+}
+
+test("the content context line always states how the open form relates to the selected record", async ({
+  page,
+}, testInfo) => {
+  await seedAi(page);
+  await selectSection(page, "Prepare content");
+  const context = page.locator(".social-content-context[data-entry] > .social-content-context-main");
+  // A saved campaign exists but is not selected: the form starts a new, unsaved campaign.
+  await expect(context).toContainText("New campaign");
+  await page.getByRole("button", { name: /^Loaded content:/ }).click();
+  await page.getByRole("option", { name: /Launch week teaser/ }).click();
+  // A saved campaign is selected while Write is active: say that the new one is separate.
+  await expect(context).toContainText("New campaign");
+  await expect(context).toContainText("Separate from Launch week teaser");
+  await expect(context).not.toContainText("Not saved yet");
+  await page.screenshot({ path: testInfo.outputPath("header-write-selected.png"), animations: "disabled" });
+  await page.getByRole("button", { name: "Edit existing", exact: true }).click();
+  await expect(page.getByRole("dialog").first()).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(context).toContainText("Editing Launch week teaser");
+  await expect(context).toContainText("Revision 1");
+  await page.screenshot({ path: testInfo.outputPath("header-edit.png"), animations: "disabled" });
+});
+
+test("a brief-based entry names its program once", async ({ page }, testInfo) => {
+  await seedAi(page);
+  await page
+    .getByRole("textbox", { name: /What should the AI prepare/ })
+    .fill("A week of posts for the demo project");
+  await page.getByRole("button", { name: "Prepare proposal" }).click();
+  await page.getByRole("button", { name: "Save as paused campaign" }).click();
+  await page.getByRole("button", { name: "Open campaign" }).click();
+  const context = page.locator('.social-content-context[data-entry="brief"]');
+  await expect(context).toBeVisible();
+  const name = (await context.locator("strong").first().textContent())!.trim();
+  expect(name.length).toBeGreaterThan(0);
+  // The context line carries the name and state; the program panel below does not repeat them.
+  await expect(page.locator(".social-programs .social-program-detail").first()).toBeVisible();
+  await expect(
+    page.locator(".social-programs .social-program-detail > .social-record-heading"),
+  ).toHaveCount(0);
+  await expect(page.getByRole("heading", { name, exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("header-brief.png"), animations: "disabled" });
+});
+
+for (const size of [
+  { width: 1280, height: 800 },
+  { width: 800, height: 800 },
+]) {
+  test(`AI review dialogs keep their actions in a fixed footer at ${size.width}x${size.height}`, async ({
+    page,
+  }, testInfo) => {
+    await page.setViewportSize(size);
+    await seedAi(page);
+    // Stepped plan dialog: Next is in the footer, outside the scrolling content.
+    await selectSection(page, "Plans and replies");
+    await page.getByRole("button", { name: "Create automatic publishing plan", exact: true }).click();
+    const plan = page.getByRole("dialog", { name: "Create automatic publishing plan", exact: true });
+    const planFooter = plan.locator("footer");
+    await expectInViewport(page, planFooter.getByRole("button", { name: "Next", exact: true }));
+    await page.screenshot({ path: testInfo.outputPath("plan-step.png"), animations: "disabled" });
+    // AI plan review.
+    await plan.getByRole("button", { name: "Ask AI to suggest a plan", exact: true }).click();
+    await planFooter.getByRole("button", { name: "Suggest a plan", exact: true }).click();
+    await expect(plan.getByRole("group", { name: "AI plan suggestion", exact: true })).toBeVisible();
+    await expectInViewport(page, planFooter.getByRole("button", { name: "Use as plan draft", exact: true }));
+    await expectInViewport(page, planFooter.getByRole("button", { name: "Discard suggestion", exact: true }));
+    await page.screenshot({ path: testInfo.outputPath("plan-review-footer.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    // Stepped rule dialog and the rule simplify review.
+    await page.getByRole("button", { name: "Reply rules", exact: true }).click();
+    await page.getByRole("button", { name: "Create automation rule", exact: true }).click();
+    const rule = page.getByRole("dialog", { name: "Create automation rule", exact: true });
+    await expectInViewport(page, rule.locator("footer").getByRole("button", { name: "Next", exact: true }));
+    await page.screenshot({ path: testInfo.outputPath("rule-step.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Simplify with AI", exact: true }).click();
+    const simplify = page.getByRole("dialog", { name: "Simplify rules with AI", exact: true });
+    const simplifyFooter = simplify.locator("footer");
+    await simplifyFooter.getByRole("button", { name: "Suggest simpler rules", exact: true }).click();
+    await expect(simplify.getByRole("group", { name: "AI rule review", exact: true })).toBeVisible();
+    await expectInViewport(page, simplifyFooter.getByRole("button", { name: /^Accept all valid/ }));
+    await expectInViewport(page, simplifyFooter.getByRole("button", { name: "Close", exact: true }));
+    await page.screenshot({ path: testInfo.outputPath("rules-review-footer.png"), animations: "disabled" });
+    await page.keyboard.press("Escape");
+    // Fact suggestions inside the product knowledge dialog.
+    await selectSection(page, "Prepare content");
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
+    const knowledge = page.getByRole("dialog", { name: "Product knowledge", exact: true });
+    await knowledge.getByRole("button", { name: "Suggest facts from text", exact: true }).click();
+    await knowledge
+      .getByLabel("Source text", { exact: true })
+      .fill(
+        "The starter plan costs 12 euros per month. Support answers within one business day. The app runs on Windows and macOS.",
+      );
+    await knowledge.getByLabel("Source label", { exact: true }).fill("Pricing page, pasted today");
+    await knowledge.getByRole("button", { name: "Suggest facts", exact: true }).click();
+    await expect(
+      knowledge.getByRole("region", { name: "Suggestions - not verified yet" }),
+    ).toBeVisible();
+    const knowledgeFooter = knowledge.locator("footer");
+    await expectInViewport(page, knowledgeFooter.getByRole("button", { name: "Accept all valid", exact: true }));
+    await expectInViewport(page, knowledgeFooter.getByRole("button", { name: "Reject all", exact: true }));
+    await page.screenshot({ path: testInfo.outputPath("facts-review-footer.png"), animations: "disabled" });
+  });
+}
+
+const IMPORT_FILE = JSON.stringify([
+  { accountId: "x", platformId: "dara-news", name: "Dara News Blog", projectIds: ["demo"], language: "en", tags: ["lead"] },
+  { accountId: "x", platformId: "emre-shop", name: "Emre Retail Shop", projectIds: ["demo"], language: "tr" },
+  { accountId: "x", platformId: "fay", name: "Fay Person", projectIds: ["demo"] },
+  { accountId: "missing", platformId: "bad", name: "Broken row", projectIds: ["demo"] },
+]);
+
+async function seedContacts(page: Page) {
+  await seedAi(page);
+  await page.evaluate(() =>
+    (window as unknown as Record<string, () => void>).socialFixtureSeedContacts(),
+  );
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+}
+const contactWrites = async (page: Page) =>
+  (await fixtureActions(page)).filter((call) =>
+    ["contacts.import", "contacts.upsert"].includes(call.action),
+  );
+
+test("tag suggestions for an import are reviewed per tag and added to the import draft only", async ({
+  page,
+}, testInfo) => {
+  await seedContacts(page);
+  await selectSection(page, "Audience");
+  await page.getByText("Import contacts", { exact: true }).first().click();
+  await page.getByLabel("JSON contact list").setInputFiles({
+    name: "contacts.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(IMPORT_FILE),
+  });
+  const preview = page.getByRole("group", { name: "Import preview" });
+  await expect(preview.getByText(/3 contacts ready/)).toBeVisible();
+  await preview.getByRole("button", { name: "Suggest tags", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Suggest tags for this import", exact: true });
+  await expect(dialog.getByText(/are sent to/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("tags-import-ask.png"), animations: "disabled" });
+  await dialog.locator("footer").getByRole("button", { name: "Suggest tags", exact: true }).click();
+  const review = dialog.getByRole("group", { name: "AI tag suggestions", exact: true });
+  await expect(review.getByText("Added to the import draft only")).toBeVisible();
+  await expect(review.getByText("Suggestions for 2 of 3 contacts")).toBeVisible();
+  // Nothing is chosen yet and nothing was written.
+  const apply = dialog.locator("footer").getByRole("button", { name: /^Add \d+ tags? to the import draft$/ });
+  await expect(apply).toBeDisabled();
+  expect(await contactWrites(page)).toEqual([]);
+  // Edit one suggestion, keep it, and leave the others unticked (rejected).
+  const blog = review.getByRole("listitem").filter({ hasText: "Dara News Blog" }).first();
+  await blog.getByRole("textbox", { name: "Tag for Dara News Blog" }).first().fill("press-contact");
+  await blog.getByRole("checkbox", { name: /Keep tag press-contact for Dara News Blog/ }).check();
+  await expect(apply).toHaveText("Add 1 tag to the import draft");
+  await page.screenshot({ path: testInfo.outputPath("tags-import-review.png"), animations: "disabled" });
+  await apply.click();
+  await expect(dialog).not.toBeVisible();
+  expect(await contactWrites(page)).toEqual([]);
+  // The edited tag is in the import draft, labelled as coming from the suggestions.
+  await preview.getByText(/Tags in this import · 1 added from AI suggestions/).click();
+  await expect(preview.getByText(/lead, press-contact/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("tags-import-draft.png"), animations: "disabled" });
+  // Importing is the owner's separate action and carries the accepted tag only.
+  await preview.getByRole("button", { name: /^Import 3 valid contacts$/ }).click();
+  await expect.poll(async () => (await contactWrites(page)).length).toBe(1);
+  const imported = (await contactWrites(page))[0];
+  expect(imported.action).toBe("contacts.import");
+  const rows = imported.input.contacts as { platformId: string; tags?: string[]; consent?: unknown }[];
+  expect(rows.find((row) => row.platformId === "dara-news")?.tags).toEqual(["lead", "press-contact"]);
+  expect(rows.find((row) => row.platformId === "emre-shop")?.tags).toBeUndefined();
+  expect(rows.every((row) => row.consent === undefined)).toBe(true);
+});
+
+test("tag suggestions for selected contacts are saved only for the tags the owner keeps", async ({
+  page,
+}, testInfo) => {
+  await seedContacts(page);
+  await selectSection(page, "Audience");
+  await page.getByRole("checkbox", { name: "Select contact Ada Press", exact: true }).check();
+  await page.getByRole("checkbox", { name: "Select contact Bo Retail Shop", exact: true }).check();
+  await page.getByRole("button", { name: "Suggest tags", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Suggest tags for selected contacts", exact: true });
+  await dialog.getByLabel(/What should the tags describe/).fill("Mark journalists as press");
+  await dialog.locator("footer").getByRole("button", { name: "Suggest tags", exact: true }).click();
+  const review = dialog.getByRole("group", { name: "AI tag suggestions", exact: true });
+  await expect(review.getByText("Saved on the contacts you choose")).toBeVisible();
+  await expect(review.getByText(/Would also match: Press list/)).toBeVisible();
+  const ask = (await fixtureActions(page)).find((call) => call.action === "contacts.suggestTags");
+  expect(ask?.input).toMatchObject({
+    accountId: "x",
+    projectId: "demo",
+    instructions: "Mark journalists as press",
+  });
+  expect([...((ask?.input.contactIds as string[] | undefined) ?? [])].sort()).toEqual([
+    "ada-press",
+    "bo-retail",
+  ]);
+  expect(await contactWrites(page)).toEqual([]);
+  await dialog.locator("footer").getByRole("button", { name: "Keep all valid" }).click();
+  // Reject Bo's retail tag again; keep the rest.
+  await review.getByRole("checkbox", { name: /Keep tag retail for Bo Retail Shop/ }).uncheck();
+  await page.screenshot({ path: testInfo.outputPath("tags-contacts-review.png"), animations: "disabled" });
+  await dialog.locator("footer").getByRole("button", { name: /^Save \d+ tags?$/ }).click();
+  await expect(dialog).not.toBeVisible();
+  const saves = await contactWrites(page);
+  expect(saves.map((call) => call.input)).toHaveLength(2);
+  expect(saves.map((call) => call.input)).toEqual(
+    expect.arrayContaining([
+      { accountId: "x", platformId: "ada-press", tags: ["VIP", "press", "lang-en"] },
+      { accountId: "x", platformId: "bo-retail", tags: ["lang-tr"] },
+    ]),
+  );
+  // Only tags changed: no consent, opt-out or eligibility fields were sent.
+  for (const save of saves)
+    expect(Object.keys(save.input).sort()).toEqual(["accountId", "platformId", "tags"]);
 });

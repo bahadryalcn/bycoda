@@ -168,6 +168,21 @@ inclusion UNKNOWN. No app, preference, OS, approval, Host, index/branch, build,
 install or release change. Baseline is a source reference, not a delivered fix.
 Update user guides and immutable delivery references when behavior changes.
 
+## Approval intent conservation continuation, 2026-10-30
+
+ApprovalToasts and the actual transcript ApprovalControls now use the shared
+`useApprovalDecisionControl` and render-issued opaque request tokens. SessionPane
+supplies its actual Session through ApprovalDecisionProvider. Global notifications
+and pane projections may have different presentation metadata; the bounded intent
+registry conserves both exact contexts and joins only their actual original source
+request. Pending/uncertain decisions stay disabled across unmount/remount. A true
+pre-effect refusal is local error feedback; callback settlement remains unconfirmed
+without provider proof. Accepted Native events and guarded Host snapshots can
+retire the represented original; absence, replacement and callback return cannot.
+The private registry is a physical-profile Parent producer, not permission or
+Native Buffers qualification. Source/evidence packet:
+`temp/verification/2026-10-30-decision-inputs/`. Installed inclusion is unknown.
+
 ## H3 Settings pages A implementation, 2026-10-28
 
 Uncommitted source delivery in the existing checkout; no release or installed

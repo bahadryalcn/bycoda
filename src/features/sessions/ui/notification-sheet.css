@@ -104,10 +104,14 @@
   flex: 1 1 7rem;
 }
 .notification-request-footer {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
-.notification-request-footer .notification-project {
-  flex: 0 1 auto;
+.notification-request-source {
+  flex: 1 1 16rem;
+  flex-wrap: wrap;
+}
+.notification-request-footer .notification-request-actions {
+  margin-inline-start: auto;
 }
 .notification-popup-dismiss {
   position: absolute;

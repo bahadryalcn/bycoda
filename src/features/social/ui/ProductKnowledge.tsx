@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Select } from "../../../shared/ui/Select";
 import { Sparkles } from "../../../shared/ui/icons";
@@ -24,7 +23,7 @@ import {
   visibleCandidates,
   type FactReview,
 } from "./FactSuggestions";
-import { Notice, field, time, type Run } from "./socialShared";
+import { Notice, SocialDialog, field, time, type Run } from "./socialShared";
 import { useSocialPending } from "./useSocialPending";
 import "./social-knowledge.css";
 
@@ -339,7 +338,7 @@ export function ProductKnowledge({
         </Button>
       </div>
       {open ? (
-        <Modal
+        <SocialDialog
           title={t("Product knowledge")}
           description={t("Verified product facts are the only facts AI drafts and automatic replies may rely on.")}
           size="lg"
@@ -705,7 +704,7 @@ export function ProductKnowledge({
               </section>
             ) : null}
           </div>
-        </Modal>
+        </SocialDialog>
       ) : null}
     </>
   );

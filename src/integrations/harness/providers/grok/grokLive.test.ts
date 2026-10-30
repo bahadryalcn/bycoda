@@ -1,3 +1,5 @@
+import { requestedApproval } from "../approvalOccurrence.testSupport";
+import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -6,6 +8,7 @@ import {
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const sent: string[] = [];
+let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
 
@@ -20,10 +23,12 @@ vi.mock("../../core/child", () => ({
   },
   writeChild: async (_id: string, line: string) => {
     sent.push(line);
+    const message = JSON.parse(line);
+    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
   },
 }));
 
-const { compactGrokContext, sendGrokTurn, respondGrokApproval, stopGrokSession } =
+const { compactGrokContext, sendGrokTurn, respondGrokApproval, stopGrokSession, cancelGrokTurn } =
   await import("./grok");
 import type { HarnessEvent } from "../../core/types";
 
@@ -74,7 +79,82 @@ async function handshake() {
 describe("grok live turn sequence", () => {
   beforeEach(() => {
     sent.length = 0;
+    heldApprovalWrite = null;
   });
+
+  it.each([false, true])("retains Grok actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
+    const sessionId = `grok-write-${cancelBeforeTimeout}`;
+    const events: HarnessEvent[] = [];
+    const turn = sendGrokTurn({ sessionId, cwd: "/repo", model: "grok:grok-4.6", runtimeMode: "supervised", text: "hi", attachments: [], onEvent: event => events.push(event) });
+    const outcome = turn.catch(() => undefined);
+    await handshake();
+    await waitFor(() => parse().some(message => message.method === "session/prompt"), "prompt");
+    const prompt = parse().find(message => message.method === "session/prompt")!;
+    let frame = 0;
+    await exerciseApprovalActualWriteLifetime({
+      events, requestId: 993, cancelBeforeTimeout,
+      ask: () => nativeOutputFrame(sessionId, `actual-write-${++frame}`, () => onLine!(JSON.stringify({ jsonrpc: "2.0", id: 993, method: "session/request_permission", params: { sessionId: "S1", toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" }, options: [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }] } }))),
+      approve: nonce => respondGrokApproval(sessionId, 993, "allow", nonce),
+      cancel: () => cancelGrokTurn(sessionId),
+      holdWrites: gate => { heldApprovalWrite = gate; },
+      replies: () => parse().filter(message => message.id === 993 && message.result).map(message => message.result),
+    });
+    if (!cancelBeforeTimeout) reply(prompt.id, { stopReason: "end_turn" });
+    await outcome;
+    await stopGrokSession(sessionId);
+  });
+
+  it.each([false, true])(
+    "fails closed on an overlapping Grok permission (allow already queued: %s)",
+    async (allowBeforeDuplicate) => {
+      const events: HarnessEvent[] = [];
+      const turn = sendGrokTurn({
+        sessionId: "grok-overlap",
+        cwd: "/repo",
+        model: "grok:grok-4.6",
+        runtimeMode: "supervised",
+        text: "hi",
+        attachments: [],
+        onEvent: (event) => events.push(event),
+      });
+      await handshake();
+      await waitFor(() => parse().some((message) => message.method === "session/prompt"), "prompt");
+      const prompt = parse().find((message) => message.method === "session/prompt")!;
+      let frame = 0;
+      await exerciseOverlappingApproval({
+        events,
+        requestId: 992,
+        allowBeforeDuplicate,
+        ask: () =>
+          nativeOutputFrame("grok-overlap", `overlap-${++frame}`, () =>
+            onLine!(
+              JSON.stringify({
+                jsonrpc: "2.0",
+                id: 992,
+                method: "session/request_permission",
+                params: {
+                  sessionId: "S1",
+                  toolCall: { toolCallId: "overlap", title: "Run git status", kind: "execute" },
+                  options: [
+                    { optionId: "allow-once", kind: "allow_once" },
+                    { optionId: "reject-once", kind: "reject_once" },
+                  ],
+                },
+              }),
+            ),
+          ),
+        approve: (nonce, decision) => respondGrokApproval("grok-overlap", 992, decision, nonce),
+        replies: () =>
+          parse()
+            .filter((message) => message.id === 992 && message.result)
+            .map((message) => message.result),
+        deniedResult: { outcome: { outcome: "selected", optionId: "reject-once" } },
+      });
+      reply(prompt.id, { stopReason: "end_turn" });
+      await turn;
+      await stopGrokSession("grok-overlap");
+    },
+  );
 
   it("authenticates, selects the model, and prompts", async () => {
     const events: HarnessEvent[] = [];
@@ -153,10 +233,51 @@ describe("grok live turn sequence", () => {
       }),
     );
     await waitFor(() => events.some((e) => e.type === "approval.requested"), "approval.requested");
+    const original = requestedApproval(events, 1);
     respondGrokApproval("t2", 1, "allow");
+    expect(parse().some((message) => message.id === 1 && message.result)).toBe(false);
+    respondGrokApproval("t2", 1, "allow", original.occurrenceId);
     await waitFor(() => parse().some((m) => m.id === 1 && m.result), "permission response");
     const response = parse().find((m) => m.id === 1 && m.result);
     expect(response.result.outcome.optionId).toBe("allow-once");
+    onLine!(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "session/request_permission",
+        params: {
+          sessionId: "S1",
+          toolCall: { title: "Run second command", kind: "execute", toolCallId: "call_b" },
+          options: [
+            { optionId: "allow-once", kind: "allow_once" },
+            { optionId: "reject-once", kind: "reject_once" },
+          ],
+        },
+      }),
+    );
+    await waitFor(
+      () => events.filter((event) => event.type === "approval.requested").length === 2,
+      "replacement permission",
+    );
+    const current = requestedApproval(events, 1);
+    expect(current.occurrenceId).not.toBe(original.occurrenceId);
+    respondGrokApproval("t2", 1, "allow", original.occurrenceId);
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 1 && message.result)).toHaveLength(1);
+    respondGrokApproval("t2", 1, "deny", current.occurrenceId);
+    await waitFor(
+      () => parse().filter((message) => message.id === 1 && message.result).length === 2,
+      "replacement matching reply",
+    );
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: 1,
+      occurrenceId: current.occurrenceId,
+      decision: "deny",
+    });
+    respondGrokApproval("t2", 1, "allow", current.occurrenceId);
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 1 && message.result)).toHaveLength(2);
     reply(promptId, { stopReason: "end_turn" });
     await turn;
     await stopGrokSession("t2");

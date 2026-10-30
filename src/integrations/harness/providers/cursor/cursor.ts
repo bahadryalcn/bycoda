@@ -1,4 +1,15 @@
 import {
+  createPendingApproval,
+  cancelPendingApprovals,
+  observePendingApprovalWrite,
+  type ApprovalActualWriteObserver,
+  ownsPendingApproval,
+  rejectOverlappingApproval,
+  releasePendingApproval,
+  type PendingApproval,
+} from "../pendingApproval";
+import { isApprovalOccurrenceId } from "../../../../shared/model/approvalOccurrence";
+import {
   captureNativeOutputWorkEvent,
   runNativeOutputWork,
   nativeOutputSink,
@@ -112,7 +123,7 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
-  approvals: Map<number, (decision: ApprovalDecision) => void>;
+  approvals: Map<number, PendingApproval>;
   questions: Map<number, ((reply: UserQuestionReply) => void) & QuestionDelivery>;
   visibleQuestionId?: number;
   enrichedTools: Set<string>;
@@ -196,8 +207,21 @@ export function respondCursorApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ) {
-  liveByThread.get(sessionId)?.approvals.get(requestId)?.(decision);
+  const live = liveByThread.get(sessionId);
+  const pending = live?.approvals.get(requestId);
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    pending.invalidated ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
+  pending(decision);
 }
 
 export function respondCursorQuestion(
@@ -234,8 +258,7 @@ export async function cancelCursorTurn(sessionId: string): Promise<void> {
   live.backgroundAgentTools.clear();
   if (live.toolEnrichmentTimer) cancelNativeOutputCallback(live.toolEnrichmentTimer);
   live.toolEnrichmentTimer = undefined;
-  for (const [, resolve] of live.approvals) resolve("deny");
-  live.approvals.clear();
+  cancelPendingApprovals(live.approvals);
   for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
   live.questions.clear();
   await live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
@@ -255,8 +278,7 @@ export async function stopCursorSession(sessionId: string): Promise<void> {
     live.pendingToolEnrichments.clear();
     live.agentTools.clear();
     live.backgroundAgentTools.clear();
-    for (const [, resolve] of live.approvals) resolve("deny");
-    live.approvals.clear();
+    cancelPendingApprovals(live.approvals);
     for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
     live.questions.clear();
   }
@@ -327,8 +349,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       const live = liveRef.current;
       if (live) {
         live.promptActive = false;
-        for (const resolve of live.approvals.values()) resolve("deny");
-        live.approvals.clear();
+        cancelPendingApprovals(live.approvals);
         for (const resolve of live.questions.values()) resolve({ kind: "skipped" });
         live.questions.clear();
         retireCursorSubagentPolling(live);
@@ -729,6 +750,17 @@ async function handlePermission(live: Live, id: number, params: unknown) {
       const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
         live.onEvent(event),
       );
+      const overlap = rejectOverlappingApproval(
+        live.approvals,
+        id,
+        nativeOutputSink(outputWork, (onActualWrite: ApprovalActualWriteObserver) =>
+          live.acp.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite),
+        ),
+      );
+      if (overlap) {
+        await overlap;
+        return;
+      }
       const rec = asRecord(params);
       const subject = asRecord(rec?.subject);
       const tool =
@@ -804,34 +836,47 @@ async function handlePermission(live: Live, id: number, params: unknown) {
         return;
       }
 
-      emitNative({
-        type: "approval.requested",
-        requestId: id,
-        title,
-        kind,
-        callId,
-        preview,
-      });
+      const pending = createPendingApproval((occurrenceId, decision) =>
+        emitNative({ type: "approval.resolved", requestId: id, occurrenceId, decision }),
+      );
+      const { occurrenceId } = pending;
+      live.approvals.set(id, pending);
+      try {
+        emitNative({
+          type: "approval.requested",
+          requestId: id,
+          occurrenceId,
+          title,
+          kind,
+          callId,
+          preview,
+        });
 
-      const decision = await new Promise<ApprovalDecision>((resolve) => {
-        live.approvals.set(id, resolve);
-      });
-      live.approvals.delete(id);
-      emitNative({ type: "approval.resolved", requestId: id, decision });
+        const decision = await pending.decision;
+        pending.report(decision);
+        if (!Array.from(liveByThread.values()).includes(live)) return;
 
-      const optionId =
-        decision === "allow"
-          ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
-          : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
+        const optionId =
+          decision === "allow"
+            ? pickOption(optionIds, ["allow-once", "allow_once", "allow-always", "allow_always"])
+            : pickOption(optionIds, ["reject-once", "reject_once", "reject-always"]);
 
-      await nativeOutputSink(outputWork, () =>
-        live.acp.respond(id, {
-          outcome: {
-            outcome: "selected",
-            optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
-          },
-        }),
-      )();
+        await nativeOutputSink(outputWork, () => {
+          if (!Array.from(liveByThread.values()).includes(live)) return Promise.resolve();
+          if (!ownsPendingApproval(live.approvals, id, pending)) {
+            pending.report("cancelled");
+            return live.acp.respond(id, { outcome: { outcome: "cancelled" } }, observePendingApprovalWrite(live.approvals, id, pending));
+          }
+          return live.acp.respond(id, {
+            outcome: {
+              outcome: "selected",
+              optionId: optionId ?? (decision === "allow" ? "allow-once" : "reject-once"),
+            },
+          }, observePendingApprovalWrite(live.approvals, id, pending));
+        })();
+      } finally {
+        releasePendingApproval(live.approvals, id, pending);
+      }
     },
     { additionalInput: true },
   );

@@ -1,3 +1,5 @@
+import { requestedApproval } from "../approvalOccurrence.testSupport";
+import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -32,6 +34,7 @@ const mock = vi.hoisted(() => {
     autoPrompt: false,
     promptStop: "end_turn",
     blockWrites: false,
+    heldApprovalWrite: null as (() => Promise<void>) | null,
     resolveGates: null as Array<() => void> | null,
     setupConfigOptions: null as unknown[] | null,
     setConfigResult: null as unknown,
@@ -58,6 +61,7 @@ vi.mock("../../core/child", () => ({
   writeChild: async (thread: string, line: string) => {
     const message = JSON.parse(line);
     mock.sent.push({ thread, ...message });
+    if (message.id === 993 && message.result && mock.heldApprovalWrite) await mock.heldApprovalWrite();
     if (mock.blockWrites) return new Promise<void>(() => undefined);
     if (!message.method || message.id == null) return;
     if (mock.silent.has(message.method)) return;
@@ -189,6 +193,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     mock.autoPrompt = false;
     mock.promptStop = "end_turn";
     mock.blockWrites = false;
+    mock.heldApprovalWrite = null;
     mock.resolveGates = null;
     mock.setupConfigOptions = null;
     mock.setConfigResult = null;
@@ -212,6 +217,91 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     resetHarnessModelOverlays();
   });
 
+  it.each([false, true])("retains Antigravity actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
+    const turn = provider.send(input);
+    const outcome = turn.catch(() => undefined);
+    await waitPrompt();
+    let frame = 0;
+    await exerciseApprovalActualWriteLifetime({
+      events, requestId: 993, cancelBeforeTimeout,
+      ask: () => nativeOutputFrame("thread", `actual-write-${++frame}`, () => permission("execute", 993)),
+      approve: nonce => provider.respond("thread", 993, "allow", nonce),
+      cancel: () => provider.cancel("thread"),
+      holdWrites: gate => { mock.heldApprovalWrite = gate; },
+      replies: () => mock.sent.filter(message => message.id === 993 && message.result).map(message => message.result),
+    });
+    if (!cancelBeforeTimeout) finishPrompt();
+    await outcome;
+  });
+
+  it.each([false, true])(
+    "fails closed on an overlapping Antigravity permission (allow already queued: %s)",
+    async (allowBeforeDuplicate) => {
+      const turn = provider.send(input);
+      await waitPrompt();
+      let frame = 0;
+      await exerciseOverlappingApproval({
+        events,
+        requestId: 992,
+        allowBeforeDuplicate,
+        ask: () =>
+          nativeOutputFrame("thread", `overlap-${++frame}`, () => permission("execute", 992)),
+        approve: (nonce, decision) => provider.respond("thread", 992, decision, nonce),
+        replies: () =>
+          mock.sent
+            .filter((message) => message.id === 992 && message.result)
+            .map((message) => message.result),
+        deniedResult: { outcome: { outcome: "selected", optionId: "no" } },
+      });
+      finishPrompt();
+      await turn;
+    },
+  );
+
+  it("never applies an earlier permission occurrence when the server reuses its RPC ID", async () => {
+    const turn = provider.send(input);
+    await waitPrompt();
+    let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+    for (let occurrence = 0; occurrence < 2; occurrence++) {
+      permission("execute", 917);
+      await vi.waitFor(() =>
+        expect(
+          events.filter((event) => event.type === "approval.requested" && event.requestId === 917),
+        ).toHaveLength(occurrence + 1),
+      );
+      const asked = requestedApproval(events, 917);
+      provider.respond("thread", 917, "allow");
+      if (previous) {
+        expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+        provider.respond("thread", 917, "allow", previous.occurrenceId);
+      }
+      await flush();
+      expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+        occurrence,
+      );
+      provider.respond("thread", 917, "deny", asked.occurrenceId);
+      await vi.waitFor(() =>
+        expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+          occurrence + 1,
+        ),
+      );
+      expect(events).toContainEqual({
+        type: "approval.resolved",
+        requestId: 917,
+        occurrenceId: asked.occurrenceId,
+        decision: "deny",
+      });
+      provider.respond("thread", 917, "allow", asked.occurrenceId);
+      await flush();
+      expect(mock.sent.filter((message) => message.id === 917 && message.result)).toHaveLength(
+        occurrence + 1,
+      );
+      previous = asked;
+    }
+    finishPrompt();
+    await turn;
+  });
+
   it("keeps a generated route bound to its explicit logical hint through deferred approval", async () => {
     const turn = provider.send({ ...input, nativeOutputSessionId: "thread" });
     await waitPrompt();
@@ -226,7 +316,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     const origin = getNativeOutputEventOrigin(asked);
     expect(origin).not.toBeNull();
     expect(inspect().pendingCausalWork).toBeGreaterThan(0);
-    provider.respond("thread", 913, "allow");
+    provider.respond("thread", 913, "allow", requestedApproval(events, 913).occurrenceId);
     await flush();
     const resolved = events.find((e) => e.type === "approval.resolved")!;
     expect(getNativeOutputEventOrigin(resolved)).toBe(origin);
@@ -272,7 +362,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     permission();
     await vi.waitFor(() => expect(events.some((e) => e.type === "approval.requested")).toBe(true));
     expect(response()).toBeUndefined();
-    provider.respond("thread", 100, "allow");
+    provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
     await vi.waitFor(() =>
       expect(response()).toEqual({ outcome: { outcome: "selected", optionId: "yes" } }),
     );
@@ -424,7 +514,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     await vi.waitFor(() => expect(events.some((e) => e.type === "approval.requested")).toBe(true));
     expect(secondEvents.some((e) => e.type === "approval.requested")).toBe(false);
     expect(response()).toBeUndefined();
-    provider.respond("thread", 100, "allow");
+    provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
     await vi.waitFor(() => expect(response()).toBeTruthy());
     finishPrompt();
     await first;
@@ -509,6 +599,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       expect(events).toContainEqual({
         type: "approval.resolved",
         requestId: 100,
+        occurrenceId: requestedApproval(events, 100).occurrenceId,
         decision: "deny",
       }),
     );
@@ -566,7 +657,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
       // The approval wait is user time, not provider silence: no stall note.
       await vi.advanceTimersByTimeAsync(300_000);
       expect(events.some((e) => e.type === "status")).toBe(false);
-      provider.respond("thread", 100, "allow");
+      provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
       await flush();
       finishPrompt();
       await vi.runAllTimersAsync();
@@ -1015,7 +1106,7 @@ describe.each(providers)("$id offline ACP transport", (provider) => {
     mock.blockWrites = true;
     vi.useFakeTimers();
     try {
-      provider.respond("thread", 100, "allow");
+      provider.respond("thread", 100, "allow", requestedApproval(events, 100).occurrenceId);
       const outcome = turn.then(
         () => "resolved",
         (e: Error) => e.message,

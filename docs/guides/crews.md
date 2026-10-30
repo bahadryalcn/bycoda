@@ -254,6 +254,22 @@ with run-delete support and after active work is stopped. It removes the work
 from the list while keeping the crew, tasks and conversations. Decisions are
 answered in the coordinator conversation through **Answer**.
 
+The work list appears only when a crew has more than one piece of work; a single
+piece of work opens its detail directly, and a crew without work shows one
+**Start work** entry. In a narrow window the dialog shows either the list or one
+piece of work, with **Back to work list**. A selected piece of work leads with its
+status, decisions, blockers and the next action; requests, the team and **Delete
+work** follow below. While an action runs its name stays beside the controls
+(for example **Pausing…**).
+
+**Working settings** group model rules, execution limits, permissions and
+appearance. Model eligibility and ranking open with **Edit model rules** (they
+start open when they differ from the defaults); the summary and any blocked or
+narrowed warning stay visible. The coordinator-permission and provider-subagent
+options state what the current choice does. Settings belong to the crew and
+apply when you save and to work you start afterwards; appearance is saved on this
+device right away.
+
 ## Model evidence, coordination and review
 
 Automatic selection filters required capabilities, availability, fixed choices

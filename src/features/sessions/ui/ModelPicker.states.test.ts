@@ -433,7 +433,12 @@ describe("model picker unsupported Reasoning and Fast", () => {
 
   it("shows Fast alone when only Fast is supported, and toggles it with one click", async () => {
     setHarnessModels("cursor", [
-      { id: "cursor:fast-only", harness: "cursor", name: "Fast only", settings: [toggle("fast", "false")] },
+      {
+        id: "cursor:fast-only",
+        harness: "cursor",
+        name: "Fast only",
+        settings: [toggle("fast", "false")],
+      },
     ]);
     const onSettingsChange = vi.fn();
     await act(async () =>

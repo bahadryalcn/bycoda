@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { CONVERSATION_VISUAL_TOOLS, describeVisualConversationTool } from "./conversation-visual-tools";
+import { APPROVAL_OCCURRENCE_PATTERN } from "../src/shared/model/approvalOccurrence";
+import {
+  CONVERSATION_VISUAL_TOOLS,
+  describeVisualConversationTool,
+} from "./conversation-visual-tools";
 import { AsyncResource } from "node:async_hooks";
 import { callConversationAppRead } from "./conversation-app-read";
 import { APP_UI_NAVIGATION_VIEWS, APP_UI_SETTINGS } from "../src/app/model/appUiControl";
@@ -180,9 +184,18 @@ export const CONVERSATION_TOOLS = {
       targetRunId: string,
       requestId: string,
       approvalId: { type: "integer", minimum: 0 },
+      approvalOccurrenceId: { type: "string", pattern: APPROVAL_OCCURRENCE_PATTERN.source },
       decision: { enum: ["allow", "deny"] },
     },
-    ["runId", "sessionId", "targetRunId", "requestId", "approvalId", "decision"],
+    [
+      "runId",
+      "sessionId",
+      "targetRunId",
+      "requestId",
+      "approvalId",
+      "approvalOccurrenceId",
+      "decision",
+    ],
   ),
   "crews.answer": object(
     {

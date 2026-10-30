@@ -217,6 +217,16 @@ export function ServersView({
     ? servers.find((server) => server.id === colorTarget.serverId)
     : undefined;
   const filterCount = Number(!!group) + Number(!!tag) + Number(favoritesOnly);
+  // Search, filters and the layout switch only mean something once there are servers to narrow.
+  const showCollectionTools =
+    !loaded || servers.length > 0 || !!search.trim() || filterCount > 0 || recentFirst;
+  const resetNarrowing = () => {
+    setSearch("");
+    setGroup("");
+    setTag("");
+    setFavoritesOnly(false);
+    setRecentFirst(false);
+  };
   const filterSummary = [group, tag, favoritesOnly ? t("Favorites only") : ""]
     .filter(Boolean)
     .join(" · ");
@@ -398,6 +408,8 @@ export function ServersView({
       </div>
       <div className="flex flex-wrap items-center gap-2 border-b border-stroke px-3 py-2">
         <div className="servers-search-actions flex min-w-0 basis-64 flex-1 items-center gap-2">
+          {showCollectionTools ? (
+          <>
           <SearchInput
             appearance="field"
             containerClassName="servers-search min-w-0 max-w-96 flex-1"
@@ -475,6 +487,8 @@ export function ServersView({
             </Popover>
           ) : null}
           <ViewToggle layout={layout} onChange={setLayout} />
+          </>
+          ) : null}
           <Button
             variant="ghost"
             iconOnly
@@ -572,6 +586,7 @@ export function ServersView({
         >
           {loaded && servers.length === 0 ? (
             <EmptyState
+              kind="empty"
               icon={<Server aria-hidden className="icon-lg" />}
               title={t("No machines connected.")}
               description={t(
@@ -585,99 +600,94 @@ export function ServersView({
             />
           ) : null}
           {servers.length > 0 && filtered.length === 0 ? (
-            <div className="flex flex-col items-center gap-2 py-8 text-sm text-(--ui-text-muted)">
-              <p>{t("No matching servers.")}</p>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setSearch("");
-                  setGroup("");
-                  setTag("");
-                  setFavoritesOnly(false);
-                  setRecentFirst(false);
-                }}
-              >
-                {t("Reset filters")}
-              </Button>
-            </div>
+            <EmptyState
+              context="panel"
+              kind="filtered"
+              icon={null}
+              description={t("No matching servers.")}
+              onReset={resetNarrowing}
+              resetLabel={t("Reset filters")}
+            />
           ) : null}
-          <div
-            aria-busy={bulkBusy}
-            className="servers-selection-bar sticky top-0 z-[1] bg-(--ui-surface) text-xs"
-          >
-            {checkedServers.length > 0 ? (
-              <Checkbox
-                aria-label={t("Select visible servers")}
-                disabled={!filtered.length || bulkBusy}
-                checked={filtered.length > 0 && visibleChecked === filtered.length}
-                indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
-                onChange={(event) => {
-                  const checked = event.target.checked;
-                  setCheckedIds((previous) => {
-                    const next = new Set(previous);
-                    for (const server of filtered) {
-                      if (checked) next.add(server.id);
-                      else next.delete(server.id);
-                    }
-                    return next;
-                  });
-                }}
-              />
-            ) : null}
-            <h1 className="min-w-0 text-sm font-medium">
-              {t("Servers")}{" "}
-              <span className="text-(--ui-text-muted) tabular-nums">
-                {loaded ? (filtered.length === servers.length
-                  ? servers.length
-                  : `${filtered.length} / ${servers.length}`) : null}
-              </span>
-            </h1>
-            {checkedServers.length ? (
-              <>
-                <span role="status" className="text-(--ui-text-secondary)">
-                  {t("{p0} selected", { p0: checkedServers.length })}
-                  {checkedServers.length > visibleChecked
-                    ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
-                    : ""}
+          {servers.length > 0 || !loaded ? (
+            <div
+              aria-busy={bulkBusy}
+              className="servers-selection-bar sticky top-0 z-[1] bg-(--ui-surface) text-xs"
+            >
+              {checkedServers.length > 0 ? (
+                <Checkbox
+                  aria-label={t("Select visible servers")}
+                  disabled={!filtered.length || bulkBusy}
+                  checked={filtered.length > 0 && visibleChecked === filtered.length}
+                  indeterminate={visibleChecked > 0 && visibleChecked < filtered.length}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setCheckedIds((previous) => {
+                      const next = new Set(previous);
+                      for (const server of filtered) {
+                        if (checked) next.add(server.id);
+                        else next.delete(server.id);
+                      }
+                      return next;
+                    });
+                  }}
+                />
+              ) : null}
+              <h1 className="min-w-0 text-sm font-medium">
+                {t("Servers")}{" "}
+                <span className="text-(--ui-text-muted) tabular-nums">
+                  {loaded ? (filtered.length === servers.length
+                    ? servers.length
+                    : `${filtered.length} / ${servers.length}`) : null}
                 </span>
-                <Button
-                  variant="ghost"
-                  disabled={bulkBusy}
-                  onClick={() => setCheckedIds(new Set())}
-                >
-                  {t("Clear selection")}
-                </Button>
-                <div className="ms-auto flex gap-1">
+              </h1>
+              {checkedServers.length ? (
+                <>
+                  <span role="status" className="text-(--ui-text-secondary)">
+                    {t("{p0} selected", { p0: checkedServers.length })}
+                    {checkedServers.length > visibleChecked
+                      ? ` · ${t("{p0} hidden", { p0: checkedServers.length - visibleChecked })}`
+                      : ""}
+                  </span>
                   <Button
                     variant="ghost"
                     disabled={bulkBusy}
-                    onClick={() => void runBulk(checkedServers, false)}
-                    startIcon={<Star className="icon-sm" />}
+                    onClick={() => setCheckedIds(new Set())}
                   >
-                    {t("Favorite")}
+                    {t("Clear selection")}
                   </Button>
-                  <Button
-                    variant="danger"
-                    disabled={bulkBusy}
-                    onClick={() => {
-                      setActionError("");
-                      setBulkTargets([...checkedServers]);
-                    }}
-                    startIcon={<Trash2 className="icon-sm" />}
-                  >
-                    {t("Delete selected")}
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <span className="ms-auto min-w-0 text-right text-(--ui-text-muted)">
-                {filterSummary ? (
-                  <span className="block truncate" title={filterSummary}>{filterSummary}</span>
-                ) : null}
-                {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
-              </span>
-            )}
-          </div>
+                  <div className="ms-auto flex gap-1">
+                    <Button
+                      variant="ghost"
+                      disabled={bulkBusy}
+                      onClick={() => void runBulk(checkedServers, false)}
+                      startIcon={<Star className="icon-sm" />}
+                    >
+                      {t("Favorite")}
+                    </Button>
+                    <Button
+                      variant="danger"
+                      disabled={bulkBusy}
+                      onClick={() => {
+                        setActionError("");
+                        setBulkTargets([...checkedServers]);
+                      }}
+                      startIcon={<Trash2 className="icon-sm" />}
+                    >
+                      {t("Delete selected")}
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <span className="ms-auto min-w-0 text-right text-(--ui-text-muted)">
+                  {filterSummary ? (
+                    <span className="block truncate" title={filterSummary}>{filterSummary}</span>
+                  ) : null}
+                  {recentFirst ? <span className="block">{t("Recently used first")}</span> : null}
+                </span>
+              )}
+            </div>
+          ) : null}
           <ul
             aria-label={t("Servers")}
             data-servers-layout={layout}

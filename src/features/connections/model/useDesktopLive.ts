@@ -57,6 +57,7 @@ export function useDesktopLive(
     let stopped = false;
     let running = false;
     let machineId: string | undefined;
+    let approvalOccurrenceSupported = false;
     let checkedAt = 0;
     const { unacked, handled, beat, inboxResults, inboxRunning } = state.current;
 
@@ -67,15 +68,19 @@ export function useDesktopLive(
         if (!machineId || Date.now() - checkedAt > MACHINE_RECHECK_MS) {
           checkedAt = Date.now();
           machineId = undefined;
+          approvalOccurrenceSupported = false;
           const machines = await invoke<RemoteMachine[]>("remote_machines");
           const machine = (Array.isArray(machines) ? machines : []).find(isLocalSyncMachine);
           if (!machine || stopped) return;
           const capabilities = await loadRemoteCapabilities(machine.environmentId);
           if (!supportsDesktopLive(capabilities) || stopped) return;
+          approvalOccurrenceSupported =
+            capabilities?.includes("sessions.approvalOccurrence.v1") === true;
           machineId = machine.id;
         }
         const id = machineId;
         await runDesktopLiveTick({
+          approvalOccurrenceSupported,
           clientId: desktopClientId,
           request: (payload) =>
             remoteRequest<DesktopLiveResult>(id, "sessions.desktopLive", payload),
@@ -93,6 +98,9 @@ export function useDesktopLive(
               return handler(sessionId, cwd);
             },
             stop: (sessionId) => handlersRef.current.stop(sessionId),
+            captureApproval: (...args) => handlersRef.current.captureApproval?.(...args),
+            approvalDispatchStarted: (...args) =>
+              handlersRef.current.approvalDispatchStarted?.(...args) ?? false,
             approve: (...args) => handlersRef.current.approve(...args),
             answer: (...args) => handlersRef.current.answer(...args),
           },
@@ -100,7 +108,10 @@ export function useDesktopLive(
           handled,
           onQueuesChanged: wakeSharedLocalQueues,
           onAdopted: (change) => noteAdoptedBeat(change),
-          queueLeases: { held: heldSharedQueueLeases, answered: noteSharedQueueLeases },
+          queueLeases: {
+            held: heldSharedQueueLeases,
+            answered: noteSharedQueueLeases,
+          },
           runLeases: { held: heldRunLeases, answered: noteRunLeases },
           beat,
           deletions: state.current.deletions,
@@ -126,6 +137,7 @@ export function useDesktopLive(
         });
       } catch {
         machineId = undefined; // Host unreachable; the next tick looks again.
+        approvalOccurrenceSupported = false;
         beat.idleAt = undefined;
         adoptedBeatFailed();
       } finally {

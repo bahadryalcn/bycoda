@@ -1,4 +1,8 @@
 import {
+  createApprovalOccurrenceId,
+  isApprovalOccurrenceId,
+} from "../../../../shared/model/approvalOccurrence";
+import {
   captureNativeOutputWorkEvent,
   runNativeOutputWork,
   nativeOutputSink,
@@ -89,6 +93,7 @@ import type {
 type ApprovalOutcome = ApprovalDecision | "cancelled";
 
 type PendingApproval = {
+  occurrenceId: string;
   rpcId: JsonRpcId;
   threadId: string;
   kind: CodexApprovalKind;
@@ -337,10 +342,19 @@ export function respondCodexApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
-  if (!pending) return;
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
   pending.resolve(decision);
 }
 
@@ -1611,12 +1625,18 @@ async function handleServerRequest(
         emitNative({
           type: "approval.requested",
           requestId: uiId,
+          occurrenceId: pending.occurrenceId,
           kind: "other",
           title: confirmation.title,
         });
         const decision = await pending;
-        emitNative({ type: "approval.resolved", requestId: uiId, decision });
-        if (decision !== "cancelled")
+        emitNative({
+          type: "approval.resolved",
+          requestId: uiId,
+          occurrenceId: pending.occurrenceId,
+          decision,
+        });
+        if (decision !== "cancelled" && Array.from(liveByThread.values()).includes(live))
           await nativeOutputSink(outputWork, () =>
             live.rpc.respond(id, {
               action: decision === "allow" ? "accept" : "decline",
@@ -1683,14 +1703,15 @@ async function handleServerRequest(
             mapped.kind,
             threadId,
           );
-          emitNative(mapped.event);
+          emitNative({ ...mapped.event, occurrenceId: pending.occurrenceId });
           const decision = await pending;
           emitNative({
             type: "approval.resolved",
             requestId: uiId,
+            occurrenceId: pending.occurrenceId,
             decision,
           });
-          if (decision === "cancelled") return;
+          if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
           if (decision === "allow") {
             const rec = asRecord(params);
             await nativeOutputSink(outputWork, () =>
@@ -1732,14 +1753,15 @@ async function handleServerRequest(
         mapped.kind,
         threadId,
       );
-      emitNative(mapped.event);
+      emitNative({ ...mapped.event, occurrenceId: pending.occurrenceId });
       const decision = await pending;
       emitNative({
         type: "approval.resolved",
         requestId: uiId,
+        occurrenceId: pending.occurrenceId,
         decision,
       });
-      if (decision === "cancelled") return;
+      if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, () =>
         live.rpc.respond(id, {
           decision: toCodexApprovalDecision(decision, mapped.kind),
@@ -1823,12 +1845,14 @@ function waitApproval(
   rpcId: JsonRpcId,
   kind: CodexApprovalKind,
   threadId: string,
-): Promise<ApprovalOutcome> {
-  return new Promise<ApprovalOutcome>((resolve) => {
-    live.approvals.set(uiId, { rpcId, threadId, kind, resolve });
+): Promise<ApprovalOutcome> & { occurrenceId: string } {
+  const occurrenceId = createApprovalOccurrenceId();
+  const promise = new Promise<ApprovalOutcome>((resolve) => {
+    live.approvals.set(uiId, { rpcId, threadId, kind, occurrenceId, resolve });
   }).finally(() => {
-    live.approvals.delete(uiId);
+    if (live.approvals.get(uiId)?.occurrenceId === occurrenceId) live.approvals.delete(uiId);
   });
+  return Object.assign(promise, { occurrenceId });
 }
 
 function autoApproval(runtimeMode: RuntimeMode, kind: CodexApprovalKind): ApprovalDecision | null {

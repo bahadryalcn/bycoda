@@ -1,0 +1,12 @@
+@layer theme, base, components, utilities;
+/* A popover that is not asked to own its scroll region still has to stay reachable: when its
+   content outgrows the height bound the surface scrolls instead of the frame clipping it.
+   Components layer, so a consumer's own overflow utility (an inner rail, deliberate clipping)
+   wins. Horizontal overflow stays clipped as before. */
+@layer components {
+  .bounded {
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}

@@ -12,6 +12,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import {
@@ -29,10 +30,13 @@ import {
 } from "../../../shared/ui/icons";
 import {
   questionDraftKey,
-  associateQuestionDraft,
   readQuestionDraft,
-  writeQuestionDraft,
+  reserveQuestionDraft,
+  subscribeQuestionDraftCapacity,
+  getQuestionDraftCapacitySnapshot,
   type QuestionDraft,
+  type QuestionDraftFailure,
+  type QuestionDraftReservation,
 } from "../model/questionDrafts";
 import {
   CUSTOM_OPTION_ID,
@@ -67,7 +71,19 @@ function QuestionFormContent({
   onInteraction,
 }: Props) {
   const t = useT();
-  const parentClosed = useParentInputsClosed(parentSessionId);
+  const parentScope = parentSessionId ? undefined : "profile";
+  const parentClosed = useParentInputsClosed(parentSessionId, parentScope);
+  const capacityEpoch = useSyncExternalStore(
+    subscribeQuestionDraftCapacity,
+    getQuestionDraftCapacitySnapshot,
+    getQuestionDraftCapacitySnapshot,
+  );
+  const reservation = useRef<QuestionDraftReservation | undefined>(undefined);
+  const privateMountOwner = useRef({});
+  const everReserved = useRef(false);
+  const mounted = useRef(false);
+  const [reserved, setReserved] = useState(false);
+  const [capacityIssue, setCapacityIssue] = useState<QuestionDraftFailure | undefined>(undefined);
   const statusId = useId();
   const [draft, setDraft] = useState<QuestionDraft>(
     () =>
@@ -92,6 +108,7 @@ function QuestionFormContent({
     {
       kind: "question-draft",
       sessionId: parentSessionId,
+      scope: parentScope,
       snapshot: () => ({
         source: "mounted-question-form",
         draftScope,
@@ -114,44 +131,100 @@ function QuestionFormContent({
     form,
   );
   useLayoutEffect(() => {
-    return associateQuestionDraft(draftScope, prompt, parentSessionId);
-  }, [draftScope, prompt, parentSessionId]);
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      reservation.current?.release();
+      reservation.current = undefined;
+      everReserved.current = false;
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const current = reservation.current;
+    if (current) {
+      if (!current.current()) {
+        setReserved(false);
+        setCapacityIssue("retired");
+        return;
+      }
+      const refreshed = current.refresh(prompt);
+      if (!refreshed.ok) {
+        setReserved(false);
+        setCapacityIssue(refreshed.reason);
+        return;
+      }
+      setReserved(true);
+      return;
+    }
+    if (everReserved.current) return;
+    const result = reserveQuestionDraft(
+      draftScope,
+      prompt,
+      parentSessionId,
+      privateMountOwner.current,
+    );
+    if (!result.ok) {
+      setReserved(false);
+      setCapacityIssue(result.reason);
+      return;
+    }
+    reservation.current = result.value;
+    everReserved.current = true;
+    const retained = result.value.read();
+    if (retained) {
+      draftRef.current = retained;
+      setDraft(retained);
+      submitted.current = !!retained.delivery;
+      setSubmitting(retained.delivery === "sending");
+      setLocalUnknown(retained.delivery === "unknown");
+    }
+    setReserved(true);
+    setCapacityIssue(undefined);
+  }, [draftScope, prompt, parentSessionId, capacityEpoch]);
   const sending = submitting || prompt.delivery === "sending";
-  const held =
+  const transportHeld =
     parentClosed ||
     sending ||
     localUnknown ||
     prompt.delivery === "unknown" ||
     prompt.delivery === "queued";
+  const held = transportHeld || !reserved;
 
+  const persistDraft = (next: QuestionDraft, external = false) => {
+    const result = reservation.current?.write(next, external);
+    if (!result?.ok) {
+      if (mounted.current) setCapacityIssue(result?.reason ?? "retired");
+      return false;
+    }
+    draftRef.current = result.value;
+    if (mounted.current) {
+      setDraft(result.value);
+      setCapacityIssue(undefined);
+      parentChanged();
+    }
+    return true;
+  };
   const updateDraft = (update: (current: QuestionDraft) => QuestionDraft) => {
-    if (!parentChanged.canMutate()) return;
-    parentChanged();
-    const next = update(draftRef.current);
-    draftRef.current = next;
-    writeQuestionDraft(draftScope, prompt, next);
-    setDraft(next);
+    if (!mounted.current || !reservation.current?.current() || !parentChanged.canMutate())
+      return false;
+    return persistDraft(update(draftRef.current));
   };
 
   useEffect(() => {
     if (prompt.delivery === "failed") {
+      const current = draftRef.current;
+      if (
+        current.delivery &&
+        !persistDraft({ ...current, delivery: undefined, pendingAction: undefined }, true)
+      )
+        return;
       submitted.current = false;
       setSubmitting(false);
       setLocalUnknown(false);
-      setDraft((current) => {
-        if (!current.delivery) return current;
-        const next = {
-          ...current,
-          delivery: undefined,
-          pendingAction: undefined,
-        };
-        writeQuestionDraft(draftScope, prompt, next, true);
-        return next;
-      });
     } else if (prompt.delivery === "unknown" || prompt.delivery === "queued") {
       setSubmitting(false);
     }
-  }, [prompt]);
+  }, [prompt, reserved]);
 
   useEffect(() => {
     if (prompt.autoResolveAt == null || !visible) return;
@@ -161,7 +234,7 @@ function QuestionFormContent({
   }, [prompt.requestId, prompt.autoResolveAt, visible]);
 
   const interact = () => {
-    if (!parentChanged.canMutate()) return;
+    if (!reserved || !reservation.current?.current() || !parentChanged.canMutate()) return;
     if (prompt.autoResolveAt != null) onInteraction?.(prompt.requestId);
   };
 
@@ -180,27 +253,35 @@ function QuestionFormContent({
     pendingAction: QuestionDraft["pendingAction"] = "answer",
   ) => {
     if (submitted.current || held) return;
+    const originalReservation = reservation.current;
+    if (!originalReservation?.current()) return;
     const admitted = parentChanged.admit();
     if (!admitted) return;
     try {
       admitted.apply(() => {
+        if (!updateDraft((current) => ({ ...current, delivery: "sending", pendingAction }))) return;
         submitted.current = true;
-        parentChanged();
         setSubmitting(true);
         setLocalUnknown(false);
-        updateDraft((current) => ({
-          ...current,
-          delivery: "sending",
-          pendingAction,
-        }));
+        parentChanged();
         try {
           onReply(prompt.requestId, reply);
         } catch {
-          setSubmitting(false);
+          if (mounted.current) setSubmitting(false);
           // A callback can throw after dispatch. Only an authoritative failed
           // transport update can establish that sending again is safe.
-          setLocalUnknown(true);
-          updateDraft((current) => ({ ...current, delivery: "unknown" }));
+          if (mounted.current) setLocalUnknown(true);
+          // This is the original synchronous admitted continuation, including
+          // when dispatch retired the view. It records uncertainty, never retries.
+          const original = originalReservation.read();
+          if (original) {
+            const retained = originalReservation.write({ ...original, delivery: "unknown" });
+            if (retained.ok && mounted.current && reservation.current === originalReservation) {
+              draftRef.current = retained.value;
+              setDraft(retained.value);
+              parentChanged();
+            }
+          }
         }
       });
     } finally {
@@ -228,11 +309,14 @@ function QuestionFormContent({
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
     if (last) {
-      updateDraft((current) => ({
-        ...current,
-        answers: nextAnswers,
-        custom: nextCustom,
-      }));
+      if (
+        !updateDraft((current) => ({
+          ...current,
+          answers: nextAnswers,
+          custom: nextCustom,
+        }))
+      )
+        return;
       finish(nextAnswers, nextCustom, "dismiss");
       return;
     }
@@ -258,7 +342,18 @@ function QuestionFormContent({
   // Providers may repeat the entire question as their header.
   const title = heading && heading !== question.prompt.trim() ? heading : undefined;
   const queued = prompt.delivery === "queued";
-  const uncertain = !queued && (prompt.delivery === "unknown" || localUnknown);
+  const uncertain =
+    !queued && (prompt.delivery === "unknown" || localUnknown || capacityIssue === "pending");
+  const capacityMessage =
+    capacityIssue === "capacity"
+      ? t(
+          "Question capacity is full. Your saved answers are kept. Resolve or discard another question to continue.",
+        )
+      : capacityIssue === "size"
+        ? t("This question or answer is too large to keep locally. Your previous answer is kept.")
+        : capacityIssue && capacityIssue !== "pending" && capacityIssue !== "closed"
+          ? t("Question state changed. Your saved answer is kept.")
+          : undefined;
   const failed = !sending && prompt.delivery === "failed";
   const dismissing = sending && draft.pendingAction === "dismiss";
   const pendingLabel = dismissing
@@ -379,7 +474,7 @@ function QuestionFormContent({
               }))
             }
             onCustom={(value) => {
-              updateDraft((current) => {
+              return updateDraft((current) => {
                 const selected = current.answers[question.id] ?? [];
                 if (question.multiSelect) {
                   const without = selected.filter((id) => !isCustomId(question, id));
@@ -402,12 +497,20 @@ function QuestionFormContent({
                 };
               });
             }}
+            onRejectedInput={() => {
+              if (mounted.current) parentChanged();
+            }}
           />
         </fieldset>
         <div className={styles.footer}>
           <div className={styles.feedback}>
             {parentClosed ? (
               <p role="status">{t("Preparing session checkpoint. Your draft is kept.")}</p>
+            ) : null}
+            {capacityMessage ? (
+              <p role="alert" className={styles.status} data-error="true">
+                {capacityMessage}
+              </p>
             ) : null}
             <p
               role={failed || uncertain ? "alert" : "status"}
@@ -418,7 +521,7 @@ function QuestionFormContent({
               <StatusIcon className="icon-sm shrink-0" />
               <span>{status}</span>
             </p>
-            {prompt.autoResolveAt != null && !held ? (
+            {prompt.autoResolveAt != null && !transportHeld ? (
               <span
                 className="text-ui-caption text-(--ui-text-secondary) tabular-nums"
                 title={t("Interact to keep this question open.")}
@@ -489,13 +592,15 @@ function QuestionFields({
   custom,
   onSelect,
   onCustom,
+  onRejectedInput,
   locked = false,
 }: {
   question: UserQuestion;
   selected: string[];
   custom: string;
   onSelect: (optionId: string) => void;
-  onCustom: (value: string) => void;
+  onCustom: (value: string) => boolean;
+  onRejectedInput: () => void;
   locked?: boolean;
 }) {
   const t = useT();
@@ -579,7 +684,12 @@ function QuestionFields({
           value={custom}
           rows={3}
           readOnly={locked}
-          onChange={(event) => onCustom(event.target.value)}
+          onChange={(event) => {
+            if (!onCustom(event.currentTarget.value)) {
+              event.currentTarget.value = custom;
+              onRejectedInput();
+            }
+          }}
           placeholder={t("Type your answer")}
           fieldClassName={styles.answer}
         />
@@ -628,7 +738,12 @@ function QuestionFields({
           value={custom}
           rows={3}
           readOnly={locked}
-          onChange={(event) => onCustom(event.target.value)}
+          onChange={(event) => {
+            if (!onCustom(event.currentTarget.value)) {
+              event.currentTarget.value = custom;
+              onRejectedInput();
+            }
+          }}
           aria-label={t("Type your answer")}
           placeholder={t("Type your answer")}
           fieldClassName={styles.answer}

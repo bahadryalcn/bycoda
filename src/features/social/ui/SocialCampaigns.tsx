@@ -190,6 +190,14 @@ export function Campaigns({
               <strong>
                 {t("Editing {p0}", { p0: parkedCampaign?.name ?? parkedEdit?.name ?? "" })}
               </strong>
+              <Badge appearance="subtle">
+                {t("Revision {p0}", {
+                  p0:
+                    (editRequest?.campaign.id === parkedEdit?.id
+                      ? editRequest?.campaign.revision
+                      : parkedCampaign?.revision) ?? 1,
+                })}
+              </Badge>
               {parkedCampaign ? (
                 <>
                   <span className="social-muted">{projectNames(parkedCampaign.projectIds)}</span>
@@ -203,7 +211,13 @@ export function Campaigns({
           ) : (
             <>
               <strong>{t("New campaign")}</strong>
-              <Badge appearance="subtle">{t("Not saved yet")}</Badge>
+              {selected ? (
+                <span className="social-muted">
+                  {t("Separate from {p0}", { p0: selected.name })}
+                </span>
+              ) : (
+                <Badge appearance="subtle">{t("Not saved yet")}</Badge>
+              )}
             </>
           )}
         </div>
@@ -319,6 +333,8 @@ export function Campaigns({
         initialProject={initialProject}
         projectIntent={projectIntent}
         run={run}
+        accounts={snapshot.accounts}
+        hostOnline={snapshot.hostOnline}
       />
     </div>
   );

@@ -11,10 +11,10 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { mergeTags, type ContactTagSubject } from "../model/socialContactTags";
 import { Stepper } from "../../../shared/ui/Stepper";
-import { Modal } from "../../../shared/ui/Modal";
 import { Sparkles } from "../../../shared/ui/icons";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
@@ -31,14 +31,18 @@ import {
   type ContactImportPreview,
 } from "../model/socialContactImport";
 import { SocialBulkComposer } from "./SocialBulkComposer";
+import { ContactTagDialog } from "./ContactTagSuggestions";
 import { RuleSimplifyReview, ruleModeLabel, useRuleSimplify } from "./RuleSimplifyReview";
 import "./social-rules.css";
+import "./social-tags.css";
 import { contactTarget } from "./socialBulk";
 import {
   Empty,
   Notice,
   StatusBadge,
   Composer,
+  ComposerActions,
+  SocialDialog,
   closeComposer,
   Projects,
   field,
@@ -68,7 +72,13 @@ export function Audience({
   const [createRequest, setCreateRequest] = useState(0);
   const [importOpen, setImportOpen] = useState(false);
   const importSection = useRef<HTMLDetailsElement>(null);
-  const [importPreview, setImportPreview] = useState<{ name: string; preview: ContactImportPreview }>();
+  const [importPreview, setImportPreview] = useState<{
+    name: string;
+    preview: ContactImportPreview;
+    /** Tags added to the draft rows from accepted AI suggestions (not saved until the import). */
+    suggested?: number;
+  }>();
+  const [tagReview, setTagReview] = useState<{ mode: "import" | "contacts"; subjects: ContactTagSubject[] }>();
   useEffect(() => {
     if (importOpen) importSection.current?.scrollIntoView({ block: "nearest" });
   }, [importOpen]);
@@ -268,6 +278,31 @@ export function Audience({
               <Button
                 variant="secondary"
                 type="button"
+                startIcon={<Sparkles aria-hidden="true" />}
+                disabled={socialLocked || !checkedVisible.length}
+                onClick={() =>
+                  setTagReview({
+                    mode: "contacts",
+                    subjects: contacts
+                      .filter((contact) => checkedIds.includes(contact.id))
+                      .map((contact) => ({
+                        ref: contact.id,
+                        accountId: contact.accountId,
+                        platformId: contact.platformId,
+                        projectIds: contact.projectIds,
+                        name: contact.name,
+                        profileUrl: contact.profileUrl,
+                        language: contact.language,
+                        tags: contact.tags,
+                      })),
+                  })
+                }
+              >
+                {t("Suggest tags")}
+              </Button>
+              <Button
+                variant="secondary"
+                type="button"
                 disabled={socialLocked || !checkedIds.length}
                 onClick={() => setCheckedIds([])}
               >
@@ -435,6 +470,25 @@ export function Audience({
                           {t("Not imported: {p0}. Consent and eligibility are never taken from a file.", { p0: ignored.join(", ") })}
                         </p>
                       ) : null}
+                      {valid.length ? (
+                        <details className="social-import-tags">
+                          <summary>
+                            {importPreview.suggested
+                              ? t("Tags in this import · {p0} added from AI suggestions", { p0: importPreview.suggested })
+                              : t("Tags in this import")}
+                          </summary>
+                          <ul>
+                            {valid.slice(0, 50).map((row) => (
+                              <li key={row.row}>
+                                <strong>{row.contact?.name}</strong>
+                                {" · "}
+                                {row.contact?.tags?.length ? row.contact.tags.join(", ") : t("No tags")}
+                              </li>
+                            ))}
+                          </ul>
+                          {valid.length > 50 ? <p>{t("And {p0} more rows.", { p0: valid.length - 50 })}</p> : null}
+                        </details>
+                      ) : null}
                     </>
                   )}
                   <div className="social-actions">
@@ -457,6 +511,36 @@ export function Audience({
                         }
                       >
                         {invalid.length ? t("Import {p0} valid contacts", { p0: valid.length }) : t("Import {p0} contacts", { p0: valid.length })}
+                      </Button>
+                    ) : null}
+                    {!preview.error && valid.length ? (
+                      <Button
+                        variant="secondary"
+                        startIcon={<Sparkles aria-hidden="true" />}
+                        disabled={socialLocked || pendingUi.is("contacts.import")}
+                        onClick={() =>
+                          setTagReview({
+                            mode: "import",
+                            subjects: valid.flatMap((row) =>
+                              row.contact
+                                ? [
+                                    {
+                                      ref: String(row.row),
+                                      accountId: row.contact.accountId,
+                                      platformId: row.contact.platformId,
+                                      projectIds: row.contact.projectIds,
+                                      name: row.contact.name,
+                                      profileUrl: row.contact.profileUrl,
+                                      language: row.contact.language,
+                                      tags: row.contact.tags ?? [],
+                                    },
+                                  ]
+                                : [],
+                            ),
+                          })
+                        }
+                      >
+                        {t("Suggest tags")}
                       </Button>
                     ) : null}
                     <Button variant="ghost" disabled={socialLocked || pendingUi.is("contacts.import")} onClick={() => setImportPreview(undefined)}>
@@ -587,6 +671,37 @@ export function Audience({
           )}
         </section>
       </div>
+      {tagReview ? (
+        <ContactTagDialog
+          mode={tagReview.mode}
+          subjects={tagReview.subjects}
+          client={client}
+          accounts={snapshot.accounts}
+          projects={projects}
+          hostOnline={snapshot.hostOnline}
+          run={run}
+          onClose={() => setTagReview(undefined)}
+          onApplyImport={(tags) =>
+            // Draft only: the rows of this import gain the chosen tags; nothing is saved before the import.
+            setImportPreview((current) => {
+              if (!current) return current;
+              let added = 0;
+              const rows = current.preview.rows.map((row) => {
+                const chosen = tags[String(row.row)];
+                if (!row.contact || !chosen?.length) return row;
+                const merged = mergeTags(row.contact.tags ?? [], chosen);
+                added += merged.length - (row.contact.tags?.length ?? 0);
+                return { ...row, contact: { ...row.contact, tags: merged } };
+              });
+              return {
+                ...current,
+                preview: { ...current.preview, rows },
+                suggested: (current.suggested ?? 0) + added,
+              };
+            })
+          }
+        />
+      ) : null}
     </div>
   );
 }
@@ -808,7 +923,15 @@ function ContactForm({
     </form>
   );
 }
-export function Rules({ client, snapshot, projects, initialProject, run, onOpenContent }: Props) {
+export function Rules({
+  client,
+  snapshot,
+  projects,
+  initialProject,
+  run,
+  onOpenContent,
+  onOpenSettings,
+}: Props) {
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -831,11 +954,32 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
     ? chosenAccount
     : (accounts[0]?.id ?? "");
   const account = accounts.find((item) => item.id === accountId);
+  const ruleFormId = useId();
   const [mode, setMode] = useState("draft");
   const [trigger, setTrigger] = useState("comment");
   const [factId, setFactId] = useState("");
   const [agent, setAgent] = useState("");
   const [agentModel, setAgentModel] = useState("");
+  // One owner for the whole draft. The steps only render it, so Back/Next, closing the dialog
+  // (the Composer parks the form) and the verified-facts detour never lose an entered value.
+  const [ruleName, setRuleName] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [limit, setLimit] = useState("10");
+  const [stop, setStop] = useState("");
+  const [step, setStep] = useState(0);
+  const [createRequest, setCreateRequest] = useState(0);
+  const [simplifyOpen, setSimplifyOpen] = useState(false);
+  const simplify = useRuleSimplify({
+    client,
+    rules: snapshot.rules,
+    accounts: snapshot.accounts,
+    profiles: snapshot.profiles,
+    projects,
+    hostOnline: snapshot.hostOnline,
+    preferred: selectedRule,
+    run,
+  });
+  const simplifyReason = simplify.phase === "review" ? "" : simplify.blocked;
   const facts = snapshot.profiles.find((profile) => profile.projectId === projectId)?.facts ?? [];
   const canAutomate =
     account?.platform !== "linkedin" && !!account?.grants[projectId]?.includes("reply");
@@ -843,20 +987,65 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
     (item) => item.operation === (trigger === "comment" ? "comments.read" : "inbox.read"),
   );
   const validFact = facts.some((fact) => fact.id === factId);
-  const modeLabels: Record<string, string> = {
-    draft: t("Draft only"),
-    approval: t("Send with user approval"),
-    automatic: t("Automatic within the rules"),
-  };
+  const projectName = projects.find((project) => project.id === projectId)?.name || projectId;
+  const limitNumber = Number(limit);
+  const limitValid =
+    limit.trim() !== "" && Number.isInteger(limitNumber) && limitNumber >= 1 && limitNumber <= 100;
+  const stopWords = stop
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  // Each blocker is shown in the step where it is resolved and disables Next with its reason.
+  const contentBlockers = [
+    ...(!projectId ? [t("Select a project.")] : []),
+    ...(!accountId ? [t("No account with draft access for the selected project.")] : []),
+    ...(triggerCapability?.status === "unsupported" ? [triggerCapability.reason] : []),
+    ...(!ruleName.trim() ? [t("Enter a rule name.")] : []),
+    ...(!facts.length
+      ? [t("Add a verified fact for this project.")]
+      : !validFact
+        ? [t("Select the verified fact the rule may answer with.")]
+        : []),
+    ...(!keyword.trim() ? [t("Enter the phrase to match.")] : []),
+  ];
+  const behaviourBlockers = [
+    ...(mode === "automatic" && !canAutomate
+      ? [t("Automatic sending needs a supported account and reply permission for this project.")]
+      : []),
+    ...(!limitValid ? [t("Enter a whole daily limit from 1 to 100.")] : []),
+  ];
+  const stepBlockers = [contentBlockers, behaviourBlockers, [] as string[]];
+  const stepsOpenTo = (index: number) => stepBlockers.slice(0, index).every((list) => !list.length);
+  const ruleSteps = [
+    { id: "content", label: t("Account and content") },
+    { id: "behaviour", label: t("Behaviour") },
+    { id: "review", label: t("Review") },
+  ];
+  const saveBlocked = socialLocked || !stepsOpenTo(2);
+  const stepReason = stepBlockers[step].join(" ");
+  const triggerLabel = trigger === "comment" ? t("Incoming comment") : t("Incoming message");
+  const modeConsequence =
+    mode === "automatic"
+      ? t("Sends replies by itself within these limits once you enable the rule.")
+      : mode === "approval"
+        ? t("Prepares replies and sends one only after you approve it.")
+        : t("Prepares reply drafts for you to review. Nothing is sent.");
+  const chosenFact = facts.find((fact) => fact.id === factId);
   return (
     <div className="social-page social-rules-page social-collection-page">
       <div className="social-collection-actions">
-        <Composer title={t("Create automation rule")}>
+        <Composer title={t("Create automation rule")} openRequest={createRequest}>
           <form
+            id={ruleFormId}
             className="social-form"
             onSubmit={(event) => {
+              event.preventDefault();
               const form = event.currentTarget;
-              const data = field(event);
+              // Enter moves forward through the steps; only the Review step saves.
+              if (step < 2) {
+                if (!stepBlockers[step].length) setStep(step + 1);
+                return;
+              }
               const fact = facts.find((item) => item.id === factId);
               void (async () => {
                 if (
@@ -867,7 +1056,10 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
                         !projectId ||
                         !fact ||
                         (mode === "automatic" && !canAutomate) ||
-                        triggerCapability?.status === "unsupported"
+                        triggerCapability?.status === "unsupported" ||
+                        !ruleName.trim() ||
+                        !keyword.trim() ||
+                        !limitValid
                       )
                         throw new Error(
                           t(
@@ -875,18 +1067,15 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
                           ),
                         );
                       return client.request("automations.create", {
-                        name: data.get("name"),
+                        name: ruleName,
                         accountId,
                         projectId,
                         mode,
                         trigger,
                         topics: fact ? [fact.topic] : [],
-                        dailyLimit: Number(data.get("limit")),
-                        stopWords: String(data.get("stop") ?? "")
-                          .split(",")
-                          .map((item) => item.trim())
-                          .filter(Boolean),
-                        answers: [{ keyword: data.get("keyword"), factId }],
+                        dailyLimit: Number(limit),
+                        stopWords,
+                        answers: [{ keyword, factId }],
                         ...(agent
                           ? {
                               agent: {
@@ -899,205 +1088,350 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
                     }),
                   )
                 ) {
-                  form.reset();
+                  setRuleName("");
+                  setKeyword("");
+                  setLimit("10");
+                  setStop("");
                   setFactId("");
                   setMode("draft");
                   setAgent("");
                   setAgentModel("");
+                  setStep(0);
                   closeComposer(form);
                 }
               })();
             }}
           >
-            <h3>{t("Create rule")}</h3>
-
-            <TextField
+            <h3 className="sr-only">{t("Create rule")}</h3>
+            <Stepper
+              className="social-rule-steps"
+              label={t("Create rule steps")}
+              steps={ruleSteps}
+              current={step}
+              completed={ruleSteps
+                .filter((_, index) => index < step && !stepBlockers[index].length)
+                .map((item) => item.id)}
+              selectable={ruleSteps.filter((_, index) => stepsOpenTo(index)).map((item) => item.id)}
               disabled={socialLocked}
-              label={t("Name")}
-              name="name"
-              required
-              maxLength={200}
+              onStepSelect={setStep}
             />
-            <label>
-              {t("Account")}
-              <SearchableSelect
-                disabled={socialLocked}
-                value={accountId}
-                label={t("Account")}
-                options={[
-                  ...(!accounts.length
-                    ? [
-                        {
-                          value: "",
-                          label: t("No account with draft access for the selected project"),
-                        },
-                      ]
-                    : []),
-                  ...accounts.map((account) => ({
-                    value: account.id,
-                    label: [account.name, "·", names[account.platform]].join(" "),
-                  })),
-                ]}
-                onChange={(nextValue) => setAccountId(nextValue)}
-                searchLocale={getLocale()}
-              />
-            </label>
-            <label>
-              {t("Project")}
-              <SearchableSelect
-                disabled={socialLocked}
-                value={projectId}
-                label={t("Project")}
-                options={projects.map((project) => ({
-                  value: project.id,
-                  label: project.name || project.cwd,
-                }))}
-                onChange={(nextValue) => {
-                  setProjectId(nextValue);
-                  setFactId("");
-                }}
-                searchLocale={getLocale()}
-              />
-            </label>
-            <label>
-              {t("Mode")}
-              <NativeSelect
-                disabled={socialLocked}
-                value={mode}
-                onChange={(event) => setMode(event.target.value)}
-              >
-                <option value="draft">{t("Draft only")}</option>
-                <option value="approval">{t("Send with user approval")}</option>
-                <option value="automatic" disabled={!canAutomate}>
-                  {t("Automatic sending within an explicit rule")}
-                </option>
-              </NativeSelect>
-            </label>
-            <label>
-              {t("Trigger")}
-              <NativeSelect
-                disabled={socialLocked}
-                name="trigger"
-                value={trigger}
-                onChange={(event) => setTrigger(event.target.value)}
-              >
-                <option
-                  value="comment"
-                  disabled={snapshot.capabilities[accountId]?.some(
-                    (item) => item.operation === "comments.read" && item.status === "unsupported",
-                  )}
-                >
-                  {t("Incoming comment")}
-                </option>
-                <option
-                  value="message"
-                  disabled={snapshot.capabilities[accountId]?.some(
-                    (item) => item.operation === "inbox.read" && item.status === "unsupported",
-                  )}
-                >
-                  {t("Incoming message")}
-                </option>
-              </NativeSelect>
-            </label>
-            <div className="flex flex-col gap-2 text-ui-caption text-(--ui-text-secondary)">
-              <p>{t("Verified facts for this project")}: {facts.length}</p>
-              {!facts.length ? <Notice kind="warning" title={t("Add a verified fact before creating a rule")}>
-                {t("Open Content to manage this project's verified facts. Your unfinished rule stays here.")}
-                <p>{projects.find((project) => project.id === projectId)?.name || projectId}</p>
-                {onOpenContent ? <Button variant="link" disabled={socialLocked} onClick={(event) => {
-                  if (event.currentTarget.form) closeComposer(event.currentTarget.form);
-                  onOpenContent(projectId);
-                }}>{t("Manage verified facts")}</Button> : null}
-              </Notice> : null}
-              <p>{t("AI agent")}: {agent ? HARNESS_TITLE[agent as keyof typeof HARNESS_TITLE] || agent : t("Inherit the global / platform agent")}</p>
-            </div>
-            <TextField
-              disabled={socialLocked}
-              label={t("Incoming phrase to match exactly")}
-              name="keyword"
-              required
-              maxLength={100}
-              placeholder={t("E.g. what is the price")}
-            />
-            <label>
-              {t("Allowed reply fact")}
-              <NativeSearchableSelect
-                disabled={socialLocked}
-                label={t("Allowed reply fact")}
-                options={[
-                  { value: "", label: t("Select a verified fact"), disabled: true },
-                  ...facts.map((fact) => ({
-                    value: fact.id,
-                    label: `${fact.topic}: ${fact.text}`,
-                  })),
-                ]}
-                required
-                value={factId}
-                onChange={(event) => setFactId(event.target.value)}
-              />
-            </label>
-            <details className="social-settings">
-              <summary>{t("Use a different AI agent for this rule")}</summary>
-              <SocialModelField
-                label={t("AI agent and model for this rule")}
-                inheritLabel={t("Use the global agent")}
-                disabled={socialLocked}
-                value={{ provider: agent, model: agentModel }}
-                onChange={(next) => {
-                  setAgent(next.provider);
-                  setAgentModel(next.model);
-                }}
-              />
-            </details>
-            <details className="social-settings">
-              <summary>{t("Advanced options: daily limit and stop phrases")}</summary>
-              <TextField
-                disabled={socialLocked}
-                label={t("Daily limit")}
-                name="limit"
-                type="number"
-                min={1}
-                max={100}
-                defaultValue={10}
-                required
-              />
-              <TextField
-                disabled={socialLocked}
-                label={t("Stop phrases")}
-                name="stop"
-                placeholder={t("Separate with commas")}
-              />
-            </details>
-            {triggerCapability?.status === "unsupported" ? (
-              <Alert tone="danger">{triggerCapability.reason}</Alert>
+            {step === 0 ? (
+              <div className="social-rule-step" key="content">
+                <TextField
+                  disabled={socialLocked}
+                  label={t("Name")}
+                  value={ruleName}
+                  onChange={(event) => setRuleName(event.target.value)}
+                  maxLength={200}
+                />
+                <div className="social-form-pair">
+                  <label>
+                    {t("Account")}
+                    <SearchableSelect
+                      disabled={socialLocked}
+                      value={accountId}
+                      label={t("Account")}
+                      options={[
+                        ...(!accounts.length
+                          ? [
+                              {
+                                value: "",
+                                label: t("No account with draft access for the selected project"),
+                              },
+                            ]
+                          : []),
+                        ...accounts.map((account) => ({
+                          value: account.id,
+                          label: [account.name, "·", names[account.platform]].join(" "),
+                        })),
+                      ]}
+                      onChange={(nextValue) => setAccountId(nextValue)}
+                      searchLocale={getLocale()}
+                    />
+                  </label>
+                  <label>
+                    {t("Project")}
+                    <SearchableSelect
+                      disabled={socialLocked}
+                      value={projectId}
+                      label={t("Project")}
+                      options={projects.map((project) => ({
+                        value: project.id,
+                        label: project.name || project.cwd,
+                      }))}
+                      onChange={(nextValue) => {
+                        setProjectId(nextValue);
+                        setFactId("");
+                      }}
+                      searchLocale={getLocale()}
+                    />
+                  </label>
+                </div>
+                <label>
+                  {t("Trigger")}
+                  <NativeSelect
+                    disabled={socialLocked}
+                    name="trigger"
+                    value={trigger}
+                    onChange={(event) => setTrigger(event.target.value)}
+                  >
+                    <option
+                      value="comment"
+                      disabled={snapshot.capabilities[accountId]?.some(
+                        (item) => item.operation === "comments.read" && item.status === "unsupported",
+                      )}
+                    >
+                      {t("Incoming comment")}
+                    </option>
+                    <option
+                      value="message"
+                      disabled={snapshot.capabilities[accountId]?.some(
+                        (item) => item.operation === "inbox.read" && item.status === "unsupported",
+                      )}
+                    >
+                      {t("Incoming message")}
+                    </option>
+                  </NativeSelect>
+                </label>
+                {triggerCapability?.status === "unsupported" ? (
+                  <Alert tone="danger">{triggerCapability.reason}</Alert>
+                ) : null}
+                {!facts.length ? (
+                  <Notice kind="warning" title={t("Add a verified fact before creating a rule")}>
+                    {t(
+                      "Open Content to manage this project's verified facts. Your unfinished rule stays here.",
+                    )}
+                    <p>{projectName}</p>
+                    {onOpenContent ? (
+                      <Button
+                        variant="link"
+                        type="button"
+                        disabled={socialLocked}
+                        onClick={(event) => {
+                          if (event.currentTarget.form) closeComposer(event.currentTarget.form);
+                          onOpenContent(projectId);
+                        }}
+                      >
+                        {t("Manage verified facts")}
+                      </Button>
+                    ) : null}
+                  </Notice>
+                ) : null}
+                <div className="social-form-pair">
+                  <TextField
+                    disabled={socialLocked}
+                    label={t("Incoming phrase to match exactly")}
+                    value={keyword}
+                    onChange={(event) => setKeyword(event.target.value)}
+                    maxLength={100}
+                    placeholder={t("E.g. what is the price")}
+                  />
+                  <label>
+                    {t("Allowed reply fact")}
+                    <NativeSearchableSelect
+                      disabled={socialLocked}
+                      label={t("Allowed reply fact")}
+                      options={[
+                        { value: "", label: t("Select a verified fact"), disabled: true },
+                        ...facts.map((fact) => ({
+                          value: fact.id,
+                          label: `${fact.topic}: ${fact.text}`,
+                        })),
+                      ]}
+                      required
+                      value={factId}
+                      onChange={(event) => setFactId(event.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
             ) : null}
-            {mode === "automatic" && !canAutomate ? (
-              <Alert tone="danger">
-                {t(
-                  "Automatic sending needs a supported account and reply permission for this project.",
-                )}
-              </Alert>
+            {step === 1 ? (
+              <div className="social-rule-step" key="behaviour">
+                <label>
+                  {t("Mode")}
+                  <NativeSelect
+                    disabled={socialLocked}
+                    value={mode}
+                    onChange={(event) => setMode(event.target.value)}
+                  >
+                    <option value="draft">{t("Draft only")}</option>
+                    <option value="approval">{t("Send with user approval")}</option>
+                    <option value="automatic" disabled={!canAutomate}>
+                      {t("Automatic sending within an explicit rule")}
+                    </option>
+                  </NativeSelect>
+                </label>
+                {mode === "automatic" && !canAutomate ? (
+                  <Alert tone="danger">
+                    {t(
+                      "Automatic sending needs a supported account and reply permission for this project.",
+                    )}
+                  </Alert>
+                ) : null}
+                <div className="social-form-pair">
+                  <TextField
+                    disabled={socialLocked}
+                    label={t("Daily limit")}
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={limit}
+                    error={limitValid ? undefined : t("Enter a whole number from 1 to 100.")}
+                    onChange={(event) => setLimit(event.target.value)}
+                  />
+                  <TextField
+                    disabled={socialLocked}
+                    label={t("Stop phrases")}
+                    value={stop}
+                    placeholder={t("Separate with commas")}
+                    onChange={(event) => setStop(event.target.value)}
+                  />
+                </div>
+                <details className="social-settings" open={agent ? true : undefined}>
+                  <summary>{t("Use a different AI agent for this rule")}</summary>
+                  <SocialModelField
+                    label={t("AI agent and model for this rule")}
+                    inheritLabel={t("Use the global agent")}
+                    disabled={socialLocked}
+                    value={{ provider: agent, model: agentModel }}
+                    onChange={(next) => {
+                      setAgent(next.provider);
+                      setAgentModel(next.model);
+                    }}
+                  />
+                </details>
+              </div>
             ) : null}
-            <p className="social-muted">
-              {t(
-                "The rule is saved paused. Review the content and permissions, then enable it separately. The AI agent and content limits are inherited from Settings.",
+            {step === 2 ? (
+              <div className="social-rule-step" key="review">
+                {contentBlockers.length || behaviourBlockers.length ? (
+                  <Alert tone="danger">
+                    {[...contentBlockers, ...behaviourBlockers].join(" ")}{" "}
+                    {contentBlockers.length ? (
+                      <Button variant="link" type="button" onClick={() => setStep(0)}>
+                        {t("Fix in Account and content")}
+                      </Button>
+                    ) : null}
+                    {behaviourBlockers.length ? (
+                      <Button variant="link" type="button" onClick={() => setStep(1)}>
+                        {t("Fix in Behaviour")}
+                      </Button>
+                    ) : null}
+                  </Alert>
+                ) : null}
+                <dl className="social-rule-summary-list" aria-label={t("Rule summary")}>
+                  <div>
+                    <dt>{t("Name")}</dt>
+                    <dd>{ruleName}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Account")}</dt>
+                    <dd>{account ? `${account.name} · ${names[account.platform]}` : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Project")}</dt>
+                    <dd>{projectName}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Trigger")}</dt>
+                    <dd>{triggerLabel}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Mode")}</dt>
+                    <dd>
+                      {ruleModeLabel(mode)}. {modeConsequence}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t("Topics")}</dt>
+                    <dd>{chosenFact?.topic ?? "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Answers")}</dt>
+                    <dd>
+                      {t("1 answer")}
+                      {chosenFact ? `: “${keyword}” → ${chosenFact.topic}` : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>{t("Daily limit")}</dt>
+                    <dd>{limitValid ? t("up to {p0} a day", { p0: limitNumber }) : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("Stop phrases")}</dt>
+                    <dd>{stopWords.length ? stopWords.join(", ") : t("None")}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("AI agent")}</dt>
+                    <dd>
+                      {agent
+                        ? [
+                            HARNESS_TITLE[agent as keyof typeof HARNESS_TITLE] || agent,
+                            agentModel.trim(),
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")
+                        : t("Inherit the global / platform agent")}
+                    </dd>
+                  </div>
+                </dl>
+                {mode === "automatic" ? (
+                  <Notice kind="warning" title={t("Automatic sending")}>
+                    {t(
+                      "Once enabled, this rule sends replies without asking you. Enabling it is a separate step that asks you to confirm.",
+                    )}
+                  </Notice>
+                ) : null}
+                <p className="social-muted">
+                  {t(
+                    "The rule is saved paused. Review the content and permissions, then enable it separately.",
+                  )}
+                </p>
+              </div>
+            ) : null}
+            <ComposerActions className="social-rule-nav">
+              {step > 0 ? (
+                <Button
+                  key="back"
+                  type="button"
+                  variant="ghost"
+                  disabled={socialLocked}
+                  onClick={() => setStep(step - 1)}
+                >
+                  {t("Back")}
+                </Button>
+              ) : null}
+              {step < 2 ? (
+                <>
+                  {stepReason ? (
+                    <p className="social-rule-reason" role="status">
+                      {stepReason}
+                    </p>
+                  ) : null}
+                  <Button
+                    key="next"
+                    type="button"
+                    variant="primary"
+                    disabled={socialLocked || !!stepBlockers[step].length}
+                    onClick={() => setStep(step + 1)}
+                  >
+                    {t("Next")}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  key="save"
+                  loading={pendingUi.is("rules.save-paused-rule")}
+                  form={ruleFormId}
+                  type="submit"
+                  variant="primary"
+                  disabled={saveBlocked}
+                >
+                  {t("Save paused rule")}
+                </Button>
               )}
-            </p>
-            <Button
-              loading={pendingUi.is("rules.save-paused-rule")}
-              type="submit"
-              variant="secondary"
-              disabled={
-                socialLocked ||
-                !accountId ||
-                !projectId ||
-                !validFact ||
-                (mode === "automatic" && !canAutomate) ||
-                triggerCapability?.status === "unsupported"
-              }
-            >
-              {t("Save paused rule")}
-            </Button>
+            </ComposerActions>
           </form>
         </Composer>
       </div>
@@ -1106,19 +1440,42 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
         data-empty={!snapshot.rules.length && !snapshot.drafts.length}
       >
         <section className="social-collection-list">
-          <h2>
-            {t("Reply rules")} <small>{snapshot.rules.length}</small>
-          </h2>
-          <label className="social-collection-search">
-            <span className="sr-only">{t("Search rules")}</span>
+          <div className="social-list-heading">
+            <h2>
+              {t("Reply rules")} <small>{snapshot.rules.length}</small>
+            </h2>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              startIcon={<Sparkles aria-hidden="true" />}
+              disabled={socialLocked || !!simplifyReason}
+              onClick={() => setSimplifyOpen(true)}
+            >
+              {t("Simplify with AI")}
+            </Button>
+          </div>
+          {simplifyReason ? (
+            <p className="social-rule-reason social-rule-list-reason" role="status">
+              {simplifyReason}{" "}
+              {simplify.noAgent && onOpenSettings ? (
+                <Button variant="link" type="button" onClick={onOpenSettings}>
+                  {t("Open settings")}
+                </Button>
+              ) : null}
+            </p>
+          ) : null}
+          <div className="social-list-tools">
             <SearchInput
+              className="social-list-search"
+              aria-label={t("Search rules")}
               disabled={socialLocked}
               appearance="field"
               value={ruleQuery}
               onChange={(event) => setRuleQuery(event.target.value)}
               placeholder={t("Search rules")}
             />
-          </label>
+          </div>
           <div className="social-list">
             {visibleRules.map((rule) => (
               <Button
@@ -1143,6 +1500,21 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
             {!visibleRules.length ? (
               <Empty
                 title={snapshot.rules.length ? t("No rules found") : t("Prepare replies with AI")}
+                action={
+                  snapshot.rules.length ? (
+                    <Button variant="ghost" type="button" onClick={() => setRuleQuery("")}>
+                      {t("Clear search")}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      disabled={socialLocked}
+                      onClick={() => setCreateRequest((value) => value + 1)}
+                    >
+                      {t("Create rule")}
+                    </Button>
+                  )
+                }
               >
                 {snapshot.rules.length
                   ? t("Change your search.")
@@ -1170,7 +1542,7 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
                       {rule.trigger === "comment" ? t("Incoming comment") : t("Incoming message")}
                     </p>
                     <p>
-                      {modeLabels[rule.mode]} · {t("Daily {p0}", { p0: rule.dailyLimit })}
+                      {ruleModeLabel(rule.mode)} · {t("Daily {p0}", { p0: rule.dailyLimit })}
                     </p>
                     <StatusBadge status={rule.enabled ? "active" : "paused"} />
                     <p>{rule.topics.join(", ")}</p>
@@ -1257,6 +1629,19 @@ export function Rules({ client, snapshot, projects, initialProject, run, onOpenC
           ) : null}
         </section>
       </div>
+      {simplifyOpen ? (
+        <SocialDialog
+          title={t("Simplify rules with AI")}
+          size="lg"
+          onClose={() => setSimplifyOpen(false)}
+        >
+          <RuleSimplifyReview
+            session={simplify}
+            onClose={() => setSimplifyOpen(false)}
+            onOpenSettings={onOpenSettings}
+          />
+        </SocialDialog>
+      ) : null}
     </div>
   );
 }

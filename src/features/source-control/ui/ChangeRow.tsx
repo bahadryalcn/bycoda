@@ -5,7 +5,7 @@ import {
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineAction, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { MiddleTruncate } from "../../../shared/ui/MiddleTruncate";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -62,7 +62,7 @@ export const ChangeRow = memo(function ChangeRow({
   const tree = depth !== undefined;
   const dir = tree ? "" : dirname(file.relative);
   const canOpen = file.status !== "deleted";
-  const { menu, ...menuHandlers } = useChangedFileMenu({
+  const { menu, openFrom, isOpen: menuOpen, ...menuHandlers } = useChangedFileMenu({
     languageDomain: "git",
     path: file.path,
     relative: file.relative,
@@ -181,7 +181,9 @@ export const ChangeRow = memo(function ChangeRow({
         >
           {statusLetter(file.status)}
         </span>
-        {/* Fixed-width slot so the row never shifts. It reveals on hover and keyboard focus; discard also lives in the context menu and the section menu. */}
+        {/* Fixed-width slots so the row never shifts. Stage/unstage is the frequent action and stays
+            direct; More opens the same menu as right-click and the context-menu key (discard, open,
+            copy, reveal) for touch and pointer users. Both reveal on hover, focus and selection. */}
         <div className="flex size-5 shrink-0 items-center justify-center">
           {busy ? (
             <WorkingIndicator label={t("Working")} />
@@ -199,6 +201,14 @@ export const ChangeRow = memo(function ChangeRow({
             </InlineAction>
           )}
         </div>
+        <InlineMoreAction
+          label={t("Actions for {p0}", { p0: file.relative })}
+          expanded={menuOpen}
+          onOpen={(anchor) => {
+            selection?.select(file.path, {}, true);
+            openFrom(anchor);
+          }}
+        />
       </ActionHost>
       {menu}
     </li>

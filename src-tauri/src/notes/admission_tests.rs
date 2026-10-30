@@ -346,6 +346,211 @@ fn note_image_grant_failure_preserves_original_error_and_uncertain_copied_asset_
 }
 
 #[test]
+fn note_image_sync_is_inside_original_admission_and_precedes_grant_after_waiter_drop() {
+    let directory = Directory::new();
+    let source = directory.root.join("sync.png");
+    let bytes = b"exact original asset\r\n\x00 bytes";
+    std::fs::write(&source, bytes).unwrap();
+    let root = directory.root.clone();
+    let dir = root.join(NOTE_ASSET_DIR).join("sync-note");
+    let barrier = WindowBarrier::new();
+    let resources = test_buffer_resources(&barrier, "notes-sync");
+    let admission = test_admit_window_buffers(&resources, Some(&barrier)).unwrap();
+    let (entered, started) = mpsc::channel();
+    let (release, held) = mpsc::channel();
+    let (finished, settled) = mpsc::channel();
+    let stage = Arc::new(AtomicUsize::new(0));
+    let flushing = stage.clone();
+    let granting = stage.clone();
+    let waiter = run_admitted_blocking(admission, move || {
+        let value = copy_note_image_with_sync(
+            &source,
+            &dir,
+            &root,
+            "sync-note",
+            note_image_names(&source)?,
+            |file| {
+                assert_eq!(file.metadata()?.len(), bytes.len() as u64);
+                entered.send(()).unwrap();
+                held.recv_timeout(WAIT).unwrap();
+                file.sync_all()?;
+                flushing.store(1, Ordering::Release);
+                Ok(())
+            },
+            |path| {
+                assert_eq!(granting.load(Ordering::Acquire), 1);
+                assert_eq!(std::fs::read(path).unwrap(), bytes);
+                granting.store(2, Ordering::Release);
+                Ok(())
+            },
+        )?;
+        Ok(ImageCompletion {
+            value: Some(value),
+            finished,
+        })
+    });
+    started.recv_timeout(WAIT).unwrap();
+    drop(waiter);
+    assert_eq!(stage.load(Ordering::Acquire), 0);
+    assert!(matches!(
+        barrier.try_close_idle_target_admission("A"),
+        Err(BarrierError::PendingNativeOperations)
+    ));
+    release.send(()).unwrap();
+    let actual = settled.recv_timeout(WAIT).unwrap();
+    assert_eq!(stage.load(Ordering::Acquire), 2);
+    assert_eq!(
+        std::fs::read(
+            directory
+                .root
+                .join(actual.markdown_path.trim_start_matches('/'))
+        )
+        .unwrap(),
+        bytes
+    );
+    assert!(barrier.try_close_idle_target_admission("A").is_ok());
+}
+
+#[test]
+fn note_image_sync_failure_never_grants_or_acknowledges_and_retains_uncertain_bytes() {
+    let directory = Directory::new();
+    let source = directory.root.join("failed-sync.png");
+    std::fs::write(&source, b"kept uncertain asset").unwrap();
+    let dir = directory.root.join(NOTE_ASSET_DIR).join("sync-error");
+    let barrier = WindowBarrier::new();
+    let resources = test_buffer_resources(&barrier, "notes-sync-error");
+    let admission = test_admit_window_buffers(&resources, Some(&barrier)).unwrap();
+    let calls = AtomicUsize::new(0);
+    let result = admission.finish(copy_note_image_with_sync(
+        &source,
+        &dir,
+        &directory.root,
+        "sync-error",
+        note_image_names(&source).unwrap(),
+        |_| Err(std::io::Error::other("original file sync failure")),
+        |_| {
+            calls.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        },
+    ));
+    assert!(result.unwrap_err().contains("original file sync failure"));
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    let copied = std::fs::read_dir(&dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(std::fs::read(copied).unwrap(), b"kept uncertain asset");
+    assert!(matches!(
+        barrier.try_close_idle_target_admission("A"),
+        Err(BarrierError::FailedNativeOperation)
+    ));
+}
+
+#[test]
+fn note_image_actual_source_size_is_checked_before_creating_or_granting_an_asset() {
+    let directory = Directory::new();
+    let source = directory.root.join("grew.png");
+    std::fs::File::create(&source)
+        .unwrap()
+        .set_len(IMAGE_MAX_BYTES + 1)
+        .unwrap();
+    let dir = directory.root.join(NOTE_ASSET_DIR).join("oversize");
+    let result = copy_note_image(
+        &source,
+        &dir,
+        &directory.root,
+        "oversize",
+        note_image_names(&source).unwrap(),
+        |_| panic!("oversized source must never be granted"),
+    );
+    assert_eq!(result.unwrap_err(), image_size_error());
+    assert!(!dir.exists());
+}
+
+#[test]
+fn note_image_stream_remains_bounded_when_actual_open_file_grows_after_metadata() {
+    let directory = Directory::new();
+    let source = directory.root.join("growing.png");
+    std::fs::write(&source, b"original").unwrap();
+    let input = std::fs::File::open(&source).unwrap();
+    assert_eq!(input.metadata().unwrap().len(), 8);
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&source)
+        .unwrap()
+        .set_len(IMAGE_MAX_BYTES + 4096)
+        .unwrap();
+    let mut output = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(directory.root.join("owned-copy.png"))
+        .unwrap();
+    assert_eq!(
+        write_note_image_data(input, &mut output).unwrap_err(),
+        image_size_error()
+    );
+    assert_eq!(output.metadata().unwrap().len(), IMAGE_MAX_BYTES + 1);
+}
+
+#[test]
+fn concurrent_note_images_keep_distinct_immutable_assets_and_original_filenames() {
+    let directory = Directory::new();
+    let first = directory.root.join("first.png");
+    let second = directory.root.join("second.png");
+    std::fs::write(&first, b"first original bytes").unwrap();
+    std::fs::write(&second, b"second original bytes").unwrap();
+    let dir = directory.root.join(NOTE_ASSET_DIR).join("same-note");
+    let (left, right) = std::thread::scope(|scope| {
+        let left = scope.spawn(|| {
+            copy_note_image(
+                &first,
+                &dir,
+                &directory.root,
+                "same-note",
+                ("original.png".into(), "same.png".into()),
+                |_| Ok(()),
+            )
+            .unwrap()
+        });
+        let right = scope.spawn(|| {
+            copy_note_image(
+                &second,
+                &dir,
+                &directory.root,
+                "same-note",
+                ("original.png".into(), "same.png".into()),
+                |_| Ok(()),
+            )
+            .unwrap()
+        });
+        (left.join().unwrap(), right.join().unwrap())
+    });
+    assert_ne!(left.markdown_path, right.markdown_path);
+    assert_eq!(left.name, "original.png");
+    assert_eq!(right.name, "original.png");
+    assert_eq!(
+        std::fs::read(
+            directory
+                .root
+                .join(left.markdown_path.trim_start_matches('/'))
+        )
+        .unwrap(),
+        b"first original bytes"
+    );
+    assert_eq!(
+        std::fs::read(
+            directory
+                .root
+                .join(right.markdown_path.trim_start_matches('/'))
+        )
+        .unwrap(),
+        b"second original bytes"
+    );
+}
+
+#[test]
 fn original_notes_write_result_survives_owner_reload_without_inheriting_idle_proof() {
     let store = SessionStore::open_in_memory().unwrap();
     let barrier = WindowBarrier::new();

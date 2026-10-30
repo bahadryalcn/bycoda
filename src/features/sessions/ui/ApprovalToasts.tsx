@@ -7,13 +7,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Switch } from "../../../shared/ui/Switch";
 import { Popover } from "../../../shared/ui/Popover";
 import { useT } from "../../../shared/i18n";
-import {
-  BellOff,
-  CircleAlert,
-  MessageMultiple,
-  Settings,
-  X,
-} from "../../../shared/ui/icons";
+import { BellOff, CircleAlert, MessageMultiple, Settings, X } from "../../../shared/ui/icons";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { allowsProjectNotification } from "../../notifications/model/notificationPreferences";
@@ -25,7 +19,8 @@ import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { LOCKED_NOTIFICATION_TEXT } from "../../notifications/model/attention";
-import type { ApprovalDecision } from "../../../integrations/harness";
+import type { ApprovalDispatch } from "./ApprovalDecisionContext";
+import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import type { PendingApprovalNotice } from "../../notifications/model/approvalToast";
 import { LAYER } from "../../../shared/lib/layers";
 import {
@@ -61,15 +56,7 @@ type Props = {
   popupNotices?: Notice[];
   topOffset?: number;
   onFocusSession: (sessionId: string) => void;
-  /**
-   * A result lets the sheet show a local outcome: `false` or a rejection means
-   * the decision may not have been delivered; no result means it was handed off.
-   */
-  onApproval: (
-    sessionId: string,
-    requestId: number,
-    decision: ApprovalDecision,
-  ) => void | boolean | Promise<void | boolean>;
+  onApproval: ApprovalDispatch;
   /**
    * Opens a conversation recorded in history, which may no longer be open.
    * `false` or a rejection means it is unavailable. Without it, only history
@@ -505,7 +492,11 @@ export function ApprovalToasts({
                     </Button>
                   </div>
                 ) : null}
-                {(view === "pending" ? count === 0 : visibleHistory.length === 0 && !historyUnavailable) ? (
+                {(
+                  view === "pending"
+                    ? count === 0
+                    : visibleHistory.length === 0 && !historyUnavailable
+                ) ? (
                   <EmptyState
                     context="list"
                     icon={<MessageMultiple className="size-6" aria-hidden />}
@@ -675,9 +666,7 @@ function NotificationTime({ at }: { at: number }) {
 
 /** The conversation title without the provider prefix stored for the tab strip. */
 function historyTitle(entry: NotificationHistoryEntry): string {
-  const harnesses = entry.harness
-    ? [entry.harness]
-    : (Object.keys(HARNESS_LABEL) as HarnessId[]);
+  const harnesses = entry.harness ? [entry.harness] : (Object.keys(HARNESS_LABEL) as HarnessId[]);
   for (const harness of harnesses) {
     if (!HARNESS_LABEL[harness]) continue;
     const title = sessionDisplayTitle(entry.title, harness);
@@ -722,9 +711,7 @@ function HistoryItem({
     <article className="notification-history-item">
       <details className="notification-history-details">
         <summary className="bycoda-arc" tabIndex={0}>
-          <span className="notification-history-title">
-            {historyTitle(entry) || t("Untitled")}
-          </span>
+          <span className="notification-history-title">{historyTitle(entry) || t("Untitled")}</span>
           <span className="notification-history-preview">{entry.label}</span>
         </summary>
         <p className="notification-history-label">{entry.label}</p>
@@ -788,25 +775,7 @@ function ApprovalToastCard({
   const t = useT();
   const { session, label, requestId } = notice;
   const title = sessionDisplayTitle(session.title, session.harness);
-  // One decision at a time; a failed or unconfirmed delivery stays visible and retryable.
-  const [decision, setDecision] = useState<{
-    value: ApprovalDecision;
-    state: "pending" | "error";
-  } | null>(null);
-  const deciding = useRef(false);
-  const decide = async (value: ApprovalDecision) => {
-    if (deciding.current) return;
-    deciding.current = true;
-    setDecision({ value, state: "pending" });
-    try {
-      if ((await onApproval(session.id, requestId, value)) === false) throw new Error("not sent");
-      setDecision(null);
-    } catch {
-      setDecision({ value, state: "error" });
-    } finally {
-      deciding.current = false;
-    }
-  };
+  const decision = useApprovalDecisionControl(session, requestId, onApproval);
   return (
     <article
       className="approval-toast notification-request pointer-events-auto relative overflow-clip rounded-(--ui-radius-popup) border border-(--ui-pane-border) bg-(--ui-surface-raised) shadow-(--ui-elevation-floating)"
@@ -851,7 +820,7 @@ function ApprovalToastCard({
       <div className="notification-request-meta notification-request-footer px-3 pb-2">
         {/* Pointer convenience only: the body button above owns keyboard access. */}
         <span
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-2"
+          className="notification-request-source flex min-w-0 cursor-pointer items-center gap-2"
           onClick={() => onFocusSession(session.id)}
         >
           <NotificationProjectLabel cwd={session.cwd} />
@@ -871,9 +840,9 @@ function ApprovalToastCard({
                 variant="primary"
                 size="sm"
                 type="button"
-                loading={decision?.state === "pending" && decision.value === "allow"}
-                disabled={decision?.state === "pending"}
-                onClick={() => void decide("allow")}
+                loading={decision.pending && decision.decision === "allow"}
+                disabled={decision.blocked}
+                onClick={() => void decision.decide("allow")}
               >
                 {t("Allow")}
               </Button>
@@ -882,9 +851,9 @@ function ApprovalToastCard({
                 size="sm"
                 tone="danger"
                 type="button"
-                loading={decision?.state === "pending" && decision.value === "deny"}
-                disabled={decision?.state === "pending"}
-                onClick={() => void decide("deny")}
+                loading={decision.pending && decision.decision === "deny"}
+                disabled={decision.blocked}
+                onClick={() => void decision.decide("deny")}
               >
                 {t("Deny")}
               </Button>
@@ -892,10 +861,20 @@ function ApprovalToastCard({
           ) : null}
         </span>
       </div>
-      {notice.kind === "approval" && decision?.state === "error" ? (
-        <Alert tone="danger" inline className="px-3 pb-2">
-          {t("The decision may not have been delivered. If this request is still listed, try again.")}
-        </Alert>
+      {notice.kind === "approval" && decision.feedback ? (
+        decision.danger ? (
+          <Alert tone="danger" inline className="px-3 pb-2">
+            {decision.feedback}
+          </Alert>
+        ) : (
+          <div
+            role="status"
+            aria-live="polite"
+            className="px-3 pb-2 text-ui-caption text-(--ui-text-secondary)"
+          >
+            {decision.feedback}
+          </div>
+        )
       ) : null}
     </article>
   );

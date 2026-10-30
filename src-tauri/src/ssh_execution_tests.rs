@@ -1,4 +1,6 @@
 use super::*;
+#[path = "ssh_execution/admission_tests.rs"]
+mod admission_tests;
 #[path = "ssh_execution_native_tests.rs"]
 mod native_tests;
 #[derive(Default)]

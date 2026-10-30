@@ -209,6 +209,11 @@ impl SessionStore {
             .map_err(|_| "Session store is locked".into())
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_connection_unlocked(&self) -> bool {
+        self.conn.try_lock().is_ok()
+    }
+
     fn process_write_admission(
         &self,
     ) -> Result<crate::native_window_lifecycle::NativeWriteAdmission, window_barrier::BarrierError>

@@ -61,7 +61,10 @@ describe("passive Parent input registry", () => {
     text = "small again";
     owner.changed();
     owner.observe(true);
-    expect(registry.inspect()).toMatchObject({ failedRecords: 0, incomplete: false });
+    expect(registry.inspect()).toMatchObject({
+      failedRecords: 0,
+      incomplete: false,
+    });
     const lease = await registry.capture("root");
     expect(lease.snapshots[0].snapshot.text).toBe(text);
     owner.release();
@@ -245,7 +248,11 @@ describe("passive Parent input registry", () => {
       excess = registry.register({ ...adapter, snapshot: overflowSnapshot });
       excess.changed();
     }).not.toThrow();
-    expect(registry.inspect()).toMatchObject({ records: 2, overflow: 1, incomplete: true });
+    expect(registry.inspect()).toMatchObject({
+      records: 2,
+      overflow: 1,
+      incomplete: true,
+    });
     expect(before.current()).toBe(false);
     await expect(registry.capture("root")).rejects.toThrow("capacity");
     excess.release();
@@ -260,7 +267,12 @@ describe("passive Parent input registry", () => {
     expect(restored.current()).toBe(false);
     before.release();
     restored.release();
-    expect(registry.inspect()).toMatchObject({ records: 1, overflow: 0, leaseBytes: 0, leases: 0 });
+    expect(registry.inspect()).toMatchObject({
+      records: 1,
+      overflow: 0,
+      leaseBytes: 0,
+      leases: 0,
+    });
   });
 
   it("enforces one aggregate JSON byte budget across individually valid entries", async () => {
@@ -300,7 +312,10 @@ describe("passive Parent input registry", () => {
     await expect(registry.capture("root")).rejects.toThrow("capacity");
     owner.changed();
     expect(first.current()).toBe(false);
-    expect(registry.inspect()).toMatchObject({ leases: 2, leaseBytes: charged });
+    expect(registry.inspect()).toMatchObject({
+      leases: 2,
+      leaseBytes: charged,
+    });
     first.release();
     first.release();
     const third = await registry.capture("root");
@@ -329,7 +344,11 @@ describe("passive Parent input registry", () => {
     expect(registry.inspect().retainedBytes).toBe(0);
     expect(registry.inspect().leaseBytes).toBeGreaterThan(0);
     lease.release();
-    expect(registry.inspect()).toMatchObject({ retainedBytes: 0, leaseBytes: 0, leases: 0 });
+    expect(registry.inspect()).toMatchObject({
+      retainedBytes: 0,
+      leaseBytes: 0,
+      leases: 0,
+    });
   });
 
   it("holds a failed retained update without evicting its original charge and safely accepts a later bounded update", async () => {
@@ -348,14 +367,24 @@ describe("passive Parent input registry", () => {
     });
     await expect(registry.capture("root")).rejects.toThrow("capacity");
     retained.update({ text: "original", disposition: "still-unknown" });
-    expect(registry.inspect()).toMatchObject({ failedRecords: 0, incomplete: false });
+    expect(registry.inspect()).toMatchObject({
+      failedRecords: 0,
+      incomplete: false,
+    });
     const lease = await registry.capture("root");
-    expect(lease.snapshots[0].snapshot).toEqual({ text: "original", disposition: "still-unknown" });
+    expect(lease.snapshots[0].snapshot).toEqual({
+      text: "original",
+      disposition: "still-unknown",
+    });
     lease.release();
     retained.release();
     retained.update({ text: "late retired update" });
     retained.release();
-    expect(registry.inspect()).toMatchObject({ records: 0, retainedBytes: 0, leaseBytes: 0 });
+    expect(registry.inspect()).toMatchObject({
+      records: 0,
+      retainedBytes: 0,
+      leaseBytes: 0,
+    });
   });
 
   it("bounds retained unknown records without reading overflow inputs or dropping originals", async () => {
@@ -373,7 +402,11 @@ describe("passive Parent input registry", () => {
     const snapshot = vi.fn(() => ({ text: "overflow" }));
     let excess!: ReturnType<ParentInputRegistry["retain"]>;
     expect(() => {
-      excess = registry.retain({ sessionId: "root", kind: "queue-edit", snapshot });
+      excess = registry.retain({
+        sessionId: "root",
+        kind: "queue-edit",
+        snapshot,
+      });
       excess.update({ text: "later" });
     }).not.toThrow();
     expect(snapshot).not.toHaveBeenCalled();
@@ -394,7 +427,11 @@ describe("passive Parent input registry", () => {
   it("never invokes a late accessor while checking currentness", async () => {
     const registry = new ParentInputRegistry();
     const data = { text: "original" };
-    registry.register({ sessionId: "root", kind: "question-draft", snapshot: () => data });
+    registry.register({
+      sessionId: "root",
+      kind: "question-draft",
+      snapshot: () => data,
+    });
     const lease = await registry.capture("root");
     const getter = vi.fn(() => "other");
     Object.defineProperty(data, "text", { enumerable: true, get: getter });
@@ -429,7 +466,408 @@ describe("passive Parent input registry", () => {
     );
     lease.release();
     retained.release();
-    expect(registry.inspect()).toMatchObject({ failedRecords: 0, retainedBytes: 0, records: 0 });
+    expect(registry.inspect()).toMatchObject({
+      failedRecords: 0,
+      retainedBytes: 0,
+      records: 0,
+    });
+  });
+});
+
+describe("explicit shared-profile Parent inputs", () => {
+  const begin = (registry: ParentInputRegistry, sessionId: string) =>
+    registry.begin(sessionId, { owner: {}, timeoutMs: 1000 });
+
+  it("selects explicit profile data for every root without assigning a session or reading legacy unknown inputs", async () => {
+    const registry = new ParentInputRegistry();
+    const unknownRead = vi.fn(() => {
+      throw new Error("unassigned private data must not be read");
+    });
+    const unknown = registry.register({
+      kind: "question-draft",
+      snapshot: unknownRead,
+    });
+    const unknownJob = unknown.admit()!;
+    const shared = registry.register({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ exact: "  shared\r\n漢🦀\n" }),
+    });
+    const a = registry.register({
+      sessionId: "A",
+      kind: "session-parent",
+      snapshot: () => ({ root: "A" }),
+    });
+    const b = registry.register({
+      sessionId: "B",
+      kind: "session-parent",
+      snapshot: () => ({ root: "B" }),
+    });
+    const close = begin(registry, "A");
+    const aLease = await close.capture();
+    const bLease = await registry.capture("B");
+    for (const [lease, root] of [
+      [aLease, "A"],
+      [bLease, "B"],
+    ] as const) {
+      expect(lease.snapshots).toHaveLength(2);
+      const profile = lease.snapshots.find((entry) => entry.kind === "approval-decision")!;
+      expect(Object.hasOwn(profile, "sessionId")).toBe(false);
+      expect(profile.snapshot.exact).toBe("  shared\r\n漢🦀\n");
+      expect(lease.snapshots.find((entry) => entry.kind === "session-parent")!.sessionId).toBe(
+        root,
+      );
+      expect(lease.missingCoverage).toContain("unassigned-parent-input-scope");
+    }
+    expect(unknownRead).not.toHaveBeenCalled();
+    expect(registry.closed(undefined)).toBe(false);
+    expect(registry.closed(undefined, "profile")).toBe(true);
+    expect(unknown.canMutate()).toBe(true);
+    expect(shared.canMutate()).toBe(false);
+    expect(b.canMutate()).toBe(true);
+    const bJob = b.admit()!;
+    b.changed();
+    expect(close.current()).toBe(true);
+    bJob.finish();
+    unknownJob.finish();
+    close.release();
+    bLease.release();
+    a.release();
+    b.release();
+    shared.release();
+    unknown.release();
+  });
+
+  it("drains the same actual shared Promise in two roots and permits only original synchronous profile publication", async () => {
+    const registry = new ParentInputRegistry();
+    let text = "before";
+    const shared = registry.register({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ text }),
+    });
+    const sink = registry.register({
+      scope: "profile",
+      kind: "question-draft",
+      snapshot: () => ({ retained: true }),
+    });
+    const a = registry.register({
+      sessionId: "A",
+      kind: "session-parent",
+      snapshot: () => ({}),
+    });
+    const other = registry.register({
+      sessionId: "C",
+      kind: "session-parent",
+      snapshot: () => ({}),
+    });
+    const original = shared.admit()!;
+    let release!: () => void;
+    const pending = original.run(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      expect(registry.canPublish(undefined, "profile")).toBe(false);
+      expect(sink.continue(original, () => {})).toBe(false);
+      original.apply(() => {
+        expect(shared.canMutate()).toBe(true);
+        expect(registry.canPublish(undefined, "profile")).toBe(true);
+        expect(registry.canPublish("A")).toBe(false);
+        expect(a.continue(original, () => {})).toBe(false);
+        expect(sink.continue({ ...original }, () => {})).toBe(false);
+        expect(
+          sink.continue(original, () => {
+            text = "  original shared result\r\n";
+            return true;
+          }),
+        ).toBe(true);
+        expect(shared.admit()).toBeNull();
+      });
+      expect(registry.canPublish(undefined, "profile")).toBe(false);
+    });
+    const closeA = begin(registry, "A");
+    const closeB = begin(registry, "B");
+    let captured = 0;
+    const captureA = closeA.capture().then((lease) => {
+      captured++;
+      return lease;
+    });
+    const captureB = closeB.capture().then((lease) => {
+      captured++;
+      return lease;
+    });
+    await Promise.resolve();
+    original.finish();
+    expect(registry.inspect().pendingJobs).toBe(1);
+    expect(captured).toBe(0);
+    expect(shared.admit()).toBeNull();
+    expect(other.canMutate()).toBe(true);
+    other.admit()!.finish();
+    release();
+    await pending;
+    const leases = await Promise.all([captureA, captureB]);
+    for (const lease of leases)
+      expect(
+        lease.snapshots.find((entry) => entry.kind === "approval-decision")!.snapshot.text,
+      ).toBe("  original shared result\r\n");
+    expect(closeA.current() && closeB.current()).toBe(true);
+    closeA.release();
+    expect(shared.canMutate()).toBe(false);
+    expect(shared.admit()).toBeNull();
+    closeB.release();
+    expect(shared.canMutate()).toBe(true);
+    shared.release();
+    sink.release();
+    a.release();
+    other.release();
+  });
+
+  it("invalidates every captured root for shared changes/roster retirement while other session changes remain isolated", async () => {
+    const registry = new ParentInputRegistry();
+    const shared = registry.register({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ value: "original" }),
+    });
+    const other = registry.register({
+      sessionId: "C",
+      kind: "session-parent",
+      snapshot: () => ({}),
+    });
+    const a = begin(registry, "A");
+    const b = begin(registry, "B");
+    await a.capture();
+    await b.capture();
+    other.changed();
+    expect(a.current() && b.current()).toBe(true);
+    shared.changed();
+    expect(a.current()).toBe(false);
+    expect(b.current()).toBe(false);
+    a.release();
+    b.release();
+    const nextA = begin(registry, "A");
+    const nextB = begin(registry, "B");
+    await nextA.capture();
+    await nextB.capture();
+    shared.release();
+    expect(nextA.current()).toBe(false);
+    expect(nextB.current()).toBe(false);
+    nextA.release();
+    nextB.release();
+    other.release();
+  });
+
+  it("includes shared IME in every preflight and refuses invalid profile/session combinations without throwing into registration", async () => {
+    const registry = new ParentInputRegistry();
+    let composing = true;
+    const read = vi.fn(() => ({ text: "IME" }));
+    const shared = registry.register({
+      scope: "profile",
+      kind: "question-draft",
+      snapshot: read,
+      composing: () => composing,
+    });
+    const a = begin(registry, "A");
+    const b = begin(registry, "B");
+    expect(a.current()).toBe(false);
+    expect(b.current()).toBe(false);
+    expect(shared.canMutate()).toBe(true);
+    await expect(a.capture()).rejects.toThrow();
+    await expect(b.capture()).rejects.toThrow();
+    expect(read).not.toHaveBeenCalled();
+    a.release();
+    b.release();
+    composing = false;
+    const next = begin(registry, "A");
+    composing = true;
+    await expect(next.capture()).rejects.toThrow("composing");
+    next.release();
+    shared.release();
+    let invalid!: ReturnType<ParentInputRegistry["register"]>;
+    expect(() => {
+      invalid = registry.register({
+        scope: "profile",
+        sessionId: "invented-root",
+        kind: "approval-decision",
+        snapshot: read,
+      });
+    }).not.toThrow();
+    expect(invalid.recorded).toBe(false);
+    await expect(registry.capture("A")).rejects.toThrow("capacity");
+    await expect(registry.capture("B")).rejects.toThrow("capacity");
+    invalid.release();
+  });
+
+  it("invalidates all captured roots before a shared recovery resume and pins exact original scope/current owner", async () => {
+    const registry = new ParentInputRegistry();
+    const adapter: {
+      scope?: "profile";
+      sessionId?: string;
+      kind: "approval-decision";
+      snapshot(): Record<string, unknown>;
+    } = {
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ value: "original" }),
+    };
+    const shared = registry.register(adapter);
+    const original = shared.admit()!;
+    original.finish();
+    const a = begin(registry, "A");
+    const b = begin(registry, "B");
+    await a.capture();
+    await b.capture();
+    const resumed = original.resume()!;
+    expect(a.current()).toBe(false);
+    expect(b.current()).toBe(false);
+    expect(original.resume()).toBeNull();
+    resumed.apply(() => expect(registry.canPublish(undefined, "profile")).toBe(true));
+    adapter.scope = undefined;
+    expect(() => resumed.apply(() => {})).toThrow("owner changed");
+    expect(shared.admit()).toBeNull();
+    resumed.finish();
+    a.release();
+    b.release();
+    shared.release();
+  });
+
+  it("retains original shared work after adapter retirement without reading retired data or granting a replacement owner", async () => {
+    const registry = new ParentInputRegistry();
+    let live = true;
+    const read = vi.fn(() => ({ old: "private" }));
+    const shared = registry.register({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: read,
+      ownsCurrent: () => live,
+    });
+    const original = shared.admit()!;
+    live = false;
+    shared.release();
+    expect(shared.admit()).toBeNull();
+    expect(() => original.apply(() => {})).toThrow("owner changed");
+    const replacement = registry.register({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ fresh: true }),
+    });
+    const a = begin(registry, "A");
+    const b = begin(registry, "B");
+    let captured = false;
+    const capture = Promise.all([a.capture(), b.capture()]).then((leases) => {
+      captured = true;
+      return leases;
+    });
+    await Promise.resolve();
+    expect(captured).toBe(false);
+    expect(replacement.admit()).toBeNull();
+    original.finish();
+    const leases = await capture;
+    expect(leases.every((lease) => lease.snapshots[0].snapshot.fresh === true)).toBe(true);
+    expect(read).not.toHaveBeenCalled();
+    a.release();
+    b.release();
+    replacement.release();
+  });
+
+  it("conserves profile originals at bounded record/retained capacity and gates overflow continuations explicitly", async () => {
+    const registry = new ParentInputRegistry({ records: 1 });
+    const original = registry.retain({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ text: "keep exact original" }),
+    });
+    const overflow = registry.register({
+      scope: "profile",
+      kind: "question-draft",
+      snapshot: () => ({ excess: true }),
+    });
+    const admitted = overflow.admit()!;
+    const a = begin(registry, "A");
+    const b = begin(registry, "B");
+    expect(overflow.admit()).toBeNull();
+    admitted.apply(() => expect(registry.canPublish(undefined, "profile")).toBe(true));
+    admitted.finish();
+    await expect(a.capture()).rejects.toThrow("capacity");
+    await expect(b.capture()).rejects.toThrow("capacity");
+    a.release();
+    b.release();
+    overflow.release();
+    const restored = await registry.capture("A");
+    expect(restored.snapshots[0].snapshot.text).toBe("keep exact original");
+    restored.release();
+    original.release();
+    expect(registry.inspect()).toMatchObject({
+      records: 0,
+      retainedBytes: 0,
+      pendingJobs: 0,
+      overflowJobs: 0,
+      overflow: 0,
+    });
+  });
+
+  it("keeps explicit profile gates and pending originals across actual module reload until each exact release", async () => {
+    const current = await import("./parentInputClosure");
+    let text = "old profile";
+    const owner = current.registerParentInput({
+      scope: "profile",
+      kind: "approval-decision",
+      snapshot: () => ({ text }),
+    });
+    const original = owner.admit()!;
+    let release!: () => void;
+    const pending = original.run(async () => {
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      original.apply(() => {
+        text = "old actual shared result";
+      });
+    });
+    const oldA = current.beginParentInputClosure("profile-hmr-A", {
+      owner: {},
+      timeoutMs: 1000,
+    });
+    const oldB = current.beginParentInputClosure("profile-hmr-B", {
+      owner: {},
+      timeoutMs: 1000,
+    });
+    vi.resetModules();
+    const fresh = await import("./parentInputClosure");
+    expect(oldA.current()).toBe(false);
+    expect(oldB.current()).toBe(false);
+    expect(fresh.canMutateParentInputs(undefined, "profile")).toBe(false);
+    expect(fresh.canMutateParentInputs(undefined)).toBe(true);
+    expect(() =>
+      fresh.beginParentInputClosure("profile-hmr-A", {
+        owner: {},
+        timeoutMs: 1000,
+      }),
+    ).toThrow("busy");
+    oldA.release();
+    expect(owner.admit()).toBeNull();
+    const next = fresh.beginParentInputClosure("profile-hmr-A", {
+      owner: {},
+      timeoutMs: 1000,
+    });
+    let captured = false;
+    const capture = next.capture().then((lease) => {
+      captured = true;
+      return lease;
+    });
+    await Promise.resolve();
+    expect(captured).toBe(false);
+    release();
+    await pending;
+    expect(
+      (await capture).snapshots.find((entry) => entry.kind === "approval-decision")!.snapshot.text,
+    ).toBe("old actual shared result");
+    expect(next.current()).toBe(true);
+    next.release();
+    expect(owner.canMutate()).toBe(false);
+    oldB.release();
+    expect(owner.canMutate()).toBe(true);
+    owner.release();
   });
 });
 
@@ -471,7 +909,10 @@ describe("owned Parent admission closure", () => {
   it("waits the real old attempt and allows only its synchronous apply, without an ambient await permit", async () => {
     const registry = new ParentInputRegistry();
     let text = "before";
-    const owner = registry.register({ ...adapter(), snapshot: () => ({ text }) });
+    const owner = registry.register({
+      ...adapter(),
+      snapshot: () => ({ text }),
+    });
     const admitted = owner.admit()!;
     let finish!: () => void;
     const pending = admitted.run(async () => {
@@ -581,7 +1022,10 @@ describe("owned Parent admission closure", () => {
   it("holds an already composing owner before changing editability, and fences newly seen IME", async () => {
     const registry = new ParentInputRegistry();
     let composing = true;
-    const owner = registry.register({ ...adapter(), composing: () => composing });
+    const owner = registry.register({
+      ...adapter(),
+      composing: () => composing,
+    });
     const first = begin(registry);
     expect(first.current()).toBe(false);
     expect(owner.canMutate()).toBe(true);
@@ -626,7 +1070,10 @@ describe("owned Parent admission closure", () => {
 
   it("invalidates an old module round and keeps its actual gate/job visible after a fresh import", async () => {
     let text = "original module";
-    const owner = registerParentInput({ ...adapter("hmr-root"), snapshot: () => ({ text }) });
+    const owner = registerParentInput({
+      ...adapter("hmr-root"),
+      snapshot: () => ({ text }),
+    });
     const admitted = owner.admit()!;
     let finish!: () => void;
     const pending = admitted.run(async () => {
@@ -637,7 +1084,10 @@ describe("owned Parent admission closure", () => {
         text = "  old actual result  ";
       });
     });
-    const oldClose = beginParentInputClosure("hmr-root", { owner: {}, timeoutMs: 1000 });
+    const oldClose = beginParentInputClosure("hmr-root", {
+      owner: {},
+      timeoutMs: 1000,
+    });
     vi.resetModules();
     const fresh = await import("./parentInputClosure");
     expect(oldClose.current()).toBe(false);
@@ -646,7 +1096,10 @@ describe("owned Parent admission closure", () => {
     );
     expect(owner.canMutate()).toBe(false);
     oldClose.release();
-    const next = fresh.beginParentInputClosure("hmr-root", { owner: {}, timeoutMs: 1000 });
+    const next = fresh.beginParentInputClosure("hmr-root", {
+      owner: {},
+      timeoutMs: 1000,
+    });
     let captured = false;
     const capture = next.capture().then((lease) => {
       captured = true;

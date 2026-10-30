@@ -6,6 +6,7 @@ import {
   useState,
   type ClipboardEvent,
   type DragEvent,
+  type RefObject,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -19,6 +20,7 @@ import {
   revokeAttachment,
   MAX_EMBED_BYTES,
 } from "../../sessions/model/attachments";
+import { attachmentDropVerdict, type AttachmentDropBlock } from "../../sessions/model/attachmentDrop";
 import { harnessSupportsAttachments, type Attachment } from "../../sessions/model/session";
 import {
   isFileReferenceText,
@@ -29,6 +31,13 @@ import {
 import { storeQuickAttachments } from "../model/quickAttachments";
 import type { QuickComposerOwner, QuickPreparation } from "../model/quickComposerClosure";
 import { captureDraft, dropPastedText, insertRestoredText } from "../../../shared/lib/draftRestore";
+import {
+  droppedFileCount,
+  nativeDropPointer,
+  pointerInside,
+  type ExternalDropPointer,
+} from "../../../shared/lib/externalDrop";
+import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 
 async function releaseCaptures(files: Attachment[]) {
   const paths = files.flatMap((file) => (file.path ? [file.path] : []));
@@ -60,16 +69,18 @@ export function useQuickAttachments(
   onError: (message: string | null) => void,
   onAdded?: (added: Attachment[], previous: Attachment[]) => void,
   owner?: QuickComposerOwner,
+  /** The element that receives drops; it carries the shared drop mark. */
+  dropTarget?: RefObject<HTMLElement | null>,
 ) {
   const [files, setFiles] = useState<Attachment[]>(() => owner?.draft().attachments ?? []);
   const [loading, setLoading] = useState(false);
-  const [dragging, setDragging] = useState(false);
   const filesRef = useRef(files);
   const queueRef = useRef(
     owner?.queue ?? { tail: Promise.resolve(), pending: 0, screenshot: false },
   );
   const alive = useRef(true);
   const nativeDropAt = useRef(0);
+  const { show: showFeedback, hide: hideDrop } = useExternalDropFeedback();
   const supportedRef = useRef(supported);
   const onAddedRef = useRef(onAdded);
   useLayoutEffect(() => {
@@ -217,21 +228,57 @@ export function useQuickAttachments(
     [owner, isSupported, onError],
   );
 
+  // One mark on the composer frame and one badge: "Attach N files", or why the drop is refused.
+  const dropBlock = (): AttachmentDropBlock | null => {
+    if (owner?.launching) return "unavailable";
+    if (!isSupported()) return "unsupported";
+    if (owner && !owner.canMutate()) return "unavailable";
+    return queueRef.current.pending > 0 ? "reading" : null;
+  };
+  const showDrop = (
+    count: number,
+    pointer: ExternalDropPointer | { position?: { x: number; y: number } },
+  ) => {
+    const target = dropTarget?.current ?? null;
+    showFeedback(
+      target,
+      attachmentDropVerdict(
+        count,
+        (owner?.draft().attachments ?? filesRef.current).length,
+        dropBlock(),
+      ),
+      "clientX" in pointer
+        ? pointer
+        : nativeDropPointer(pointer.position, pointerInside(target)),
+    );
+  };
+  // The native listener outlives renders; it reads the latest verdict through this ref.
+  const showDropRef = useRef(showDrop);
+  useLayoutEffect(() => {
+    showDropRef.current = showDrop;
+  });
+
   useEffect(() => {
     let disposed = false;
     let stop: (() => void) | undefined;
+    let nativeCount = 0;
     void getCurrentWebview()
       .onDragDropEvent(({ payload }) => {
         if (payload.type === "leave") {
-          setDragging(false);
+          nativeCount = 0;
+          hideDrop();
           return;
         }
         if (payload.type === "drop") {
-          setDragging(false);
+          nativeCount = 0;
+          hideDrop();
           nativeDropAt.current = Date.now();
           const paths = [...payload.paths];
           void collect(() => attachmentsFromPaths(paths));
-        } else setDragging(canCollect());
+        } else {
+          if (payload.type === "enter") nativeCount = payload.paths?.length ?? 0;
+          showDropRef.current(nativeCount, { position: payload.position });
+        }
       })
       .then((unlisten) => {
         if (disposed) unlisten();
@@ -242,7 +289,7 @@ export function useQuickAttachments(
       disposed = true;
       stop?.();
     };
-  }, [collect, canCollect]);
+  }, [collect, hideDrop]);
 
   const readFiles = (input: File[], accepted: QuickPreparation, overflow = false) => {
     const selected = input.slice(0, MAX_ATTACHMENTS);
@@ -370,7 +417,6 @@ export function useQuickAttachments(
   return {
     files: owner?.draft().attachments ?? files,
     loading: owner ? owner.attachmentPending > 0 : loading,
-    dragging,
     remove,
     clear: () => {
       if (!canMutate()) return;
@@ -389,16 +435,16 @@ export function useQuickAttachments(
       if (!Array.from(event.dataTransfer.types).includes("Files")) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = canCollect() ? "copy" : "none";
-      setDragging(canCollect());
+      showDrop(droppedFileCount(event.dataTransfer), event);
     },
     onDragLeave: (event: DragEvent) => {
       if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
         return;
-      setDragging(false);
+      hideDrop();
     },
     onDrop: (event: DragEvent) => {
       event.preventDefault();
-      setDragging(false);
+      hideDrop();
       if (Date.now() - nativeDropAt.current < 250) return;
       const input = Array.from(event.dataTransfer.files).slice(0, MAX_ATTACHMENTS);
       const overflow = event.dataTransfer.files.length > input.length;

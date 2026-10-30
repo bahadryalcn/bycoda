@@ -4,8 +4,10 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { exerciseOverlappingApproval, exerciseApprovalActualWriteLifetime } from "../approvalOverlap.testSupport";
 
 const sent: string[] = [];
+let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number) => void) | undefined;
 
@@ -20,6 +22,8 @@ vi.mock("../../core/child", () => ({
   },
   writeChild: async (_id: string, line: string) => {
     sent.push(line);
+    const message = JSON.parse(line);
+    if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
   },
 }));
 
@@ -32,6 +36,7 @@ vi.mock("./cursorStore", () => ({
 const {
   sendCursorTurn,
   cancelCursorTurn,
+  respondCursorApproval,
   respondCursorQuestion,
   stopCursorSession,
   __cursorTestReset,
@@ -133,8 +138,121 @@ beforeEach(() => {
   stores.tools.mockReset().mockResolvedValue([]);
   stores.subagents.mockReset().mockResolvedValue([]);
   sent.length = 0;
+  heldApprovalWrite = null;
   onLine = undefined;
   __cursorTestReset();
+});
+
+it.each([false, true])("retains Cursor actual approval writes after timeout (cancel first: %s)", async (cancelBeforeTimeout) => {
+  const { events, promptId, turn } = await startTurn("cursor-live");
+  const outcome = turn.catch(() => undefined);
+  let frame = 0;
+  await exerciseApprovalActualWriteLifetime({
+    events, requestId: 993, cancelBeforeTimeout,
+    ask: () => nativeOutputFrame("cursor-live", `actual-write-${++frame}`, () => request(993, "session/request_permission", {
+      sessionId: "cursor_1", toolCall: { toolCallId: "retained", title: "Run git status", kind: "execute" },
+      options: [{ optionId: "allow-once", kind: "allow_once" }, { optionId: "reject-once", kind: "reject_once" }],
+    })),
+    approve: nonce => respondCursorApproval("cursor-live", 993, "allow", nonce),
+    cancel: () => cancelCursorTurn("cursor-live"),
+    holdWrites: gate => { heldApprovalWrite = gate; },
+    replies: () => parse().filter(message => message.id === 993 && message.result).map(message => message.result),
+  });
+  if (!cancelBeforeTimeout) reply(promptId, { stopReason: "end_turn" });
+  await outcome;
+});
+
+it.each([false, true])(
+  "fails closed on an overlapping Cursor permission (allow already queued: %s)",
+  async (allowBeforeDuplicate) => {
+    const { events, promptId, turn } = await startTurn("cursor-live");
+    let frame = 0;
+    await exerciseOverlappingApproval({
+      events,
+      requestId: 992,
+      allowBeforeDuplicate,
+      ask: () =>
+        nativeOutputFrame("cursor-live", `overlap-${++frame}`, () =>
+          request(992, "session/request_permission", {
+            sessionId: "cursor_1",
+            toolCall: { toolCallId: "overlap", title: "Run git status", kind: "execute" },
+            options: [
+              { optionId: "allow-once", kind: "allow_once" },
+              { optionId: "reject-once", kind: "reject_once" },
+            ],
+          }),
+        ),
+      approve: (nonce, decision) => respondCursorApproval("cursor-live", 992, decision, nonce),
+      replies: () =>
+        parse()
+          .filter((message) => message.id === 992 && message.result)
+          .map((message) => message.result),
+      deniedResult: { outcome: { outcome: "selected", optionId: "reject-once" } },
+    });
+    reply(promptId, { stopReason: "end_turn" });
+    await turn;
+  },
+);
+
+it("rejects a completed occurrence when Cursor reuses its permission RPC ID", async () => {
+  const { events, promptId, turn } = await startTurn("cursor-live");
+  const ask = () =>
+    onLine!(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 991,
+        method: "session/request_permission",
+        params: {
+          sessionId: "cursor_1",
+          toolCall: { toolCallId: "reused-tool", title: "Run git status", kind: "execute" },
+          options: [
+            { optionId: "allow-once", kind: "allow_once" },
+            { optionId: "reject-once", kind: "reject_once" },
+          ],
+        },
+      }),
+    );
+  let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+  for (let occurrence = 0; occurrence < 2; occurrence++) {
+    ask();
+    await waitFor(
+      () => events.filter((event) => event.type === "approval.requested").length === occurrence + 1,
+      "permission source",
+    );
+    const asked = events.filter(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    )[occurrence];
+    respondCursorApproval("cursor-live", 991, "allow");
+    if (previous) {
+      expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+      respondCursorApproval("cursor-live", 991, "allow", previous.occurrenceId);
+    }
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 991 && message.result)).toHaveLength(
+      occurrence,
+    );
+    respondCursorApproval("cursor-live", 991, "deny", asked.occurrenceId);
+    await waitFor(
+      () =>
+        parse().filter((message) => message.id === 991 && message.result).length === occurrence + 1,
+      "matching permission reply",
+    );
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: 991,
+      occurrenceId: asked.occurrenceId,
+      decision: "deny",
+    });
+    respondCursorApproval("cursor-live", 991, "allow", asked.occurrenceId);
+    await Promise.resolve();
+    expect(parse().filter((message) => message.id === 991 && message.result)).toHaveLength(
+      occurrence + 1,
+    );
+    previous = asked;
+  }
+  reply(promptId, { stopReason: "end_turn" });
+  await turn;
 });
 
 afterEach(async () => {
@@ -672,24 +790,26 @@ it.each(["initialize", "authenticate", "session/new"])(
   },
 );
 
-it("Cursor çıkışı bekleyen onayı çözer ve kapalı pipe hatasını yakalar", async () => {
+it("Cursor exit settles the original approval without writing to the exited process", async () => {
   const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   try {
     const { events, turn } = await startTurn("cursor-exit");
     const outcome = turn.catch(() => undefined);
-    request(92, "session/request_permission", {
-      sessionId: "cursor_1",
-      toolCall: {
-        toolCallId: "execute",
-        title: "Run rm",
-        kind: "execute",
-        rawInput: { command: "rm file" },
-      },
-      options: [
-        { optionId: "allow-once", kind: "allow_once" },
-        { optionId: "reject-once", kind: "reject_once" },
-      ],
-    });
+    const inspect = nativeOutputFrame("cursor-exit", "exit-permission", () =>
+      request(92, "session/request_permission", {
+        sessionId: "cursor_1",
+        toolCall: {
+          toolCallId: "execute",
+          title: "Run rm",
+          kind: "execute",
+          rawInput: { command: "rm file" },
+        },
+        options: [
+          { optionId: "allow-once", kind: "allow_once" },
+          { optionId: "reject-once", kind: "reject_once" },
+        ],
+      }),
+    );
     await waitFor(() => events.some((event) => event.type === "approval.requested"), "approval");
     onExit!(1);
     await outcome;
@@ -697,11 +817,17 @@ it("Cursor çıkışı bekleyen onayı çözer ve kapalı pipe hatasını yakala
       () => events.some((event) => event.type === "approval.resolved"),
       "approval cleanup",
     );
-    await waitFor(
-      () =>
-        warning.mock.calls.some(([message]) => message === "[bycoda] cursor server request failed"),
-      "actual request settlement",
-    );
+    expect(parse().some((message) => message.id === 92 && message.result)).toBe(false);
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: 92,
+      occurrenceId: events.find((event) => event.type === "approval.requested")!.occurrenceId,
+      decision: "deny",
+    });
+    await waitFor(() => inspect().pendingCausalWork === 0, "original permission handler drained");
+    expect(
+      warning.mock.calls.some(([message]) => message === "[bycoda] cursor server request failed"),
+    ).toBe(false);
   } finally {
     warning.mockRestore();
   }

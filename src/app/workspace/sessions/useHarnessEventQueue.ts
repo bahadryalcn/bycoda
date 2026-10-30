@@ -7,7 +7,8 @@ import {
   failNativeOutputEvents,
   markNativeOutputEventsApplied,
 } from "../../../integrations/harness/core/nativeOutputDelivery";
-import { discardQuestionDraft } from "../../../features/sessions/model/questionDrafts";
+import { resolveQuestionDraft } from "../../../features/sessions/model/questionDrafts";
+import { observeApprovalResolutions } from "../../../features/sessions/model/approvalIntents";
 import type { UserQuestionPrompt } from "../../../features/sessions/model/userQuestion";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
 import { leafIds, type WorkspaceTab } from "../../../features/workspace/model/layout";
@@ -75,6 +76,7 @@ export function useHarnessEventQueue({
                 if (event.type === "question.asked") questions.set(event.requestId, event);
               }
               const next = applyHarnessEvents(session, events);
+              observeApprovalResolutions(session, next, events);
               const retained = [
                 ...(next.submittedQuestions ?? []),
                 ...(next.pendingQuestion ? [next.pendingQuestion] : []),
@@ -88,7 +90,7 @@ export function useHarnessEventQueue({
                       current.providerTurnId === question.providerTurnId,
                   )
                 )
-                  discardQuestionDraft(session.id, question);
+                  resolveQuestionDraft(session.id, question);
               }
               return next;
             }

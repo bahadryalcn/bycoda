@@ -60,6 +60,7 @@ import { lazySurface } from "../../../shared/ui/lazySurface";
 import {
   accountChoicesSnapshot,
   accountModelChoices,
+  accountDisplayLabel,
   modelAccountLabel,
   modelChoiceKey,
   type AccountModelChoice,
@@ -237,13 +238,15 @@ export function ModelPicker({
       const accounts = source.accounts[harness] ?? [];
       const saved = accounts.find((account) => account.id === currentAccountId);
       if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
-      return accounts.length > 1 ? saved.label : undefined;
+      return accounts.length > 1 ? accountDisplayLabel(accounts, saved) : undefined;
     }
     const accounts = providerAccounts(harness);
     const known = accounts.some((account) => account.id === currentAccountId);
     if (!known && currentAccountId !== defaultProviderAccountId(harness) && currentAccountId !== "default")
       return t("Removed account");
-    return accounts.length > 1 ? providerAccountLabel(harness, currentAccountId) : undefined;
+    if (accounts.length <= 1) return undefined;
+    const saved = accounts.find((account) => account.id === currentAccountId);
+    return saved ? accountDisplayLabel(accounts, saved) : providerAccountLabel(harness, currentAccountId);
   }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts, t]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
@@ -827,6 +830,7 @@ export function ModelPicker({
                     type="button"
                     role="menuitemradio"
                     aria-checked={inheritSelected}
+                    title={inherit.label}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => {
                       setActive(index);
@@ -874,6 +878,8 @@ export function ModelPicker({
                     role="menuitem"
                     aria-haspopup="menu"
                     aria-expanded={highlighted && showSubmenu}
+                    // Long model and account names truncate here; the tooltip keeps the full identity.
+                    title={triggerTitle}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => {
                       setActive(index);

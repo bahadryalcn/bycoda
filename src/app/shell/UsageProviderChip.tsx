@@ -246,7 +246,7 @@ function UsageProviderDetails({
   const iconHarness = presentation?.harness ?? limits.provider;
   const activeAccount = accounts.find((account) => account.id === accountId);
   const canManageAccounts = !usageOnly && Boolean(onSelectAccount && onAddAccount);
-  const activeAccountLabel = activeAccount?.label ?? "Removed account";
+  const activeAccountLabel = activeAccount?.label ?? t("Removed account");
   const identities = useProviderAccountIdentities(
     accounts,
     `${limits.updatedAt}:${reconnectState}`,

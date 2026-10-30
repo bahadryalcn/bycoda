@@ -104,7 +104,7 @@ describe.skipIf(!REAL)("antigravity soak — low-effort fleet", () => {
         // Unless a test deliberately parks on a permission request (to
         // prove a turn is in flight), auto-approve so nothing can wedge.
         if (!parkApprovals && event.type === "approval.requested") {
-          agy.respondAntigravityApproval(thread, event.requestId, "allow");
+          agy.respondAntigravityApproval(thread, event.requestId, "allow", event.occurrenceId);
         }
       },
     };

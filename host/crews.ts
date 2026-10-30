@@ -1,4 +1,5 @@
 import { flatMapAsync, mapAsync } from "./async-collections";
+import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
 import { randomUUID, createHash } from "node:crypto";
 import type { HostEngine } from "./engine";
 import type { HostStore } from "./store";
@@ -1234,10 +1235,16 @@ export class HostCrews {
           reply: JSON.parse(message(input.replyJson)),
         });
       }
+      if (!isApprovalOccurrenceId(input.approvalOccurrenceId))
+        throw new Error("Approval request changed. Reload pending inputs");
       if (
-        !session.session.blocks.some(
-          (b) => b.approval && b.approval.requestId === input.approvalId && !b.approval.decided,
-        )
+        session.session.blocks.filter(
+          (b) =>
+            b.approval &&
+            b.approval.requestId === input.approvalId &&
+            b.approval.occurrenceId === input.approvalOccurrenceId &&
+            !b.approval.decided,
+        ).length !== 1
       )
         throw new Error("Approval is no longer pending");
       if (input.decision !== "allow" && input.decision !== "deny")
@@ -1248,6 +1255,7 @@ export class HostCrews {
         sessionId: String(input.sessionId),
         runId: session.runId,
         requestId: input.approvalId,
+        approvalOccurrenceId: input.approvalOccurrenceId,
         decision: input.decision,
       });
     }

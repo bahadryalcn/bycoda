@@ -4335,6 +4335,7 @@ describe("headless session ownership", () => {
     turns[0].input.onEvent({
       type: "approval.requested",
       requestId: 7,
+      occurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
       title: "Run a command?",
     });
     const runId = (await store.session(id)).runId!;
@@ -4344,6 +4345,7 @@ describe("headless session ownership", () => {
       sessionId: id,
       runId,
       requestId: 7,
+      approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
       decision: "allow",
     };
     await expect(engine.command({ ...approval, runId: "stale" })).rejects.toThrow(
@@ -4359,7 +4361,164 @@ describe("headless session ownership", () => {
       }),
     ).rejects.toThrow("already resolved");
     expect(provider.approve).toHaveBeenCalledTimes(1);
-    expect(provider.approve).toHaveBeenCalledWith(id, 7, "allow");
+    expect(provider.approve).toHaveBeenCalledWith(
+      id,
+      7,
+      "allow",
+      "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
+    );
+  });
+
+  it("rejects a stale occurrence when the same running provider reuses its numeric approval ID", async () => {
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
+    const occurrenceA = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
+    const occurrenceB = "7e1c4dc0-6f53-4a8c-b8d8-000000000002";
+    await engine.command({
+      type: "send",
+      commandId: "occurrence-send",
+      sessionId: id,
+      text: "Work",
+    });
+    await waitForTurnStart();
+    const runId = (await store.session(id)).runId!;
+    turns[0].input.onEvent({
+      type: "approval.requested",
+      requestId: 7,
+      occurrenceId: occurrenceA,
+      callId: "A",
+      title: "Same operation",
+    });
+    const first = {
+      type: "approve",
+      commandId: "approve-A",
+      sessionId: id,
+      runId,
+      requestId: 7,
+      approvalOccurrenceId: occurrenceA,
+      decision: "allow",
+    };
+    await expect(engine.command({ ...first, approvalOccurrenceId: undefined })).rejects.toThrow(
+      "identity is missing or invalid",
+    );
+    await expect(engine.command({ ...first, approvalOccurrenceId: occurrenceB })).rejects.toThrow(
+      "request changed",
+    );
+    const receipt = await engine.command(first);
+    // Durable acceptance precedes the committed effect's authority await. Start
+    // the second occurrence only after A reached its actual provider callback;
+    // the separate latch case exercises replacement during that await.
+    await vi.waitFor(() =>
+      expect(provider.approve).toHaveBeenCalledExactlyOnceWith(id, 7, "allow", occurrenceA),
+    );
+    turns[0].input.onEvent({
+      type: "approval.requested",
+      requestId: 7,
+      occurrenceId: occurrenceB,
+      callId: "B",
+      title: "Same operation",
+    });
+    await expect(engine.command({ ...first, commandId: "late-A" })).rejects.toThrow(
+      "request changed",
+    );
+    await expect(engine.command(first)).resolves.toEqual(receipt);
+    await expect(engine.command({ ...first, decision: "deny" })).rejects.toThrow();
+    await engine.command({
+      ...first,
+      commandId: "approve-B",
+      approvalOccurrenceId: occurrenceB,
+      decision: "deny",
+    });
+    await vi.waitFor(() =>
+      expect(vi.mocked(provider.approve).mock.calls).toEqual([
+        [id, 7, "allow", occurrenceA],
+        [id, 7, "deny", occurrenceB],
+      ]),
+    );
+    const approvals = (await store.session(id)).session.blocks.filter(
+      (block) => block.approval?.requestId === 7,
+    );
+    expect(approvals.map((block) => block.approval)).toEqual([
+      { requestId: 7, occurrenceId: occurrenceA, decided: "allow" },
+      { requestId: 7, occurrenceId: occurrenceB, decided: "deny" },
+    ]);
+  });
+
+  it("rechecks the actual approval source after the committed effect's authority await", async () => {
+    const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
+    const occurrenceA = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
+    const occurrenceB = "7e1c4dc0-6f53-4a8c-b8d8-000000000002";
+    await engine.command({ type: "send", commandId: "guard-send", sessionId: id, text: "Work" });
+    await waitForTurnStart();
+    const runId = (await store.session(id)).runId!;
+    turns[0].input.onEvent({
+      type: "approval.requested",
+      requestId: 7,
+      occurrenceId: occurrenceA,
+      callId: "A",
+      title: "Original request",
+    });
+    const callbacks: Array<() => void | Promise<void>> = [];
+    const defer = vi.spyOn(store, "afterCommit").mockImplementation((effect) => {
+      callbacks.push(effect);
+    });
+    const receipt = await engine.command({
+      type: "approve",
+      commandId: "guard-A",
+      sessionId: id,
+      runId,
+      requestId: 7,
+      approvalOccurrenceId: occurrenceA,
+      decision: "allow",
+    });
+    defer.mockRestore();
+    const effect = callbacks.pop();
+    expect(effect).toBeDefined();
+    for (const callback of callbacks) await callback();
+    expect(provider.approve).not.toHaveBeenCalled();
+    let entered!: () => void, release!: () => void;
+    const authorityEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const originalAssert = store.assertAuthority.bind(store);
+    let waiting = true;
+    const authority = vi.spyOn(store, "assertAuthority").mockImplementation(async (...args) => {
+      await originalAssert(...args);
+      if (waiting) {
+        waiting = false;
+        entered();
+        await gate;
+      }
+    });
+    const dispatch = Promise.resolve(effect!());
+    // Observe immediately even if an unexpectedly early failure occurs during the latch.
+    void dispatch.catch(() => {});
+    try {
+      await authorityEntered;
+      authority.mockRestore();
+      turns[0].input.onEvent({
+        type: "approval.requested",
+        requestId: 7,
+        occurrenceId: occurrenceB,
+        callId: "B",
+        title: "Replacement request",
+      });
+      await vi.waitFor(async () => {
+        expect(
+          (await store.session(id)).session.blocks.some(
+            (block) => block.approval?.occurrenceId === occurrenceB,
+          ),
+        ).toBe(true);
+      });
+    } finally {
+      authority.mockRestore();
+      release();
+    }
+    await expect(dispatch).rejects.toThrow("original approval source changed");
+    expect(provider.approve).not.toHaveBeenCalled();
+    expect(await store.receiptStatus("guard-A")).toEqual(receipt);
   });
 
   it("stores pending questions and rejects a second device's stale answer", async () => {

@@ -93,6 +93,7 @@ import { useSubagentRelay } from "./useSubagentRelay";
 import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
 import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
+import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { EditFromHereDialog } from "./EditFromHereDialog";
 import { useEditingLastTurn } from "./useEditingLastTurn";
 import { useMessageRewind } from "./useMessageRewind";
@@ -108,7 +109,9 @@ import {
 } from "../model/transcriptJump";
 import { EmptySession } from "./EmptySession";
 import { CrewBackdrop } from "./CrewBackdrop";
-import { useComposerDockMotion } from "./useComposerDockMotion";
+import { composerReadingActive } from "./composerReading";
+import { useComposerEngagement } from "./useComposerEngagement";
+import { useComposerDockMotion, useComposerReadingMotion } from "./useComposerDockMotion";
 import { createNote, noteTitle } from "../../notes";
 import {
   getNotesPanelOpen,
@@ -222,7 +225,7 @@ export type SessionPaneProps = {
   onArchiveSession?: (sessionId: string, archived: boolean) => Promise<boolean>;
   onDeleteSession?: (sessionId: string) => Promise<boolean>;
   onRewindMessage?: (sessionId: string, blockId: string) => Promise<boolean>;
-  onApproval: (sessionId: string, requestId: number, decision: ApprovalDecision) => void;
+  onApproval: ApprovalDispatch;
   onQuestionReply: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
   questionDraftScope?: string;
   onQuestionInteraction?: (sessionId: string, requestId: number) => void;
@@ -654,6 +657,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
     (requestId: number, decision: ApprovalDecision) => onApproval(session.id, requestId, decision),
     [onApproval, session.id],
   );
+  const approvalContext = useMemo(() => ({ session, dispatch: onApproval }), [session, onApproval]);
   const replyQuestion = useCallback(
     (requestId: number, reply: UserQuestionReply) => onQuestionReply(session.id, requestId, reply),
     [onQuestionReply, session.id],
@@ -670,9 +674,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const transcriptScope = useRef<HTMLDivElement>(null);
   const [transcriptScroller, setTranscriptScroller] = useState<HTMLDivElement | null>(null);
   const focusPane = useCallback(() => onFocus(session.id), [onFocus, session.id]);
-  const { quoteRequest, addSelectionToChat, acknowledgeQuote, snapshot: quoteSnapshot } =
-    useQuoteRequests(rootParentRef, addToChatTarget);
+  const {
+    quoteRequest,
+    addSelectionToChat,
+    acknowledgeQuote,
+    snapshot: quoteSnapshot,
+  } = useQuoteRequests(rootParentRef, addToChatTarget);
   const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  // The reader scrolled away from the end (from the transcript's follow owner).
+  const [readingHistory, setReadingHistory] = useState(false);
   // One owner for "the earlier turn is being edited"; the Composer receives it.
   const [editingLastTurn, setEditingLastTurn] = useEditingLastTurn(
     session.id,
@@ -797,9 +807,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
     () => peekTranscriptJump(session.id),
     () => null,
   );
-  useCitedTurnHistory({ visible, jump: jumpRequest, blocks: stableBlocks,
-    hasMore: remoteHistoryHasMore, loading: remoteHistoryLoading,
-    error: remoteHistoryError, load: onLoadRemoteHistory });
+  useCitedTurnHistory({
+    visible,
+    jump: jumpRequest,
+    blocks: stableBlocks,
+    hasMore: remoteHistoryHasMore,
+    loading: remoteHistoryLoading,
+    error: remoteHistoryError,
+    load: onLoadRemoteHistory,
+  });
   useEffect(() => {
     if (!visible || !navigatorReady || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
@@ -851,6 +867,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const dockComposer =
     remoteSessionLoading || (!draftBlock && (!isEmpty || inSplit || !!session.inboxAsk));
   const composerDockMotion = useComposerDockMotion(dockComposer);
+  const composerEngagement = useComposerEngagement(composerDockMotion.dockedRef);
+  // Reading history with focus elsewhere: the one mounted composer shows its
+  // compact geometry. Anything needing the full layout keeps it.
+  const composerReading = composerReadingActive({
+    readingHistory: readingHistory && dockComposer && !isEmpty,
+    engaged: composerEngagement.engaged,
+    blocked: !!session.pendingQuestion || editingLastTurn || btw.open,
+  });
+  useComposerReadingMotion(composerDockMotion.dockedRef, dockComposer, composerReading);
   const draftRef = useRef<string | undefined>(getComposerDraft(session.id));
   const parentChanged = useParentInputClosure({
     kind: "session-parent",
@@ -1172,6 +1197,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       focusToken={composerFocusToken}
       hotkeys={focused && !btw.open}
       shell={!dockComposer}
+      reading={composerReading}
       harness={session.harness}
       model={session.model}
       modelSettings={session.modelSettings}
@@ -1590,6 +1616,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                 onMouseDown={focusPane}
               >
                 <AgentTranscript
+                  approvalContext={approvalContext}
                   sessionId={session.id}
                   blocks={session.blocks}
                   performanceTraceId={sessionPerformanceTrace(session.id)}
@@ -1634,6 +1661,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     !session.inboxAsk && !session.worktreeRemoved && onHandoff ? handoff : undefined
                   }
                   onJumpToBottomChange={setShowJumpToBottom}
+                  onReadingChange={setReadingHistory}
                   onJumpToBottomReady={onJumpToBottomReady}
                   onRevealReady={onRevealReady}
                   onNavigateReady={onNavigateReady}
@@ -1693,6 +1721,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
             data-session-composer
             inert={btw.open}
             className="mx-auto w-full max-w-4xl shrink-0"
+            {...composerEngagement.handlers}
           >
             {composer}
           </div>

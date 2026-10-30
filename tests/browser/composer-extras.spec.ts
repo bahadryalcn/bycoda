@@ -1,4 +1,12 @@
 import { test, expect } from "@playwright/test";
+import {
+  dropAnnouncer,
+  dropBadge,
+  dropMarks,
+  fileDrag,
+  files,
+  textDrag,
+} from "./external-drop";
 
 test("composer attachment submission stays local and keeps Stop available", async ({
   page,
@@ -1433,4 +1441,83 @@ test("independent scalar model settings preserve the draft caret and sibling val
   );
   await expect(draft).toHaveValue("Preserve this draft");
   await expect(draft).toBeFocused();
+});
+
+test("external drop: the composer shows one mark and one badge that names the attach action", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/composer-extras.html");
+  const box = page.locator("[data-composer-box]").first();
+  await expect(box).toBeVisible();
+
+  // Dragging text is not a file drop: no mark, no badge.
+  await textDrag(box, "dragover");
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+
+  await fileDrag(box, "dragover", files(3));
+  await expect(box).toHaveAttribute("data-drop-indicator", "inside");
+  await expect(dropMarks(page)).toHaveCount(1);
+  await expect(dropBadge(page)).toHaveCount(1);
+  await expect(dropBadge(page)).toHaveText("Attach 3 files");
+  await expect(dropAnnouncer(page)).toHaveText("Attach 3 files");
+  // The old in-box instruction is gone: the badge is the only sentence.
+  await expect(box).not.toContainText("Drop files to attach");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    await page.screenshot({
+      path: `temp/verification/vis-dnd-4/composer-attach-3-${light ? "light" : "dark"}.png`,
+    });
+  }
+
+  // Every way a drag can end clears both.
+  await page.keyboard.press("Escape");
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+  await fileDrag(box, "dragover", files(1));
+  await expect(dropBadge(page)).toHaveText("Attach 1 file");
+  await fileDrag(box, "dragleave", files(1), { x: 1, y: 1 });
+  await expect(dropMarks(page)).toHaveCount(0);
+  await fileDrag(box, "dragover", files(1));
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await expect(dropBadge(page)).toHaveCount(0);
+
+  // Dropping attaches and clears the feedback.
+  await fileDrag(box, "dragover", files(1));
+  await fileDrag(box, "drop", [{ name: "dropped.png", type: "image/png" }]);
+  await expect(dropBadge(page)).toHaveCount(0);
+  await expect(dropMarks(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /^Remove dropped\.png/ })).toBeVisible();
+
+  // More files than a draft can hold: the badge says how many will be kept.
+  await fileDrag(box, "dragover", files(25));
+  await expect(dropBadge(page)).toHaveText("Attach 19 of 25 files");
+  await page.keyboard.press("Escape");
+  await expect(dropBadge(page)).toHaveCount(0);
+});
+
+test("external drop: a composer that cannot take attachments says why instead of offering the drop", async ({
+  page,
+}) => {
+  await page.goto("/tests/browser/composer-extras.html?no-attachments");
+  const box = page.locator("[data-composer-box]").first();
+  await expect(box).toBeVisible();
+  await fileDrag(box, "dragover", files(2));
+  await expect(box).toHaveAttribute("data-drop-indicator", "blocked");
+  await expect(dropBadge(page)).toHaveText("This provider does not support attachments");
+  await expect(dropBadge(page)).toHaveAttribute("data-action", "blocked");
+  for (const light of [false, true]) {
+    await page.evaluate(
+      (light) => document.documentElement.classList.toggle("theme-light", light),
+      light,
+    );
+    await page.screenshot({
+      path: `temp/verification/vis-dnd-4/composer-blocked-${light ? "light" : "dark"}.png`,
+    });
+  }
+  await fileDrag(box, "dragleave", files(2), { x: 1, y: 1 });
+  await expect(dropMarks(page)).toHaveCount(0);
 });

@@ -108,3 +108,73 @@ export type FactSuggestResult = {
   agent: SocialAgent;
   verified: false;
 };
+
+/** At most this many contacts per `contacts.suggestTags` request (the Host enforces it). */
+export const CONTACT_TAG_REQUEST_MAX = 100;
+/** At most this many suggested tags per contact, each at most this long. */
+export const CONTACT_TAG_PER_CONTACT_MAX = 5;
+export const CONTACT_TAG_MAX_LENGTH = 40;
+/** A contact's total tag list is capped by the Host's contact validation. */
+export const CONTACT_TAGS_MAX = 30;
+
+/**
+ * One import row (not saved yet) the model should label. `ref` is the caller's own key and comes
+ * back unchanged; it carries no meaning to the Host. Consent, opt-out and eligibility are never part
+ * of a row.
+ */
+export type ContactTagRow = {
+  ref: string;
+  name: string;
+  platformId?: string;
+  profileUrl?: string;
+  language?: string;
+  tags?: string[];
+};
+
+/**
+ * `contacts.suggestTags` input: owner-only, scoped to one account and one project the account has
+ * draft access to. Exactly one of `contactIds` (saved contacts of that account and project) or `rows`
+ * (parsed import rows) is given. Free `instructions` and every contact value are quoted to the model
+ * as untrusted data.
+ */
+export type ContactTagInput = {
+  accountId: string;
+  projectId: string;
+  contactIds?: string[];
+  rows?: ContactTagRow[];
+  /** At most 2000 characters. */
+  instructions?: string;
+};
+
+export type ContactTagSuggestion = {
+  tag: string;
+  reason: string;
+  /** No contact of this project carries the tag yet, so accepting it introduces a new label. */
+  isNew: boolean;
+};
+
+export type ContactTagProposal = {
+  /** The saved contact's id, or the row's `ref`. */
+  ref: string;
+  name: string;
+  currentTags: string[];
+  /** Only tags the contact does not carry yet; never empty (contacts with nothing to add are omitted). */
+  tags: ContactTagSuggestion[];
+  /** Existing segments of this project the contact would match once it carries every proposed tag. */
+  segments: { id: string; name: string }[];
+};
+
+/**
+ * The answer: a draft only. It never changes consent, opt-out or eligibility and stores nothing; the
+ * owner applies accepted tags through `contacts.import` (rows) or `contacts.upsert` (saved contacts).
+ */
+export type ContactTagResult = {
+  accountId: string;
+  projectId: string;
+  proposals: ContactTagProposal[];
+  /** Refs the model had nothing to add for. */
+  unchangedRefs: string[];
+  notes: string[];
+  agent: SocialAgent;
+  draftOnly: true;
+};

@@ -29,6 +29,9 @@ import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
 import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
+import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
+import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
 import { ProjectMascot } from "../../projects/ui/ProjectMascot";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
@@ -1280,7 +1283,13 @@ function ActivityToolIcon({ state, live = false }: { state: ToolCallState; live?
 }
 
 /** Failure stays marked. Running and success do not get a trailing icon. */
-function ToolCallStatusIcon({ state, stopped = false }: { state: ToolCallState; stopped?: boolean }) {
+function ToolCallStatusIcon({
+  state,
+  stopped = false,
+}: {
+  state: ToolCallState;
+  stopped?: boolean;
+}) {
   const t = useT();
   // A call cut short on purpose settles as accepted, so mark it instead of reading as done.
   if (stopped && state !== "rejected") {
@@ -1296,7 +1305,11 @@ function ToolCallStatusIcon({ state, stopped = false }: { state: ToolCallState; 
   return null;
 }
 
-export function formatWorkingDuration(elapsedMs: number | null, modelName?: string, done = false): string {
+export function formatWorkingDuration(
+  elapsedMs: number | null,
+  modelName?: string,
+  done = false,
+): string {
   const who = modelName?.trim();
   const elapsed = formatElapsed(elapsedMs);
   const verb = done ? (who ? "worked" : "Worked") : who ? "working" : "Working";
@@ -1584,30 +1597,78 @@ function ApprovalControls({
   block: Block;
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
 }) {
-  const t = useT();
+  const context = useApprovalDecisionContext();
   const approval = block.approval;
   if (!approval || approval.decided || !onApproval) return null;
+  if (!context) return <ApprovalContextUnavailable />;
+  return <ConnectedApprovalControls block={block} context={context} />;
+}
+
+function ApprovalContextUnavailable() {
+  const t = useT();
   return (
-    <div className="mt-1.5 flex gap-2">
-      <Button
-        motion="none"
-        variant="primary"
-        type="button"
+    <span className="text-ui-caption text-(--ui-text-secondary)">
+      {t("Open this request in its conversation to respond.")}
+    </span>
+  );
+}
 
-        onClick={() => onApproval(approval.requestId, "allow")}
-      >
-        {t("Allow")}
-      </Button>
-      <Button
-        motion="none"
-        variant="ghost"
-        tone="danger"
-        type="button"
+function ConnectedApprovalControls({
+  block,
+  context,
+}: {
+  block: Block;
+  context: NonNullable<ReturnType<typeof useApprovalDecisionContext>>;
+}) {
+  const t = useT();
+  const decision = useApprovalDecisionControl(
+    context.session,
+    block.approval!.requestId,
+    context.dispatch,
+    block,
+  );
+  return (
+    <div>
+      <div className="mt-1.5 flex gap-2">
+        <Button
+          motion="none"
+          variant="primary"
+          type="button"
 
-        onClick={() => onApproval(approval.requestId, "deny")}
-      >
-        {t("Deny")}
-      </Button>
+          loading={decision.pending && decision.decision === "allow"}
+          disabled={decision.blocked}
+          onClick={() => void decision.decide("allow")}
+        >
+          {t("Allow")}
+        </Button>
+        <Button
+          motion="none"
+          variant="ghost"
+          tone="danger"
+          type="button"
+
+          loading={decision.pending && decision.decision === "deny"}
+          disabled={decision.blocked}
+          onClick={() => void decision.decide("deny")}
+        >
+          {t("Deny")}
+        </Button>
+      </div>
+      {decision.feedback ? (
+        decision.danger ? (
+          <Alert tone="danger" inline>
+            {decision.feedback}
+          </Alert>
+        ) : (
+          <div
+            role="status"
+            aria-live="polite"
+            className="mt-1.5 text-ui-caption text-(--ui-text-secondary)"
+          >
+            {decision.feedback}
+          </div>
+        )
+      ) : null}
     </div>
   );
 }

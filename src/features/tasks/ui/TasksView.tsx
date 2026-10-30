@@ -850,6 +850,67 @@ function TasksContent({
   // A task that is gone from the board takes its panel with it.
   if (selectedKey && !loading && !selected) setSelectedKey(null);
 
+  // One answer for "no task is visible": unreadable board, filters hiding tasks, or truly none.
+  const noMachineNotice = t(
+    "No connected machine has a task board. Connect one, or update its {p0} Host.",
+    { p0: PRODUCT_IDENTITY.displayName },
+  );
+  // The raw error and notice already live in the status control; do not repeat them here.
+  const unreadable =
+    storedTasks.length === 0
+      ? boardDataState.error || missingNotice
+        ? t("Tasks couldn’t be read. Retry, or open Connection issue for details.")
+        : machines.length === 0
+          ? t("Connect a machine with a task board to see tasks here.")
+          : null
+      : null;
+  const narrowed =
+    Boolean(searchQuery.trim()) ||
+    activeFilterCount > 0 ||
+    projectFilter !== "all" ||
+    sprintFilter !== "";
+  const resetTaskFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("all");
+    setMachineFilter("all");
+    setGoalFilter(ALL_GOALS);
+    setProjectFilter("all");
+    setSprintFilter("");
+  };
+  const emptyTasks = unreadable ? (
+    <EmptyState
+      context="panel"
+      kind="unavailable"
+      title={t("Tasks unavailable")}
+      description={unreadable}
+      onRetry={retryBoard}
+      retrying={board.pending}
+    />
+  ) : visibleTasks.length > 0 && narrowed ? (
+    <EmptyState
+      context="panel"
+      kind="filtered"
+      icon={null}
+      description={t("No tasks match your search or filters.")}
+      onReset={resetTaskFilters}
+    />
+  ) : visibleTasks.length > 0 ? (
+    <EmptyState
+      context="panel"
+      kind="empty"
+      icon={null}
+      description={t("Every task is planned in a sprint.")}
+    />
+  ) : (
+    // The toolbar already carries the one New task action; do not repeat it here.
+    <EmptyState
+      context="panel"
+      kind="empty"
+      title={t("No tasks yet")}
+      description={t("Use New task to give an agent something to work on.")}
+    />
+  );
+
   return (
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">
       <header className="task-board-toolbar">
@@ -919,9 +980,7 @@ function TasksContent({
           <span className="task-board-notice">
             {loading
               ? t("Looking for machines…")
-              : t("No connected machine has a task board. Connect one, or update its {p0} Host.", {
-                  p0: PRODUCT_IDENTITY.displayName,
-                })}
+              : noMachineNotice}
           </span>
         ) : null}
         <div className="task-board-actions">
@@ -946,7 +1005,7 @@ function TasksContent({
               {newReviewNotes === 1 ? t("note") : t("notes")}
             </span>
           ) : null}
-          {section !== "reports" ? (
+          {section !== "reports" && visibleTasks.length > 0 ? (
             <span className="task-scope-summary">{t("{p0} tasks", { p0: tasks.length })}</span>
           ) : null}
           {goalList.length > 0 || visibleTasks.length > 0 ? (
@@ -1048,17 +1107,19 @@ function TasksContent({
               ) : null}
             </>
           ) : null}
-          <Button
-            variant="ghost"
-            aria-pressed={selectMode}
-            disabled={bulkBusy}
-            onClick={() => {
-              setSelectMode((value) => !value);
-              setBulkSelection(new Set());
-            }}
-          >
-            {t(selectMode ? "Finish selection" : "Select tasks")}
-          </Button>
+          {visibleTasks.length > 0 || selectMode ? (
+            <Button
+              variant="ghost"
+              aria-pressed={selectMode}
+              disabled={bulkBusy}
+              onClick={() => {
+                setSelectMode((value) => !value);
+                setBulkSelection(new Set());
+              }}
+            >
+              {t(selectMode ? "Finish selection" : "Select tasks")}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
@@ -1491,7 +1552,7 @@ function TasksContent({
                 onOpen={(task) => openCard(`${task.machineId}:${task.id}`)}
               />
             ) : (
-              <EmptyState description={t("No tasks match your search or filters.")} />
+              emptyTasks
             )
           ) : (
             <TaskBoardColumns
@@ -1511,6 +1572,7 @@ function TasksContent({
               actionsFor={cardActions}
               onOpen={openCard}
               onTaskDrop={onTaskDrop}
+              empty={emptyTasks}
             />
           )}
         </div>

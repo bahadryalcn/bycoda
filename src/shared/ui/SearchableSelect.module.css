@@ -26,3 +26,32 @@
 .valuesDisabled > .value {
   color: var(--ui-control-disabled-fg);
 }
+
+/* Compact triggers (row, pill, panel) are not `.bycoda-arc-select` fields, so the Select frame's focus
+   treatment did not reach them: they drew the neutral border plus the base accent-ink outline, two
+   tones for one focus. They take the same single frame as the field variants: the border and a
+   contained outline on the one neutral focus role, danger when invalid. The fill never changes.
+   `button.bycoda-arc` outranks the shared Arc focus rule (`:is(button, ...).bycoda-arc:focus-visible`). */
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  ):focus-visible {
+  border-color: var(--ui-field-border-focus);
+  outline: var(--ui-field-focus-width, 2px) solid var(--ui-field-border-focus);
+  outline-offset: calc(var(--ui-field-focus-width, 2px) * -1);
+}
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  )[aria-invalid="true"] {
+  border-color: var(--ui-tone-danger-fg);
+}
+button:global(.bycoda-arc):is(
+    [data-select-variant="row"],
+    [data-select-variant="pill"],
+    [data-select-variant="panel"]
+  )[aria-invalid="true"]:focus-visible {
+  outline-color: var(--ui-tone-danger-fg);
+}

@@ -1,5 +1,5 @@
 import { useSocialPending } from "./useSocialPending";
-import { useContext as useSocialContext, useId, useRef, useState, type MouseEvent } from "react";
+import { useContext as useSocialContext, useId, useState, type FormEvent, type MouseEvent } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
@@ -36,6 +36,7 @@ import {
 import { SocialMultiSelect } from "./SocialMultiSelect";
 import {
   Composer,
+  ComposerActions,
   Empty,
   Notice,
   StatusBadge,
@@ -54,9 +55,6 @@ const defaultSchedule = (): PublishingScheduleFields => ({
   maxHours: "5",
 });
 
-/** A second press right after a step change must not save a plan the owner has not seen yet. */
-const STEP_SETTLE_MS = 400;
-
 export function PublishingPlans({
   client,
   snapshot,
@@ -71,6 +69,7 @@ export function PublishingPlans({
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
   const reasonId = useId();
+  const formId = useId();
   const campaigns = socialRows(snapshot.campaigns, snapshot.related?.campaigns);
   const jobs = socialRows(snapshot.jobs, snapshot.related?.jobs);
   const plans = snapshot.publishingPlans ?? [];
@@ -91,7 +90,6 @@ export function PublishingPlans({
   const [view, setView] = useState<"plan" | "suggest">("plan");
   const [openRequest, setOpenRequest] = useState(0);
   const [dialogUsed, setDialogUsed] = useState(false);
-  const stepChangedAt = useRef(0);
   const selected = plans.find((plan) => plan.id === selectedId) ?? plans[0];
   const editingPlan = plans.find((plan) => plan.id === editingId);
   const completedCampaignIds =
@@ -252,10 +250,7 @@ export function PublishingPlans({
               };
   const updateSchedule = (change: Partial<PublishingScheduleFields>) =>
     setScheduleDraft((value) => ({ ...value, ...change }));
-  const goTo = (next: PlanStepId) => {
-    stepChangedAt.current = Date.now();
-    setStep(next);
-  };
+  const goTo = (next: PlanStepId) => setStep(next);
   const pausePlan = (plan: SocialPublishingPlan) =>
     void pendingUi.run("publishing-plan.pause", () =>
       run(
@@ -309,6 +304,14 @@ export function PublishingPlans({
     setReviewed(undefined);
     setStep("review");
     setView("plan");
+  };
+  const submitStep = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (current !== "review") {
+      if (stepValid[current]) goTo(PLAN_STEP_IDS[currentIndex + 1]);
+      return;
+    }
+    save(event.currentTarget);
   };
   const save = (form: HTMLFormElement) => {
     if (!canSave || !validation.schedule) return;
@@ -451,17 +454,9 @@ export function PublishingPlans({
               />
             ) : (
               <form
+                id={formId}
                 className="social-form social-plan-setup social-plan-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const form = event.currentTarget;
-                  if (current === "review") {
-                    if (Date.now() - stepChangedAt.current < STEP_SETTLE_MS) return;
-                    save(form);
-                  } else if (stepValid[current]) {
-                    goTo(PLAN_STEP_IDS[currentIndex + 1]);
-                  }
-                }}
+                onSubmit={submitStep}
               >
                 {stepper}
                 {current === "content" ? (
@@ -676,7 +671,7 @@ export function PublishingPlans({
                     ) : null}
                   </div>
                 )}
-                <div className="social-plan-footer">
+                <ComposerActions className="social-plan-footer">
                   {current !== "content" ? (
                     <Button
                       variant="ghost"
@@ -723,16 +718,22 @@ export function PublishingPlans({
                   {current === "review" ? (
                     <Button
                       key="save"
+                      form={formId}
                       loading={pendingUi.is("publishing-plans.save-changes-as-paused")}
                       type="submit"
                       variant="secondary"
                       disabled={socialLocked || !canSave}
+                      // The second click of a double-click on Next lands here once Review is shown.
+                      onClick={(event) => {
+                        if (event.detail > 1) event.preventDefault();
+                      }}
                     >
                       {editingId ? t("Save changes as paused") : t("Save plan as paused")}
                     </Button>
                   ) : (
                     <Button
                       key="next"
+                      form={formId}
                       type="submit"
                       variant="secondary"
                       disabled={socialLocked || !stepValid[current]}
@@ -741,7 +742,7 @@ export function PublishingPlans({
                       {current === "content" ? t("Next") : t("Review plan")}
                     </Button>
                   )}
-                </div>
+                </ComposerActions>
               </form>
             )}
           </Composer>

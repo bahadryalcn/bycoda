@@ -966,6 +966,7 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
       ) : null}
       {scan && scan.servers.length === 0 && !scanError ? (
         <EmptyState
+          kind="empty"
           description={t("No servers found")}
           action={
             <Button variant="primary" disabled={disabled} onClick={() => setShowStart(true)}>
@@ -974,7 +975,12 @@ function ProjectDevServersPanel({ cwd, launch }: { cwd: string; launch?: Launch 
           }
         />
       ) : scan && visibleServers.length === 0 && query ? (
-        <EmptyState description={t("No servers match your search.")} />
+        <EmptyState
+          kind="filtered"
+          description={t("No servers match your search.")}
+          onReset={() => setSearch("")}
+          resetLabel={t("Clear search")}
+        />
       ) : null}
       {visibleServers.length || selected ? (
         <div className="dev-server-workspace">

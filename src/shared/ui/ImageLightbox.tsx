@@ -63,7 +63,8 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
       role="dialog"
       aria-modal="true"
       aria-label={t("Image preview: {p0}", { p0: alt })}
-      className="fixed inset-0 flex flex-col gap-3 bg-(--ui-overlay-backdrop) p-4 max-[520px]:p-2"
+      data-modal-layer="media"
+      className="fixed inset-0 flex flex-col gap-3 p-4 max-[520px]:p-2"
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
         event.stopPropagation();
@@ -71,6 +72,8 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
       }}
       onClick={(event) => event.stopPropagation()}
     >
+      {/* The shared modal scrim, behind the viewer controls (they keep the media-on-dark ink). */}
+      <div aria-hidden="true" className="modal-backdrop pointer-events-none absolute inset-0 -z-10" />
       <div className="flex shrink-0 items-center justify-between gap-3">
         <p title={alt} className="text-ui-secondary text-on-solid min-w-0 flex-1 truncate">
           {alt}

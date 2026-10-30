@@ -344,7 +344,9 @@ function AutomationsContent({
     setCompactListOpen,
     setDraft,
   });
-  const error = actionError ?? localQuery.error?.message ?? null;
+  // A failed read is not "no automations": say so, with a retry, instead of offering first use.
+  const readFailed = localQuery.isError && storedAutomations.length === 0;
+  const error = actionError ?? (readFailed ? null : (localQuery.error?.message ?? null));
 
   const editorDraft = pickerOpen
     ? null
@@ -545,6 +547,14 @@ function AutomationsContent({
                   context="list"
                   kind={filtered ? "filtered" : "empty"}
                   description={filtered ? t("No matching automations") : t("No automations yet")}
+                  onReset={
+                    filtered
+                      ? () => {
+                          setQuery("");
+                          setStatusFilter("all");
+                        }
+                      : undefined
+                  }
                 />
               )}
             </div>
@@ -628,6 +638,14 @@ function AutomationsContent({
                 }}
               />
             </HostModelSource>
+          ) : readFailed && !hasAutomations ? (
+            <EmptyState
+              kind="unavailable"
+              title={t("Automations unavailable")}
+              description={localQuery.error?.message ?? t("Automations could not be read.")}
+              onRetry={() => void localQuery.refetch()}
+              retrying={localQuery.isFetching}
+            />
           ) : (
             <AutomationPicker
               firstUse={firstUse}
@@ -946,7 +964,7 @@ function AutomationPicker({
   );
 }
 
-const RUN_GRID = "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-4 px-4";
+const RUN_GRID = "grid grid-cols-[minmax(0,1.4fr)_9.5rem_6.75rem_3.5rem] items-center gap-x-4 gap-y-1 px-4";
 
 function RunRow({
   run,
@@ -971,7 +989,7 @@ function RunRow({
           void onOpenSession(sessionId);
         }}
         variant="item"
-        className={`${RUN_GRID} min-w-[560px] w-full`}
+        className={`${RUN_GRID} min-w-[480px] w-full`}
         style={{ display: "grid" }}
       >
         <span className="flex min-w-0 items-center gap-2 text-(--ui-tone-neutral-fg)">
@@ -997,7 +1015,7 @@ function RunRow({
         {run.error && (run.status === "failed" || run.status === "skipped") ? (
           <span
             title={run.error}
-            className="col-span-full truncate text-start text-ui-micro text-(--ui-tone-danger-fg)"
+            className="col-span-full line-clamp-2 break-words text-start text-ui-micro text-(--ui-tone-danger-fg)"
           >
             {run.error}
           </span>
@@ -1558,12 +1576,16 @@ function AutomationEditor({
           <section className="automation-content">
             <SectionTitle>{t("Run history")}</SectionTitle>
             {historyLoading ? (
-              <p role="status" className="p-3 text-ui-caption text-(--ui-text-muted)">
+              <p
+                role="status"
+                className="flex items-center gap-2 p-3 text-ui-caption text-(--ui-text-muted)"
+              >
+                <LoaderCircle className="icon-xs animate-spin" />
                 {t("Loading…")}
               </p>
             ) : null}
             {historyError ? (
-              <Alert tone="danger">
+              <Alert tone="danger" className="mt-2">
                 <p>{historyError}</p>
                 <Button
                   type="button"
@@ -1578,7 +1600,7 @@ function AutomationEditor({
             {runs.length > 0 ? (
               <div className="mt-3 overflow-x-auto rounded-md border border-(--ui-tone-neutral-border)">
                 <div
-                  className={`${RUN_GRID} min-w-[560px] h-10 text-ui-micro text-(--ui-text-muted)`}
+                  className={`${RUN_GRID} min-w-[480px] h-10 text-ui-micro text-(--ui-text-muted)`}
                 >
                   <span>{t("Trigger")}</span>
                   <span>{t("Triggered")}</span>

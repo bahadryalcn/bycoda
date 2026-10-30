@@ -5,7 +5,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Modal } from "../../../shared/ui/Modal";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import { ChevronRight, Pencil, Play, Plus } from "../../../shared/ui/icons";
+import { ChevronLeft, ChevronRight, Pencil, Play, Plus } from "../../../shared/ui/icons";
 import type { BackgroundSessionTarget } from "../../tasks/model/backgroundSession";
 import { taskSessionIds } from "../../tasks/model/backgroundSession";
 import { useProjectCrews } from "../model/crewClient";
@@ -168,6 +168,8 @@ export function CrewManagementDialog({
       : "ongoing",
   );
   const [page, setPage] = useState<"work" | "start" | "edit">("work");
+  // Narrow windows show the work list or one work at a time; wide ones show both.
+  const [pane, setPane] = useState<"list" | "detail">(initialRunId ? "detail" : "list");
   const [editorReturn, setEditorReturn] = useState<"work" | "start">("work");
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const pending = pendingAction !== null;
@@ -259,6 +261,10 @@ export function CrewManagementDialog({
   const crewScope = crew && savedCrew ? crewScopeLabel(crew) : undefined;
   // Without any work the empty state owns the one start action; with work the header does.
   const noWork = all.length === 0;
+  // A single piece of work needs no list column; its detail is the whole view.
+  const needsList = all.length > 1;
+  const hideListNarrow = needsList && !!selected && pane === "detail";
+  const hideDetailNarrow = needsList && pane === "list";
   return (
     <Modal
       title={crew?.name ?? t("Crews")}
@@ -395,30 +401,52 @@ export function CrewManagementDialog({
           </div>
         ) : (
           <div
-            className={`grid min-w-0 ${selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
+            className={`grid min-w-0 ${needsList && selected ? "@min-[640px]/crew-management:grid-cols-[264px_minmax(0,1fr)]" : ""}`}
           >
-            <CrewWorkList
-              view={selectedView}
-              ongoingCount={all.filter((run) => run.status !== "finished").length}
-              runs={visible}
-              listedCount={listed.length}
-              query={query}
-              selectedId={selected?.id}
-              disabled={pending}
-              onViewChange={(next) => {
-                if (pendingGate.current) return;
-                setView(next);
-                setSelectedId("");
-                setError("");
-              }}
-              onQueryChange={setQuery}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setError("");
-              }}
-            />
+            {needsList ? (
+              <div
+                className={`[&>nav]:h-full ${hideListNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+              >
+                <CrewWorkList
+                  view={selectedView}
+                  ongoingCount={all.filter((run) => run.status !== "finished").length}
+                  runs={visible}
+                  listedCount={listed.length}
+                  query={query}
+                  selectedId={selected?.id}
+                  disabled={pending}
+                  onViewChange={(next) => {
+                    if (pendingGate.current) return;
+                    setView(next);
+                    setSelectedId("");
+                    setError("");
+                  }}
+                  onQueryChange={setQuery}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setPane("detail");
+                    setError("");
+                  }}
+                />
+              </div>
+            ) : null}
             {selected || data.catalogError || state.error || error ? (
-              <div className="min-w-0 p-4 @min-[640px]/crew-management:min-h-64">
+              <div
+                className={`min-w-0 p-4 @min-[640px]/crew-management:min-h-64 ${hideDetailNarrow ? "hidden @min-[640px]/crew-management:block" : ""}`}
+              >
+                {needsList && selected ? (
+                  <div className="-mt-1 mb-2 @min-[640px]/crew-management:hidden">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      startIcon={<ChevronLeft className="icon-sm" />}
+                      disabled={pending}
+                      onClick={() => setPane("list")}
+                    >
+                      {t("Back to work list")}
+                    </Button>
+                  </div>
+                ) : null}
                 {data.catalogError ? (
                   <Alert
                     tone="warning"
@@ -468,12 +496,14 @@ export function CrewManagementDialog({
                       )
                     }
                     onDelete={() =>
-                      void act(`delete:${selected.id}`, () =>
-                        state.call("crews.deleteRun", {
+                      void act(`delete:${selected.id}`, async () => {
+                        await state.call("crews.deleteRun", {
                           runId: selected.id,
                           expectedUpdatedAt: selected.updatedAt,
-                        }),
-                      )
+                        });
+                        // The work is gone: a narrow window goes back to the list.
+                        setPane("list");
+                      })
                     }
                   />
                 ) : error ? (

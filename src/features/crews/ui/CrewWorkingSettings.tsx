@@ -76,7 +76,7 @@ function Section({
           <p className="text-ui-caption text-(--ui-text-secondary)">{description}</p>
         ) : null}
       </div>
-      <div className="flex min-w-0 flex-col gap-2.5">{children}</div>
+      <div className="flex min-w-0 flex-col gap-3">{children}</div>
     </section>
   );
 }
@@ -127,6 +127,41 @@ function Line({
         {children}
       </div>
     </div>
+  );
+}
+
+/** A whole-number limit. An error moves the field under its label so the message has room. */
+function LimitLine({
+  label,
+  description,
+  min,
+  max,
+  value,
+  error,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  min: number;
+  max: number;
+  value: number;
+  error: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <Line label={label} description={description} stacked={!!error}>
+      <div className={error ? "w-full max-w-72" : "w-28"}>
+        <NumberField
+          label={label}
+          hideLabel
+          min={min}
+          max={max}
+          value={value}
+          error={error || undefined}
+          onChange={(e) => onChange(Number(e.target.value))}
+        />
+      </div>
+    </Line>
   );
 }
 
@@ -259,7 +294,7 @@ export function CrewWorkingSettings({
           "These settings belong to the crew. They apply when you save and to work you start afterwards; work already started keeps its own.",
         )}
       </p>
-      <div className="grid min-w-0 gap-x-10 gap-y-6 @min-[48rem]/crew-editor:grid-cols-2">
+      <div className="grid min-w-0 max-w-xl gap-x-10 gap-y-6 @min-[48rem]/crew-editor:max-w-none @min-[48rem]/crew-editor:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-6">
           <Section
             title={t("Models")}
@@ -293,7 +328,7 @@ export function CrewWorkingSettings({
             </div>
             {eligibilityFeedback}
             {rulesOpen ? (
-              <div className="flex min-w-0 flex-col gap-2.5">
+              <div className="flex min-w-0 flex-col gap-3">
                 <Line
                   label={t("Highest cost allowed")}
                   description={t(
@@ -444,54 +479,33 @@ export function CrewWorkingSettings({
 
         <div className="flex min-w-0 flex-col gap-6">
           <Section title={t("Execution limits")}>
-            <Line
+            <LimitLine
               label={t("Members working at once")}
               description={t("How many assignments can run at the same time.")}
-            >
-              <div className="w-28">
-                <NumberField
-                  label={t("Members working at once")}
-                  hideLabel
-                  min={1}
-                  max={4}
-                  value={policy.maxParallel}
-                  error={errors.maxParallel || undefined}
-                  onChange={(e) => onPolicyChange({ maxParallel: Number(e.target.value) })}
-                />
-              </div>
-            </Line>
-            <Line
+              min={1}
+              max={4}
+              value={policy.maxParallel}
+              error={errors.maxParallel}
+              onChange={(value) => onPolicyChange({ maxParallel: value })}
+            />
+            <LimitLine
               label={t("Assignments per job")}
               description={t("The most assignments the coordinator can hand out for one job.")}
-            >
-              <div className="w-28">
-                <NumberField
-                  label={t("Assignments per job")}
-                  hideLabel
-                  min={1}
-                  max={20}
-                  value={policy.maxAssignments}
-                  error={errors.maxAssignments || undefined}
-                  onChange={(e) => onPolicyChange({ maxAssignments: Number(e.target.value) })}
-                />
-              </div>
-            </Line>
-            <Line
+              min={1}
+              max={20}
+              value={policy.maxAssignments}
+              error={errors.maxAssignments}
+              onChange={(value) => onPolicyChange({ maxAssignments: value })}
+            />
+            <LimitLine
               label={t("Minutes per assignment")}
               description={t("An assignment running longer than this is stopped.")}
-            >
-              <div className="w-28">
-                <NumberField
-                  label={t("Minutes per assignment")}
-                  hideLabel
-                  min={1}
-                  max={240}
-                  value={policy.maxRunMinutes}
-                  error={errors.maxRunMinutes || undefined}
-                  onChange={(e) => onPolicyChange({ maxRunMinutes: Number(e.target.value) })}
-                />
-              </div>
-            </Line>
+              min={1}
+              max={240}
+              value={policy.maxRunMinutes}
+              error={errors.maxRunMinutes}
+              onChange={(value) => onPolicyChange({ maxRunMinutes: value })}
+            />
           </Section>
 
           <Section title={t("Permissions")}>

@@ -879,6 +879,29 @@ Object.assign(window, {
     snapshot.approvedCampaignIds = ["campaign"];
   },
   // Fixture only: more content and reply rules so the AI review flows (plan, simplify) have data.
+  socialFixtureSeedContacts: () => {
+    snapshot.contacts.push(
+      ...[
+        ["ada-press", "Ada Press", "en", ["VIP"]],
+        ["bo-retail", "Bo Retail Shop", "tr", []],
+        ["cem-person", "Cem Yilmaz", undefined, []],
+      ].map(([platformId, name, language, tags]) => ({
+        id: String(platformId),
+        accountId: "x",
+        platformId: String(platformId),
+        name: String(name),
+        source: "manual" as const,
+        tags: tags as string[],
+        language: language as string | undefined,
+        projectIds: ["demo"],
+        replyEligible: false,
+        commentEligible: false,
+        optedOut: false,
+        history: [],
+      })),
+    );
+    snapshot.segments.push({ id: "press-group", name: "Press list", projectIds: ["demo"], tags: ["press"] });
+  },
   socialFixtureSeedAi: () => {
     snapshot.campaigns.push(
       ...["Launch week teaser", "Pricing reminder", "Customer story", "Holiday notice"].map(
@@ -1560,6 +1583,61 @@ Object.assign(window, {
               requiresOwnerActivation: true,
             };
           }
+          // Fixture only: deterministic stand-in for the Host contact tag proposals. Draft only: it
+          // stores nothing and never touches consent or opt-out.
+          if (params.action === "contacts.suggestTags") {
+            const input = params.input ?? {};
+            const subjects = (
+              (input.rows as { ref: string; name: string; language?: string; tags?: string[] }[] | undefined) ??
+              (input.contactIds as string[]).map((id) => {
+                const contact = snapshot.contacts.find((item) => item.id === id)!;
+                return { ref: contact.id, name: contact.name, language: contact.language, tags: contact.tags };
+              })
+            ).slice(0, 100);
+            const known = new Set(snapshot.contacts.flatMap((contact) => contact.tags));
+            const proposals = subjects.flatMap((subject) => {
+              const have = new Set(subject.tags ?? []);
+              const tags = [
+                ...(/press|blog|news/i.test(subject.name)
+                  ? [{ tag: "press", reason: `“${subject.name}” points to press or a blog.` }]
+                  : []),
+                ...(/shop|retail|store/i.test(subject.name)
+                  ? [{ tag: "retail", reason: `“${subject.name}” looks like a shop.` }]
+                  : []),
+                ...(subject.language
+                  ? [{ tag: `lang-${subject.language}`, reason: `The contact’s language is ${subject.language}.` }]
+                  : []),
+              ]
+                .filter((entry) => !have.has(entry.tag))
+                .map((entry) => ({ ...entry, isNew: !known.has(entry.tag) }));
+              return tags.length
+                ? [
+                    {
+                      ref: subject.ref,
+                      name: subject.name,
+                      currentTags: subject.tags ?? [],
+                      tags,
+                      segments: tags.some((entry) => entry.tag === "press")
+                        ? snapshot.segments
+                            .filter((segment) => segment.tags.includes("press"))
+                            .map((segment) => ({ id: segment.id, name: segment.name }))
+                        : [],
+                    },
+                  ]
+                : [];
+            });
+            return {
+              accountId: input.accountId,
+              projectId: input.projectId,
+              proposals,
+              unchangedRefs: subjects
+                .map((subject) => subject.ref)
+                .filter((ref) => !proposals.some((proposal) => proposal.ref === ref)),
+              notes: ["Fixture note: suggestions come from the names only."],
+              agent: { provider: "codex", model: "fixture-model" },
+              draftOnly: true,
+            };
+          }
           if (params.action === "facts.suggest") {
             const input = params.input ?? {};
             const source = String(input.sourceText ?? "");
@@ -1870,6 +1948,34 @@ Object.assign(window, {
               };
               snapshot.segments.push(segment);
               return structuredClone(segment);
+            }
+            if (params.action === "contacts.upsert") {
+              // Fixture of the normal contact update: only the fields sent change; consent stays.
+              const contact = snapshot.contacts.find(
+                (item) => item.accountId === input.accountId && item.platformId === input.platformId,
+              );
+              if (!contact) throw new Error("Fixture contact not found.");
+              if (input.tags) contact.tags = input.tags as string[];
+              return structuredClone(contact);
+            }
+            if (params.action === "contacts.import") {
+              const rows = input.contacts as Record<string, unknown>[];
+              for (const [index, row] of rows.entries())
+                snapshot.contacts.push({
+                  id: `imported-${snapshot.contacts.length}-${index}`,
+                  accountId: String(row.accountId),
+                  platformId: String(row.platformId),
+                  name: String(row.name),
+                  source: "import",
+                  tags: (row.tags as string[] | undefined) ?? [],
+                  language: row.language as string | undefined,
+                  projectIds: row.projectIds as string[],
+                  replyEligible: false,
+                  commentEligible: false,
+                  optedOut: false,
+                  history: [],
+                });
+              return structuredClone(snapshot.contacts.slice(-rows.length));
             }
             if (params.action === "automations.create") {
               const rule = {

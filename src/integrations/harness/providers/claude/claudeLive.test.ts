@@ -1235,6 +1235,60 @@ describe("claude session replay", () => {
   });
 });
 
+it("does not let an earlier Live approval occurrence resolve a replacement with the same UI ID", async () => {
+  let previous: { requestId: number; occurrenceId?: string } | undefined;
+  for (let generation = 0; generation < 2; generation++) {
+    sent.length = 0;
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "control_request",
+      request_id: "approval-reused",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        tool_use_id: "same-tool",
+        input: { command: "git status" },
+      },
+    });
+    await waitFor(
+      () => events.some((event) => event.type === "approval.requested"),
+      "approval occurrence",
+    );
+    const asked = events.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    )!;
+    const replies = () =>
+      parse().filter(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "approval-reused",
+      );
+    respondClaudeApproval("s1", asked.requestId, "allow");
+    if (previous) {
+      expect(asked.requestId).toBe(previous.requestId);
+      expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+      respondClaudeApproval("s1", asked.requestId, "allow", previous.occurrenceId);
+    }
+    await Promise.resolve();
+    expect(replies()).toHaveLength(0);
+    respondClaudeApproval("s1", asked.requestId, "deny", asked.occurrenceId);
+    await waitFor(() => replies().length === 1, "source-owned reply");
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: asked.requestId,
+      occurrenceId: asked.occurrenceId,
+      decision: "deny",
+    });
+    respondClaudeApproval("s1", asked.requestId, "allow", asked.occurrenceId);
+    expect(replies()).toHaveLength(1);
+    previous = asked;
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    await stopClaudeSession("s1");
+    __claudeTestReset();
+  }
+});
+
 describe("claude subagents", () => {
   it.each(["allow", "deny"] as const)(
     "routes a child permission decision: %s",
@@ -1254,7 +1308,7 @@ describe("claude subagents", () => {
       });
       const approval = events.find((event) => event.type === "approval.requested")!;
       expect(approval).toMatchObject({ callId: "child_read" });
-      respondClaudeApproval("s1", approval.requestId, decision);
+      respondClaudeApproval("s1", approval.requestId, decision, approval.occurrenceId);
       await waitFor(
         () =>
           parse().some(
@@ -1485,7 +1539,7 @@ describe("claude subagents", () => {
       outcome = error;
     });
     writeChild.mockRejectedValueOnce(new Error("Broken pipe"));
-    respondClaudeApproval("s1", approval.requestId, "allow");
+    respondClaudeApproval("s1", approval.requestId, "allow", approval.occurrenceId);
     await waitFor(() => outcome instanceof Error, "failed permission delivery");
     expect(outcome).toMatchObject({ message: "Broken pipe" });
     expect(events).toContainEqual({
@@ -2880,7 +2934,7 @@ it("preserves the original control-request lineage after an asynchronous user de
   expect(inspect().pendingCausalWork).toBeGreaterThan(0);
   const origin = getNativeOutputEventOrigin(asked);
   expect(origin).not.toBeNull();
-  respondClaudeApproval("claude-causal", asked.requestId, "allow");
+  respondClaudeApproval("claude-causal", asked.requestId, "allow", asked.occurrenceId);
   await waitFor(
     () => events.some((e) => e.type === "approval.resolved"),
     "causal approval settlement",

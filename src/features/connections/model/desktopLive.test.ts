@@ -1,5 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
-import type { Block, Session } from "../../sessions/model/session";
+// @vitest-environment happy-dom
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { newSession, type Block, type Session } from "../../sessions/model/session";
+import { ParentInputRegistry } from "../../sessions/data/parentInputClosure";
+import { createApprovalIntentRegistry } from "../../sessions/model/approvalIntents";
+import { registerRemoteSessionActions } from "./remoteSessionActions";
+import { applyHarnessEvent } from "../../../integrations/harness/core/apply";
+import { createApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import {
   applyDesktopLiveCommand,
   executeDesktopInboxOperation,
@@ -8,7 +14,24 @@ import {
   supportsDesktopLive,
   type DesktopLiveCommand,
   type DesktopLivePayload,
+  type DesktopLiveHandlers,
 } from "./desktopLive";
+
+const native = vi.hoisted(() => ({
+  approve: vi.fn(),
+  adapter: { respondApproval: vi.fn() },
+}));
+vi.mock("../../../integrations/harness", () => ({
+  getHarness: () => native.adapter,
+  // The production Native bridge returns void, without a provider-consumption ACK.
+  respondHarnessApproval: (...args: unknown[]) => {
+    native.approve(...args);
+  },
+}));
+beforeEach(() => {
+  native.approve.mockClear();
+  native.adapter = { respondApproval: vi.fn() };
+});
 
 it("dispatches review context and inline review batches through the finite native bridge", async () => {
   const runner = { invoke: vi.fn().mockResolvedValue("url"), list: vi.fn() };
@@ -57,7 +80,7 @@ const approvalBlock = (requestId: number, decided?: "allow"): Block =>
   ({
     id: `b${requestId}`,
     role: "tool",
-    approval: { requestId, decided },
+    approval: { requestId, decided, occurrenceId: createApprovalOccurrenceId() },
   }) as unknown as Block;
 
 const session = (over: Partial<Session> & { id: string }): Session =>
@@ -100,9 +123,29 @@ describe("buildDesktopLiveSessions", () => {
 });
 
 describe("applyDesktopLiveCommand", () => {
-  const handlers = () => ({ stop: vi.fn(), approve: vi.fn(), answer: vi.fn() });
+  const handlers = () => {
+    const parent = new ParentInputRegistry();
+    const registry = createApprovalIntentRegistry({
+      register: (adapter) => parent.register(adapter),
+    });
+    return {
+      stop: vi.fn(),
+      approve: vi.fn<DesktopLiveHandlers["approve"]>((sessionId, requestId, decision, expected) =>
+        registry.submitApprovalIntent(
+          sessions.find((value) => value.id === sessionId),
+          requestId,
+          decision,
+          expected,
+        ),
+      ),
+      answer: vi.fn(),
+      captureApproval: registry.captureApprovalRequest,
+      approvalDispatchStarted: registry.approvalRequestDispatchStarted,
+    };
+  };
   const sessions = [
     session({
+      ...newSession("codex", "G:/desktop-fixture"),
       id: "s",
       busy: true,
       blocks: [approvalBlock(3)],
@@ -125,12 +168,13 @@ describe("applyDesktopLiveCommand", () => {
           type: "approve",
           requestId: 3,
           decision: "deny",
+          approvalOccurrenceId: sessions[0].blocks[0].approval!.occurrenceId,
         },
         sessions,
         h,
       ),
     ).toBe(true);
-    expect(h.approve).toHaveBeenCalledWith("s", 3, "deny");
+    expect(h.approve).toHaveBeenCalledWith("s", 3, "deny", expect.any(Object));
     const reply = { kind: "skipped" } as const;
     applyDesktopLiveCommand(
       { id: "3", sessionId: "s", type: "answer", requestId: 7, reply },
@@ -180,6 +224,540 @@ describe("applyDesktopLiveCommand", () => {
   });
 });
 
+describe("desktop live exact local approval source", () => {
+  function fixture(limits?: { records: number }) {
+    let value = newSession("codex", "G:/desktop-original");
+    value.blocks = [{ ...approvalBlock(71), text: "  original request\r\n漢🦀  " }];
+    const parent = new ParentInputRegistry();
+    const registry = createApprovalIntentRegistry({
+      register: (adapter) => parent.register(adapter),
+      limits,
+    });
+    const handlers = {
+      stop: vi.fn(),
+      answer: vi.fn(),
+      captureApproval: vi.fn(registry.captureApprovalRequest),
+      approvalDispatchStarted: registry.approvalRequestDispatchStarted,
+      approve: vi.fn<DesktopLiveHandlers["approve"]>((_sessionId, requestId, decision, expected) =>
+        registry.submitApprovalIntent(value, requestId, decision, expected, () => value),
+      ),
+    };
+    const command: DesktopLiveCommand = {
+      id: "original-command",
+      sessionId: value.id,
+      type: "approve",
+      requestId: 71,
+      decision: "allow",
+      approvalOccurrenceId: value.blocks[0].approval!.occurrenceId,
+    };
+    return {
+      handlers,
+      registry,
+      parent,
+      approvalOccurrenceSupported: true,
+      command,
+      get value() {
+        return value;
+      },
+      replace(next: Session) {
+        value = next;
+      },
+      sessions: () => [value],
+      unacked: new Set<string>(),
+      handled: new Set<string>(),
+    };
+  }
+
+  it("passes a real pre-await token to the actual central consumer and never replays its void outcome", async () => {
+    const f = fixture();
+    const request = vi.fn(async (payload: DesktopLivePayload) => {
+      expect(f.handlers.captureApproval).toHaveBeenCalledExactlyOnceWith(
+        f.value,
+        71,
+        f.value.blocks[0],
+      );
+      expect(payload.sessions[0].pending?.[0]).toEqual(f.value.blocks[0]);
+      return { commands: [f.command] };
+    });
+    await runDesktopLiveTick({ ...f, request });
+    expect(native.approve).toHaveBeenCalledExactlyOnceWith(
+      "codex",
+      f.value.id,
+      71,
+      "allow",
+      f.value.blocks[0].approval!.occurrenceId,
+    );
+    expect(f.registry.readApprovalIntent(f.value, 71)).toMatchObject({
+      callback: "void",
+      phase: "unconfirmed",
+      repeatBlocked: true,
+      providerAck: "unproved",
+    });
+    request.mockImplementation(async () => ({ commands: [f.command] }));
+    await runDesktopLiveTick({ ...f, request });
+    expect(native.approve).toHaveBeenCalledTimes(1);
+    expect([...f.unacked]).toEqual([f.command.id]);
+  });
+
+  it("refuses a same-ID replacement block after the heartbeat await without recapturing", async () => {
+    const f = fixture();
+    const original = f.value;
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => {
+        await Promise.resolve();
+        f.replace({
+          ...original,
+          blocks: [{ ...original.blocks[0], approval: { requestId: 71 } }],
+        });
+        return { commands: [f.command] };
+      },
+    });
+    expect(f.handlers.captureApproval).toHaveBeenCalledOnce();
+    expect(f.handlers.captureApproval.mock.calls[0][0]).toBe(original);
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("never supplies a post-await token for a request absent from the published cut", async () => {
+    const f = fixture();
+    const later = f.value;
+    f.replace({ ...later, busy: true, blocks: [] });
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => {
+        f.replace(later);
+        return { commands: [f.command] };
+      },
+    });
+    expect(f.handlers.captureApproval).not.toHaveBeenCalled();
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("keeps a failed original capture absent even if the source becomes available while waiting", async () => {
+    const f = fixture();
+    f.handlers.captureApproval.mockReturnValueOnce(undefined);
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => ({ commands: [f.command] }),
+    });
+    expect(f.handlers.captureApproval).toHaveBeenCalledOnce();
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("lets the central latest-source check refuse a changed Native adapter before effect", async () => {
+    const f = fixture();
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => {
+        native.adapter = { respondApproval: vi.fn() };
+        return { commands: [f.command] };
+      },
+    });
+    expect(f.handlers.approve).toHaveBeenCalledOnce();
+    expect(native.approve).not.toHaveBeenCalled();
+    expect(f.registry.readApprovalIntent(f.value, 71)).toMatchObject({
+      phase: "rejected",
+      callback: "not-started",
+      repeatBlocked: false,
+    });
+  });
+
+  it("revalidates in-place original body changes at the real consumer", async () => {
+    const f = fixture();
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => {
+        f.value.blocks[0].text = "a different request body";
+        return { commands: [f.command] };
+      },
+    });
+    expect(f.handlers.approve).toHaveBeenCalledOnce();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("uses the central latest getter after a reentrant publication replaces the request", () => {
+    const f = fixture();
+    f.registry.subscribe(() => {
+      const current = f.value;
+      f.replace({
+        ...current,
+        blocks: [{ ...current.blocks[0], approval: { requestId: 71 } }],
+      });
+    });
+    expect(applyDesktopLiveCommand(f.command, f.sessions(), f.handlers)).toBe(false);
+    expect(f.handlers.approve).toHaveBeenCalledOnce();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("refuses direct approval dispatch without an actual capture port", () => {
+    const f = fixture();
+    expect(
+      applyDesktopLiveCommand(f.command, f.sessions(), {
+        stop: f.handlers.stop,
+        answer: f.handlers.answer,
+        approve: f.handlers.approve,
+      }),
+    ).toBe(false);
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("keeps an actually closed approval in the Host queue and retries the original token once after release", async () => {
+    const f = fixture();
+    const gate = f.parent.begin("logical-root", { owner: {}, timeoutMs: 1000 });
+    const request = vi.fn(async (_payload: DesktopLivePayload) => ({
+      commands: [f.command],
+    }));
+    try {
+      await runDesktopLiveTick({ ...f, request });
+      expect(native.approve).not.toHaveBeenCalled();
+      expect(f.handled.size).toBe(0);
+      expect(f.unacked.size).toBe(0);
+      const originalToken = f.handlers.captureApproval.mock.results[0].value;
+      gate.release();
+      await runDesktopLiveTick({ ...f, request });
+      expect(request.mock.calls[1][0].acked).toBeUndefined();
+      expect(f.handlers.approve.mock.lastCall?.[3]).toBe(originalToken);
+      expect(native.approve).toHaveBeenCalledExactlyOnceWith(
+        "codex",
+        f.value.id,
+        71,
+        "allow",
+        f.value.blocks[0].approval!.occurrenceId,
+      );
+      expect(f.unacked.has(f.command.id)).toBe(true);
+      await runDesktopLiveTick({ ...f, request });
+      expect(request.mock.calls[2][0].acked).toEqual([f.command.id]);
+      expect(native.approve).toHaveBeenCalledTimes(1);
+    } finally {
+      gate.release();
+    }
+  });
+
+  it("does not ACK real capacity refusal and retries only after actual prior-source resolution frees capacity", async () => {
+    const f = fixture({ records: 1 });
+    const prior = newSession("codex", "G:/original-capacity-owner");
+    prior.blocks = [approvalBlock(72)];
+    f.registry.submitApprovalIntent(
+      prior,
+      72,
+      "deny",
+      f.registry.captureApprovalRequest(prior, 72),
+    );
+    const request = async () => ({ commands: [f.command] });
+    await runDesktopLiveTick({ ...f, request });
+    expect(native.approve).toHaveBeenCalledExactlyOnceWith(
+      "codex",
+      prior.id,
+      72,
+      "deny",
+      prior.blocks[0].approval!.occurrenceId,
+    );
+    expect(f.handled.size).toBe(0);
+    expect(f.unacked.size).toBe(0);
+    const originalToken = f.handlers.captureApproval.mock.results[0].value;
+    const event = {
+      type: "approval.resolved",
+      requestId: 72,
+      decision: "deny",
+    } as const;
+    f.registry.observeApprovalResolutions(prior, applyHarnessEvent(prior, event), [event]);
+    await runDesktopLiveTick({ ...f, request });
+    expect(f.handlers.approve.mock.lastCall?.[3]).toBe(originalToken);
+    expect(native.approve).toHaveBeenCalledTimes(2);
+    expect(native.approve).toHaveBeenLastCalledWith(
+      "codex",
+      f.value.id,
+      71,
+      "allow",
+      f.value.blocks[0].approval!.occurrenceId,
+    );
+    expect(f.unacked.has(f.command.id)).toBe(true);
+  });
+
+  it("never retargets a held original choice to a later same-ID replacement", async () => {
+    const f = fixture();
+    const gate = f.parent.begin("logical-root", { owner: {}, timeoutMs: 1000 });
+    try {
+      await runDesktopLiveTick({
+        ...f,
+        request: async () => ({ commands: [f.command] }),
+      });
+      expect(f.unacked.size).toBe(0);
+      gate.release();
+      f.replace({
+        ...f.value,
+        blocks: [{ ...f.value.blocks[0], approval: { requestId: 71 } }],
+      });
+      await runDesktopLiveTick({
+        ...f,
+        request: async () => ({ commands: [f.command] }),
+      });
+      expect(f.handlers.approve).toHaveBeenCalledTimes(1);
+      expect(native.approve).not.toHaveBeenCalled();
+      expect(f.unacked.has(f.command.id)).toBe(true); // Explicit original identity is stale.
+    } finally {
+      gate.release();
+    }
+  });
+
+  it("pins a missing original token across retries instead of borrowing a newly available capture", async () => {
+    const f = fixture();
+    f.handlers.captureApproval.mockReturnValueOnce(undefined);
+    const request = async () => ({ commands: [f.command] });
+    await runDesktopLiveTick({ ...f, request });
+    await runDesktopLiveTick({ ...f, request });
+    expect(f.handlers.captureApproval.mock.results[1].value).toBeDefined();
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(f.handled.size).toBe(0);
+    expect(f.unacked.size).toBe(0);
+    expect(native.approve).not.toHaveBeenCalled();
+  });
+
+  it("holds a fresh choice when an earlier different decision is still consumption-unproved", async () => {
+    const f = fixture();
+    f.registry.submitApprovalIntent(
+      f.value,
+      71,
+      "deny",
+      f.registry.captureApprovalRequest(f.value, 71),
+    );
+    const request = async () => ({ commands: [f.command] });
+    await runDesktopLiveTick({ ...f, request });
+    await runDesktopLiveTick({ ...f, request });
+    expect(native.approve).toHaveBeenCalledExactlyOnceWith(
+      "codex",
+      f.value.id,
+      71,
+      "deny",
+      f.value.blocks[0].approval!.occurrenceId,
+    );
+    expect(f.unacked.size).toBe(0);
+    expect(f.handled.size).toBe(0);
+    expect(f.registry.readApprovalIntent(f.value, 71)).toMatchObject({
+      decision: "deny",
+      callback: "void",
+      providerAck: "unproved",
+    });
+  });
+
+  it("ACKs an actual pending callback attempt once while its real Promise and raw original remain live", async () => {
+    const f = fixture();
+    let resolve!: () => void;
+    const actual = new Promise<void>((done) => {
+      resolve = done;
+    });
+    const approve = vi.fn(() => actual);
+    f.value.hostBinding = {
+      kind: "local-host",
+      machineId: "machine",
+      environmentId: "environment",
+      projectId: "project",
+      sessionId: "host-original",
+      authorityGeneration: 1,
+      created: true,
+    };
+    const detach = registerRemoteSessionActions(f.value.id, {
+      approve,
+      approvalOccurrenceSupported: true,
+    } as never);
+    const request = async () => ({ commands: [f.command] });
+    let gate: ReturnType<ParentInputRegistry["begin"]> | undefined;
+    try {
+      await runDesktopLiveTick({ ...f, request });
+      expect(approve).toHaveBeenCalledExactlyOnceWith(
+        71,
+        "allow",
+        f.value.blocks[0].approval!.occurrenceId,
+      );
+      expect(f.unacked.has(f.command.id)).toBe(true);
+      expect(f.registry.readApprovalIntent(f.value, 71)).toMatchObject({
+        phase: "pending",
+        callback: "pending",
+        providerAck: "unproved",
+      });
+      gate = f.parent.begin("logical-root", { owner: {}, timeoutMs: 1000 });
+      let drained = false;
+      const capture = gate.capture().then((lease) => {
+        drained = true;
+        return lease;
+      });
+      await Promise.resolve();
+      expect(drained).toBe(false);
+      await runDesktopLiveTick({ ...f, request });
+      expect(approve).toHaveBeenCalledTimes(1);
+      resolve();
+      await f.handlers.approve.mock.results[0].value;
+      const lease = await capture;
+      try {
+        expect(lease.snapshots[0].snapshot).toMatchObject({
+          qualified: false,
+          rosterComplete: false,
+          records: [
+            expect.objectContaining({
+              callback: "fulfilled",
+              phase: "unconfirmed",
+              providerAck: "unproved",
+            }),
+          ],
+        });
+      } finally {
+        lease.release();
+      }
+    } finally {
+      resolve();
+      gate?.release();
+      detach();
+    }
+  });
+
+  it("holds a reentrant pre-effect refusal, then consumes only the original's explicit stale witness", async () => {
+    const f = fixture();
+    const unsubscribe = f.registry.subscribe(() => {
+      f.replace({
+        ...f.value,
+        blocks: [{ ...f.value.blocks[0], approval: { requestId: 71 } }],
+      });
+    });
+    try {
+      await runDesktopLiveTick({
+        ...f,
+        request: async () => ({ commands: [f.command] }),
+      });
+      expect(native.approve).not.toHaveBeenCalled();
+      expect(f.unacked.size).toBe(0);
+      expect(f.handled.size).toBe(0);
+      unsubscribe();
+      await runDesktopLiveTick({
+        ...f,
+        request: async () => ({ commands: [f.command] }),
+      });
+      expect(native.approve).not.toHaveBeenCalled();
+      expect(f.handlers.approve).toHaveBeenCalledTimes(1);
+      expect(f.unacked.has(f.command.id)).toBe(true);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it("bounds held originals without eviction or later retargeting of an unpinned overflow command", async () => {
+    const f = fixture();
+    f.replace({
+      ...f.value,
+      blocks: Array.from({ length: 65 }, (_, index) => ({
+        ...approvalBlock(index + 1),
+        text: `Original request ${index + 1}`,
+      })),
+    });
+    const commands: DesktopLiveCommand[] = f.value.blocks.map((block) => ({
+      id: `command-${block.approval!.requestId}`,
+      sessionId: f.value.id,
+      type: "approve",
+      requestId: block.approval!.requestId,
+      decision: "allow",
+      approvalOccurrenceId: block.approval!.occurrenceId,
+    }));
+    const gate = f.parent.begin("logical-root", { owner: {}, timeoutMs: 1000 });
+    const request = async () => ({ commands });
+    try {
+      await runDesktopLiveTick({ ...f, request });
+      expect(f.handlers.approve).toHaveBeenCalledTimes(64);
+      expect(f.handled.size).toBe(0);
+      expect(f.unacked.size).toBe(0);
+      expect(native.approve).not.toHaveBeenCalled();
+      gate.release();
+      f.replace({ ...f.value, blocks: [f.value.blocks[64]] });
+      await runDesktopLiveTick({ ...f, request });
+      expect(f.handled.size).toBe(64); // Only known originals are now explicitly stale.
+      expect(f.unacked.has("command-65")).toBe(false);
+      expect(f.handlers.approve).toHaveBeenCalledTimes(64);
+      expect(native.approve).not.toHaveBeenCalled();
+      await runDesktopLiveTick({ ...f, request });
+      expect(f.unacked.has("command-65")).toBe(false);
+      expect(native.approve).not.toHaveBeenCalled();
+    } finally {
+      gate.release();
+    }
+  });
+
+  it.each([undefined, "invalid"])(
+    "holds missing/invalid wire occurrence %s without ACK or a fresh numeric fallback",
+    async (approvalOccurrenceId) => {
+      const f = fixture();
+      const command = { ...f.command, approvalOccurrenceId };
+      const request = async () => ({ commands: [command] });
+      await runDesktopLiveTick({ ...f, request });
+      await runDesktopLiveTick({ ...f, request });
+      expect(f.handlers.approve).not.toHaveBeenCalled();
+      expect(native.approve).not.toHaveBeenCalled();
+      expect(f.handled.size).toBe(0);
+      expect(f.unacked.size).toBe(0);
+    },
+  );
+
+  it("holds an otherwise exact command while the actual Host capability is absent", async () => {
+    const f = fixture();
+    const request = async () => ({ commands: [f.command] });
+    await runDesktopLiveTick({ ...f, request, approvalOccurrenceSupported: false });
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(f.unacked.size).toBe(0);
+    await runDesktopLiveTick({ ...f, request });
+    expect(native.approve).toHaveBeenCalledExactlyOnceWith(
+      "codex",
+      f.value.id,
+      71,
+      "allow",
+      f.command.approvalOccurrenceId,
+    );
+  });
+
+  it("refuses delayed A when same numeric ID B already replaced it before this heartbeat", async () => {
+    const f = fixture();
+    const oldCommand = f.command;
+    f.replace({
+      ...f.value,
+      blocks: [
+        {
+          ...f.value.blocks[0],
+          approval: { requestId: 71, occurrenceId: createApprovalOccurrenceId() },
+        },
+      ],
+    });
+    await runDesktopLiveTick({ ...f, request: async () => ({ commands: [oldCommand] }) });
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+    expect(f.unacked.has(oldCommand.id)).toBe(true); // Nonce A is explicitly stale against current B.
+  });
+
+  it("refuses an in-place nonce replacement even when Block and approval objects survive", async () => {
+    const f = fixture();
+    await runDesktopLiveTick({
+      ...f,
+      request: async () => {
+        f.value.blocks[0].approval!.occurrenceId = createApprovalOccurrenceId();
+        return { commands: [f.command] };
+      },
+    });
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+    expect(f.unacked.has(f.command.id)).toBe(true);
+  });
+
+  it("never upgrades a held unidentified original command ID by attaching a later valid nonce", async () => {
+    const f = fixture();
+    const unidentified = { ...f.command, approvalOccurrenceId: undefined };
+    await runDesktopLiveTick({ ...f, request: async () => ({ commands: [unidentified] }) });
+    expect(f.unacked.size).toBe(0);
+    await runDesktopLiveTick({ ...f, request: async () => ({ commands: [f.command] }) });
+    expect(f.handlers.approve).not.toHaveBeenCalled();
+    expect(native.approve).not.toHaveBeenCalled();
+    expect(f.unacked.has(f.command.id)).toBe(true); // Same command ID changed its immutable envelope.
+  });
+});
+
 describe("runDesktopLiveTick", () => {
   it("acknowledges writer transfer only after retirement finishes, including a closed tab", async () => {
     let finish!: () => void;
@@ -193,14 +771,25 @@ describe("runDesktopLiveTick", () => {
           };
         }),
     );
-    const job = { id: "transfer", sessionId: "warm", type: "retire-writer" as const };
-    const request = vi.fn(async (_payload: DesktopLivePayload) => ({ commands: [job] }));
+    const job = {
+      id: "transfer",
+      sessionId: "warm",
+      type: "retire-writer" as const,
+    };
+    const request = vi.fn(async (_payload: DesktopLivePayload) => ({
+      commands: [job],
+    }));
     const unacked = new Set<string>();
     const deps = {
       request,
       sessions: () => [],
       writers: () => writers,
-      handlers: { stop: vi.fn(), approve: vi.fn(), answer: vi.fn(), retireWriter },
+      handlers: {
+        stop: vi.fn(),
+        approve: vi.fn(),
+        answer: vi.fn(),
+        retireWriter,
+      },
       unacked,
       handled: new Set<string>(),
     };
@@ -315,7 +904,14 @@ describe("runDesktopLiveTick", () => {
             cwd: "/project",
             name: "Project",
             sessionLayout: {
-              folders: [{ id: "f", name: folderName, sessionIds: ["s"], collapsed: false }],
+              folders: [
+                {
+                  id: "f",
+                  name: folderName,
+                  sessionIds: ["s"],
+                  collapsed: false,
+                },
+              ],
               order: { loose: [folderName] },
             },
           },
@@ -437,7 +1033,10 @@ describe("runDesktopLiveTick", () => {
     expect(request.mock.calls[1][0].adoptedSeq).toBe(0);
     expect(onAdopted).toHaveBeenLastCalledWith({ ids: [], reset: false });
     await runDesktopLiveTick(deps);
-    expect(onAdopted).toHaveBeenLastCalledWith({ ids: ["a", "b"], reset: false });
+    expect(onAdopted).toHaveBeenLastCalledWith({
+      ids: ["a", "b"],
+      reset: false,
+    });
     // A host that restarted cannot say what moved.
     await runDesktopLiveTick(deps);
     expect(onAdopted).toHaveBeenLastCalledWith({ ids: [], reset: true });
@@ -449,7 +1048,10 @@ describe("runDesktopLiveTick", () => {
     const answered = vi.fn();
     const held = vi.fn(() => [{ sessionId: "chat", epoch: 3 }]);
     const request = vi.fn().mockResolvedValue({
-      queueLeases: { chat: { holder: "desktop:w", epoch: 3, expiresAt: 99 }, gone: null },
+      queueLeases: {
+        chat: { holder: "desktop:w", epoch: 3, expiresAt: 99 },
+        gone: null,
+      },
     });
     await runDesktopLiveTick({
       request,

@@ -133,3 +133,52 @@ it("retries a failed warmup when the page is opened", async () => {
   expect(load).toHaveBeenCalledTimes(2);
   expect(container.textContent).toBe("Inbox content");
 });
+
+it("shows the layout placeholder only while the chunk loads, then the surface", async () => {
+  const slow = deferredSurface("Editor content");
+  const Surface = lazySurface(slow.load, { fallback: createElement("p", null, "Placeholder") });
+  await act(async () => root.render(createElement(Surface)));
+  expect(container.textContent).toBe("Placeholder");
+  await act(async () => slow.finish());
+  expect(container.textContent).toBe("Editor content");
+});
+
+it("renders a fast chunk without leaving the placeholder behind", async () => {
+  const component = () => createElement("main", null, "Editor content");
+  const Surface = lazySurface(() => Promise.resolve({ default: component }), {
+    fallback: createElement("p", null, "Placeholder"),
+  });
+  await Surface.preload();
+  await act(async () => root.render(createElement(Surface)));
+  expect(container.textContent).toBe("Editor content");
+});
+
+it("leaves a blank frame when no placeholder is given, as before", async () => {
+  const slow = deferredSurface("Menu content");
+  const Surface = lazySurface(slow.load);
+  await act(async () => root.render(createElement(Surface)));
+  expect(container.textContent).toBe("");
+});
+
+it("reports a failed load with a recovery action instead of loading forever", async () => {
+  const Surface = lazySurface(() => Promise.reject(new Error("chunk missing")), {
+    fallback: createElement("p", null, "Placeholder"),
+  });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  await act(async () => root.render(createElement(Surface)));
+  expect(container.textContent).not.toContain("Placeholder");
+  expect(container.querySelector("button")).not.toBeNull();
+  errors.mockRestore();
+});
+
+it("does nothing when the surface closes before its chunk arrives", async () => {
+  const slow = deferredSurface("Editor content");
+  const Surface = lazySurface(slow.load, { fallback: createElement("p", null, "Placeholder") });
+  const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+  await act(async () => root.render(createElement(Surface)));
+  await act(async () => root.render(createElement("div", null, "Closed")));
+  await act(async () => slow.finish());
+  expect(container.textContent).toBe("Closed");
+  expect(errors).not.toHaveBeenCalled();
+  errors.mockRestore();
+});

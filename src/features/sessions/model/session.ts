@@ -401,6 +401,8 @@ export type Block = {
   };
   approval?: {
     requestId: number;
+    /** Issued by the original request owner; missing only on legacy snapshots. */
+    occurrenceId?: string;
     decided?: "allow" | "deny" | "cancelled";
   };
   /** Inner activity of a delegated run. Present on Agent/Task tool blocks. */

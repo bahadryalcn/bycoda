@@ -27,6 +27,10 @@ import {
 import { abortQuit, relinquishTransferredWindow } from "../../model/appLifecycle";
 import type { TabActivation } from "../tabs/useTabActivation";
 import { beginWindowMoveTiming } from "../../model/windowMoveTiming";
+import {
+  publishWindowTransferNotice,
+  queuedTransferMessage,
+} from "../../model/windowTransferNotice";
 
 export interface MoveTabsOptions {
   position?: WindowMovePosition;
@@ -174,6 +178,7 @@ export function useMoveTabsToNewWindow(deps: MoveTabsToNewWindowDeps): {
             targetWindowLabel: opts?.targetWindowLabel,
           }),
         );
+        publishWindowTransferNotice("info", queuedTransferMessage());
         return "queued" as const;
       }
       timing.stage("preparing");

@@ -322,6 +322,7 @@ struct NotesProducerEpochs {
 #[derive(Deserialize)]
 #[serde(rename_all = "kebab-case")]
 enum ProducerKind {
+    ApprovalDecision,
     QuestionDraft,
     SessionParent,
     ComposerParent,
@@ -333,7 +334,8 @@ enum ProducerKind {
 impl ProducerKind {
     fn family_index(&self) -> u64 {
         match self {
-            Self::QuestionDraft
+            Self::ApprovalDecision
+            | Self::QuestionDraft
             | Self::SessionParent
             | Self::ComposerParent
             | Self::QueueEdit

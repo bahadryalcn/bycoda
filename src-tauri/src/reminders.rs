@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -6,6 +7,8 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+use crate::native_window_lifecycle::{self, NativeWriteAdmission};
+use crate::session_store::window_barrier::{BarrierError, WindowBarrier};
 use crate::session_store::{now_millis, validate_id, SessionStore};
 
 pub(crate) const CHANGED: &str = "bycoda:reminders-changed";
@@ -175,29 +178,77 @@ pub fn reminder_list(store: State<'_, SessionStore>) -> Result<Vec<Reminder>, St
 #[tauri::command(async)]
 pub fn reminder_set(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_ids: Vec<String>,
     due_at: i64,
 ) -> Result<(), String> {
-    let mut conn = store.lock_conn()?;
-    set(&mut conn, &session_ids, due_at, now_millis())?;
-    drop(conn);
-    let _ = app.emit(CHANGED, ());
-    Ok(())
+    native_window_lifecycle::persistence_write_observed(&window, || {
+        set_with(&store, &session_ids, due_at, now_millis, || {
+            app.emit(CHANGED, ()).map_err(|e| e.to_string())
+        })
+    })
 }
 
 #[tauri::command(async)]
 pub fn reminder_clear(
     app: AppHandle,
+    window: tauri::Window,
     store: State<'_, SessionStore>,
     session_ids: Vec<String>,
     expected_due_at: Option<i64>,
 ) -> Result<(), String> {
-    let mut conn = store.lock_conn()?;
-    clear(&mut conn, &session_ids, expected_due_at)?;
-    drop(conn);
-    let _ = app.emit(CHANGED, ());
-    Ok(())
+    native_window_lifecycle::persistence_write_observed(&window, || {
+        clear_with(&store, &session_ids, expected_due_at, || {
+            app.emit(CHANGED, ()).map_err(|e| e.to_string())
+        })
+    })
+}
+
+type ObservedWrite = (Result<(), String>, Result<(), ()>);
+fn changed_with(
+    store: &SessionStore,
+    write: impl FnOnce(&mut Connection) -> Result<(), String>,
+    changed: impl FnOnce() -> Result<(), String>,
+) -> ObservedWrite {
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let mut connection = store.lock_conn()?;
+        write(&mut connection)
+    }));
+    match result {
+        Ok(Ok(())) => {
+            // The SQL guard has ended, but the caller's original admission has not.
+            let observed = matches!(catch_unwind(AssertUnwindSafe(changed)), Ok(Ok(())));
+            (Ok(()), if observed { Ok(()) } else { Err(()) })
+        }
+        Ok(Err(error)) => (Err(error), Err(())),
+        Err(_) => (Err("Reminder write observation failed".into()), Err(())),
+    }
+}
+fn set_with(
+    store: &SessionStore,
+    ids: &[String],
+    due_at: i64,
+    now: impl FnOnce() -> i64,
+    changed: impl FnOnce() -> Result<(), String>,
+) -> ObservedWrite {
+    changed_with(
+        store,
+        |connection| set(connection, ids, due_at, now()),
+        changed,
+    )
+}
+fn clear_with(
+    store: &SessionStore,
+    ids: &[String],
+    expected_due_at: Option<i64>,
+    changed: impl FnOnce() -> Result<(), String>,
+) -> ObservedWrite {
+    changed_with(
+        store,
+        |connection| clear(connection, ids, expected_due_at),
+        changed,
+    )
 }
 
 #[tauri::command]
@@ -321,6 +372,106 @@ fn queue_open(app: &AppHandle, session_id: String, due_at: i64) -> Result<(), St
     .map_err(|error| error.to_string())
 }
 
+/// One process-owned tick, not a lease for the infinite sleeping timer. A closed
+/// gate defers before SQL/dispatch; the next existing timer tick may try again.
+fn process_tick_with(
+    barrier: Option<&WindowBarrier>,
+    store: &SessionStore,
+    now: impl FnOnce() -> i64,
+    preferences: &DeliveryPreferences,
+    latest_preferences: impl FnMut() -> Result<Option<DeliveryPreferences>, String>,
+    changed: impl FnOnce() -> Result<(), String>,
+    deliver: impl FnMut(Reminder, bool) -> Result<(), String>,
+) -> Result<(), String> {
+    let admission = match native_window_lifecycle::admit_process_persistence(barrier) {
+        Ok(admission) => admission,
+        Err(BarrierError::AdmissionClosed) => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    tick_with(
+        admission,
+        store,
+        now,
+        preferences,
+        latest_preferences,
+        changed,
+        deliver,
+    )
+}
+fn tick_with(
+    admission: NativeWriteAdmission,
+    store: &SessionStore,
+    now: impl FnOnce() -> i64,
+    preferences: &DeliveryPreferences,
+    mut latest_preferences: impl FnMut() -> Result<Option<DeliveryPreferences>, String>,
+    changed: impl FnOnce() -> Result<(), String>,
+    mut deliver: impl FnMut(Reminder, bool) -> Result<(), String>,
+) -> Result<(), String> {
+    let mut committed = false;
+    let mut observation = Ok(());
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let due = {
+            let mut connection = store.lock_conn()?;
+            take_due(&mut connection, now(), |reminder| {
+                preferences.project_rules.contains_key(&reminder.session_id)
+            })
+            .map_err(|error| error.to_string())?
+        };
+        committed = true;
+        if due.is_empty() {
+            return Ok(());
+        }
+        if changed().is_err() {
+            observation = Err(());
+        }
+        for reminder in due {
+            // Refresh after any previous blocked delivery. No preference or SQL
+            // lock spans an OS notification; all accepted work keeps this guard.
+            let preferences = match latest_preferences() {
+                Ok(Some(preferences)) => preferences,
+                Ok(None) => continue,
+                Err(_) => {
+                    observation = Err(());
+                    continue;
+                }
+            };
+            if !preferences.allows(&reminder) {
+                continue;
+            }
+            let current = store.lock_conn().and_then(|connection| {
+                connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM session_reminders WHERE session_id = ?1 AND due_at = ?2 AND fired_at IS NOT NULL)",
+                    params![reminder.session_id, reminder.due_at], |row| row.get::<_, bool>(0),
+                ).map_err(|error| error.to_string())
+            });
+            match current {
+                Ok(true) => {
+                    if deliver(reminder, preferences.sound).is_err() {
+                        observation = Err(());
+                    }
+                }
+                Ok(false) => {}
+                Err(_) => observation = Err(()),
+            }
+        }
+        Ok(())
+    }));
+    let result = match result {
+        Ok(result) => result,
+        Err(_) => {
+            observation = Err(());
+            // A committed fired claim stays authoritative. Unknown delivery is
+            // never reset or replayed, including after a callback unwind.
+            if committed {
+                Ok(())
+            } else {
+                Err("Reminder tick observation failed".into())
+            }
+        }
+    };
+    admission.finish_observed(result, observation)
+}
+
 pub(crate) fn init(app: &AppHandle) {
     app.manage(ReminderService::default());
     let app = app.clone();
@@ -336,64 +487,43 @@ pub(crate) fn init(app: &AppHandle) {
             continue;
         };
         let store = app.state::<SessionStore>();
-        let due = store.lock_conn().and_then(|mut conn| {
-            // Resolve project preferences before claiming a reminder, including
-            // during launch and immediately after a reminder is scheduled.
-            take_due(&mut conn, now_millis(), |reminder| {
-                preferences.project_rules.contains_key(&reminder.session_id)
-            })
-            .map_err(|error| error.to_string())
-        });
-        let due = match due {
-            Ok(due) => due,
-            Err(error) => {
-                eprintln!("Could not check reminders: {error}");
-                continue;
-            }
-        };
-        if due.is_empty() {
-            continue;
-        }
-        let _ = app.emit(CHANGED, ());
-        for reminder in due {
-            // A prior platform notification may have blocked while preferences
-            // changed. Take a fresh snapshot without holding the lock for delivery.
-            let preferences = app
-                .state::<ReminderService>()
-                .preferences
-                .lock()
-                .ok()
-                .and_then(|value| value.clone());
-            let Some(preferences) = preferences else {
-                continue;
-            };
-            if !preferences.allows(&reminder) {
-                continue;
-            }
-            // Cancellation or rescheduling may happen while another banner is
-            // being delivered. Do not announce a stale snapshot of the queue.
-            let current = store.lock_conn().and_then(|conn| conn.query_row(
-                "SELECT EXISTS(SELECT 1 FROM session_reminders WHERE session_id = ?1 AND due_at = ?2 AND fired_at IS NOT NULL)",
-                params![reminder.session_id, reminder.due_at], |row| row.get::<_, bool>(0),
-            ).map_err(|error| error.to_string())).unwrap_or(false);
-            if !current {
-                continue;
-            }
-            let identifier = format!(
-                "{NOTIFICATION_PREFIX}{}:{}",
-                reminder.session_id, reminder.due_at
-            );
-            let _ = tauri::async_runtime::block_on(crate::notifications::show_notification(
-                app.clone(),
-                identifier,
-                app.package_info().name.clone(),
-                reminder.title,
-                "Reminder: continue this conversation.".into(),
-                preferences.sound,
-            ));
+        let barrier = app.try_state::<WindowBarrier>();
+        let result = process_tick_with(
+            barrier.as_ref().map(|state| state.inner()),
+            &store,
+            now_millis,
+            &preferences,
+            || {
+                app.state::<ReminderService>()
+                    .preferences
+                    .lock()
+                    .map(|value| value.clone())
+                    .map_err(|error| error.to_string())
+            },
+            || app.emit(CHANGED, ()).map_err(|error| error.to_string()),
+            |reminder, sound| {
+                tauri::async_runtime::block_on(crate::notifications::show_notification(
+                    app.clone(),
+                    format!(
+                        "{NOTIFICATION_PREFIX}{}:{}",
+                        reminder.session_id, reminder.due_at
+                    ),
+                    app.package_info().name.clone(),
+                    reminder.title,
+                    "Reminder: continue this conversation.".into(),
+                    sound,
+                ))
+            },
+        );
+        if let Err(error) = result {
+            eprintln!("Could not check reminders: {error}");
         }
     });
 }
+
+#[cfg(test)]
+#[path = "reminders/admission_tests.rs"]
+mod admission_tests;
 
 #[cfg(test)]
 mod tests {

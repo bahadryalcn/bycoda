@@ -61,6 +61,14 @@ describe("Codex requests reach the chat and notifications", () => {
 
   function render(event?: HarnessEvent) {
     if (event) session = applyHarnessEvent(session, event);
+    const rendered = session;
+    const occurrences = new Map(
+      rendered.blocks.flatMap((block) =>
+        block.approval ? [[block.approval.requestId, block.approval.occurrenceId] as const] : [],
+      ),
+    );
+    const dispatch = (sessionId: string, id: number, decision: "allow" | "deny") =>
+      codexAdapter.respondApproval(sessionId, id, decision, occurrences.get(id));
     root.render(
       createElement(
         Fragment,
@@ -69,7 +77,8 @@ describe("Codex requests reach the chat and notifications", () => {
         createElement(AgentTranscript, {
           blocks: session.blocks,
           busy: true,
-          onApproval: (id, decision) => codexAdapter.respondApproval(session.id, id, decision),
+          approvalContext: { session: rendered, dispatch },
+          onApproval: (id, decision) => dispatch(rendered.id, id, decision),
         }),
         session.pendingQuestion
           ? createElement(QuestionForm, {
@@ -81,8 +90,7 @@ describe("Codex requests reach the chat and notifications", () => {
         createElement(ApprovalToasts, {
           notices: hiddenApprovalNotices([session], "other", [], false),
           onFocusSession: () => undefined,
-          onApproval: (sessionId, id, decision) =>
-            codexAdapter.respondApproval(sessionId, id, decision),
+          onApproval: dispatch,
         }),
       ),
     );

@@ -733,13 +733,22 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         {t("Loading skills…")}
       </Alert>
     ) : null) : shown.length === 0 ? (
-      <p className={styles.message}>
-        {all.length
-          ? t("No matching skills")
-          : machine
+      all.length ? (
+        <EmptyState
+          context="list"
+          kind="filtered"
+          icon={null}
+          description={t("No matching skills")}
+          onReset={() => setQuery("")}
+          resetLabel={t("Clear search")}
+        />
+      ) : (
+        <p className={styles.message}>
+          {machine
             ? t("No skills on this machine.")
             : t("No skills yet. Add skill creates a starter SKILL.md.")}
-      </p>
+        </p>
+      )
     ) : (
       shown.map((skill) => renderRow(skill, machine))
     )}

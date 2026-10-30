@@ -1,3 +1,4 @@
+import { requestedApproval } from "../approvalOccurrence.testSupport";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -255,7 +256,12 @@ it("retains a permission's real write after its UI callback returns", async () =
         release = resolve;
       }),
   );
-  genericAcpAdapter.respondApproval!("generic-plan", 777, "allow");
+  genericAcpAdapter.respondApproval!(
+    "generic-plan",
+    777,
+    "allow",
+    requestedApproval(events, 777).occurrenceId,
+  );
   expect(inspect().pendingCausalWork).toBe(1);
   expect(events.some((e) => e.type === "approval.resolved")).toBe(false);
   release();
@@ -312,6 +318,38 @@ it("retires a displaced waiting RPC id without releasing its replacement", async
   expect(mock.respond).not.toHaveBeenCalled();
 });
 
+it("never applies the displaced permission occurrence to the replacement with the same RPC ID", async () => {
+  const { genericAcpAdapter } = await import("./genericAcpAdapter");
+  await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
+  const previous = permissionFixture(306);
+  const original = requestedApproval(events, 306);
+  const replacement = permissionFixture(306);
+  const current = requestedApproval(events, 306);
+  expect(current.occurrenceId).not.toBe(original.occurrenceId);
+  expect(previous().pendingCausalWork).toBe(0);
+  expect(events).toContainEqual({
+    type: "approval.resolved",
+    requestId: 306,
+    occurrenceId: original.occurrenceId,
+    decision: "cancelled",
+  });
+  genericAcpAdapter.respondApproval!("generic-plan", 306, "allow");
+  genericAcpAdapter.respondApproval!("generic-plan", 306, "allow", original.occurrenceId);
+  expect(mock.respond).not.toHaveBeenCalled();
+  expect(replacement().pendingCausalWork).toBe(1);
+  genericAcpAdapter.respondApproval!("generic-plan", 306, "deny", current.occurrenceId);
+  await vi.waitFor(() => expect(replacement().pendingCausalWork).toBe(0));
+  expect(mock.respond).toHaveBeenCalledTimes(1);
+  expect(events).toContainEqual({
+    type: "approval.resolved",
+    requestId: 306,
+    occurrenceId: current.occurrenceId,
+    decision: "deny",
+  });
+  genericAcpAdapter.respondApproval!("generic-plan", 306, "allow", current.occurrenceId);
+  expect(mock.respond).toHaveBeenCalledTimes(1);
+});
+
 it("natural exit keeps a removed responding approval owned until its actual write settles", async () => {
   const { genericAcpAdapter } = await import("./genericAcpAdapter");
   await sendGenericAcpTurn({ ...input(undefined), runtimeMode: "supervised" });
@@ -323,7 +361,12 @@ it("natural exit keeps a removed responding approval owned until its actual writ
         release = resolve;
       }),
   );
-  genericAcpAdapter.respondApproval!("generic-plan", 304, "allow");
+  genericAcpAdapter.respondApproval!(
+    "generic-plan",
+    304,
+    "allow",
+    requestedApproval(events, 304).occurrenceId,
+  );
   mock.onExit!(0);
   expect(inspect().pendingCausalWork).toBe(1);
   release();

@@ -7,14 +7,16 @@ import { HostEngine } from "./engine";
 import { SocialService, type SocialPrincipal } from "./social";
 import type { SocialTextGenerator } from "./social-generation";
 import { platformRequirements } from "../src/integrations/social/capabilities";
-import type { SocialCredential, SocialCredentialStore } from "./social-credentials";
+import type { SocialCredentialStore } from "./social-credentials";
 import type { SocialAdapter, SocialAdapters } from "../src/integrations/social/adapter";
 import type {
   SocialAccount,
   SocialCampaign,
+  SocialContact,
   SocialRule,
 } from "../src/features/social/model/social";
 import type {
+  ContactTagResult,
   FactSuggestResult,
   PlanSuggestion,
   RuleSimplifySuggestion,
@@ -169,7 +171,6 @@ async function fixture(generateText?: SocialTextGenerator) {
     credentials,
   };
 }
-type Fixture = Awaited<ReturnType<typeof fixture>>;
 
 const answerOf = (value: unknown) => JSON.stringify(value);
 const SCHEDULE = {
@@ -947,6 +948,270 @@ describe("facts.suggest", () => {
   });
 });
 
+/** Contacts: one account with two saved contacts, two segments and an agent. */
+async function contactWorld(generator: SocialTextGenerator) {
+  const s = await fixture(generator);
+  await s.setAgent();
+  const account = await s.account();
+  const upsert = (platformId: string, name: string, tags: string[], extra = {}) =>
+    s.call<SocialContact>("contacts.upsert", {
+      accountId: account.id,
+      platformId,
+      name,
+      tags,
+      projectIds: [s.project.id],
+      ...extra,
+    });
+  const ada = await upsert("ada-1", "Ada Press", ["VIP"], { language: "en" });
+  const bo = await upsert("bo-2", "Bo Retail", [], { language: "tr" });
+  await s.call("segments.create", {
+    name: "VIP press",
+    projectIds: [s.project.id],
+    tags: ["VIP", "press"],
+  });
+  await s.call("segments.create", { name: "Press", projectIds: [s.project.id], tags: ["press"] });
+  const rows = [
+    { ref: "row-1", name: "Cem Blogger", platformId: "cem", language: "tr", tags: [] },
+    { ref: "row-2", name: "Dara Shop", platformId: "dara" },
+  ];
+  return {
+    s,
+    account,
+    ada,
+    bo,
+    upsert,
+    rows,
+    input: { accountId: account.id, projectId: s.project.id, rows },
+  };
+}
+
+describe("contacts.suggestTags", () => {
+  const answer = (contacts: unknown[]) => answerOf({ contacts });
+
+  it("proposes labels for import rows with reasons, reuses existing spelling and stores nothing", async () => {
+    const generator = vi.fn<SocialTextGenerator>(async () => "{}");
+    const { s, input, account } = await contactWorld(generator);
+    generator.mockResolvedValueOnce(
+      answer([
+        {
+          key: "c1",
+          tags: [
+            { tag: " press ", reason: "Blogger in the name." },
+            { tag: "PRESS", reason: "duplicate in other case" },
+            { tag: "vip", reason: "Existing label spelled VIP." },
+            { tag: "x".repeat(41), reason: "too long" },
+            { tag: "no reason", reason: "" },
+            { tag: "extra", reason: "x", note: 1 },
+          ],
+        },
+        { key: "c2", tags: [] },
+        { key: "c9", tags: [{ tag: "ghost", reason: "unknown key" }] },
+        { key: "c1", tags: [{ tag: "again", reason: "second entry for the same contact" }] },
+      ]),
+    );
+    const before = await s.persisted();
+    const result = await s.call<ContactTagResult>("contacts.suggestTags", input);
+    expect(result).toEqual({
+      accountId: account.id,
+      projectId: s.project.id,
+      proposals: [
+        {
+          ref: "row-1",
+          name: "Cem Blogger",
+          currentTags: [],
+          tags: [
+            { tag: "press", reason: "Blogger in the name.", isNew: false },
+            { tag: "VIP", reason: "Existing label spelled VIP.", isNew: false },
+          ],
+          segments: [
+            { id: expect.any(String), name: "VIP press" },
+            { id: expect.any(String), name: "Press" },
+          ],
+        },
+      ],
+      unchangedRefs: ["row-2"],
+      notes: ["5 AI suggestions were dropped because they could not be used."],
+      agent: AGENT,
+      draftOnly: true,
+    });
+    // Nothing was written: no contact, consent, segment, job or send.
+    expect(await s.persisted()).toEqual(before);
+    expect(s.send).not.toHaveBeenCalled();
+    expect(s.poll).not.toHaveBeenCalled();
+  });
+
+  it("labels saved contacts of the account and project and lists only newly matched segments", async () => {
+    const generator = vi.fn<SocialTextGenerator>(async () => "{}");
+    const { s, account, ada, bo } = await contactWorld(generator);
+    await s.call("contacts.optout", { id: bo.id });
+    generator.mockResolvedValueOnce(
+      answer([
+        { key: "c1", tags: [{ tag: "press", reason: "Press in the name." }] },
+        { key: "c2", tags: [{ tag: "press", reason: "Retail?" }] },
+      ]),
+    );
+    const before = await s.persisted();
+    const result = await s.call<ContactTagResult>("contacts.suggestTags", {
+      accountId: account.id,
+      projectId: s.project.id,
+      contactIds: [ada.id, bo.id],
+      instructions: "Label journalists as press.",
+    });
+    expect(result.proposals.map((proposal) => proposal.ref)).toEqual([ada.id, bo.id]);
+    // Ada already has VIP: the proposal completes "VIP press" and "Press". Bo only matches "Press".
+    expect(result.proposals[0].currentTags).toEqual(["VIP"]);
+    expect(result.proposals[0].segments.map((segment) => segment.name)).toEqual([
+      "VIP press",
+      "Press",
+    ]);
+    expect(result.proposals[1].segments.map((segment) => segment.name)).toEqual(["Press"]);
+    // Consent, opt-out and eligibility are untouched: the opted-out contact stays opted out.
+    expect(await s.persisted()).toEqual(before);
+    const stored = await s.call<SocialContact[]>("contacts.search", {});
+    expect(stored.find((contact) => contact.id === bo.id)).toMatchObject({
+      optedOut: true,
+      replyEligible: false,
+      commentEligible: false,
+    });
+  });
+
+  it("is owner-only and rejects out-of-scope contacts, bad shapes, a missing grant and a missing agent", async () => {
+    const generator = vi.fn<SocialTextGenerator>(async () => "{}");
+    const { s, input, account, ada } = await contactWorld(generator);
+    await expect(
+      s.social.call(await s.session(), "social.contacts.suggestTags", input),
+    ).rejects.toThrow("account owner");
+    await expect(s.call("contacts.suggestTags", { ...input, optedOut: false })).rejects.toThrow(
+      "Unknown or protected social field",
+    );
+    const call = (change: Record<string, unknown>) =>
+      s.call("contacts.suggestTags", { ...input, ...change });
+    await expect(call({ contactIds: [ada.id] })).rejects.toThrow("either saved contacts or import");
+    await expect(
+      s.call("contacts.suggestTags", { accountId: account.id, projectId: s.project.id }),
+    ).rejects.toThrow("either saved contacts or import");
+    await expect(call({ rows: [] })).rejects.toThrow("Send 1");
+    await expect(
+      call({ rows: Array.from({ length: 101 }, (_, index) => ({ ref: `r${index}`, name: "n" })) }),
+    ).rejects.toThrow("Send 1");
+    await expect(call({ rows: [{ ref: "a", name: "A", consent: true }] })).rejects.toThrow(
+      "Unknown or protected social field",
+    );
+    await expect(
+      call({
+        rows: [
+          { ref: "a", name: "A" },
+          { ref: "a", name: "B" },
+        ],
+      }),
+    ).rejects.toThrow("unique");
+    await expect(call({ rows: [{ ref: "a", name: "" }] })).rejects.toThrow("contact name");
+    await expect(call({ rows: ["text"] })).rejects.toThrow("Invalid contact row");
+    await expect(call({ instructions: "x".repeat(2001) })).rejects.toThrow("at most 2000");
+    await expect(call({ accountId: "missing" })).rejects.toThrow();
+    await expect(call({ projectId: "missing" })).rejects.toThrow();
+    // Saved contacts must belong to this account and project.
+    const other = await s.account("x", "Other account");
+    const foreign = await s.call<SocialContact>("contacts.upsert", {
+      accountId: other.id,
+      platformId: "foreign",
+      name: "Foreign",
+      projectIds: [s.project.id],
+    });
+    const base = { accountId: account.id, projectId: s.project.id };
+    await expect(
+      s.call("contacts.suggestTags", { ...base, contactIds: [foreign.id] }),
+    ).rejects.toThrow("contacts of this account and project");
+    await expect(
+      s.call("contacts.suggestTags", { ...base, contactIds: ["missing"] }),
+    ).rejects.toThrow("contacts of this account and project");
+    await expect(s.call("contacts.suggestTags", { ...base, contactIds: [] })).rejects.toThrow(
+      "at least one contact",
+    );
+    expect(generator).not.toHaveBeenCalled();
+    // A project the account has no draft grant for.
+    const second = await s.store.addProject(
+      mkdtempSync(join(tmpdir(), "bycoda-social-suggest-b-")),
+      "B",
+    );
+    await expect(call({ projectId: second.id })).rejects.toThrow("draft permission");
+    // Provider failures never leak, malformed answers change nothing.
+    generator.mockRejectedValueOnce(new Error("quota exceeded for key AIza-secret"));
+    const failure = await call({}).catch((error: Error) => error);
+    expect((failure as Error).message).toContain("AI generation failed or stopped");
+    expect((failure as Error).message).not.toContain("AIza-secret");
+    const before = await s.persisted();
+    const bad: [unknown, string][] = [
+      ["not json at all", "not valid JSON"],
+      ["x".repeat(30001), "too long"],
+      [answerOf({ contacts: [], extra: 1 }), "unexpected"],
+      [answerOf({}), "contact list"],
+      [answerOf({ contacts: "all" }), "contact list"],
+    ];
+    for (const [output, reason] of bad) {
+      generator.mockResolvedValueOnce(output as string);
+      await expect(call({})).rejects.toThrow(reason);
+    }
+    expect(await s.persisted()).toEqual(before);
+    await s.call("policy.save", { policies: { global: {}, platforms: {} } });
+    await expect(call({})).rejects.toThrow(
+      "Choose an available text agent in the Social settings first.",
+    );
+  });
+
+  it("caps labels per contact at five and at the 30-label contact limit", async () => {
+    const generator = vi.fn<SocialTextGenerator>(async () => "{}");
+    const { s, account, upsert } = await contactWorld(generator);
+    const full = await upsert(
+      "full-1",
+      "Full",
+      Array.from({ length: 28 }, (_, index) => `t${index}`),
+    );
+    generator.mockResolvedValueOnce(
+      answer([
+        {
+          key: "c1",
+          tags: Array.from({ length: 8 }, (_, index) => ({ tag: `new${index}`, reason: "r" })),
+        },
+      ]),
+    );
+    const result = await s.call<ContactTagResult>("contacts.suggestTags", {
+      accountId: account.id,
+      projectId: s.project.id,
+      contactIds: [full.id],
+    });
+    expect(result.proposals[0].tags.map((entry) => entry.tag)).toEqual(["new0", "new1"]);
+    expect(result.proposals[0].tags.every((entry) => entry.isNew)).toBe(true);
+  });
+
+  it("quotes names, rows and instructions as JSON data and replays by request id", async () => {
+    const generator = vi.fn<SocialTextGenerator>(async () => "{}");
+    const { s, account } = await contactWorld(generator);
+    const rows = [{ ref: "row-1", name: INJECTION, platformId: "inj", tags: ["a"] }];
+    generator.mockResolvedValue(answer([{ key: "c1", tags: [{ tag: "press", reason: "Name." }] }]));
+    const request = {
+      accountId: account.id,
+      projectId: s.project.id,
+      rows,
+      instructions: INJECTION,
+    };
+    const first = await s.call<ContactTagResult>("contacts.suggestTags", request, owner, "tags-1");
+    const prompt = generator.mock.calls[0][1];
+    expect(prompt).toContain("untrusted data");
+    expect(prompt).toContain(`Owner instructions: ${JSON.stringify(INJECTION)}`);
+    expect(prompt).toContain(`"name":${JSON.stringify(INJECTION)}`);
+    expect(prompt.split(INJECTION).length - 1).toBe(2);
+    expect(prompt).not.toContain("row-1");
+    expect(first.draftOnly).toBe(true);
+    expect(await s.call("contacts.suggestTags", request, owner, "tags-1")).toEqual(first);
+    expect(generator).toHaveBeenCalledTimes(1);
+    await expect(
+      s.call("contacts.suggestTags", { ...request, instructions: "other" }, owner, "tags-1"),
+    ).rejects.toThrow("Request ID was already used with another operation.");
+    expect(generator).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("suggestion isolation", () => {
   it("only reaches the injected generator and keeps the three operations out of the session tool list", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
@@ -956,7 +1221,7 @@ describe("suggestion isolation", () => {
     expect(generator).toHaveBeenCalledTimes(1);
     expect(fetchSpy).not.toHaveBeenCalled();
     expect(s.credentials.get).not.toHaveBeenCalled();
-    for (const name of ["plans.suggest", "rules.simplify", "facts.suggest"])
+    for (const name of ["plans.suggest", "rules.simplify", "facts.suggest", "contacts.suggestTags"])
       expect(s.social.isTool(`social.${name}`)).toBe(false);
   });
 });

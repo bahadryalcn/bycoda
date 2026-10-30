@@ -250,6 +250,28 @@ Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `
 
 ## Interrupted Native helper requests
 
+Local reminder and SSH setting changes can also be temporarily refused during
+workspace capture. Refused changes leave their saved values intact. Reminders
+that become due while new work is closed remain pending for a later timer tick.
+An already claimed reminder is not sent again merely because a notification or
+reply failed. Notes images return a usable path only after their file bytes are
+written and synchronized; a failed or uncertain outcome keeps its original
+status and should be checked before inserting the image again.
+
+When a local workspace capture temporarily refuses a local automation change,
+the refused request leaves saved rows unchanged. A failed save keeps its editor
+draft; retry after capture finishes. Time-based scheduling and startup recovery
+retry on their normal next evaluation. An accepted local write finishes before
+capture proceeds.
+
+Workspace capture can also temporarily refuse SSH runbook changes, new runs,
+scheduled review refreshes and recovery from saved run records. A refused change
+leaves the saved records unchanged; retry after capture finishes. An already
+accepted run keeps its original permission through its last local status write
+and worker cleanup. Its cached status and Stop control remain available while
+new work is refused. Stopping the local SSH process can still leave the remote
+script's outcome unknown; check that outcome before starting another run.
+
 Development source now retains the original Native editor buffer report and
 desktop finish/format request before sending it. If the connection breaks after
 the Host may have accepted the request, recovery asks for that original's outcome

@@ -589,7 +589,7 @@ it("keeps a goal filter when the task tool is reopened without retaining its ope
   expect(restoredScroller.scrollTop).toBe(120);
 });
 
-it("shows pending and genuinely empty task board states", async () => {
+it("shows pending and unreachable task board states", async () => {
   host([]);
   const original = invoke.getMockImplementation()!;
   let resolveMachines!: (machines: unknown[]) => void;
@@ -610,7 +610,39 @@ it("shows pending and genuinely empty task board states", async () => {
   expect(container.querySelector('[data-remote-data-state="empty"]')).toBeTruthy();
   expect(container.querySelectorAll("[data-task-column]")).toHaveLength(0);
   expect(container.querySelectorAll(".task-column-empty")).toHaveLength(0);
-  expect(container.textContent?.match(/Nothing to do yet/g)).toHaveLength(1);
+  // No machine can answer: that is unavailable, not an empty board waiting for a first task.
+  const unavailable = container.querySelector('[data-kind="unavailable"]');
+  expect(unavailable?.textContent).toContain("Tasks unavailable");
+  expect(unavailable && button(unavailable, "Retry")).toBeTruthy();
+  expect(container.textContent).not.toContain("No tasks yet");
+  expect(button(container, "Select tasks")).toBeUndefined();
+});
+
+it("explains a genuinely empty board once, without repeating the toolbar start, and shows no bulk row", async () => {
+  host([]);
+  await render(vi.fn(), "backlog");
+  const empty = container.querySelector('[data-kind="empty"]');
+  expect(empty?.textContent).toContain("No tasks yet");
+  expect(empty?.querySelector("button")).toBeNull();
+  expect(
+    Array.from(container.querySelectorAll("button")).filter((entry) => buttonText(entry) === "New task"),
+  ).toHaveLength(1);
+  expect(button(container, "Select tasks")).toBeUndefined();
+  expect(container.querySelector(".task-scope-summary")).toBeNull();
+  expect(container.querySelector('[data-kind="unavailable"]')).toBeNull();
+});
+
+it("resets a search that hides every task instead of asking for a new one", async () => {
+  host([task({ id: "a", title: "Ship the report", status: "todo" })]);
+  await render(vi.fn(), "backlog");
+  const search = container.querySelector<HTMLInputElement>('input[type="search"]')!;
+  await act(async () => type(search, "zzz-no-match"));
+  const filtered = container.querySelector('[data-kind="filtered"]');
+  expect(filtered?.textContent).toContain("No tasks match your search or filters.");
+  expect(filtered && button(filtered, "New task")).toBeUndefined();
+  await act(async () => button(filtered!, "Reset filters")!.click());
+  expect(container.textContent).toContain("Ship the report");
+  expect(container.querySelector('[data-kind="filtered"]')).toBeNull();
 });
 
 it("keeps last-known cards visible on a failed refresh and retries the network read", async () => {

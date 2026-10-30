@@ -17,6 +17,8 @@ export type MiddleTruncateProps = Omit<ComponentPropsWithoutRef<"span">, "childr
 
 const PATH_TAIL = 28;
 const TEXT_TAIL = 10;
+/** A short tail (branch or model suffix) can still give up its start to an ellipsis, down to these characters. */
+const MIN_TAIL_END = 6;
 /** Grapheme clusters rarely exceed a handful of UTF-16 units; this bounds segmentation work per call. */
 const UNITS_PER_CLUSTER = 8;
 
@@ -93,8 +95,13 @@ export const MiddleTruncate = memo(function MiddleTruncate({
 }: MiddleTruncateProps) {
   const parts = splitMiddle(children, { mode, tail });
   const tooltip = title === false ? undefined : (title ?? children);
-  // A tail wider than a very narrow container collapses in its own middle, so its last characters stay readable.
-  const tailEnd = parts.tail ? lastCharacters(parts.tail, TEXT_TAIL) : "";
+  // A tail wider than a very narrow container collapses at its own start, so its last characters stay readable.
+  // Short tails keep fewer characters protected, otherwise they could never ellipsize and would be clipped.
+  const tailEnd = parts.tail
+    ? lastCharacters(parts.tail, parts.tail.length > TEXT_TAIL ? TEXT_TAIL : MIN_TAIL_END)
+    : "";
+  // A head of one or two characters needs no reserved ellipsis room; longer ones keep room for "x...".
+  const headClass = Array.from(parts.head).length > 2 ? `${styles.head} ${styles.headReserve}` : styles.head;
   const classes = [parts.tail ? styles.root : styles.plain, className].filter(Boolean).join(" ");
   if (!parts.tail)
     return (
@@ -105,7 +112,7 @@ export const MiddleTruncate = memo(function MiddleTruncate({
   return (
     <span {...props} title={tooltip} className={classes} data-middle-truncate="">
       <span className={styles.full}>{children}</span>
-      <span aria-hidden="true" className={styles.head}>
+      <span aria-hidden="true" className={headClass}>
         {parts.head}
       </span>
       <span aria-hidden="true" className={styles.tail}>

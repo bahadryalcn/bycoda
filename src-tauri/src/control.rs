@@ -971,10 +971,27 @@ pub fn control_disable(
 
 #[tauri::command]
 pub fn control_attach_worker(
-    window: WebviewWindow,
+    window: tauri::Window,
     host: State<'_, ControlHost>,
     lead_id: String,
     session_id: String,
+) -> Result<String, String> {
+    let admission = crate::native_window_lifecycle::admit_window_buffers(&window)?;
+    admission.finish(control_attach_worker_with(
+        &host,
+        window.label(),
+        lead_id,
+        session_id,
+        create_worker_scratch,
+    ))
+}
+
+fn control_attach_worker_with(
+    host: &ControlHost,
+    owner: &str,
+    lead_id: String,
+    session_id: String,
+    create_scratch: impl FnOnce() -> Result<PathBuf, String>,
 ) -> Result<String, String> {
     let mut inner = host
         .inner
@@ -983,13 +1000,13 @@ pub fn control_attach_worker(
     if inner
         .grants
         .get(&lead_id)
-        .is_none_or(|grant| grant.window != window.label())
+        .is_none_or(|grant| grant.window != owner)
     {
         return Err("Lead connection is inactive".into());
     }
     let scratch = match inner.scratch.get(&session_id) {
         Some(path) if path.is_dir() => path.clone(),
-        _ => create_worker_scratch()?,
+        _ => create_scratch()?,
     };
     inner.workers.insert(session_id.clone(), lead_id);
     inner.app_grants.remove(&session_id);
@@ -998,7 +1015,12 @@ pub fn control_attach_worker(
 }
 
 fn create_worker_scratch() -> Result<PathBuf, String> {
-    let path = std::env::temp_dir().join(format!("bycoda-worker-{}", uuid::Uuid::new_v4()));
+    create_worker_scratch_in(&std::env::temp_dir())
+}
+
+// Only the native operation supplies this root; it is never an IPC path or grant.
+fn create_worker_scratch_in(root: &Path) -> Result<PathBuf, String> {
+    let path = root.join(format!("bycoda-worker-{}", uuid::Uuid::new_v4()));
     let builder = std::fs::DirBuilder::new();
     #[cfg(unix)]
     let builder = {
@@ -1222,16 +1244,28 @@ pub fn control_desktop_authorize_effect(
 
 #[tauri::command(async)]
 pub fn control_save(
+    window: tauri::Window,
     store: State<'_, crate::session_store::SessionStore>,
     lead_id: String,
     state: String,
 ) -> Result<(), String> {
+    crate::native_window_lifecycle::persistence_write(&window, || {
+        control_save_with(&store, &lead_id, &state)
+    })
+}
+
+fn control_save_with(
+    store: &crate::session_store::SessionStore,
+    lead_id: &str,
+    state: &str,
+) -> Result<(), String> {
     if state.len() > 8_000_000 {
         return Err("Orchestration history is too large".into());
     }
-    let run: Value = serde_json::from_str(&state).map_err(|_| "Invalid run state")?;
+    let run: Value = serde_json::from_str(state).map_err(|_| "Invalid run state")?;
     let conn = store.lock_conn()?;
-    crate::session_store::save_orchestration(&conn, &lead_id, &run).map_err(|e| e.to_string())?;
+    crate::session_store::save_orchestration(&conn, lead_id, &run).map_err(|e| e.to_string())?;
+    drop(conn);
     Ok(())
 }
 
@@ -1324,6 +1358,9 @@ pub fn control_scopes(cwd: String, files: Vec<String>) -> Result<Vec<String>, St
         })
         .collect()
 }
+
+#[cfg(test)]
+mod admission_tests;
 
 #[cfg(test)]
 mod tests {

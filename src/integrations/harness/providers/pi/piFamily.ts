@@ -1,4 +1,8 @@
 import {
+  createApprovalOccurrenceId,
+  isApprovalOccurrenceId,
+} from "../../../../shared/model/approvalOccurrence";
+import {
   captureNativeOutputWorkEvent,
   captureNativeOutputWork,
   joinNativeOutputWorks,
@@ -79,6 +83,7 @@ import type {
 } from "../../core/types";
 
 type PendingApproval = {
+  occurrenceId: string;
   request: PiExtensionUiRequest;
   resolve: (decision: ApprovalDecision) => void;
 };
@@ -392,10 +397,19 @@ export function respondApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
   const live = stateFor(flavor).liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
-  if (!pending) return;
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
   pending.resolve(decision);
 }
 
@@ -1298,17 +1312,21 @@ async function handleExtensionUi(
       }
 
       const uiId = live.nextApprovalUiId++;
+      const occurrenceId = createApprovalOccurrenceId();
+      const pending = new Promise<ApprovalDecision>((resolve) => {
+        live.approvals.set(uiId, { request, occurrenceId, resolve });
+      });
       emitNative({
         type: "approval.requested",
         requestId: uiId,
+        occurrenceId,
         title: extensionUiTitle(request),
         kind: "other",
       });
-      const decision = await new Promise<ApprovalDecision>((resolve) => {
-        live.approvals.set(uiId, { request, resolve });
-      });
-      live.approvals.delete(uiId);
-      emitNative({ type: "approval.resolved", requestId: uiId, decision });
+      const decision = await pending;
+      if (live.approvals.get(uiId)?.occurrenceId === occurrenceId) live.approvals.delete(uiId);
+      emitNative({ type: "approval.resolved", requestId: uiId, occurrenceId, decision });
+      if (!Array.from(stateFor(flavor).liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, writeChild)(
         sessionId,
         JSON.stringify(extensionUiResponse(request, decision)),

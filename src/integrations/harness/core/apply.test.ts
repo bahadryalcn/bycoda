@@ -359,7 +359,10 @@ describe("approval lifetime", () => {
     const session = appendUser(stale, "continue");
     const tool = session.blocks.find((block) => block.tool?.callId === "shell-1");
 
-    expect(tool?.approval).toEqual({ requestId: 7, decided: "cancelled" });
+    expect(tool?.approval).toEqual({
+      ...stale.blocks.find((block) => block.tool?.callId === "shell-1")!.approval,
+      decided: "cancelled",
+    });
     expect(session.blocks.at(-1)).toMatchObject({
       role: "user",
       text: "continue",

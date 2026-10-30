@@ -15,6 +15,9 @@ import {
 import { FilePlus } from "../../../shared/ui/icons";
 import { Modal } from "../../../shared/ui/Modal";
 import { isImeComposition } from "../../../shared/lib/keyboard";
+import { droppedFileCount } from "../../../shared/lib/externalDrop";
+import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
+import { attachmentDropVerdict } from "../model/attachmentDrop";
 import {
   isFileReferenceText,
   messageFilesFromClipboard,
@@ -85,6 +88,8 @@ function QueueEditContent({
   const [loadingAttachments, setLoadingAttachments] = useState(0);
   const pendingAttachments = useRef(0);
   const field = useRef<HTMLTextAreaElement>(null);
+  const dropBox = useRef<HTMLDivElement>(null);
+  const dropFeedback = useExternalDropFeedback();
   const draftRef = useRef(draft);
   draftRef.current = draft;
   /** Where the caret goes once the next draft is rendered. */
@@ -323,11 +328,27 @@ function QueueEditContent({
       <div
         className="flex flex-col gap-3 p-4"
         onDragOver={(event) => {
-          if (!canAttach || !hasFiles(event)) return;
+          if (!hasFiles(event)) return;
           event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
+          const block = !canAttach ? "unsupported" : !parentChanged.canMutate() ? "unavailable" : null;
+          event.dataTransfer.dropEffect = block ? "none" : "copy";
+          dropFeedback.show(
+            dropBox.current,
+            attachmentDropVerdict(
+              droppedFileCount(event.dataTransfer),
+              draftRef.current.attachments.length,
+              block,
+            ),
+            event,
+          );
+        }}
+        onDragLeave={(event) => {
+          const next = event.relatedTarget as Node | null;
+          if (next && event.currentTarget.contains(next)) return;
+          dropFeedback.hide();
         }}
         onDrop={(event) => {
+          dropFeedback.hide();
           if (!parentChanged.canMutate()) {
             event.preventDefault();
             return;
@@ -339,7 +360,10 @@ function QueueEditContent({
           void collect(() => attachmentsFromFiles(files));
         }}
       >
-        <div className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)">
+        <div
+          ref={dropBox}
+          className="rounded-lg border border-(--ui-tone-neutral-border) bg-(--ui-surface-raised)"
+        >
           {draft.attachments.length > 0 ? (
             <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
               {draft.attachments.map((file, index) => (

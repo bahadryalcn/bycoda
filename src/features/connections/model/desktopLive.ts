@@ -1,4 +1,6 @@
 import type { Block, Session } from "../../sessions/model/session";
+import type { ApprovalRequestToken } from "../../sessions/model/approvalIntents";
+import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { DesktopProjectDirectory } from "./protocol";
 import {
@@ -116,7 +118,9 @@ export async function executeDesktopInboxOperation(
     return Promise.all(
       REMOTE_INBOX_PROVIDERS.map(async (provider) => {
         try {
-          const status = (await runner.invoke(commands[provider])) as { connected?: boolean };
+          const status = (await runner.invoke(commands[provider])) as {
+            connected?: boolean;
+          };
           return { provider, connected: status?.connected === true };
         } catch (error) {
           return { provider, connected: false, error: safeInboxError(error) };
@@ -148,6 +152,7 @@ export type DesktopLiveCommand = {
   sessionId: string;
   type: "cancel" | "approve" | "answer" | "retire-writer";
   requestId?: number;
+  approvalOccurrenceId?: string;
   decision?: "allow" | "deny";
   reply?: UserQuestionReply;
 };
@@ -156,7 +161,18 @@ export type DesktopLiveHandlers = {
   retireWriter?: (sessionId: string) => Promise<void>;
   delete?: (sessionId: string, cwd: string) => Promise<void>;
   stop: (sessionId: string) => void;
-  approve: (sessionId: string, requestId: number, decision: "allow" | "deny") => void;
+  captureApproval?: (
+    session: Session,
+    requestId: number,
+    block: Block,
+  ) => ApprovalRequestToken | undefined;
+  approvalDispatchStarted?: (expected: ApprovalRequestToken | undefined) => boolean;
+  approve: (
+    sessionId: string,
+    requestId: number,
+    decision: "allow" | "deny",
+    expected?: ApprovalRequestToken,
+  ) => void | boolean | Promise<boolean>;
   answer: (sessionId: string, requestId: number, reply: UserQuestionReply) => void;
 };
 
@@ -167,6 +183,75 @@ function jsonSafe<T>(value: T): T {
 
 function undecidedApprovals(session: Session): Block[] {
   return session.blocks.filter((block) => block.approval && !block.approval.decided);
+}
+
+type DesktopApprovalSource = {
+  sessionId: string;
+  requestId: number;
+  occurrenceId?: string;
+  block: object;
+  approval: object;
+  token?: ApprovalRequestToken;
+};
+
+type DesktopCommandOutcome = "applied" | "stale" | "held";
+type RetainedDesktopApproval = {
+  source: DesktopApprovalSource;
+  decision: "allow" | "deny";
+  wireOccurrenceId?: string;
+};
+type DesktopApprovalCommands = {
+  records: Map<string, RetainedDesktopApproval>;
+  capacityHeld: boolean;
+};
+const DESKTOP_APPROVAL_COMMAND_LIMIT = 64;
+const approvalCommandsKey = Symbol.for("bycoda.desktop-live.approval-commands.v1");
+const approvalIdentitiesKey = Symbol.for("bycoda.desktop-live.approval-object-identities.v1");
+const approvalCommandGlobals = globalThis as typeof globalThis & {
+  [approvalCommandsKey]?: WeakMap<Set<string>, DesktopApprovalCommands>;
+  [approvalIdentitiesKey]?: WeakMap<object, object>;
+};
+const approvalCommands = (approvalCommandGlobals[approvalCommandsKey] ??= new WeakMap());
+const approvalIdentities = (approvalCommandGlobals[approvalIdentitiesKey] ??= new WeakMap());
+function approvalObjectIdentity(value: object): object {
+  let identity = approvalIdentities.get(value);
+  if (!identity) {
+    identity = {};
+    approvalIdentities.set(value, identity);
+  }
+  return identity;
+}
+function retainedApprovalCommands(handled: Set<string>): DesktopApprovalCommands {
+  let state = approvalCommands.get(handled);
+  if (!state) {
+    state = { records: new Map(), capacityHeld: false };
+    approvalCommands.set(handled, state);
+  }
+  return state;
+}
+
+function captureDesktopApprovals(
+  sessions: readonly Session[],
+  handlers: DesktopLiveHandlers,
+): DesktopApprovalSource[] {
+  const sources: DesktopApprovalSource[] = [];
+  for (const session of sessions) {
+    if (session.worktreeRemoved) continue;
+    for (const block of undecidedApprovals(session)) {
+      const approval = block.approval!;
+      const requestId = approval.requestId;
+      const token = handlers.captureApproval?.(session, requestId, block);
+      sources.push({
+        sessionId: session.id,
+        requestId,
+        occurrenceId: approval.occurrenceId,
+        block: approvalObjectIdentity(block),
+        approval: approvalObjectIdentity(approval),
+        token,
+      });
+    }
+  }
+  return sources;
 }
 
 /** The heartbeat entry per session object (null: nothing to report). A session
@@ -211,33 +296,74 @@ export function applyDesktopLiveCommand(
   command: DesktopLiveCommand,
   sessions: readonly Session[],
   handlers: DesktopLiveHandlers,
+  originalApprovals?: readonly DesktopApprovalSource[],
 ): boolean {
+  return dispatchDesktopLiveCommand(command, sessions, handlers, originalApprovals) === "applied";
+}
+
+function dispatchDesktopLiveCommand(
+  command: DesktopLiveCommand,
+  sessions: readonly Session[],
+  handlers: DesktopLiveHandlers,
+  originalApprovals?: readonly DesktopApprovalSource[],
+  approvalOccurrenceSupported = true,
+): DesktopCommandOutcome {
   const session = sessions.find((candidate) => candidate.id === command.sessionId);
-  if (!session || session.worktreeRemoved) return false;
+  if (!session || session.worktreeRemoved) return "stale";
   const id = command.requestId;
   if (command.type === "cancel") {
-    if (!session.busy) return false;
+    if (!session.busy) return "stale";
     handlers.stop(session.id);
-    return true;
+    return "applied";
   }
-  if (id === undefined || id === null || !Number.isFinite(Number(id))) return false;
+  if (id === undefined || id === null || !Number.isFinite(Number(id))) return "stale";
   const requestId = Number(id);
   if (command.type === "approve") {
-    if (command.decision !== "allow" && command.decision !== "deny") return false;
-    const pending = undecidedApprovals(session).some(
+    if (command.decision !== "allow" && command.decision !== "deny") return "stale";
+    const pending = undecidedApprovals(session).find(
       (block) => String(block.approval?.requestId) === String(requestId),
     );
-    if (!pending) return false;
-    handlers.approve(session.id, requestId, command.decision);
-    return true;
+    if (!pending) return "stale";
+    if (!approvalOccurrenceSupported || !isApprovalOccurrenceId(command.approvalOccurrenceId))
+      return "held";
+    // A direct caller captures at its synchronous accepted boundary. A heartbeat
+    // supplies its original cut, including an empty cut; never recapture a token
+    // after the request await for an approval that arrived or changed meanwhile.
+    const sources = originalApprovals ?? captureDesktopApprovals(sessions, handlers);
+    const source = sources.find(
+      (candidate) => candidate.sessionId === session.id && candidate.requestId === requestId,
+    );
+    if (!source) return "stale";
+    if (!isApprovalOccurrenceId(source.occurrenceId)) return "held";
+    if (
+      source.occurrenceId !== command.approvalOccurrenceId ||
+      pending.approval?.occurrenceId !== source.occurrenceId
+    )
+      return "stale";
+    if (
+      source.block !== approvalObjectIdentity(pending) ||
+      source.approval !== approvalObjectIdentity(pending.approval!)
+    )
+      return "stale";
+    if (!source.token || !handlers.approvalDispatchStarted) return "held";
+    // The probe is a private callback-attempt observation, not a provider ACK.
+    // A true probe before entry also prevents replay after a synchronous throw.
+    if (handlers.approvalDispatchStarted(source.token)) return "applied";
+    try {
+      handlers.approve(session.id, requestId, command.decision, source.token);
+    } catch (error) {
+      if (handlers.approvalDispatchStarted(source.token)) return "applied";
+      throw error;
+    }
+    return handlers.approvalDispatchStarted(source.token) ? "applied" : "held";
   }
   if (command.type === "answer") {
-    if (!command.reply) return false;
-    if (String(session.pendingQuestion?.requestId) !== String(requestId)) return false;
+    if (!command.reply) return "stale";
+    if (String(session.pendingQuestion?.requestId) !== String(requestId)) return "stale";
     handlers.answer(session.id, requestId, command.reply);
-    return true;
+    return "applied";
   }
-  return false;
+  return "stale";
 }
 
 /** When the last heartbeat was sent and whether it reported nothing. */
@@ -251,7 +377,11 @@ export type DesktopLiveBeat = {
   directoryAck?: string;
   directoryResend?: boolean;
   /** The last directory serialized, so an unchanged object is not stringified again. */
-  serialized?: { directory: DesktopProjectDirectory; json: string; revision?: string };
+  serialized?: {
+    directory: DesktopProjectDirectory;
+    json: string;
+    revision?: string;
+  };
 };
 
 /** One exchange with the host: report live sessions plus what was handled
@@ -259,6 +389,8 @@ export type DesktopLiveBeat = {
  * until a call succeeds; `handled` dedupes re-sent commands. With a `beat`,
  * an empty heartbeat is not repeated before DESKTOP_LIVE_IDLE_MS. */
 export async function runDesktopLiveTick(deps: {
+  /** Actual Host descriptor observation; absent legacy capability is unjoined. */
+  approvalOccurrenceSupported?: boolean;
   beat?: DesktopLiveBeat;
   now?: () => number;
   clientId?: string;
@@ -292,7 +424,8 @@ export async function runDesktopLiveTick(deps: {
 }): Promise<void> {
   const acked = [...deps.unacked];
   const now = deps.now ?? Date.now;
-  const live = buildDesktopLiveSessions(deps.sessions());
+  const originalSessions = deps.sessions();
+  const live = buildDesktopLiveSessions(originalSessions);
   const projectDirectory = deps.projectDirectory?.();
   let directoryFingerprint: string | undefined;
   let directoryRevision: string | undefined;
@@ -371,6 +504,10 @@ export async function runDesktopLiveTick(deps: {
         }
       : {}),
   };
+  // These tokens belong to the actual local requests published by this exchange.
+  // The legacy wire has no remote-view occurrence nonce: this closes the local
+  // await/replacement race, not an ID-reuse ambiguity in an older remote view.
+  const originalApprovals = captureDesktopApprovals(originalSessions, deps.handlers);
   const result = await deps.request(payload);
   if (deps.beat) {
     deps.beat.directoryFingerprint = directoryFingerprint;
@@ -405,7 +542,12 @@ export async function runDesktopLiveTick(deps: {
       void Promise.resolve()
         .then(() => deps.handlers.delete!(job.sessionId, job.cwd))
         .then(() => runner.results.set(job.id, { id: job.id }))
-        .catch((error) => runner.results.set(job.id, { id: job.id, error: safeInboxError(error) }))
+        .catch((error) =>
+          runner.results.set(job.id, {
+            id: job.id,
+            error: safeInboxError(error),
+          }),
+        )
         .finally(() => runner.running.delete(job.id));
     }
   }
@@ -426,9 +568,17 @@ export async function runDesktopLiveTick(deps: {
       void Promise.resolve()
         .then(() => executeDesktopInboxOperation(job.operation, runner, job.deadline))
         .then((value) =>
-          runner.results.set(job.id, { id: job.id, result: jsonSafe(value ?? null) }),
+          runner.results.set(job.id, {
+            id: job.id,
+            result: jsonSafe(value ?? null),
+          }),
         )
-        .catch((error) => runner.results.set(job.id, { id: job.id, error: safeInboxError(error) }))
+        .catch((error) =>
+          runner.results.set(job.id, {
+            id: job.id,
+            error: safeInboxError(error),
+          }),
+        )
         .finally(() => {
           runner.running.delete(job.id);
           while (runner.results.size > 64)
@@ -487,7 +637,60 @@ export async function runDesktopLiveTick(deps: {
         if (deps.sessions().some((session) => session.id === command.sessionId && session.busy))
           throw new Error("The desktop session is still running. Retry after it finishes.");
         await deps.handlers.retireWriter(command.sessionId);
-      } else applyDesktopLiveCommand(command, deps.sessions(), deps.handlers);
+      } else if (command.type === "approve") {
+        const retained = retainedApprovalCommands(deps.handled);
+        const requestId = command.requestId == null ? undefined : Number(command.requestId);
+        let original = retained.records.get(command.id);
+        if (
+          original &&
+          (original.source.sessionId !== command.sessionId ||
+            original.source.requestId !== requestId ||
+            original.decision !== command.decision ||
+            original.wireOccurrenceId !==
+              (isApprovalOccurrenceId(command.approvalOccurrenceId)
+                ? command.approvalOccurrenceId
+                : undefined))
+        ) {
+          // A command ID is immutable. A changed envelope cannot retarget its
+          // original choice; consuming it is an explicit local stale witness.
+          retained.records.delete(command.id);
+        } else {
+          if (!original) {
+            const source = originalApprovals.find(
+              (candidate) =>
+                candidate.sessionId === command.sessionId && candidate.requestId === requestId,
+            );
+            if (source && (command.decision === "allow" || command.decision === "deny")) {
+              if (
+                retained.capacityHeld ||
+                retained.records.size >= DESKTOP_APPROVAL_COMMAND_LIMIT
+              ) {
+                // The Host queue retains this original choice. Once an original
+                // cannot be pinned, never recapture it from a later heartbeat.
+                retained.capacityHeld = true;
+                continue;
+              }
+              original = {
+                source,
+                decision: command.decision,
+                wireOccurrenceId: isApprovalOccurrenceId(command.approvalOccurrenceId)
+                  ? command.approvalOccurrenceId
+                  : undefined,
+              };
+              retained.records.set(command.id, original);
+            }
+          }
+          const outcome = dispatchDesktopLiveCommand(
+            command,
+            deps.sessions(),
+            deps.handlers,
+            original ? [original.source] : originalApprovals,
+            deps.approvalOccurrenceSupported === true,
+          );
+          if (outcome === "held") continue;
+          retained.records.delete(command.id);
+        }
+      } else dispatchDesktopLiveCommand(command, deps.sessions(), deps.handlers);
     } catch (error) {
       console.error(error);
       continue; // Keep the command pending if its handler failed.

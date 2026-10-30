@@ -1,6 +1,7 @@
 //! Explicit reviewed SSH execution. No startup, restore, interactive-terminal
 //! input, credential store, connection store, output log or automatic retry.
 use crate::{
+    native_window_lifecycle::NativeWriteAdmission,
     ssh_group_defaults::RemoteShellKind,
     ssh_security::{self, SshEndpoint},
 };
@@ -9,11 +10,13 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     io::Write,
+    panic::{catch_unwind, AssertUnwindSafe},
     process::{Child, Command, Stdio},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -267,13 +270,25 @@ struct Batch {
     cancelled: Vec<AtomicBool>,
     owner_alive: Arc<AtomicBool>,
     persistence: Arc<dyn RunPersistence>,
+    observation_failed: AtomicBool,
+    /// Actual joins/cleanup, never the cached terminal status, decide liveness.
+    workers_finished: AtomicBool,
 }
 impl Batch {
     fn snapshot(&self) -> RunStatus {
         self.status
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(|e| {
+                self.fail_observation();
+                e.into_inner()
+            })
             .clone()
+    }
+    fn fail_observation(&self) {
+        self.observation_failed.store(true, Ordering::Release);
+        for cancelled in &self.cancelled {
+            cancelled.store(true, Ordering::Release);
+        }
     }
     fn cancelled(&self, index: usize) -> bool {
         !self.owner_alive.load(Ordering::Acquire) || self.cancelled[index].load(Ordering::Acquire)
@@ -285,19 +300,36 @@ impl Batch {
         exit_code: Option<i32>,
         reason: Option<&str>,
     ) -> bool {
-        let mut status = self.status.lock().unwrap_or_else(|e| e.into_inner());
+        let mut status = self.status.lock().unwrap_or_else(|e| {
+            self.fail_observation();
+            e.into_inner()
+        });
         status.targets[index].state = state;
         status.targets[index].exit_code = exit_code;
         status.targets[index].reason = reason.map(str::to_owned);
-        if self.persistence.update(&status).is_err() {
+        if !matches!(
+            catch_unwind(AssertUnwindSafe(|| self.persistence.update(&status))),
+            Ok(Ok(()))
+        ) {
+            self.fail_observation();
             status.targets[index].state = TargetState::Unknown;
             status.targets[index].reason = Some("persistence_failed".into());
-            for cancelled in &self.cancelled {
-                cancelled.store(true, Ordering::Release);
-            }
             false
         } else {
             true
+        }
+    }
+    fn fail_unfinished(&self, reason: &str) {
+        self.fail_observation();
+        let unfinished: Vec<_> = self
+            .snapshot()
+            .targets
+            .iter()
+            .enumerate()
+            .filter_map(|(index, target)| (!target.state.terminal()).then_some(index))
+            .collect();
+        for index in unfinished {
+            self.transition(index, TargetState::Unknown, None, Some(reason));
         }
     }
 }
@@ -307,6 +339,95 @@ pub(crate) struct SshExecutions {
 }
 type TargetRunner =
     Arc<dyn Fn(&Batch, usize, &RunbookSnapshot, &ResolvedTarget, ExecutionLimits) + Send + Sync>;
+
+type ExecutionThread = Box<dyn FnOnce() + Send + 'static>;
+type ExecutionSpawner =
+    Arc<dyn Fn(ExecutionThread) -> std::io::Result<JoinHandle<()>> + Send + Sync>;
+fn execution_spawner() -> ExecutionSpawner {
+    Arc::new(|work| {
+        std::thread::Builder::new()
+            .name("ssh-execution".into())
+            .spawn(work)
+    })
+}
+enum PreparedRun {
+    Existing(RunStatus),
+    Work(RunWork),
+}
+struct RunWork {
+    initial: RunStatus,
+    batch: Arc<Batch>,
+    book: RunbookSnapshot,
+    targets: Vec<ResolvedTarget>,
+    limits: ExecutionLimits,
+    runner: TargetRunner,
+}
+/// Even an unexpected supervisor unwind joins every launched target first.
+struct WorkerJoins {
+    handles: Vec<JoinHandle<()>>,
+    batch: Arc<Batch>,
+}
+impl Drop for WorkerJoins {
+    fn drop(&mut self) {
+        for handle in self.handles.drain(..) {
+            if handle.join().is_err() {
+                self.batch.fail_observation();
+            }
+        }
+    }
+}
+impl RunWork {
+    fn supervise(&self, spawn: &ExecutionSpawner) {
+        let mut workers = WorkerJoins {
+            handles: Vec::new(),
+            batch: self.batch.clone(),
+        };
+        let next = Arc::new(AtomicUsize::new(0));
+        let targets = Arc::new(self.targets.clone());
+        let book = Arc::new(self.book.clone());
+        for _ in 0..self.limits.concurrency.min(targets.len()) {
+            let batch = self.batch.clone();
+            let targets = targets.clone();
+            let book = book.clone();
+            let next = next.clone();
+            let runner = self.runner.clone();
+            let limits = self.limits;
+            match spawn(Box::new(move || loop {
+                let index = next.fetch_add(1, Ordering::AcqRel);
+                if index >= targets.len() {
+                    break;
+                }
+                let outcome = catch_unwind(AssertUnwindSafe(|| {
+                    if batch.cancelled(index) {
+                        batch.transition(
+                            index,
+                            TargetState::Cancelled,
+                            None,
+                            Some("cancelled_before_start"),
+                        );
+                    } else if batch.transition(index, TargetState::Running, None, None) {
+                        runner(&batch, index, &book, &targets[index], limits);
+                    }
+                }));
+                if outcome.is_err() {
+                    batch.fail_observation();
+                    batch.transition(index, TargetState::Unknown, None, Some("worker_panicked"));
+                }
+            })) {
+                Ok(handle) => workers.handles.push(handle),
+                Err(_) => {
+                    self.batch.fail_observation();
+                    break;
+                }
+            }
+        }
+        // No registry, status, resource or SQL lock spans these actual joins.
+        drop(workers);
+        if !self.batch.snapshot().finished() {
+            self.batch.fail_unfinished("worker_incomplete");
+        }
+    }
+}
 impl SshExecutions {
     #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
@@ -352,8 +473,9 @@ impl SshExecutions {
         targets: Vec<ResolvedTarget>,
         limits: ExecutionLimits,
         persistence: Arc<dyn RunPersistence>,
+        admission: NativeWriteAdmission,
     ) -> Result<RunStatus, String> {
-        self.start_with_runner(
+        self.start_admitted_with_runner(
             reviews,
             owner,
             review_id,
@@ -363,8 +485,10 @@ impl SshExecutions {
             limits,
             persistence,
             Arc::new(execute),
+            admission,
         )
     }
+    #[cfg(test)]
     #[allow(clippy::too_many_arguments)]
     fn start_with_runner(
         self: &Arc<Self>,
@@ -378,6 +502,138 @@ impl SshExecutions {
         persistence: Arc<dyn RunPersistence>,
         runner: TargetRunner,
     ) -> Result<RunStatus, String> {
+        self.start_admitted_with_runner(
+            reviews,
+            owner,
+            review_id,
+            run_id,
+            book,
+            targets,
+            limits,
+            persistence,
+            runner,
+            NativeWriteAdmission::Unqualified,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn start_admitted_with_runner(
+        self: &Arc<Self>,
+        reviews: &SshExecutionReviews,
+        owner: &str,
+        review_id: &str,
+        run_id: String,
+        book: RunbookSnapshot,
+        targets: Vec<ResolvedTarget>,
+        limits: ExecutionLimits,
+        persistence: Arc<dyn RunPersistence>,
+        runner: TargetRunner,
+        admission: NativeWriteAdmission,
+    ) -> Result<RunStatus, String> {
+        self.start_admitted_with_spawners(
+            reviews,
+            owner,
+            review_id,
+            run_id,
+            book,
+            targets,
+            limits,
+            persistence,
+            runner,
+            admission,
+            execution_spawner(),
+            execution_spawner(),
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn start_admitted_with_spawners(
+        self: &Arc<Self>,
+        reviews: &SshExecutionReviews,
+        owner: &str,
+        review_id: &str,
+        run_id: String,
+        book: RunbookSnapshot,
+        targets: Vec<ResolvedTarget>,
+        limits: ExecutionLimits,
+        persistence: Arc<dyn RunPersistence>,
+        runner: TargetRunner,
+        admission: NativeWriteAdmission,
+        supervisor_spawn: ExecutionSpawner,
+        worker_spawn: ExecutionSpawner,
+    ) -> Result<RunStatus, String> {
+        let prepared = catch_unwind(AssertUnwindSafe(|| {
+            self.prepare_start(
+                reviews,
+                owner,
+                review_id,
+                run_id,
+                book,
+                targets,
+                limits,
+                persistence,
+                runner,
+            )
+        }));
+        let work = match prepared {
+            Ok(Ok(PreparedRun::Existing(status))) => return admission.finish(Ok(status)),
+            Ok(Ok(PreparedRun::Work(work))) => work,
+            Ok(Err(error)) => return admission.finish(Err(error)),
+            Err(_) => {
+                return admission.finish(Err("SSH execution preparation observation failed".into()))
+            }
+        };
+        let initial = work.initial.clone();
+        let batch = work.batch.clone();
+        // This exact guard stays recoverable outside the cached Batch if spawn
+        // refuses. Fallback SQL is still inside the original admitted lifetime.
+        let held = Arc::new(Mutex::new(Some(admission)));
+        let original = held.clone();
+        let launched = supervisor_spawn(Box::new(move || {
+            let admission = original
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .take()
+                .expect("only the original supervisor can take its admission");
+            let observed = catch_unwind(AssertUnwindSafe(|| work.supervise(&worker_spawn)));
+            if observed.is_err() {
+                work.batch.fail_unfinished("supervisor_panicked");
+            }
+            let observation = if work.batch.observation_failed.load(Ordering::Acquire) {
+                Err(())
+            } else {
+                Ok(())
+            };
+            let _: Result<(), ()> = admission.finish_observed(Ok(()), observation);
+            work.batch.workers_finished.store(true, Ordering::Release);
+        }));
+        match launched {
+            Ok(_supervisor) => Ok(initial),
+            Err(_) => {
+                batch.fail_unfinished("supervisor_spawn_failed");
+                let admission = held
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .take()
+                    .expect("a refused supervisor cannot take the original admission");
+                let result =
+                    admission.finish(Err("Could not start SSH execution supervisor".into()));
+                batch.workers_finished.store(true, Ordering::Release);
+                result
+            }
+        }
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn prepare_start(
+        &self,
+        reviews: &SshExecutionReviews,
+        owner: &str,
+        review_id: &str,
+        run_id: String,
+        book: RunbookSnapshot,
+        targets: Vec<ResolvedTarget>,
+        limits: ExecutionLimits,
+        persistence: Arc<dyn RunPersistence>,
+        runner: TargetRunner,
+    ) -> Result<PreparedRun, String> {
         if !valid_id(&run_id) {
             return Err("Invalid SSH execution run identifier".into());
         }
@@ -409,7 +665,7 @@ impl SshExecutions {
             if status.owner != owner || status.digest != initial.digest {
                 return Err("Run identifier belongs to another execution".into());
             }
-            return Ok(status);
+            return Ok(PreparedRun::Existing(status));
         }
         if let Some(existing) = persistence.load(owner, &run_id)? {
             if existing.owner != owner
@@ -418,11 +674,11 @@ impl SshExecutions {
             {
                 return Err("Run identifier belongs to another execution".into());
             }
-            return Ok(existing);
+            return Ok(PreparedRun::Existing(existing));
         }
         let active = runs
             .values()
-            .filter(|run| !run.snapshot().finished())
+            .filter(|run| !run.workers_finished.load(Ordering::Acquire))
             .count();
         if active >= MAX_ACTIVE_RUNS {
             return Err("Too many active SSH executions".into());
@@ -436,12 +692,12 @@ impl SshExecutions {
                 {
                     return Err("Run identifier belongs to another execution".into());
                 }
-                return Ok(existing);
+                return Ok(PreparedRun::Existing(existing));
             }
             ClaimResult::Claimed => {}
         }
         if runs.len() >= MAX_REVIEWS {
-            runs.retain(|_, run| !run.snapshot().finished());
+            runs.retain(|_, run| !run.workers_finished.load(Ordering::Acquire));
         }
         let batch = Arc::new(Batch {
             status: Mutex::new(initial.clone()),
@@ -449,56 +705,50 @@ impl SshExecutions {
             cancelled: targets.iter().map(|_| AtomicBool::new(false)).collect(),
             owner_alive: alive,
             persistence,
+            observation_failed: AtomicBool::new(false),
+            workers_finished: AtomicBool::new(false),
         });
         runs.insert(run_id, batch.clone());
         drop(runs);
-        let next = Arc::new(AtomicUsize::new(0));
-        let targets = Arc::new(targets);
-        let book = Arc::new(book);
-        for _ in 0..limits.concurrency.min(targets.len()) {
-            let batch = batch.clone();
-            let targets = targets.clone();
-            let book = book.clone();
-            let next = next.clone();
-            let runner = runner.clone();
-            std::thread::spawn(move || loop {
-                let index = next.fetch_add(1, Ordering::AcqRel);
-                if index >= targets.len() {
-                    break;
-                }
-                if batch.cancelled(index) {
-                    batch.transition(
-                        index,
-                        TargetState::Cancelled,
-                        None,
-                        Some("cancelled_before_start"),
-                    );
-                    continue;
-                }
-                if !batch.transition(index, TargetState::Running, None, None) {
-                    continue;
-                }
-                runner(&batch, index, &book, &targets[index], limits);
-            });
-        }
-        Ok(initial)
+        Ok(PreparedRun::Work(RunWork {
+            initial,
+            batch,
+            book,
+            targets,
+            limits,
+            runner,
+        }))
     }
+    pub(crate) fn cached_status(
+        &self,
+        owner: &str,
+        run_id: &str,
+    ) -> Result<Option<RunStatus>, String> {
+        let run = self
+            .runs
+            .lock()
+            .map_err(|_| "Execution registry unavailable")?
+            .get(run_id)
+            .cloned();
+        match run {
+            Some(run) => {
+                let status = run.snapshot();
+                if status.owner != owner {
+                    return Err("Execution belongs to another native window".into());
+                }
+                Ok(Some(status))
+            }
+            None => Ok(None),
+        }
+    }
+    #[cfg(test)]
     pub(crate) fn status(
         &self,
         owner: &str,
         run_id: &str,
         persistence: &dyn RunPersistence,
     ) -> Result<RunStatus, String> {
-        if let Some(run) = self
-            .runs
-            .lock()
-            .map_err(|_| "Execution registry unavailable")?
-            .get(run_id)
-        {
-            let status = run.snapshot();
-            if status.owner != owner {
-                return Err("Execution belongs to another native window".into());
-            }
+        if let Some(status) = self.cached_status(owner, run_id)? {
             return Ok(status);
         }
         let status = persistence
@@ -565,10 +815,70 @@ impl Drop for SshExecutions {
     }
 }
 
-fn terminate(child: &mut Child) {
-    crate::harness::terminate_all(&[child.id()]);
-    let _ = child.kill();
-    let _ = child.wait();
+struct ProcessWork<'a> {
+    batch: &'a Batch,
+    child: Child,
+    writer: Option<JoinHandle<bool>>,
+    exited: bool,
+}
+impl ProcessWork<'_> {
+    fn stop(&mut self) {
+        if self.exited {
+            return;
+        }
+        // A local exit is not proof of remote termination. Preserve the existing
+        // Unknown outcome while retaining this worker until local observation.
+        let stopped = catch_unwind(AssertUnwindSafe(|| {
+            crate::harness::terminate_all(&[self.child.id()]);
+            let killed = self.child.kill().is_ok();
+            let waited = self.child.wait().is_ok();
+            (killed, waited)
+        }));
+        match stopped {
+            Ok((killed, true)) => {
+                self.exited = true;
+                if !killed {
+                    self.batch.fail_observation();
+                }
+            }
+            _ => self.batch.fail_observation(),
+        }
+        // Failed wait/kill is never terminal proof. This is observation only,
+        // not a new execution or a replay, and the original admission stays live.
+        while !self.exited {
+            match self.child.try_wait() {
+                Ok(Some(_)) => self.exited = true,
+                Ok(None) | Err(_) => std::thread::sleep(Duration::from_millis(25)),
+            }
+        }
+    }
+    fn delivered(&mut self) -> bool {
+        let delivered = self
+            .writer
+            .take()
+            .is_some_and(|writer| matches!(writer.join(), Ok(true)));
+        if !delivered {
+            self.batch.fail_observation();
+        }
+        delivered
+    }
+}
+impl Drop for ProcessWork<'_> {
+    fn drop(&mut self) {
+        if !self.exited {
+            self.batch.fail_observation();
+            self.stop();
+        }
+        if self.writer.is_some() {
+            self.delivered();
+        }
+    }
+}
+struct ScriptInput(Vec<u8>);
+impl Drop for ScriptInput {
+    fn drop(&mut self) {
+        self.0.fill(0);
+    }
 }
 fn execute(
     batch: &Batch,
@@ -588,6 +898,7 @@ fn execute_prepared(
     let (mut command, mut input, _endpoint, _proxy) = match result {
         Ok(value) => value,
         Err(_) => {
+            batch.fail_observation();
             batch.transition(index, TargetState::Failed, None, Some("preparation_failed"));
             return;
         }
@@ -609,26 +920,54 @@ fn execute_prepared(
     #[cfg(not(windows))]
     let spawned = command.spawn();
     drop(gate);
-    let mut child = match spawned {
+    let child = match spawned {
         Ok(child) => child,
         Err(_) => {
             input.fill(0);
+            batch.fail_observation();
             batch.transition(index, TargetState::Failed, None, Some("spawn_failed"));
             return;
         }
     };
-    let mut stdin = child.stdin.take().expect("Execution stdin must be piped");
-    let writer = std::thread::spawn(move || {
-        let written = stdin.write_all(&input).and_then(|_| stdin.flush());
+    let mut work = ProcessWork {
+        batch,
+        child,
+        writer: None,
+        exited: false,
+    };
+    let Some(mut stdin) = work.child.stdin.take() else {
         input.fill(0);
-        written.is_ok()
-    });
+        batch.fail_observation();
+        batch.transition(index, TargetState::Unknown, None, Some("stdin_unavailable"));
+        return;
+    };
+    let input = ScriptInput(input);
+    match std::thread::Builder::new()
+        .name("ssh-execution-stdin".into())
+        .spawn(move || {
+            stdin
+                .write_all(&input.0)
+                .and_then(|_| stdin.flush())
+                .is_ok()
+        }) {
+        Ok(writer) => work.writer = Some(writer),
+        Err(_) => {
+            batch.fail_observation();
+            batch.transition(
+                index,
+                TargetState::Unknown,
+                None,
+                Some("stdin_worker_failed"),
+            );
+            return;
+        }
+    }
     let deadline = Instant::now() + Duration::from_secs(limits.timeout_seconds);
     loop {
         if batch.cancelled(index) || Instant::now() >= deadline {
             let cancelled = batch.cancelled(index);
-            terminate(&mut child);
-            let _ = writer.join();
+            work.stop();
+            work.delivered();
             batch.transition(
                 index,
                 if cancelled {
@@ -645,9 +984,10 @@ fn execute_prepared(
             );
             return;
         }
-        match child.try_wait() {
+        match work.child.try_wait() {
             Ok(Some(exit)) => {
-                let delivered = writer.join().unwrap_or(false);
+                work.exited = true;
+                let delivered = work.delivered();
                 let code = exit.code();
                 if !delivered || code.is_none() || code == Some(255) {
                     batch.transition(
@@ -672,8 +1012,9 @@ fn execute_prepared(
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(25)),
             Err(_) => {
-                terminate(&mut child);
-                let _ = writer.join();
+                batch.fail_observation();
+                work.stop();
+                work.delivered();
                 batch.transition(
                     index,
                     TargetState::Unknown,

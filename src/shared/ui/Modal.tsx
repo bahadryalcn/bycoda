@@ -176,6 +176,7 @@ export function Modal(props: Props) {
   if (host) return createPortal(<ModalPanel {...props} />, host);
   return createPortal(
     <div
+      data-modal-layer=""
       className={`fixed inset-0 ${props.placement === "end" ? "flex justify-end" : props.fitViewport !== false ? "grid place-items-center" : ""}`}
       style={{ zIndex: LAYER.dialog }}
       onMouseDown={(event) => {
@@ -187,7 +188,7 @@ export function Modal(props: Props) {
       }}
     >
       <div
-        className="modal-backdrop pointer-events-none absolute inset-0 bg-(--ui-overlay-backdrop)"
+        className="modal-backdrop pointer-events-none absolute inset-0"
         style={props.motion === "none" ? { animation: "none" } : undefined}
       />
       <ModalPanel {...props} />

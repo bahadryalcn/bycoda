@@ -603,15 +603,22 @@ pub(crate) fn persistence_write_observed<T>(
     window: &tauri::Window,
     work: impl FnOnce() -> (Result<T, String>, Result<(), ()>),
 ) -> Result<T, String> {
-    let admission = {
-        let barrier = window.app_handle().try_state::<WindowBarrier>();
-        let resources = window.resources_table();
-        admit_persistence(&resources, barrier.as_ref().map(|state| state.inner()))
-            .map_err(|error| error.to_string())?
-    };
+    let admission = admit_window_persistence(window)?;
     // Resource/token locks are released; work's SQL guard drops before finish.
     let (result, observation) = work();
     admission.finish_observed(result, observation)
+}
+
+/// Transfer the actual caller's Persistence admission to its accepted worker.
+/// Resource/token locks end here; the worker must retain the returned admission
+/// through its last SQL callback and cleanup, independently of an IPC waiter.
+pub(crate) fn admit_window_persistence(
+    window: &tauri::Window,
+) -> Result<NativeWriteAdmission, String> {
+    let barrier = window.app_handle().try_state::<WindowBarrier>();
+    let resources = window.resources_table();
+    admit_persistence(&resources, barrier.as_ref().map(|state| state.inner()))
+        .map_err(|error| error.to_string())
 }
 
 /// The actual native command's mutation key, not a separate caller-chosen scope.
@@ -657,6 +664,25 @@ pub(crate) fn test_admit_window_buffers(
     barrier: Option<&WindowBarrier>,
 ) -> Result<NativeWriteAdmission, String> {
     admit_buffer_resources(resources, barrier)
+}
+
+/// Test the same resource-owned Persistence admission used by native commands.
+#[cfg(test)]
+pub(crate) fn test_admit_window_persistence(
+    resources: &ResourceTable,
+    barrier: Option<&WindowBarrier>,
+) -> Result<NativeWriteAdmission, String> {
+    admit_persistence(resources, barrier).map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+pub(crate) fn test_persistence_write<T>(
+    resources: &ResourceTable,
+    barrier: Option<&WindowBarrier>,
+    work: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let admission = test_admit_window_persistence(resources, barrier)?;
+    admission.finish(work())
 }
 
 fn ensure_slot(

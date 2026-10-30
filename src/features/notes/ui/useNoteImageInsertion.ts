@@ -11,6 +11,10 @@ import {
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { EditorView } from "@codemirror/view";
 import { pickImageFiles } from "../../../platform/tauri/fs";
+import { t } from "../../../shared/i18n";
+import { droppedFileCount, droppedFileTypes } from "../../../shared/lib/externalDrop";
+import type { ExternalDropVerdict } from "../../../shared/lib/externalDrop";
+import { useExternalDropFeedback } from "../../../shared/hooks/useExternalDropFeedback";
 import { filesFromClipboard } from "../../sessions/model/attachments";
 import {
   insertNoteImagesMarkdown,
@@ -31,11 +35,26 @@ function hasDroppedFiles(data: DataTransfer | null): data is DataTransfer {
   return [...data.types].some((type) => type === "Files" || type === "application/x-moz-file");
 }
 
+const IMAGE_PATH = /\.(png|jpe?g|gif|webp|bmp|ico|svg|tiff?|heic|heif|avif)$/i;
+const HAS_EXTENSION = /\.[a-z0-9]{1,5}$/i;
+
+/** A drag is refused only when every file is known not to be an image (folders stay unknown). */
+function onlyNonImages(kinds: { types?: string[]; paths?: string[] }): boolean {
+  if (kinds.types?.length) return kinds.types.every((type) => type !== "" && !type.startsWith("image/"));
+  if (kinds.paths?.length)
+    return kinds.paths.every((path) => HAS_EXTENSION.test(path) && !IMAGE_PATH.test(path));
+  return false;
+}
+
 /**
  * Image insertion for one open note: toolbar picker, pastes on the preview,
  * DOM drops on the editor body and native (Tauri) file drops. One insertion runs
  * at a time under the note's input owner; the markdown lands at the caret that
  * was current when the insertion started, and the draft owner applies it.
+ *
+ * While files are dragged over the editor body it carries the shared drop mark and the cursor
+ * badge says "Insert image" (or why it cannot). Text drags are not touched here: the editor
+ * keeps its own text drop and caret behaviour.
  */
 export function useNoteImageInsertion({
   noteId,
@@ -63,7 +82,7 @@ export function useNoteImageInsertion({
   onInserted: (body: string) => void;
   onError: (message: string) => void;
 }) {
-  const [imageDrag, setImageDrag] = useState(false);
+  const { show: showDrop, hide: hideDrop } = useExternalDropFeedback();
   const [imageBusy, setImageBusy] = useState(false);
   const [outcome, setOutcome] = useState<object | null>(null);
   const outcomeCommit = useRef<{ token: object; committed(): void } | null>(null);
@@ -122,7 +141,7 @@ export function useNoteImageInsertion({
       }
       imageBusyRef.current = true;
       setImageBusy(true);
-      setImageDrag(false);
+      hideDrop();
       try {
         const images = await load(work);
         if (images.length === 0) return;
@@ -182,7 +201,25 @@ export function useNoteImageInsertion({
         } else committed();
       }
     },
-    [inputOwner, draftState, editorViewRef, modeRef],
+    [inputOwner, draftState, editorViewRef, modeRef, hideDrop],
+  );
+
+  /** What releasing the dragged files on the editor would do right now. */
+  const dropVerdict = useCallback(
+    (kinds: { count: number; types?: string[]; paths?: string[] }): ExternalDropVerdict => {
+      if (imageBusyRef.current)
+        return { kind: "blocked", reason: t("Wait for the current image to finish inserting") };
+      if (inputOwner.closed())
+        return { kind: "blocked", reason: t("This note cannot be changed right now") };
+      if (onlyNonImages(kinds))
+        return { kind: "blocked", reason: t("Only images can be inserted here") };
+      return {
+        kind: "accept",
+        label:
+          kinds.count > 1 ? t("Insert {p0} images", { p0: kinds.count }) : t("Insert image"),
+      };
+    },
+    [inputOwner],
   );
 
   const pasteImages = useCallback(
@@ -240,20 +277,32 @@ export function useNoteImageInsertion({
       );
     };
 
+    let nativePaths: string[] = [];
     void getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type === "leave") {
-          setImageDrag(false);
+          nativePaths = [];
+          hideDrop();
           return;
         }
         const { x, y } = event.payload.position;
         const over = overDropZone(x, y);
         if (event.payload.type === "enter" || event.payload.type === "over") {
-          setImageDrag(over);
+          if (event.payload.type === "enter") nativePaths = event.payload.paths ?? [];
+          if (!over) hideDrop();
+          else {
+            const point = toClientPoint(x, y);
+            showDrop(
+              dropZoneRef.current,
+              dropVerdict({ count: nativePaths.length, paths: nativePaths }),
+              { clientX: point.x, clientY: point.y },
+            );
+          }
           return;
         }
         if (event.payload.type !== "drop") return;
-        setImageDrag(false);
+        nativePaths = [];
+        hideDrop();
         if (!over || Date.now() - lastDropAt.current < 250) return;
         lastDropAt.current = Date.now();
         const range = insertionRange();
@@ -270,25 +319,29 @@ export function useNoteImageInsertion({
       cancelled = true;
       unlisten?.();
     };
-  }, [addDroppedImages, insertionRange, noteId]);
+  }, [addDroppedImages, insertionRange, noteId, showDrop, hideDrop, dropVerdict]);
 
   /** DOM drag handlers for the editor body (the native path above covers Tauri drops). */
   const dropZoneHandlers = {
     onDragOver: (event: ReactDragEvent<HTMLDivElement>) => {
       if (!hasDroppedFiles(event.dataTransfer)) return;
       event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-      setImageDrag(true);
+      const verdict = dropVerdict({
+        count: droppedFileCount(event.dataTransfer),
+        types: droppedFileTypes(event.dataTransfer),
+      });
+      event.dataTransfer.dropEffect = verdict.kind === "accept" ? "copy" : "none";
+      showDrop(event.currentTarget, verdict, event);
     },
     onDragLeave: (event: ReactDragEvent<HTMLDivElement>) => {
       const next = event.relatedTarget as Node | null;
       if (next && event.currentTarget.contains(next)) return;
-      setImageDrag(false);
+      hideDrop();
     },
     onDrop: (event: ReactDragEvent<HTMLDivElement>) => {
       if (!hasDroppedFiles(event.dataTransfer)) return;
       event.preventDefault();
-      setImageDrag(false);
+      hideDrop();
       if (Date.now() - lastDropAt.current < 250) return;
       lastDropAt.current = Date.now();
       const files = [...event.dataTransfer.files];
@@ -299,7 +352,9 @@ export function useNoteImageInsertion({
   };
 
   return {
-    imageDrag,
+    // The shared drop mark and cursor badge replace the in-editor drop overlay, so a consumer that
+    // still draws one from this flag never shows it.
+    imageDrag: false,
     imageBusy,
     dropZoneRef,
     dropZoneHandlers,

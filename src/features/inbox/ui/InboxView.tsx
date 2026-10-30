@@ -360,6 +360,12 @@ export function InboxView({
     if (source === "jira" && jiraHiddenProjectIds.length > 0) saveHiddenJiraProjectIds([]);
     if (codeScopes.hidden.length > 0) codeScopes.save([]);
   };
+  // Search, filters and mark-as-read only mean something once there is something to narrow or mark.
+  const narrowed = filtersActive || searchInput.trim().length > 0;
+  const resetNarrowing = () => {
+    resetFilters();
+    setSearchInput("");
+  };
   const fetchState = inboxFetchState(activeFilters);
   const fetchQuery = useMemo<InboxQuery>(
     () => ({
@@ -430,6 +436,7 @@ export function InboxView({
     },
   });
   const { items, providerErrors, loading } = collection;
+  const showCollectionTools = loading || items.length > 0 || narrowed;
   const linearProjects = useMemo(() => linearProjectOptions(items), [items]);
 
   const { targetItem, patchTargetItem } = useLinkedTargetItem({ target, cwd, items });
@@ -652,6 +659,8 @@ export function InboxView({
       {viewRow}
       {noSourcesConnected ? null : (
         <div className="flex h-9 shrink-0 items-center gap-1 px-2">
+          {showCollectionTools ? (
+          <>
           <SearchInputGroup appearance="field" className="min-w-0 flex-1">
             <Search className="pointer-events-none icon-xs shrink-0 text-(--ui-text-secondary)" />
             <SearchInput
@@ -738,6 +747,10 @@ export function InboxView({
           >
             <CheckCheck className="icon-sm" strokeWidth={1.75} />
           </Button>
+          </>
+          ) : (
+            <span className="min-w-0 flex-1" />
+          )}
           <Button
             iconOnly
             label={t("Refresh")}
@@ -811,24 +824,41 @@ export function InboxView({
           <div role="status" className="flex items-center justify-center gap-2 py-10 text-ui-secondary text-(--ui-text-secondary)">
             <WorkingIndicator size="md" />{t("Loading...")}
           </div>
-        ) : pullRequestsOnly && visibleItems.length === 0 ? (
-          <EmptyState
-            icon={<Inbox aria-hidden="true" />}
-            description={
-              projects.length === 0
-                ? t("Add a project to see its repository's pull requests.")
-                : t("No loaded items match these filters.")
-            }
-          />
         ) : visibleItems.length === 0 ? (
-          <EmptyState
-            icon={<Inbox aria-hidden="true" />}
-            description={
-              !isTrackerSource(source) && projects.length === 0
-                ? t("Open a project to fill the inbox")
-                : t("No loaded items match these filters.")
-            }
-          />
+          !pullRequestsOnly && !isTrackerSource(source) && projects.length === 0 ? (
+            <EmptyState
+              kind="empty"
+              icon={<Inbox aria-hidden="true" />}
+              description={t("Open a project to fill the inbox")}
+              action={
+                onOpenProject ? (
+                  <Button variant="secondary" type="button" onClick={() => void onOpenProject()}>
+                    {t("Add project")}
+                  </Button>
+                ) : undefined
+              }
+            />
+          ) : pullRequestsOnly && projects.length === 0 ? (
+            <EmptyState
+              kind="empty"
+              icon={<Inbox aria-hidden="true" />}
+              description={t("Add a project to see its repository's pull requests.")}
+            />
+          ) : narrowed ? (
+            <EmptyState
+              kind="filtered"
+              icon={<Inbox aria-hidden="true" />}
+              description={t("No loaded items match these filters.")}
+              onReset={resetNarrowing}
+              resetLabel={t("Clear filters")}
+            />
+          ) : (
+            <EmptyState
+              kind="empty"
+              icon={<Inbox aria-hidden="true" />}
+              description={t("No items to show.")}
+            />
+          )
         ) : (
           <ul className="flex flex-col gap-0.5 p-1.5">
             {shownItems.map((item) => {

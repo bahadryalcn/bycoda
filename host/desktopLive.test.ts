@@ -8,12 +8,172 @@ import {
 } from "./desktopLive";
 import { ChangeSignal } from "./changeSignal";
 import { RemoteChanges } from "./remoteChanges";
+import type { Block } from "../src/features/sessions/model/session";
 import type {
   DesktopProjectDirectory,
   HostProject,
 } from "../src/features/connections/model/protocol";
 
+const occurrenceA = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
+const occurrenceB = "7e1c4dc0-6f53-4a8c-b8d8-000000000002";
+const approvalBlock = (occurrenceId = occurrenceA) => ({
+  id: "approval",
+  role: "approval" as const,
+  text: "Original approval",
+  approval: { requestId: 1, occurrenceId },
+});
+
 describe("desktop window ownership", () => {
+  it("binds an approval to its published occurrence and keeps original delivery identity and fences", () => {
+    const live = new DesktopLive();
+    const beat = (pending: Block[] = [approvalBlock()], acked: string[] = [], clientId = "owner") =>
+      live.beat({
+        clientId,
+        sessions: [{ id: "session", busy: true, pending }],
+        acked,
+      });
+    beat();
+    const command = {
+      type: "approve" as const,
+      commandId: "original-command",
+      sessionId: "session",
+      runId: "desktop",
+      authorityGeneration: 7,
+      requestId: 1,
+      approvalOccurrenceId: occurrenceA,
+      decision: "allow" as const,
+    };
+    live.enqueue(command);
+    live.enqueue({ ...command });
+    expect(beat().commands).toEqual([
+      {
+        id: "original-command",
+        sessionId: "session",
+        type: "approve",
+        runId: "desktop",
+        authorityGeneration: 7,
+        requestId: 1,
+        approvalOccurrenceId: occurrenceA,
+        decision: "allow",
+      },
+    ]);
+    expect(() => live.enqueue({ ...command, decision: "deny" })).toThrow(
+      "different desktop control",
+    );
+    expect(() => live.enqueue({ ...command, approvalOccurrenceId: occurrenceB })).toThrow(
+      "different desktop control",
+    );
+    expect(() => live.enqueue({ ...command, authorityGeneration: 8 })).toThrow(
+      "different desktop control",
+    );
+    beat([], [command.commandId], "foreign");
+    expect(beat().commands).toHaveLength(1);
+    expect(beat([approvalBlock()], [command.commandId]).commands).toEqual([]);
+    // Acceptance replay after a real owner ACK never queues another physical delivery.
+    live.enqueue({ ...command });
+    expect(beat().commands).toEqual([]);
+    expect(() => live.enqueue({ ...command, decision: "deny" })).toThrow(
+      "different desktop control",
+    );
+  });
+
+  it("never replaces an accepted occurrence with the latest same-ID request from a later heartbeat", () => {
+    const live = new DesktopLive();
+    live.beat({
+      clientId: "owner",
+      sessions: [{ id: "session", busy: true, pending: [approvalBlock()] }],
+    });
+    const command = {
+      type: "approve" as const,
+      commandId: "selected-A",
+      sessionId: "session",
+      runId: "desktop",
+      requestId: 1,
+      approvalOccurrenceId: occurrenceA,
+      decision: "allow" as const,
+    };
+    // The actual owner may already have B when this still-published A is selected.
+    live.enqueue(command);
+    const delivered = live.beat({
+      clientId: "owner",
+      sessions: [{ id: "session", busy: true, pending: [approvalBlock(occurrenceB)] }],
+    }).commands;
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({ id: "selected-A", approvalOccurrenceId: occurrenceA });
+    expect(delivered[0].approvalOccurrenceId).not.toBe(occurrenceB);
+    live.enqueue({ ...command });
+    expect(() => live.enqueue({ ...command, commandId: "late-A" })).toThrow(
+      "changed or is already resolved",
+    );
+    live.enqueue({ ...command, commandId: "selected-B", approvalOccurrenceId: occurrenceB });
+    expect(
+      live
+        .beat({
+          clientId: "owner",
+          sessions: [{ id: "session", busy: true, pending: [approvalBlock(occurrenceB)] }],
+        })
+        .commands.map((entry) => entry.approvalOccurrenceId),
+    ).toEqual([occurrenceA, occurrenceB]);
+  });
+
+  it("refuses missing, malformed, ambiguous and wrong-owner approval occurrences without inventing an identity", () => {
+    const live = new DesktopLive();
+    const publish = (pending: Block[] = [approvalBlock()]) =>
+      live.beat({ clientId: "owner", sessions: [{ id: "session", busy: true, pending }] });
+    publish();
+    const command = {
+      type: "approve" as const,
+      commandId: "request",
+      sessionId: "session",
+      runId: "desktop",
+      requestId: 1,
+      approvalOccurrenceId: occurrenceA,
+      decision: "allow" as const,
+    };
+    for (const approvalOccurrenceId of [undefined, "", "latest", occurrenceA + "\n"])
+      expect(() => live.enqueue({ ...command, approvalOccurrenceId })).toThrow(
+        "identity is missing or invalid",
+      );
+    expect(() => live.enqueue({ ...command, runId: "host-run" })).toThrow(
+      "different execution owner",
+    );
+    publish([approvalBlock(), { ...approvalBlock(), id: "ambiguous" }]);
+    expect(() => live.enqueue(command)).toThrow("changed or is already resolved");
+    publish([
+      {
+        ...approvalBlock(),
+        approval: { requestId: 1, occurrenceId: occurrenceA, decided: "allow" },
+      },
+    ]);
+    expect(() => live.enqueue(command)).toThrow("changed or is already resolved");
+    expect(publish().commands).toEqual([]);
+  });
+
+  it("deduplicates an accepted retry even when the pending delivery queue is full", () => {
+    const live = new DesktopLive();
+    const commands = Array.from({ length: 100 }, (_, index) => ({
+      type: "cancel" as const,
+      commandId: `cancel-${index}`,
+      sessionId: `session-${index}`,
+      runId: "desktop",
+    }));
+    live.beat({
+      clientId: "owner",
+      sessions: commands.map((command) => ({ id: command.sessionId, busy: true })),
+    });
+    commands.forEach((command) => live.enqueue(command));
+    expect(() => live.enqueue({ ...commands[0] })).not.toThrow();
+    expect(() => live.enqueue({ ...commands[0], commandId: "overflow" })).toThrow(
+      "Too many commands",
+    );
+    expect(
+      live.beat({
+        clientId: "owner",
+        sessions: commands.map((command) => ({ id: command.sessionId, busy: true })),
+      }).commands,
+    ).toHaveLength(100);
+  });
+
   it("waits for the owning window to retire a warm writer and rejects foreign ACKs", async () => {
     const live = new DesktopLive();
     live.beat({ clientId: "owner", sessions: [], writers: { version: 1, sessionIds: ["warm"] } });
@@ -79,24 +239,44 @@ describe("desktop window ownership", () => {
       sessions: Array.from({ length: 100 }, (_, index) => ({ id: `old-${index}`, busy: true })),
     });
     for (let index = 0; index < 100; index++)
-      live.enqueue({ type: "cancel", sessionId: `old-${index}` });
+      live.enqueue({
+        type: "cancel",
+        commandId: `cancel-old-${index}`,
+        runId: "desktop",
+        sessionId: `old-${index}`,
+      });
     now = DESKTOP_BEAT_STALE_MS + 1;
     expect(
       live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] }).commands,
     ).toHaveLength(0);
-    expect(() => live.enqueue({ type: "cancel", sessionId: "current" })).toThrow(
-      "Too many commands",
-    );
+    expect(() =>
+      live.enqueue({
+        type: "cancel",
+        commandId: "cancel-current",
+        runId: "desktop",
+        sessionId: "current",
+      }),
+    ).toThrow("Too many commands");
     now = DESKTOP_COMMAND_RETAIN_MS + 1;
     live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] });
-    live.enqueue({ type: "cancel", sessionId: "current" });
+    live.enqueue({
+      type: "cancel",
+      commandId: "cancel-current",
+      runId: "desktop",
+      sessionId: "current",
+    });
     expect(
       live.beat({ clientId: "new", sessions: [{ id: "current", busy: true }] }).commands,
     ).toEqual([expect.objectContaining({ type: "cancel", sessionId: "current" })]);
 
     const reconnect = new DesktopLive(() => now);
     reconnect.beat({ clientId: "a", sessions: [{ id: "same", busy: true }] });
-    reconnect.enqueue({ type: "cancel", sessionId: "same" });
+    reconnect.enqueue({
+      type: "cancel",
+      commandId: "cancel-same",
+      runId: "desktop",
+      sessionId: "same",
+    });
     now += DESKTOP_BEAT_STALE_MS + 1;
     expect(
       reconnect.beat({ clientId: "b", sessions: [{ id: "same", busy: true }] }).commands,
@@ -157,19 +337,24 @@ describe("desktop window ownership", () => {
 
   it("keeps other windows alive and routes cancel, approve and answer to their owner", () => {
     const live = new DesktopLive();
-    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
+    live.beat({ clientId: "A", sessions: [{ id: "a", busy: true, pending: [approvalBlock()] }] });
     live.beat({ clientId: "B", sessions: [{ id: "b", busy: true }] });
     expect(live.running("a", false)).toBe(true);
     expect(live.running("b", false)).toBe(true);
-    live.enqueue({ type: "cancel", sessionId: "a" });
+    live.enqueue({ type: "cancel", commandId: "cancel-a", runId: "desktop", sessionId: "a" });
     live.enqueue({
       type: "approve",
+      commandId: "approve-a",
+      runId: "desktop",
       sessionId: "a",
       requestId: 1,
+      approvalOccurrenceId: occurrenceA,
       decision: "allow",
     });
     live.enqueue({
       type: "answer",
+      commandId: "answer-a",
+      runId: "desktop",
       sessionId: "a",
       requestId: 2,
       reply: { kind: "skipped" },
@@ -210,7 +395,7 @@ describe("desktop window ownership", () => {
   it("does not let an idle duplicate tab steal a live owner's prompts", () => {
     const live = new DesktopLive();
     live.beat({ clientId: "A", sessions: [{ id: "a", busy: true }] });
-    live.enqueue({ type: "cancel", sessionId: "a" });
+    live.enqueue({ type: "cancel", commandId: "cancel-a", runId: "desktop", sessionId: "a" });
     expect(live.beat({ clientId: "B", sessions: [{ id: "a", busy: false }] }).commands).toEqual([]);
     expect(live.running("a", false)).toBe(true);
   });

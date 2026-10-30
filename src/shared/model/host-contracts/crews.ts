@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { SafeCounterSchema } from "./schemas";
+import { SafeCounterSchema, WIRE_UUID_V4_PATTERN } from "./schemas";
 import {
   CommandReceiptSchema,
   ModelSettingsSchema,
@@ -188,6 +188,7 @@ export const CrewDirectorySchema = z.strictObject({
 });
 export const CrewApprovalSchema = z.strictObject({
   requestId: SafeCounterSchema,
+  occurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN).optional(),
   decided: z.enum(["allow", "deny", "cancelled"]).optional(),
 });
 export const CrewUserQuestionOptionSchema = z.strictObject({
@@ -383,6 +384,7 @@ const response = {
 export const CrewsRespondParamsSchema = z.strictObject({
   ...response,
   approvalId: SafeCounterSchema,
+  approvalOccurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN),
   decision: z.enum(["allow", "deny"]),
 });
 export const CrewsAnswerParamsSchema = z.strictObject({

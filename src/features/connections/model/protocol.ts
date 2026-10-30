@@ -448,6 +448,8 @@ type HostCommandBody =
       sessionId: string;
       runId: string;
       requestId: number;
+      /** Original source-issued request occurrence; never reconstructed by a client. */
+      approvalOccurrenceId?: string;
       decision: "allow" | "deny";
     }
   | {

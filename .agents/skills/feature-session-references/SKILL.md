@@ -13,9 +13,10 @@ turn. Local desktop only; no OS protocol registration, mobile/remote expansion,
 new send permission or migration initiation. Read `feature-host-runtime`,
 `feature-sessions-sidebar`, `feature-notes` and the current `.artifact` before changes.
 
-Source inventory refreshed 2026-10-30, shared `main @ 654256cb2`.
-The original implementation is included in that commit; the current corrections
-are uncommitted. Preserve unrelated staged and unstaged admission/UI work.
+Source inventory refreshed 2026-10-30, shared `main`: started at `654256cb2`,
+then an external actor integrated corrections in `7c18b5b14` during verification.
+The final worker Find-trigger/footer and fixture refinements follow that commit.
+This lane performed no Git writes. Preserve unrelated staged/unstaged work.
 Search roots: `src/app/`, `src/features/{sessions,agent-app,connections,notes}/`,
 `src/integrations/harness/`, `host/`, `src-tauri/src/`, `tests/browser/`,
 `src/shared/i18n/`. Existing dirty/staged work belongs to other workstreams.
@@ -93,8 +94,10 @@ and concrete blockers are recorded in that packet's `DELIVERY.md` and
 then-blocked browser attempts. Current correction evidence belongs under
 `temp/verification/2026-10-30-session-references/`; see its `DELIVERY.md`,
 `BACKEND.md`, `NAVIGATION.md` and `RENDERER-UI.md` for final commands and limits.
-Normal desktop/Host types and focused reference, navigation, worker, renderer,
-Sidebar and isolated Host checks passed in the current run. Browser acceptance
+Normal desktop/Host types passed earlier snapshots; the last desktop snapshot
+reports unrelated concurrent Social UI unused-import/local diagnostics (exact
+files in the current delivery report). Focused reference, navigation, worker,
+renderer, Sidebar and isolated Host checks passed. Browser acceptance
 uses actual Markdown/Popover/Notes/Sidebar components with fixture metadata and
 navigation. Bounded Tailwind scanning/dependency discovery and a test-only local
 HTTP transport shim resolve the earlier loading blocker. Captures are inspected
@@ -115,9 +118,11 @@ are separate evidence. Installed inclusion is unknown; release is not requested.
 
 ## Committed handoff references
 
-Original source implementation is present in `main @ 654256cb2` (already in the
-checkout when this run began). Corrections from this run remain uncommitted;
-this run did not stage, commit, push, build, install or release.
+Original implementation is present in `654256cb2`. Another actor integrated the
+reference corrections with admission work in `7c18b5b14`; final footer/fixture
+and evidence refinements follow it. This lane did not stage, commit, push,
+build, install or release. Check current source hashes/status in the delivery
+packet; a shared checkout can move during verification.
 
 ## Proposals
 

@@ -31,6 +31,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* The head never collapses below room for one character and its ellipsis, so a truncated value always shows "...". */
+.headReserve {
+  min-inline-size: 1.75em;
+}
 .tail {
   display: flex;
   flex: 0 1 auto;

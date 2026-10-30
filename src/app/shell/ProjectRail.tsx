@@ -37,6 +37,7 @@ import {
   PinOff,
   CircleAlert,
   File,
+  FileDiff,
   StickyNote,
   Plus,
   Search,
@@ -75,7 +76,7 @@ import {
   PROJECT_RAIL_WIDTH_MIN,
   saveProjectRailWidth,
 } from "../../features/settings/model/appearance";
-import { basename, type GitDiffStats } from "../../platform/tauri/fs";
+import { basename } from "../../platform/tauri/fs";
 import { IS_MAC } from "../../platform/tauri/platform";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
 import { formatInteger } from "../../shared/lib/numbers";
@@ -151,6 +152,21 @@ import { useRemoteConnection } from "../../features/connections/model/useRemoteC
 import { useProjectMenu, type ProjectMenuMove } from "./useProjectMenu";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { GroupGitPopover } from "../../features/projects/ui/GroupGitPopover";
+import {
+  projectGitChange,
+  projectGitChangeSpoken,
+  projectGitChangeSummary,
+  projectGitCountLabel,
+  projectGitDetailBucket,
+  type ProjectGitChange,
+} from "../../features/projects/ui/projectGitChange";
+import {
+  duplicateProjectNames,
+  identityLine,
+  isDuplicateProjectName,
+  parentFolderLabel,
+} from "../../features/projects/ui/projectIdentity";
+import "./projectRailRow.css";
 import {
   OPEN_PROJECT_CHANGES_EVENT,
   summarizeGroupGit,
@@ -328,6 +344,28 @@ export function ProjectRail({
     y: number;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The compact flyout is a dialog whose popover frame is measured hidden first, so the row can only take
+  // focus once the frame is placed. Landing on the active project (or the first row) lets PageDown/End scroll the
+  // list; the popover returns focus to its trigger on close.
+  useEffect(() => {
+    if (!navigator || !visible) return;
+    let frame = 0;
+    let attempts = 0;
+    const focusRow = () => {
+      const list = scrollRef.current;
+      const flyout = list?.closest("[data-project-navigation-flyout]");
+      if (!list || !flyout) return;
+      const active = document.activeElement;
+      if (active && active !== flyout && flyout.contains(active)) return;
+      const target =
+        list.querySelector<HTMLElement>("[data-project-path] button[aria-current]") ??
+        list.querySelector<HTMLElement>("[data-project-path] button");
+      target?.focus();
+      if (document.activeElement !== target && ++attempts < 12) frame = requestAnimationFrame(focusRow);
+    };
+    frame = requestAnimationFrame(focusRow);
+    return () => cancelAnimationFrame(frame);
+  }, [navigator, visible]);
   // Scrolls a project's row into view. A row inside a collapsed group is not
   // rendered, so this does nothing there and never expands anything.
   const revealProject = (path: string) => {
@@ -400,6 +438,14 @@ export function ProjectRail({
     [liveAgents, lock],
   );
   const notificationProjects = useNotificationProjects([...allProjects.keys()]);
+  // Display names need not be unique; rows that would read the same get a short folder hint.
+  const nameCollisions = duplicateProjectNames(
+    [...allProjects.values()].map((project) => ({
+      path: project.path,
+      name: resolveTabGroupLabel(projectKey(project.path), groupLabels, basename(project.path)),
+    })),
+    sameProjectPath,
+  );
   const menuTrigger = useRef<HTMLElement | null>(null);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const groupLogos = useTabGroupLogos();
@@ -545,7 +591,8 @@ export function ProjectRail({
   useEffect(() => {
     if (!projectMenu.isOpen) return;
     const onScroll = () => closeProjectMenu();
-    const scrollParent = scrollRef.current ?? window;
+    // The column scrolls instead of the ledger in a short window; a capture listener on it sees both.
+    const scrollParent = scrollRef.current?.parentElement ?? scrollRef.current ?? window;
     scrollParent.addEventListener("scroll", onScroll, true);
     return () => scrollParent.removeEventListener("scroll", onScroll, true);
   }, [projectMenu.isOpen, closeProjectMenu]);
@@ -710,6 +757,8 @@ export function ProjectRail({
       locked={locked}
       sortableGroups={sortableGroups}
       muteStatuses={muteStatuses}
+      nameCollisions={nameCollisions}
+      focusHint={!navigator}
       cwd={cwd}
       busy={busy}
       statsEnabled={visible}
@@ -730,7 +779,12 @@ export function ProjectRail({
             }))
       }
       onToggleLock={() => projectMenu.toggleGroupLock(group.id)}
-      onOpenGroupMenu={(x, y) => projectMenu.openGroupMenu(group.id, x, y)}
+      onOpenGroupMenu={(x, y) =>
+        projectMenu.openGroupMenu(group.id, x, y, {
+          up: () => sortableGroups.moveBy(group.id, -1),
+          down: () => sortableGroups.moveBy(group.id, 1),
+        })
+      }
       groupLabels={groupLabels}
       groupColors={groupColors}
       groupCustomColors={groupCustomColors}
@@ -774,6 +828,8 @@ export function ProjectRail({
           label={t("Pinned")}
           items={pinnedProjects}
           muteStatuses={muteStatuses}
+          nameCollisions={nameCollisions}
+          focusHint={!navigator}
           cwd={cwd}
           busy={busy}
           statsEnabled={visible}
@@ -837,6 +893,8 @@ export function ProjectRail({
         onToggleCollapsed={() => rail.toggleCollapsed("projects")}
         items={groupedProjectSections.ungrouped}
         muteStatuses={muteStatuses}
+        nameCollisions={nameCollisions}
+        focusHint={!navigator}
         emptyLabel={
           sections.projects.length === 0 && projectGroups.length === 0
             ? "No projects yet"
@@ -933,7 +991,17 @@ export function ProjectRail({
         </div>
       ) : null}
 
-      <div className="@container/rail flex min-h-0 flex-1 flex-col">
+      {/* The fixed sections (tools, live summary, update and Development footers) can exceed a short window. Above
+          the short-height query the ledger is the only scroll owner and the footers stay pinned. At or below it the
+          ledger grows to its content and this column becomes the only scroll owner, so every bottom item stays
+          reachable without nested scrollbars. The popup keeps the ledger as its one scroll owner. */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col ${
+          navigator
+            ? "@container/rail"
+            : "[container:rail/size] overflow-y-auto overflow-x-hidden overscroll-none"
+        }`}
+      >
         {IS_MAC && !navigator ? brand : null}
         {settingsOpen && !navigator ? (
           <Button
@@ -1197,7 +1265,7 @@ export function ProjectRail({
                   lockOverscroll(el);
                   scrollRef.current = el;
                 }}
-                className="bycoda-project-ledger flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-none pb-2"
+                className={`bycoda-project-ledger flex flex-1 flex-col overflow-y-auto overscroll-none pb-2 ${navigator ? "min-h-0" : "min-h-32 [@container_rail_(max-height:640px)]:flex-none [@container_rail_(max-height:640px)]:overflow-y-visible"}`}
               >
                 {/* The popup has one scroll owner: its live summary scrolls with the list. */}
                 {navigator ? <div className="bycoda-rail-status">{liveStatus}</div> : null}
@@ -1266,6 +1334,8 @@ function ProjectSection({
   onToggleCollapsed,
   items,
   muteStatuses,
+  nameCollisions,
+  focusHint,
   emptyLabel,
   onAdd,
   remoteOnly,
@@ -1292,6 +1362,9 @@ function ProjectSection({
   onToggleCollapsed?: () => void;
   items: RecentProject[];
   muteStatuses: ReadonlyMap<string, string | null>;
+  nameCollisions: ReadonlySet<string>;
+  /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
+  focusHint: boolean;
   emptyLabel?: string;
   onAdd?: () => void;
   remoteOnly?: readonly RemoteOnlyProject[];
@@ -1346,6 +1419,8 @@ function ProjectSection({
             key={item.path}
             item={item}
             muteStatus={muteStatuses.get(pathKey(item.path)) ?? undefined}
+            nameCollisions={nameCollisions}
+            focusHint={focusHint}
             selected={!searchActive && sameProjectPath(item.path, cwd)}
             busy={isBusyPath(item.path, busy)}
             statsEnabled={statsEnabled}
@@ -1593,6 +1668,8 @@ function ProjectGroupSection({
   items,
   workspaceItems,
   muteStatuses,
+  nameCollisions,
+  focusHint,
   cwd,
   busy,
   statsEnabled,
@@ -1623,6 +1700,9 @@ function ProjectGroupSection({
   items: RecentProject[];
   workspaceItems: RecentProject[];
   muteStatuses: ReadonlyMap<string, string | null>;
+  nameCollisions: ReadonlySet<string>;
+  /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
+  focusHint: boolean;
   cwd: string;
   busy: Set<string>;
   statsEnabled: boolean;
@@ -1836,8 +1916,9 @@ function ProjectGroupSection({
             </span>
           ) : null}
         </div>
-        {/* The change count stays visible; the row actions take space only while the
-            row is hovered, focused or selected, so the group name keeps its width. */}
+        {/* The change count stays visible. The row actions keep their space at rest
+            (owner decision 2026-10-30, V2-009), so revealing them on hover or focus
+            never moves the name or the count. */}
         {gitSummary.dirty > 0 ? (
           <span
             className="my-auto shrink-0 tabular-nums text-ui-caption text-warning @max-[140px]/rail:hidden"
@@ -1846,10 +1927,7 @@ function ProjectGroupSection({
             {gitSummary.dirty}
           </span>
         ) : null}
-        <div
-          data-action-slot="collapse"
-          className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden"
-        >
+        <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
           {localPaths.length > 0 || (workspaceRoot && !locked) ? (
             <InlineAction
               label={t("{p0} git overview, {p1}", { p0: group.name, p1: gitTitle })}
@@ -1959,6 +2037,8 @@ function ProjectGroupSection({
                   key={item.path}
                   item={item}
                   muteStatus={muteStatuses.get(pathKey(item.path)) ?? undefined}
+                  nameCollisions={nameCollisions}
+                  focusHint={focusHint}
                   selected={!searchActive && sameProjectPath(item.path, cwd)}
                   busy={isBusyPath(item.path, busy)}
                   statsEnabled={statsEnabled && settledOpen}
@@ -2004,6 +2084,8 @@ function ProjectCard({
   groupCustomColors,
   groupLogos,
   groupMascots,
+  nameCollisions,
+  focusHint,
 }: {
   item: RecentProject;
   muteStatus?: string;
@@ -2025,6 +2107,10 @@ function ProjectCard({
   groupCustomColors: Record<string, string>;
   groupLogos: ReturnType<typeof useTabGroupLogos>;
   groupMascots: Record<string, string>;
+  /** Display names several rail projects share; such a row adds its parent folder as context. */
+  nameCollisions: ReadonlySet<string>;
+  /** Rows show their full detail in the shared keyboard-focus hint (not inside the Projects flyout). */
+  focusHint: boolean;
 }) {
   const t = useT();
   const multi = useProjectMultiSelect();
@@ -2037,10 +2123,8 @@ function ProjectCard({
   const color = resolveTabGroupColor(key, groupColors, groupCustomColors, seed);
   const diffEnabled = statsEnabled && Boolean(item.path) && item.path !== "~";
   const stats = useProjectDiffStats(item.path, diffEnabled, selected);
-  const files = stats?.files ?? 0;
-  const additions = stats?.additions ?? 0;
-  const deletions = stats?.deletions ?? 0;
-  const hasChanges = files > 0 || additions > 0 || deletions > 0;
+  // No read (or a failed one) is `null`, never "clean"; a clean tree shows nothing either.
+  const change = projectGitChange(stats);
   const remote = remoteProjectFor(item.path);
   const { machines } = useRemoteMachines(!!remote);
   const machine = remote
@@ -2058,20 +2142,39 @@ function ProjectCard({
     : !machine
       ? "Machine not connected on this computer"
       : indicator.label;
-  const cardTitle = projectCardTitle(
-    remote ? `${remote.cwd} on ${machine?.name ?? "another machine"} (${connection})` : item.path,
+  // The row's second label tells same-named projects apart: the machine for a remote project, the parent
+  // folder for a local project whose name another rail project shares. The stored name never changes.
+  const context =
+    machine?.name ??
+    (!remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "");
+  const changeSummary = change ? projectGitChangeSummary(change, t) : "";
+  // The tooltip shows on hover and, through the shared Button hint, on keyboard focus, so it is one line.
+  const cardTitle = identityLine([
     name,
-    stats,
-    busy,
-  );
-  const cardAriaLabel = projectCardAriaLabel(
-    machine ? `${name} on ${machine.name}` : name,
-    stats,
-    busy,
-  );
-  const labelClassName = machine
-    ? "min-w-0 max-w-[75%] shrink-0 truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden"
+    remote ? `${remote.cwd} on ${machine?.name ?? "another machine"} (${connection})` : item.path,
+    busy && t("Working"),
+    change && t("{p0} uncommitted", { p0: changeSummary }),
+    muteStatus,
+  ]);
+  const cardAriaLabel = [
+    machine ? `${name} on ${machine.name}` : context ? `${name} (${context})` : name,
+    busy ? "working" : "",
+    change ? projectGitChangeSpoken(change, t) : "",
+    muteStatus,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const labelClassName = context
+    ? "min-w-0 max-w-[75%] truncate text-ui-secondary font-medium leading-tight @max-[140px]/rail:hidden"
     : nameClassName;
+  // The wide "+a -d" needs room: the compact indicator replaces it once the row itself is narrower than
+  // this bucket (see projectRailRow.css). Fixed items sharing the row make the detail need more.
+  const detailBucket = change
+    ? projectGitDetailBucket(
+        change,
+        (remote && !showReconnect ? 1 : 0) + (muteStatus ? 1 : 0) + (showReconnect ? 1 : 0),
+      )
+    : null;
 
   return (
     <ActionHost
@@ -2081,6 +2184,7 @@ function ProjectCard({
       ground={railBackgroundColor(loadRailBackgrounds(key).header)}
       data-project-working={busy || undefined}
       data-multi-selected={multiSelected || undefined}
+      data-project-row=""
       className="reorder-item project-reorder-item group relative flex h-(--ui-control-height-compact) cursor-default touch-none items-stretch rounded-md px-2 text-content @max-[140px]/rail:px-0"
       onPointerDown={(event) => {
         if (multi?.active || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -2163,8 +2267,9 @@ function ProjectCard({
       <Button
         variant="item"
         type="button"
-        title={muteStatus ? `${cardTitle}\n${muteStatus}` : cardTitle}
-        aria-label={muteStatus ? `${cardAriaLabel}, ${muteStatus}` : cardAriaLabel}
+        title={cardTitle}
+        tooltip={focusHint ? cardTitle : undefined}
+        aria-label={cardAriaLabel}
         aria-current={selected ? "true" : undefined}
         className={`flex min-w-0 flex-1 cursor-default items-center gap-2 text-left ${multi?.active ? "" : showReconnect ? "pe-12" : "pe-6"} @max-[140px]/rail:justify-center @max-[140px]/rail:pe-0!`}
       >
@@ -2199,14 +2304,19 @@ function ProjectCard({
           </span>
         ) : null}
         <span className={labelClassName}>{name}</span>
-        {machine ? (
-          <span className="min-w-0 flex-1 truncate text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
-            {machine.name}
+        {context ? (
+          <span className="project-card-context min-w-0 flex-1 truncate text-ui-caption leading-tight text-(--ui-text-secondary) @max-[140px]/rail:hidden">
+            {context}
           </span>
         ) : null}
-        {hasChanges ? (
-          <span className="project-card-stats shrink-0 @max-[140px]/rail:hidden!">
-            <ProjectDiffStat additions={additions} deletions={deletions} />
+        {change ? (
+          <span
+            className="project-card-stats shrink-0 @max-[140px]/rail:hidden!"
+            data-project-git=""
+            data-git-bucket={detailBucket ?? undefined}
+            title={t("{p0} uncommitted", { p0: changeSummary })}
+          >
+            <ProjectGitChangeMark change={change} />
           </span>
         ) : null}
         {remote && !showReconnect ? (
@@ -2239,7 +2349,7 @@ function ProjectCard({
           </span>
         ) : null}
       </Button>
-      {hasChanges ? (
+      {change ? (
         <span
           aria-hidden
           className="pointer-events-none absolute right-1.5 top-1.5 hidden size-1.5 rounded-full bg-success @max-[140px]/rail:block"
@@ -2426,65 +2536,43 @@ function isBusyPath(path: string, busy: Set<string>): boolean {
   return false;
 }
 
-function ProjectDiffStat({ additions, deletions }: { additions: number; deletions: number }) {
-  const t = useT();
-  if (additions <= 0 && deletions <= 0) return null;
-
-  const label = [
-    additions > 0 ? `+${formatInteger(additions)}` : "",
-    deletions > 0 ? `-${formatInteger(deletions)}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-
+/**
+ * The row's Git change mark. Both forms are decorative: the row button's accessible name and tooltip carry
+ * the full files and lines. The wide form shows "+a -d" (only when line counts exist); the compact form is
+ * the shared Changes icon with the changed-file count, which is its own measure and never a line count.
+ * CSS switches between them by the row's width (projectRailRow.css).
+ */
+function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
   return (
-    <span
-      title={t("{p0} uncommitted", { p0: label })}
-      className="flex shrink-0 items-center gap-1 font-sans text-ui-micro font-semibold tabular-nums"
-    >
-      {additions > 0 ? <span className="text-diff-add-fg">+{formatInteger(additions)}</span> : null}
-      {deletions > 0 ? <span className="text-diff-del-fg">-{formatInteger(deletions)}</span> : null}
-    </span>
+    <>
+      {change.hasLines ? (
+        <span
+          data-git-detail=""
+          aria-hidden="true"
+          className="items-center gap-1 whitespace-nowrap font-sans text-ui-micro font-semibold tabular-nums"
+        >
+          {change.additions > 0 ? (
+            <span className="text-diff-add-fg">+{formatInteger(change.additions)}</span>
+          ) : null}
+          {change.deletions > 0 ? (
+            <span className="text-diff-del-fg">-{formatInteger(change.deletions)}</span>
+          ) : null}
+        </span>
+      ) : null}
+      <span
+        data-git-compact=""
+        aria-hidden="true"
+        className="items-center gap-0.5 text-(--ui-text-secondary)"
+      >
+        <FileDiff className="icon-xs shrink-0" strokeWidth={1.75} />
+        {change.files > 0 ? (
+          <span data-git-count="" className="text-ui-micro font-medium tabular-nums">
+            {projectGitCountLabel(change.files)}
+          </span>
+        ) : null}
+      </span>
+    </>
   );
-}
-
-function projectCardTitle(
-  path: string,
-  name: string,
-  stats: GitDiffStats | null,
-  busy: boolean,
-): string {
-  const parts = [name, path];
-  if (busy) parts.push("Working");
-  const files = stats?.files ?? 0;
-  const additions = stats?.additions ?? 0;
-  const deletions = stats?.deletions ?? 0;
-  if (files > 0 || additions > 0 || deletions > 0) {
-    parts.push(
-      [
-        files > 0 ? `${files} ${files === 1 ? "file" : "files"} changed` : "",
-        additions > 0 ? `+${formatInteger(additions)}` : "",
-        deletions > 0 ? `-${formatInteger(deletions)}` : "",
-      ]
-        .filter(Boolean)
-        .join(" "),
-    );
-  }
-  return parts.join("\n");
-}
-
-function projectCardAriaLabel(name: string, stats: GitDiffStats | null, busy: boolean): string {
-  const parts = [name];
-  if (busy) parts.push("working");
-  const files = stats?.files ?? 0;
-  const additions = stats?.additions ?? 0;
-  const deletions = stats?.deletions ?? 0;
-  if (files > 0) {
-    parts.push(`${files} ${files === 1 ? "file" : "files"} changed`);
-  }
-  if (additions > 0) parts.push(`+${formatInteger(additions)}`);
-  if (deletions > 0) parts.push(`-${formatInteger(deletions)}`);
-  return parts.join(", ");
 }
 
 /** Adds a folder on this computer, or one on a connected machine. */

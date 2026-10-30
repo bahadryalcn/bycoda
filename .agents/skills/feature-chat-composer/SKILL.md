@@ -5,6 +5,47 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Bounded question conservation, 2026-10-30
+
+QuestionForm reserves a bounded questionDrafts lineage in layout before accepting
+input. The shared store keeps at most64 lineages/4MiB total/1MiB per lineage, refuses
+new/oversize writes without evicting unfinished data, and restores rejected live
+DOM input to the previous retained value. Exact Unicode, whitespace, CRLF and
+empty values are data. Semantic question changes retain separate drafts, including
+behavior/header/dismiss-action and literal option metadata. Pending/unknown records
+cannot be ordinarily discarded; only authoritative question resolution retires
+them. Unscoped mounts have private bounded owners, no guessed cross-mount identity
+or restoration. Explicit profile Parent scope is shared across logical closures;
+undefined scope alone remains unassigned. Fixture and focused source evidence:
+`temp/verification/2026-10-30-decision-inputs/`; no installed/crash-recovery proof.
+
+## V2 2026-10-30: reading-mode composer and message actions (uncommitted)
+
+Source delivered in the shared checkout; no commit. Fixture evidence only, no native or installed acceptance.
+
+- V2-001 reading mode: the transcript follow owner reports reading-history intent
+  (`useTranscriptFollow.ts` `onReadingChange`, latched from `stickToBottom`; content growth, resize and the
+  compaction clamp do not clear it; 160 px entry gate in `composerReading.ts`). `useComposerEngagement.ts`
+  treats focus, press, click, drag and IME inside the dock and its portalled menus as engagement; a departure
+  parked in an outside overlay or another window is re-checked every 250 ms. `SessionPane.tsx` keeps full
+  layout while a question, earlier-turn edit or Btw sheet is open. `Composer.tsx` gets `reading`
+  (`data-composer-reading`, textarea `rows` 1, workspace row hidden unless error/pending/removed worktree);
+  the same textarea and draft owner remain mounted. Height cap in `model/composerResize.ts`: 20% of window
+  height clamped to 68–132 px, internal scroll beyond. Motion: `useComposerReadingMotion` (180 ms, none under
+  reduced motion). Proposal awaiting owner confirmation: the workspace row (checkout/branch/project/tip) is
+  hidden while reading; one-line change in `chat-controls.css` restores it.
+- V2-002/010 message actions: `TranscriptMessageActions.tsx` renders Copy, Save, Handoff, Second opinion and
+  Turn metrics as one icon-only shared `FloatingButtonGroup` ("Message actions" toolbar). `useCopyFeedback`
+  per action: single flight, success only after the clipboard/Notes write resolves, failure keeps a
+  "Retry copy"/"Retry save" danger icon plus an inline `role=alert` reason. `CopyTurnButton` sound now plays
+  after the copy resolves. Adapter (`arc/floating-button-group`) gained typed `tone`, `tooltip` and
+  `render(renderTrigger)` for popup triggers.
+- Checks: browser suite `composer-compact` (registered in `tests/browser/suites.json`, 15 passed through
+  `browser-tests.mjs`); unit tests `composerReading`, `useComposerEngagement`, `useComposerDockMotion`,
+  `composerResize`, `AgentTranscriptReading`, `TranscriptMessageActions`, `AgentTranscript.copy`.
+  Screenshots: `temp/verification/v2-001/`, `temp/verification/v2-002/`.
+- Not verified: real IME session, OS file drop, WebKit/native rendering, density variants.
+
 ## Owned Parent input admission, 2026-10-29
 
 `beginParentInputClosure` gates the actual QuestionForm/cache, SessionPane,

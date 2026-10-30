@@ -178,6 +178,51 @@ describe("JsonRpcClient", () => {
     }
   });
 
+  it.each(["resolve", "reject"] as const)(
+    "exposes the original %s write beyond its bounded response timeout",
+    async (settlement) => {
+      vi.useFakeTimers();
+      let finish!: () => void;
+      let fail!: (error: Error) => void;
+      const actual = new Promise<void>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      let retained: Promise<void> | undefined;
+      let drained = false;
+      const client = new JsonRpcClient("retained-reply");
+      transport.onWrite = () => actual;
+      try {
+        const waiter = client
+          .respond(7, { outcome: "cancelled" }, (write) => {
+            retained = write;
+            void write.then(
+              () => {
+                drained = true;
+              },
+              () => {
+                drained = true;
+              },
+            );
+          })
+          .catch((error: Error) => error);
+        expect(retained).toBeDefined();
+        await vi.advanceTimersByTimeAsync(16_000);
+        expect(await waiter).toBeInstanceOf(Error);
+        expect(drained).toBe(false);
+        if (settlement === "resolve") finish();
+        else fail(new Error("original write failed"));
+        await retained!.catch(() => {});
+        expect(drained).toBe(true);
+      } finally {
+        finish();
+        await actual.catch(() => {});
+        client.close();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("bounds a blocked write instead of outliving the request deadline", async () => {
     vi.useFakeTimers();
     try {

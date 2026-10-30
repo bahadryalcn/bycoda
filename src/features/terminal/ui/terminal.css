@@ -57,6 +57,9 @@
   flex-direction: column;
   flex: 0 0 auto;
   min-inline-size: 0;
+  /* The list width is an explicit, user-resizable size, so its rows adapt to it rather
+     than to the window (container query below). */
+  container: terminal-list / inline-size;
   border-inline-end: 1px solid var(--terminal-border);
   background: var(--ui-surface-panel);
 }
@@ -115,6 +118,26 @@
 .terminal-row-actions {
   display: flex;
   flex-shrink: 0;
+}
+/* In a narrow list the name needs the width more than two idle icons do. The actions
+   take no space at rest and appear on hover, keyboard focus and for the active terminal;
+   touch always shows them. Width is shared by container, not by window. */
+@container terminal-list (max-width: 10rem) {
+  .terminal-row-actions {
+    max-inline-size: 0;
+    overflow: hidden;
+  }
+  .terminal-list-row:is(:hover, :focus-within, [data-selected])
+    .terminal-row-actions {
+    max-inline-size: none;
+    overflow: visible;
+  }
+  @media (hover: none), (pointer: coarse) {
+    .terminal-row-actions {
+      max-inline-size: none;
+      overflow: visible;
+    }
+  }
 }
 .terminal-canvas {
   display: grid;

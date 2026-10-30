@@ -2,9 +2,9 @@ import { useEffect, useRef, type KeyboardEvent, type MouseEvent } from "react";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { MoreHorizontal, Server, Star, Terminal } from "../../../shared/ui/icons";
+import { Server, Star, Terminal } from "../../../shared/ui/icons";
 import type { ServerRecord } from "../model/serverInventory";
 import type { ServersLayout } from "./serversLayout";
 import { MachineStatus } from "./ServerStatus";
@@ -260,14 +260,12 @@ export function ServerItem({
               {t("Connect")}
             </Button>
           ) : null}
-          <InlineAction
+          <InlineMoreAction
             reveal="always"
             disabled={busy}
             label={t("Actions for {p0}", { p0: server.name })}
-            onClick={(event) => onMenu(event.currentTarget)}
-          >
-            <MoreHorizontal aria-hidden className="icon-sm" />
-          </InlineAction>
+            onOpen={onMenu}
+          />
         </div>
       </ActionHost>
     </li>

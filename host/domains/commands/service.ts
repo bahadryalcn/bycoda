@@ -5,6 +5,7 @@ import {
   type SessionCommand,
 } from "../../../src/shared/model/host-contracts/session-commands";
 import { assertDomainAuthority, type HostDomainContext } from "../context";
+import { isApprovalOccurrenceId } from "../../../src/shared/model/approvalOccurrence";
 
 type Contextual = Extract<SessionCommand, { type: "contextual" }>;
 type DesktopCommand = Extract<SessionCommand, { type: "cancel" | "approve" | "answer" }>;
@@ -108,6 +109,10 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
       // Preserve semantic checks on even ignored HTTP fields (for example an
       // invalid noteCard attached to rewind), before using the typed projection.
       ports.execution.validateCommand(raw);
+      if (command.type === "approve" && !isApprovalOccurrenceId(command.approvalOccurrenceId))
+        throw new Error(
+          "Approval request identity is missing or invalid. Refresh this request before responding.",
+        );
       const sessionId = command.sessionId ?? "";
       const accepted = () => ports.repository.receiptStatus(command.commandId);
 
@@ -202,6 +207,14 @@ export function createCommandService<View>(ports: CommandServicePorts<View>) {
         throw new Error("Clear the queued messages before rewinding the conversation.");
 
       if (command.type === "cancel" || command.type === "approve" || command.type === "answer") {
+        if (command.type === "approve" && (await accepted())) {
+          // A move to desktop execution cannot bypass the original Host receipt's
+          // exact command signature or enqueue the same identity as a new effect.
+          await assertDomainAuthority(context);
+          const receipt = await ports.execution.command(command);
+          await assertDomainAuthority(context);
+          return receipt;
+        }
         const watch = await ports.nativeProjection.watch(sessionId);
         if (watch?.running) {
           if (!ports.nativeProjection.alive())

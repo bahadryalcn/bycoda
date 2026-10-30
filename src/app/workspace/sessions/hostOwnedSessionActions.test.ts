@@ -5,6 +5,11 @@ import { expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { registerRemoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { useApprovalActions } from "./useApprovalActions";
+import {
+  approvalRequestDispatchStarted,
+  captureApprovalRequest,
+} from "../../../features/sessions/model/approvalIntents";
+import { createApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import { useSessionDraftActions, type SessionDraftActionDeps } from "./useSessionDraftActions";
 import { usePlanActions } from "./usePlanActions";
 
@@ -19,11 +24,15 @@ const state = vi.hoisted(() => ({
   setSessions: vi.fn(),
 }));
 vi.mock("../../../features/sessions/model/sessionsStore", () => state);
-vi.mock("../../../integrations/harness", () => ({
-  respondHarnessApproval: native.approve,
-  respondHarnessQuestion: native.answer,
-  keepHarnessQuestionOpen: native.keepOpen,
-}));
+vi.mock("../../../integrations/harness", () => {
+  const adapter = { respondApproval: native.approve };
+  return {
+    getHarness: () => adapter,
+    respondHarnessApproval: native.approve,
+    respondHarnessQuestion: native.answer,
+    keepHarnessQuestionOpen: native.keepOpen,
+  };
+});
 vi.mock("../../../features/orchestration/model/orchestration", () => ({
   orchestrator: { forSession: () => undefined },
 }));
@@ -49,8 +58,17 @@ it("routes local Host approvals, questions, drafts and plan builds through owner
     requestId: 7,
     questions: [],
   } as unknown as Session["pendingQuestion"];
+  session.blocks = [
+    {
+      id: "actual-approval",
+      role: "approval",
+      text: "Original Host approval",
+      approval: { requestId: 9, occurrenceId: createApprovalOccurrenceId() },
+    },
+  ];
   state.sessionsRef.current = [session];
   const owner = {
+    approvalOccurrenceSupported: true,
     approve: vi.fn(),
     answer: vi.fn(),
     saveDraft: vi.fn(() => true),
@@ -76,18 +94,38 @@ it("routes local Host approvals, questions, drafts and plan builds through owner
   }
   try {
     await act(async () => root.render(createElement(Fixture)));
-    approval.onApproval(session.id, 9, "allow");
+    const original = captureApprovalRequest(session, 9, session.blocks[0]);
+    expect(original).toBeDefined();
+    approval.onApproval(session.id, 9, "allow", original);
     approval.onQuestionReply(session.id, 7, { answers: [] } as never);
     approval.onQuestionInteraction(session.id, 7);
     expect(draft.onSaveDraft(session.id, "retain draft", [])).toBe(true);
     expect(draft.onRemoveDraft(session.id, "draft")).toBe(true);
     plan.onBuildPlan(session.id, "plan");
-    expect(owner.approve).toHaveBeenCalledWith(9, "allow");
+    expect(approvalRequestDispatchStarted(original)).toBe(true);
+    expect(owner.approve).toHaveBeenCalledWith(
+      9,
+      "allow",
+      session.blocks[0].approval!.occurrenceId,
+    );
     expect(owner.answer).toHaveBeenCalledWith(7, { answers: [] });
     expect(owner.saveDraft).toHaveBeenCalledWith("retain draft", []);
     expect(owner.buildPlan).toHaveBeenCalledWith("plan", undefined);
+    session.blocks = [
+      ...session.blocks,
+      {
+        id: "actual-next-approval",
+        role: "approval",
+        text: "Next original Host request",
+        approval: { requestId: 10, occurrenceId: createApprovalOccurrenceId() },
+      },
+    ];
+    const next = captureApprovalRequest(session, 10, session.blocks[1]);
+    expect(next).toBeDefined();
     detach();
-    approval.onApproval(session.id, 10, "deny");
+    expect(approval.onApproval(session.id, 10, "deny", next)).toBe(false);
+    expect(approvalRequestDispatchStarted(next)).toBe(false);
+    expect(owner.approve).toHaveBeenCalledTimes(1);
     expect(() => approval.onQuestionReply(session.id, 7, { answers: [] } as never)).toThrow(
       "unavailable",
     );

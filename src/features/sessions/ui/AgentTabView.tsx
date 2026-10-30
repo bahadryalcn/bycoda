@@ -78,6 +78,7 @@ function LocalAgentTabView({
     null,
   );
   const [navigatorReady, setNavigatorReady] = useState(false);
+  const [findTriggerContainer, setFindTriggerContainer] = useState<HTMLSpanElement | null>(null);
   const onNavigateReady = useCallback(
     (navigate: ((blockId: string | null, query?: string) => boolean) | null) => {
       navigateBlockRef.current = navigate;
@@ -177,6 +178,7 @@ function LocalAgentTabView({
           visible={visible}
           focused={focused}
           onNavigate={navigateBlock}
+          triggerContainer={findTriggerContainer}
         />
       </div>
       <footer className="flex shrink-0 items-center gap-1.5 border-t border-(--ui-tone-neutral-border) px-3 py-1.5 font-sans text-ui-micro text-(--ui-text-secondary)">
@@ -185,6 +187,7 @@ function LocalAgentTabView({
           {model} · {HARNESS_TITLE[session.harness]}
         </span>
         <span className="ml-auto shrink-0">{t("Run by the orchestrator · read-only")}</span>
+        <span ref={setFindTriggerContainer} className="shrink-0" />
       </footer>
     </div>
   );

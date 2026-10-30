@@ -140,6 +140,25 @@ function oklchToLinear({ lightness, chroma, hue }: Oklch): Channels {
   ];
 }
 
+/** `color-mix(in oklab, toward amount, from)`: the CSS surface formulas, mirrored for canvas derivation. */
+export function mixInOklab(from: string, toward: string, amount: number): string {
+  const a = toOklch(from);
+  const b = toOklch(toward);
+  const lab = (color: Oklch) => [
+    color.lightness,
+    color.chroma * Math.cos(color.hue),
+    color.chroma * Math.sin(color.hue),
+  ];
+  const [l1, a1, b1] = lab(a);
+  const [l2, a2, b2] = lab(b);
+  const lightness = l1 + (l2 - l1) * amount;
+  const x = a1 + (a2 - a1) * amount;
+  const y = b1 + (b2 - b1) * amount;
+  return format(
+    oklchToLinear({ lightness, chroma: Math.hypot(x, y), hue: Math.atan2(y, x) }).map(fromLinear) as Channels,
+  );
+}
+
 /** The colour at this lightness and hue with as much of `chroma` as the sRGB gamut holds. */
 function renderOklch(lightness: number, chroma: number, hue: number): string {
   let current = chroma;

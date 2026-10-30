@@ -1,4 +1,8 @@
 import {
+  createApprovalOccurrenceId,
+  isApprovalOccurrenceId,
+} from "../../../../shared/model/approvalOccurrence";
+import {
   runNativeOutputWork,
   nativeOutputSink,
   captureNativeOutputWork,
@@ -117,6 +121,7 @@ import type {
 type ApprovalOutcome = ApprovalDecision | "cancelled";
 
 type PendingApproval = {
+  occurrenceId: string;
   requestId: string;
   input: Record<string, unknown>;
   resolve: (decision: ApprovalOutcome) => void;
@@ -321,10 +326,19 @@ export function respondClaudeApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ): void {
   const live = liveByThread.get(sessionId);
   const pending = live?.approvals.get(requestId);
-  if (!pending) return;
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
   pending.resolve(decision);
 }
 
@@ -1418,14 +1432,20 @@ async function handleControlRequest(
       emitNative({
         type: "approval.requested",
         requestId: uiId,
+        occurrenceId: pending.occurrenceId,
         title: toolTitle(toolName, input),
         kind: toolKindFromName(toolName),
         callId: control.toolUseId,
         preview: previewFromTool(toolName, input),
       });
       const decision = await pending;
-      emitNative({ type: "approval.resolved", requestId: uiId, decision });
-      if (decision === "cancelled") return;
+      emitNative({
+        type: "approval.resolved",
+        requestId: uiId,
+        occurrenceId: pending.occurrenceId,
+        decision,
+      });
+      if (decision === "cancelled" || !Array.from(liveByThread.values()).includes(live)) return;
       await nativeOutputSink(outputWork, writeJson)(
         sessionId,
         buildControlResponse(control.requestId, toClaudePermissionResult(decision, input)),
@@ -1462,12 +1482,14 @@ function waitApproval(
   uiId: number,
   requestId: string,
   input: Record<string, unknown>,
-): Promise<ApprovalOutcome> {
-  return new Promise<ApprovalOutcome>((resolve) => {
-    live.approvals.set(uiId, { requestId, input, resolve });
+): Promise<ApprovalOutcome> & { occurrenceId: string } {
+  const occurrenceId = createApprovalOccurrenceId();
+  const promise = new Promise<ApprovalOutcome>((resolve) => {
+    live.approvals.set(uiId, { requestId, input, occurrenceId, resolve });
   }).finally(() => {
-    live.approvals.delete(uiId);
+    if (live.approvals.get(uiId)?.occurrenceId === occurrenceId) live.approvals.delete(uiId);
   });
+  return Object.assign(promise, { occurrenceId });
 }
 
 function waitQuestion(

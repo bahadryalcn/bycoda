@@ -1,3 +1,5 @@
+import { isApprovalOccurrenceId } from "../../../../shared/model/approvalOccurrence";
+import { createPendingApproval, cancelPendingApprovals, observePendingApprovalWrite, ownsPendingApproval, rejectOverlappingApproval, releasePendingApproval, type PendingApproval, type ApprovalActualWriteObserver } from "../pendingApproval";
 import {
   nativeOutputSink,
   retainNativeOutputEventOrigin,
@@ -28,7 +30,10 @@ type Live = {
   previousMode?: string;
   approvals: Map<
     number,
-    { options: { optionId: string; kind: string }[]; work: NativeOutputWork | null }
+    PendingApproval & {
+      options: { optionId: string; kind: string }[];
+      work: NativeOutputWork | null;
+    }
   >;
 };
 const lives = new Map<string, Live>();
@@ -36,17 +41,30 @@ const resumes = new Map<string, { providerId: string; cwd: string }>();
 const starting = new Set<string>();
 const cancelled = new Set<string>();
 
-/** Map entries own only waiting decisions. Responding writes remove their entry
- * first and retain their own actual promise through exit or cancellation. */
-function retireWaitingApprovals(live: Live, requestId?: number): void {
-  if (requestId !== undefined) {
-    const pending = live.approvals.get(requestId);
-    live.approvals.delete(requestId);
-    pending?.work?.fail("generic-acp-approval-retired");
-    return;
-  }
-  for (const pending of live.approvals.values()) pending.work?.fail("generic-acp-approval-retired");
-  live.approvals.clear();
+function retireWaitingApprovals(live: Live): void {
+  cancelPendingApprovals(live.approvals);
+}
+
+function servePendingApproval(sessionId: string, live: Live, id: number, pending: Live["approvals"] extends Map<number, infer P> ? P : never): void {
+  const waiter = nativeOutputSink(pending.work, async () => {
+    try {
+      const decision = await pending.decision;
+      if (lives.get(sessionId) !== live) return;
+      await nativeOutputSink(pending.work, () => {
+        if (lives.get(sessionId) !== live) return Promise.resolve();
+        const option = ownsPendingApproval(live.approvals, id, pending) && decision !== "cancelled"
+          ? pending.options.find(entry => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"))
+          : undefined;
+        return live.client.respond(id, {
+          outcome: option ? { outcome: "selected", optionId: option.optionId } : { outcome: "cancelled" },
+        }, observePendingApprovalWrite(live.approvals, id, pending));
+      })();
+      pending.report(decision);
+    } finally {
+      releasePendingApproval(live.approvals, id, pending);
+    }
+  })();
+  void trackNativeOutputWork(waiter, pending.work).catch(() => undefined);
 }
 
 async function stop(sessionId: string): Promise<void> {
@@ -69,16 +87,7 @@ async function cancel(sessionId: string): Promise<void> {
     return;
   }
   live.cancelled = true;
-  for (const [id, pending] of live.approvals) {
-    live.approvals.delete(id);
-    await trackNativeOutputWork(
-      nativeOutputSink(pending.work, () =>
-        live.client.respond(id, { outcome: { outcome: "cancelled" } }),
-      )(),
-      pending.work,
-    );
-  }
-  live.approvals.clear();
+  retireWaitingApprovals(live);
   await live.client.notify("session/cancel", { sessionId: live.providerId }).catch(() => undefined);
   // A noncompliant agent must not leave the turn waiting forever.
   await stop(sessionId);
@@ -157,6 +166,12 @@ export async function sendGenericAcpTurn(
           });
           return;
         }
+        if (state.approvals.has(id)) {
+          const duplicateWork = captureNativeOutputWork({ additionalInput: true });
+          const overlap = rejectOverlappingApproval(state.approvals, id, nativeOutputSink(duplicateWork, (onActualWrite: ApprovalActualWriteObserver) => client.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite)));
+          if (overlap) await trackNativeOutputWork(overlap, duplicateWork);
+          return;
+        }
         if (state.cancelled || state.replaying) {
           await client.respond(id, { outcome: { outcome: "cancelled" } });
           return;
@@ -178,14 +193,18 @@ export async function sendGenericAcpTurn(
           });
           return;
         }
-        retireWaitingApprovals(state, id);
-        state.approvals.set(id, {
+        const work = captureNativeOutputWork({ additionalInput: true });
+        const pending = Object.assign(createPendingApproval((occurrenceId, decision) => nativeOutputSink(work, () => state.onEvent({type: "approval.resolved", requestId: id, occurrenceId, decision}))()), {
           options: permission.options ?? [],
-          work: captureNativeOutputWork({ additionalInput: true }),
+          work,
         });
+        const { occurrenceId } = pending;
+        state.approvals.set(id, pending);
+        servePendingApproval(input.sessionId, state, id, pending);
         state.onEvent({
           type: "approval.requested",
           requestId: id,
+          occurrenceId,
           title: permission.toolCall?.title ?? "ACP permission",
           callId: permission.toolCall?.toolCallId,
         });
@@ -371,26 +390,19 @@ export const genericAcpAdapter: HarnessAdapter = {
   bindSession: (id, providerId, cwd) => {
     resumes.set(id, { providerId, cwd });
   },
-  respondApproval: (sessionId, id, decision: ApprovalDecision) => {
+  respondApproval: (sessionId, id, decision: ApprovalDecision, approvalOccurrenceId?: string) => {
     const live = lives.get(sessionId);
     const pending = live?.approvals.get(id);
-    if (!live || !pending) return;
-    live.approvals.delete(id);
-    const option = pending.options.find(
-      (entry) => entry.kind === (decision === "allow" ? "allow_once" : "reject_once"),
-    );
-    const actual = nativeOutputSink(pending.work, () =>
-      live.client.respond(id, {
-        outcome: option
-          ? { outcome: "selected", optionId: option.optionId }
-          : { outcome: "cancelled" },
-      }),
-    )().then(
-      nativeOutputSink(pending.work, () =>
-        live.onEvent({ type: "approval.resolved", requestId: id, decision }),
-      ),
-    );
-    void trackNativeOutputWork(actual, pending.work).catch(() => undefined);
+    if (
+      !live ||
+      live.cancelled ||
+      !pending ||
+      pending.invalidated ||
+      !isApprovalOccurrenceId(approvalOccurrenceId) ||
+      pending.occurrenceId !== approvalOccurrenceId
+    )
+      return;
+    pending(decision);
   },
   refreshCatalog: refreshGenericAcpCatalog,
 };

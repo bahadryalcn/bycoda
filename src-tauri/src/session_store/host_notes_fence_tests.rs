@@ -286,3 +286,259 @@ fn bounded_process_keeper_refuses_before_close_without_evicting_original_owners(
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[cfg(windows)]
+mod actual_node {
+    use super::{CapturedHostNotesStore, Fixture, HostNotesFenceOwner};
+    use serde_json::{json, Value};
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::os::windows::process::CommandExt;
+    use std::path::{Path, PathBuf};
+    use std::process::{Child, ChildStdin, Command, Stdio};
+    use std::sync::{mpsc, Arc, Mutex};
+    use std::thread::JoinHandle;
+    use std::time::{Duration, Instant};
+
+    const PEER: &str = include_str!("../../../host/fixtures/host-notes-native-fence.mjs");
+
+    struct Peer {
+        child: Child,
+        input: Option<ChildStdin>,
+        events: mpsc::Receiver<Result<Value, String>>,
+        errors: Arc<Mutex<String>>,
+        readers: Vec<JoinHandle<()>>,
+    }
+
+    impl Peer {
+        fn spawn(
+            node: &Path,
+            repository: &Path,
+            database: &Path,
+            addon: &Path,
+            script: &Path,
+        ) -> Self {
+            std::fs::write(script, PEER).unwrap();
+            let mut child = Command::new(node)
+                .arg("--experimental-transform-types")
+                .arg(script)
+                .arg(repository)
+                .arg(database)
+                .arg(addon)
+                .creation_flags(0x08000000)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("the explicit owned Node runtime must start");
+            let input = child.stdin.take();
+            let output = child.stdout.take().unwrap();
+            let mut error_output = child.stderr.take().unwrap();
+            let (send, events) = mpsc::channel();
+            let output_reader = std::thread::spawn(move || {
+                for line in BufReader::new(output).lines() {
+                    let value = line.map_err(|error| error.to_string()).and_then(|line| {
+                        if line.len() > 16384 {
+                            return Err("owned Node peer emitted an oversized event".into());
+                        }
+                        serde_json::from_str(&line).map_err(|error| error.to_string())
+                    });
+                    if send.send(value).is_err() {
+                        return;
+                    }
+                }
+            });
+            let errors = Arc::new(Mutex::new(String::new()));
+            let captured = Arc::clone(&errors);
+            let error_reader = std::thread::spawn(move || {
+                let mut bytes = [0_u8; 2048];
+                loop {
+                    let Ok(length) = error_output.read(&mut bytes) else {
+                        return;
+                    };
+                    if length == 0 {
+                        return;
+                    }
+                    let mut text = captured.lock().unwrap();
+                    text.push_str(&String::from_utf8_lossy(&bytes[..length]));
+                    if text.len() > 32768 {
+                        let mut start = text.len() - 32768;
+                        while !text.is_char_boundary(start) {
+                            start += 1;
+                        }
+                        text.drain(..start);
+                    }
+                }
+            });
+            Self {
+                child,
+                input,
+                events,
+                errors,
+                readers: vec![output_reader, error_reader],
+            }
+        }
+
+        fn command(&mut self, command: &str) {
+            let input = self.input.as_mut().unwrap();
+            writeln!(input, "{}", json!({ "command": command })).unwrap();
+            input.flush().unwrap();
+        }
+
+        fn event(&self, name: &str) -> Value {
+            let received = self
+                .events
+                .recv_timeout(Duration::from_secs(15))
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "owned Node peer did not emit {name}: {error}; stderr: {}",
+                        self.errors.lock().unwrap()
+                    )
+                })
+                .unwrap_or_else(|error| panic!("owned Node peer protocol: {error}"));
+            assert_eq!(
+                received["event"],
+                name,
+                "unexpected Node event {received}; stderr: {}",
+                self.errors.lock().unwrap()
+            );
+            received
+        }
+
+        fn finish(&mut self) {
+            self.input.take();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                if let Some(status) = self.child.try_wait().unwrap() {
+                    assert!(
+                        status.success(),
+                        "owned Node peer failed: {status}; {}",
+                        self.errors.lock().unwrap()
+                    );
+                    break;
+                }
+                assert!(Instant::now() < deadline, "owned Node peer did not exit");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            for reader in self.readers.drain(..) {
+                reader.join().unwrap();
+            }
+        }
+    }
+
+    impl Drop for Peer {
+        fn drop(&mut self) {
+            self.input.take();
+            if self.child.try_wait().ok().flatten().is_none() {
+                // Only this test's uniquely spawned child, never a process search.
+                let _ = self.child.kill();
+            }
+            let _ = self.child.wait();
+            for reader in self.readers.drain(..) {
+                let _ = reader.join();
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires explicit Node runtime and built physical admission addon"]
+    fn real_host_sql_jobs_drain_across_the_original_native_fence() {
+        let node = PathBuf::from(
+            std::env::var_os("BYCODA_NATIVE_HOST_NOTES_NODE")
+                .expect("set the explicit isolated Node runtime"),
+        );
+        let addon = PathBuf::from(
+            std::env::var_os("BYCODA_NATIVE_HOST_NOTES_ADDON")
+                .expect("set the explicit trusted built admission addon"),
+        );
+        assert!(node.is_absolute() && node.is_file());
+        assert!(addon.is_absolute() && addon.is_file());
+        let repository = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+        let fixture = Fixture::new();
+        let database = fixture.database("sessions.db");
+        let store = fixture.store("sessions.db");
+        let mut peer = Peer::spawn(
+            &node,
+            repository,
+            &database,
+            &addon,
+            &fixture.0.join("node-host-fence-peer.mjs"),
+        );
+        let accepted = peer.event("accepted");
+        assert_eq!(accepted["originals"], 2);
+
+        let owner =
+            HostNotesFenceOwner::new(vec![CapturedHostNotesStore::capture(&store).unwrap()]);
+        let generation = owner.generation();
+        assert!(!owner.cooperative_only(generation).unwrap());
+        owner.close_ingress(generation).unwrap();
+        assert!(process_owns_original(&owner));
+        assert!(!owner.try_drained(generation).unwrap());
+        assert!(!owner.retire_if_drained(generation).unwrap());
+
+        peer.command("try-new");
+        let rejected = peer.event("new-rejected");
+        assert_eq!(rejected["code"], "HOST_NOTES_ADMISSION_BUSY");
+        peer.command("commit");
+        let committed = peer.event("committed");
+        assert_eq!(committed["first"]["body"], "first");
+        assert_eq!(committed["second"]["body"], "second");
+        assert_eq!(committed["newAbsent"], true);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !owner.try_drained(generation).unwrap() {
+            assert!(
+                Instant::now() < deadline,
+                "original Host SQL jobs never retired"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        peer.command("try-new");
+        let still_closed = peer.event("new-rejected");
+        assert_eq!(still_closed["code"], "HOST_NOTES_ADMISSION_BUSY");
+        assert!(process_owns_original(&owner));
+        // Reads and actual Native SQL access remain independent of Host writer
+        // closure. No SQL/owner mutex is held while the peer or kernel drains.
+        peer.command("read");
+        let read = peer.event("read");
+        assert_eq!(read["body"], "second");
+        {
+            let connection = store.lock_conn().unwrap();
+            for (id, expected) in [("original", "first"), ("second", "second")] {
+                let body: String = connection
+                    .query_row("SELECT body FROM notes WHERE id = ?1", [id], |row| {
+                        row.get(0)
+                    })
+                    .unwrap();
+                assert_eq!(body, expected);
+            }
+            let refused: i64 = connection
+                .query_row("SELECT COUNT(*) FROM notes WHERE id = 'new'", [], |row| {
+                    row.get(0)
+                })
+                .unwrap();
+            assert_eq!(refused, 0);
+        }
+        assert!(owner.retire_if_drained(generation).unwrap());
+        assert!(!process_owns_original(&owner));
+        peer.command("reopened");
+        assert_eq!(peer.event("reopened")["body"], "after native");
+        let body: String = store
+            .lock_conn()
+            .unwrap()
+            .query_row("SELECT body FROM notes WHERE id = 'after'", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(body, "after native");
+        peer.command("exit");
+        peer.event("closed");
+        peer.finish();
+    }
+
+    fn process_owns_original(owner: &Arc<HostNotesFenceOwner>) -> bool {
+        super::super::process_owners()
+            .unwrap()
+            .owners
+            .get(&owner.generation())
+            .is_some_and(|original| Arc::ptr_eq(original, owner))
+    }
+}

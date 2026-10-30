@@ -131,6 +131,7 @@ import { TransientNotice } from "../../shared/ui/TransientNotice";
 import "./sessionList.css";
 import type { OpenFileFn } from "../../features/search/model/search";
 import { sessionDisplayTitle } from "../../features/sessions/model/session";
+import { MiddleTruncate } from "../../shared/ui/MiddleTruncate";
 import { ParticleText } from "../../shared/ui/ParticleText";
 import { nextUnseenFinishedSessions } from "../../features/sessions/model/sessionDone";
 import { orchestrationTaskLabel } from "../../features/orchestration/model/orchestrationSummary";
@@ -5500,7 +5501,7 @@ const SessionCard = memo(function SessionCard({
           id={detailId}
           className="pointer-events-none overflow-hidden p-2.5"
         >
-          <p className="line-clamp-2 text-ui-secondary font-medium leading-snug text-content">
+          <p className="line-clamp-2 break-words text-ui-secondary font-medium leading-snug text-content">
             {title}
           </p>
           <dl className="mt-1.5 flex flex-col gap-1 text-ui-caption text-(--ui-text-secondary)">
@@ -5522,8 +5523,11 @@ const SessionCard = memo(function SessionCard({
             ) : null}
             <div className="flex min-w-0 items-center gap-1.5">
               <dt className="sr-only">{t("Project")}</dt>
-              <dd className="min-w-0 truncate" dir="auto">
-                {session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd}
+              {/* A long path keeps its last folder; the middle collapses. */}
+              <dd className="min-w-0 flex-1 overflow-hidden" dir="auto">
+                <MiddleTruncate mode="path">
+                  {session.worktreeCwd && worktree ? session.worktreeCwd : session.cwd}
+                </MiddleTruncate>
               </dd>
             </div>
             <div className="flex min-w-0 items-center justify-between gap-2">

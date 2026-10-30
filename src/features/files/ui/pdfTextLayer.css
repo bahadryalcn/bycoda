@@ -43,9 +43,16 @@
   color: transparent;
 }
 
+/* System colours: the opaque Highlight covers the canvas glyphs and the layer's own text is
+   shown in HighlightText, so the selected run is the system pair rather than black on Highlight. */
 @media (forced-colors: active) {
+  .pdf-text-layer {
+    mix-blend-mode: normal;
+  }
+
   .pdf-text-layer ::selection {
     background: Highlight;
+    color: HighlightText;
   }
 }
 

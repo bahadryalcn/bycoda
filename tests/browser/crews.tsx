@@ -133,6 +133,9 @@ if (params.has("defaults")) {
   definitions = [defaults.definition];
   agents = defaults.agents;
 }
+// Realistic recent times for the work list (fixture data; ordering is unchanged).
+const baseTime = Date.now() - 3 * 60 * 60_000;
+const at = (minutes: number) => baseTime + minutes * 60_000;
 let starts = 0;
 let groupFailure = false;
 let copyFailure = false;
@@ -171,12 +174,12 @@ let runs = [
         text: params.has("blocked")
           ? "Choose a fallback image provider before continuing. The current account has no remaining image generation capacity, so the owner needs to confirm the next provider and budget."
           : "Need image generation for the hero",
-        createdAt: 1,
+        createdAt: at(1),
       },
     ],
     notifications: {},
-    createdAt: 1,
-    updatedAt: 2,
+    createdAt: at(1),
+    updatedAt: at(2),
     tasks: [
       {
         id: "task",
@@ -215,8 +218,8 @@ let runs = [
     assignments: [],
     messages: [],
     notifications: {},
-    createdAt: 0,
-    updatedAt: 1,
+    createdAt: at(0),
+    updatedAt: at(1),
     tasks: [],
   },
 ];
@@ -229,8 +232,8 @@ if (params.has("multiple")) {
     assignments: [],
     tasks: [],
     messages: [],
-    createdAt: 2,
-    updatedAt: 3,
+    createdAt: at(2),
+    updatedAt: at(3),
   });
 }
 if (params.has("manyRuns")) {
@@ -250,8 +253,8 @@ if (params.has("manyRuns")) {
       assignments: [],
       tasks: [],
       messages: [],
-      createdAt: 10 + index,
-      updatedAt: 10 + index,
+      createdAt: at(10 + index),
+      updatedAt: at(10 + index),
     });
   }
 }
@@ -270,6 +273,7 @@ if (params.has("pausedPlanning")) {
     messages: [],
   };
 }
+if (params.has("singleRun")) runs = runs.filter((run) => run.id === "run");
 if (params.has("unknownActivity")) {
   delete (runs[0] as { coordinatorStatus?: string }).coordinatorStatus;
 }

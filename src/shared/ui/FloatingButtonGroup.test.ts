@@ -90,3 +90,107 @@ it("preserves pointer selections and exposes icon commands without hover", () =>
   expect(onSelect).toHaveBeenCalledOnce();
   expect(container.querySelectorAll('[role="toolbar"]')).toHaveLength(1);
 });
+
+it("hands a popup trigger to its owner while keeping roving focus and the group's tooltip", () => {
+  const owner = vi.fn();
+  const onSelect = vi.fn();
+  const received: string[] = [];
+  act(() =>
+    root.render(
+      createElement(FloatingButtonGroup, {
+        label: "Message actions",
+        iconOnly: true,
+        items: [
+          { id: "copy", label: "Copy", icon: createElement("span", null, "C"), onSelect },
+          {
+            id: "menu",
+            label: "Handoff",
+            tooltip: "Hand this session over",
+            icon: createElement("span", null, "H"),
+            render: (renderTrigger) =>
+              renderTrigger({
+                ref: (node) => {
+                  received.push(node ? "attached" : "detached");
+                },
+                ariaLabel: "Handoff: 2 agents",
+                "aria-haspopup": "menu",
+                "aria-expanded": true,
+                onSelect: owner,
+              }),
+          },
+          { id: "last", label: "Last", icon: createElement("span", null, "L"), onSelect },
+        ],
+      }),
+    ),
+  );
+  const buttons = Array.from(container.querySelectorAll<HTMLButtonElement>("[data-fbg-item]"));
+  expect(buttons).toHaveLength(3);
+  const trigger = buttons[1]!;
+  expect(received).toEqual(["attached"]);
+  expect(trigger.getAttribute("aria-label")).toBe("Handoff: 2 agents");
+  expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+  expect(trigger.getAttribute("aria-expanded")).toBe("true");
+  expect(trigger.title).toBe("Hand this session over");
+  act(() => trigger.click());
+  expect(owner).toHaveBeenCalledOnce();
+  // The popup item stays in the arrow-key order of the one toolbar.
+  act(() => buttons[0]!.focus());
+  act(() => {
+    buttons[0]!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+    );
+  });
+  expect(document.activeElement).toBe(trigger);
+  expect(buttons.filter((button) => button.tabIndex === 0)).toHaveLength(1);
+});
+
+it("lets a disabled popup trigger refuse activation", () => {
+  const owner = vi.fn();
+  act(() =>
+    root.render(
+      createElement(FloatingButtonGroup, {
+        label: "Actions",
+        items: [
+          {
+            id: "menu",
+            label: "Handoff",
+            render: (renderTrigger) => renderTrigger({ disabled: true, onSelect: owner }),
+          },
+        ],
+      }),
+    ),
+  );
+  const trigger = container.querySelector<HTMLButtonElement>("[data-fbg-item]")!;
+  act(() => trigger.click());
+  expect(owner).not.toHaveBeenCalled();
+  expect(trigger.getAttribute("aria-disabled")).toBe("true");
+});
+
+it("shows pending and result tones on the same icon-only item", () => {
+  const onSelect = vi.fn();
+  const render = (props: { label: string; tone?: "success" | "danger"; loading?: boolean }) =>
+    act(() =>
+      root.render(
+        createElement(FloatingButtonGroup, {
+          label: "Message actions",
+          iconOnly: true,
+          items: [{ id: "copy", icon: createElement("span", null, "C"), onSelect, ...props }],
+        }),
+      ),
+    );
+  render({ label: "Copy response" });
+  const button = container.querySelector<HTMLButtonElement>("[data-fbg-item]")!;
+  expect(button.getAttribute("data-button-tone")).toBe("neutral");
+  render({ label: "Copy response", loading: true });
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  act(() => button.click());
+  expect(onSelect).not.toHaveBeenCalled();
+  render({ label: "Copied", tone: "success" });
+  expect(button.getAttribute("data-button-tone")).toBe("success");
+  expect(button.getAttribute("aria-label")).toBe("Copied");
+  expect(button.hasAttribute("data-icon-only")).toBe(true);
+  render({ label: "Retry copy", tone: "danger" });
+  expect(button.getAttribute("data-button-tone")).toBe("danger");
+  act(() => button.click());
+  expect(onSelect).toHaveBeenCalledOnce();
+});

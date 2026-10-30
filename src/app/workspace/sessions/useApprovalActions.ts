@@ -2,7 +2,6 @@ import { hostSessionBinding } from "../../../features/connections/model/sessionE
 import { useCallback, type MutableRefObject } from "react";
 import {
   keepHarnessQuestionOpen,
-  respondHarnessApproval,
   respondHarnessQuestion,
   type ApprovalDecision,
   type UserQuestionReply,
@@ -10,6 +9,10 @@ import {
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { type Session } from "../../../features/sessions/model/session";
+import {
+  submitApprovalIntent,
+  type ApprovalRequestToken,
+} from "../../../features/sessions/model/approvalIntents";
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 
 export interface ApprovalActionDeps {
@@ -24,14 +27,16 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
   const { sessionsRef, setInspectedWorkerId, focusOpenSession, onSelectHistorySession } = deps;
 
   const onApproval = useCallback(
-    (sessionId: string, requestId: number, decision: ApprovalDecision) => {
+    (
+      sessionId: string,
+      requestId: number,
+      decision: ApprovalDecision,
+      expected?: ApprovalRequestToken,
+    ) => {
       const session = sessionsRef.current.find((s) => s.id === sessionId);
-      if (!session || session.worktreeRemoved) return;
-      if ((hostSessionBinding(session) || remoteProjectFor(session.cwd))) {
-        remoteSessionActions(sessionId)?.approve(requestId, decision);
-        return;
-      }
-      respondHarnessApproval(session.harness, sessionId, requestId, decision);
+      return submitApprovalIntent(session, requestId, decision, expected, () =>
+        sessionsRef.current.find((current) => current.id === sessionId),
+      );
     },
     [],
   );
@@ -45,7 +50,7 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
         ["sending", "queued", "unknown"].includes(session.pendingQuestion.delivery ?? "")
       )
         return;
-      if ((hostSessionBinding(session) || remoteProjectFor(session.cwd))) {
+      if (hostSessionBinding(session) || remoteProjectFor(session.cwd)) {
         const actions = remoteSessionActions(sessionId);
         if (!actions) throw new Error("Question connection is unavailable");
         actions.answer(requestId, reply);

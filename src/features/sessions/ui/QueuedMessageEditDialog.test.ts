@@ -186,3 +186,69 @@ describe("QueuedMessageEditDialog", () => {
     expect(dirty.onCancel).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("QueuedMessageEditDialog file drop feedback", () => {
+  const fileDrag = (target: Element, type: string, items = 2) => {
+    const event = new Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperties(event, {
+      clientX: { value: 40 },
+      clientY: { value: 40 },
+      dataTransfer: {
+        value: {
+          types: ["Files"],
+          files: [],
+          items: Array.from({ length: items }, () => ({ kind: "file", type: "image/png" })),
+          dropEffect: "none",
+        },
+      },
+    });
+    target.dispatchEvent(event);
+    return event as Event & { dataTransfer: { dropEffect: string } };
+  };
+  const badge = () => document.querySelector(".pointer-drop-hint")?.textContent ?? null;
+  const mark = () => document.querySelector("[data-drop-indicator]");
+
+  it("marks the editor and says how many files will be attached", async () => {
+    const view = await open();
+    const body = view.field.closest(".flex-col")!;
+    const event = fileDrag(body, "dragover");
+    expect(badge()).toBe("Attach 2 files");
+    expect(mark()?.getAttribute("data-drop-indicator")).toBe("inside");
+    expect(mark()?.contains(view.field)).toBe(true);
+    expect(event.dataTransfer.dropEffect).toBe("copy");
+    expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+    act(() => void fileDrag(body, "dragleave"));
+    expect(badge()).toBeNull();
+    expect(mark()).toBeNull();
+  });
+
+  it("names the reason when the provider cannot take attachments", async () => {
+    const view = await open({ canAttach: false });
+    const event = fileDrag(view.field.closest(".flex-col")!, "dragover", 1);
+    expect(badge()).toBe("This provider does not support attachments");
+    expect(mark()?.getAttribute("data-drop-indicator")).toBe("blocked");
+    expect(event.dataTransfer.dropEffect).toBe("none");
+  });
+
+  // Escape belongs to the modal (it closes or asks to discard); an Escape that cancels the
+  // drag itself reaches the editor as dragleave.
+  it("ends the feedback on blur, drag end, drop and unmount", async () => {
+    const view = await open();
+    const body = view.field.closest(".flex-col")!;
+    for (const end of [
+      () => window.dispatchEvent(new Event("blur")),
+      () => window.dispatchEvent(new Event("dragend")),
+      () => void fileDrag(body, "drop"),
+    ]) {
+      act(() => void fileDrag(body, "dragover"));
+      expect(badge()).not.toBeNull();
+      act(end);
+      expect(badge()).toBeNull();
+      expect(mark()).toBeNull();
+    }
+    act(() => void fileDrag(body, "dragover"));
+    act(() => root.unmount());
+    expect(badge()).toBeNull();
+    root = createRoot(container);
+  });
+});

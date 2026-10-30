@@ -222,8 +222,17 @@ function buildStatesFixture(): {
   saveProjectGroupAssignments({ [pathKey("/projects/hidden")]: "g-hidden" });
   hideGroup("g-hidden");
   const local = sessions.slice(0, 8);
-  const hidden = { ...sessions[8], id: "hidden-1", cwd: "/projects/hidden", title: "Hidden group chat" };
-  const unread = { ...sessions[9], id: "unread-1", title: "Conversation whose record cannot be read" };
+  const hidden = {
+    ...sessions[8],
+    id: "hidden-1",
+    cwd: "/projects/hidden",
+    title: "Hidden group chat",
+  };
+  const unread = {
+    ...sessions[9],
+    id: "unread-1",
+    title: "Conversation whose record cannot be read",
+  };
   const longName = {
     ...sessions[10],
     id: "long-1",
@@ -231,46 +240,54 @@ function buildStatesFixture(): {
       "A very long recovered conversation title that keeps going to prove that the row wraps instead of pushing the Open action out of the dialog",
     cwd: "/projects/a-very-long-project-folder-name/with/many/nested/segments/that/never/fit/on/one/line",
   };
-  const all = [...local, hidden, unread, longName];
+  // `?states&calm`: only records that do not need attention, so the attention filter is empty.
+  const all = statesParams.has("calm")
+    ? [sessions[6], sessions[7]]
+    : [...local, hidden, unread, longName];
   const tabsAll = all.map((session) => newTab(session.id));
   const base = captureSessionRecovery(
     null,
     collectWorkspaceSnapshot(tabsAll, all, tabsAll[0].id, all[0].cwd, new Map()),
   )!;
-  const remoteStubs = [
-    remoteStub(11, "host-working", "Remote build (fresh host status)"),
-    remoteStub(12, "host-stale", "Remote chat (cached status)"),
-    remoteStub(13, "host-input", "Remote chat waiting for input"),
-  ];
-  const remote: RemoteRailSession[] = [
-    {
-      project: remoteStubs[0].cwd,
-      fresh: true,
-      session: {
-        id: "host-working",
-        title: remoteStubs[0].title,
-        harness: "codex",
-        status: "running",
-        updatedAt: Date.now() - 30_000,
-        revision: 1,
-        projectId: "p",
-      } as never,
-    },
-    {
-      project: remoteStubs[2].cwd,
-      fresh: true,
-      session: {
-        id: "host-input",
-        title: remoteStubs[2].title,
-        harness: "codex",
-        status: "idle",
-        needsInput: true,
-        updatedAt: Date.now() - 90_000,
-        revision: 1,
-        projectId: "p",
-      } as never,
-    },
-  ];
+  const remoteStubs = statesParams.has("calm")
+    ? []
+    : [
+        remoteStub(11, "host-working", "Remote build (fresh host status)"),
+        remoteStub(12, "host-stale", "Remote chat (cached status)"),
+        remoteStub(13, "host-input", "Remote chat waiting for input"),
+      ];
+  const remote: RemoteRailSession[] =
+    remoteStubs.length === 0
+      ? []
+      : [
+          {
+            project: remoteStubs[0].cwd,
+            fresh: true,
+            session: {
+              id: "host-working",
+              title: remoteStubs[0].title,
+              harness: "codex",
+              status: "running",
+              updatedAt: Date.now() - 30_000,
+              revision: 1,
+              projectId: "p",
+            } as never,
+          },
+          {
+            project: remoteStubs[2].cwd,
+            fresh: true,
+            session: {
+              id: "host-input",
+              title: remoteStubs[2].title,
+              harness: "codex",
+              status: "idle",
+              needsInput: true,
+              updatedAt: Date.now() - 90_000,
+              revision: 1,
+              projectId: "p",
+            } as never,
+          },
+        ];
   return {
     recovery: {
       ...base,

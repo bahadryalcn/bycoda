@@ -1,3 +1,5 @@
+// The React-free core keeps this model usable from the headless Host bundle.
+import { t } from "../../../shared/i18n/core";
 import type { AgentModel } from "./models";
 import {
   defaultProviderAccountId,
@@ -7,10 +9,36 @@ import {
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
 
-export type AccountModelChoice = AgentModel & { accountId?: string; accountColor?: string };
+export type AccountModelChoice = AgentModel & {
+  accountId?: string;
+  accountColor?: string;
+  /** The account's display label, kept apart from `name` so a row can truncate the model first. */
+  accountLabel?: string;
+};
 export type ModelAccountCatalog = Partial<
   Record<"codex" | "claude", readonly { id: string; label: string }[]>
 >;
+
+/**
+ * Display label of one account. Accounts may share a label; the stored label stays untouched and
+ * only the display gains the local account ID so same-named accounts remain distinguishable.
+ */
+export function accountDisplayLabel(
+  accounts: readonly { id: string; label: string }[],
+  account: { id: string; label: string },
+): string {
+  const key = account.label.trim().toLocaleLowerCase();
+  const shared = accounts.some(
+    (other) => other.id !== account.id && other.label.trim().toLocaleLowerCase() === key,
+  );
+  return shared ? `${account.label} · ${account.id}` : account.label;
+}
+
+/** The model name of a choice without its trailing account label. */
+export function modelChoiceBaseName(choice: AccountModelChoice): string {
+  const suffix = choice.accountLabel ? ` ${choice.accountLabel}` : "";
+  return suffix && choice.name.endsWith(suffix) ? choice.name.slice(0, -suffix.length) : choice.name;
+}
 
 export function accountModelChoices(
   models: AgentModel[],
@@ -27,12 +55,16 @@ export function accountModelChoices(
             accountColor: providerAccountColorValue(account),
           }))
         : (catalog[model.harness] ?? []);
-    return accounts.map((account) => ({
-      ...model,
-      name: `${model.name} ${account.label}`,
-      accountId: account.id,
-      ...(account.accountColor ? { accountColor: account.accountColor } : {}),
-    }));
+    return accounts.map((account) => {
+      const accountLabel = accountDisplayLabel(accounts, account);
+      return {
+        ...model,
+        name: `${model.name} ${accountLabel}`,
+        accountLabel,
+        accountId: account.id,
+        ...(account.accountColor ? { accountColor: account.accountColor } : {}),
+      };
+    });
   });
 }
 
@@ -45,11 +77,16 @@ export function modelAccountLabel(
   accountId?: string,
   catalog?: ModelAccountCatalog,
 ): string {
-  if (catalog !== undefined && supportsProviderAccounts(model.harness))
-    return `${model.name} ${catalog[model.harness]?.find((account) => account.id === (accountId ?? "default"))?.label ?? "Unavailable Host account"}`;
-  return supportsProviderAccounts(model.harness)
-    ? `${model.name} ${providerAccountLabel(model.harness, accountId ?? defaultProviderAccountId(model.harness))}`
-    : model.name;
+  if (catalog !== undefined && supportsProviderAccounts(model.harness)) {
+    const accounts = catalog[model.harness] ?? [];
+    const found = accounts.find((account) => account.id === (accountId ?? "default"));
+    return `${model.name} ${found ? accountDisplayLabel(accounts, found) : t("Unavailable Host account")}`;
+  }
+  if (!supportsProviderAccounts(model.harness)) return model.name;
+  const id = accountId ?? defaultProviderAccountId(model.harness);
+  const accounts = providerAccounts(model.harness);
+  const found = accounts.find((account) => account.id === id);
+  return `${model.name} ${found ? accountDisplayLabel(accounts, found) : providerAccountLabel(model.harness, id)}`;
 }
 
 export function accountChoicesSnapshot(): string {

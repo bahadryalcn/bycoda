@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
+import { WIRE_IDENTIFIER_PATTERN } from "../src/shared/model/host-contracts/schemas";
 import { parseSessionLayout } from "./session-layout";
 import {
   MAX_DIRECTORY_LOGO_LENGTH,
@@ -19,6 +21,7 @@ import { canonicalHostPath, hostProjectId } from "../src/features/sync/model/syn
 export const DESKTOP_BEAT_STALE_MS = 20_000;
 const MAX_PENDING_BLOCKS = 50;
 const MAX_COMMANDS = 100;
+const MAX_COMMAND_RECEIPTS = 500;
 export const DESKTOP_COMMAND_RETAIN_MS = 5 * 60_000;
 export const DESKTOP_WRITER_TRANSFER_MS = 12_000;
 /**
@@ -33,6 +36,9 @@ export type DesktopCommand = {
   sessionId: string;
   type: "cancel" | "approve" | "answer" | "retire-writer";
   requestId?: number;
+  approvalOccurrenceId?: string;
+  runId?: string;
+  authorityGeneration?: number;
   decision?: "allow" | "deny";
   reply?: unknown;
 };
@@ -144,6 +150,8 @@ export class DesktopLive {
   private clients = new Map<string, number>();
   private sessions = new Map<string, LiveSession>();
   private commands: (DesktopCommand & { queuedAt: number })[] = [];
+  // Bounded acceptance fingerprints, not provider-completion or durable receipts.
+  private commandReceipts = new Map<string, { signature: string; acceptedAt: number }>();
   private writerClients = new Map<string, Set<string>>();
   private writerTransfers = new Map<
     string,
@@ -184,6 +192,10 @@ export class DesktopLive {
         now - command.queuedAt < DESKTOP_COMMAND_RETAIN_MS
       );
     });
+    const pending = new Set(this.commands.map((command) => command.id));
+    for (const [id, receipt] of this.commandReceipts)
+      if (!pending.has(id) && now - receipt.acceptedAt >= DESKTOP_COMMAND_RETAIN_MS)
+        this.commandReceipts.delete(id);
   }
 
   /** Strictly increasing, so two changes in one millisecond still differ. */
@@ -495,18 +507,65 @@ export class DesktopLive {
   /** Leaves a watcher's stop, approval or answer for the desktop to run. */
   enqueue(command: Extract<HostCommand, { type: "cancel" | "approve" | "answer" }>): void {
     this.reclaimCommands();
-    if (this.commands.length >= MAX_COMMANDS)
-      throw new Error("Too many commands waiting for the bycoda app on that computer");
-    this.commands.push({
-      queuedAt: this.now(),
-      id: randomUUID(),
+    if (typeof command.commandId !== "string" || !WIRE_IDENTIFIER_PATTERN.test(command.commandId))
+      throw new Error("Invalid command ID");
+    const delivery: DesktopCommand = {
+      id: command.commandId,
       sessionId: command.sessionId,
       type: command.type,
+      runId: command.runId,
+      ...(command.authorityGeneration === undefined
+        ? {}
+        : { authorityGeneration: command.authorityGeneration }),
       ...(command.type === "approve"
-        ? { requestId: command.requestId, decision: command.decision }
+        ? {
+            requestId: command.requestId,
+            approvalOccurrenceId: command.approvalOccurrenceId,
+            decision: command.decision,
+          }
         : {}),
       ...(command.type === "answer" ? { requestId: command.requestId, reply: command.reply } : {}),
-    });
+    };
+    const signature = createHash("sha256").update(JSON.stringify(delivery)).digest("hex");
+    const previous = this.commandReceipts.get(command.commandId);
+    if (previous) {
+      if (previous.signature !== signature)
+        throw new Error("This command ID already belongs to a different desktop control");
+      return;
+    }
+    if (this.commands.some((pending) => pending.id === command.commandId))
+      throw new Error("This command ID already belongs to a different desktop control");
+    if (command.type === "approve") {
+      if (!isApprovalOccurrenceId(command.approvalOccurrenceId))
+        throw new Error(
+          "Approval request identity is missing or invalid. Refresh this request before responding.",
+        );
+      if (command.runId !== "desktop")
+        throw new Error("This approval belongs to a different execution owner");
+      const pending = this.overlay(command.sessionId)?.pending.filter(
+        (block) => block.approval?.requestId === command.requestId && !block.approval.decided,
+      );
+      if (
+        pending?.length !== 1 ||
+        pending[0].approval?.occurrenceId !== command.approvalOccurrenceId
+      )
+        throw new Error(
+          "This approval request changed or is already resolved. Refresh it before responding.",
+        );
+    }
+    if (this.commands.length >= MAX_COMMANDS)
+      throw new Error("Too many commands waiting for the bycoda app on that computer");
+    // Only acknowledged/expired delivery history may be compacted. Pending choices
+    // remain in their original queue slot even when the current prompt changes.
+    if (this.commandReceipts.size >= MAX_COMMAND_RECEIPTS) {
+      const queued = new Set(this.commands.map((entry) => entry.id));
+      const completed = Array.from(this.commandReceipts.keys()).find((id) => !queued.has(id));
+      if (completed === undefined) throw new Error("Desktop command receipt storage is full");
+      this.commandReceipts.delete(completed);
+    }
+    const acceptedAt = this.now();
+    this.commands.push({ ...delivery, queuedAt: acceptedAt });
+    this.commandReceipts.set(command.commandId, { signature, acceptedAt });
   }
 }
 

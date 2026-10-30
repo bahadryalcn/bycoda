@@ -84,3 +84,50 @@ it("exposes the exact value to assistive technology and tooltips, with decorativ
     vi.unstubAllGlobals();
   }
 });
+
+it("keeps a visible ellipsis and a shrinkable tail for long branch names", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const branch =
+    "feature/A-very-long-workspace-folder-name-that-should-truncate-not-push-the-actions-away-from-the-header-row";
+  try {
+    await act(async () => root.render(createElement(MiddleTruncate, { mode: "text" }, branch)));
+    const node = host.firstElementChild as HTMLElement;
+    expect(node.title).toBe(branch);
+    const [full, head, tail] = Array.from(node.children) as HTMLElement[];
+    expect(full.textContent).toBe(branch);
+    // The head reserves room for "x..." so it can never collapse to nothing and hide the truncation.
+    expect(head.classList.length).toBe(2);
+    expect(head.textContent! + tail.textContent!).toBe(branch);
+    expect(tail.textContent).toBe("header-row");
+    // The tail yields its start to an ellipsis, so only the last characters stay unconditionally visible.
+    const [tailHead, tailEnd] = Array.from(tail.children) as HTMLElement[];
+    expect(tailHead.textContent).toBe("head");
+    expect(tailEnd.textContent).toBe("er-row");
+
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not reserve ellipsis room for a one or two character head", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () => root.render(createElement(MiddleTruncate, { mode: "text" }, "ab1234567890")));
+    const [, head, tail] = Array.from((host.firstElementChild as HTMLElement).children) as HTMLElement[];
+    expect(head.textContent).toBe("ab");
+    expect(head.classList.length).toBe(1);
+    expect(tail.textContent).toBe("1234567890");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+    vi.unstubAllGlobals();
+  }
+});

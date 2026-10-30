@@ -1,8 +1,8 @@
 import { Alert } from "../../../shared/ui/Alert";
-import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
+import { ActionHost, InlineMoreAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
 import { DropdownMenu, type DropdownMenuItem } from "../../../shared/ui/DropdownMenu";
-import { ChevronDown, ChevronRight, GripVertical, MoreHorizontal } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronRight, GripVertical } from "../../../shared/ui/icons";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
@@ -746,19 +746,16 @@ export function JiraBoardView({
           >
             <GripVertical className="icon-sm" aria-hidden="true" />
           </Button>
-          <InlineAction
+          <InlineMoreAction
             reveal="always"
             disabled={locked || items.length === 0}
             label={t("Move {p0}", { p0: issue.identifier })}
-            aria-haspopup="menu"
-            aria-expanded={moveKey === id}
-            onClick={(event) => {
+            expanded={moveKey === id}
+            onOpen={(anchor) => {
               setMoveKey(moveKey === id ? null : id);
-              setMoveAnchor(event.currentTarget);
+              setMoveAnchor(anchor);
             }}
-          >
-            <MoreHorizontal className="icon-sm" aria-hidden="true" />
-          </InlineAction>
+          />
         </ActionHost>
         <div className="flex min-w-0 items-center gap-2 px-3 pb-1 text-ui-caption text-(--ui-text-secondary)">
           <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">

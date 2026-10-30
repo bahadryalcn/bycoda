@@ -239,8 +239,7 @@ html [data-composer-box]:has([data-ui-focus="group"]:focus-visible) {
   outline-color: transparent;
 }
 /* Operation boundaries retain their meaning independently of ordinary focus. */
-html [data-composer-box][data-composer-editing],
-html [data-composer-box][data-composer-dragging] {
+html [data-composer-box][data-composer-editing] {
   border-color: var(--ui-tone-accent-border);
 }
 .bycoda-title-settle {

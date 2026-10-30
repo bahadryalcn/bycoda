@@ -1,4 +1,15 @@
 import {
+  createPendingApproval,
+  cancelPendingApprovals,
+  observePendingApprovalWrite,
+  type ApprovalActualWriteObserver,
+  ownsPendingApproval,
+  rejectOverlappingApproval,
+  releasePendingApproval,
+  type PendingApproval,
+} from "../pendingApproval";
+import { isApprovalOccurrenceId } from "../../../../shared/model/approvalOccurrence";
+import {
   runNativeOutputWork,
   nativeOutputSink,
   retainNativeOutputEventOrigin,
@@ -65,7 +76,7 @@ type Live = {
   runtimeMode: RuntimeMode;
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
-  approvals: Map<number, (decision: ApprovalDecision) => void>;
+  approvals: Map<number, PendingApproval>;
   promptInFlight: boolean;
   /** True while the owning turn may have state-changing requests in flight —
    *  a cancel here makes the transport indeterminate even mid-config. */
@@ -232,8 +243,21 @@ export function respondAntigravityApproval(
   sessionId: string,
   requestId: number,
   decision: ApprovalDecision,
+  approvalOccurrenceId?: string,
 ) {
-  liveByThread.get(sessionId)?.approvals.get(requestId)?.(decision);
+  const live = liveByThread.get(sessionId);
+  const pending = live?.approvals.get(requestId);
+  if (
+    !live ||
+    live.cancelled ||
+    live.muteUpdates ||
+    !pending ||
+    pending.invalidated ||
+    !isApprovalOccurrenceId(approvalOccurrenceId) ||
+    pending.occurrenceId !== approvalOccurrenceId
+  )
+    return;
+  pending(decision);
 }
 
 export async function cancelAntigravityTurn(sessionId: string): Promise<void> {
@@ -250,8 +274,7 @@ export async function cancelAntigravityTurn(sessionId: string): Promise<void> {
   // control request in flight may already have taken effect — either way this
   // transport's state is indeterminate, so the next send must not reuse it.
   if (live.turnActive) live.stale = true;
-  for (const resolve of live.approvals.values()) resolve("deny");
-  live.approvals.clear();
+  cancelPendingApprovals(live.approvals);
   // Unwind the local turn first: a blocked stdin must not keep the UI's send
   // promise (or this cancel) wedged. The wire notify is best-effort.
   live.acp.rejectPending(new Error("cancelled"));
@@ -318,8 +341,7 @@ function settleLive(live: Live): void {
     cancelNativeOutputCallback(live.watchdog);
     live.watchdog = undefined;
   }
-  for (const resolve of live.approvals.values()) resolve("deny");
-  live.approvals.clear();
+  cancelPendingApprovals(live.approvals);
 }
 
 /**
@@ -751,6 +773,17 @@ async function handlePermission(live: Live, id: number, params: unknown) {
       const emitNative = nativeOutputSink(outputWork, (event: Parameters<Live["onEvent"]>[0]) =>
         live.onEvent(event),
       );
+      const overlap = rejectOverlappingApproval(
+        live.approvals,
+        id,
+        nativeOutputSink(outputWork, (onActualWrite: ApprovalActualWriteObserver) =>
+          live.acp.respond(id, { outcome: { outcome: "cancelled" } }, onActualWrite),
+        ),
+      );
+      if (overlap) {
+        await overlap;
+        return;
+      }
       const request = permissionRequestFromAcp(params);
       // Protocol replies always flow; UI events are gated on the turn still being
       // live so a cancelled run cannot leave approval cards behind.
@@ -764,55 +797,75 @@ async function handlePermission(live: Live, id: number, params: unknown) {
         });
       }
       let optionId: string | null;
-      if (
-        !live.promptInFlight ||
-        live.cancelled ||
-        live.muteUpdates ||
-        request.optionIds.length === 0
-      ) {
-        optionId = null;
-      } else if (live.planning) {
-        optionId = permissionOptionId(
-          request.kind === "read" || request.kind === "search" ? "allow" : "deny",
-          request.optionIds,
-          request.optionKinds,
-        );
-      } else {
-        optionId = autoPermissionOption(
-          live.runtimeMode,
-          request.kind,
-          request.optionIds,
-          request.optionKinds,
-        );
-        if (!optionId) {
-          const pending = new Promise<ApprovalDecision>((resolve) => {
-            live.approvals.set(id, resolve);
-          });
-          emitNative({
-            type: "approval.requested",
-            requestId: id,
-            title: request.title,
-            kind: request.kind,
-            callId: request.callId,
-            preview: request.preview,
-          });
-          const decision = await pending;
-          live.approvals.delete(id);
-          // The approval wait itself was the silence; restart the stall clock.
-          nativeOutputSink(outputWork, noteActivity)(live);
-          // Always close the card — even a cancelled/exited turn must not leave a
-          // pending approval rendered as actionable.
-          emitNative({ type: "approval.resolved", requestId: id, decision });
-          optionId = live.cancelled
-            ? null
-            : permissionOptionId(decision, request.optionIds, request.optionKinds);
+      let pending: PendingApproval | undefined;
+      try {
+        if (
+          !live.promptInFlight ||
+          live.cancelled ||
+          live.muteUpdates ||
+          request.optionIds.length === 0
+        ) {
+          optionId = null;
+        } else if (live.planning) {
+          optionId = permissionOptionId(
+            request.kind === "read" || request.kind === "search" ? "allow" : "deny",
+            request.optionIds,
+            request.optionKinds,
+          );
+        } else {
+          optionId = autoPermissionOption(
+            live.runtimeMode,
+            request.kind,
+            request.optionIds,
+            request.optionKinds,
+          );
+          if (!optionId) {
+            pending = createPendingApproval((occurrenceId, decision) =>
+              emitNative({ type: "approval.resolved", requestId: id, occurrenceId, decision }),
+            );
+            const { occurrenceId } = pending;
+            live.approvals.set(id, pending);
+            emitNative({
+              type: "approval.requested",
+              requestId: id,
+              occurrenceId,
+              title: request.title,
+              kind: request.kind,
+              callId: request.callId,
+              preview: request.preview,
+            });
+            const decision = await pending.decision;
+            // The approval wait itself was the silence; restart the stall clock.
+            nativeOutputSink(outputWork, noteActivity)(live);
+            // Always close the card — even a cancelled/exited turn must not leave a
+            // pending approval rendered as actionable.
+            pending.report(decision);
+            if (!Array.from(liveByThread.values()).includes(live)) return;
+            optionId =
+              live.cancelled || pending.invalidated
+                ? null
+                : permissionOptionId(
+                    decision === "allow" ? "allow" : "deny",
+                    request.optionIds,
+                    request.optionKinds,
+                  );
+          }
         }
+        await nativeOutputSink(outputWork, () => {
+          if (pending) {
+            if (!Array.from(liveByThread.values()).includes(live)) return Promise.resolve();
+            if (!ownsPendingApproval(live.approvals, id, pending)) {
+              pending.report("cancelled");
+              optionId = null;
+            }
+          }
+          return live.acp.respond(id, {
+            outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" },
+          }, pending ? observePendingApprovalWrite(live.approvals, id, pending) : undefined);
+        })();
+      } finally {
+        if (pending) releasePendingApproval(live.approvals, id, pending);
       }
-      await nativeOutputSink(outputWork, () =>
-        live.acp.respond(id, {
-          outcome: optionId ? { outcome: "selected", optionId } : { outcome: "cancelled" },
-        }),
-      )();
     },
     { additionalInput: true },
   );

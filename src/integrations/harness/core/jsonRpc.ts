@@ -275,7 +275,11 @@ export class JsonRpcClient {
     );
   }
 
-  async respond(id: JsonRpcId, result: unknown): Promise<void> {
+  async respond(
+    id: JsonRpcId,
+    result: unknown,
+    onActualWrite?: (write: Promise<void>) => void,
+  ): Promise<void> {
     const method = this.serverRequests.get(String(id)) ?? `request ${id}`;
     this.serverRequests.delete(String(id));
     await this.send(
@@ -285,6 +289,7 @@ export class JsonRpcClient {
         result,
       },
       `reply to ${method}`,
+      onActualWrite,
     );
   }
 
@@ -304,7 +309,11 @@ export class JsonRpcClient {
     );
   }
 
-  private async send(payload: object, operation: string): Promise<void> {
+  private async send(
+    payload: object,
+    operation: string,
+    onActualWrite?: (write: Promise<void>) => void,
+  ): Promise<void> {
     if (this.closed) throw new Error("Harness process is not running");
     // Bound the write: a child that stops draining stdin must not let a
     // blocked harness_write outlive the request's own deadline (or wedge a
@@ -320,6 +329,9 @@ export class JsonRpcClient {
       writeWork?.fail("rpc-write-rejected");
       throw error;
     }
+    // Source owners retain the actual write independently of this bounded waiter.
+    // Its settlement is not provider consumption or process-route attestation.
+    onActualWrite?.(actualWrite);
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       await Promise.race([

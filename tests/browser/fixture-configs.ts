@@ -46,6 +46,7 @@ import c44 from "./update-footer.playwright.config.ts";
 import c45 from "./transcript.playwright.config.ts";
 import c46 from "./playwright.overlays.config.ts";
 import c47 from "./playwright.session-references.config.ts";
+import c48 from "./playwright.composer-compact.config.ts";
 
 export const fixtureConfigs = {
   "tests/browser/compact-navigation.playwright.config.ts": c0,
@@ -96,4 +97,5 @@ export const fixtureConfigs = {
   "tests/browser/transcript.playwright.config.ts": c45,
   "tests/browser/playwright.overlays.config.ts": c46,
   "tests/browser/playwright.session-references.config.ts": c47,
+  "tests/browser/playwright.composer-compact.config.ts": c48,
 };

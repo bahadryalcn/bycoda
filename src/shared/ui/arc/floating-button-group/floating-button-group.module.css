@@ -64,6 +64,11 @@
   min-block-size: var(--fbg-h);
   flex: none;
 }
+/* The group owns one moving highlight for every tone; a result tone (success, danger) only recolors the ink. */
+.group .item[data-fbg-item][data-button-tone] {
+  --button-hover: transparent;
+  --button-pressed: transparent;
+}
 .vertical .item:not([data-icon-only]) {
   justify-content: flex-start;
 }

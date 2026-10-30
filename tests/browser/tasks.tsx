@@ -133,7 +133,7 @@ if (sprintFixture) {
     for (const [machineId, id, projectId, title, status] of rows)
       tasks[machineId].push(demo(id, projectId, title, status));
     // A long description exercises wrapping in the detail panel and the edit form.
-    tasks["machine-remote"].find((task) => task.id === "task-api")!.prompt = Array.from(
+    tasks["machine-remote"].find((task) => task.id === "task-checkout")!.prompt = Array.from(
       { length: 12 },
       (_, index) =>
         `Step ${index + 1}: read the rate limiter, compare it with the documented limits and write down every header a client can rely on, including the ones that only appear on retries.`,

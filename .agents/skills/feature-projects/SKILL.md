@@ -5,6 +5,20 @@ description: Projects inventory for project rail, groups, folder selection, rena
 
 # Projects
 
+## V2 2026-10-30: compact Git mark and identities (uncommitted)
+
+- Each project row is its own container (`data-project-row`, `src/app/shell/projectRailRow.css`); it shows
+  `+a -d` when the row has room (`projectGitDetailBucket`, `src/features/projects/ui/projectGitChange.ts`),
+  otherwise one Changes icon with the changed-file count, icon only below 160 px. File counts and line counts
+  are never merged; binary/untracked-only changes now show; missing or failed data shows no mark (the hook
+  does not distinguish loading from failure). Full numbers in the row's accessible name and tooltip.
+- Same-named projects show their parent folder (`projectIdentity.ts`, `duplicateProjectNames`); names
+  truncate with priority over the mark. Flyout rows keep `focusHint` off because the shared Button focus
+  tooltip breaks focus return in `SidebarRename.test.ts`.
+- Evidence: fixture `tests/browser/project-rail-git.*` (screenshots in `temp/verification/v2-003/`), unit
+  tests `projectGitChange`, `projectIdentity`, `ProjectRailGitChange`. Not verified: remote row with Git
+  stats, real Sidebar popover, density variants.
+
 ## H4 rail/menu source delivery, 2026-10-28
 
 ProjectRail uses shared ActionHost/InlineAction for project/group controls.

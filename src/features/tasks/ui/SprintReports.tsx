@@ -185,18 +185,21 @@ export function SprintReports({
     0,
     ...(report?.sources.map((source) => source.historyAvailableFrom ?? 0) ?? []),
   );
+  const axisDay = (at: number) =>
+    new Date(at).toLocaleDateString(locale, { month: "short", day: "numeric" });
   const chart: LineChartDatum[] =
     report?.sprint.startedAt === undefined
       ? []
       : scopedLedger
           .filter((entry) => entry.at >= Math.max(availableFrom, report.sprint.startedAt ?? 0))
-          .map((entry) => ({
+          .map((entry, index, entries) => ({
             key: String(entry.sequence),
             label: new Date(entry.at).toLocaleString(locale),
-            axisLabel: new Date(entry.at).toLocaleDateString(locale, {
-              month: "short",
-              day: "numeric",
-            }),
+            // Several changes on one day name that day once; the axis stays quiet after it.
+            axisLabel:
+              index > 0 && axisDay(entries[index - 1].at) === axisDay(entry.at)
+                ? undefined
+                : axisDay(entry.at),
             values: {
               remaining: entry.totals!.remainingPoints,
               ...(start && end && end > start && baseline !== undefined && !historyMissing

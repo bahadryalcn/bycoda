@@ -8,6 +8,7 @@ import {
   syncTranscriptViewport,
   WHEEL_HOLD_MS,
 } from "./transcriptScroll";
+import { nextReadingHistory } from "./composerReading";
 import { TranscriptRetentionContext } from "./TranscriptPool";
 import { useTurnScrollAnchor } from "./useTurnScrollAnchor";
 
@@ -23,6 +24,11 @@ type Options = {
   onPromptChange?: (mounting: boolean, scroller: HTMLDivElement | null) => (() => void) | void;
   onJumpToBottomChange?: (show: boolean) => void;
   onJumpToBottomReady?: (jump: (() => void) | null) => void;
+  /**
+   * The reader is away from the end by their own scrolling, not because content
+   * grew or the viewport resized. Latched: it only clears when following resumes.
+   */
+  onReadingChange?: (reading: boolean) => void;
   onScrollerChange?: (el: HTMLDivElement | null) => void;
 };
 
@@ -42,6 +48,7 @@ export function useTranscriptFollow({
   onPromptChange,
   onJumpToBottomChange,
   onJumpToBottomReady,
+  onReadingChange,
   onScrollerChange,
 }: Options) {
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -52,6 +59,7 @@ export function useTranscriptFollow({
   const restoringCheckpoint = useRef(retained?.scrollTop !== undefined);
   const stickToBottom = useRef(retained?.bottomFollow ?? true);
   const showJumpRef = useRef(false);
+  const readingRef = useRef(false);
   const distanceFromBottom = useRef(0);
   const wheelHold = useRef(0);
   const scrollGeometry = useRef<{
@@ -81,8 +89,25 @@ export function useTranscriptFollow({
     [onJumpToBottomChange],
   );
 
+  // Reading mode follows the reader's intent (`stickToBottom`), latched with a
+  // distance gate. It must not follow geometry: the composer resizing because of
+  // it would otherwise move the scroll distance and toggle it back.
+  const publishReading = useCallback(
+    (el: HTMLElement) => {
+      const next = nextReadingHistory(readingRef.current, {
+        following: stickToBottom.current,
+        distance: el.scrollHeight - el.scrollTop - el.clientHeight,
+      });
+      if (next === readingRef.current) return;
+      readingRef.current = next;
+      onReadingChange?.(next);
+    },
+    [onReadingChange],
+  );
+
   const rememberScroll = useCallback(
     (el: HTMLElement) => {
+      publishReading(el);
       scrollGeometry.current = {
         el,
         top: el.scrollTop,
@@ -107,7 +132,7 @@ export function useTranscriptFollow({
         bottomFollow: stickToBottom.current,
       });
     },
-    [retention],
+    [publishReading, retention],
   );
 
   const syncPinned = useCallback(
@@ -177,6 +202,10 @@ export function useTranscriptFollow({
   useEffect(() => {
     onJumpToBottomChange?.(showJumpRef.current);
   }, [onJumpToBottomChange]);
+  useEffect(() => {
+    onReadingChange?.(readingRef.current);
+    return () => onReadingChange?.(false);
+  }, [onReadingChange]);
 
   useLayoutEffect(() => {
     onScrollerChange?.(scrollerEl);
@@ -195,7 +224,20 @@ export function useTranscriptFollow({
       if (e.deltaY < 0) {
         stickToBottom.current = false;
         setShowJump(true);
-      } else if (e.deltaY === 0) {
+        publishReading(scrollerEl);
+      } else if (e.deltaY > 0) {
+        // Already at the very end, there is no scroll event to say the reader
+        // came back (a compact composer can leave the position clamped there).
+        if (
+          !stickToBottom.current &&
+          scrollerEl.scrollHeight - scrollerEl.scrollTop - scrollerEl.clientHeight < 1
+        ) {
+          stickToBottom.current = true;
+          distanceFromBottom.current = 0;
+          setShowJump(false);
+          rememberScroll(scrollerEl);
+        }
+      } else {
         // A directionless trackpad event can precede an off-thread scroll.
         // Wait for its direction before following new output.
         wheelHold.current = performance.now() + WHEEL_HOLD_MS;
@@ -217,7 +259,7 @@ export function useTranscriptFollow({
       scrollerEl.removeEventListener("scroll", onScroll);
       scrollerEl.removeEventListener("wheel", onWheel);
     };
-  }, [rememberScroll, scrollerEl, setShowJump, syncPinned, visible]);
+  }, [publishReading, rememberScroll, scrollerEl, setShowJump, syncPinned, visible]);
 
   useLayoutEffect(() => {
     if (restoreCheckpoint.current && lastUserId === checkpointUserId.current) return;
@@ -255,13 +297,14 @@ export function useTranscriptFollow({
       stickToBottom.current = true;
       setShowJump(false);
       pinToBottom(el);
+      publishReading(el);
     } else if (restore && stickToBottom.current) {
       pinToBottom(el);
       rememberScroll(el);
     } else if (restore) {
       el.scrollTop = Math.max(0, el.scrollHeight - el.clientHeight - distanceFromBottom.current);
     }
-  }, [rememberScroll, visible, setShowJump]);
+  }, [publishReading, rememberScroll, visible, setShowJump]);
 
   // The one place that follows streamed content to the bottom. Observer
   // callbacks run after layout and before paint, so the pin lands in the same

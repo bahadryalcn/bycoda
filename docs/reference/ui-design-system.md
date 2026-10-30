@@ -283,6 +283,7 @@ primary control; use `ActionHost` and `InlineAction` from `src/shared/ui/ActionH
 | `InlineAction` (`label`, `reveal?`) | Shared Button `inset`: about 20px, small radius, transparent at rest, `--color-selection` hover and `--color-selection-strong` press/open, secondary ink to foreground. It never paints an opaque square over a hovered or selected host.                                                                                                         |
 | Reveal                              | `reveal="interaction"` (default) shows the action while its host is hovered, focused or selected; keyboard focus, an open menu and pending always show it, and touch input (`hover: none` / `pointer: coarse`) shows it permanently. Use `reveal="always"` for field adornments and chips. Counts, warnings and status are never hidden this way. |
 | Isolation                           | Pointer down, click, middle click, Enter/Space and drag start on an `InlineAction` do not reach the host, so closing never also selects or drags the item. Middle-click close belongs on the host.                                                                                                                                                |
+| `InlineMoreAction` (`label`, `onOpen`, `expanded?`) | The row's overflow entry: an `InlineAction` with the More glyph, `aria-haspopup="menu"` and optional `aria-expanded`. `onOpen(anchor)` opens the same menu (same target, same permission gates) as right-click and the context-menu key, so touch and pointer users reach it. Use it for secondary actions only; keep frequent actions direct and keep status (counts, Git, connection) visible in the row. |
 
 ```tsx
 <ActionHost selected={active} onAuxClick={(event) => event.button === 1 && close(tab)}>
@@ -296,6 +297,19 @@ primary control; use `ActionHost` and `InlineAction` from `src/shared/ui/ActionH
   </InlineAction>
 </ActionHost>
 ```
+
+Row action hierarchy: one or two frequent actions stay direct (`InlineAction`), secondary ones go to
+`InlineMoreAction`, and status, errors that need a decision and retry stay visible in the row.
+Reveal-only actions reserve their slot (opacity) so hovering never moves the row's text; the
+`data-action-slot="collapse"` slot is the narrow-row exception that takes no width at rest. With a
+fine pointer the slot sits over the row's end on hover, keyboard focus, selection or an open menu
+when the row marks trailing secondary metadata (a time, a count, an empty gutter) with
+`data-action-yield`: that element turns transparent but keeps its box and text, so nothing moves
+(`data-action-anchor="end"` aligns the actions to the last line). Never mark status (dots, badges,
+Git, connection) as yielding; a row without a yielding element expands the slot instead, and
+touch keeps the actions beside the text. A feature list that can be resized below about 10rem may
+use a container query to collapse its row actions the same way (terminal list); pane geometry
+follows the container, not the window.
 
 Shared adopters: SearchInput clear, PasswordField reveal, TagInput and SearchableSelect
 chip removal (`reveal="always"`), and `TreeRow` inside a host. Feature tab strips and

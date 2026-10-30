@@ -197,6 +197,16 @@ export function useChangedFileMenu({
       const rect = trigger.current.getBoundingClientRect();
       setPosition({ x: rect.left, y: rect.bottom });
     },
+    /** The menu is showing; lets a More action report aria-expanded. */
+    isOpen: position !== null,
+    /** Opens the same menu from a visible control (an inline More action), so touch and
+     *  pointer users reach what right-click and the context-menu key reach. Focus returns
+     *  to the control on close. */
+    openFrom: (anchor: HTMLElement) => {
+      trigger.current = anchor;
+      const rect = anchor.getBoundingClientRect();
+      setPosition({ x: rect.left, y: rect.bottom });
+    },
     menu: (
       <>
         {position ? (

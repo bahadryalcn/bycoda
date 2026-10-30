@@ -83,15 +83,19 @@ it("awaits note saving in the response toolbar and prevents duplicate actions", 
   );
   const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
   expect(toolbar).not.toBeNull();
-  const save = toolbar.querySelector<HTMLButtonElement>('[data-id="save"]')!;
+  const save = toolbar.querySelector<HTMLButtonElement>('[aria-label="Save as note"]')!;
   await act(async () => {
     save.click();
     save.click();
   });
   expect(onSaveNote).toHaveBeenCalledExactlyOnceWith("Keep this answer");
   expect(save.getAttribute("aria-busy")).toBe("true");
+  // Saved is claimed only once the Notes write has settled.
+  expect(save.getAttribute("aria-label")).toBe("Save as note");
   await act(async () => finish());
-  expect(save.dataset.state).toBe("done");
+  expect(save.getAttribute("aria-label")).toBe("Saved to Notes");
+  expect(save.getAttribute("aria-busy")).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("Saved to Notes");
 });
 
 it("groups all five response actions and keeps their menus anchored and keyboard accessible", async () => {
@@ -118,11 +122,16 @@ it("groups all five response actions and keeps their menus anchored and keyboard
     ),
   );
   const toolbar = container.querySelector('[role="toolbar"][aria-label="Message actions"]')!;
-  expect(
-    [...toolbar.querySelectorAll("[data-ebg-item]")].map((item) => item.getAttribute("data-id")),
-  ).toEqual(["copy", "save", "handoff", "second-opinion", "metrics"]);
-  for (const id of ["handoff", "second-opinion"]) {
-    const trigger = toolbar.querySelector<HTMLButtonElement>(`[data-id="${id}"]`)!;
+  const items = () => [...toolbar.querySelectorAll<HTMLButtonElement>("[data-fbg-item]")];
+  expect(items().map((item) => item.getAttribute("aria-label"))).toEqual([
+    "Copy response",
+    "Save as note",
+    "Handoff",
+    "Second opinion",
+    expect.stringContaining("Turn metrics"),
+  ]);
+  for (const name of ["Handoff", "Second opinion"]) {
+    const trigger = toolbar.querySelector<HTMLButtonElement>(`[aria-label="${name}"]`)!;
     await act(async () => trigger.click());
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
     expect(document.querySelector('[role="menu"][data-provider-target]')).not.toBeNull();
@@ -134,7 +143,8 @@ it("groups all five response actions and keeps their menus anchored and keyboard
   }
   expect(onSecondOpinion).not.toHaveBeenCalled();
   expect(onHandoff).not.toHaveBeenCalled();
-  const metrics = toolbar.querySelector<HTMLButtonElement>('[data-id="metrics"]')!;
+  const metrics = items()[4]!;
+  expect(metrics.getAttribute("aria-haspopup")).toBe("dialog");
   await act(async () => metrics.click());
   expect(
     document.querySelector('[role="dialog"][aria-label="Turn metrics"]')?.textContent,
@@ -146,7 +156,7 @@ it("groups all five response actions and keeps their menus anchored and keyboard
   await act(async () =>
     metrics.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowLeft", bubbles: true })),
   );
-  expect(document.activeElement?.getAttribute("data-id")).toBe("second-opinion");
+  expect(document.activeElement?.getAttribute("aria-label")).toBe("Second opinion");
 });
 
 it("shows response note failures without confirming success", async () => {
@@ -163,10 +173,15 @@ it("shows response note failures without confirming success", async () => {
       }),
     ),
   );
-  const save = container.querySelector<HTMLButtonElement>('[role="toolbar"] [data-id="save"]')!;
+  const save = container.querySelector<HTMLButtonElement>(
+    '[role="toolbar"] [aria-label="Save as note"]',
+  )!;
   await act(async () => save.click());
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Storage unavailable");
-  expect(save.dataset.state).not.toBe("done");
+  // The failed action offers a retry instead of a confirmation.
+  expect(save.getAttribute("aria-label")).toBe("Retry save");
+  expect(save.getAttribute("aria-disabled")).toBeNull();
+  expect(container.querySelector('[role="status"]')?.textContent).toBe("");
 });
 
 it("copies the full user prompt and confirms success", async () => {

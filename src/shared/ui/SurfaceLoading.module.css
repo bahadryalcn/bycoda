@@ -1,0 +1,29 @@
+/* Placeholder for a lazily loaded region. It fills the region's own box so the content does not
+   move the surrounding layout when it arrives, and it stays hidden for the first moments so a
+   chunk that is already warm never flashes a loader. Reduced motion keeps the delay and drops
+   the fade, so nothing moves. */
+.root {
+  display: grid;
+  place-items: center;
+  block-size: 100%;
+  min-block-size: 0;
+  padding: 0.75rem;
+  animation: reveal 160ms linear 150ms both;
+}
+@keyframes reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .root {
+    animation: reveal 1ms linear 150ms both;
+  }
+}
+/* The indeterminate bar is a small cue, not a full-width rule across the region. */
+.root > * {
+  inline-size: min(100%, 14rem);
+}

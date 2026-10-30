@@ -132,3 +132,10 @@ Delivered in `src/styles/` (source only, uncommitted; no installed-build check):
 - Text fields share one 2px neutral focus ring.
 - Under `html.has-user-accent` the selection pair (`--ui-text-selection-background`/`-foreground`) and the accent solid/hover/pressed roles follow the user accent with the readability level applied (see feature-appearance). No local colour recipes were added in features.
 - Recorded from the theme sub-agent report; the integration pass did not re-measure the 2px focus ring or the canvas/composer values.
+
+## V2 2026-10-30: modal backdrop roles (uncommitted)
+
+`--ui-overlay-backdrop-blur` (`min(4px, var(--glass-blur))`), `--ui-overlay-backdrop-soft` (60% of the scrim)
+and `--ui-overlay-backdrop-nested` (24%) in `src/styles/index.css` next to `--ui-overlay-backdrop`; shared by
+light, dark and custom themes. Rules and fallbacks are in the same file (`.modal-backdrop`). See
+`feature-shared-ui` V2 section for consumers and evidence.

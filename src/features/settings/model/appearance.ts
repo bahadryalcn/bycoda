@@ -9,6 +9,7 @@ import {
 import {
   deriveAccentRoles,
   isAccentReadability,
+  mixInOklab,
   type AccentCanvas,
   type AccentReadability,
 } from "./accentContrast";
@@ -330,13 +331,22 @@ function hex(rgb: Rgb) {
 /** Tint values applied to the document (live previews included); unset until first applied. */
 const appliedTint: { hue?: number; saturation?: number; darkLightness?: number } = {};
 
-/** The page canvas of both schemes, from the applied tint (mirrors the CSS theme formulas). */
+/**
+ * The darkest-reading surface a selection sits on in each scheme, from the applied tint
+ * (mirrors the CSS formulas): the dark editor/terminal `--ui-surface` (content 10% over the
+ * canvas) is the lightest ground there; the light `--ui-surface-panel` (content 3%) is the
+ * darkest. Visibility against these also holds against the page canvas.
+ */
 function themeCanvases(): AccentCanvas {
   const hue = appliedTint.hue ?? loadThemeHue();
   const saturation = appliedTint.saturation ?? loadThemeSaturation();
+  const darkBase = hex(hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness()));
+  const darkContent = hex(hslToRgb(hue, saturation, 92));
+  const lightBase = hex(hslToRgb(hue, saturation * 0.2, 98.6));
+  const lightContent = hex(hslToRgb(hue, saturation * 0.35, 13));
   return {
-    dark: hex(hslToRgb(hue, saturation, appliedTint.darkLightness ?? loadThemeDarkLightness())),
-    light: hex(hslToRgb(hue, saturation * 0.2, 98.6)),
+    dark: mixInOklab(darkBase, darkContent, 0.1),
+    light: mixInOklab(lightBase, lightContent, 0.03),
   };
 }
 

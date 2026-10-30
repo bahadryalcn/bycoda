@@ -1,5 +1,28 @@
 use super::*;
 
+#[test]
+fn v3_profile_approval_decisions_are_data_in_the_parent_family_only() {
+    let mut value = notes_capture();
+    value["producers"][0] = json!({
+        "id":3,"revision":1,"kind":"approval-decision",
+        "snapshot":{"decision":"allow","raw":"  ç 😀\r\n\t","providerAck":"unproved","qualified":true},
+        "undefinedPaths":[]
+    });
+    let raw = serde_json::to_string(&value).unwrap();
+    let kept = RawCaptureArtifact::parse(raw.clone(), "A").unwrap();
+    assert_eq!(kept.raw(), raw);
+    assert_eq!(value["qualified"], false);
+    assert_eq!(value["producerCoverage"], "unknown");
+    for (id, session) in [(4, None), (5, None), (3, Some("foreign"))] {
+        let mut invalid = value.clone();
+        invalid["producers"][0]["id"] = json!(id);
+        if let Some(session) = session {
+            invalid["producers"][0]["sessionId"] = json!(session);
+        }
+        assert!(RawCaptureArtifact::parse(invalid.to_string(), "A").is_err());
+    }
+}
+
 fn notes_capture() -> Value {
     let mut value = producer_capture();
     value["version"] = json!(3);

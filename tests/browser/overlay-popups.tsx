@@ -74,7 +74,7 @@ function Workbench({ children }: { children?: ReactNode }) {
   );
 }
 
-function BoundedPopover({ mode }: { mode: "scroll" | "intrinsic" | "clip" }) {
+function BoundedPopover({ mode }: { mode: "scroll" | "intrinsic" | "clip" | "hard-clip" }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [clicks, setClicks] = useState(0);
@@ -96,7 +96,7 @@ function BoundedPopover({ mode }: { mode: "scroll" | "intrinsic" | "clip" }) {
           role="dialog"
           aria-label={`${mode} popover`}
           data-testid="popover-surface"
-          flow={mode === "scroll" ? "scroll" : undefined}
+          flow={mode === "scroll" ? "scroll" : mode === "hard-clip" ? "intrinsic" : undefined}
           width={280}
           maxHeight={mode === "intrinsic" ? undefined : 320}
           onDismiss={(reason) => {
@@ -365,6 +365,7 @@ function App() {
       ].map(open)}
       <BoundedPopover mode="scroll" />
       <BoundedPopover mode="clip" />
+      <BoundedPopover mode="hard-clip" />
       <BoundedPopover mode="intrinsic" />
       <Button variant="ghost" iconOnly label="Project settings" data-testid="tooltip-icon">
         <Settings />

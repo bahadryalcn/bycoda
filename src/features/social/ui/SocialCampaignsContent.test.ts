@@ -148,11 +148,16 @@ it("offers write, brief and edit entries tied to the selected record", async () 
   // A new campaign is an explicit state; the saved record keeps its own detail header below.
   expect(context().dataset.entry).toBe("write");
   expect(context().textContent).toContain("New campaign");
+  // The saved campaign is selected: the line says the new one is separate instead of "Not saved yet".
+  const line = () => context().querySelector(".social-content-context-main")!.textContent;
+  expect(line()).toContain("Separate from Saved campaign");
+  expect(line()).not.toContain("Not saved yet");
   expect(element.querySelector(".social-content-detail h2")?.textContent).toBe("Saved campaign");
 
   await click("Edit existing");
   expect(context().dataset.entry).toBe("edit");
   expect(context().textContent).toContain("Editing Saved campaign");
+  expect(line()).toContain("Revision 1");
   expect(composer().textContent).toContain("Editing Saved campaign");
   expect(composer().textContent).toContain("Revision 1");
   // New writing waits until the parked edit is saved or stopped.

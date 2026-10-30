@@ -27,6 +27,10 @@ import type { WindowTransferPayload } from "../../model/windowTransfer";
 import type { EditorFileClose } from "../files/useEditorFileClose";
 import type { MoveTabsOptions } from "./useMoveTabsToNewWindow";
 import { cancelWindowMoveTiming } from "../../model/windowMoveTiming";
+import {
+  cancelledTransferMessage,
+  publishWindowTransferNotice,
+} from "../../model/windowTransferNotice";
 
 export interface WindowMoveActionDeps {
   pendingWindowMoves: PendingWindowMoves;
@@ -95,6 +99,7 @@ export function useWindowMoveActions(deps: WindowMoveActionDeps): {
   const onCancelMoveToNewWindow = useCallback((tabId: string) => {
     cancelWindowMoveTiming([tabId]);
     setPendingWindowMoves((prev) => dropWindowMoves(prev, [tabId]));
+    publishWindowTransferNotice("info", cancelledTransferMessage());
   }, []);
 
   /** Moves one file tab into a new window as its own editor tab. */

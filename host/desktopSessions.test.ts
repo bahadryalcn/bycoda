@@ -57,10 +57,15 @@ async function setup() {
   const store = new HostStore(join(directory, "host.db"));
   const bind = vi.fn();
   let finish = () => {};
+  let signalProviderStarted!: () => void;
+  const providerStarted = new Promise<void>((resolve) => {
+    signalProviderStarted = resolve;
+  });
   const send = vi.fn(
     () =>
       new Promise<void>((resolve) => {
         finish = resolve;
+        signalProviderStarted();
       }),
   );
   const engine = new HostEngine(store, {
@@ -103,7 +108,20 @@ async function setup() {
     desktopDb.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  return { dbPath, desktopDb, seed, store, engine, project, call, bind, send, projectDir, clock };
+  return {
+    dbPath,
+    desktopDb,
+    seed,
+    store,
+    engine,
+    project,
+    call,
+    bind,
+    send,
+    projectDir,
+    clock,
+    providerStarted,
+  };
 }
 
 describe("desktop sessions on the host", () => {
@@ -702,7 +720,7 @@ describe("desktop sessions on the host", () => {
       id: "ap1",
       role: "approval",
       text: "Run tests?",
-      approval: { requestId: 7 },
+      approval: { requestId: 7, occurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001" },
     };
     const question = { requestId: 9, questions: [] };
     const beat = async (body: unknown) => await s.call("sessions.desktopLive", body);
@@ -740,6 +758,7 @@ describe("desktop sessions on the host", () => {
         sessionId: "a",
         runId: "desktop",
         requestId: 7,
+        approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
         decision: "allow",
       },
       { type: "cancel", commandId: "k2", sessionId: "a", runId: "desktop" },
@@ -747,7 +766,15 @@ describe("desktop sessions on the host", () => {
       expect((await s.call("commands.dispatch", command)).error).toBeUndefined();
     const queued = (await beat({ sessions: [{ id: "a", busy: true }] })).result.commands;
     expect(queued).toMatchObject([
-      { sessionId: "a", type: "approve", requestId: 7, decision: "allow" },
+      {
+        id: "k1",
+        sessionId: "a",
+        type: "approve",
+        runId: "desktop",
+        requestId: 7,
+        approvalOccurrenceId: "7e1c4dc0-6f53-4a8c-b8d8-000000000001",
+        decision: "allow",
+      },
       { sessionId: "a", type: "cancel" },
     ]);
     expect(s.send).not.toHaveBeenCalled();
@@ -1126,7 +1153,45 @@ describe("the run lease of a conversation", () => {
       released: true,
     });
     expect((await mac(s, "c1")).error).toBeUndefined();
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+    // Acceptance precedes asynchronous checkpoint/runtime preparation. Observe
+    // the real provider boundary without imposing a startup latency contract.
+    await s.providerStarted;
+    expect(s.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the host lease during original preparation and observes the actual provider onset", async () => {
+    const s = await setup();
+    s.seed({ id: "a", cwd: s.project.cwd });
+    let continuePreparation!: () => void;
+    const preparation = new Promise<void>((resolve) => {
+      continuePreparation = resolve;
+    });
+    let signalPreparing!: () => void;
+    const preparing = new Promise<void>((resolve) => {
+      signalPreparing = resolve;
+    });
+    const originalBegin = s.engine.checkpoints.beginFilesTurn.bind(s.engine.checkpoints);
+    const begin = vi.spyOn(s.engine.checkpoints, "beginFilesTurn").mockImplementation((...args) => {
+      signalPreparing();
+      return preparation.then(() => originalBegin(...args));
+    });
+    try {
+      expect((await mac(s, "prepared-onset")).error).toBeUndefined();
+      await preparing;
+      expect(s.send).not.toHaveBeenCalled();
+      expect((await s.call("sessions.get", { sessionId: "a" })).result.status).toBe("running");
+      expect((await lease(s, "acquire")).error).toMatch(/^LEASE_HELD:/);
+
+      continuePreparation();
+      await s.providerStarted;
+      expect(begin).toHaveBeenCalledTimes(1);
+      expect(s.send).toHaveBeenCalledTimes(1);
+      expect((await lease(s, "acquire")).error).toMatch(/^LEASE_HELD:/);
+      expect((await lease(s, "release", { epoch: 7 })).result).toEqual({ released: false });
+    } finally {
+      continuePreparation();
+      begin.mockRestore();
+    }
   });
 
   it("refuses a queued send and a compact the same way", async () => {
@@ -1185,7 +1250,8 @@ describe("the run lease of a conversation", () => {
     const s = await setup();
     s.seed({ id: "a", cwd: s.project.cwd });
     expect((await mac(s, "c5")).error).toBeUndefined();
-    await vi.waitFor(() => expect(s.send).toHaveBeenCalledTimes(1));
+    await s.providerStarted;
+    expect(s.send).toHaveBeenCalledTimes(1);
     const held = await lease(s, "acquire");
     expect(held.error).toMatch(/^LEASE_HELD: /);
     // Fencing: a window that lost it is told so instead of writing.

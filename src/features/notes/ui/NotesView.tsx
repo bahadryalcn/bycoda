@@ -856,22 +856,24 @@ export function NotesView({
             ? t("{p0} of {p1} notes", { p0: visible.length, p1: notes.length })
             : t("{p0} notes", { p0: notes.length })}
         </span>
-        <Button
-          ref={selectionButton}
-          variant="ghost"
-          size="sm"
-          label={t("Select notes")}
-          selected={selectionMode}
-          aria-pressed={selectionMode}
-          disabled={bulkDeleting}
-          onClick={() => {
-            setSelectionMode((current) => !current);
-            setCheckedIds(new Set());
-          }}
-        >
-          <Check className="icon-sm" />
-          {t("Select notes")}
-        </Button>
+        {notes.length > 0 || selectionMode ? (
+          <Button
+            ref={selectionButton}
+            variant="ghost"
+            size="sm"
+            label={t("Select notes")}
+            selected={selectionMode}
+            aria-pressed={selectionMode}
+            disabled={bulkDeleting}
+            onClick={() => {
+              setSelectionMode((current) => !current);
+              setCheckedIds(new Set());
+            }}
+          >
+            <Check className="icon-sm" />
+            {t("Select notes")}
+          </Button>
+        ) : null}
         <Button
           variant="secondary"
           size="sm"
@@ -882,6 +884,7 @@ export function NotesView({
           {t("New note")}
         </Button>
       </div>
+      {notes.length > 0 || filtered || loading ? (
       <div className="flex shrink-0 items-center gap-1 px-2 py-1">
         <SearchInputGroup appearance="field" className="min-w-0 flex-1">
           <Search className="icon-xs shrink-0 text-(--ui-text-secondary)" aria-hidden="true" />
@@ -919,6 +922,7 @@ export function NotesView({
           className="shrink-0"
         />
       </div>
+      ) : null}
       {filtersOpen ? (
         <Popover
           anchor={filtersButton}
@@ -1152,6 +1156,7 @@ export function NotesView({
           </div>
         ) : listError && notes.length === 0 ? null : visible.length === 0 ? (
           <EmptyState
+            kind={filtered ? "filtered" : "empty"}
             description={
               searchingBody
                 ? t("Searching note content…")
@@ -1669,9 +1674,11 @@ function NoteCard({
           </span>
         ) : null}
         {!note.preview ? <span className="sr-only">{t("No preview")}</span> : null}
+        {/* Empty trailing gutter: the row actions sit over it, so the title, preview and meta never move. */}
+        <span data-action-yield="" aria-hidden="true" className="ms-auto shrink-0" />
       </span>
     </Button>
-    <div data-action-slot="collapse" className="mt-1 flex shrink-0 items-center">
+    <div data-action-slot="collapse" data-action-anchor="end" className="flex shrink-0 items-center">
       <InlineAction
         label={t("Actions for {p0}", { p0: note.title || t("Untitled") })}
         aria-haspopup="menu"
@@ -1733,7 +1740,9 @@ function NoteGroupHeading({
       >
         <ChevronDown className={`size-3 shrink-0 ${collapsed ? "-rotate-90" : ""}`} />
         <span className="min-w-0 flex-1 truncate">{label}</span>
-        <span className="tabular-nums text-(--ui-text-secondary)">{group.totalNotes}</span>
+        <span data-action-yield="" className="tabular-nums text-(--ui-text-secondary)">
+          {group.totalNotes}
+        </span>
       </Button>
       <div data-action-slot="collapse" className="flex shrink-0 items-center">
         <InlineAction
@@ -1908,7 +1917,6 @@ function NoteEditor({
   onSavedRef.current = onSaved;
   // Picker, preview paste, DOM and native drops; the draft owner applies the body.
   const {
-    imageDrag,
     imageBusy,
     dropZoneRef,
     dropZoneHandlers,
@@ -2554,18 +2562,9 @@ function NoteEditor({
           aria-labelledby={`${modesId}-${visibleMode}`}
           data-external-drop-owner="note-images"
           aria-busy={imageBusy}
-          className={`note-editor-body relative rounded-(--ui-radius-card) border transition-colors ${
-            imageDrag
-              ? "border-(--ui-border-accent) bg-(--ui-surface-selected)"
-              : "border-(--ui-editor-border)"
-          }`}
+          className="note-editor-body relative rounded-(--ui-radius-card) border border-(--ui-editor-border) transition-colors"
           {...dropZoneHandlers}
         >
-          {imageDrag && !imageBusy ? (
-            <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-(--ui-radius-card) bg-(--ui-surface-raised) text-ui-caption text-(--ui-text-secondary)">
-              {t("Drop images here")}
-            </div>
-          ) : null}
           <div className={visibleMode === "split" ? "note-layout note-split" : "note-layout"}>
             {/* Stays mounted in preview so undo history survives the switch. */}
             <NoteEditorPane

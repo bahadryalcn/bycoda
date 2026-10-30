@@ -44,6 +44,9 @@ import { resetRemoteMachineChannelsForTests } from "../model/remoteMachineChanne
 import { readRemotePageCache, writeRemotePageCache } from "../model/remotePageCache";
 import { watchKey, watchRun, watchedRun } from "../model/remoteTurnWatch";
 import { clearComposerDraft } from "../../sessions/model/draftCache";
+import { captureApprovalRequest, readApprovalIntent } from "../../sessions/model/approvalIntents";
+import { captureRemoteSessionActions } from "../model/remoteSessionActions";
+import { createApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import type {
   HostCommand,
   HostDescriptor,
@@ -228,6 +231,7 @@ let steerFailure: string | undefined;
 /** What the host answers to a `send` (a refusal, as the other computer's turn makes it). */
 let sendFailure: string | undefined;
 let commandStatusSupported = false;
+let approvalOccurrenceSupported = true;
 let statusRequests: string[];
 let answerFailure: string | undefined;
 let receiptRunId: string | undefined;
@@ -249,6 +253,7 @@ let machineDown: string | undefined;
 const unreachable = "Machine is unreachable. Check the host and SSH tunnel, then reconnect.";
 
 beforeEach(() => {
+  approvalOccurrenceSupported = true;
   commandStatusSupported = false;
   statusRequests = [];
   transportProbe.current = undefined;
@@ -366,6 +371,7 @@ beforeEach(() => {
         name: "home",
         providers,
         capabilities: [
+          ...(approvalOccurrenceSupported ? ["sessions.approvalOccurrence.v1"] : []),
           "attachments.upload",
           ...(attachmentOwnershipSupported ? ["attachments.ownership.v1"] : []),
           "sessions.plan",
@@ -598,7 +604,8 @@ beforeEach(() => {
     const value = await requestWire(command, input);
     const method = (input as { method?: string } | undefined)?.method;
     return command === "remote_request" && method?.startsWith("sessions.") && value !== undefined
-      ? JSON.parse(JSON.stringify(value)) : value;
+      ? JSON.parse(JSON.stringify(value))
+      : value;
   });
   container = document.createElement("div");
   document.body.append(container);
@@ -2344,6 +2351,18 @@ it.each(["approve", "answer", "usageLimit", "compact", "removeDraft"] as const)(
       ...(kind === "approve" ? { runId: "approval-run", status: "running" as const } : {}),
       session: {
         ...host!.session,
+        ...(kind === "approve"
+          ? {
+              blocks: [
+                {
+                  id: "approval-7",
+                  role: "approval" as const,
+                  text: "Original approval",
+                  approval: { requestId: 7, occurrenceId: createApprovalOccurrenceId() },
+                },
+              ],
+            }
+          : {}),
         ...(kind === "usageLimit" ? { usageLimit: { resetsAt: Date.now() + 10000 } } : {}),
         ...(kind === "removeDraft"
           ? {
@@ -2356,8 +2375,10 @@ it.each(["approve", "answer", "usageLimit", "compact", "removeDraft"] as const)(
       },
     };
     await renderRemoteProbe();
+    const approvalToken =
+      kind === "approve" ? captureApprovalRequest(remoteOverrides.session!, 7) : undefined;
     await act(async () => {
-      if (kind === "approve") remoteOverrides.onApproval!("shell", 7, "allow");
+      if (kind === "approve") await remoteOverrides.onApproval!("shell", 7, "allow", approvalToken);
       if (kind === "answer") remoteOverrides.onQuestionReply!("shell", 3, { kind: "skipped" });
       if (kind === "usageLimit") remoteOverrides.onUsageLimitDismiss!("shell");
       if (kind === "compact") remoteOverrides.onCompactContext!();
@@ -2369,6 +2390,188 @@ it.each(["approve", "answer", "usageLimit", "compact", "removeDraft"] as const)(
     });
   },
 );
+
+it("keeps the actual approval port stable across a pane rerender and retains the true command promise outcome", async () => {
+  openExistingChat();
+  host = {
+    ...host!,
+    authorityGeneration: 3,
+    runId: "stable-approval-run",
+    status: "running",
+    session: {
+      ...host!.session,
+      blocks: [
+        {
+          id: "stable-approval",
+          role: "approval",
+          text: "Original command",
+          approval: { requestId: 713, occurrenceId: createApprovalOccurrenceId() },
+        },
+      ],
+    },
+  };
+  await renderRemoteProbe();
+  const originalSession = remoteOverrides.session!;
+  const token = captureApprovalRequest(originalSession, 713);
+  const originalCallback = remoteOverrides.onApproval!;
+  const port = captureRemoteSessionActions("shell")!;
+  expect(token).toBeDefined();
+  expect(port.current()).toBe(true);
+  await renderRemoteProbe(false);
+  expect(port.current()).toBe(true);
+  await act(async () => {
+    await originalCallback("shell", 713, "allow", token);
+  });
+  await settle();
+  expect(commands.filter((command) => command.type === "approve")).toHaveLength(1);
+  expect(commands.find((command) => command.type === "approve")).toMatchObject({
+    approvalOccurrenceId: originalSession.blocks[0].approval!.occurrenceId,
+  });
+  expect(readApprovalIntent(remoteOverrides.session!, 713)).toMatchObject({
+    callback: "fulfilled",
+    providerAck: "unproved",
+    repeatBlocked: true,
+  });
+  await act(async () => {
+    await remoteOverrides.onApproval!(
+      "shell",
+      713,
+      "deny",
+      captureApprovalRequest(remoteOverrides.session!, 713),
+    );
+  });
+  expect(commands.filter((command) => command.type === "approve")).toHaveLength(1);
+});
+
+function openOccurrenceApproval(
+  requestId: number,
+  occurrenceId: string | undefined = createApprovalOccurrenceId(),
+) {
+  openExistingChat();
+  host = {
+    ...host!,
+    runId: `approval-${requestId}`,
+    status: "running",
+    session: {
+      ...host!.session,
+      blocks: [
+        {
+          id: `approval-block-${requestId}`,
+          role: "approval",
+          text: "  Original remote approval\r\n漢🦀  ",
+          approval: { requestId, occurrenceId },
+        },
+      ],
+    },
+  };
+  return occurrenceId;
+}
+
+it.each(["capability", "absent", "malformed"] as const)(
+  "remote approval refuses %s identity before central or low-level effect",
+  async (failure) => {
+    const requestId = 8401;
+    const occurrenceId = openOccurrenceApproval(requestId);
+    if (failure === "capability") approvalOccurrenceSupported = false;
+    else
+      host!.session.blocks[0].approval!.occurrenceId = failure === "absent" ? undefined : "invalid";
+    await renderRemoteProbe();
+    const value = remoteOverrides.session!;
+    const token = captureApprovalRequest(value, requestId);
+    let accepted: unknown;
+    await act(async () => {
+      accepted = await remoteOverrides.onApproval!("shell", requestId, "allow", token);
+    });
+    expect(accepted).toBe(false);
+    expect(commands.filter((command) => command.type === "approve")).toEqual([]);
+    const port = captureRemoteSessionActions("shell")!;
+    expect(() =>
+      port.actions.approve(requestId, "allow", failure === "capability" ? occurrenceId : undefined),
+    ).toThrow(failure === "capability" ? /Update the Host/ : /cannot be verified/);
+    expect(commands.filter((command) => command.type === "approve")).toEqual([]);
+  },
+);
+
+it("remote approval low-level DTO carries the supplied original nonce without looking up a newer same-ID value", async () => {
+  const requestId = 8402;
+  const original = openOccurrenceApproval(requestId)!;
+  await renderRemoteProbe();
+  const port = captureRemoteSessionActions("shell")!;
+  remoteOverrides.session!.blocks[0].approval!.occurrenceId = createApprovalOccurrenceId();
+  await act(async () => {
+    await port.actions.approve(requestId, "allow", original);
+  });
+  expect(commands.filter((command) => command.type === "approve")).toMatchObject([
+    { requestId, approvalOccurrenceId: original },
+  ]);
+  // This is the actual client DTO boundary with a mocked Host; server-side
+  // refusal of stale A is covered separately with the real Host DesktopLive.
+});
+
+it("remote central callback refuses in-place same-ID nonce replacement after capture", async () => {
+  const requestId = 8403;
+  openOccurrenceApproval(requestId);
+  await renderRemoteProbe();
+  const value = remoteOverrides.session!;
+  const token = captureApprovalRequest(value, requestId);
+  value.blocks[0].approval!.occurrenceId = createApprovalOccurrenceId();
+  await act(async () => {
+    await remoteOverrides.onApproval!("shell", requestId, "allow", token);
+  });
+  expect(commands.filter((command) => command.type === "approve")).toEqual([]);
+});
+
+it("keeps the exact original nonce and command ID in the actual outbox through a pending callback and later same-ID metadata", async () => {
+  const requestId = 8404;
+  const occurrenceId = openOccurrenceApproval(requestId)!;
+  await renderRemoteProbe();
+  let finish!: () => void;
+  dispatchDelay = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  let sent: unknown;
+  try {
+    await act(async () => {
+      sent = remoteOverrides.onApproval!(
+        "shell",
+        requestId,
+        "allow",
+        captureApprovalRequest(remoteOverrides.session!, requestId),
+      );
+    });
+    await settle();
+    const original = pendingRemoteCommand(projectKey, "env", "host-session", "shell")!;
+    expect(original).toMatchObject({
+      type: "approve",
+      requestId,
+      approvalOccurrenceId: occurrenceId,
+    });
+    expect(original.commandId).toBeTruthy();
+    remoteOverrides.session!.blocks[0].approval!.occurrenceId = createApprovalOccurrenceId();
+    await act(async () => {
+      await remoteOverrides.onApproval!(
+        "shell",
+        requestId,
+        "deny",
+        captureApprovalRequest(remoteOverrides.session!, requestId),
+      );
+    });
+    expect(pendingRemoteCommand(projectKey, "env", "host-session", "shell")).toEqual(original);
+    await act(async () => {
+      finish();
+      dispatchDelay = undefined;
+      await sent;
+    });
+    expect(commands.filter((command) => command.type === "approve")).toMatchObject([
+      { commandId: original.commandId, approvalOccurrenceId: occurrenceId, decision: "allow" },
+    ]);
+    expect(commands.filter((command) => command.type === "approve")).toHaveLength(1);
+  } finally {
+    finish();
+    dispatchDelay = undefined;
+    await sent;
+  }
+});
 
 it("authority intent: keeps deferred Configure on its old generation until an explicit fresh change", async () => {
   openRunningChat();
@@ -4237,26 +4440,61 @@ it("releases desktop attachment ownership only after a successful host handoff",
   );
 });
 
-
 /** Fake provider/Host over the actual desktop request adapter. No live profile. */
 function localExecutionHost(options: { loseCreateReceipt?: boolean } = {}) {
   const original = vi.mocked(invoke).getMockImplementation()!;
-  const receipts = new Map<string, { payload: string; receipt: { commandId: string; sessionId: string; revision: number; authorityGeneration?: number; runId?: string } }>();
-  const local = { ...machine, localHost: true, name: "This computer", endpoint: "http://127.0.0.1:3776" };
+  const receipts = new Map<
+    string,
+    {
+      payload: string;
+      receipt: {
+        commandId: string;
+        sessionId: string;
+        revision: number;
+        authorityGeneration?: number;
+        runId?: string;
+      };
+    }
+  >();
+  const local = {
+    ...machine,
+    localHost: true,
+    name: "This computer",
+    endpoint: "http://127.0.0.1:3776",
+  };
   let lost = false;
   vi.mocked(invoke).mockImplementation(async (command, input) => {
     if (command === "local_host_connect") return local;
     if (command === "list_project_files" || command === "list_claude_commands") return [];
     if (command === "remote_machines") return [local];
     const request = input as { method?: string; params?: HostCommand } | undefined;
-    if (request?.method === "projects.open") return { id: "project", cwd: "/home/me/repo", name: "repo" };
+    if (request?.method === "projects.open")
+      return { id: "project", cwd: "/home/me/repo", name: "repo" };
     if (request?.method === "environment.describe") {
-      const descriptor = await original(command, input) as HostDescriptor;
-      return { ...descriptor, capabilities: [...descriptor.capabilities, "sessions.createFirstTurn", "commands.status", "sessions.configure.providerAccount.v1"] };
+      const descriptor = (await original(command, input)) as HostDescriptor;
+      return {
+        ...descriptor,
+        capabilities: [
+          ...descriptor.capabilities,
+          "sessions.createFirstTurn",
+          "commands.status",
+          "sessions.configure.providerAccount.v1",
+        ],
+      };
     }
     if (request?.method === "models.list") {
-      const models = await original(command, input) as HostModelCatalog;
-      return { ...models, accounts: { codex: [{ id: "default", label: "Host default" }, { id: "host-work", label: "Host work" }, { id: "work-account", label: "Work account" }], claude: [{ id: "default", label: "Host default" }] } };
+      const models = (await original(command, input)) as HostModelCatalog;
+      return {
+        ...models,
+        accounts: {
+          codex: [
+            { id: "default", label: "Host default" },
+            { id: "host-work", label: "Host work" },
+            { id: "work-account", label: "Work account" },
+          ],
+          claude: [{ id: "default", label: "Host default" }],
+        },
+      };
     }
     if (request?.method === "commands.status") {
       statusRequests.push(request.params!.commandId);
@@ -4273,13 +4511,28 @@ function localExecutionHost(options: { loseCreateReceipt?: boolean } = {}) {
       }
       const receipt = dispatch(intent);
       if (intent.type === "configure" && intent.providerAccountId !== undefined && host)
-        host = { ...host, session: { ...host.session, providerAccountId: intent.providerAccountId ?? undefined } };
+        host = {
+          ...host,
+          session: { ...host.session, providerAccountId: intent.providerAccountId ?? undefined },
+        };
       if (intent.type === "create" && host) {
-        host = { ...host, session: { ...host.session, id: intent.sessionId!, providerAccountId: intent.providerAccountId,
-          blocks: intent.firstTurn ? [{ id: intent.firstTurn.commandId, role: "user", text: intent.firstTurn.text }] : [] } };
+        host = {
+          ...host,
+          session: {
+            ...host.session,
+            id: intent.sessionId!,
+            providerAccountId: intent.providerAccountId,
+            blocks: intent.firstTurn
+              ? [{ id: intent.firstTurn.commandId, role: "user", text: intent.firstTurn.text }]
+              : [],
+          },
+        };
       }
-      const accepted = { ...receipt, sessionId: host!.session.id,
-        ...(intent.type === "create" || intent.type === "send" ? { runId: "local-run" } : {}) };
+      const accepted = {
+        ...receipt,
+        sessionId: host!.session.id,
+        ...(intent.type === "create" || intent.type === "send" ? { runId: "local-run" } : {}),
+      };
       receipts.set(intent.commandId, { payload, receipt: accepted });
       if (intent.type === "create" && options.loseCreateReceipt && !lost) {
         lost = true;
@@ -4302,15 +4555,33 @@ it("local Host opt-in: real creation and first send preserve local cwd, account 
   await render(session);
   await sendTransport("First local Host message");
   await vi.waitFor(() => expect(commands, container.textContent ?? "").toHaveLength(1));
-  expect(commands[0]).toMatchObject({ type: "create", sessionId: session.id, projectId: "project", workspaceMode: "current", providerAccountId: "work-account",
-    firstTurn: { type: "send", text: "First local Host message" } });
-  expect(hostSessionBinding(session)).toMatchObject({ sessionId: session.id, authorityGeneration: null, created: true });
+  expect(commands[0]).toMatchObject({
+    type: "create",
+    sessionId: session.id,
+    projectId: "project",
+    workspaceMode: "current",
+    providerAccountId: "work-account",
+    firstTurn: { type: "send", text: "First local Host message" },
+  });
+  expect(hostSessionBinding(session)).toMatchObject({
+    sessionId: session.id,
+    authorityGeneration: null,
+    created: true,
+  });
   expect(transportProbe.current?.session?.cwd).toBe("/home/me/repo");
   expect(shouldPersistSession({ ...session, blocks: host!.session.blocks })).toBe(false);
   await upsertSession({ ...session, blocks: host!.session.blocks });
-  expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send")).toBe(false);
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send"),
+  ).toBe(false);
   await sendTransport("Second local Host message");
-  expect(commands.at(-1)).toMatchObject({ type: "send", sessionId: session.id, text: "Second local Host message" });
+  expect(commands.at(-1)).toMatchObject({
+    type: "send",
+    sessionId: session.id,
+    text: "Second local Host message",
+  });
 });
 
 it("local Host opt-in: lost atomic first-turn receipt survives restart and reconciles the same ID", async () => {
@@ -4319,21 +4590,36 @@ it("local Host opt-in: lost atomic first-turn receipt survives restart and recon
   await render(session);
   await sendTransport("Preserve exactly once");
   const pending = pendingRemoteCommand(session.cwd, "env", null, session.id)!;
-  expect(pending).toMatchObject({ type: "create", commandId: session.id, firstTurn: { text: "Preserve exactly once" } });
-  expect(() => savePendingRemoteCommand(session.cwd, "env", { ...pending, model: "changed" } as HostCommand, session.id)).toThrow("changed");
+  expect(pending).toMatchObject({
+    type: "create",
+    commandId: session.id,
+    firstTurn: { text: "Preserve exactly once" },
+  });
+  expect(() =>
+    savePendingRemoteCommand(
+      session.cwd,
+      "env",
+      { ...pending, model: "changed" } as HostCommand,
+      session.id,
+    ),
+  ).toThrow("changed");
   await act(async () => root.unmount());
   resetRemoteSessionCachesForTests();
   root = createRoot(container);
   const restored = restoreHostSessionShell(session.id)!;
   await render(restored);
-  const retry = [...container.querySelectorAll("button")].find((button) => button.textContent === "Retry")!;
+  const retry = [...container.querySelectorAll("button")].find(
+    (button) => button.textContent === "Retry",
+  )!;
   expect(retry).toBeTruthy();
   await act(async () => retry.click());
   await settle();
   expect(statusRequests).toContain(session.id);
   expect(commands).toHaveLength(1);
   expect(hostSessionBinding(restored)).toMatchObject({ authorityGeneration: null, created: true });
-  expect(host!.session.blocks.filter((block) => block.text === "Preserve exactly once")).toHaveLength(1);
+  expect(
+    host!.session.blocks.filter((block) => block.text === "Preserve exactly once"),
+  ).toHaveLength(1);
   expect(pendingRemoteCommand(session.cwd, "env", null, session.id)).toBeUndefined();
 });
 
@@ -4345,9 +4631,12 @@ it("local Host opt-in: offline owners keep the original intent and cannot execut
   await sendTransport("Hold on this Host");
   expect(commands).toHaveLength(0);
   expect(hostSessionBinding(session)?.sessionId).toBe(session.id);
-  expect(vi.mocked(invoke).mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send")).toBe(false);
+  expect(
+    vi
+      .mocked(invoke)
+      .mock.calls.some(([method]) => method === "session_upsert" || method === "harness_send"),
+  ).toBe(false);
 });
-
 
 it("local Host opt-in: first send keeps an existing selected worktree separate from project cwd", async () => {
   localExecutionHost();
@@ -4356,8 +4645,16 @@ it("local Host opt-in: first send keeps an existing selected worktree separate f
   session.worktreeCwd = "/home/me/repo-existing-worktree";
   await render(session);
   await sendTransport("Use selected checkout");
-  expect(commands[0]).toMatchObject({ type: "create", projectId: "project", workspaceMode: "current", worktreeCwd: session.worktreeCwd });
-  expect(transportProbe.current?.session).toMatchObject({ cwd: session.cwd, worktreeCwd: session.worktreeCwd });
+  expect(commands[0]).toMatchObject({
+    type: "create",
+    projectId: "project",
+    workspaceMode: "current",
+    worktreeCwd: session.worktreeCwd,
+  });
+  expect(transportProbe.current?.session).toMatchObject({
+    cwd: session.cwd,
+    worktreeCwd: session.worktreeCwd,
+  });
   expect(transportProbe.current?.session?.worktreeCwd).not.toContain("remote://");
 });
 
@@ -4366,9 +4663,22 @@ it("local Host opt-in: Stop fences stale attachment completion and a newer manua
   const session = await newLocalHostSession("/home/me/repo");
   await render(session);
   let release!: () => void;
-  attachmentReadDelay = new Promise<void>((resolve) => { release = resolve; });
+  attachmentReadDelay = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   await act(async () => {
-    expect(transportProbe.current!.onSubmit!(session.id, "Stale upload", [{ id: "old-file", name: "note.txt", kind: "file", mimeType: "text/plain", size: 1, path: "C:/fixture/note.txt" }])).toBe(true);
+    expect(
+      transportProbe.current!.onSubmit!(session.id, "Stale upload", [
+        {
+          id: "old-file",
+          name: "note.txt",
+          kind: "file",
+          mimeType: "text/plain",
+          size: 1,
+          path: "C:/fixture/note.txt",
+        },
+      ]),
+    ).toBe(true);
   });
   await settle();
   await act(async () => transportProbe.current!.onStop!(session.id));
@@ -4379,27 +4689,52 @@ it("local Host opt-in: Stop fences stale attachment completion and a newer manua
   const creates = commands.filter((command) => command.type === "create");
   expect(creates).toHaveLength(1);
   expect(creates[0]).toMatchObject({ firstTurn: { text: "Newer manual send" } });
-  expect(commands.some((command) => "text" in command && command.text === "Stale upload")).toBe(false);
+  expect(commands.some((command) => "text" in command && command.text === "Stale upload")).toBe(
+    false,
+  );
 });
-
 
 it("local Host opt-in: named account selection and default clearing configure only the owning Host", async () => {
   localExecutionHost();
   const session = await newLocalHostSession("/home/me/repo");
-  session.harness = "codex"; session.model = gpt.id; session.providerAccountId = "default";
+  session.harness = "codex";
+  session.model = gpt.id;
+  session.providerAccountId = "default";
   await render(session);
   await sendTransport("Start on default");
-  await act(async () => transportProbe.current!.onModelChange!(session.id, "codex", gpt.id, "host-work"));
+  await act(async () =>
+    transportProbe.current!.onModelChange!(session.id, "codex", gpt.id, "host-work"),
+  );
   await settle();
-  expect(commands.at(-1)).toMatchObject({ type: "configure", sessionId: session.id, providerAccountId: "host-work" });
-  await act(async () => transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "default"));
+  expect(commands.at(-1)).toMatchObject({
+    type: "configure",
+    sessionId: session.id,
+    providerAccountId: "host-work",
+  });
+  await act(async () =>
+    transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "default"),
+  );
   await settle();
   expect(commands.at(-1)).toMatchObject({ type: "configure", providerAccountId: null });
   const before = commands.length;
-  await act(async () => transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "native-only"));
+  await act(async () =>
+    transportProbe.current!.onSelectProviderAccount!(session.id, "codex", "native-only"),
+  );
   await settle();
   expect(commands).toHaveLength(before);
-  expect(vi.mocked(invoke).mock.calls.some(([method]) => method.startsWith("harness_"))).toBe(false);
-  const requests = vi.mocked(invoke).mock.calls.filter(([method, input]) => method === "remote_request" && (input as { method?: string })?.method === "commands.dispatch");
-  expect(requests.every(([, input]) => (input as { expectedEnvironmentId?: string }).expectedEnvironmentId === "env")).toBe(true);
+  expect(vi.mocked(invoke).mock.calls.some(([method]) => method.startsWith("harness_"))).toBe(
+    false,
+  );
+  const requests = vi
+    .mocked(invoke)
+    .mock.calls.filter(
+      ([method, input]) =>
+        method === "remote_request" &&
+        (input as { method?: string })?.method === "commands.dispatch",
+    );
+  expect(
+    requests.every(
+      ([, input]) => (input as { expectedEnvironmentId?: string }).expectedEnvironmentId === "env",
+    ),
+  ).toBe(true);
 });

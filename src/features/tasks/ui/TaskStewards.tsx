@@ -6,6 +6,7 @@ import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Switch } from "../../../shared/ui/Switch";
 import { NumberField } from "../../../shared/ui/NumberField";
 import { projectDisplayName } from "../../projects/model/projectNames";
+import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
@@ -101,6 +102,7 @@ function StewardsPanel({
   recents,
   machine,
   saving,
+  error,
   acting,
   now,
   onAdd,
@@ -118,6 +120,8 @@ function StewardsPanel({
   /** The machine that would run the draft's steward, when it is connected. */
   machine?: string;
   saving: boolean;
+  /** Why the last save of the open draft failed. */
+  error: string | null;
   acting: string | null;
   now: number;
   onAdd: () => void;
@@ -138,7 +142,7 @@ function StewardsPanel({
   return (
     <section
       aria-label={t("Stewards")}
-      className="flex max-h-[45%] shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3"
+      className={`flex shrink-0 flex-col gap-1.5 overflow-y-auto border-b border-(--ui-tone-neutral-border) p-3 ${draft ? "max-h-[80%]" : "max-h-[45%]"}`}
     >
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 text-ui-caption text-(--ui-text-secondary)">
@@ -157,6 +161,7 @@ function StewardsPanel({
           recents={recents}
           machine={machine}
           saving={saving}
+          error={error}
           onChange={onChange}
           onCancel={onCancel}
           onSubmit={onSubmit}
@@ -321,6 +326,7 @@ function StewardForm({
   recents,
   machine,
   saving,
+  error,
   onChange,
   onCancel,
   onSubmit,
@@ -329,6 +335,7 @@ function StewardForm({
   recents: RecentProject[];
   machine?: string;
   saving: boolean;
+  error: string | null;
   onChange: (draft: StewardDraft) => void;
   onCancel: () => void;
   onSubmit: (event: FormEvent) => void;
@@ -358,7 +365,7 @@ function StewardForm({
           const next = Math.trunc(Number(event.target.value));
           if (Number.isFinite(next)) update(key, Math.min(max, Math.max(min, next)));
         }}
-        fieldClassName="w-16 max-w-16"
+        fieldClassName="w-24 max-w-24"
       />
     </label>
   );
@@ -492,6 +499,11 @@ function StewardForm({
           </div>
         </fieldset>
       </div>
+      {error ? (
+        <Alert tone="danger" role="alert" className="mx-4 mb-3 shrink-0">
+          {error}
+        </Alert>
+      ) : null}
       <div className="task-form-footer">
         <Button variant="ghost" type="button" disabled={saving} onClick={onCancel}>
           {t("Cancel")}
@@ -535,6 +547,7 @@ export function useTaskStewards({
   const { cwd, recents, projectFilter, lock, machines, selectedProject } = scope;
   const [draft, setDraft] = useState<StewardDraft | null>(null);
   const [open, setOpen] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const stewards = useMemo(
     () =>
       stored.filter(
@@ -555,6 +568,7 @@ export function useTaskStewards({
       modelsFor(harness)[0]?.id ??
       preferredModelId(harness);
     setError(null);
+    setSaveError(null);
     setDraft(newStewardDraft(project, harness, model));
   };
 
@@ -562,13 +576,16 @@ export function useTaskStewards({
     event.preventDefault();
     if (saving || !draft) return;
     setSaving(true);
+    setSaveError(null);
     try {
       putSteward(await saveSteward(capable, draft));
       setDraft(null);
       setError(null);
       void refresh();
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      const message = reason instanceof Error ? reason.message : String(reason);
+      setError(message);
+      setSaveError(message);
     } finally {
       setSaving(false);
     }
@@ -598,6 +615,7 @@ export function useTaskStewards({
   return {
     stewards,
     draft,
+    saveError,
     open,
     toggle: () => setOpen((value) => !value),
     begin,
@@ -607,13 +625,16 @@ export function useTaskStewards({
     startEditing: (steward: BoardSteward) => {
       if (saving) return;
       setError(null);
+      setSaveError(null);
       setDraft(draftFromSteward(steward));
     },
     change: (next: StewardDraft) => {
       if (!saving) setDraft(next);
     },
     cancel: () => {
-      if (!saving) setDraft(null);
+      if (saving) return;
+      setSaveError(null);
+      setDraft(null);
     },
   };
 }
@@ -651,6 +672,7 @@ export function StewardsSection({
         recents={recents}
         machine={draft ? machineName(capable, draft.cwd) : undefined}
         saving={saving}
+        error={stewards.saveError}
         acting={acting}
         now={now}
         onAdd={stewards.begin}

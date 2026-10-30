@@ -219,6 +219,50 @@ afterEach(async () => {
   __openCodeTestReset();
 });
 
+it("preserves provider approval occurrences across real Live replacements and reused UI IDs", async () => {
+  let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
+  for (let generation = 0; generation < 2; generation++) {
+    harnessHttp.mockClear();
+    const events: HarnessEvent[] = [];
+    const { done } = await startTurn(events);
+    askPermission("session_1", "reused-permission");
+    await waitFor(
+      () => events.some((event) => event.type === "approval.requested"),
+      "permission request",
+    );
+    const asked = events.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    )!;
+    const replies = () =>
+      harnessHttp.mock.calls.filter(([input]) => input.url.includes("/permission/"));
+    respondOpenCodeApproval("opencode-live", asked.requestId, "allow");
+    if (previous) {
+      expect(asked.requestId).toBe(previous.requestId);
+      expect(asked.occurrenceId).not.toBe(previous.occurrenceId);
+      respondOpenCodeApproval("opencode-live", asked.requestId, "allow", previous.occurrenceId);
+    }
+    await Promise.resolve();
+    expect(replies()).toHaveLength(0);
+    respondOpenCodeApproval("opencode-live", asked.requestId, "deny", asked.occurrenceId);
+    await waitFor(() => replies().length === 1, "matching original permission");
+    expect(events).toContainEqual({
+      type: "approval.resolved",
+      requestId: asked.requestId,
+      occurrenceId: asked.occurrenceId,
+      decision: "deny",
+    });
+    respondOpenCodeApproval("opencode-live", asked.requestId, "allow", asked.occurrenceId);
+    await Promise.resolve();
+    expect(replies()).toHaveLength(1);
+    previous = asked;
+    idle();
+    await done;
+    await stopOpenCodeSession("opencode-live");
+    __openCodeTestReset();
+  }
+});
+
 it("reports when OpenCode accepts a turn", async () => {
   const events: HarnessEvent[] = [];
   const onAccepted = vi.fn();
@@ -1300,7 +1344,7 @@ describe("OpenCode child permission routing", () => {
       status: 500,
       body: "Permission reply failed",
     });
-    respondOpenCodeApproval("opencode-live", approval.requestId, "allow");
+    respondOpenCodeApproval("opencode-live", approval.requestId, "allow", approval.occurrenceId);
     await waitFor(
       () => events.some((event) => event.type === "session.error"),
       "permission failure",
@@ -1341,7 +1385,7 @@ describe("OpenCode child permission routing", () => {
       approval: { requestId: approval.requestId },
     });
     expect(events).not.toContainEqual({ type: "message.completed" });
-    respondOpenCodeApproval("opencode-live", approval.requestId, decision);
+    respondOpenCodeApproval("opencode-live", approval.requestId, decision, approval.occurrenceId);
     await waitFor(
       () =>
         harnessHttp.mock.calls.some(
@@ -1359,6 +1403,7 @@ describe("OpenCode child permission routing", () => {
     expect(events).toContainEqual({
       type: "approval.resolved",
       requestId: approval.requestId,
+      occurrenceId: approval.occurrenceId,
       decision,
     });
     const resolved = events.reduce(applyHarnessEvent, newSession("opencode", "/repo"));
@@ -1492,8 +1537,18 @@ describe("OpenCode child permission routing", () => {
     const approvals = events.filter((event) => event.type === "approval.requested");
     expect(approvals).toHaveLength(2);
     expect(approvals[0].requestId).not.toBe(approvals[1].requestId);
-    respondOpenCodeApproval("opencode-live", approvals[1].requestId, "deny");
-    respondOpenCodeApproval("opencode-live", approvals[0].requestId, "allow");
+    respondOpenCodeApproval(
+      "opencode-live",
+      approvals[1].requestId,
+      "deny",
+      approvals[1].occurrenceId,
+    );
+    respondOpenCodeApproval(
+      "opencode-live",
+      approvals[0].requestId,
+      "allow",
+      approvals[0].occurrenceId,
+    );
     idle();
     await done;
     const replies = harnessHttp.mock.calls.filter(([input]) => input.url.includes("/permission/"));
@@ -1684,7 +1739,7 @@ it("cache sınırı aktif delta ve alt ajan onay rotasını korur", async () => 
     "child approval after cache pressure",
   );
   const approval = events.find((event) => event.type === "approval.requested")!;
-  respondOpenCodeApproval("opencode-live", approval.requestId, "deny");
+  respondOpenCodeApproval("opencode-live", approval.requestId, "deny", approval.occurrenceId);
   idle();
   await done;
 });
@@ -1780,7 +1835,7 @@ it("idle alt ajan geçmişi incomplete metadata olsa da sınırlanır ve aktif z
     type: "message.delta",
     text: " still alive",
   });
-  respondOpenCodeApproval("opencode-live", approval.requestId, "deny");
+  respondOpenCodeApproval("opencode-live", approval.requestId, "deny", approval.occurrenceId);
   await waitFor(
     () => events.some((event) => event.type === "approval.resolved"),
     "held permission resolved",
@@ -1796,7 +1851,7 @@ it("idle alt ajan geçmişi incomplete metadata olsa da sınırlanır ve aktif z
     "rehydrated permission",
   );
   const revived = events.filter((event) => event.type === "approval.requested")[1];
-  respondOpenCodeApproval("opencode-live", revived.requestId, "deny");
+  respondOpenCodeApproval("opencode-live", revived.requestId, "deny", revived.occurrenceId);
   idle();
   await done;
 });
@@ -1896,7 +1951,7 @@ it("deleted child bekleyen etkileşimi çözer ve başka aktif child rotasını 
     "other child permission",
   );
   const approval = events.filter((event) => event.type === "approval.requested")[1];
-  respondOpenCodeApproval("opencode-live", approval.requestId, "deny");
+  respondOpenCodeApproval("opencode-live", approval.requestId, "deny", approval.occurrenceId);
   idle();
   await done;
 });
@@ -1943,7 +1998,7 @@ it("holds Native SSE ancestry and permission work through actual HTTP and user s
   const asked = events.find((e) => e.type === "approval.requested")!;
   const origin = getNativeOutputEventOrigin(asked);
   expect(origin).not.toBeNull();
-  respondOpenCodeApproval("opencode-live", asked.requestId, "allow");
+  respondOpenCodeApproval("opencode-live", asked.requestId, "allow", asked.occurrenceId);
   await waitFor(
     () => events.some((e) => e.type === "approval.resolved"),
     "causal permission result",

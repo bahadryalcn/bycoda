@@ -69,14 +69,14 @@ export function InboxDiscussionPanel({
     <aside
       ref={resize.setPaneRef}
       aria-label={t("Ask about {p0}", { p0: inboxItemRef(item) })}
-      className="relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-pane-border) max-[1100px]:absolute max-[1100px]:inset-0 max-[1100px]:z-10 max-[1100px]:!w-auto max-[1100px]:bg-(--ui-surface)"
+      className="inbox-discussion-panel relative flex min-h-0 shrink-0 flex-col border-l border-(--ui-pane-border)"
     >
       <div
         {...resize.separatorProps}
         aria-label={t("Resize discussion")}
         onPointerDown={resize.onPointerDown}
         onDoubleClick={resize.onDoubleClick}
-        className="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize max-[1100px]:hidden"
+        className="inbox-discussion-resizer absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize"
       />
       <header className="flex h-11 shrink-0 items-center border-b border-(--ui-tone-neutral-border) px-3">
         <span className="min-w-0 flex-1 truncate text-ui-secondary font-medium">

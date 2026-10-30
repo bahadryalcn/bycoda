@@ -87,8 +87,8 @@ export function GitGraphDialog({ title, toolbar, onClose, children, expandable =
   };
 
   return createPortal(
-    <div className="fixed inset-0" style={{ zIndex: LAYER.popover - 1 }}>
-      <div className="modal-backdrop absolute inset-0 bg-scrim/40" onMouseDown={onClose} />
+    <div data-modal-layer="" className="fixed inset-0" style={{ zIndex: LAYER.popover - 1 }}>
+      <div className="modal-backdrop absolute inset-0" onMouseDown={onClose} />
       <div
         className={
           maximized

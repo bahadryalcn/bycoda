@@ -1895,7 +1895,9 @@ export function FileSection({
   ];
   return (
     <div>
-      <div className="flex h-7 items-center gap-1 px-1.5">
+      {/* In a narrow pane the icon group wraps under the title instead of squeezing the title to
+          nothing and overlapping the count (the title keeps a readable floor). */}
+      <div className="flex min-h-7 flex-wrap items-center gap-x-1 px-1.5">
         <Button
           size="sm"
           variant="item"
@@ -1904,7 +1906,7 @@ export function FileSection({
           aria-expanded={open}
           title={title}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+          className="flex min-w-28 flex-1 basis-28 items-center gap-1 text-left"
         >
           {open ? (
             <ChevronDown
@@ -1927,50 +1929,52 @@ export function FileSection({
             {countLabel ?? count}
           </span>
         </Button>
-        {headerExtra}
-        {view && onToggleView ? (
-          <IconAction
-            title={view === "tree" ? t("View as List") : t("View as Tree")}
-            onClick={onToggleView}
-          >
-            {view === "tree" ? (
-              <ListBullet className="size-3.5" strokeWidth={1.75} />
-            ) : (
-              <FolderTree className="size-3.5" strokeWidth={1.75} />
-            )}
-          </IconAction>
-        ) : null}
-        {overflow.length ? (
-          <IconAction
-            title={t("More actions")}
-            onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
-            haspopup="menu"
-            expanded={!!moreAnchor}
-          >
-            <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
-          </IconAction>
-        ) : null}
-        {direct.map((action) =>
-          action.label ? (
-            <Button
-              size="sm"
-              variant="ghost"
-              motion="none"
-              key={action.title}
-              type="button"
-              title={action.title}
-              aria-label={action.title}
-              onClick={action.onClick}
-              className="shrink-0"
+        <div className="ml-auto flex items-center gap-1">
+          {headerExtra}
+          {view && onToggleView ? (
+            <IconAction
+              title={view === "tree" ? t("View as List") : t("View as Tree")}
+              onClick={onToggleView}
             >
-              {action.label}
-            </Button>
-          ) : (
-            <IconAction key={action.title} title={action.title} onClick={action.onClick}>
-              {action.icon}
+              {view === "tree" ? (
+                <ListBullet className="size-3.5" strokeWidth={1.75} />
+              ) : (
+                <FolderTree className="size-3.5" strokeWidth={1.75} />
+              )}
             </IconAction>
-          ),
-        )}
+          ) : null}
+          {overflow.length ? (
+            <IconAction
+              title={t("More actions")}
+              onClick={(event) => setMoreAnchor(moreAnchor ? null : event.currentTarget)}
+              haspopup="menu"
+              expanded={!!moreAnchor}
+            >
+              <MoreHorizontal className="icon-sm" strokeWidth={1.75} />
+            </IconAction>
+          ) : null}
+          {direct.map((action) =>
+            action.label ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                motion="none"
+                key={action.title}
+                type="button"
+                title={action.title}
+                aria-label={action.title}
+                onClick={action.onClick}
+                className="shrink-0"
+              >
+                {action.label}
+              </Button>
+            ) : (
+              <IconAction key={action.title} title={action.title} onClick={action.onClick}>
+                {action.icon}
+              </IconAction>
+            ),
+          )}
+        </div>
       </div>
       {moreAnchor ? (
         <DropdownMenu

@@ -6,6 +6,40 @@ phone does not move its provider process, workspace or history authority.
 
 ## Source implementation
 
+Native reminder commands and their process-owned timer claim actual Persistence
+admission before SQL. A closed timer tick leaves due rows untouched and returns
+to the same loop. An accepted tick retains admission through final notification;
+failed reads/notifications cannot certify idle or replay a committed fired row.
+The three SSH group configuration writers and Control's save/private scratch
+commands use their actual caller boundaries too, preserving their original
+permissions, lock order and atomic updates.
+
+Notes image jobs create a fresh file, bound the actual opened-source stream and
+sync its bytes before granting access. A failed copy/sync/grant returns its
+original error without publishing a path or deleting an uncertain replacement.
+These file-byte checks do not establish namespace/power-loss or Notes-row/image
+graph durability. The Native Buffers lane still requires a complete native cut;
+partial raw retention alone does not finish its second checkpoint operation.
+
+Native Automation writes use the actual caller's global Persistence admission
+before entering SQL. An admitted transaction and its notification retain their
+original lifetime even if the observer stops waiting; the connection is unlocked
+before notification. Event claims keep the original webview caller restriction
+and recovery label. SSH runbook scalar writes and durable status recovery use
+the same actual-caller Persistence path. Start captures its original admission
+before review/proxy consumption or SQL; accepted background workers retain that
+admission through final persistence and actual worker completion. Cached status
+and cancellation control accepted work without requesting a new write grant.
+Durable lookup errors propagate before credentials are consumed; missing rows
+and uncertain recovery are distinct. These wired families do not qualify the
+whole store or prove complete writer coverage.
+
+The cross-process backend test uses the real Native Store schema and fence owner
+with a separate Node process and production Host worker. It checks both closed
+states, original queued commits, attested reads and exact retirement. The Desktop
+lease controls also cover accepted/running preparation before actual provider
+onset; command acceptance is not a provider-start latency promise.
+
 Participating Host Notes writers now reserve their actual physical databases
 before entering the serial queue. Each original retains its reservation until
 its SQL connections have closed or its Worker has actually exited. A lost public

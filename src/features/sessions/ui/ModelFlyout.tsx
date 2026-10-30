@@ -31,7 +31,11 @@ import { ModelExtrasPanel, useModelExtrasSummary } from "./ModelExtras";
 import "./ModelPicker.css";
 
 import { modelGroups } from "../model/modelPickerData";
-import { modelChoiceKey, type AccountModelChoice } from "../model/accountModelChoices";
+import {
+  modelChoiceBaseName,
+  modelChoiceKey,
+  type AccountModelChoice,
+} from "../model/accountModelChoices";
 const MODEL_MENU_WIDTH = 310;
 const SUBMENU_OVERLAP = -4;
 const PROVIDER_TAB_SIZE = 32;
@@ -267,6 +271,7 @@ export function ModelFlyout({
                     ) : null}
                     {group.models.map(({ item, index }) => {
                       const accountColor = (item as AccountModelChoice).accountColor;
+                      const accountLabel = (item as AccountModelChoice).accountLabel;
                       const selected = modelChoiceKey(item) === currentId;
                       const highlighted = index === active;
                       const favorited = favorites.includes(item.id);
@@ -291,7 +296,13 @@ export function ModelFlyout({
                             aria-selected={selected}
                             aria-label={`${item.name}, ${provenance}`}
                             disabled={disabled}
-                            title={disabled ? harnessUnavailableHint(item.harness) : undefined}
+                            // The row truncates long names; the full name (and why a row is unavailable) stays in
+                            // the tooltip, and the accessible name above always carries it.
+                            title={
+                              disabled
+                                ? `${item.name} · ${harnessUnavailableHint(item.harness)}`
+                                : item.name
+                            }
                             onMouseDown={(event) => event.preventDefault()}
                             onClick={() => onPick(item)}
                             className="min-w-0 flex-1 text-left"
@@ -303,10 +314,20 @@ export function ModelFlyout({
                                 aria-hidden
                               />
                             ) : null}
-                            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+                            <span className="min-w-0 flex-1 truncate">
+                              {modelChoiceBaseName(item as AccountModelChoice)}
+                            </span>
+                            {accountLabel ? (
+                              <>
+                                {" "}
+                                <span className="max-w-[45%] shrink-0 truncate ui-caption-text">
+                                  {accountLabel}
+                                </span>
+                              </>
+                            ) : null}
                           </Button>
                           {tab === "favorites" ? (
-                            <span className="max-w-24 shrink-0 truncate ui-caption-text">
+                            <span className="max-w-24 shrink-0 truncate ui-caption-text" title={provenance}>
                               {provenance}
                             </span>
                           ) : null}

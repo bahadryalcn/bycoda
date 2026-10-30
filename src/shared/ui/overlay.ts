@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef } from "react";
+import { createContext, useContext, useLayoutEffect, useRef, useState } from "react";
 import { isImeComposition } from "../lib/keyboard";
 
 export const OverlayParent = createContext<symbol | null>(null);
@@ -11,6 +11,10 @@ type Entry = {
   modal: boolean;
   escape?: () => void;
   previous: HTMLElement | null;
+  /** Where to return when `previous` is gone: the openers of the popovers it sat inside. */
+  fallbacks: HTMLElement[];
+  /** Surviving ancestors of the outermost opener, nearest first, for a removed opener. */
+  scope: HTMLElement[];
   initialFocusSelector?: string;
   passive: boolean;
 };
@@ -29,7 +33,9 @@ if (typeof document !== "undefined") {
     (event) => {
       pointerTriggerAt = performance.now();
       pointerTrigger =
-        event.target instanceof Element ? event.target.closest<HTMLElement>(TRIGGER_SELECTOR) : null;
+        event.target instanceof Element
+          ? event.target.closest<HTMLElement>(TRIGGER_SELECTOR)
+          : null;
     },
     true,
   );
@@ -37,11 +43,98 @@ if (typeof document !== "undefined") {
 function returnTarget(): HTMLElement | null {
   if (typeof document === "undefined") return null;
   const active = document.activeElement;
-  if (active instanceof HTMLElement && active !== document.body && active !== document.documentElement)
+  if (
+    active instanceof HTMLElement &&
+    active !== document.body &&
+    active !== document.documentElement
+  )
     return active;
   return pointerTrigger?.isConnected && performance.now() - pointerTriggerAt < TRIGGER_WINDOW_MS
     ? pointerTrigger
     : null;
+}
+/** How far above a removed opener a safe target is searched; farther is another context. */
+const SCOPE_DEPTH = 3;
+function scopeOf(opener: HTMLElement | null): HTMLElement[] {
+  const scope: HTMLElement[] = [];
+  for (
+    let parent = opener?.parentElement;
+    // A direct child of the body is an app or portal root, not a context: never a fallback.
+    parent && parent !== document.body && parent.parentElement !== document.body &&
+    scope.length < SCOPE_DEPTH;
+    parent = parent.parentElement
+  ) {
+    scope.push(parent);
+    if (parent.matches("dialog, [role='dialog'], [aria-modal='true']")) break;
+  }
+  return scope;
+}
+/**
+ * Read while rendering, before descendant layout effects move focus into their portals. An
+ * opener inside another open popover (a menu row that opens a dialog, a submenu) disappears
+ * with that popover, so the capture also keeps what that popover will return to itself.
+ */
+function captureReturn() {
+  const previous = returnTarget();
+  const fallbacks: HTMLElement[] = [];
+  const owner = previous
+    ? entries.find((entry) => !entry.modal && entry.root.contains(previous))
+    : null;
+  if (owner) {
+    if (owner.previous) fallbacks.push(owner.previous);
+    fallbacks.push(...owner.fallbacks);
+  }
+  return { previous, fallbacks, scope: scopeOf(fallbacks[fallbacks.length - 1] ?? previous) };
+}
+function editable(el: HTMLElement) {
+  return (
+    el.isContentEditable ||
+    el instanceof HTMLTextAreaElement ||
+    (el instanceof HTMLInputElement &&
+      !/^(button|checkbox|radio|submit|reset|range|color|file|image)$/.test(el.type))
+  );
+}
+function focusIsLost() {
+  const active = document.activeElement;
+  return !active || active === document.body || active === document.documentElement;
+}
+const reachable = (el: HTMLElement | null, entry: Entry): el is HTMLElement =>
+  !!el && el.isConnected && !entry.root.contains(el) && !el.closest("[inert]");
+/** The first control in the nearest surviving container around a removed opener. */
+function focusInScope(entry: Entry) {
+  for (const scope of entry.scope) {
+    if (!reachable(scope, entry)) continue;
+    const target = focusable(scope).find((el) => el !== scope && !entry.root.contains(el));
+    if (!target) continue;
+    target.focus({ preventScroll: true });
+    return;
+  }
+}
+/**
+ * Returns focus to the opener when it is still here, else to the opener of the popover it came
+ * from, else to the first control in the nearest surviving container around the opener. Never
+ * scrolls, and never pulls the caret out of a field the user has already moved to.
+ */
+function restoreFocusFor(entry: Entry) {
+  const active = document.activeElement;
+  if (
+    active instanceof HTMLElement &&
+    !focusIsLost() &&
+    !entry.root.contains(active) &&
+    editable(active)
+  )
+    return;
+  for (const candidate of [entry.previous, ...entry.fallbacks]) {
+    if (!reachable(candidate, entry)) continue;
+    candidate.focus({ preventScroll: true });
+    if (document.activeElement !== candidate) continue;
+    // The same commit may remove the opener right after (the menu item deleted its own row).
+    queueMicrotask(() => {
+      if (!candidate.isConnected && focusIsLost()) focusInScope(entry);
+    });
+    return;
+  }
+  focusInScope(entry);
 }
 /** Outer window listeners must leave Escape to the active overlay stack. */
 export function hasActiveOverlay() {
@@ -205,7 +298,7 @@ export function useOverlay(
 ) {
   const id = useRef(Symbol("overlay")).current;
   // Capture before descendant layout effects can move focus into their portals.
-  const previous = useRef(returnTarget());
+  const [captured] = useState(captureReturn);
   const parent = useContext(OverlayParent);
   const close = useRef(escape);
   close.current = escape;
@@ -217,7 +310,9 @@ export function useOverlay(
       root: root.current,
       modal,
       escape: escape ? () => close.current?.() : undefined,
-      previous: previous.current,
+      previous: captured.previous,
+      fallbacks: captured.fallbacks,
+      scope: captured.scope,
       initialFocusSelector,
       passive,
     };
@@ -247,17 +342,12 @@ export function useOverlay(
         document.removeEventListener("focusin", onFocus);
         observer?.disconnect();
       }
-      if (
-        restoreFocus &&
-        (wasTop || entry.modal) &&
-        entry.previous?.isConnected &&
-        !entry.previous.closest("[inert]")
-      )
-        entry.previous.focus({ preventScroll: true });
+      if (restoreFocus && (wasTop || entry.modal)) restoreFocusFor(entry);
     };
   }, [
     id,
     parent,
+    captured,
     root,
     modal,
     Boolean(escape),

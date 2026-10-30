@@ -1,8 +1,10 @@
+import { useEffect, useRef } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { ComposerActions } from "./socialShared";
 import type { FactCandidate, FactSuggestResult } from "../model/socialSuggestions";
 
 export const FACT_TOPIC_MAX = 200;
@@ -102,6 +104,11 @@ export function FactSuggestions({
 }) {
   useLocale();
   const { result } = review;
+  const section = useRef<HTMLElement>(null);
+  // A new answer lands below the ask form: bring it into view, its actions are in the dialog footer.
+  useEffect(() => {
+    section.current?.scrollIntoView?.({ block: "nearest" });
+  }, [result]);
   const shown = visibleCandidates(review);
   const open = shown.filter((candidate) => !review.accepted.includes(candidate.id));
   const acceptable = acceptableCandidates(review, slotsLeft, duplicateTopic);
@@ -109,6 +116,7 @@ export function FactSuggestions({
   const label = result.sourceLabel;
   return (
     <section
+      ref={section}
       className="social-fact-suggestions"
       aria-label={t("Suggestions - not verified yet")}
       data-testid="fact-suggestions"
@@ -148,23 +156,21 @@ export function FactSuggestions({
         </p>
       ) : (
         <>
-          <div className="social-fact-suggestions-actions">
+          <ComposerActions className="social-fact-suggestions-actions">
+            {open.length && !acceptable.length ? (
+              <small className="social-muted">{t("No suggestion can be accepted yet.")}</small>
+            ) : null}
+            <Button type="button" variant="ghost" disabled={locked} onClick={onRejectAll}>
+              {t("Reject all")}
+            </Button>
             <Button
-              size="sm"
               type="button"
-              variant="secondary"
               disabled={locked || !acceptable.length}
               onClick={() => onAcceptAll(acceptable.map((candidate) => candidate.id))}
             >
               {t("Accept all valid")}
             </Button>
-            <Button size="sm" type="button" variant="ghost" disabled={locked} onClick={onRejectAll}>
-              {t("Reject all")}
-            </Button>
-            {open.length && !acceptable.length ? (
-              <small className="social-muted">{t("No suggestion can be accepted yet.")}</small>
-            ) : null}
-          </div>
+          </ComposerActions>
           <ul className="social-fact-suggestions-list">
             {shown.map((candidate, index) => {
               const topic = candidateTopic(review, candidate);

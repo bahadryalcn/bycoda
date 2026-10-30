@@ -28,7 +28,7 @@ export function TaskAccountPicker({
   if (!supportsProviderAccounts(harness)) return null;
   if (!local)
     return (
-      <span className="task-account-context">
+      <span className="task-account-context text-ui-caption text-(--ui-text-secondary)">
         {accountId && accountId !== "default"
           ? t("Account selected on the host")
           : t("Host default account")}
@@ -40,7 +40,10 @@ export function TaskAccountPicker({
     !providerAccounts(harness).some((account) => account.id === accountId);
   if (!missing) return null;
   return (
-    <span role="status" className="task-account-context text-(--ui-tone-warning-fg)">
+    <span
+      role="status"
+      className="task-account-context text-ui-caption text-(--ui-tone-warning-fg)"
+    >
       {t("Unavailable account")}
     </span>
   );

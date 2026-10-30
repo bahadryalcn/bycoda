@@ -5,6 +5,34 @@ description: Shared UI redesign inventory for public bycoda controls, task-sized
 
 # Shared UI components and redesign
 
+## V2 2026-10-30: overlays, empty/loading states, row actions (uncommitted)
+
+Source delivered in the shared checkout; fixture/unit evidence only.
+
+- Modal backdrop (V2-004): one shared blur/dim on the lowest `[data-modal-layer]` only; nested layers get a
+  light tint without blur. Roles `--ui-overlay-backdrop-blur|soft|nested` in `src/styles/index.css`; full dim
+  fallback without `backdrop-filter`, under forced colors, reduced transparency and no-blur mode.
+  `GitGraphDialog` and `ImageLightbox` use the same scrim.
+- Focus return (V2-012) has one owner, `overlay.ts`: opener, else the opener of the popover it came from
+  (menu → dialog), else the first control in the nearest surviving container (max 3 levels, never a direct
+  child of `body`), always `preventScroll`, never blurring a field the user moved to. Modal no longer keeps a
+  second fallback. `native-context-menu.tsx` focus calls use `preventScroll`.
+- Popover default `flow` is now `auto` (V2-007): content scrolls vertically only when it exceeds the bound
+  (`Popover.module.css`, components layer, so consumer overflow utilities win); `flow="intrinsic"` stays the
+  explicit clip option. This closes the open "Popover `flow` adoption by consumers" item below.
+- EmptyState (V2-005): `kind` empty/filtered/unavailable with `onReset`/`onRetry`, implied role and glyph;
+  consumers fixed: Tasks, Automations, Inbox, Notes, Servers, MCP settings, Skills, DevServers,
+  CrewMemberPicker, AdditionalDirsDialog. Inventory: `temp/local/2026-10-30-ui-refinements-2/v2-005/inventory.md`.
+- Loading (V2-006): `lazySurface(..., { fallback })`, shared `SurfaceLoading` (indeterminate, 150 ms delay),
+  `SettingsLoadingSurface` keeps the section title and dialog close visible inside one mounted Modal.
+- Row actions (V2-009/011): `InlineMoreAction` in `ActionHost.tsx` (menu semantics, opens the row's existing
+  menu); adopted by source-control `ChangeRow`, `ServerItem`, `JiraBoardView`, `CrewRailSection`. Container
+  queries replace window breakpoints in the terminal list, inbox discussion panel and task evaluation grid.
+  Collapse slot: overlay form via `data-action-yield` (LastSessions, Notes) replaces secondary metadata
+  instead of shifting it; ProjectRail group header reserves its action slot at rest (owner decision
+  2026-10-30: “Reserve space at rest (Recommended)”). Measured 0 px shift in `temp/verification/v2-final-c/`.
+- Evidence: `temp/verification/v2-004/`, `v2-005/`, `v2-006/`, `v2-007/`, `v2-009/`, `v2-final/`.
+
 ## Optional observed text controls, 2026-10-29
 
 InlineEdit and TagInput retain their ordinary unregistered callback/ref/keyboard

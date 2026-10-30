@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IdentifierSchema, SafeCounterSchema } from "./schemas";
+import { IdentifierSchema, SafeCounterSchema, WIRE_UUID_V4_PATTERN } from "./schemas";
 
 /** Provider identifiers on the existing Host wire, independent of UI harness state. */
 export const SessionProviderSchema = z.enum([
@@ -217,6 +217,7 @@ export const CommandDispatchParamsSchema = z.discriminatedUnion("type", [
     type: z.literal("approve"),
     runId: IdentifierSchema,
     requestId: SafeCounterSchema,
+    approvalOccurrenceId: z.string().regex(WIRE_UUID_V4_PATTERN).optional(),
     decision: z.enum(["allow", "deny"]),
   }),
   z.strictObject({

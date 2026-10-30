@@ -5,6 +5,7 @@ import {
   ACCENT_INK_LIGHT,
   contrastRatio,
   deriveAccentRoles,
+  mixInOklab,
   paperSelectionPair,
   PAPER_CANVAS,
   relativeLuminance,
@@ -35,6 +36,14 @@ const ACCENTS = {
 } as const;
 
 const LEVELS: AccentReadability[] = ["auto", "strong"];
+
+describe("oklab mix (CSS color-mix mirror)", () => {
+  it("matches the CSS oklab midpoint of black and white and the endpoints", () => {
+    expect(mixInOklab("#000000", "#ffffff", 0.5)).toBe("#636363");
+    expect(mixInOklab("#123456", "#abcdef", 0)).toBe("#123456");
+    expect(mixInOklab("#123456", "#abcdef", 1)).toBe("#abcdef");
+  });
+});
 
 describe("WCAG helpers", () => {
   it("matches the reference ratios", () => {

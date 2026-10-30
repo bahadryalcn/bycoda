@@ -69,8 +69,6 @@
   margin: 0.5rem 0 0;
   padding: 0;
   list-style: none;
-  max-height: 15rem;
-  overflow: auto;
 }
 .sprint-row {
   display: flex;
@@ -82,9 +80,13 @@
 }
 .sprint-row > div {
   min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.75rem;
 }
 .sprint-row p {
-  margin: 0.125rem 0 0;
+  margin: 0;
   color: var(--ui-text-secondary);
 }
 .sprint-muted {
