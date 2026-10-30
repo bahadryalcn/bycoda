@@ -20,6 +20,8 @@ const sumTotals = (rows: readonly SprintTotals[]): SprintTotals =>
     { tasks: 0, points: 0, completedPoints: 0, remainingPoints: 0, unestimated: 0, deleted: 0 },
   );
 
+const NO_REPORTS: SprintReport[] = [];
+
 export function SprintReports({
   board,
   sprintId,
@@ -40,11 +42,18 @@ export function SprintReports({
 }) {
   const t = useT();
   const locale = useLocale();
-  const [report, setReport] = useState<SprintReport | null>(null);
-  const [history, setHistory] = useState<SprintReport[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  // The answer belongs to the inputs it was read for; any other key starts empty
+  // and loading, with no reset pass after render.
+  const [answer, setAnswer] = useState<{
+    key: string;
+    report: SprintReport | null;
+    history: SprintReport[];
+    error: string | null;
+  } | null>(null);
+  // Source freshness is measured from this time: when the report arrived, then
+  // every half minute while it can still go stale.
+  const [now, setNow] = useState(() => Date.now());
   const revision = board.sprints.map((sprint) => `${sprint.id}:${sprint.revision}`).join("|");
   const sourceRevision = board.sources
     .map((source) => `${source.environmentId}:${source.cursor}`)
@@ -58,13 +67,20 @@ export function SprintReports({
       }),
   );
   const scopeKey = [...allowed].sort().join("|");
+  const readKey = JSON.stringify([
+    sprintId,
+    revision,
+    sourceRevision,
+    planningRevision,
+    board.supported,
+    board.coordinatorEnvironmentId,
+    projectKey,
+    scopeKey,
+    refresh,
+  ]);
   useEffect(() => {
-    let cancelled = false;
-    setReport(null);
-    setHistory([]);
-    setError(null);
     if (!board.supported) return;
-    setLoading(true);
+    let cancelled = false;
     const completed = board.sprints
       .filter(
         (sprint) =>
@@ -80,36 +96,38 @@ export function SprintReports({
     void Promise.all([
       sprintId ? board.report(sprintId) : Promise.resolve(null),
       Promise.all(completed.map((sprint) => board.report(sprint.id))),
-    ])
-      .then(
-        ([selected, reports]) => {
-          if (!cancelled) {
-            setReport(selected);
-            setHistory(reports);
-          }
-        },
-        (reason) => {
-          if (!cancelled) setError(reason instanceof Error ? reason.message : String(reason));
-        },
-      )
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    ]).then(
+      ([selected, reports]) => {
+        if (cancelled) return;
+        setNow(Date.now());
+        setAnswer({ key: readKey, report: selected, history: reports, error: null });
+      },
+      (reason) => {
+        if (cancelled) return;
+        setAnswer({
+          key: readKey,
+          report: null,
+          history: [],
+          error: reason instanceof Error ? reason.message : String(reason),
+        });
+      },
+    );
     return () => {
       cancelled = true;
     };
     // The controller is refreshed by source/planning revisions; callback identity is intentionally excluded.
-  }, [
-    sprintId,
-    revision,
-    sourceRevision,
-    planningRevision,
-    board.supported,
-    board.coordinatorEnvironmentId,
-    projectKey,
-    scopeKey,
-    refresh,
-  ]);
+  }, [readKey]);
+  const current = answer?.key === readKey ? answer : null;
+  const report = current?.report ?? null;
+  const history = current?.history ?? NO_REPORTS;
+  const error = current?.error ?? null;
+  const loading = board.supported && !current;
+  const staleCheck = !!report && !report.frozen;
+  useEffect(() => {
+    if (!staleCheck) return;
+    const timer = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [staleCheck]);
   const visibleKey = (key: string) => allowed.has(key) && (!projectKey || key === projectKey);
   const totalsFor = (value: SprintReport) =>
     sumTotals(
@@ -134,7 +152,7 @@ export function SprintReports({
         return (
           !source ||
           source.caughtUp === false ||
-          Date.now() - source.syncedAt > 60_000 ||
+          now - source.syncedAt > 60_000 ||
           !board.machines.some((machine) => machine.environmentId === project.environmentId) ||
           (source.visibleProjectIds && !source.visibleProjectIds.includes(project.projectId))
         );

@@ -31,7 +31,7 @@ type Preview = {
   client: SocialClient;
   uploadId: string;
   attempt: number;
-  phase: "pending" | "ready" | "error";
+  phase: "ready" | "error";
   source?: string;
 };
 
@@ -51,14 +51,17 @@ export function SocialUploadImagePreview({
   const [preview, setPreview] = useState<Preview>();
   const [attempt, setAttempt] = useState(0);
   const version = useRef(0);
+  // Any change of scope or visibility drops the earlier preview; the pending view needs no state.
+  const scopeKey = [client, uploadId, attempt, active] as const;
+  const [seenScopeKey, setSeenScopeKey] = useState(scopeKey);
+  if (scopeKey.some((value, index) => !Object.is(value, seenScopeKey[index]))) {
+    setSeenScopeKey(scopeKey);
+    setPreview(undefined);
+  }
   useEffect(() => {
     const current = ++version.current;
-    if (!active) {
-      setPreview(undefined);
-      return;
-    }
+    if (!active) return;
     const scope = { client, uploadId, attempt };
-    setPreview({ ...scope, phase: "pending" });
     void (async () => {
       try {
         if (!/^[A-Za-z0-9_-]{1,128}$/.test(uploadId)) throw new Error("Invalid image upload.");

@@ -1,0 +1,8 @@
+SQLite is in the Public Domain.
+
+The SQLite authors have dedicated the deliverable SQLite code and documentation
+to the public domain. The original notices in sqlite3.h and sqlite3ext.h are
+retained unchanged. See https://sqlite.org/copyright.html.
+
+This directory contains only the public extension ABI headers, not a separately
+linked SQLite engine. Origin, exact version and byte hashes are in ORIGIN.json.

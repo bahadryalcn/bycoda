@@ -1,5 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot } from "react-dom/client";
+import {
+  LOCAL_MODEL_SOURCE,
+  ModelSourceContext,
+  type ModelSource,
+} from "../../src/features/sessions/ui/modelSource";
 import { useState } from "react";
 import { ToolPanel } from "../../src/app/shell/ToolNavigation";
 import { SocialView } from "../../src/features/social/ui/SocialView";
@@ -873,6 +878,62 @@ Object.assign(window, {
     snapshot.policies = { global: { maxMessageCharacters: 40 }, platforms: {} };
     snapshot.approvedCampaignIds = ["campaign"];
   },
+  // Fixture only: more content and reply rules so the AI review flows (plan, simplify) have data.
+  socialFixtureSeedAi: () => {
+    snapshot.campaigns.push(
+      ...["Launch week teaser", "Pricing reminder", "Customer story", "Holiday notice"].map(
+        (name, index) => ({
+          id: `ai-campaign-${index + 1}`,
+          name,
+          projectIds: ["demo"],
+          revision: 1,
+          paused: false,
+          createdAt: 2 + index,
+          variants: [
+            {
+              accountId: "x",
+              text: `${name}: fixture post body for the AI plan review.`,
+              media: [],
+              scheduledAt: Date.now() + (index + 2) * 3600000,
+              factIds: [],
+            },
+          ],
+        }),
+      ),
+    );
+    snapshot.approvedCampaignIds = ["campaign", "ai-campaign-1", "ai-campaign-2"];
+    snapshot.rules = [
+      {
+        id: "rule-a",
+        name: "Support questions",
+        accountId: "x",
+        projectId: "demo",
+        mode: "approval",
+        trigger: "message",
+        topics: ["Destek", "Fiyat"],
+        dailyLimit: 20,
+        enabled: false,
+        stopWords: ["refund", "Refund", "lawsuit"],
+        answers: [
+          { keyword: "help", factId: "fact" },
+          { keyword: "support", factId: "fact" },
+        ],
+      },
+      {
+        id: "rule-b",
+        name: "Pricing comments",
+        accountId: "x",
+        projectId: "demo",
+        mode: "draft",
+        trigger: "comment",
+        topics: ["Destek"],
+        dailyLimit: 10,
+        enabled: false,
+        stopWords: [],
+        answers: [{ keyword: "price", factId: "fact" }],
+      },
+    ];
+  },
   socialFixtureWorkflow: () => {
     workflowWrites = true;
     snapshot.sendingEnabled = true;
@@ -1394,6 +1455,140 @@ Object.assign(window, {
             if (!mime) throw new Error("Fixture image preview is unavailable.");
             return { base64: upload.base64, mime };
           }
+          // Fixture only: deterministic stand-in for the Host reply suggestion. It stores nothing.
+          if (params.action === "replies.suggest") {
+            const ids = ((params.input ?? {}).factIds as string[]) ?? [];
+            const facts = snapshot.profiles.flatMap((profile) => profile.facts);
+            return {
+              text: `Fixture reply: ${facts.filter((fact) => ids.includes(fact.id)).map((fact) => fact.text).join(" ")}`,
+              factIds: ids,
+              agent: { provider: "codex", model: "fixture-model" },
+            };
+          }
+          // Fixture only: deterministic stand-ins for the Host AI bridges. They store nothing and
+          // never contact a provider; the real operations are owner-only, read-only proposals.
+          if (params.action === "plans.suggest") {
+            const input = params.input ?? {};
+            const pool = snapshot.campaigns.filter(
+              (campaign) =>
+                campaign.projectIds.includes(String(input.projectId)) &&
+                campaign.variants.some((variant) => variant.accountId === input.accountId) &&
+                (!Array.isArray(input.campaignIds) || input.campaignIds.includes(campaign.id)),
+            );
+            const chosen = pool.slice(0, 3);
+            return {
+              accountId: input.accountId,
+              projectId: input.projectId,
+              name: "Weekday announcements (AI draft)",
+              campaignIds: chosen.map((campaign) => campaign.id),
+              schedule: {
+                timeZone: "Europe/Istanbul",
+                startTime: "09:00",
+                endTime: "18:00",
+                minIntervalMinutes: 360,
+                maxIntervalMinutes: 720,
+              },
+              rationale: "Fixture rationale: one post per working-day window, oldest approved content first.",
+              excluded: pool.slice(3).map((campaign) => ({
+                campaignId: campaign.id,
+                reason: "Fixture reason: similar to an earlier pool entry.",
+              })),
+              unapprovedCampaignIds: chosen
+                .filter((campaign) => !snapshot.approvedCampaignIds?.includes(campaign.id))
+                .map((campaign) => campaign.id),
+              questions: ["Which days should the plan avoid?"],
+              agent: { provider: "codex", model: "fixture-model" },
+              requiresOwnerActivation: true,
+            };
+          }
+          if (params.action === "rules.simplify") {
+            const input = params.input ?? {};
+            const rules = snapshot.rules.filter(
+              (rule) =>
+                rule.accountId === input.accountId &&
+                rule.projectId === input.projectId &&
+                (!Array.isArray(input.ruleIds) || input.ruleIds.includes(rule.id)),
+            );
+            const [first, ...rest] = rules;
+            if (!first)
+              return {
+                accountId: input.accountId,
+                projectId: input.projectId,
+                proposals: [],
+                unchangedRuleIds: [],
+                notes: [],
+                agent: { provider: "codex", model: "fixture-model" },
+                requiresOwnerActivation: true,
+              };
+            const stopWords = [...new Set(first.stopWords.map((word) => word.toLowerCase()))];
+            const topics = first.topics.slice(0, 1);
+            const proposed = {
+              name: `${first.name} (simplified)`,
+              accountId: first.accountId,
+              projectId: first.projectId,
+              mode: first.mode,
+              trigger: first.trigger,
+              topics,
+              dailyLimit: Math.max(1, Math.min(first.dailyLimit, 5)),
+              stopWords,
+              answers: first.answers.slice(0, 1),
+              ...(first.agent ? { agent: first.agent } : {}),
+            };
+            const changes = (
+              ["name", "topics", "dailyLimit", "stopWords", "answers"] as const
+            )
+              .filter(
+                (field) =>
+                  JSON.stringify(proposed[field]) !== JSON.stringify(first[field]),
+              )
+              .map((field) => ({ field, before: first[field], after: proposed[field] }));
+            return {
+              accountId: input.accountId,
+              projectId: input.projectId,
+              proposals: [
+                {
+                  ruleId: first.id,
+                  ruleName: first.name,
+                  proposed,
+                  changes,
+                  reason: "Fixture reason: one topic and one answer cover the same questions.",
+                },
+              ],
+              unchangedRuleIds: rest.map((rule) => rule.id),
+              notes: ["Fixture note: stop words were kept."],
+              agent: { provider: "codex", model: "fixture-model" },
+              requiresOwnerActivation: true,
+            };
+          }
+          if (params.action === "facts.suggest") {
+            const input = params.input ?? {};
+            const source = String(input.sourceText ?? "");
+            const sentences = source
+              .split(/(?<=[.!?])\s+/)
+              .map((sentence) => sentence.trim())
+              .filter((sentence) => sentence.length > 12)
+              .slice(0, 4);
+            const existing = snapshot.profiles
+              .filter((profile) => profile.projectId === input.projectId)
+              .flatMap((profile) => profile.facts);
+            return {
+              accountId: input.accountId,
+              projectId: input.projectId,
+              sourceLabel: String(input.sourceLabel ?? ""),
+              suggestions: sentences.map((sentence, index) => ({
+                id: `suggestion-${index + 1}`,
+                topic: ["Pricing", "Support", "Availability", "Features"][index % 4],
+                text: sentence,
+                quote: sentence,
+                ...(existing.find((fact) => fact.text === sentence)
+                  ? { duplicateOfFactId: existing.find((fact) => fact.text === sentence)!.id }
+                  : {}),
+              })),
+              skipped: 1,
+              agent: { provider: "codex", model: "fixture-model" },
+              verified: false,
+            };
+          }
           if (programFixture && params.action.startsWith("programs.")) {
             const input = params.input ?? {};
             if (params.action === "programs.list") return structuredClone(programRecords);
@@ -1433,16 +1628,6 @@ Object.assign(window, {
                 },
                 questions: ["Which launch date should the posts mention?"],
                 requiresOwnerActivation: true,
-              };
-            }
-            // Fixture only: deterministic stand-in for the Host reply suggestion. It stores nothing.
-            if (params.action === "replies.suggest") {
-              const ids = (input.factIds as string[]) ?? [];
-              const facts = snapshot.profiles.flatMap((profile) => profile.facts);
-              return {
-                text: `Fixture reply: ${facts.filter((fact) => ids.includes(fact.id)).map((fact) => fact.text).join(" ")}`,
-                factIds: ids,
-                agent: { provider: "codex", model: "fixture-model" },
               };
             }
             if (params.action === "programs.configure") {
@@ -1686,6 +1871,38 @@ Object.assign(window, {
               snapshot.segments.push(segment);
               return structuredClone(segment);
             }
+            if (params.action === "automations.create") {
+              const rule = {
+                ...(structuredClone(input) as unknown as SocialSnapshot["rules"][number]),
+                id: `rule-${snapshot.rules.length + 1}`,
+                enabled: false,
+              };
+              snapshot.rules.push(rule);
+              return structuredClone(rule);
+            }
+            if (params.action === "automations.pause") {
+              const rule = snapshot.rules.find((item) => item.id === input.id)!;
+              rule.enabled = false;
+              rule.pausedReason = "Paused by user/session.";
+              return structuredClone(rule);
+            }
+            if (params.action === "profiles.save") {
+              const profile = {
+                projectId: String(input.projectId),
+                productName: String(input.productName),
+                brandVoice: String(input.brandVoice),
+                facts: (input.facts as SocialSnapshot["profiles"][number]["facts"]).map((fact, index) => ({
+                  ...fact,
+                  id: fact.id || `saved-fact-${index}`,
+                  verifiedAt: Date.now(),
+                })),
+              };
+              snapshot.profiles = [
+                ...snapshot.profiles.filter((item) => item.projectId !== profile.projectId),
+                profile,
+              ];
+              return structuredClone(profile);
+            }
             if (["replies.draft", "messages.draft", "comments.draft"].includes(params.action)) {
               const thread = snapshot.threads.find((item) => item.id === input.threadId);
               const contact = snapshot.contacts.find(
@@ -1788,9 +2005,18 @@ function XMediaFixture() {
     </main>
   );
 }
+// Fixture only: every provider counts as installed so the shared model picker can be exercised.
+const fixtureModelSource: ModelSource = {
+  ...LOCAL_MODEL_SOURCE,
+  available: () => true,
+  probed: () => true,
+  refresh: () => {},
+};
 const fixtureQueryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 createRoot(document.getElementById("root")!).render(
   <QueryClientProvider client={fixtureQueryClient}>
-    <SocialFixture />
+    <ModelSourceContext.Provider value={fixtureModelSource}>
+      <SocialFixture />
+    </ModelSourceContext.Provider>
   </QueryClientProvider>,
 );

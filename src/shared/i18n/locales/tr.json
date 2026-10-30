@@ -9359,5 +9359,6 @@
   "Item": "Öğe",
   "Move to another window": "Başka pencereye taşı",
   "Release to move": "Taşımak için bırak",
-  "Could not verify the tag change. Your current tags are kept.": "Etiket değişikliği doğrulanamadı. Mevcut etiketleriniz korunuyor."
+  "Could not verify the tag change. Your current tags are kept.": "Etiket değişikliği doğrulanamadı. Mevcut etiketleriniz korunuyor.",
+  "Used for the composer send button, selected text and accent actions.": "Mesaj alanındaki gönder düğmesi, seçili metin ve vurgu eylemleri için kullanılır."
 }

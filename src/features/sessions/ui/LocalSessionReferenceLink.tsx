@@ -24,6 +24,7 @@ export function LocalSessionReferenceLink({
   const navigation = useLocalSessionReferenceNavigation();
   const trigger = useRef<HTMLButtonElement>(null);
   const sequence = useRef(0);
+  const activeOpen = useRef<{ owner: typeof navigation } | null>(null);
   const id = useId();
   const [details, setDetails] = useState(false);
   const [resolved, setResolved] = useState<{
@@ -32,7 +33,7 @@ export function LocalSessionReferenceLink({
   }>();
   const metadata = resolved?.owner === navigation ? resolved.value : undefined;
   const [reading, setReading] = useState(false);
-  const [opening, setOpening] = useState(false);
+  const [opening, setOpening] = useState<"session" | "beside">();
   const [error, setError] = useState<string>();
   const unavailable = t("This local session is unavailable.");
 
@@ -46,14 +47,16 @@ export function LocalSessionReferenceLink({
   // retained details and any in-flight continuation without changing saved prose.
   useEffect(() => {
     sequence.current++;
+    activeOpen.current = null;
     setResolved(undefined);
     setDetails(false);
     setReading(false);
-    setOpening(false);
+    setOpening(undefined);
     setError(undefined);
   }, [navigation]);
 
   async function readDetails() {
+    if (activeOpen.current?.owner === navigation) return;
     const request = ++sequence.current;
     setReading(true);
     setResolved(undefined);
@@ -71,9 +74,11 @@ export function LocalSessionReferenceLink({
   }
 
   async function open(beside = false, withoutTurn = false) {
-    if (opening) return;
+    if (activeOpen.current?.owner === navigation) return;
+    const operation = { owner: navigation };
+    activeOpen.current = operation;
     const request = ++sequence.current;
-    setOpening(true);
+    setOpening(beside ? "beside" : "session");
     setReading(false);
     setError(undefined);
     try {
@@ -84,7 +89,8 @@ export function LocalSessionReferenceLink({
       if (sequence.current === request)
         setError(cause instanceof Error ? cause.message : unavailable);
     } finally {
-      if (sequence.current === request) setOpening(false);
+      if (activeOpen.current === operation) activeOpen.current = null;
+      if (sequence.current === request) setOpening(undefined);
     }
   }
 
@@ -94,7 +100,7 @@ export function LocalSessionReferenceLink({
         href={href}
         className={`text-(--ui-tone-info-fg) hover:underline ${className ?? ""}`}
         title={t("Open local session")}
-        aria-busy={opening || undefined}
+        aria-busy={!!opening || undefined}
         aria-describedby={error || opening ? id : undefined}
         onClick={(event) => {
           event.preventDefault();
@@ -118,6 +124,7 @@ export function LocalSessionReferenceLink({
         type="button"
         aria-expanded={details}
         aria-haspopup="dialog"
+        disabled={!!opening}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -214,7 +221,7 @@ export function LocalSessionReferenceLink({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  disabled={opening || reading}
+                  disabled={!!opening || reading}
                   onClick={() => void open(false, true)}
                 >
                   {t("Open conversation")}
@@ -224,8 +231,8 @@ export function LocalSessionReferenceLink({
                 type="button"
                 variant="secondary"
                 size="sm"
-                loading={opening}
-                disabled={reading || !metadata}
+                loading={opening === "session"}
+                disabled={!!opening || reading || !metadata}
                 onClick={() => void open()}
               >
                 {t("Open session")}
@@ -234,7 +241,8 @@ export function LocalSessionReferenceLink({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={opening || reading || !metadata}
+                loading={opening === "beside"}
+                disabled={!!opening || reading || !metadata}
                 onClick={() => void open(true)}
               >
                 {t("Open beside")}

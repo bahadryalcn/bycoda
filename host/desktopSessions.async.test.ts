@@ -252,3 +252,42 @@ it("reads stable native locators in the worker without initializing identity or 
   expect(await desktop.localSessionReferenceAsync("missing")).toBeUndefined();
   expect(desktop.opened).toBe(0);
 });
+
+it("does not advertise Native links while ownership is unavailable or transferred", async () => {
+  const { db, desktop } = fixture();
+  db.exec(
+    "CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY, source_store_id TEXT, source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'store-one','profile-one'); CREATE TABLE native_authority_floor(session_id TEXT PRIMARY KEY, phase TEXT); INSERT INTO native_authority_floor VALUES('visible','NATIVE')",
+  );
+  expect(await desktop.localSessionReferenceAsync("visible")).toEqual({
+    kind: "native",
+    sourceStoreId: "store-one",
+    sourceProfileId: "profile-one",
+    sessionId: "visible",
+  });
+  for (const phase of ["QUIESCING", "BLOCKED", "HOST", "CACHE", "UNKNOWN"]) {
+    db.prepare("UPDATE native_authority_floor SET phase=? WHERE session_id='visible'").run(phase);
+    expect(await desktop.localSessionReferenceAsync("visible"), phase).toBeUndefined();
+    expect(db.prepare("SELECT phase FROM native_authority_floor WHERE session_id='visible'").get()?.phase).toBe(phase);
+  }
+  expect(desktop.opened).toBe(0);
+});
+
+it("does not substitute another profile when the selected duplicate ID has unavailable authority", async () => {
+  const { db, desktop, path, paths } = fixture();
+  db.exec(
+    "CREATE TABLE native_authority_identity(id INTEGER PRIMARY KEY, source_store_id TEXT, source_profile_id TEXT); INSERT INTO native_authority_identity VALUES(1,'first-store','first-profile'); CREATE TABLE native_authority_floor(session_id TEXT PRIMARY KEY, phase TEXT); INSERT INTO native_authority_floor VALUES('visible','BLOCKED')",
+  );
+  const secondPath = join(dirname(path), "second-profile.db");
+  copyFileSync(path, secondPath);
+  const second = new DatabaseSync(secondPath);
+  try {
+    second.exec(
+      "UPDATE sessions SET created_at=2; UPDATE native_authority_identity SET source_store_id='second-store',source_profile_id='second-profile'; UPDATE native_authority_floor SET phase='NATIVE'",
+    );
+  } finally {
+    second.close();
+  }
+  paths.push(secondPath);
+  expect(await desktop.localSessionReferenceAsync("visible")).toBeUndefined();
+  expect(desktop.opened).toBe(0);
+});

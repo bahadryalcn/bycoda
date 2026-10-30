@@ -4,6 +4,14 @@ import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
 import { readBuildIdentity } from "../scripts/build/build-info.mjs";
+import {
+  admissionSourceFingerprint,
+  assertAdmissionPackagingSeparation,
+  copyAdmissionBundle,
+  readAdmissionBundle,
+  smokeAdmissionBundle,
+  validateAdmissionPackageDestination,
+} from "../scripts/build/physical-store-admission.mjs";
 
 // Official Node release checksums, pinned so release builds are reproducible.
 // https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
@@ -42,6 +50,18 @@ const target = args.includes("--target")
   ? args[args.indexOf("--target") + 1]
   : `${process.platform}-${process.arch}`;
 const targets = args.includes("--all") ? Object.keys(runtimes) : [target];
+const nativeAdmission = args.includes("--native-admission");
+const admissionDirectoryIndex = args.indexOf("--native-admission-dir");
+if (
+  admissionDirectoryIndex >= 0 &&
+  (!nativeAdmission ||
+    !args[admissionDirectoryIndex + 1] ||
+    args[admissionDirectoryIndex + 1].startsWith("--"))
+)
+  throw new Error("--native-admission-dir requires --native-admission and a directory");
+const admissionDirectory = resolve(
+  admissionDirectoryIndex >= 0 ? args[admissionDirectoryIndex + 1] : "build/host-native",
+);
 const output = resolve("build/host-packages");
 const cache = resolve(process.env.BYCODA_HOST_RUNTIME_CACHE ?? "build/host-runtime-cache");
 await mkdir(output, { recursive: true });
@@ -53,6 +73,19 @@ if (process.env.BYCODA_BUILD_MANIFEST && !buildIdentity)
   throw new Error("Build identity manifest is missing or invalid");
 if (buildIdentity && buildIdentity.version !== version)
   throw new Error("Build identity version does not match the host package");
+// Validate every requested native input before downloading or replacing a package.
+const admissionFingerprint = nativeAdmission
+  ? await admissionSourceFingerprint(resolve("."))
+  : null;
+if (nativeAdmission) await assertAdmissionPackagingSeparation(admissionDirectory, output, targets);
+if (nativeAdmission)
+  for (const target of targets) {
+    const bundle = await readAdmissionBundle(join(admissionDirectory, target), target);
+    if (bundle.manifest.sourceFingerprint !== admissionFingerprint)
+      throw new Error(`Native admission source mismatch for ${target}`);
+    if (target === `${process.platform}-${process.arch}`)
+      await validateAdmissionPackageDestination(output, target, bundle.manifest.artifact);
+  }
 for (const target of targets) {
   if (!(target in runtimes)) throw new Error(`Unsupported host target: ${target}`);
   const windows = target.startsWith("win32-");
@@ -76,6 +109,14 @@ for (const target of targets) {
     await writeFile(archive, bytes);
   }
   const folder = join(output, target);
+  if (nativeAdmission) {
+    await assertAdmissionPackagingSeparation(admissionDirectory, output, targets);
+    const bundle = await readAdmissionBundle(join(admissionDirectory, target), target);
+    if (bundle.manifest.sourceFingerprint !== admissionFingerprint)
+      throw new Error(`Native admission source mismatch for ${target}`);
+    if (target === `${process.platform}-${process.arch}`)
+      await validateAdmissionPackageDestination(output, target, bundle.manifest.artifact);
+  }
   await rm(folder, { recursive: true, force: true });
   await mkdir(folder, { recursive: true });
   if (windows) {
@@ -103,6 +144,13 @@ for (const target of targets) {
   await copyFile("build/host/store-worker.mjs", join(folder, "store-worker.mjs"));
   await copyFile("build/host/snapshot-worker.mjs", join(folder, "snapshot-worker.mjs"));
   await copyFile("host/provider-guard.mjs", join(folder, "provider-guard.mjs"));
+  if (nativeAdmission)
+    await copyAdmissionBundle(
+      join(admissionDirectory, target),
+      folder,
+      target,
+      admissionFingerprint,
+    );
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
   await writeFile(
     join(folder, "version.json"),
@@ -129,6 +177,7 @@ for (const target of targets) {
       windowsHide: true,
     }).trim();
     if (actual !== version) throw new Error("Packaged host failed its executable smoke test");
+    if (nativeAdmission) await smokeAdmissionBundle(executable, folder, target);
   }
   // Local installation consumes this directory directly: no ZIP/tar round trip.
   if (args.includes("--directory-only")) {

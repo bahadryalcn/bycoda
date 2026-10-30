@@ -25,7 +25,7 @@ type FileTreeKeyboardOptions = {
   expanded: Set<string>;
   selectedPath: string | null;
   selectedPaths: Set<string>;
-  selectionAnchor: RefObject<string | null>;
+  selectionAnchorRef: RefObject<string | null>;
   operationRunning: RefObject<boolean>;
   toggle: (path: string) => void;
   onSelect: (path: string, modifiers?: TreeSelectionModifiers) => void;
@@ -53,7 +53,7 @@ export function useFileTreeKeyboard({
   expanded,
   selectedPath,
   selectedPaths,
-  selectionAnchor,
+  selectionAnchorRef,
   operationRunning,
   toggle,
   onSelect,
@@ -231,7 +231,7 @@ export function useFileTreeKeyboard({
       setSelectedPaths(new Set(paths));
       if (!selectedPath || selectedPath === cwd) {
         setSelectedPath(paths[0] ?? cwd);
-        selectionAnchor.current = paths[0] ?? null;
+        selectionAnchorRef.current = paths[0] ?? null;
       }
       return;
     }

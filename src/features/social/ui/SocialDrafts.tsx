@@ -26,6 +26,9 @@ import { HARNESS_TITLE } from "../../sessions/model/session";
 import { t, useLocale } from "../../../shared/i18n";
 import { Notice, StatusBadge, statuses, time, type Run } from "./socialShared";
 
+/** Longest delay setTimeout honors; a later deadline is not armed (it would fire at once). */
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
 export function DraftList({
   drafts,
   client,
@@ -79,11 +82,19 @@ function Draft({
     ? factIds.filter((id) => !facts.some((fact) => fact.id === id))
     : [];
   const account = snapshot?.accounts.find((item) => item.id === draft.accountId);
+  // Opening the editor (or changing account, client or retrying) starts a fresh limits read.
+  const policyKey = [editing, account?.id, client, policyAttempt] as const;
+  const [seenPolicyKey, setSeenPolicyKey] = useState(policyKey);
+  if (policyKey.some((value, index) => !Object.is(value, seenPolicyKey[index]))) {
+    setSeenPolicyKey(policyKey);
+    if (editing && account) {
+      setEditPolicy(undefined);
+      setPolicyError("");
+    }
+  }
   useEffect(() => {
     if (!editing || !account) return;
     let cancelled = false;
-    setEditPolicy(undefined);
-    setPolicyError("");
     void client
       .request<{ effective: SocialPolicy }>("policy.get", { accountId: account.id })
       .then((result) => {
@@ -106,6 +117,17 @@ function Draft({
     socialRows(snapshot.threads, snapshot.related?.threads).find(
       (item) => item.id === draft.threadId,
     );
+  // The reply window closes on its own: a timer at the deadline refreshes the clock used for the check.
+  const replyUntil = account?.connection !== "browser" ? thread?.replyUntil : undefined;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!replyUntil) return;
+    const delay = Math.max(0, replyUntil - Date.now());
+    if (delay > MAX_TIMER_DELAY_MS) return;
+    const timer = setTimeout(() => setNow(Math.max(Date.now(), replyUntil)), delay);
+    return () => clearTimeout(timer);
+  }, [replyUntil]);
+  const replyWindowExpired = !!replyUntil && replyUntil <= now;
   const messageDraft = draft.kind === "message" || thread?.kind === "message";
   const messagingMedia =
     !!account &&
@@ -160,9 +182,7 @@ function Draft({
             ? t("This contact does not want to be contacted.")
             : thread?.replyAllowed === false
               ? t("The platform does not allow replies to this conversation.")
-              : account?.connection !== "browser" &&
-                  thread?.replyUntil &&
-                  thread.replyUntil <= Date.now()
+              : replyWindowExpired
                 ? t("The reply window for this conversation has expired.")
                 : snapshot && (!snapshot.hostOnline || snapshot.stopped || !snapshot.sendingEnabled)
                   ? t("Sending is off. Use the sending controls in the Automations section.")

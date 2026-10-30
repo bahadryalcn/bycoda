@@ -1873,7 +1873,7 @@ test("non-X browser accounts connect without API configuration and preserve plat
     if (platform === "Telegram") {
       await page
         .locator("summary")
-        .filter({ hasText: /^Platform capabilities and requirements$/ })
+        .filter({ hasText: /^Platform yetenekleri ve gereksinimleri$/ })
         .click();
       const publish = page
         .getByRole("region", { name: "Kullanılabilir işlemler" })
@@ -2142,11 +2142,11 @@ for (const width of [390, 1440])
     await form.locator("summary").filter({ hasText: "AI modelleri ve medya" }).click();
     // The agent and model come from the shared picker; the inherit choice leads its menu.
     const textAgent = form.locator('[data-model-picker-presentation="field"]');
-    await expect(textAgent).toHaveAttribute("aria-label", "Use the global agent");
+    await expect(textAgent).toHaveAttribute("aria-label", "Genel ajanı kullan");
     await textAgent.click();
     await page.getByRole("menuitem", { name: "Model", exact: true }).hover();
-    await page.getByRole("option", { name: "Claude Sonnet 5", exact: true }).click();
-    await expect(textAgent).not.toHaveAttribute("aria-label", "Use the global agent");
+    await page.getByRole("option", { name: "Claude Sonnet 5, Claude Code", exact: true }).click();
+    await expect(textAgent).not.toHaveAttribute("aria-label", "Genel ajanı kullan");
     const pickedAgent = await textAgent.getAttribute("aria-label");
     await form.getByLabel("Medya kaynağı", { exact: true }).selectOption("generate");
     await form.getByLabel("Görsel sağlayıcısı", { exact: true }).selectOption("gemini");
@@ -2809,7 +2809,7 @@ test("all creation forms and verified project information stay readable at deskt
     await selectSection(page, "İçerik hazırla");
     // Product knowledge is a summary row; its forms open in a dialog.
     await page.getByRole("button", { name: "Yönet", exact: true }).click();
-    const profile = page.getByRole("dialog", { name: "Product knowledge", exact: true });
+    const profile = page.getByRole("dialog", { name: "Ürün bilgisi", exact: true });
     await expect(profile.getByLabel("Ürün adı", { exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(profile).not.toBeVisible();

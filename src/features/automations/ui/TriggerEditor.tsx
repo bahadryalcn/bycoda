@@ -50,21 +50,29 @@ export function TriggerRow({
   onRemove: () => void;
 }) {
   useLocale();
-  const [branches, setBranches] = useState<string[]>([]);
+  // Branch names belong to the project they were read for; another project or a
+  // trigger without a branch has none until its own read answers.
+  const [loadedBranches, setLoadedBranches] = useState<{ path: string; names: string[] }>({
+    path: "",
+    names: [],
+  });
   const projectPath = looksLikeProject(cwd) ? cwd : "";
   const push = trigger.event === "push_to_branch";
+  const branches =
+    projectPath && push && loadedBranches.path === projectPath ? loadedBranches.names : [];
   useEffect(() => {
-    if (!projectPath || !push) {
-      setBranches([]);
-      return;
-    }
+    if (!projectPath || !push) return;
     let cancelled = false;
     void gitBranches(projectPath).then(
       (info) => {
-        if (!cancelled) setBranches(info.branches.map((branch) => branch.name));
+        if (!cancelled)
+          setLoadedBranches({
+            path: projectPath,
+            names: info.branches.map((branch) => branch.name),
+          });
       },
       () => {
-        if (!cancelled) setBranches([]);
+        if (!cancelled) setLoadedBranches({ path: projectPath, names: [] });
       },
     );
     return () => {

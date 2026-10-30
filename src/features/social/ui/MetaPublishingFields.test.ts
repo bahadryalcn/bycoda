@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useState } from "react";
+import { act, createElement, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { SocialMedia } from "../model/social";
@@ -19,7 +19,9 @@ function Editor({
   disabled?: boolean;
 }) {
   const [value, setValue] = useState(initial);
-  latest = value;
+  useLayoutEffect(() => {
+    latest = value;
+  });
   return createElement(MetaPublishingFields, {
     platform,
     value,

@@ -54,6 +54,7 @@ export function AppConfirmHost() {
           message: <span className="whitespace-pre-line">{request.message}</span>,
           confirmLabel: request.confirmLabel,
           danger: request.tone === "danger",
+          onConfirm: request.onConfirm,
         });
       }),
     [confirm],

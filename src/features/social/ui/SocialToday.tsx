@@ -1,4 +1,4 @@
-import { useContext } from "react";
+import { useContext, useState } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { Skeleton } from "../../../shared/ui/Skeleton";
@@ -60,7 +60,9 @@ export function SocialToday({
     programsSupported: !!snapshot.programsSupported,
     revision: snapshot,
   });
-  const result = buildAttention({ base: snapshot, sources: today.sources, now: Date.now() });
+  // Read the clock once per mount (render stays pure for the React Compiler).
+  const [now] = useState(Date.now);
+  const result = buildAttention({ base: snapshot, sources: today.sources, now });
   const labels = sourceLabels();
   const loading = result.unavailable.filter((item) => item.state === "loading");
   const failed = result.unavailable.filter((item) => item.state === "error");

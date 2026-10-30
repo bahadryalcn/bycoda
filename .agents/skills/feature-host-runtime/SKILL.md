@@ -5,7 +5,53 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
-## Host Notes physical foundations, 2026-10-30
+## Host Notes participating-writer integration, 2026-10-30
+
+The current source connects the private Node port to actual Host Notes jobs.
+`host/host-notes-admission.ts` takes sorted, all-or-nothing physical writer
+reservations before the serial tail publishes a save/delete. The original job
+retains them through actual SQL connection closure or Worker EXIT. A rejected
+public waiter is not retirement; committed results survive release uncertainty.
+Read-only jobs attest their actual connection without acquiring a writer lease.
+Worker startup pins its joined/unjoined mode and immutable artifact identity;
+messages cannot discard comparison data or enroll an unjoined worker midlife.
+Post-lock authorization, CAS, delete bookkeeping and session locators remain.
+
+The same native image exports a public SQLite extension entry. On Windows the
+actual SQLite main HANDLE supplies the full physical identity and link count
+before PRAGMAs/DDL. Further extension loading is disabled. File paths, comparison
+metadata, kernel guards and module loading do not grant project or SQL authority.
+
+`session_store/host_notes_fence.rs` and `native_projection_coordinator.rs` capture
+the actual Native connection under a short borrow, then close/drain participating
+Host ingress before renderer preparation. The existing Native WindowBarrier still
+closes after renderer preparation. A bounded process-owned strong registry
+reserves its slot before closure and retains original fences across hard errors
+and coordinator replacement. Only matching actual retirement releases them.
+SQL, kernel polling and renderer callbacks stay outside preparation/map mutexes.
+
+Native admission packaging is explicit. `host:admission:build` produces an
+immutable flat image and schema-2 manifest; ordinary Host builds remain usable.
+Packaging verifies native source identity, target, hash, canonical input/output
+separation and Windows load-path budget before replacing output. Same-target
+packages exercise their own runtime and actual SQLite extension. Missing or
+unsupported startup admission is explicitly unjoined; corrupt configured inputs
+and joined faults hold protected work. Windows Node/SQLite's UTF-8 path limit is
+checked before joining; no working-directory switch or alternate-image fallback.
+
+The owner-drop defect was reproduced red before the process keeper fix; the new
+Native checks and broader SessionStore checks passed afterward. Current source,
+final-image and package evidence are recorded under
+`temp/verification/2026-10-30-host-notes-integration/`. That packet, rather than
+the historical counts below, determines final acceptance.
+
+This is participating-writer integration, not a complete actor census or a
+qualified migration. Unix actual SQLite attestation, six-target native package
+acceptance, installed GUI/devices, full actor/input/writer closure and full26
+remain open. Keep `qualified:false`, `applicationThrough:null`, fixed missing
+coverage, default/history promotion and migration gates unchanged.
+
+## Prior Host Notes physical foundations (source608), 2026-10-30
 
 `host/host-notes-async.ts` separates the public result from actual queued SQL
 completion. An observed worker error or uncertain delivery keeps the original

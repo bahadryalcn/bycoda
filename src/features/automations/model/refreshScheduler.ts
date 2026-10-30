@@ -108,7 +108,10 @@ export function useRefreshLoop(
   hiddenIntervalMs: number = HIDDEN_REFRESH_MS,
 ): () => Promise<void> {
   const runRef = useRef(run);
-  runRef.current = run;
+  // Committed before the scheduler effect below starts its first run.
+  useEffect(() => {
+    runRef.current = run;
+  });
   const schedulerRef = useRef<RefreshScheduler | null>(null);
   useEffect(() => {
     const scheduler = createRefreshScheduler({

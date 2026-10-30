@@ -8,6 +8,7 @@ import {
   ArrowDownCircle,
   ArrowUp,
   BellOff,
+  ArrowDown,
   CheckList,
   ChevronDown,
   ExternalLink,
@@ -345,6 +346,9 @@ type Options = {
   isProjectBusy?: (path: string) => boolean;
 };
 
+/** Keyboard/menu alternative to dragging a project row within its own list. */
+export type ProjectMenuMove = { up?: () => void; down?: () => void };
+
 /**
  * Right-click menu for a project: appearance, groups, pinning, editors,
  * notifications, and removal. Shared by the project rail and the project
@@ -363,7 +367,14 @@ export function useProjectMenu({
 }: Options) {
   const t = useT();
   const [projectMenu, setProjectMenu] = useState<
-    (Point & { path: string; projectKey: string; onSelectForBulk?: () => void }) | null
+    | (Point & {
+        path: string;
+        projectKey: string;
+        onSelectForBulk?: () => void;
+        /** Non-drag reorder for the row's own list; an absent direction is disabled. */
+        move?: ProjectMenuMove;
+      })
+    | null
   >(null);
   const [removingGroup, setRemovingGroup] = useState<{
     id: string;
@@ -481,12 +492,13 @@ export function useProjectMenu({
     y: number,
     triggerElement?: HTMLElement | null,
     onSelectForBulk?: () => void,
+    move?: ProjectMenuMove,
   ) => {
     captureTrigger(triggerElement);
     onOpen?.();
     setGroupMenu(null);
     setNotificationMenu(null);
-    setProjectMenu({ x, y, path, projectKey: projectKey(path), onSelectForBulk });
+    setProjectMenu({ x, y, path, projectKey: projectKey(path), onSelectForBulk, move });
   };
 
   const openGroupMenu = (id: string, x: number, y: number) => {
@@ -574,6 +586,10 @@ export function useProjectMenu({
     }
     if (action === "select-for-bulk") {
       projectMenu.onSelectForBulk?.();
+    } else if (action === "move-project-up") {
+      projectMenu.move?.up?.();
+    } else if (action === "move-project-down") {
+      projectMenu.move?.down?.();
     } else if (action === "project-group:new") {
       createGroup(projectMenu.x, projectMenu.y, path);
     } else if (action === "project-group:none") {
@@ -714,6 +730,17 @@ export function useProjectMenu({
             : []),
           ...(projectMenu.onSelectForBulk
             ? [{ id: "select-for-bulk", label: t("Select"), icon: CheckList }]
+            : []),
+          ...(projectMenu.move
+            ? [
+                { id: "move-project-up", label: t("Move up"), icon: ArrowUp, disabled: !projectMenu.move.up },
+                {
+                  id: "move-project-down",
+                  label: t("Move down"),
+                  icon: ArrowDown,
+                  disabled: !projectMenu.move.down,
+                },
+              ]
             : []),
           ...projectMenuExtraItems(
             loadPinnedProjects().some((pinned) => sameProjectPath(pinned, projectMenu.path)),

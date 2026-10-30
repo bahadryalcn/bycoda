@@ -175,12 +175,23 @@ export function explorerItems(
   ];
 }
 
-/** Context menu with the busy-operation gate applied: nothing that mutates can start while one runs. */
-export function gateBusyMenuItems(items: ExplorerMenuItem[], busy: boolean): ExplorerMenuItem[] {
-  if (!busy) return items;
-  return items.map((item) =>
-    item.kind === "item" && BUSY_MENU_ITEMS.includes(item.id) ? { ...item, disabled: true } : item,
-  );
+/**
+ * Context menu with the busy-operation gate applied: nothing that mutates can start while one runs.
+ * `createReason` (no usable root or machine) disables New File / New Folder alone and replaces their
+ * "In {folder}" line with the reason, so the user sees why instead of a silent dead item.
+ */
+export function gateBusyMenuItems(
+  items: ExplorerMenuItem[],
+  busy: boolean,
+  createReason?: string,
+): ExplorerMenuItem[] {
+  if (!busy && !createReason) return items;
+  return items.map((item) => {
+    if (item.kind !== "item") return item;
+    const create = item.id === "new-file" || item.id === "new-folder";
+    if (create && createReason) return { ...item, disabled: true, description: createReason };
+    return busy && BUSY_MENU_ITEMS.includes(item.id) ? { ...item, disabled: true } : item;
+  });
 }
 
 type HeaderMenuOptions = {

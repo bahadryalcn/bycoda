@@ -5,6 +5,7 @@ import type { HostTask } from "../src/features/tasks/model/hostTasks";
 import type { HostGoal } from "../src/features/tasks/model/hostGoals";
 import type { HostAutomation } from "../src/features/automations/model/hostAutomations";
 import type { SocialThread } from "../src/features/social/model/social";
+import type { HostNotesDatabaseFactory } from "./host-notes-admission";
 
 export type HostNote = {
   id: string;
@@ -61,6 +62,8 @@ export class HostNotes {
     private readonly paths = desktopDatabasePaths,
     private readonly now = Date.now,
     private readonly authorizeWrite?: () => boolean,
+    private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
+      new DatabaseSync(path, options),
   ) {}
   // Distinguishes a new host instance from an older instance with the same write count.
   private version = Date.now();
@@ -74,7 +77,7 @@ export class HostNotes {
       throw new Error("Notes require an existing bycoda desktop database on this computer.");
     const results: T[] = [];
     for (const path of paths) {
-      const db = new DatabaseSync(path, { readOnly: !write });
+      const db = this.openDatabase(path, { readOnly: !write });
       try {
         db.exec("PRAGMA busy_timeout=2000");
         if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='notes'").get())
@@ -173,7 +176,7 @@ export class HostNotes {
     if (matches.length > 1) throw new Error("Ambiguous note ID across desktop profiles.");
     const location = matches[0] ?? (create ? locations[0] : undefined);
     if (!location) throw new Error("Note no longer exists.");
-    const db = new DatabaseSync(location.path);
+    const db = this.openDatabase(location.path, { readOnly: false });
     try {
       db.exec("PRAGMA busy_timeout=2000; BEGIN IMMEDIATE");
       if (this.authorizeWrite && !this.authorizeWrite())
@@ -331,7 +334,12 @@ export class HostNotes {
       expectedUpdatedAt,
       (db, existing) => {
         db.prepare("DELETE FROM notes WHERE id=?").run(id);
-        if (existing) deleted = { id, sourceCwd: existing.sourceCwd, sourceSessionId: existing.sourceSessionId };
+        if (existing)
+          deleted = {
+            id,
+            sourceCwd: existing.sourceCwd,
+            sourceSessionId: existing.sourceSessionId,
+          };
         return { deleted: true };
       },
       false,

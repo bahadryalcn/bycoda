@@ -207,11 +207,15 @@ describe("pane docking UI", () => {
     expect(document.querySelector('.pointer-drop-hint[data-action="move"]')?.textContent).toContain(
       "Split left",
     );
-    expect(container.querySelector(".pointer-events-none.absolute.inset-0")).not.toBeNull();
+    // The split edge is drawn by the shared drop indicator on the pane, not by a pane child.
+    expect(
+      container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator"),
+    ).toBe("split-start");
     pointer(window, "pointerup", 20, 150);
     expect(onMove).toHaveBeenCalledWith("a", "a", "left");
     expect(layoutLeaves(tree).map((pane) => pane.id)).toEqual(["a", "empty"]);
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
   });
 
@@ -237,14 +241,31 @@ describe("pane docking UI", () => {
     dragStart();
     pointer(window, "pointermove", 200, 150);
     expect(document.querySelector('.pointer-drop-hint[data-action="blocked"]')).not.toBeNull();
+    // Dropping a lone pane on itself has no pane target to mark: the cursor badge says so.
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     pointer(window, "pointerup", 200, 150);
     expect(onMove).not.toHaveBeenCalled();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     dragStart();
     pointer(window, "pointermove", 390, 150);
+    expect(
+      container.querySelector('[data-pane-id="a"]')?.getAttribute("data-drop-indicator"),
+    ).toBe("split-end");
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
     expect(onMove).not.toHaveBeenCalled();
     expect(document.querySelector(".pointer-drop-hint")).toBeNull();
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
     expect(document.body.style.cursor).toBe("");
+  });
+
+  it("clears the split target when the pane tree unmounts mid-drag", () => {
+    render(leaf("a"), vi.fn(), vi.fn());
+    dragStart();
+    pointer(window, "pointermove", 20, 150);
+    expect(document.querySelector("[data-drop-indicator]")).not.toBeNull();
+    act(() => root.unmount());
+    expect(document.querySelector("[data-drop-indicator]")).toBeNull();
+    expect(document.querySelector(".pointer-drop-hint")).toBeNull();
   });
 
   it("treats a click without pointer travel as selection without a split", () => {

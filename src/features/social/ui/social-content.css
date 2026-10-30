@@ -1,0 +1,172 @@
+/* Content: one record header, three entries, then preview, check, approval and one next step. */
+.social-content-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-inline-size: 0;
+}
+.social-content-head > :first-child {
+  flex: 1 1 14rem;
+  max-inline-size: 28rem;
+  min-inline-size: 0;
+}
+.social-content-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-inline-size: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-card);
+}
+.social-content-context-main {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-inline-size: 0;
+}
+.social-content-context-main > strong,
+.social-content-context > strong {
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.social-content-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+}
+/* Inside the editor the record line sits on the modal surface instead of a second card. */
+.social-form > .social-content-context {
+  padding: 0;
+  background: none;
+}
+.social-content-page .social-campaign-manual {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+.social-content-page .social-campaign-manual > .social-stats {
+  padding-block: 0;
+}
+.social-content-tools .social-list-tools {
+  max-inline-size: 28rem;
+}
+.social-content-page .social-empty {
+  min-block-size: 0;
+  padding-block: 0.75rem;
+}
+
+.social-content-detail {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+.social-content-record-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.social-content-block {
+  display: grid;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+.social-content-block > h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+  color: var(--ui-text-secondary);
+}
+.social-content-block > p {
+  margin: 0;
+}
+.social-content-detail .social-campaign-previews {
+  flex: none;
+  gap: 0.5rem;
+}
+.social-content-detail .social-content-post {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+}
+.social-content-post > :is(p, div, small) {
+  margin: 0;
+}
+.social-content-post-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-inline-size: 0;
+}
+.social-content-post-head > h4 {
+  margin: 0;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.social-content-post-head > .social-content-count {
+  margin-inline-start: auto;
+}
+.social-content-count {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.social-content-count[data-over="true"] {
+  color: var(--color-danger);
+}
+.social-variant legend .social-content-count {
+  margin-inline-start: 0.5rem;
+}
+.social-content-meta {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.social-content-checks {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.social-content-checks > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-inline-size: 0;
+}
+.social-content-checks > li > .social-notice {
+  flex: 1 1 100%;
+}
+.social-content-check-account {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.social-content-next {
+  padding: 0.75rem 1rem;
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-card);
+}
+.social-content-next-label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+}
+.social-content-next-label > strong {
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+}

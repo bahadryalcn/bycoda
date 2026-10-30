@@ -1,6 +1,12 @@
-//! Private mechanical file/lease bridge. Never SQL attestation or permission.
+//! Private mechanical file/lease bridge plus a separate SQLite identity entry.
+//! Neither creates application permission or complete writer enrollment.
 //! Live guards belong to a pinned process-native registry, not JavaScript GC.
 mod image_pin;
+mod sqlite_extension;
+
+pub use sqlite_extension::{
+    connection_attestation_supported, registry_root_for_database, sqlite_extension_entry_point,
+};
 
 use bycoda_physical_store_admission as core;
 use napi::bindgen_prelude::BigInt;
@@ -137,7 +143,7 @@ pub struct PhysicalRegistry {
 
 #[napi]
 pub fn mechanical_abi_version() -> u32 {
-    1
+    2
 }
 
 #[napi]

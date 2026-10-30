@@ -1,6 +1,6 @@
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext } from "./socialContext";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Progress } from "../../../shared/ui/Progress";
 import { TextField } from "../../../shared/ui/TextField";
@@ -78,13 +78,16 @@ export function XMediaFields({
     onVideoMetadataChange,
     client,
   });
-  callbacks.current = {
-    onChange,
-    onBusyChange,
-    onVideoDurationChange,
-    onVideoMetadataChange,
-    client,
-  };
+  // Latest props for the async upload and the unmount cleanup, published after commit.
+  useLayoutEffect(() => {
+    callbacks.current = {
+      onChange,
+      onBusyChange,
+      onVideoDurationChange,
+      onVideoMetadataChange,
+      client,
+    };
+  }, [onChange, onBusyChange, onVideoDurationChange, onVideoMetadataChange, client]);
   const count = Math.max(1, Math.min(4, maxCount ?? (message ? 1 : 4)));
   useEffect(() => {
     mounted.current = true;

@@ -53,6 +53,7 @@
     "format:check": "oxfmt --check .",
     "host:build": "tsc-rs --noEmit -p host/tsconfig.json && node host/build.mjs",
     "host:build:fast": "tsc-rs --noEmit --fast -p host/tsconfig.json && node host/build.mjs",
+    "host:admission:build": "node scripts/build/physical-store-admission.mjs",
     "host:package": "pnpm run host:build && node host/package.mjs",
     "host": "node build/host/bycoda-host.mjs",
     "pretest:host": "pnpm run host:build",

@@ -7,7 +7,7 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { Button } from "../../../shared/ui/Button";
 import { TextField } from "../../../shared/ui/TextField";
 import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
 
 type Status = {
@@ -70,37 +70,51 @@ export function SocialAuthority({
   const mounted = useRef(true);
   const pending = useRef(false);
   const selected = useRef(selectedHost);
-  selected.current = selectedHost;
+  useLayoutEffect(() => {
+    selected.current = selectedHost;
+  }, [selectedHost]);
   const machinesVersion = JSON.stringify(
     machines.map((machine) => [machine.id, machine.environmentId, machine.endpoint]).sort(),
   );
-
-  const loadStatus = useCallback(async () => {
-    const version = ++epoch.current;
+  // A changed Host list starts a new read: show it as loading and drop the previous error.
+  const [seenMachinesVersion, setSeenMachinesVersion] = useState(machinesVersion);
+  if (seenMachinesVersion !== machinesVersion) {
+    setSeenMachinesVersion(machinesVersion);
     setLoading(true);
     setError("");
-    try {
-      const value = await invoke<Status | null>("social_authority_status");
-      if (!mounted.current || version !== epoch.current) return;
-      if (!value) throw new Error(t("Could not connect to the local host."));
-      setStatus(value);
-    } catch (error) {
-      if (mounted.current && version === epoch.current) {
-        setStatus(undefined);
-        setError(t("The central host setting could not be read: {p0}", { p0: errorText(error) }));
-      }
-    } finally {
-      if (mounted.current && version === epoch.current) setLoading(false);
-    }
+  }
+
+  const readStatus = useCallback(() => {
+    const version = ++epoch.current;
+    return invoke<Status | null>("social_authority_status")
+      .then((value) => {
+        if (!mounted.current || version !== epoch.current) return;
+        if (!value) throw new Error(t("Could not connect to the local host."));
+        setStatus(value);
+      })
+      .catch((error) => {
+        if (mounted.current && version === epoch.current) {
+          setStatus(undefined);
+          setError(t("The central host setting could not be read: {p0}", { p0: errorText(error) }));
+        }
+      })
+      .finally(() => {
+        if (mounted.current && version === epoch.current) setLoading(false);
+      });
   }, []);
+  const loadStatus = useCallback(() => {
+    setLoading(true);
+    setError("");
+    return readStatus();
+  }, [readStatus]);
   useEffect(() => {
     mounted.current = true;
-    void loadStatus();
+    void readStatus();
     return () => {
       mounted.current = false;
       ++epoch.current;
     };
-  }, [machinesVersion, loadStatus]);
+  }, [machinesVersion, readStatus]);
 
   const target = machines.find((machine) => machine.id === selectedHost);
   const remote = !!status && status.sourceMachineId !== selectedHost && !!target;

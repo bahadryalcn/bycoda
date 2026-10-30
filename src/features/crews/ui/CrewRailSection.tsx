@@ -248,7 +248,7 @@ export function CrewRailSection({
 
   return (
     <div
-      ref={drag.setRef}
+      ref={(element) => drag.setRef(element)}
       className={RAIL_SECTION_BLOCK}
       data-collapsed={collapsed || undefined}
     >

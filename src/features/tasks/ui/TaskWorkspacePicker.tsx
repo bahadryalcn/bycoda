@@ -84,14 +84,21 @@ export function TaskWorkspacePicker({
   const [newName, setNewName] = useState("");
   const [creation, setCreation] = useState<"existing" | "new" | null>(null);
   const busy = creation !== null;
-  const [fetching, setFetching] = useState(false);
+  // The load that last finished; a different context or revision is fetching until it does.
+  const [fetchedKey, setFetchedKey] = useState<string | null>(null);
   const fetchedContext = useRef("");
   const creating = useRef(false);
   const [revision, setRevision] = useState(0);
   const [supported, setSupported] = useState<boolean | null>(null);
   const machineId = machine?.id;
   const context = useRef("");
-  context.current = `${machineId ?? ""}\0${cwd}`;
+  const currentContext = `${machineId ?? ""}\0${cwd}`;
+  const loadKey = `${currentContext}\0${revision}`;
+  const fetching = Boolean(machine && cwd) && fetchedKey !== loadKey;
+  // Committed before the inventory effect below compares it with the loaded one.
+  useEffect(() => {
+    context.current = currentContext;
+  });
   const reportChecks = useEffectEvent((patch: Partial<WorkspaceChecks>) => onChecksChange?.(patch));
   const changeNewName = (name: string) => {
     setNewName(name);
@@ -111,11 +118,7 @@ export function TaskWorkspacePicker({
       );
     }
     fetchedContext.current = context.current;
-    if (!machine || !cwd) {
-      setFetching(false);
-      return;
-    }
-    setFetching(true);
+    if (!machine || !cwd) return;
     (async () => {
       if (!(await machineCapabilities(machine)).includes(HOST_TASK_WORKSPACES)) {
         if (live) setSupported(false);
@@ -142,7 +145,7 @@ export function TaskWorkspacePicker({
         if (live) setError(reason instanceof Error ? reason.message : String(reason));
       })
       .finally(() => {
-        if (live) setFetching(false);
+        if (live) setFetchedKey(loadKey);
       });
     return () => {
       live = false;

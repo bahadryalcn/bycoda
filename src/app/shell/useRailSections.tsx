@@ -18,14 +18,12 @@ import {
   loadRailSectionOrder,
   loadRailSectionCollapse,
   toggleRailSectionCollapse,
-  moveRailSection,
   resetRailSectionOrder,
   saveRailSectionOrder,
   subscribeRailSectionOrder,
   type CollapsibleRailSection,
   type RailSectionId,
 } from "../../features/projects/model/railSections";
-import type { MoveStep } from "../../shared/lib/reorder";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 
 /** Classes for a header that drags: grab cursor, and no touch scrolling. */
@@ -183,25 +181,6 @@ export function SectionMenuButton({
   );
 }
 
-/** Alt+Up / Alt+Down, the keyboard way to move a section or a group. */
-export function moveStepForKey(event: KeyboardEvent): "up" | "down" | null {
-  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
-    return null;
-  }
-  if (event.key === "ArrowUp") return "up";
-  if (event.key === "ArrowDown") return "down";
-  return null;
-}
-
-/** A move reorders the DOM, which can drop focus; put it back. */
-export function keepFocus(element: HTMLElement) {
-  requestAnimationFrame(() => {
-    if (element.isConnected && document.activeElement !== element) {
-      element.focus();
-    }
-  });
-}
-
 /** What one section needs to be draggable by its header. */
 export type RailSectionDrag = {
   /** Goes on the section's root element, which is what moves. */
@@ -240,16 +219,21 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
     setOrder(next);
     saveRailSectionOrder(next);
   };
-  const move = (id: RailSectionId, step: MoveStep) => {
-    const next = moveRailSection(order, id, step, shown);
-    if (next.join() !== order.join()) commit(next);
-  };
+  // Spoken name of a section: its header title, announced with its new place after a move.
+  const sectionName = (id: RailSectionId) =>
+    ({
+      "last-sessions": t("Last sessions"),
+      pinned: t("Pinned"),
+      groups: t("Groups"),
+      crews: t("Crews"),
+      projects: t("Projects"),
+    })[id];
   const sortable = useAnimatedReorder(
     shownOrder,
     (ids) => commit(applyShownSectionOrder(order, ids)),
     "y",
     undefined,
-    { foldOnDrag: true },
+    { foldOnDrag: true, label: sectionName },
   );
   const folded = sortable.draggingId !== null;
 
@@ -271,13 +255,9 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
         event.stopPropagation();
       },
       onKeyDown: (event) => {
-        const step = moveStepForKey(event);
-        if (step) {
-          event.preventDefault();
-          event.stopPropagation();
-          move(id, step);
-          keepFocus(event.target as HTMLElement);
-        } else if (
+        // Alt+Up / Alt+Down: the same move, announcement and focus restore as a drag.
+        if (sortable.onItemKeyDown(id, event)) return;
+        if (
           event.target === event.currentTarget &&
           (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
         ) {
@@ -330,7 +310,7 @@ export function useRailSections(shown: ReadonlySet<RailSectionId>) {
       onPick={(action) => {
         const id = menu.id;
         setMenu(null);
-        if (action === "up" || action === "down") move(id, action);
+        if (action === "up" || action === "down") sortable.moveBy(id, action === "up" ? -1 : 1);
         else if (action === "reset") resetRailSectionOrder();
       }}
       onClose={() => setMenu(null)}

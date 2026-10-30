@@ -1,4 +1,4 @@
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 import { registerHooks } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -19,8 +19,12 @@ registerHooks({
 });
 const { HostNotes } = await import("./host-notes.ts");
 const { DesktopSessions } = await import("./desktopSessions.ts");
+const { createHostNotesDatabaseFactory, isHostNotesAdmissionFault, HostNotesAdmissionError } =
+  await import("./host-notes-admission.ts");
 let paths = [];
 let desktop, desktopPlatform;
+let databaseFactory = createHostNotesDatabaseFactory();
+const physicalAdmission = Object.freeze(workerData ?? { mode: "unjoined" });
 let currentId = 0,
   checkAuthorization = false;
 let deletedNote;
@@ -37,8 +41,11 @@ const notes = new HostNotes(
     Atomics.wait(status, 0, 0, 5000);
     return Atomics.load(status, 0) === 1;
   },
+  (path, options) => databaseFactory.open(path, options),
 );
-notes.onDelete = (note) => { deletedNote = note; };
+notes.onDelete = (note) => {
+  deletedNote = note;
+};
 const methods = new Set([
   "list",
   "get",
@@ -50,90 +57,129 @@ const methods = new Set([
   "desktopLocalSessionReference",
   "desktopSnapshot",
 ]);
-parentPort.on("message", ({ id, method, args, paths: nextPaths, checkAuthorization: check }) => {
-  deletedNote = undefined;
-  try {
-    if (
-      !Number.isSafeInteger(id) ||
-      !methods.has(method) ||
-      !Array.isArray(args) ||
-      !Array.isArray(nextPaths) ||
-      nextPaths.some((path) => typeof path !== "string")
-    )
-      throw new Error("Invalid notes operation.");
-    paths = nextPaths;
-    currentId = id;
-    checkAuthorization = check === true;
-    let value;
-    if (method.startsWith("desktop")) {
-      const platform =
-        method === "desktopList" ? args[3] : method === "desktopSnapshot" ? args[2] : args[1];
+parentPort.on(
+  "message",
+  ({ id, method, args, paths: nextPaths, checkAuthorization: check, comparison }) => {
+    deletedNote = undefined;
+    try {
+      if (!databaseFactory.connectionsClosed() || databaseFactory.closeFault())
+        throw new HostNotesAdmissionError(
+          "HOST_NOTES_ADMISSION_FAULT",
+          "Notes connection close is unverified.",
+        );
       if (
-        ![
-          "aix",
-          "android",
-          "darwin",
-          "freebsd",
-          "haiku",
-          "linux",
-          "openbsd",
-          "sunos",
-          "win32",
-          "cygwin",
-          "netbsd",
-        ].includes(platform)
+        physicalAdmission.mode === "joined"
+          ? !comparison ||
+            comparison.artifact !== physicalAdmission.artifact ||
+            comparison.sha256 !== physicalAdmission.sha256 ||
+            comparison.entryPoint !== physicalAdmission.entryPoint
+          : comparison !== undefined
       )
-        throw new Error("Invalid desktop platform.");
-      if (!desktop || desktopPlatform !== platform) {
-        desktop?.close();
-        desktop = new DesktopSessions(() => paths, platform);
-        desktopPlatform = platform;
-      }
-      try {
-        if (method === "desktopList") {
-          const [cwd, projectId, providers, , known] = args;
-          if (
-            typeof cwd !== "string" ||
-            typeof projectId !== "string" ||
-            !Array.isArray(providers) ||
-            providers.some((provider) => typeof provider !== "string")
-          )
-            throw new Error("Invalid desktop metadata read.");
-          value = desktop.readMetadataList(cwd, projectId, providers);
-          if (known === value.fingerprint)
-            value = {
-              key: value.key,
-              database: value.database,
-              fingerprint: value.fingerprint,
-              unchanged: true,
-            };
-        } else {
-          const id = args[0];
-          if (typeof id !== "string") throw new Error("Invalid desktop session ID.");
-          if (method === "desktopStampRows") value = desktop.readStampRows(id);
-          else if (method === "desktopMetadata") value = desktop.readMetadataRecord(id, true);
-          else if (method === "desktopLocalSessionReference") value = desktop.readLocalSessionReference(id);
-          else {
-            const projectId = args[1],
-              expectedProjectCwd = args[3];
-            if (
-              typeof projectId !== "string" ||
-              (expectedProjectCwd !== undefined && typeof expectedProjectCwd !== "string")
-            )
-              throw new Error("Invalid desktop snapshot read.");
-            value = desktop.readSnapshotRecord(id, projectId, expectedProjectCwd);
-          }
+        throw new HostNotesAdmissionError(
+          "HOST_NOTES_ADMISSION_FAULT",
+          "Notes physical connection comparison is unavailable.",
+        );
+      databaseFactory = createHostNotesDatabaseFactory(comparison);
+      if (
+        !Number.isSafeInteger(id) ||
+        !methods.has(method) ||
+        !Array.isArray(args) ||
+        !Array.isArray(nextPaths) ||
+        nextPaths.some((path) => typeof path !== "string")
+      )
+        throw new Error("Invalid notes operation.");
+      paths = nextPaths;
+      currentId = id;
+      checkAuthorization = check === true;
+      let value;
+      if (method.startsWith("desktop")) {
+        const platform =
+          method === "desktopList" ? args[3] : method === "desktopSnapshot" ? args[2] : args[1];
+        if (
+          ![
+            "aix",
+            "android",
+            "darwin",
+            "freebsd",
+            "haiku",
+            "linux",
+            "openbsd",
+            "sunos",
+            "win32",
+            "cygwin",
+            "netbsd",
+          ].includes(platform)
+        )
+          throw new Error("Invalid desktop platform.");
+        if (!desktop || desktopPlatform !== platform) {
+          desktop?.close();
+          desktop = new DesktopSessions(
+            () => paths,
+            platform,
+            undefined,
+            undefined,
+            (path, options) => databaseFactory.open(path, options),
+          );
+          desktopPlatform = platform;
         }
-      } finally {
-        desktop.releaseReadHandles();
-      }
-    } else value = notes[method](...args);
-    parentPort.postMessage({ id, value, revision: notes.revision, deletedNote });
-  } catch (error) {
-    parentPort.postMessage({
-      id,
-      error: error instanceof Error ? error.message : "Notes operation failed.",
-      revision: notes.revision,
-    });
-  }
-});
+        try {
+          if (method === "desktopList") {
+            const [cwd, projectId, providers, , known] = args;
+            if (
+              typeof cwd !== "string" ||
+              typeof projectId !== "string" ||
+              !Array.isArray(providers) ||
+              providers.some((provider) => typeof provider !== "string")
+            )
+              throw new Error("Invalid desktop metadata read.");
+            value = desktop.readMetadataList(cwd, projectId, providers);
+            if (known === value.fingerprint)
+              value = {
+                key: value.key,
+                database: value.database,
+                fingerprint: value.fingerprint,
+                unchanged: true,
+              };
+          } else {
+            const id = args[0];
+            if (typeof id !== "string") throw new Error("Invalid desktop session ID.");
+            if (method === "desktopStampRows") value = desktop.readStampRows(id);
+            else if (method === "desktopMetadata") value = desktop.readMetadataRecord(id, true);
+            else if (method === "desktopLocalSessionReference")
+              value = desktop.readLocalSessionReference(id);
+            else {
+              const projectId = args[1],
+                expectedProjectCwd = args[3];
+              if (
+                typeof projectId !== "string" ||
+                (expectedProjectCwd !== undefined && typeof expectedProjectCwd !== "string")
+              )
+                throw new Error("Invalid desktop snapshot read.");
+              value = desktop.readSnapshotRecord(id, projectId, expectedProjectCwd);
+            }
+          }
+        } finally {
+          desktop.releaseReadHandles();
+        }
+      } else value = notes[method](...args);
+      parentPort.postMessage({
+        id,
+        value,
+        revision: notes.revision,
+        deletedNote,
+        terminalClosed: databaseFactory.connectionsClosed(),
+        admissionFault: databaseFactory.closeFault(),
+        attested: comparison !== undefined,
+      });
+    } catch (error) {
+      parentPort.postMessage({
+        id,
+        error: error instanceof Error ? error.message : "Notes operation failed.",
+        revision: notes.revision,
+        terminalClosed: databaseFactory.connectionsClosed(),
+        admissionFault: isHostNotesAdmissionFault(error) || databaseFactory.closeFault(),
+        attested: comparison !== undefined,
+      });
+    }
+  },
+);

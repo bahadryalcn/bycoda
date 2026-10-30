@@ -25,10 +25,6 @@
   opacity: 0.45;
   user-select: none;
 }
-.jira-board-view [data-drop] {
-  outline: 2px solid var(--ui-tone-accent-fg);
-  outline-offset: -2px;
-}
 .jira-board-status,
 .jira-board-hint {
   padding-block: 6px;

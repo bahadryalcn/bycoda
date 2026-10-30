@@ -7,6 +7,13 @@ import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
+import {
+  announceDrag,
+  setDropFeedback,
+  setDropIndicator,
+  setGrabbing,
+  type DropPlacement,
+} from "../../../shared/lib/drag";
 import { useEffect, useRef, useState, type PointerEvent, type UIEvent } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
@@ -90,7 +97,6 @@ export function JiraBoardView({
   const [backlogUnavailable, setBacklogUnavailable] = useState(false);
   const [pick, setPick] = useState<TransitionPick | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
-  const [hover, setHover] = useState<string | null>(null);
   const [moveKey, setMoveKey] = useState<string | null>(null);
   const [moveAnchor, setMoveAnchor] = useState<HTMLElement | null>(null);
   const generation = useRef(0);
@@ -105,6 +111,8 @@ export function JiraBoardView({
   const scopeChanged = useRef(onScopeChanged);
   scopeChanged.current = onScopeChanged;
   const dragged = useRef<string | null>(null);
+  const captured = useRef<HTMLElement | null>(null);
+  const announcedTarget = useRef("");
   const pointer = useRef<{ id: number; key: string; x: number; y: number; active: boolean } | null>(
     null,
   );
@@ -142,8 +150,56 @@ export function JiraBoardView({
     mounted.current = true;
     return () => {
       mounted.current = false;
+      // An open drag must not leave its cursor, badge or target mark behind.
+      if (dragged.current) setGrabbing(false);
+      dragged.current = null;
+      pointer.current = null;
     };
   }, []);
+  const dragging = dragKey !== null;
+  useEffect(() => {
+    if (!dragging) return;
+    // Escape and losing the window end the drag the way a cancelled pointer does.
+    const cancel = () => {
+      const p = pointer.current;
+      if (!p) return;
+      pointer.current = null;
+      dragged.current = null;
+      setDragKey(null);
+      const element = captured.current;
+      captured.current = null;
+      try {
+        if (element?.hasPointerCapture(p.id)) element.releasePointerCapture(p.id);
+      } catch {
+        /* already released */
+      }
+      if (!p.active) return;
+      // The button is still down: its release must not count as a click on a card.
+      suppressClick.current = true;
+      window.addEventListener(
+        "pointerup",
+        () =>
+          window.setTimeout(() => {
+            suppressClick.current = false;
+          }, 0),
+        { once: true },
+      );
+      setGrabbing(false);
+      announcedTarget.current = "";
+      announceDrag(t("Drag cancelled"));
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      cancel();
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("blur", cancel);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("blur", cancel);
+    };
+  }, [dragging]);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,9 +255,9 @@ export function JiraBoardView({
     setPick(null);
     setMoveKey(null);
     pointer.current = null;
+    if (dragged.current) setGrabbing(false);
     dragged.current = null;
     setDragKey(null);
-    setHover(null);
     setBacklogUnavailable(false);
     let committed = false;
     void (async () => {
@@ -474,6 +530,64 @@ export function JiraBoardView({
     );
   }
 
+  /**
+   * What releasing over `zone` would do: the badge sentence, and which element carries the mark.
+   * It mirrors the rules dropColumn / dropGroup apply (same column or sprint ranks, anything
+   * else moves; a column without statuses and an unranked same-place drop do nothing).
+   */
+  function dropPreview(
+    issue: JiraBoardIssue,
+    zone: HTMLElement,
+  ): { label: string; element: HTMLElement; placement: DropPlacement } | null {
+    const before = zone.dataset.jiraBefore;
+    if (before === issue.identifier) return null;
+    const container = zone.closest<HTMLElement>(".jira-board-column, .jira-board-sprint") ?? zone;
+    let name: string;
+    let same: boolean;
+    if (mode === "kanban") {
+      const column =
+        zone.dataset.jiraColumn === undefined
+          ? undefined
+          : configuration?.columns[Number(zone.dataset.jiraColumn)];
+      if (!column) return null;
+      if (column.statusIds.length === 0)
+        return {
+          label: t("No statuses mapped to this column."),
+          element: container,
+          placement: "blocked",
+        };
+      name = column.name;
+      same = column.statusIds.includes(issue.statusId);
+    } else {
+      const group = groupsRef.current.find((g) => g.id === zone.dataset.jiraGroup);
+      if (!group) return null;
+      name = group.name;
+      same = group.issues.some((i) => i.identifier === issue.identifier);
+    }
+    if (same && !canRank)
+      return { label: t("Already in {p0}", { p0: name }), element: container, placement: "blocked" };
+    const label = same ? t("Reorder in {p0}", { p0: name }) : t("Move to {p0}", { p0: name });
+    // Ranking lands before the card under the pointer; otherwise the whole column or sprint receives.
+    return before !== undefined && canRank
+      ? { label, element: zone, placement: "before" }
+      : { label, element: container, placement: "inside" };
+  }
+
+  function showDropTarget(key: string, zone: HTMLElement | null, at: PointerEvent<HTMLElement>) {
+    const issue = allIssues.find((i) => i.identifier === key);
+    const preview = issue && zone ? dropPreview(issue, zone) : null;
+    // The badge always names the dragged issue; with no valid target it says where to drop.
+    const label =
+      preview?.label ??
+      (mode === "kanban" ? t("Drop on a column") : t("Drop on a sprint or the backlog"));
+    setDropFeedback(preview?.placement === "blocked" ? "blocked" : "move", at, label, key);
+    setDropIndicator(preview?.element ?? null, preview?.placement ?? null);
+    if (preview && preview.label !== announcedTarget.current) {
+      announcedTarget.current = preview.label;
+      announceDrag(preview.label);
+    }
+  }
+
   function pointerStart(event: PointerEvent<HTMLElement>, issue: JiraBoardIssue) {
     if (locked || event.button !== 0 || !(event.target instanceof Element)) return;
     const handle = event.target.closest("[data-jira-drag-handle]");
@@ -493,7 +607,12 @@ export function JiraBoardView({
     const p = pointer.current;
     if (!p || p.id !== event.pointerId || locked) return;
     if (!p.active && Math.hypot(event.clientX - p.x, event.clientY - p.y) < 6) return;
-    if (!p.active) event.currentTarget.setPointerCapture(event.pointerId);
+    if (!p.active) {
+      event.currentTarget.setPointerCapture(event.pointerId);
+      captured.current = event.currentTarget;
+      setGrabbing(true);
+      announceDrag(t("Picked up {p0}. Escape cancels.", { p0: p.key }));
+    }
     p.active = true;
     dragged.current = p.key;
     setDragKey(p.key);
@@ -502,7 +621,7 @@ export function JiraBoardView({
     const target = document
       .elementFromPoint(event.clientX, event.clientY)
       ?.closest<HTMLElement>("[data-jira-drop]");
-    setHover(target?.dataset.jiraDrop ?? null);
+    showDropTarget(p.key, target ?? null, event);
     // Scroll the nearest board/list container while approaching an edge.
     const scroll = target?.closest<HTMLElement>(".jira-board-column, .jira-board-planning");
     if (scroll) {
@@ -523,11 +642,15 @@ export function JiraBoardView({
     if (!p || p.id !== event.pointerId) return;
     pointer.current = null;
     dragged.current = null;
+    captured.current = null;
     setDragKey(null);
-    setHover(null);
     if (event.currentTarget.hasPointerCapture(event.pointerId))
       event.currentTarget.releasePointerCapture(event.pointerId);
     if (!p.active) return;
+    // Clears the cursor, the badge and the target mark whether the drop is accepted or not.
+    setGrabbing(false);
+    announcedTarget.current = "";
+    if (cancelled) announceDrag(t("Drag cancelled"));
     event.preventDefault();
     suppressClick.current = true;
     window.setTimeout(() => {
@@ -582,7 +705,6 @@ export function JiraBoardView({
         key={issue.identifier}
         className="jira-board-card rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) p-2"
         data-dragging={dragKey === issue.identifier || undefined}
-        data-drop={hover === id || undefined}
         data-jira-drop={id}
         data-jira-group={group.id}
         data-jira-column={column ? configuration?.columns.indexOf(column) : undefined}
@@ -944,7 +1066,6 @@ export function JiraBoardView({
                 key={index}
                 className="jira-board-column min-h-0 flex-1 basis-60 overflow-y-auto"
                 onScroll={(event) => demand(event, group)}
-                data-drop={hover === id || undefined}
                 aria-label={column.name}
                 data-jira-drop={id}
                 data-jira-group={group.id}
@@ -1021,7 +1142,6 @@ export function JiraBoardView({
               <section
                 key={group.id}
                 className="jira-board-sprint mb-3 rounded-(--ui-radius-card) border border-(--ui-editor-border) p-2"
-                data-drop={hover === group.id || undefined}
                 aria-label={group.name}
                 data-jira-drop={group.id}
                 data-jira-group={group.id}

@@ -75,10 +75,16 @@ export function SocialBulkComposer({
   const active = useRef(false);
   const previousBatch = useRef<BulkOptions | undefined>(undefined);
   const accountKey = [...new Set(targets.map((target) => target.accountId))].sort().join("|");
-  useEffect(() => {
-    let cancelled = false;
+  // A changed client, account set or retry discards the earlier limits before the next read.
+  const policyKey = [client, accountKey, policyAttempt] as const;
+  const [seenPolicyKey, setSeenPolicyKey] = useState(policyKey);
+  if (policyKey.some((value, index) => !Object.is(value, seenPolicyKey[index]))) {
+    setSeenPolicyKey(policyKey);
     setPolicies({});
     setPolicyErrors({});
+  }
+  useEffect(() => {
+    let cancelled = false;
     void readBulkPolicies(
       client,
       accountKey

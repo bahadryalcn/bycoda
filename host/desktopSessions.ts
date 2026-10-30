@@ -11,8 +11,12 @@ import type {
 import type { Block, Session } from "../src/features/sessions/model/session";
 import { DesktopLive } from "./desktopLive";
 import { AsyncHostNotes } from "./host-notes-async";
+import { isHostNotesAdmissionFault, type HostNotesDatabaseFactory } from "./host-notes-admission";
 import { parseHead } from "../src/features/sync/model/conversationHead";
-import { buildLocalSessionLink, type LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
+import {
+  buildLocalSessionLink,
+  type LocalSessionLocator,
+} from "../src/features/sessions/model/localSessionReference";
 
 // Must match the desktop app's Tauri identifiers and its session database
 // (src-tauri/tauri*.conf.json, src-tauri/src/session_store.rs).
@@ -142,6 +146,8 @@ export class DesktopSessions {
     /** The app's heartbeat: running state and live prompts. */
     readonly live = new DesktopLive(),
     private readonly idleMs = 5000,
+    private readonly openDatabase: HostNotesDatabaseFactory = (path, options) =>
+      new DatabaseSync(path, options),
   ) {}
 
   private stamps = new Map<string, { at: number; rows: DesktopStampRow[] }>();
@@ -180,6 +186,7 @@ export class DesktopSessions {
         this.release(path, handle);
         return result;
       } catch (error) {
+        if (isHostNotesAdmissionFault(error)) throw error;
         // A stale handle (file replaced, schema migrated) is retried once fresh.
         this.drop(path);
         if (attempt > 0) {
@@ -206,7 +213,7 @@ export class DesktopSessions {
       return cached;
     }
     this.drop(path);
-    const db = new DatabaseSync(path, { readOnly: true });
+    const db = this.openDatabase(path, { readOnly: true });
     try {
       db.exec("PRAGMA busy_timeout=2000");
     } catch (error) {
@@ -771,16 +778,27 @@ export class DesktopSessions {
 
   /** Worker-only identity lookup. Reads existing origin identity; never initializes it. */
   readLocalSessionReference(id: string): LocalSessionLocator | undefined {
-    let selected:
-      { createdAt: number; locator?: LocalSessionLocator } | undefined;
+    let selected: { createdAt: number; locator?: LocalSessionLocator } | undefined;
     for (const path of this.paths()) {
       const found = this.query(
         path,
         (db) => {
-          const row = db
-            .prepare("SELECT created_at FROM sessions WHERE id=?")
-            .get(id);
+          const row = db.prepare("SELECT created_at FROM sessions WHERE id=?").get(id);
           if (!row) return undefined;
+          const hasAuthority = !!db
+            .prepare(
+              "SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_authority_floor'",
+            )
+            .get();
+          const authority = hasAuthority
+            ? db.prepare("SELECT phase FROM native_authority_floor WHERE session_id=?").get(id)
+            : undefined;
+          // Keep the selected row's identity even when it is unavailable, so a
+          // duplicate ID in another profile cannot become an implicit fallback.
+          // Host references are produced from Host authority; an in-flight,
+          // blocked or transferred Native row is not a verified Native target.
+          if (authority && authority.phase !== "NATIVE")
+            return { createdAt: Number(row.created_at) };
           const hasIdentity = !!db
             .prepare(
               "SELECT 1 FROM sqlite_master WHERE type='table' AND name='native_authority_identity'",
@@ -810,24 +828,15 @@ export class DesktopSessions {
         },
         true,
       );
-      if (
-        found &&
-        (!selected || ownsBefore(found.createdAt, selected.createdAt))
-      )
-        selected = found;
+      if (found && (!selected || ownsBefore(found.createdAt, selected.createdAt))) selected = found;
     }
     return selected?.locator;
   }
 
-  async localSessionReferenceAsync(
-    id: string,
-  ): Promise<LocalSessionLocator | undefined> {
+  async localSessionReferenceAsync(id: string): Promise<LocalSessionLocator | undefined> {
     const generation = this.metadataGeneration;
     this.metadataReader ??= new AsyncHostNotes(this.paths);
-    const result = await this.metadataReader.desktopLocalSessionReference(
-      id,
-      this.platform,
-    );
+    const result = await this.metadataReader.desktopLocalSessionReference(id, this.platform);
     this.assertReadGeneration(generation);
     return result;
   }

@@ -25,6 +25,36 @@ use std::{
 const TURNSTILE: &str = "turnstile.lock";
 const WRITERS: &str = "writers.lock";
 
+/// Profile-canonical registry location shared by Native and Node adapters.
+pub const DATABASE_REGISTRY_DIRECTORY: &str = ".bycoda-physical-admission-v1";
+
+/// Derive a location from a caller's canonical absolute database path. This
+/// performs no mkdir, file open, SQL operation or permission/connection grant.
+/// The caller must establish canonical/profile/actual-connection provenance;
+/// structural path validation here does not attest any of those properties.
+pub fn database_registry_root(canonical_abs_database: &Path) -> Result<PathBuf, Error> {
+    if !canonical_abs_database.is_absolute()
+        || canonical_abs_database.file_name().is_none()
+        || canonical_abs_database.components().any(|component| {
+            matches!(
+                component,
+                std::path::Component::CurDir | std::path::Component::ParentDir
+            )
+        })
+    {
+        return Err(Error::Unsafe(
+            "registry derivation requires a canonical absolute database path",
+        ));
+    }
+    let parent = canonical_abs_database
+        .parent()
+        .filter(|path| path.is_absolute())
+        .ok_or(Error::Unsafe(
+            "canonical database path has no absolute parent",
+        ))?;
+    Ok(parent.join(DATABASE_REGISTRY_DIRECTORY))
+}
+
 /// The contested mechanical resource, not an application authorization state.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BusyResource {
@@ -390,5 +420,48 @@ pub struct ClosedFence {
 impl ClosedFence {
     pub fn identity(&self) -> &PhysicalFileId {
         &self.domain.identity
+    }
+}
+
+#[cfg(test)]
+mod root_tests {
+    use super::*;
+
+    #[test]
+    fn registry_root_is_only_canonical_parent_plus_shared_constant() {
+        let parent = std::fs::canonicalize(std::env::temp_dir()).unwrap();
+        let database = parent.join("bycoda-not-opened-by-registry-derivation.db");
+        assert_eq!(
+            database_registry_root(&database).unwrap(),
+            parent.join(DATABASE_REGISTRY_DIRECTORY)
+        );
+        assert_eq!(
+            database_registry_root(&parent.join("another.db")).unwrap(),
+            database_registry_root(&database).unwrap()
+        );
+    }
+
+    #[test]
+    fn registry_derivation_refuses_relative_and_parent_traversal_inputs() {
+        assert!(matches!(
+            database_registry_root(Path::new("relative.db")),
+            Err(Error::Unsafe(_))
+        ));
+        // Windows PathBuf::join on a verbatim canonical prefix normalizes `..`
+        // before the helper sees it. Supply literal traversal, not a normalized
+        // absolute path which no longer contains the rejected component.
+        #[cfg(windows)]
+        let traversal = Path::new(r"C:\physical-root\..\store.db");
+        #[cfg(not(windows))]
+        let traversal = Path::new("/physical-root/../store.db");
+        assert!(matches!(
+            database_registry_root(traversal),
+            Err(Error::Unsafe(_))
+        ));
+        #[cfg(unix)]
+        assert!(matches!(
+            database_registry_root(Path::new("/")),
+            Err(Error::Unsafe(_))
+        ));
     }
 }

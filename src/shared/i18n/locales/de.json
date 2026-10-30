@@ -8205,5 +8205,6 @@
   "Item": "Element",
   "Move to another window": "In anderes Fenster verschieben",
   "Release to move": "Zum Verschieben loslassen",
-  "Could not verify the tag change. Your current tags are kept.": "Die Tag-Änderung konnte nicht überprüft werden. Ihre aktuellen Tags bleiben erhalten."
+  "Could not verify the tag change. Your current tags are kept.": "Die Tag-Änderung konnte nicht überprüft werden. Ihre aktuellen Tags bleiben erhalten.",
+  "Used for the composer send button, selected text and accent actions.": "Wird für die Senden-Schaltfläche im Editor, markierten Text und Akzentaktionen verwendet."
 }

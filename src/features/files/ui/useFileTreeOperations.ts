@@ -34,6 +34,8 @@ import {
 
 type FileTreeOperationsOptions = {
   cwd: string;
+  /** Creating is refused (no usable root or machine); the toolbar and menus already say why. */
+  createUnavailable?: boolean;
   activeRoot: RefObject<string>;
   expandedRef: RefObject<Set<string>>;
   selectedPath: string | null;
@@ -67,9 +69,35 @@ type FileTreeOperationsOptions = {
   setCopyFailedText: Dispatch<SetStateAction<string | null>>;
 };
 
+/**
+ * What a drop of `paths` onto the folder `destParent` would do: `into-itself` is refused (a folder
+ * cannot land inside its own subtree), `same-folder` is a move that changes nothing, and `ok` runs.
+ * `transferPaths` enforces the first rule; the drag indicator reads the same answer before release.
+ */
+export type TransferVerdict = "ok" | "into-itself" | "same-folder";
+
+export function transferVerdict(
+  cwd: string,
+  paths: string[],
+  destParent: string,
+  copy: boolean,
+): TransferVerdict {
+  const targets = topLevelTreePaths(paths);
+  if (
+    targets.some(
+      (path) => isDirAt(cwd, path) && (destParent === path || destParent.startsWith(`${path}/`)),
+    )
+  )
+    return "into-itself";
+  if (!copy && targets.length > 0 && targets.every((path) => parentPath(path) === destParent))
+    return "same-folder";
+  return "ok";
+}
+
 /** Explorer file mutations: create, rename, delete, copy/move/paste and menu actions. */
 export function useFileTreeOperations({
   cwd,
+  createUnavailable = false,
   activeRoot,
   expandedRef,
   selectedPath,
@@ -157,7 +185,7 @@ export function useFileTreeOperations({
   };
 
   const startCreate = (isDir: boolean, atPath: string | null = selectedPath) => {
-    if (operationRunning.current) return;
+    if (operationRunning.current || createUnavailable) return;
     const parent = createParentOf(cwd, atPath);
     // The same create is already open: keep its field (and typed name) instead of restarting it.
     const open = creatingRef.current;
@@ -305,11 +333,7 @@ export function useFileTreeOperations({
 
   const transferPaths = async (paths: string[], destParent: string, copy: boolean) => {
     const targets = topLevelTreePaths(paths);
-    if (
-      targets.some(
-        (path) => isDirAt(cwd, path) && (destParent === path || destParent.startsWith(`${path}/`)),
-      )
-    ) {
+    if (transferVerdict(cwd, targets, destParent, copy) === "into-itself") {
       throw new Error("Cannot move or copy a folder into itself.");
     }
     const createdPaths: string[] = [];

@@ -204,4 +204,86 @@ describe("title tab context menu", () => {
     expect(labels).not.toContain("Delete");
     expect(labels.some((label) => label?.startsWith("Close Tab"))).toBe(true);
   });
+
+  describe("moving a tab without dragging", () => {
+    function renderThree(onReorder = vi.fn()) {
+      act(() =>
+        root.render(
+          createElement(TitleBar, {
+            tabs: [tab("a"), tab("b"), tab("c")],
+            activeId: "a",
+            cwd: "/project",
+            onToggleSidebar: vi.fn(),
+            onNew: vi.fn(),
+            onSelect: vi.fn(),
+            onClose: vi.fn(),
+            onCloseMany: vi.fn(),
+            onReorder,
+          }),
+        ),
+      );
+      return onReorder;
+    }
+
+    it("offers Move Left / Move Right, disabled at the ends of the strip", () => {
+      const onReorder = renderThree();
+      const first = openMenu("a");
+      expect(menuItem(first, "Move Left").disabled).toBe(true);
+      expect(menuItem(first, "Move Right").disabled).toBe(false);
+      act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+      const last = openMenu("c");
+      expect(menuItem(last, "Move Left").disabled).toBe(false);
+      expect(menuItem(last, "Move Right").disabled).toBe(true);
+      expect(onReorder).not.toHaveBeenCalled();
+    });
+
+    it("moves the tab and announces it from the menu", () => {
+      const onReorder = renderThree();
+      pick(openMenu("b"), "Move Right");
+      expect(onReorder).toHaveBeenCalledExactlyOnceWith(["a", "c", "b"], "b");
+      expect(document.querySelector("[data-drag-announcer]")?.textContent).toContain("b");
+      expect(document.querySelector("[data-drag-announcer]")?.textContent).toContain("3 of 3");
+      pick(openMenu("b"), "Move Left");
+      expect(onReorder).toHaveBeenLastCalledWith(["b", "a", "c"], "b");
+    });
+
+    it("moves the focused tab with Alt+Arrow and leaves plain arrows alone", () => {
+      const onReorder = renderThree();
+      const button = container.querySelector<HTMLButtonElement>('[data-title-tab-id="b"] button')!;
+      act(() =>
+        button.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, cancelable: true }),
+        ),
+      );
+      expect(onReorder).not.toHaveBeenCalled();
+      const alt = new KeyboardEvent("keydown", {
+        key: "ArrowLeft",
+        altKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      act(() => button.dispatchEvent(alt));
+      expect(alt.defaultPrevented).toBe(true);
+      expect(onReorder).toHaveBeenCalledExactlyOnceWith(["b", "a", "c"], "b");
+    });
+
+    it("keeps the first tab in place at the edge and says so", () => {
+      const onReorder = renderThree();
+      const button = container.querySelector<HTMLButtonElement>('[data-title-tab-id="a"] button')!;
+      act(() =>
+        button.dispatchEvent(
+          new KeyboardEvent("keydown", {
+            key: "ArrowLeft",
+            altKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      );
+      expect(onReorder).not.toHaveBeenCalled();
+      expect(document.querySelector("[data-drag-announcer]")?.textContent).toContain(
+        "stays at position 1 of 3",
+      );
+    });
+  });
 });

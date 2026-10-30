@@ -248,3 +248,128 @@ export function publishingPauseFeedback(reason?: string): PublishingPauseFeedbac
     technicalDetail: value,
   };
 }
+
+/** Host limits of `plans.suggest` (mirrored for the disabled reasons; the Host owns enforcement). */
+export const PLAN_SUGGEST_POOL_MAX = 50;
+export const PLAN_SUGGEST_INSTRUCTIONS_MAX = 2000;
+
+export type PlanStepId = "content" | "schedule" | "review";
+export const PLAN_STEP_IDS: readonly PlanStepId[] = ["content", "schedule", "review"];
+
+/** Where the owner fixes a blocker. The dialog only offers actions it can really perform. */
+export type PlanFixAction = "content" | "accounts" | "settings";
+export type PlanBlocker = { id: string; text: string; fix?: PlanFixAction };
+
+/** Reasons the first step cannot continue: each one would make the plan unsavable. */
+export function planContentBlockers(input: {
+  name: string;
+  accountCount: number;
+  accountFound: boolean;
+  projectId: string;
+  availableCampaignIds: readonly string[];
+  campaignIds: readonly string[];
+}): PlanBlocker[] {
+  const blockers: PlanBlocker[] = [];
+  if (!input.accountCount)
+    blockers.push({ id: "no-account", text: t("Connect an account first."), fix: "accounts" });
+  else if (!input.accountFound)
+    blockers.push({ id: "choose-account", text: t("Choose a sharing account.") });
+  if (!input.projectId) blockers.push({ id: "choose-project", text: t("Choose a project.") });
+  if (!input.name.trim()) blockers.push({ id: "name", text: t("Enter a plan name.") });
+  if (input.accountFound && input.projectId) {
+    if (!input.availableCampaignIds.length)
+      blockers.push({
+        id: "no-campaigns",
+        text: t(
+          "There are no campaigns for this account and project. Prepare content in Campaigns and approve it for publishing.",
+        ),
+        fix: "content",
+      });
+    else if (!input.campaignIds.length)
+      blockers.push({
+        id: "empty-pool",
+        text: t("Select at least one campaign for the content pool."),
+      });
+    else if (input.campaignIds.some((id) => !input.availableCampaignIds.includes(id)))
+      blockers.push({
+        id: "stale-pool",
+        text: t(
+          "Some selected campaigns are not available for this account and project. Reselect the content pool.",
+        ),
+      });
+  }
+  return blockers;
+}
+
+/**
+ * Things that do not stop a paused plan from being saved but will stop it from being enabled.
+ * They are shown where the owner can fix them, never as a reason to block Next.
+ */
+export function planContentWarnings(input: {
+  accountFound: boolean;
+  publishGranted: boolean;
+  campaignIds: readonly string[];
+  approvedCampaignIds?: readonly string[];
+}): PlanBlocker[] {
+  const warnings: PlanBlocker[] = [];
+  if (input.accountFound && !input.publishGranted)
+    warnings.push({
+      id: "grant",
+      text: t(
+        "This account has no publishing permission for this project. The plan can be saved paused, but it cannot be enabled until you grant it in Accounts.",
+      ),
+      fix: "accounts",
+    });
+  const unapproved = input.campaignIds.filter((id) => !input.approvedCampaignIds?.includes(id));
+  if (unapproved.length)
+    warnings.push({
+      id: "approval",
+      text: t(
+        "{p0} of {p1} campaigns are not approved for publishing. Approve them in Campaigns before enabling the plan.",
+        { p0: unapproved.length, p1: input.campaignIds.length },
+      ),
+      fix: "content",
+    });
+  return warnings;
+}
+
+export type PlanAgentState = "checking" | "ready" | "missing" | "unknown";
+
+/** Why "Ask AI to suggest a plan" is unavailable right now; empty when it can be asked. */
+export function planSuggestBlockedReason(input: {
+  hostOnline: boolean;
+  accountFound: boolean;
+  projectId: string;
+  publishGranted: boolean;
+  agent: PlanAgentState;
+  eligibleCount: number;
+  narrowedCount: number;
+}): string {
+  if (!input.hostOnline) return t("The computer is offline.");
+  if (!input.accountFound) return t("Choose a sharing account first.");
+  if (!input.projectId) return t("Choose a project first.");
+  if (!input.publishGranted)
+    return t("Grant publishing permission for this project in Accounts first.");
+  if (input.agent === "missing") return t("Choose a text agent in Settings first.");
+  if (!input.eligibleCount)
+    return t("Create an active campaign for this account and project first.");
+  const pool = input.narrowedCount || input.eligibleCount;
+  if (pool > PLAN_SUGGEST_POOL_MAX)
+    return t("Choose at most {p0} campaigns for the suggestion.", { p0: PLAN_SUGGEST_POOL_MAX });
+  return "";
+}
+
+/** Moves one pool entry; entries before `lockedPrefix` (already published) never move or get passed. */
+export function movePoolEntry(
+  ids: readonly string[],
+  index: number,
+  delta: -1 | 1,
+  lockedPrefix = 0,
+): string[] {
+  const target = index + delta;
+  if (index < lockedPrefix || target < lockedPrefix || target < 0 || target >= ids.length)
+    return [...ids];
+  const next = [...ids];
+  [next[index], next[target]] = [next[target], next[index]];
+  return next;
+}

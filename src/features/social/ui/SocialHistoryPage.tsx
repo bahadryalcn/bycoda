@@ -36,10 +36,16 @@ export function useSocialHistoryPage<T extends { id: string }>(
   const offset = id ? offsets[id] : undefined;
   const stamp = `${id}:${version}:${offset ?? "latest"}`;
   const [result, setResult] = useState<{ stamp: string; value?: T; error?: string }>();
+  // A new request (client, record, page, visibility or retry) drops the previous result first.
+  const requestKey = [client, action, id, stamp, offset, enabled, active, revision] as const;
+  const [seenRequestKey, setSeenRequestKey] = useState(requestKey);
+  if (requestKey.some((value, index) => !Object.is(value, seenRequestKey[index]))) {
+    setSeenRequestKey(requestKey);
+    if (enabled && id && active) setResult(undefined);
+  }
   useEffect(() => {
     if (!enabled || !id || !active) return;
     let alive = true;
-    setResult(undefined);
     void client
       .request<T>(action, { id, limit: 20, ...(offset === undefined ? {} : { offset }) })
       .then((value) => {

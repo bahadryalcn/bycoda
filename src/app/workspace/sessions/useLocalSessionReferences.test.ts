@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newDefaultSession, type Session } from "../../../features/sessions/model/session";
@@ -21,6 +21,9 @@ import {
 import type { ResolvedLocalSession } from "../../../features/sessions/model/localSessionNavigation";
 import type { LocalSessionReference } from "../../../features/sessions/model/localSessionReference";
 import { useOpenSessionActions, type OpenSessionActionsDeps } from "./useOpenSessionActions";
+import { useOrchestrationWorkerPanes } from "../bridges/useOrchestrationWorkerPanes";
+import type { WorkerDetailRequest } from "../bridges/useOrchestrationState";
+import { hostSessionShellSummaries } from "../../../features/connections/model/sessionExecutionBinding";
 
 const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
@@ -36,6 +39,9 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 vi.mock("../../../features/group-lock/model/groupLock", () => ({
   getGroupLockView: () => mocks.privacy,
   subscribeGroupLock: () => () => {},
+}));
+vi.mock("../../../features/group-lock/model/lockState", () => ({
+  isProjectLockedIn: () => mocks.locked,
 }));
 vi.mock("../../../features/sessions/model/localSessionNavigation", () => ({
   resolveLocalSessionReference: mocks.resolve,
@@ -101,12 +107,33 @@ const hostTarget = (): ResolvedLocalSession => ({
 
 function Harness() {
   const open = useOpenSessionActions(deps);
+  const [workerDetailRequest, setWorkerDetailRequest] = useState<WorkerDetailRequest | null>(null);
+  const { queueWorkerPanes } = useOrchestrationWorkerPanes({
+    tabs: deps.tabsRef.current,
+    setTabs: deps.setTabs,
+    setActiveTabId: deps.setActiveTabId,
+    setComposerFocused: deps.setComposerFocused,
+    projectCwdRef: { current: "/project" },
+    focusOpenSession: deps.focusOpenSession,
+    onSelectHistorySession: open.onSelectHistorySession,
+    ensureOpenSession: deps.ensureOpenSession,
+    inspectedWorkerId: null,
+    setInspectedWorkerId: deps.setInspectedWorkerId,
+    workerDetailRequest,
+    setWorkerDetailRequest,
+  });
   navigation = useLocalSessionReferences({
     ...open,
     ensureOpenSession: deps.ensureOpenSession,
     activeSessionId: () => deps.tabsRef.current.find((tab) => tab.id === active)?.focusedId,
     showSessions,
     workspaceNavigation: deps.workspaceNavigation,
+    onOpenWorkerDetails: (session, isCurrent) => queueWorkerPanes([{
+      sessionId: session.id,
+      leadId: session.orchestrationLeadId!,
+      title: session.title,
+      harness: session.harness,
+    }], isCurrent),
   });
   return null;
 }
@@ -392,8 +419,13 @@ it("maps a canonical Host worker and lead to distinct local shells before using 
   expect(workerShell.id).not.toBe("host-target");
   expect(leadShell.id).not.toBe("canonical-lead");
   expect(workerShell.orchestrationLeadId).toBe(leadShell.id);
-  expect(deps.tabsRef.current.find((tab) => tab.id === active)?.focusedId).toBe(leadShell.id);
+  expect(leafIds(deps.tabsRef.current.find((tab) => tab.id === active)!.layout)).toContain(leadShell.id);
   expect(deps.setInspectedWorkerId).toHaveBeenCalledWith(workerShell.id);
+  const workerFiles = () => deps.tabsRef.current.flatMap((tab) =>
+    tab.editorPanes.flatMap((pane) => pane.files.filter((file) => file.agent?.sessionId === workerShell.id)),
+  );
+  expect(workerFiles()).toHaveLength(1);
+  expect(deps.tabsRef.current.find((tab) => tab.id === active)?.editorPanes[0].activeFileId).toBe(workerFiles()[0].id);
   expect(mocks.resolve).toHaveBeenCalledWith({
     locator: {
       kind: "host",
@@ -403,6 +435,65 @@ it("maps a canonical Host worker and lead to distinct local shells before using 
   });
   await open({ locator: worker.locator });
   expect(getSessions()).toHaveLength(4);
+  expect(deps.tabsRef.current).toHaveLength(2);
+  expect(workerFiles()).toHaveLength(1);
+});
+
+it("opens the Native worker's read-only editor and preserves the cited jump until its transcript mounts", async () => {
+  target.orchestrationLeadId = source.id;
+  target.blocks = [{ id: "user-turn", role: "user", text: "Question" } as never];
+  await open({ ...reference, turnId: "user-turn" });
+  expect(deps.tabsRef.current).toHaveLength(1);
+  const files = deps.tabsRef.current[0].editorPanes.flatMap((pane) => pane.files);
+  expect(files).toHaveLength(1);
+  expect(files[0].agent).toMatchObject({ sessionId: target.id, leadId: source.id });
+  expect(peekTranscriptJump(target.id)?.blockId).toBe("user-turn");
+  await open({ ...reference, turnId: "user-turn" });
+  expect(deps.tabsRef.current).toHaveLength(1);
+  expect(deps.tabsRef.current[0].editorPanes.flatMap((pane) => pane.files)).toHaveLength(1);
+  await open({ ...reference, turnId: "user-turn" }, { beside: true });
+  expect(deps.tabsRef.current).toHaveLength(1);
+  expect(leafIds(deps.tabsRef.current[0].layout)).not.toContain(target.id);
+  expect(deps.tabsRef.current[0].editorPanes.flatMap((pane) => pane.files)).toHaveLength(1);
+});
+
+it.each([false, true])("rechecks reference privacy during delegated tab loading (beside=%s)", async (beside) => {
+  vi.mocked(deps.ensureOpenSession)
+    .mockResolvedValueOnce(target)
+    .mockImplementation(async (id) => {
+      mocks.privacy = { lock: {} };
+      return getSessions().find((entry) => entry.id === id) ?? null;
+    });
+  await open(reference, { beside });
+  expect(deps.tabsRef.current).toHaveLength(1);
+  expect(deps.tabsRef.current[0].editorPanes).toEqual([]);
+  expect(active).toBe(deps.tabsRef.current[0].id);
+});
+
+it("does not publish worker panes or a jump after the target is locked during worker loading", async () => {
+  target.orchestrationLeadId = source.id;
+  target.blocks = [{ id: "user-turn", role: "user", text: "Question" } as never];
+  const originalEnsure = deps.ensureOpenSession;
+  vi.mocked(deps.ensureOpenSession).mockImplementation(async (id) => {
+    if (id === source.id) mocks.locked = true;
+    return getSessions().find((entry) => entry.id === id) ?? null;
+  });
+  await expect(open({ ...reference, turnId: "user-turn" })).rejects.toThrow("unavailable");
+  expect(deps.tabsRef.current[0].editorPanes).toEqual([]);
+  expect(peekTranscriptJump(target.id)).toBeNull();
+  deps.ensureOpenSession = originalEnsure;
+});
+
+it("refreshes only Host shell archive presentation from the verified owner when reusing a shell", async () => {
+  mocks.resolve.mockResolvedValue(hostTarget());
+  await open({ locator: hostTarget().locator });
+  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(true);
+  const unarchived = hostTarget();
+  unarchived.archived = false;
+  mocks.resolve.mockResolvedValue(unarchived);
+  await open({ locator: unarchived.locator });
+  expect(hostSessionShellSummaries().find((entry) => entry.title === "Host target")?.archived).toBe(false);
+  expect(mocks.loadRemoteBlock).not.toHaveBeenCalled();
   expect(deps.tabsRef.current).toHaveLength(2);
 });
 

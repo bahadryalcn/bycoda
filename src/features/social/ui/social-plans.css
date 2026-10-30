@@ -1,0 +1,138 @@
+/* Publishing plans: stepped plan dialog, AI suggestion review and the compact plan summary. */
+
+/* Dialog form: stepper on top, one step at a time, actions kept together at the end. */
+.social-view .social-editor > .social-form.social-plan-setup.social-plan-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-inline-size: 48rem;
+}
+.social-plan-step {
+  display: grid;
+  gap: 0.875rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.social-plan-step > legend {
+  padding: 0;
+  margin-block-end: 0.25rem;
+  font-weight: 500;
+}
+.social-plan-ai {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.social-plan-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.social-plan-reason {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-caption);
+}
+.social-plan-reason:empty {
+  display: none;
+}
+
+/* Review step and suggestion review: label / value rows, no nested cards. */
+.social-plan-review {
+  display: grid;
+  gap: 0.625rem;
+  margin: 0;
+}
+.social-plan-review > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.social-plan-review dt {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.social-plan-review dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.social-plan-pool {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0.375rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.social-plan-pool > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  min-inline-size: 0;
+}
+.social-plan-pool-name {
+  flex: 1 1 12rem;
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+/* AI suggestion panel */
+.social-plan-suggest {
+  display: grid;
+  gap: 0.75rem;
+  min-inline-size: 0;
+  max-inline-size: 48rem;
+}
+.social-plan-suggest > h3 {
+  margin: 0;
+}
+.social-plan-excluded {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0.5rem 0 0;
+  padding-inline-start: 1.25rem;
+  font-size: var(--ui-font-caption);
+}
+.social-plan-rationale {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* Plan summary leads with the next action. */
+.social-plan-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--ui-radius-card);
+  background: var(--ui-surface-panel);
+  overflow-wrap: anywhere;
+}
+.social-plan-next strong {
+  font-weight: 500;
+}
+.social-plan-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 0.75rem;
+}
+
+@media (max-width: 40rem) {
+  .social-plan-review > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.125rem;
+  }
+  .social-plan-footer {
+    justify-content: stretch;
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "kind": "unmodified public SQLite extension ABI headers",
+  "version": "3.53.2",
+  "origin": "libsqlite3-sys-0.38.2/sqlite3 cached upstream headers",
+  "upstream": "https://sqlite.org/download.html",
+  "license": "Public Domain",
+  "licenseSource": "https://sqlite.org/copyright.html",
+  "modified": false,
+  "files": [
+    {
+      "path": "sqlite3.h",
+      "sha256": "9e69a1353a4288450b0d5239ede11fc7f1f4c8e5eb07491fc8317eacb5b7de7e",
+      "byteLength": 690725
+    },
+    {
+      "path": "sqlite3ext.h",
+      "sha256": "ac9645e5c9ff0cf176efdd6e75cb5e98f46295d38e02db5c4d208826a39ab4be",
+      "byteLength": 39175
+    }
+  ]
+}

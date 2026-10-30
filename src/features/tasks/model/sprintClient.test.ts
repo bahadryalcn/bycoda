@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { focusManager } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +46,10 @@ function Harness({
   projects = [],
   tasks = [],
 }: { machines?: RemoteMachine[]; projects?: SprintProjectRef[]; tasks?: BoardTask[] } = {}) {
-  board = useSprintBoard(machines, tasks, projects);
+  const current = useSprintBoard(machines, tasks, projects);
+  useEffect(() => {
+    board = current;
+  });
   return null;
 }
 beforeEach(() => {

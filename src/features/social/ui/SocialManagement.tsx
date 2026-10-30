@@ -11,6 +11,9 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { Stepper } from "../../../shared/ui/Stepper";
+import { Modal } from "../../../shared/ui/Modal";
+import { Sparkles } from "../../../shared/ui/icons";
 import { useEffect, useRef, useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
@@ -28,6 +31,8 @@ import {
   type ContactImportPreview,
 } from "../model/socialContactImport";
 import { SocialBulkComposer } from "./SocialBulkComposer";
+import { RuleSimplifyReview, ruleModeLabel, useRuleSimplify } from "./RuleSimplifyReview";
+import "./social-rules.css";
 import { contactTarget } from "./socialBulk";
 import {
   Empty,

@@ -15,6 +15,12 @@ export interface FileIdentityData {
   nativeFormat: string;
   links: bigint;
 }
+/** JSON returned ONLY by the actual trusted SQLite function; not a reconstructible grant. */
+export interface SqliteConnectionIdentityData {
+  version: 1;
+  physicalFileId: string;
+  links: number;
+}
 export interface ReservationStatistics {
   processActive: number;
   ownerActive: number;
@@ -37,8 +43,13 @@ export interface PhysicalRegistry {
   statistics(): ReservationStatistics;
 }
 export interface PhysicalStoreAdmission {
-  mechanicalAbiVersion(): 1;
+  mechanicalAbiVersion(): 2;
   openRegistry(protectedRoot: string): PhysicalRegistry;
+  /** Shared Core location derivation only; caller establishes canonical provenance. */
+  registryRootForDatabase(canonicalAbsDbPath: string): string;
+  sqliteExtensionEntryPoint(): "sqlite3_bycodaphysical_init";
+  /** Current implementation supports actual connection attestation on Windows only. */
+  connectionAttestationSupported(): boolean;
 }
 export function loadPhysicalStoreAdmission(
   explicitAbsoluteNodeArtifact: string,

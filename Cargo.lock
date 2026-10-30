@@ -492,6 +492,7 @@ name = "bycoda-physical-store-admission-node"
 version = "0.1.0"
 dependencies = [
  "bycoda-physical-store-admission",
+ "cc",
  "napi",
  "napi-build",
  "napi-derive",

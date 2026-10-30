@@ -137,7 +137,14 @@ import { orchestrationTaskLabel } from "../../features/orchestration/model/orche
 import { orderedSessionActionIds } from "../../features/sessions/model/sessionSelection";
 import { paneDropFromPoint, setExternalPaneDrop } from "../../features/workspace/model/paneDrop";
 import type { PaneEdge } from "../../features/workspace/model/layout";
-import { setDropFeedback, setGrabbing, suppressTextSelection } from "../../shared/lib/drag";
+import {
+  announceDrag,
+  clearDropIndicator,
+  setDropFeedback,
+  setDropIndicator,
+  setGrabbing,
+  suppressTextSelection,
+} from "../../shared/lib/drag";
 import {
   isPointerOutsideWindow,
   popOutPosition,
@@ -1047,12 +1054,23 @@ function SidebarComponent({
   const sessionHarnesses = harnessesInSessions(projectSessions);
   const narrowedByUser = searchNarrowed || filtersActive;
   const visibleTabs = tabOrder.filter((itemId) => itemId !== "inbox");
-  const sortable = useAnimatedReorder(visibleTabs, (ids) => {
-    let index = 0;
-    const next = tabOrder.map((itemId) => (itemId === "inbox" ? itemId : ids[index++]));
-    setTabOrder(next);
-    saveSidebarTabOrder(next);
-  });
+  const sortable = useAnimatedReorder(
+    visibleTabs,
+    (ids) => {
+      let index = 0;
+      const next = tabOrder.map((itemId) => (itemId === "inbox" ? itemId : ids[index++]));
+      setTabOrder(next);
+      saveSidebarTabOrder(next);
+    },
+    "x",
+    undefined,
+    { label: (itemId) => t(TAB_LABELS[itemId]) },
+  );
+  const [viewTabMenu, setViewTabMenu] = useState<{
+    x: number;
+    y: number;
+    tabId: Exclude<SidebarTab, "inbox">;
+  } | null>(null);
   const cancelFolderDrag = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelFolderDrag.current?.(), []);
   const skipFolderClickUntil = useRef(0);
@@ -1930,11 +1948,6 @@ function SidebarComponent({
         needsApproval={listedApprovalSessionIds.has(session.id)}
         inputKind={liveAgentsById.get(session.id)?.inputKind}
         dropTarget={isSessionDrop("session", session.id)}
-        dropInsert={
-          sessionDrop?.kind === "insert" && sessionDrop.id === session.id
-            ? sessionDrop.place
-            : undefined
-        }
         dropDwell={
           sessionDrop?.kind === "insert" && sessionDrop.id === session.id && !!sessionDrop.dwell
         }
@@ -1995,11 +2008,6 @@ function SidebarComponent({
     cancelFolderDrag.current?.();
     const handle = event.currentTarget;
     const source = handle.closest<HTMLElement>("[data-session-folder]");
-    let highlighted: HTMLElement | null = null;
-    const clearHighlight = () => {
-      highlighted?.removeAttribute("data-folder-drop");
-      highlighted = null;
-    };
     const pointerId = event.pointerId;
     const startX = event.clientX;
     const startY = event.clientY;
@@ -2015,6 +2023,11 @@ function SidebarComponent({
         active = true;
         setGrabbing(true);
         source?.setAttribute("data-folder-dragging", "true");
+        announceDrag(
+          t("Picked up folder {p0}. Escape cancels.", {
+            p0: sessionFoldersRef.current.find((item) => item.id === folderId)?.name ?? t("Folder"),
+          }),
+        );
       }
       target = folderMoveTargetAt(ev.clientX, ev.clientY, sessionsScrollRef.current);
       const allowed = !!target && canMoveFolder(sessionFoldersRef.current, folderId, target);
@@ -2026,27 +2039,19 @@ function SidebarComponent({
           before.kind === target.kind &&
           (!("id" in before) || ("id" in target && before.id === target.id)) &&
           (!("place" in before) || ("place" in target && before.place === target.place)));
+      const folderName = sessionFoldersRef.current.find((item) => item.id === folderId)?.name;
       if (!reported || reported.allowed !== allowed || !sameTarget) {
         reported = { target, allowed };
-        clearHighlight();
-        const root = sessionsScrollRef.current;
-        if (root && target && allowed) {
-          highlighted =
-            "id" in target
-              ? ([...root.querySelectorAll<HTMLElement>("[data-session-folder]")].find(
-                  (el) => el.dataset.sessionFolder === (target as { id: string }).id,
-                ) ?? null)
-              : target.kind === "pinned"
-                ? root.querySelector<HTMLElement>("[data-pinned-sessions]")
-                : null;
-          highlighted?.setAttribute(
-            "data-folder-drop",
-            target.kind === "beside" ? target.place : target.kind,
-          );
-        }
+        markFolderMoveTarget(sessionsScrollRef.current, target, allowed);
+        // One sentence per change of target, never per pointer move.
+        announceDrag(
+          !target || !allowed
+            ? t("Cannot drop here")
+            : t("{p0}: {p1}", { p0: folderName ?? t("Folder"), p1: folderMoveLabel(target) }),
+        );
       }
-      if (!target || !allowed) setDropFeedback("blocked", ev, t("Cannot drop here"));
-      else setDropFeedback("move", ev, folderMoveLabel(target));
+      if (!target || !allowed) setDropFeedback("blocked", ev, t("Cannot drop here"), folderName);
+      else setDropFeedback("move", ev, folderMoveLabel(target), folderName);
     };
     const onUp = (ev: PointerEvent) => {
       if (ev.pointerId === pointerId) finish(true);
@@ -2064,8 +2069,8 @@ function SidebarComponent({
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("blur", onCancel);
       restoreSelection();
+      // Also clears the cursor badge and the target mark, committed or not.
       setGrabbing(false);
-      clearHighlight();
       source?.removeAttribute("data-folder-dragging");
       cancelFolderDrag.current = null;
       try {
@@ -2076,6 +2081,7 @@ function SidebarComponent({
       if (!active) return;
       skipFolderClickUntil.current = performance.now() + 400;
       if (commit && target) onFolderMove(folderId, target);
+      else announceDrag(t("Move cancelled"));
     }
     cancelFolderDrag.current = () => finish(false);
     window.addEventListener("pointermove", onMove);
@@ -2119,14 +2125,6 @@ function SidebarComponent({
         }`}
       >
         <div
-          data-folder-insert="before"
-          className="pointer-events-none absolute inset-x-1 top-0 z-20 h-0.5 rounded-full bg-accent"
-        />
-        <div
-          data-folder-insert="after"
-          className="pointer-events-none absolute inset-x-1 bottom-0 z-20 h-0.5 rounded-full bg-accent"
-        />
-        <div
           className="overflow-hidden rounded-md"
           style={shellFill ? { background: shellFill } : undefined}
         >
@@ -2134,7 +2132,6 @@ function SidebarComponent({
             <FolderRenameRow
               folder={entry.folder}
               memberCount={entry.allSessions.length}
-              dropTarget={isSessionDrop("folder", entry.folder.id)}
               onCommit={(name) => {
                 commitSessionFolders(renameFolder(sessionFolders, entry.folder.id, name));
                 setRenamingFolderId(null);
@@ -2146,7 +2143,6 @@ function SidebarComponent({
               folder={entry.folder}
               sessions={entry.allSessions}
               expanded={expanded}
-              dropTarget={isSessionDrop("folder", entry.folder.id)}
               busy={entry.allSessions.some((session) => listedBusySessionIds.has(session.id))}
               done={entry.allSessions.some((session) => unseenFinishedIds.has(session.id))}
               needsApproval={entry.allSessions.some((session) =>
@@ -2274,6 +2270,37 @@ function SidebarComponent({
     onTabChange(itemId);
   };
 
+  // The menu alternative to dragging a view tab, disabled at the ends of the row.
+  const viewTabIndex = viewTabMenu ? visibleTabs.indexOf(viewTabMenu.tabId) : -1;
+  const viewTabMenuItems: ExplorerMenuItem[] =
+    viewTabIndex < 0
+      ? EMPTY_MENU_ITEMS
+      : [
+          {
+            kind: "item",
+            id: "move-left",
+            get label() {
+              return t("Move Left");
+            },
+            disabled: viewTabIndex === 0,
+          },
+          {
+            kind: "item",
+            id: "move-right",
+            get label() {
+              return t("Move Right");
+            },
+            disabled: viewTabIndex === visibleTabs.length - 1,
+          },
+        ];
+  const onViewTabMenuPick = (id: string) => {
+    const tabId = viewTabMenu?.tabId;
+    setViewTabMenu(null);
+    if (tabId && (id === "move-left" || id === "move-right")) {
+      sortable.moveBy(tabId, id === "move-left" ? -1 : 1);
+    }
+  };
+
   const changeAdditions = changeStats?.additions ?? 0;
   const changeDeletions = changeStats?.deletions ?? 0;
   // Two different measures: how many files changed, and how many lines (churn).
@@ -2337,6 +2364,11 @@ function SidebarComponent({
           if (event.button !== 0) return;
           sortable.onItemPointerDown(itemId, event);
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setViewTabMenu({ x: event.clientX, y: event.clientY, tabId: itemId });
+        }}
       >
         <Button
           variant="tab"
@@ -2344,6 +2376,10 @@ function SidebarComponent({
           type="button"
           role="tab"
           aria-selected={active}
+          // Alt+Arrow moves the view tab without dragging; the menu offers the same move.
+          onKeyDown={(event) => {
+            sortable.onItemKeyDown(itemId, event);
+          }}
           data-workspace-tab-counted={
             itemId === "sessions" && workingSessionsBadge ? "" : undefined
           }
@@ -2881,7 +2917,6 @@ function SidebarComponent({
                               }
                               sessions={groupSessions}
                               expanded={expanded}
-                              dropTarget={!isReminders && sessionDrop?.kind === "pinned"}
                               busy={groupSessions.some((session) =>
                                 listedBusySessionIds.has(session.id),
                               )}
@@ -3029,6 +3064,16 @@ function SidebarComponent({
           }
           onPick={onSessionMenuPick}
           onClose={closeSessionMenu}
+        />
+      ) : null}
+      {viewTabMenu && viewTabIndex >= 0 ? (
+        <ExplorerMenu
+          x={viewTabMenu.x}
+          y={viewTabMenu.y}
+          items={viewTabMenuItems}
+          ariaLabel={`${t(TAB_LABELS[viewTabMenu.tabId])} tab actions`}
+          onPick={onViewTabMenuPick}
+          onClose={() => setViewTabMenu(null)}
         />
       ) : null}
       {folderMenu ? (
@@ -4256,6 +4301,33 @@ function folderMoveLabel(target: FolderMoveTarget): string {
   }
 }
 
+/**
+ * Marks where a dragged folder would land with the shared indicator: a line before or after a
+ * folder, a frame on the folder (or pinned) header it would nest into, and a refused frame on the
+ * header it cannot go into. The top level has no row to mark, so only the badge says it.
+ */
+function markFolderMoveTarget(
+  root: HTMLElement | null,
+  target: FolderMoveTarget | null,
+  allowed: boolean,
+) {
+  const folder =
+    root && target && "id" in target
+      ? ([...root.querySelectorAll<HTMLElement>("[data-session-folder]")].find(
+          (el) => el.dataset.sessionFolder === target.id,
+        ) ?? null)
+      : null;
+  const header = (scope: HTMLElement | null | undefined) =>
+    scope?.querySelector<HTMLElement>("[data-folder-row]") ?? null;
+  if (!root || !target) clearDropIndicator();
+  else if (!allowed) setDropIndicator(header(folder), "blocked");
+  else if (target.kind === "beside") setDropIndicator(folder, target.place);
+  else if (target.kind === "into") setDropIndicator(header(folder), "inside");
+  else if (target.kind === "pinned")
+    setDropIndicator(header(root.querySelector<HTMLElement>("[data-pinned-sessions]")), "inside");
+  else clearDropIndicator();
+}
+
 function sameDropTarget(a: SessionListDropTarget | null, b: SessionListDropTarget | null): boolean {
   if (!a || !b) return a === b;
   if (a.kind !== b.kind) return false;
@@ -4277,6 +4349,32 @@ function dropTargetLabel(target: SessionListDropTarget): string {
     case "insert":
       return target.dwell ? t("Hold to group") : t("Release to move here");
   }
+}
+
+/**
+ * Marks the one row a dragged session would land on, in the shared drop-indicator vocabulary:
+ * a line before/after a card, a dashed frame once a card is ready to group, a frame on a folder
+ * or the pinned header. The instruction itself lives only in the cursor badge.
+ */
+function markSessionListTarget(target: SessionListDropTarget | null) {
+  if (!target) {
+    clearDropIndicator();
+    return;
+  }
+  if (target.kind === "insert" || target.kind === "session") {
+    const card = [...document.querySelectorAll<HTMLElement>("[data-session-card]")].find(
+      (el) => el.dataset.sessionCard === target.id,
+    );
+    setDropIndicator(card ?? null, target.kind === "session" ? "group" : target.place);
+    return;
+  }
+  const scope =
+    target.kind === "folder"
+      ? [...document.querySelectorAll<HTMLElement>("[data-session-folder]")].find(
+          (el) => el.dataset.sessionFolder === target.id,
+        )
+      : document.querySelector<HTMLElement>("[data-pinned-sessions]");
+  setDropIndicator(scope?.querySelector<HTMLElement>("[data-folder-row]") ?? null, "inside");
 }
 
 function FolderColorSwatches({
@@ -4312,7 +4410,6 @@ function FolderRow({
   folder,
   sessions,
   expanded,
-  dropTarget,
   busy,
   done,
   needsApproval,
@@ -4325,7 +4422,6 @@ function FolderRow({
   folder: Pick<SessionFolder, "name" | "colorIndex" | "customColor">;
   sessions: SessionSummary[];
   expanded: boolean;
-  dropTarget: boolean;
   busy: boolean;
   done: boolean;
   needsApproval: boolean;
@@ -4340,7 +4436,6 @@ function FolderRow({
   const accent = folderAccent(folder.colorIndex, folder.customColor);
   return (
     <Button
-      selected={dropTarget}
       variant="item"
       motion="none"
       type="button"
@@ -4359,10 +4454,6 @@ function FolderRow({
       }}
       className="group relative flex w-full min-w-0 touch-none items-center gap-1.5 text-start"
     >
-      <div
-        data-drop-highlight={dropTarget ? "true" : "false"}
-        className="pointer-events-none absolute inset-0 hidden rounded-md bg-(--ui-surface-selected) data-[drop-highlight=true]:block"
-      />
       <span
         className={`relative grid size-4 shrink-0 place-items-center ${
           accent ? "" : "text-(--ui-text-secondary)"
@@ -4418,13 +4509,11 @@ function FolderRow({
 function FolderRenameRow({
   folder,
   memberCount,
-  dropTarget,
   onCommit,
   onCancel,
 }: {
   folder: SessionFolder;
   memberCount: number;
-  dropTarget: boolean;
   onCommit: (name: string) => void;
   onCancel: () => void;
 }) {
@@ -4457,15 +4546,8 @@ function FolderRenameRow({
   };
 
   return (
-    <div
-      className={`relative flex w-full items-center gap-1.5 px-2 py-1.5 ${
-        dropTarget ? "" : "text-content"
-      }`}
-    >
-      <div
-        data-drop-highlight={dropTarget ? "true" : "false"}
-        className="pointer-events-none absolute inset-0 hidden rounded-md bg-(--ui-surface-selected) data-[drop-highlight=true]:block"
-      />
+    // data-folder-row keeps this row a drop target (and its mark) while the name is being edited.
+    <div data-folder-row="" className="relative flex w-full items-center gap-1.5 px-2 py-1.5 text-content">
       <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary)">
         <ChevronDown className="icon-sm" strokeWidth={1.75} />
       </span>
@@ -4604,7 +4686,6 @@ const SessionCard = memo(function SessionCard({
   needsApproval,
   inputKind,
   dropTarget,
-  dropInsert,
   dropDwell = false,
   groupDelayMs,
   density,
@@ -4637,8 +4718,6 @@ const SessionCard = memo(function SessionCard({
   inputKind?: LiveAgent["inputKind"];
   /** Ready to group with the dragged session. */
   dropTarget?: boolean;
-  /** The dragged session would land on this side of the card. */
-  dropInsert?: "before" | "after";
   /** The dragged session rests on this card, counting down to grouping. */
   dropDwell?: boolean;
   groupDelayMs: number;
@@ -4873,6 +4952,7 @@ const SessionCard = memo(function SessionCard({
     const setListTarget = (next: SessionListDropTarget | null) => {
       if (sameDropTarget(lastList, next)) return;
       lastList = next;
+      markSessionListTarget(next);
       onListDropTargetChange?.(next);
     };
     const clearDwell = () => {
@@ -4892,7 +4972,12 @@ const SessionCard = memo(function SessionCard({
           dwell.ready = true;
           const ready: SessionListDropTarget = { kind: "session", id };
           setListTarget(ready);
-          setDropFeedback("move", { clientX: lastX, clientY: lastY }, dropTargetLabel(ready));
+          setDropFeedback(
+            "move",
+            { clientX: lastX, clientY: lastY },
+            dropTargetLabel(ready),
+            title,
+          );
         }, groupDelayMs);
         dwell = { id, ready: false, timer };
       }
@@ -4926,22 +5011,27 @@ const SessionCard = memo(function SessionCard({
         onPopOut &&
         isPointerOutsideWindow(ev.clientX, ev.clientY, window.innerWidth, window.innerHeight)
       ) {
-        setDropFeedback("window", ev, busy ? "Move after response finishes" : undefined);
+        setDropFeedback(
+          "window",
+          ev,
+          busy ? "Move after response finishes" : undefined,
+          title,
+        );
         setExternalPaneDrop(null);
         return;
       }
       if (lastList) {
-        setDropFeedback("move", ev, dropTargetLabel(lastList));
+        setDropFeedback("move", ev, dropTargetLabel(lastList), title);
         setExternalPaneDrop(null);
         return;
       }
       if (!onPlaceOnPane) {
-        setDropFeedback("blocked", ev);
+        setDropFeedback("blocked", ev, undefined, title);
         return;
       }
       const over = paneDropFromPoint(ev.clientX, ev.clientY);
       if (!over || over.id === session.id) {
-        setDropFeedback("blocked", ev);
+        setDropFeedback("blocked", ev, undefined, title);
         setExternalPaneDrop({
           fromId: session.id,
           overId: over?.id === session.id ? session.id : null,
@@ -4954,7 +5044,7 @@ const SessionCard = memo(function SessionCard({
         overId: over.id,
         edge: over.edge,
       });
-      setDropFeedback("move", ev, `Place ${over.edge}`);
+      setDropFeedback("move", ev, `Place ${over.edge}`, title);
     };
 
     const onUp = (ev: PointerEvent) => {
@@ -5270,18 +5360,7 @@ const SessionCard = memo(function SessionCard({
                   : "text-(--ui-text-secondary) hover:text-content"
         }`}
       >
-        {dropTarget ? (
-          <div className="pointer-events-none absolute inset-0 rounded-md bg-(--ui-surface-selected)" />
-        ) : null}
-        {dropInsert && !dropTarget ? (
-          <span
-            aria-hidden
-            data-session-drop-line={dropInsert}
-            className={`pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded-full bg-accent ${
-              dropInsert === "before" ? "-top-[3px]" : "-bottom-[3px]"
-            }`}
-          />
-        ) : null}
+        {/* The landing mark (line, group frame) is drawn on this card by setDropIndicator. */}
         {dropDwell || dropTarget ? (
           <span
             aria-hidden

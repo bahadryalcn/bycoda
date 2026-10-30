@@ -69,4 +69,30 @@ describe("confirmInApp", () => {
     expect(await confirmInApp(request)).toBe(true);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Delete branch?"));
   });
+
+  it("runs the confirm work once after a platform yes, never after a no, and lets a failure reach the caller", async () => {
+    mocks.isTauri.mockReturnValue(true);
+    const onConfirm = vi.fn(async () => undefined);
+    mocks.ask.mockResolvedValueOnce(false);
+    expect(await confirmInApp({ ...request, onConfirm })).toBe(false);
+    expect(onConfirm).not.toHaveBeenCalled();
+    mocks.ask.mockResolvedValueOnce(true);
+    expect(await confirmInApp({ ...request, onConfirm })).toBe(true);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    mocks.ask.mockResolvedValueOnce(true);
+    const failing = vi.fn(async () => {
+      throw new Error("Locked");
+    });
+    await expect(confirmInApp({ ...request, onConfirm: failing })).rejects.toThrow("Locked");
+  });
+
+  it("leaves the confirm work to the registered host", async () => {
+    const onConfirm = vi.fn();
+    const host = vi.fn(async () => true);
+    const unregister = registerAppConfirmHost(host);
+    expect(await confirmInApp({ ...request, onConfirm })).toBe(true);
+    expect(host).toHaveBeenCalledWith(expect.objectContaining({ onConfirm }));
+    expect(onConfirm).not.toHaveBeenCalled();
+    unregister();
+  });
 });

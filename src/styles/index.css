@@ -630,12 +630,18 @@ html.theme-light {
 /* Once the accent roles are published, the fill and ink are a measured pair per scheme. */
 html.has-user-accent {
   --ui-text-selection-background: var(--user-accent-selection-dark, var(--ui-interaction-accent));
-  --ui-text-selection-foreground: var(--palette-solidInk);
+  --ui-text-selection-foreground: var(--user-accent-selection-dark-ink, var(--palette-solidInk));
 }
 
 html.has-user-accent.theme-light {
   --ui-text-selection-background: var(--user-accent-selection-light, var(--ui-interaction-accent));
-  --ui-text-selection-foreground: var(--palette-scrim);
+  --ui-text-selection-foreground: var(--user-accent-selection-light-ink, var(--palette-scrim));
+}
+
+/* Content painted on a white page (PDF canvases) keeps its dark glyphs in both schemes, so its
+   selection fill is derived for that page with dark ink: it is multiplied onto the page. */
+:root {
+  --ui-paper-selection-background: var(--user-accent-selection-paper, var(--ui-interaction-accent));
 }
 
 @media (forced-colors: active) {
@@ -648,11 +654,6 @@ html.has-user-accent.theme-light {
 html[data-accent-readability="strong"] {
   --ui-accent-ink-strength: 20%;
   --ui-overlay-selection-strength: 24%;
-}
-
-/* CodeMirror owns its selection fill; retain readable ink for that fill. */
-.cm-editor {
-  --ui-text-selection-foreground: var(--color-content);
 }
 
 /* Blue/orange stays distinguishable for protanopia, deuteranopia and

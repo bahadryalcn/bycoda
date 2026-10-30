@@ -100,10 +100,11 @@ export function useOpenSessionActions({
   }, [sessions, onKeepSession, tabsRef]);
 
   const onSelectHistorySession = useCallback(
-    async (sessionId: string, options?: { preview?: boolean }) => {
+    async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean }) => {
       const request = ++openRequest.current;
       workspaceNavigation.cancel();
-      const isCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
+      const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
+      const isCurrent = () => navigationCurrent() && options?.isCurrent?.() !== false;
       let session = await ensureOpenSession(sessionId);
       if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) return;
       const parentId = session.orchestrationLeadId ?? orchestrator.forSession(sessionId)?.leadId;
@@ -177,7 +178,7 @@ export function useOpenSessionActions({
 
   /** Open several history sessions together as a grid in one new tab. */
   const onOpenSessionsSideBySide = useCallback(
-    async (sessionIds: string[]) => {
+    async (sessionIds: string[], options?: { isCurrent?: () => boolean }) => {
       const wanted = [...new Set(sessionIds)];
       if (wanted.length > SIDE_BY_SIDE_LIMIT) {
         await message(
@@ -192,13 +193,14 @@ export function useOpenSessionActions({
       if (wanted.length === 0) return;
       workspaceNavigation.cancel();
       const request = ++openRequest.current;
-      const isCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
+      const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
+      const isCurrent = () => navigationCurrent() && options?.isCurrent?.() !== false;
       const loaded = await Promise.all(wanted.map((id) => ensureOpenSession(id)));
       if (request !== openRequest.current || !isCurrent()) return;
       const opened = loaded.filter((session): session is Session => !!session && !session.inboxAsk);
       if (opened.length === 0) return;
       if (opened.length === 1) {
-        await onSelectHistorySession(opened[0].id);
+        await onSelectHistorySession(opened[0].id, options);
         return;
       }
       const plan = planOpenSessionsSideBySide({

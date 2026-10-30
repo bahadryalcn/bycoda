@@ -21,6 +21,13 @@ export type AppConfirmRequest = {
    * device), so an approval can never wait behind a minimized or hidden window.
    */
   reveal?: boolean;
+  /**
+   * Optional async work run when the owner confirms. In the in-app dialog it stays open with both buttons
+   * disabled while the work runs, shows a rejection with the confirming button live for a retry, and the
+   * request resolves true only after the work succeeded. The platform fallback has no place to show a
+   * retry: it runs the work once after a yes and lets a rejection reach the caller.
+   */
+  onConfirm?: () => void | Promise<void>;
 };
 
 /** The in-app surface. `AppConfirmHost` registers one; it resolves true only when the owner confirms. */
@@ -42,6 +49,13 @@ export function registerAppConfirmHost(next: AppConfirmHost): () => void {
  */
 export function confirmInApp(request: AppConfirmRequest): Promise<boolean> {
   if (host) return host(request);
+  return platformConfirm(request).then(async (confirmed) => {
+    if (confirmed) await request.onConfirm?.();
+    return confirmed;
+  });
+}
+
+function platformConfirm(request: AppConfirmRequest): Promise<boolean> {
   if (isTauri()) {
     return ask(request.fallbackText ?? request.message, {
       title: request.title,

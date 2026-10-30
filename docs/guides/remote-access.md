@@ -211,6 +211,37 @@ On Windows, the launcher is `%USERPROFILE%\.bycoda-host\bin\bycoda-host.cmd`. Th
 
 `pnpm run host:package` builds a self-contained package for the current Windows/Mac/Linux architecture. `pnpm run host:package -- --all` builds all six archives, using pinned official Node binaries and checksums. Archives contain the host bundle, runtime, launcher, and licenses. `host/package.mjs` pins the runtime version. Cross-packaging Windows on Unix requires `zip` and `unzip`; native Windows packaging uses PowerShell.
 
+The optional physical admission module has an explicit native build:
+
+```sh
+pnpm run host:admission:build --target win32-x64
+pnpm run host:package -- --target win32-x64 --native-admission
+```
+
+The native command requires the selected Rust target and its linker to be
+available; it does not install toolchains. It writes a target-specific bundle
+under `build/host-native/`. Packaging verifies its target, checksum and current
+native source fingerprint before replacing a package. For `--all`, first build
+all six native bundles. `--native-admission-dir` selects an alternate directory
+containing those target folders. Ordinary `host:build` and `host:package` remain
+usable without a native module.
+
+For a development Host, build JavaScript normally and use
+`pnpm run host:admission:build --output build/host` to place the native manifest
+beside its worker. Images use immutable hash filenames; rebuilding changes
+the manifest without overwriting a loaded image. A running Host keeps its original
+module until it exits. Missing or unsupported native admission leaves an ordinary
+Host explicitly unjoined; a corrupt configured module or a fault after joining
+holds protected work. Windows actual-connection attestation and participating
+writer fences do not establish complete actor coverage. Linux/macOS actual SQLite
+connection attestation and full migration qualification remain pending.
+
+Windows Node/SQLite limits the UTF-8 extension loading path, including the
+Windows namespace prefix, to 260 bytes. The flat image filename keeps the bundle
+compact; a longer configured path is refused before joining. Choose a shorter
+build/package location for that case. No working-directory change or unverified
+alternate image is used.
+
 Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `bycoda-host-win32-{arm64,x64}.zip`, and their `.sha256` files alongside the desktop installers, and its desktop builds are configured with that release's download address (`BYCODA_HOST_RELEASE_URL`). SSH setup installs the matching version under `~/.bycoda-host/runtime`.
 
 **The host on this computer** ships inside the Windows and macOS installers. On start, an installed release app installs that host if this computer has none, and upgrades it when the bundled version is newer, using the same verified installer as SSH setup. It never downgrades, waits while the host has running sessions or another update is being installed, and treats an unreadable host database as busy. A waiting or failed update is shown in Settings → Connections and retried while the app is open.

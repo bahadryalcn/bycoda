@@ -13,6 +13,41 @@ import { useSession } from "../model/sessionsStore";
 import { HARNESS_TITLE, sessionDisplayTitle, sessionWorkCwd, type Session } from "../model/session";
 import { createNote, noteTitle } from "../../notes";
 import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { useCitedTurnHistory } from "./useCitedTurnHistory";
+import { useReadOnlyHostSession } from "./useReadOnlyHostSession";
+import { Button } from "../../../shared/ui/Button";
+import { Alert } from "../../../shared/ui/Alert";
+
+type AgentTabViewProps = {
+  title: string;
+  session?: Session;
+  visible: boolean;
+  focused?: boolean;
+  onOpenFile?: (path: string) => void;
+};
+
+export function AgentTabView(props: AgentTabViewProps) {
+  if (props.session && hostSessionBinding(props.session))
+    return <HostAgentTabView {...props} session={props.session} />;
+  return <LocalAgentTabView {...props} />;
+}
+
+function HostAgentTabView(props: AgentTabViewProps & { session: Session }) {
+  const t = useT();
+  const remote = useReadOnlyHostSession(props.session, props.visible);
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      {remote.error && <Alert tone="danger" role="alert">
+        {remote.error}
+        <Button type="button" variant="secondary" onClick={remote.retry}>{t("Retry")}</Button>
+      </Alert>}
+      <div className="min-h-0 flex-1"><LocalAgentTabView {...props} {...remote} remoteSession /></div>
+    </div>
+  );
+}
+
+type HostHistoryProps = ReturnType<typeof useReadOnlyHostSession> & { remoteSession?: boolean };
 
 /**
  * One orchestration worker, watched from its lead's workspace.
@@ -22,22 +57,23 @@ import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/se
  * voice into a conversation the lead is holding, so the way to change course
  * is to say so in the lead's own transcript.
  */
-export function AgentTabView({
+function LocalAgentTabView({
   title,
   session: shellSession,
   visible,
   focused = visible,
   onOpenFile,
-}: {
-  title: string;
-  session?: Session;
-  visible: boolean;
-  focused?: boolean;
-  onOpenFile?: (path: string) => void;
-}) {
+  remoteSession = false,
+  remoteHistoryHasMore = false,
+  remoteHistoryLoading = false,
+  remoteHistoryError,
+  onLoadRemoteHistory,
+  onLoadRemoteBlock,
+}: AgentTabViewProps & Partial<HostHistoryProps>) {
   const t = useT();
   // The shell's copy lags behind by streamed text; the store has the live one.
-  const session = useSession(shellSession?.id) ?? shellSession;
+  const live = useSession(shellSession?.id);
+  const session = remoteSession ? shellSession : live ?? shellSession;
   const navigateBlockRef = useRef<((blockId: string | null, query?: string) => boolean) | null>(
     null,
   );
@@ -58,6 +94,11 @@ export function AgentTabView({
     () => peekTranscriptJump(session?.id ?? ""),
     () => null,
   );
+  useCitedTurnHistory({
+    visible, jump: jumpRequest, blocks: session?.blocks ?? [],
+    hasMore: remoteHistoryHasMore, loading: remoteHistoryLoading,
+    error: remoteHistoryError, load: onLoadRemoteHistory,
+  });
   useEffect(() => {
     if (!visible || !navigatorReady || !session || !jumpRequest) return;
     const frame = requestAnimationFrame(() => {
@@ -66,7 +107,7 @@ export function AgentTabView({
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id]);
+  }, [visible, navigatorReady, jumpRequest, navigateBlock, session?.id, session?.blocks]);
   const notesEnabled = useSyncExternalStore(subscribeNotesEnabled, loadNotesEnabled, () => true);
   const saveNote = useCallback(
     async (text: string) => {
@@ -111,6 +152,13 @@ export function AgentTabView({
         <AgentTranscript
           blocks={session.blocks}
           busy={session.busy}
+          historyLoading={session.historyLoading}
+          historyLoadError={session.historyLoadError}
+          remoteHistoryHasMore={remoteHistoryHasMore}
+          remoteHistoryLoading={remoteHistoryLoading}
+          remoteHistoryError={remoteHistoryError}
+          onLoadRemoteHistory={onLoadRemoteHistory}
+          onLoadRemoteBlock={onLoadRemoteBlock}
           cwd={sessionWorkCwd(session)}
           harness={session.harness}
           model={session.model}

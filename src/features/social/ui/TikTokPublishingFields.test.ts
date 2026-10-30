@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useState } from "react";
+import { act, createElement, useLayoutEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
@@ -19,7 +19,9 @@ function Editor({ connection }: { connection?: SocialAccount["connection"] } = {
     factIds: [],
     scheduledAt: 1,
   });
-  latest = variant;
+  useLayoutEffect(() => {
+    latest = variant;
+  });
   return createElement(TikTokPublishingFields, {
     variant,
     client,

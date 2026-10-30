@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -185,7 +186,20 @@ export function useSocialWorkspaceController({
   const [collectionFilters, setCollectionFilters] = useState<
     Partial<Record<Section, SocialWorkspaceFilters>>
   >({});
+  // Mutable per-Host cache: only written by effects and async reads, never read while rendering.
+  // `hostViews` is the immutable copy of it that render consumes.
   const hostWorkspaces = useRef(new Map<string, HostWorkspaceState>());
+  const [hostViews, setHostViews] = useState<[string, HostWorkspaceState][]>([]);
+  // The Host whose retained view state (tab, filters, ...) the current render state belongs to.
+  const [readyMachineId, setReadyMachineId] = useState("");
+  const publishHosts = useCallback(() => {
+    setHostViews(
+      Array.from(hostWorkspaces.current.entries(), ([id, host]) => [
+        id,
+        { ...host, snapshots: new Map(host.snapshots) },
+      ]),
+    );
+  }, []);
   const scheduler = useRef<RefreshScheduler | null>(null);
   const scheduledQuery = useRef("");
   const forceRefresh = useRef(false);
@@ -194,22 +208,26 @@ export function useSocialWorkspaceController({
   const legacyHosts = useRef(new Set<string>());
   const section = workspaceSection(tab, automationMode);
   const query = useRef<SocialWorkspaceQuery>({ section });
-  query.current = {
-    section,
-    ...(filter ? { projectId: filter } : {}),
-    offsets,
-    filters: collectionFilters[section] ?? {},
-  };
   const running = useRef(false);
   const epoch = useRef(0);
   const currentMachine = useRef(machineId);
   const lastAction = useRef("");
   const loadedMachine = useRef("");
   const retainedSnapshot = useRef(snapshot);
-  retainedSnapshot.current = snapshot;
-  currentMachine.current = machineId;
+  // Latest committed render state for the async readers; layout effects run before the passive
+  // effects below, so every effect sees the values of the render it belongs to.
+  useLayoutEffect(() => {
+    query.current = {
+      section,
+      ...(filter ? { projectId: filter } : {}),
+      offsets,
+      filters: collectionFilters[section] ?? {},
+    };
+    retainedSnapshot.current = snapshot;
+    currentMachine.current = machineId;
+  });
   const client = useMemo(() => {
-    const base = socialClient(machineId);
+    const base = socialClient(readyMachineId);
     const request: typeof base.request = async <T,>(
       action: string,
       input?: Record<string, unknown>,
@@ -219,7 +237,7 @@ export function useSocialWorkspaceController({
       return base.request<T>(action, input, requestId);
     };
     return { ...base, request };
-  }, [machineId]);
+  }, [readyMachineId]);
   const readWorkspace = useCallback(async (id: string, isCurrent: () => boolean) => {
     const version = ++epoch.current;
     const host = hostWorkspaces.current.get(id)!;
@@ -265,6 +283,7 @@ export function useSocialWorkspaceController({
       if (legacyHosts.current.has(id)) {
         for (const key of LEGACY_SNAPSHOT_SECTIONS) host.snapshots.set(key, next);
       } else host.snapshots.set(input.section!, next);
+      publishHosts();
       setSnapshot(next);
       setLoadError("");
       setUpdatedAt(Date.now());
@@ -286,7 +305,7 @@ export function useSocialWorkspaceController({
     setLoading(false);
     setRefreshing(false);
     refreshSucceeded.current = answers.every((answer) => answer.status === "fulfilled");
-  }, []);
+  }, [publishHosts]);
   const refresh = useCallback(async (id: string, interactive = false, withProjects = false) => {
     if (id !== currentMachine.current || !scheduler.current) return false;
     forceRefresh.current ||= interactive;
@@ -377,6 +396,8 @@ export function useSocialWorkspaceController({
       setStale(false);
       setLoading(!host.snapshot);
       setUpdatedAt(0);
+      setReadyMachineId(machineId);
+      publishHosts();
     }
     scheduledQuery.current = JSON.stringify(query.current);
     const nextScheduler = createRefreshScheduler({
@@ -395,7 +416,7 @@ export function useSocialWorkspaceController({
       ++epoch.current;
       if (scheduler.current === nextScheduler) scheduler.current = null;
     };
-  }, [machineId, readWorkspace]);
+  }, [machineId, readWorkspace, publishHosts]);
   // Query routing: a changed section/filter/offset/collection filter triggers one scheduler read.
   useEffect(() => {
     const key = JSON.stringify(query.current);
@@ -412,7 +433,7 @@ export function useSocialWorkspaceController({
     setError("");
     setNotice("");
     lastAction.current = "";
-    const id = machineId;
+    const id = readyMachineId;
     try {
       await work();
       const completedMessage =
@@ -440,20 +461,30 @@ export function useSocialWorkspaceController({
     }
   };
   const scoped = useMemo(() => scopeSocialSnapshot(snapshot, filter), [snapshot, filter]);
-  const host = hostWorkspaces.current.get(machineId);
-  if (host && loadedMachine.current === machineId) {
-    Object.assign(host, {
-      tab,
-      visited,
-      filter,
-      offsets,
-      automationMode,
-      client,
-      run,
-      projects,
-      collectionFilters,
-    });
-  }
+  // The retained cache keeps the latest view state of the Host that is shown, so it can be restored.
+  useLayoutEffect(() => {
+    const host = hostWorkspaces.current.get(readyMachineId);
+    if (host)
+      Object.assign(host, {
+        tab,
+        visited,
+        filter,
+        offsets,
+        automationMode,
+        client,
+        run,
+        projects,
+        collectionFilters,
+      });
+  });
+  // The shown Host renders from live state; the others from their last published view.
+  const hosts: [string, HostWorkspaceState][] = hostViews.map(([id, view]) => [
+    id,
+    id === readyMachineId
+      ? { ...view, tab, visited, filter, offsets, automationMode, client, run, projects, collectionFilters }
+      : view,
+  ]);
+  const shownHost = hostViews.find(([id]) => id === machineId)?.[1];
   const actions = {
     selectMachine: (id: string) => setMachineId(id),
     selectTab(item: Tab) {
@@ -524,9 +555,9 @@ export function useSocialWorkspaceController({
     filter,
     status: { loading, refreshing, stale, busy, error, loadError, notice, updatedAt },
     /** Retained workspaces of every Host seen so far (inactive ones stay mounted but hidden). */
-    hosts: Array.from(hostWorkspaces.current.entries()),
+    hosts,
     /** False until the active Host answered for the current section. */
-    sectionLoaded: !!scoped && !!host?.snapshots.has(section),
+    sectionLoaded: !!scoped && !!shownHost?.snapshots.has(section),
     actions,
   };
 }

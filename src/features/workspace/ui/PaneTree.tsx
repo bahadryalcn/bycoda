@@ -10,7 +10,14 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { setDropFeedback, setGrabbing, suppressTextSelection } from "../../../shared/lib/drag";
+import {
+  clearDropIndicator,
+  setDropFeedback,
+  setDropIndicator,
+  setGrabbing,
+  suppressTextSelection,
+  type DropPlacement,
+} from "../../../shared/lib/drag";
 import { Maximize2 } from "../../../shared/ui/icons";
 import {
   isPointerOutsideWindow,
@@ -360,6 +367,23 @@ function PaneTreeComponent({
   const renderLeaves = leaves.flatMap((pane) =>
     (pane.tabIds ?? [pane.id]).map((id) => ({ ...pane, id, hidden: id !== pane.id })),
   );
+  // The pane edge, centre or whole tree a drop would land on. Drawn by the shared drop indicator
+  // (not by a pane child) so a pane, a tab and a session row read the same; the cursor badge
+  // alone carries the instruction.
+  const dropMark = paneDropMark(drop, renderLeaves, leaves, maximum);
+  const dropMarkId = dropMark?.id ?? null;
+  const dropMarkPlacement = dropMark?.placement ?? null;
+  useEffect(() => {
+    if (!dropMarkPlacement) return;
+    const tree = treeRef.current;
+    const element = dropMarkId
+      ? [...(tree?.querySelectorAll<HTMLElement>("[data-pane-id]") ?? [])].find(
+          (pane) => pane.dataset.paneId === dropMarkId,
+        )
+      : tree;
+    setDropIndicator(element ?? null, dropMarkPlacement);
+    return () => clearDropIndicator();
+  }, [dropMarkId, dropMarkPlacement]);
   const sashes = maximum ? [] : layoutSashes(tree);
   const inSplit = leaves.length > 1;
   // Split rectangles follow the available workspace width. Keep saved ratios
@@ -710,15 +734,6 @@ function PaneTreeComponent({
                 ))}
               </div>
             ) : null}
-            {drop &&
-            !drop.targetFileId &&
-            !hidden &&
-            (drop.overId === leaf.id || leaf.tabIds?.includes(drop.overId ?? "")) &&
-            (drop.fromId !== leaf.id ||
-              drop.edge !== "center" ||
-              (leaf.tabIds?.length ?? 0) > 1) ? (
-              <PaneDropHint edge={drop.edge} invalid={drop.invalid} />
-            ) : null}
             {(inSplit || maximum) && !hidden ? (
               <Button
                 iconOnly
@@ -848,16 +863,6 @@ function PaneTreeComponent({
           </div>
         );
       })}
-      {drop?.invalid && !drop.overId ? (
-        <div
-          data-pane-drop-invalid
-          className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded border-2 border-danger bg-(--ui-tone-danger-subtle)"
-        >
-          <span className="rounded bg-surface px-3 py-2 text-ui-caption text-content">
-            {t("Cannot drop here")}
-          </span>
-        </div>
-      ) : null}
       {sashes.map((sash) => (
         <Sash
           key={`${sash.splitId}:${sash.index}`}
@@ -952,42 +957,43 @@ function paneEnterFrom({ rect, axis }: LayoutLeaf): PaneEnterFrom {
   return "fade";
 }
 
-function PaneDropHint({ edge, invalid }: { edge: PaneEdge; invalid?: boolean }) {
-  useLocale();
-  if (edge === "center")
-    return (
-      <div
-        className={`pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded border-2 ${invalid ? "border-danger bg-(--ui-tone-danger-subtle)" : "border-accent bg-(--ui-tone-accent-subtle)"}`}
-      >
-        <span className="rounded bg-surface px-3 py-2 text-ui-caption text-content">
-          {t(invalid ? "Cannot drop here" : "Add as pane tab")}
-        </span>
-      </div>
+const PANE_EDGE_PLACEMENT: Record<PaneEdge, DropPlacement> = {
+  left: "split-start",
+  right: "split-end",
+  top: "split-top",
+  bottom: "split-bottom",
+  center: "inside",
+};
+
+/**
+ * Where the shared drop indicator goes for the current pane drop: the visible pane that would
+ * receive it (edge half to split, whole pane for a tab), or the whole tree when the pointer is over
+ * no valid pane. A refused target is marked "blocked" so it never reads as an accepted split.
+ */
+function paneDropMark(
+  drop: PaneDrop | null,
+  renderLeaves: readonly (LayoutLeaf & { hidden: boolean })[],
+  leaves: readonly LayoutLeaf[],
+  maximum: LayoutLeaf | undefined,
+): { id: string | null; placement: DropPlacement } | null {
+  if (!drop || drop.targetFileId) return null;
+  if (drop.invalid && !drop.overId) return { id: null, placement: "blocked" };
+  const leaf = renderLeaves.find((candidate) => {
+    const groupSelected = leaves.find(
+      (pane) => pane.id === candidate.id || pane.tabIds?.includes(candidate.id),
     );
-  const wash =
-    edge === "left"
-      ? "absolute inset-y-0 left-0 w-1/2"
-      : edge === "right"
-        ? "absolute inset-y-0 right-0 w-1/2"
-        : edge === "top"
-          ? "absolute inset-x-0 top-0 h-1/2"
-          : "absolute inset-x-0 bottom-0 h-1/2";
-  const line =
-    edge === "left"
-      ? "absolute inset-y-0 left-0 w-0.5"
-      : edge === "right"
-        ? "absolute inset-y-0 right-0 w-0.5"
-        : edge === "top"
-          ? "absolute inset-x-0 top-0 h-0.5"
-          : "absolute inset-x-0 bottom-0 h-0.5";
-  return (
-    <div className="pointer-events-none absolute inset-0 z-20">
-      <div
-        className={`${wash} ${invalid ? "bg-(--ui-tone-danger-subtle)" : "bg-(--ui-tone-accent-subtle)"}`}
-      />
-      <div className={`${line} ${invalid ? "bg-danger" : "bg-accent"}`} />
-    </div>
-  );
+    const hidden = candidate.hidden || Boolean(maximum && groupSelected?.id !== maximum.id);
+    return (
+      !hidden &&
+      (drop.overId === candidate.id || candidate.tabIds?.includes(drop.overId ?? "")) &&
+      (drop.fromId !== candidate.id || drop.edge !== "center" || (candidate.tabIds?.length ?? 0) > 1)
+    );
+  });
+  if (!leaf) return null;
+  return {
+    id: leaf.id,
+    placement: drop.invalid ? "blocked" : PANE_EDGE_PLACEMENT[drop.edge],
+  };
 }
 
 function Sash({

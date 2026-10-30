@@ -298,6 +298,43 @@ function TabHarnesses({
 
 type SortableApi = ReturnType<typeof useAnimatedReorder>;
 
+const TAB_MOVE_LEFT_ID = "move-left";
+const TAB_MOVE_RIGHT_ID = "move-right";
+
+/**
+ * The menu alternative to dragging a tab: Move Left / Move Right, disabled at the strip ends.
+ * They sit above the first separator so closing actions stay grouped below.
+ */
+function withTabMoveItems(
+  items: ExplorerMenuItem[],
+  index: number,
+  count: number,
+  t: ReturnType<typeof useT>,
+): ExplorerMenuItem[] {
+  if (index < 0 || count < 2) return items;
+  const moveItems: ExplorerMenuItem[] = [
+    {
+      kind: "item",
+      id: TAB_MOVE_LEFT_ID,
+      get label() {
+        return t("Move Left");
+      },
+      disabled: index === 0,
+    },
+    {
+      kind: "item",
+      id: TAB_MOVE_RIGHT_ID,
+      get label() {
+        return t("Move Right");
+      },
+      disabled: index === count - 1,
+    },
+  ];
+  const firstSeparator = items.findIndex((item) => item.kind === "sep");
+  const at = firstSeparator < 0 ? items.length : firstSeparator;
+  return [...items.slice(0, at), ...moveItems, ...items.slice(at)];
+}
+
 function TitleTabItem({
   tab,
   active,
@@ -384,6 +421,8 @@ function TitleTabItem({
           if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
         }}
         onKeyDown={(event) => {
+          // Alt+Arrow moves the tab without dragging; the menu offers the same move.
+          if (canDrag && sortable.onItemKeyDown(tab.id, event)) return;
           if (event.key === "Enter" && (tab.previewFileId || tab.previewSessionId)) {
             if (tab.previewFileId) onPinFile?.(tab.previewFileId);
             if (tab.previewSessionId) onKeepSession?.(tab.previewSessionId);
@@ -946,7 +985,12 @@ function TitleBarComponent({
         }
       : undefined;
   }, [activeId, tabs, onPlaceOnPane, onMoveToNewWindow, popOutTab]);
-  const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop);
+  const sortable = useAnimatedReorder(tabIds, onReorder, "x", externalTabDrop, {
+    label: (tabId) => {
+      const tab = tabs.find((entry) => entry.id === tabId);
+      return tab ? tabCopy(tab).headline : "";
+    },
+  });
   const paneToTabDrop = useExternalTitleTabDrop();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const setTabStripRef = useCallback(
@@ -1009,24 +1053,33 @@ function TitleBarComponent({
   const contextTab = tabMenu ? tabs.find((tab) => tab.id === tabMenu.tabId) : undefined;
   const contextCloseIds = contextTab ? titleTabContextCloseIdSets(tabs, contextTab.id) : null;
   const contextMenuItems: ExplorerMenuItem[] = contextTab
-    ? buildTitleTabContextMenuItems({
-        contextTab,
-        tabs,
+    ? withTabMoveItems(
+        buildTitleTabContextMenuItems({
+          contextTab,
+          tabs,
+          t,
+          detached,
+          closeShortcut,
+          idleTabCount,
+          hasReturnTabToMain: Boolean(onReturnTabToMain),
+          hasMoveToNewWindow: Boolean(onMoveToNewWindow),
+          hasCloseIdleTabs: Boolean(onCloseIdleTabs),
+          hasArchiveTab: Boolean(onArchiveTab),
+          hasDeleteTab: Boolean(onDeleteTab),
+        }),
+        tabs.findIndex((tab) => tab.id === contextTab.id),
+        tabs.length,
         t,
-        detached,
-        closeShortcut,
-        idleTabCount,
-        hasReturnTabToMain: Boolean(onReturnTabToMain),
-        hasMoveToNewWindow: Boolean(onMoveToNewWindow),
-        hasCloseIdleTabs: Boolean(onCloseIdleTabs),
-        hasArchiveTab: Boolean(onArchiveTab),
-        hasDeleteTab: Boolean(onDeleteTab),
-      })
+      )
     : [];
 
   const onPickTabMenu = (id: string) => {
     if (!contextTab || !contextCloseIds) return;
     setTabMenu(null);
+    if (id === TAB_MOVE_LEFT_ID || id === TAB_MOVE_RIGHT_ID) {
+      sortable.moveBy(contextTab.id, id === TAB_MOVE_LEFT_ID ? -1 : 1);
+      return;
+    }
     if (id === "keep-open") {
       if (contextTab.previewSessionId) onKeepSession?.(contextTab.previewSessionId);
       if (contextTab.previewFileId) onPinFile?.(contextTab.previewFileId);

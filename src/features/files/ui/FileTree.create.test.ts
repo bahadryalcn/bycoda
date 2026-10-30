@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listCachedDir, loadExpanded, loadSelected, saveExpanded, saveSelected } from "../model/fileTree";
 import type { FsEntry } from "../../../platform/tauri/fs";
 import { FileTree } from "./FileTree";
+import { reportRemoteLoad, resetRemoteHealth } from "../../connections/model/remoteHealth";
 
 const { directories, created, gate } = vi.hoisted(() => ({
   directories: new Map<string, FsEntry[]>(),
@@ -295,5 +296,63 @@ describe("Explorer Collapse All", () => {
     expect(container.querySelector("[data-explorer-selection-scope]")?.textContent).toContain(
       "hidden",
     );
+  });
+});
+
+describe("Explorer create availability", () => {
+  const remoteCwd = () => `remote://machine-1/project-${project}`;
+  const mountRemote = async () => {
+    const remote = remoteCwd();
+    cwd = remote;
+    props = { ...props, cwd: remote };
+    await act(async () => root.render(createElement(FileTree, props)));
+  };
+  afterEach(() => resetRemoteHealth());
+
+  it("disables New File and New Folder with the reason while the machine is unreachable", async () => {
+    await mountRemote();
+    await act(async () => {
+      reportRemoteLoad(remoteCwd(), "files", new Error("Machine is unreachable"));
+    });
+    for (const action of ["new-file", "new-folder"]) {
+      expect(header(action).disabled).toBe(true);
+      expect(header(action).getAttribute("aria-label")).toContain("This machine is unreachable");
+      expect(header(action).getAttribute("title")).toContain("This machine is unreachable");
+    }
+    await act(async () => header("new-file").click());
+    expect(nameInput()).toBeNull();
+    // The context menu states the same reason instead of a silent dead item.
+    await contextMenu(container.querySelector("[data-explorer-root]")!);
+    const item = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
+      (button) => button.textContent?.trim().startsWith("New File"),
+    )!;
+    expect(item.getAttribute("aria-disabled") === "true" || item.disabled).toBe(true);
+    expect(item.textContent).toContain("This machine is unreachable");
+  });
+
+  it("names the pairing and host-update reasons separately", async () => {
+    await mountRemote();
+    await act(async () => {
+      reportRemoteLoad(
+        remoteCwd(),
+        "files",
+        new Error("Host identity changed. Add this machine again before continuing."),
+      );
+    });
+    expect(header("new-folder").getAttribute("aria-label")).toContain(
+      "Pair this machine again to change files",
+    );
+    await act(async () => {
+      reportRemoteLoad(remoteCwd(), "files", new Error("Unsupported host method"));
+    });
+    expect(header("new-folder").getAttribute("aria-label")).toContain(
+      "Update the host to change files",
+    );
+  });
+
+  it("keeps creating available for a reachable root", async () => {
+    await mount(null);
+    expect(header("new-file").disabled).toBe(false);
+    expect(header("new-file").getAttribute("aria-label")).not.toContain("(");
   });
 });

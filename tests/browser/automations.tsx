@@ -4,6 +4,7 @@ import { AutomationsView } from "../../src/features/automations/ui/AutomationsVi
 import {
   newAutomationDraft,
   type Automation,
+  type AutomationRun,
 } from "../../src/features/automations/model/automations";
 import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
 import {
@@ -25,10 +26,92 @@ let automation: Automation = {
   createdAt: 1,
   updatedAt: 1,
 };
+// ?runs=mixed fills the run history with every status, ?runs=error fails the first
+// read (Retry succeeds) and ?runs=slow keeps it loading until releaseRuns() is called.
+const runsMode = new URLSearchParams(location.search).get("runs");
+const at = Date.now();
+const sampleRuns: AutomationRun[] = [
+  {
+    id: "run-input",
+    automationId: "fixture-review",
+    trigger: "scheduled",
+    scheduledFor: at - 120_000,
+    createdAt: at - 120_000,
+    startedAt: at - 110_000,
+    status: "running",
+    needsInput: true,
+    sessionId: "session-input",
+  },
+  {
+    id: "run-running",
+    automationId: "fixture-review",
+    trigger: "event",
+    scheduledFor: at - 600_000,
+    createdAt: at - 600_000,
+    startedAt: at - 590_000,
+    status: "running",
+    sessionId: "session-running",
+  },
+  {
+    id: "run-ok",
+    automationId: "fixture-review",
+    trigger: "scheduled",
+    scheduledFor: at - 3_600_000,
+    createdAt: at - 3_600_000,
+    startedAt: at - 3_590_000,
+    completedAt: at - 3_500_000,
+    status: "succeeded",
+    sessionId: "session-ok",
+  },
+  {
+    id: "run-failed",
+    automationId: "fixture-review",
+    trigger: "manual",
+    scheduledFor: at - 86_400_000,
+    createdAt: at - 86_400_000,
+    startedAt: at - 86_390_000,
+    completedAt: at - 86_300_000,
+    status: "failed",
+    error:
+      "Fixture failure: the selected model was unavailable and the run ended before the first message could be sent to the agent, so no changes were made.",
+  },
+  {
+    id: "run-skipped",
+    automationId: "fixture-review",
+    trigger: "scheduled",
+    scheduledFor: at - 2 * 86_400_000,
+    createdAt: at - 2 * 86_400_000,
+    status: "skipped",
+    error: "The previous run was still active.",
+  },
+  {
+    id: "run-cancelled",
+    automationId: "fixture-review",
+    trigger: "scheduled",
+    scheduledFor: at - 3 * 86_400_000,
+    createdAt: at - 3 * 86_400_000,
+    startedAt: at - 3 * 86_400_000,
+    completedAt: at - 3 * 86_400_000 + 30_000,
+    status: "cancelled",
+    sessionId: "session-cancelled",
+  },
+  {
+    id: "run-pending",
+    automationId: "fixture-review",
+    trigger: "scheduled",
+    scheduledFor: at + 60_000,
+    createdAt: at,
+    status: "pending",
+  },
+];
+let runReads = 0;
+let releaseRuns: () => void = () => {};
+const runsHeld = new Promise<void>((resolve) => (releaseRuns = resolve));
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 const control = {
   holdSave: false,
   finishSave: null as null | ((error?: string) => void),
+  releaseRuns: () => releaseRuns(),
 };
 Object.assign(window, {
   automationFixtureCalls: calls,
@@ -56,7 +139,14 @@ Object.assign(window, {
         return structuredClone(automation);
       }
       if (command === "automations_delete") throw new Error("Fixture must cancel deletion");
-      if (command === "automation_runs_list" || command === "remote_machines") return [];
+      if (command === "automation_runs_list") {
+        runReads++;
+        if (runsMode === "slow") await runsHeld;
+        if (runsMode === "error" && runReads === 1)
+          throw new Error("Fixture: run history is unavailable right now");
+        return runsMode ? structuredClone(sampleRuns) : [];
+      }
+      if (command === "remote_machines") return [];
       if (command.endsWith("_status")) return { connected: false };
       if (command.startsWith("plugin:")) return null;
       return [];

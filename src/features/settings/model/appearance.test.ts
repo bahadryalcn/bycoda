@@ -485,8 +485,13 @@ describe("accent readability", () => {
     expect(read("--user-accent-color")).toBe("#a855f7");
     expect(read("--user-accent-solid")).toBe("#a855f7");
     expect(loadAccentColor()).toBe("#a855f7");
-    expect(contrastRatio(read("--user-accent-selection-dark"), "#ffffff")).toBeGreaterThanOrEqual(7);
-    expect(contrastRatio(read("--user-accent-selection-light"), "#000000")).toBeGreaterThanOrEqual(7);
+    // The published ink travels with each fill (it can flip to keep both 7:1 text and 3:1 canvas).
+    for (const scheme of ["dark", "light"]) {
+      expect(
+        contrastRatio(read(`--user-accent-selection-${scheme}`), read(`--user-accent-selection-${scheme}-ink`)),
+      ).toBeGreaterThanOrEqual(7);
+    }
+    expect(contrastRatio(read("--user-accent-selection-paper"), "#000000")).toBeGreaterThanOrEqual(7);
   });
 
   it("publishes hover and pressed steps that keep the ink readable", () => {

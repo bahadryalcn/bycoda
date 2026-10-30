@@ -75,7 +75,10 @@ const goals: Record<string, HostGoal[]> = {
   "machine-local": [],
   "machine-remote": [],
 };
-const sprintFixture = query.has("sprints") ? new SprintFixture(machines, () => tasks) : null;
+// ?sprintSeed is ?sprints with a history: two completed sprints, an active one and a planned one.
+const seedSprints = query.has("sprintSeed");
+const sprintFixture =
+  query.has("sprints") || seedSprints ? new SprintFixture(machines, () => tasks) : null;
 if (sprintFixture) {
   const demo = (
     id: string,
@@ -107,6 +110,35 @@ if (sprintFixture) {
     demo("remote-done", "remote-project", "MacBook shipped task", "done"),
     demo("api-task", "remote-api", "API stability"),
   ];
+  if (seedSprints) {
+    const longTitle =
+      "Audit every keyboard shortcut across the editor, the terminal and the dialogs, then document conflicts for the whole team";
+    const rows: [string, string, string, string, TaskStatus][] = [
+      ["machine-local", "task-settings", "local-project", "Settings migration", "done"],
+      ["machine-local", "task-shortcuts", "local-project", longTitle, "done"],
+      ["machine-local", "task-resume", "local-project", "Crash on resume", "done"],
+      ["machine-local", "task-onboarding", "local-project", "PC onboarding", "running"],
+      ["machine-local", "task-docs", "local-docs", "Documentation cleanup", "done"],
+      ["machine-local", "task-notes", "local-docs", "Release notes draft", "todo"],
+      ["machine-remote", "task-keys", "remote-project", "Signing keys rotation", "done"],
+      ["machine-remote", "task-shipped", "remote-project", "MacBook shipped task", "done"],
+      ["machine-remote", "task-checkout", "remote-project", "MacBook checkout", "todo"],
+      ["machine-remote", "task-next", "remote-project", "Planned for the next sprint", "todo"],
+      ["machine-remote", "task-api", "remote-api", "API stability", "running"],
+      ["machine-remote", "task-headers", "remote-api", "Rate limit headers", "done"],
+      ["machine-remote", "task-idea", "remote-api", "Backlog idea without a sprint", "todo"],
+    ];
+    tasks["machine-local"] = [];
+    tasks["machine-remote"] = [];
+    for (const [machineId, id, projectId, title, status] of rows)
+      tasks[machineId].push(demo(id, projectId, title, status));
+    // A long description exercises wrapping in the detail panel and the edit form.
+    tasks["machine-remote"].find((task) => task.id === "task-api")!.prompt = Array.from(
+      { length: 12 },
+      (_, index) =>
+        `Step ${index + 1}: read the rate limiter, compare it with the documented limits and write down every header a client can rely on, including the ones that only appear on retries.`,
+    ).join("\n\n");
+  }
 }
 const trees = new Map<string, { path: string; branch: string }[]>();
 const managedWorkspace: ManagedWorkspace = {
@@ -751,7 +783,183 @@ const source = {
   probed: () => true,
   refresh: () => {},
 };
+
+/** Builds the sprint history through the fixture's own commands, moving the clock
+ * back so the reports have days of work behind them. Fictitious data only. */
+async function seedSprintHistory() {
+  if (!sprintFixture || !seedSprints) return;
+  const day = 86_400_000;
+  const realNow = Date.now.bind(Date);
+  const base = realNow();
+  let clock = base;
+  Date.now = () => clock;
+  const envOf = (machineId: string) =>
+    machines.find((entry) => entry.id === machineId)!.environmentId;
+  const place: Record<string, string> = {};
+  for (const [machineId, list] of Object.entries(tasks))
+    for (const task of list) place[task.id] = machineId;
+  const statuses = new Map<string, TaskStatus>();
+  const finalStatus = new Map<string, TaskStatus>();
+  for (const list of Object.values(tasks))
+    for (const task of list) {
+      finalStatus.set(task.id, task.status);
+      statuses.set(task.id, "todo");
+    }
+  let cursor = 0;
+  const ingest = async () => {
+    cursor++;
+    for (const [machineId, list] of Object.entries(tasks)) {
+      const environmentId = envOf(machineId);
+      await sprintFixture.rpc("sprints.ingest", machineId, {
+        input: {
+          environmentId,
+          cursor,
+          caughtUp: true,
+          visibleProjectIds: [...new Set(list.map((task) => task.projectId))],
+          snapshot: {
+            cursor,
+            historyAvailableFrom: base - 40 * day,
+            tasks: list.map((task) => ({
+              id: task.id,
+              projectId: task.projectId,
+              title: task.title,
+              status: statuses.get(task.id)!,
+              updatedAt: clock,
+            })),
+          },
+        },
+      });
+    }
+  };
+  const ref = (taskId: string) => {
+    const task = Object.values(tasks)
+      .flat()
+      .find((entry) => entry.id === taskId)!;
+    const machineId = place[taskId];
+    return { environmentId: envOf(machineId), projectId: task.projectId, taskId };
+  };
+  const project = (machineId: string, projectId: string) => {
+    const match = projects[machineId].find((entry) => entry.id === projectId)!;
+    return {
+      environmentId: envOf(machineId),
+      projectId,
+      name: match.name,
+      cwd: machineId === "machine-remote" ? `remote://env-remote${match.cwd}` : match.cwd,
+    };
+  };
+  const call = (method: string, id: string, input: Record<string, unknown>) =>
+    sprintFixture.rpc(method, "machine-local", {
+      id,
+      input: { requestId: crypto.randomUUID(), ...input },
+    });
+  const sprint = async (
+    id: string,
+    name: string,
+    goal: string,
+    capacity: number,
+    startDay: number,
+    endDay: number,
+    scope: [string, number | null][],
+    projectRefs: ReturnType<typeof project>[],
+  ) => {
+    clock = base + startDay * day;
+    await call("sprints.create", id, {
+      id,
+      name,
+      goal,
+      projects: projectRefs,
+      capacityPoints: capacity,
+      projectCapacities: {},
+      startsAt: clock,
+      endsAt: base + endDay * day,
+    });
+    for (const [taskId, storyPoints] of scope)
+      await call("sprints.plan", id, {
+        ...ref(taskId),
+        sprintId: id,
+        storyPoints,
+        expectedRevision: 0,
+      });
+  };
+  const finish = async (taskId: string, onDay: number, status: TaskStatus = "done") => {
+    clock = base + onDay * day;
+    statuses.set(taskId, status);
+    await ingest();
+  };
+  const all = [
+    project("machine-local", "local-project"),
+    project("machine-local", "local-docs"),
+    project("machine-remote", "remote-project"),
+    project("machine-remote", "remote-api"),
+  ];
+  clock = base - 36 * day;
+  await ingest();
+  await sprint(
+    "sprint-41",
+    "Sprint 41",
+    "Settings and signing keys.",
+    13,
+    -35,
+    -22,
+    [
+      ["task-settings", 3],
+      ["task-shortcuts", 5],
+      ["task-keys", 2],
+    ],
+    [all[0], all[2]],
+  );
+  await call("sprints.start", "sprint-41", { expectedRevision: 1 });
+  await finish("task-settings", -32);
+  await finish("task-keys", -28);
+  await finish("task-shortcuts", -24);
+  clock = base - 22 * day;
+  await call("sprints.complete", "sprint-41", { expectedRevision: 2 });
+  await sprint(
+    "sprint-42",
+    "Sprint 42",
+    "Resume reliability and rate limits.",
+    16,
+    -21,
+    -7,
+    [
+      ["task-resume", 5],
+      ["task-shipped", 8],
+      ["task-headers", 3],
+    ],
+    all,
+  );
+  await call("sprints.start", "sprint-42", { expectedRevision: 1 });
+  await finish("task-headers", -17);
+  await finish("task-resume", -12);
+  await finish("task-shipped", -8);
+  clock = base - 7 * day;
+  await call("sprints.complete", "sprint-42", { expectedRevision: 2 });
+  await sprint(
+    "sprint-43",
+    "Sprint 43",
+    "Ship onboarding and keep the API stable. This goal is intentionally long so the heading, the report and the sprint list all have to cope with a sentence that keeps going past one line.",
+    21,
+    -6,
+    8,
+    [
+      ["task-onboarding", 3],
+      ["task-docs", 2],
+      ["task-notes", null],
+      ["task-checkout", 5],
+      ["task-api", 8],
+    ],
+    all,
+  );
+  await call("sprints.start", "sprint-43", { expectedRevision: 1 });
+  await finish("task-docs", -5);
+  await finish("task-onboarding", -3, "running");
+  await finish("task-api", -2, "running");
+  await sprint("sprint-44", "Sprint 44", "", 8, 8, 22, [["task-next", 5]], [all[2]]);
+  Date.now = realNow;
+  for (const [id, status] of finalStatus) statuses.set(id, status);
+}
 void languageReady
+  .then(() => seedSprintHistory())
   .then(() => setLanguagePreference(query.get("lang") === "tr" ? "tr" : "en"))
   .then(() =>
     createRoot(document.getElementById("root")!).render(

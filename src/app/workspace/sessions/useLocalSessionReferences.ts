@@ -26,8 +26,9 @@ import { t } from "../../../shared/i18n";
 
 type Deps = {
   ensureOpenSession: (id: string) => Promise<Session | null>;
-  onSelectHistorySession: (id: string) => Promise<unknown>;
-  onOpenSessionsSideBySide: (ids: string[]) => Promise<unknown>;
+  onSelectHistorySession: (id: string, options?: { isCurrent?: () => boolean }) => Promise<unknown>;
+  onOpenSessionsSideBySide: (ids: string[], options?: { isCurrent?: () => boolean }) => Promise<unknown>;
+  onOpenWorkerDetails?: (session: Session, isCurrent: () => boolean) => Promise<boolean>;
   activeSessionId: () => string | undefined;
   showSessions: () => void;
   workspaceNavigation: { cancel: () => void; captureRequest?: () => () => boolean };
@@ -72,8 +73,9 @@ export function useLocalSessionReferences(deps: Deps) {
           const owner = current.current;
           owner.workspaceNavigation.cancel();
           const navigationCurrent = owner.workspaceNavigation.captureRequest?.() ?? (() => true);
+          const referenceCurrent = () => serial === request.current && getGroupLockView() === privacy;
           const stillCurrent = () =>
-            serial === request.current && getGroupLockView() === privacy && navigationCurrent();
+            referenceCurrent() && navigationCurrent();
           const target = await resolveLocalSessionReference(reference);
           if (!stillCurrent()) return;
           assertReferenceProjectVisible(target.cwd);
@@ -146,6 +148,7 @@ export function useLocalSessionReferences(deps: Deps) {
                 );
               });
               if (existing) {
+                patchHostSessionShellMetadata(existing.id, { archived: resolved.archived });
                 if (existing.orchestrationLeadId !== leadId) {
                   const next = saveHostSessionBinding(
                     { ...existing, orchestrationLeadId: leadId },
@@ -211,19 +214,34 @@ export function useLocalSessionReferences(deps: Deps) {
           if (!target.host && hostSessionBinding(session))
             throw new Error(t("This local conversation is unavailable or inaccessible."));
           assertReferenceProjectVisible(target.cwd);
+          const worker = !!session.orchestrationLeadId && session.orchestrationLeadId !== id;
+          if (worker && !owner.onOpenWorkerDetails)
+            throw new Error(t("This local conversation is unavailable or inaccessible."));
           const source = owner.activeSessionId();
           owner.showSessions();
           const opening =
-            options?.beside && source && source !== id
-              ? owner.onOpenSessionsSideBySide([source, id])
-              : owner.onSelectHistorySession(id);
+            options?.beside && !worker && source && source !== id
+              ? owner.onOpenSessionsSideBySide([source, id], { isCurrent: referenceCurrent })
+              : owner.onSelectHistorySession(id, { isCurrent: referenceCurrent });
           const delegatedCurrent = owner.workspaceNavigation.captureRequest?.() ?? (() => true);
           await opening;
+          const openingCurrent = () =>
+            serial === request.current && getGroupLockView() === privacy && delegatedCurrent();
+          if (!openingCurrent()) return;
+          if (
+            worker &&
+            owner.onOpenWorkerDetails
+          ) {
+            // History navigation focuses the lead. The existing worker owner opens
+            // the read-only transcript tab and reuses it when already present.
+            const opened = await owner.onOpenWorkerDetails(session, openingCurrent);
+            if (!openingCurrent()) return;
+            if (!opened)
+              throw new Error(t("This local conversation is unavailable or inaccessible."));
+          }
           if (
             reference.turnId &&
-            serial === request.current &&
-            getGroupLockView() === privacy &&
-            delegatedCurrent()
+            openingCurrent()
           )
             requestTranscriptJump(id, reference.turnId);
         },

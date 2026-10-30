@@ -2895,6 +2895,12 @@ function Workspace({
   const onboardingTransferred = !!windowTransfer || !!toolWindow;
   const localSessionReferences = useLocalSessionReferences({
     ensureOpenSession, onSelectHistorySession, onOpenSessionsSideBySide,
+    onOpenWorkerDetails: (session, isCurrent) => queueWorkerPanes([{
+      sessionId: session.id,
+      leadId: session.orchestrationLeadId!,
+      title: session.title,
+      harness: session.harness,
+    }], isCurrent),
     activeSessionId: () => activeSessionIdRef.current,
     workspaceNavigation,
     showSessions: () => {

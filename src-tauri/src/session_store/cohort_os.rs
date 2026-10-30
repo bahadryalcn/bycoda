@@ -86,6 +86,13 @@ pub(super) fn file_identity(file: &File) -> Result<(String, u64), String> {
 pub(super) fn connection_identity(
     connection: &rusqlite::Connection,
 ) -> Result<(String, u64), String> {
+    file_identity(&connection_file(connection)?)
+}
+
+/// Clone SQLite's actual main-file handle while the connection is borrowed.
+/// The clone is identity/pinning data; it does not grant SQL or note authority.
+#[cfg(windows)]
+pub(super) fn connection_file(connection: &rusqlite::Connection) -> Result<File, String> {
     use std::os::windows::io::BorrowedHandle;
     use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 
@@ -108,12 +115,9 @@ pub(super) fn connection_identity(
     // this borrowed connection is alive. Duplicate it; never take ownership of
     // or close the original SQLite handle, nor carry that borrow across an await.
     let borrowed = unsafe { BorrowedHandle::borrow_raw(handle) };
-    let file = File::from(
-        borrowed
-            .try_clone_to_owned()
-            .map_err(|_| "Native writer SQLite connection identity cannot be inspected")?,
-    );
-    file_identity(&file)
+    Ok(File::from(borrowed.try_clone_to_owned().map_err(|_| {
+        "Native writer SQLite connection identity cannot be inspected"
+    })?))
 }
 
 pub(super) fn safe_file(path: &Path, create: bool, fresh: bool) -> Result<File, String> {

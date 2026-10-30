@@ -7,6 +7,9 @@ use crate::native_authority_checkpoint::{
 };
 use crate::native_authority_pipe::PipeCancellation;
 use crate::native_window_lifecycle::{self, NativeCheckpointWindow};
+use crate::session_store::host_notes_fence::{
+    CapturedHostNotesStore, FenceGeneration, HostNotesFenceOwner,
+};
 use crate::session_store::native_raw_capture::{
     RawCaptureArtifact, RawCaptureDescriptor, RawCaptureReceipt,
 };
@@ -25,11 +28,12 @@ use tauri::{Emitter, Manager};
 const LIFETIME: Duration = Duration::from_secs(30);
 const MAX_PREPARES: usize = 4;
 const MAX_RETAINED: usize = 256;
-const MISSING: [&str; 4] = [
+const MISSING: [&str; 5] = [
     "raw-editor-buffers",
     "multi-input-provenance",
     "provider-closure",
     "producer-coverage",
+    "host-notes-writer-closure",
 ];
 
 fn error(code: &str) -> String {
@@ -43,6 +47,7 @@ fn raw_digest(value: &[u8]) -> String {
     format!("{:x}", Sha256::digest(value))
 }
 
+#[derive(Clone)]
 struct Recipient {
     window: tauri::Window,
     owner: Arc<NativeCheckpointWindow>,
@@ -52,6 +57,7 @@ struct Recipient {
     result: Option<Result<NativeProjectionReceipt, String>>,
     raw_recovery: Option<RawCaptureReceipt>,
 }
+#[derive(Clone)]
 struct Prepared {
     comparison: String,
     raw: Option<RawCaptureArtifact>,
@@ -68,7 +74,7 @@ struct State {
     reason: Option<String>,
     challenging: bool,
     in_flight: usize,
-    round: Option<NativeCheckpointRound>,
+    round: Option<Arc<NativeCheckpointRound>>,
     release_ready: bool,
 }
 struct Preparation {
@@ -77,6 +83,20 @@ struct Preparation {
     deadline: Instant,
     state: Mutex<State>,
     changed: Condvar,
+    host_notes: Arc<HostNotesFenceOwner>,
+    host_generation: FenceGeneration,
+}
+
+impl Preparation {
+    fn try_retire_host_notes(&self) -> Result<bool, String> {
+        {
+            let state = self.state.lock().map_err(|_| error("UNAVAILABLE"))?;
+            if !state.cancelled || state.in_flight != 0 || state.round.is_some() {
+                return Ok(false);
+            }
+        }
+        self.host_notes.retire_if_drained(self.host_generation)
+    }
 }
 
 #[derive(Serialize)]
@@ -177,6 +197,10 @@ impl NativeProjectionCoordinator {
         if Instant::now() >= preparation.deadline {
             return Err(error("EXPIRED"));
         }
+        let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
+        if state.cancelled {
+            return Err(state.reason.clone().unwrap_or_else(|| error("CANCELLED")));
+        }
         Ok(())
     }
 
@@ -208,6 +232,24 @@ impl NativeProjectionCoordinator {
         )
     }
 
+    fn validate_preparation_window(
+        &self,
+        preparation: &Preparation,
+        window: &tauri::Window,
+    ) -> Result<(), String> {
+        let recipient = {
+            let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
+            state
+                .recipients
+                .get(window.label())
+                .cloned()
+                .ok_or_else(|| error("WRONG_WINDOW"))?
+        };
+        // Physical-owner/source checks may take their own SQL/resource locks.
+        // Never nest them under the preparation's ownership mutex.
+        self.validate_window(&recipient, window)
+    }
+
     /// Invoked only by the authenticated selected-Host private source endpoint.
     pub(crate) fn observe(
         &self,
@@ -229,6 +271,12 @@ impl NativeProjectionCoordinator {
             store.renderer_checkpoint_capture_scope(&scope).map(|_| ())
         })?;
         self.idle(session)?;
+        // Only clone the actual SQLite-owned file under its short SQL borrow.
+        // Capture/bind does not close ingress; no capability is issued by DTO.
+        let host_notes = HostNotesFenceOwner::new(vec![self
+            .source
+            .with_checked_store(CapturedHostNotesStore::capture)?]);
+        let host_generation = host_notes.generation();
         let windows = self.app.webview_windows();
         if windows.is_empty() || windows.len() > 64 {
             return Err(error("WINDOW_CAPACITY"));
@@ -267,6 +315,8 @@ impl NativeProjectionCoordinator {
                 release_ready: false,
             }),
             changed: Condvar::new(),
+            host_notes,
+            host_generation,
         });
         {
             let mut all = self.preparations.lock().map_err(|_| error("UNAVAILABLE"))?;
@@ -317,18 +367,32 @@ impl NativeProjectionCoordinator {
         preparation: &Preparation,
         cancellation: &PipeCancellation,
     ) -> Result<(), String> {
-        {
+        self.close_host_notes_before_prepare(preparation, cancellation)?;
+        self.source
+            .checked_source()
+            .map_err(|error| error.to_string())?;
+        let prepare_events = {
             let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
-            for recipient in state.recipients.values() {
-                recipient
-                    .window
-                    .emit_to(
-                        tauri::EventTarget::webview_window(recipient.window.label()),
-                        "native-projection-prepare",
+            state
+                .recipients
+                .values()
+                .map(|recipient| {
+                    (
+                        recipient.window.clone(),
                         self.payload(preparation, recipient),
                     )
-                    .map_err(|error| error.to_string())?;
-            }
+                })
+                .collect::<Vec<_>>()
+        };
+        // No SQL, physical-owner or preparation mutex while emitting callbacks.
+        for (window, payload) in prepare_events {
+            window
+                .emit_to(
+                    tauri::EventTarget::webview_window(window.label()),
+                    "native-projection-prepare",
+                    payload,
+                )
+                .map_err(|error| error.to_string())?;
         }
         let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
         loop {
@@ -354,6 +418,9 @@ impl NativeProjectionCoordinator {
                 .map_err(|_| error("UNAVAILABLE"))?
                 .0;
         }
+        state.challenging = true;
+        let recipients = state.recipients.values().cloned().collect::<Vec<_>>();
+        drop(state);
         // Ordinary producers are still open until all actual renderer captures
         // have drained. Refuse busy work atomically rather than closing over it.
         self.harness_idle(&preparation.scope.session_id)?;
@@ -378,15 +445,23 @@ impl NativeProjectionCoordinator {
                 return Err(failure.message);
             }
         };
-        state.round = Some(round);
+        let round = Arc::new(round);
+        match preparation.state.lock() {
+            Ok(mut state) => state.round = Some(Arc::clone(&round)),
+            Err(poisoned) => {
+                // Keep the original retirement locator even on an owner error.
+                poisoned.into_inner().round = Some(Arc::clone(&round));
+                return Err(error("UNAVAILABLE"));
+            }
+        }
         // Install every nonce before emitting any challenge. No renderer can
         // create or substitute its own round, logical target or physical owner.
         let mut challenges = Vec::new();
-        for recipient in state.recipients.values() {
+        for recipient in &recipients {
             self.check_preparation_time(preparation, cancellation)?;
             self.validate_window(recipient, &recipient.window)?;
             let challenge = self.checkpoints.issue_projection(
-                state.round.as_ref().unwrap(),
+                &round,
                 &recipient.window,
                 preparation.deadline,
                 &recipient.prepared.as_ref().unwrap().comparison,
@@ -406,6 +481,10 @@ impl NativeProjectionCoordinator {
                 .insert("prepareId".into(), preparation.id.clone().into());
             challenges.push((recipient.window.clone(), nonce, payload));
         }
+        let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
+        if state.cancelled {
+            return Err(error("CANCELLED"));
+        }
         for (window, nonce, _) in &challenges {
             state.recipients.get_mut(window.label()).unwrap().nonce = Some(nonce.clone());
         }
@@ -417,6 +496,7 @@ impl NativeProjectionCoordinator {
             if state.cancelled {
                 return Err(error("CANCELLED"));
             }
+            drop(state);
             window
                 .emit_to(
                     tauri::EventTarget::webview_window(window.label()),
@@ -424,7 +504,6 @@ impl NativeProjectionCoordinator {
                     payload,
                 )
                 .map_err(|error| error.to_string())?;
-            drop(state);
         }
         let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
         loop {
@@ -452,6 +531,35 @@ impl NativeProjectionCoordinator {
         }
     }
 
+    fn close_host_notes_before_prepare(
+        &self,
+        preparation: &Preparation,
+        cancellation: &PipeCancellation,
+    ) -> Result<(), String> {
+        self.check_preparation_time(preparation, cancellation)?;
+        preparation
+            .host_notes
+            .close_ingress(preparation.host_generation)?;
+        loop {
+            self.check_preparation_time(preparation, cancellation)?;
+            {
+                let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
+                if state.cancelled {
+                    return Err(error("CANCELLED"));
+                }
+            }
+            if preparation
+                .host_notes
+                .try_drained(preparation.host_generation)?
+            {
+                return self.check_preparation_time(preparation, cancellation);
+            }
+            // Only the observation thread parks. Original fences are in the
+            // issued preparation; no SQL/resource/owner mutex is held here.
+            std::thread::park_timeout(Duration::from_millis(25));
+        }
+    }
+
     fn finish(&self, preparation: &Preparation, failure: Option<String>) -> Result<Value, String> {
         let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
         state.cancelled = true; // No new verification may start after this point.
@@ -466,12 +574,35 @@ impl NativeProjectionCoordinator {
                 .map_err(|_| error("UNAVAILABLE"))?
                 .0;
         }
-        if let Some(round) = state.round.take() {
-            let closed = self.checkpoints.retire_round(&round)?;
+        let round = state.round.take();
+        drop(state);
+        if let Some(round) = round {
+            let closed = match self.checkpoints.retire_round(&round) {
+                Ok(closed) => closed,
+                Err(failure) => {
+                    // A failed retirement must not lose its original locator.
+                    let mut state = preparation
+                        .state
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner());
+                    state.round = Some(round);
+                    return Err(failure);
+                }
+            };
             self.barrier
                 .reopen_target_admission(closed)
                 .map_err(|error| error.to_string())?;
         }
+        let cooperative_only = preparation
+            .host_notes
+            .cooperative_only(preparation.host_generation)?;
+        // Observer cancellation/timeout is NOT actual Host worker retirement.
+        // Retain the exact ClosingFence until every accepted writer releases.
+        // No SQL/FULL/resource/preparation mutex is held during this polling.
+        while !preparation.try_retire_host_notes()? {
+            std::thread::park_timeout(Duration::from_millis(25));
+        }
+        let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
         // Accepted SQL is settled. Keep only its original recovery locator;
         // finished preparations must release their shared raw-byte charge.
         for recipient in state.recipients.values_mut() {
@@ -488,6 +619,9 @@ impl NativeProjectionCoordinator {
         let observed = state.reason.is_none() && receipt_count == state.recipients.len();
         let status = if observed { "observed" } else { "unverified" };
         let mut missing_coverage: Vec<String> = MISSING.into_iter().map(String::from).collect();
+        if cooperative_only {
+            missing_coverage.push("host-notes-connection-attestation".into());
+        }
         for recipient in state.recipients.values() {
             if let Some(prepared) = &recipient.prepared {
                 for missing in &prepared.missing {
@@ -500,9 +634,15 @@ impl NativeProjectionCoordinator {
         if let Some(reason) = &state.reason {
             missing_coverage.push(reason.chars().take(120).collect());
         }
-        for recipient in state.recipients.values() {
-            let _ = recipient.window.emit_to(
-                tauri::EventTarget::webview_window(recipient.window.label()),
+        let windows = state
+            .recipients
+            .values()
+            .map(|recipient| recipient.window.clone())
+            .collect::<Vec<_>>();
+        drop(state);
+        for window in windows {
+            let _ = window.emit_to(
+                tauri::EventTarget::webview_window(window.label()),
                 "native-projection-finished",
                 json!({ "version":1,"qualified":false,"prepareId":preparation.id,"status":status }),
             );
@@ -539,6 +679,7 @@ impl NativeProjectionCoordinator {
             return Err(error("INVALID_COVERAGE"));
         }
         let preparation = self.record(id)?;
+        self.validate_preparation_window(&preparation, window)?;
         // Validate the issued physical recipient before reserving/parsing raw
         // data, then repeat it after parsing without holding the state lock.
         {
@@ -550,7 +691,6 @@ impl NativeProjectionCoordinator {
                 .recipients
                 .get(window.label())
                 .ok_or_else(|| error("WRONG_WINDOW"))?;
-            self.validate_window(recipient, window)?;
             if recipient.owner.incarnation().to_string() != epoch || recipient.prepared.is_some() {
                 return Err(error("STALE_PREPARE"));
             }
@@ -581,6 +721,7 @@ impl NativeProjectionCoordinator {
             }
             None
         };
+        self.validate_preparation_window(&preparation, window)?;
         let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
         if state.cancelled || state.challenging || Instant::now() >= preparation.deadline {
             return Err(error("PREPARATION_CLOSED"));
@@ -603,7 +744,6 @@ impl NativeProjectionCoordinator {
             .recipients
             .get_mut(window.label())
             .ok_or_else(|| error("WRONG_WINDOW"))?;
-        self.validate_window(recipient, window)?;
         if recipient.owner.incarnation().to_string() != epoch || recipient.prepared.is_some() {
             return Err(error("STALE_PREPARE"));
         }
@@ -636,6 +776,7 @@ impl NativeProjectionCoordinator {
             return Err(error("RAW_CAPACITY"));
         }
         let preparation = self.record(id)?;
+        self.validate_preparation_window(&preparation, window)?;
         let raw = {
             let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
             if state.cancelled || !state.challenging || Instant::now() >= preparation.deadline {
@@ -645,7 +786,6 @@ impl NativeProjectionCoordinator {
                 .recipients
                 .get_mut(window.label())
                 .ok_or_else(|| error("WRONG_WINDOW"))?;
-            self.validate_window(recipient, window)?;
             if recipient.nonce.as_deref() != Some(nonce)
                 || recipient
                     .prepared
@@ -709,13 +849,13 @@ impl NativeProjectionCoordinator {
             return Err(error("RAW_CAPACITY"));
         }
         let preparation = self.record(id)?;
+        self.validate_preparation_window(&preparation, window)?;
         let (owner, expected) = {
             let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
             let recipient = state
                 .recipients
                 .get(window.label())
                 .ok_or_else(|| error("WRONG_WINDOW"))?;
-            self.validate_window(recipient, window)?;
             let prepared = recipient
                 .prepared
                 .as_ref()
@@ -738,13 +878,13 @@ impl NativeProjectionCoordinator {
         };
         // No preparation lock while obtaining physical-owner and SQL guards.
         let receipt = self.checkpoints.read_projection_raw(&owner, &expected)?;
+        self.validate_preparation_window(&preparation, window)?;
         {
             let state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
             let recipient = state
                 .recipients
                 .get(window.label())
                 .ok_or_else(|| error("WRONG_WINDOW"))?;
-            self.validate_window(recipient, window)?;
             if recipient.nonce.as_deref() != Some(nonce)
                 || recipient.raw_recovery.as_ref() != Some(&expected)
             {
@@ -764,12 +904,8 @@ impl NativeProjectionCoordinator {
             return Err(error("INVALID_REASON"));
         }
         let preparation = self.record(id)?;
+        self.validate_preparation_window(&preparation, window)?;
         let mut state = preparation.state.lock().map_err(|_| error("UNAVAILABLE"))?;
-        let recipient = state
-            .recipients
-            .get(window.label())
-            .ok_or_else(|| error("WRONG_WINDOW"))?;
-        self.validate_window(recipient, window)?;
         state.cancelled = true;
         if state.reason.is_none() {
             state.reason = Some(error("RENDERER_RELEASE"));
@@ -856,3 +992,7 @@ pub(crate) fn native_projection_checkpoint_release(
         .release(&window, &prepare_id, &reason)
         .map(|ready| json!({"releaseReady":ready}))
 }
+
+#[cfg(all(test, windows))]
+#[path = "native_projection_coordinator/host_notes_tests.rs"]
+mod host_notes_tests;

@@ -734,7 +734,7 @@ describe("sidebar session bulk actions", () => {
   });
 
   it("asks once in the shared dialog with the count, the skipped running session and a danger action", async () => {
-    const request = vi.fn(async (_: AppConfirmRequest) => false);
+    const request = vi.fn<(request: AppConfirmRequest) => Promise<boolean>>(async () => false);
     const unregister = registerAppConfirmHost(request);
     try {
       props.onDeleteSession = vi.fn();

@@ -68,7 +68,11 @@ import { MOD } from "../../../platform/tauri/platform";
 import type { OpenFileFn } from "../../search/model/search";
 import type { GitStatusMap } from "../../source-control/hooks/useGitFileStatuses";
 import {
+  announceDrag,
+  clearDropFeedback,
   emitExplorerFilePointerDrag,
+  setDropFeedback,
+  setDropIndicator,
   setGrabbing,
   suppressTextSelection,
 } from "../../../shared/lib/drag";
@@ -90,7 +94,7 @@ import {
 } from "./fileTreeSupport";
 import { useFileTreeExternalDrop } from "./useFileTreeExternalDrop";
 import { useFileTreeKeyboard } from "./useFileTreeKeyboard";
-import { useFileTreeOperations } from "./useFileTreeOperations";
+import { transferVerdict, useFileTreeOperations } from "./useFileTreeOperations";
 import { useFileTreePolling } from "./useFileTreePolling";
 
 import {
@@ -329,6 +333,17 @@ function FileTreeInner({
   // File History and Blame need this computer or a host with `git.actions`.
   const canInspectGit = useRemoteSupports(cwd, GIT_ACTIONS) === true;
   const connectionFailure = useRemoteLoadFailure(cwd, "files");
+  // Why creating cannot start at all: no folder to create in, or a remote machine that cannot be
+  // asked. These are the capability signals the tree already has; there is no per-folder permission.
+  const createUnavailableReason = !cwd || cwd === "~"
+    ? t("Open a project folder first")
+    : connectionFailure?.kind === "unreachable"
+      ? t("This machine is unreachable")
+      : connectionFailure?.kind === "identity"
+        ? t("Pair this machine again to change files")
+        : connectionFailure?.kind === "outdated"
+          ? t("Update the host to change files")
+          : undefined;
 
   const toggle = (path: string) => {
     const next = new Set(expandedRef.current);
@@ -427,6 +442,10 @@ function FileTreeInner({
     let active = false;
     let restoreSelection: (() => void) | undefined;
     let preview: HTMLDivElement | null = null;
+    // True while this gesture owns the cursor badge and the folder mark (a tree row is the target).
+    let showingTarget = false;
+    let announcedTarget = "";
+    let copyIntent = false;
 
     const movePreview = () => {
       if (!preview) return;
@@ -467,6 +486,43 @@ function FileTreeInner({
       movePreview();
     };
 
+    // One badge says whether releasing moves or copies and where; the folder row carries the mark
+    // (inside, or blocked with the reason in the badge). Copy follows Ctrl/Cmd/Alt, as on release.
+    const showTarget = (target: string) => {
+      const verdict = operationRunning.current
+        ? "busy"
+        : transferVerdict(cwd, dragPaths, target, copyIntent);
+      const folder = parentLabel(target);
+      const label =
+        verdict === "busy"
+          ? t("Wait for the current file operation to finish")
+          : verdict === "into-itself"
+            ? t("Cannot drop a folder into itself")
+            : verdict === "same-folder"
+              ? t("Already in {p0}", { p0: folder })
+              : copyIntent
+                ? t("Copy to {p0}", { p0: folder })
+                : t("Move to {p0}", { p0: folder });
+      const blocked = verdict !== "ok";
+      setDropFeedback(blocked ? "blocked" : "move", { clientX: lastX, clientY: lastY }, label);
+      setDropIndicator(
+        visibleRows().find((row) => row.title === target) ?? null,
+        blocked ? "blocked" : "inside",
+      );
+      showingTarget = true;
+      if (label !== announcedTarget) {
+        announcedTarget = label;
+        announceDrag(label);
+      }
+    };
+
+    const hideTarget = () => {
+      if (!showingTarget) return;
+      showingTarget = false;
+      announcedTarget = "";
+      clearDropFeedback();
+    };
+
     const release = () => {
       delete handle.dataset.explorerDragging;
       preview?.remove();
@@ -489,6 +545,7 @@ function FileTreeInner({
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
       window.removeEventListener("blur", onCancel);
       release();
       if (active && attachmentPaths.length)
@@ -522,33 +579,42 @@ function FileTreeInner({
       }
       moveEvent.preventDefault();
       movePreview();
+      copyIntent = moveEvent.ctrlKey || moveEvent.metaKey || moveEvent.altKey;
       const target = internalDropTarget(lastX, lastY);
-      setDragOverPath(target);
-      if (!target && attachmentPaths.length)
-        emitExplorerFilePointerDrag({
-          type: "move",
-          path: attachmentPaths[0],
-          ...dragDetail,
-          x: lastX,
-          y: lastY,
-        });
+      if (target) showTarget(target);
+      else {
+        hideTarget();
+        if (attachmentPaths.length)
+          emitExplorerFilePointerDrag({
+            type: "move",
+            path: attachmentPaths[0],
+            ...dragDetail,
+            x: lastX,
+            y: lastY,
+          });
+      }
     }
 
     function finish(commit: boolean, upEvent?: PointerEvent) {
       if (commit && upEvent) onMove(upEvent);
       if (active) {
         suppressFileClickUntil.current = performance.now() + 400;
+        if (!commit) announceDrag(t("Drag cancelled"));
         if (commit) {
           const target = internalDropTarget(lastX, lastY);
-          if (target)
-            void run(() =>
-              transferPaths(
-                dragPaths,
-                target,
-                !!(upEvent?.ctrlKey || upEvent?.metaKey || upEvent?.altKey),
-              ),
-            );
-          else if (attachmentPaths.length)
+          const copy = !!(upEvent?.ctrlKey || upEvent?.metaKey || upEvent?.altKey);
+          if (target) {
+            const verdict = transferVerdict(cwd, dragPaths, target, copy);
+            void run(async () => {
+              await transferPaths(dragPaths, target, copy);
+              if (verdict === "ok")
+                announceDrag(
+                  copy
+                    ? t("Copied to {p0}", { p0: parentLabel(target) })
+                    : t("Moved to {p0}", { p0: parentLabel(target) }),
+                );
+            });
+          } else if (attachmentPaths.length)
             emitExplorerFilePointerDrag({
               type: "drop",
               path: attachmentPaths[0],
@@ -568,9 +634,16 @@ function FileTreeInner({
       finish(false);
     }
     function onKey(keyEvent: KeyboardEvent) {
-      if (keyEvent.key !== "Escape") return;
-      keyEvent.preventDefault();
-      finish(false);
+      if (keyEvent.key === "Escape") {
+        keyEvent.preventDefault();
+        finish(false);
+        return;
+      }
+      // Pressing or releasing the copy modifier switches the badge without moving the pointer.
+      if (!active || !["Control", "Meta", "Alt"].includes(keyEvent.key)) return;
+      copyIntent = keyEvent.ctrlKey || keyEvent.metaKey || keyEvent.altKey;
+      const target = internalDropTarget(lastX, lastY);
+      if (target) showTarget(target);
     }
 
     fileDragCleanup.current = onCancel;
@@ -578,6 +651,7 @@ function FileTreeInner({
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
     window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
     window.addEventListener("blur", onCancel);
   };
 
@@ -603,6 +677,7 @@ function FileTreeInner({
     runAction,
   } = useFileTreeOperations({
     cwd,
+    createUnavailable: Boolean(createUnavailableReason),
     activeRoot,
     expandedRef,
     selectedPath,
@@ -680,9 +755,10 @@ function FileTreeInner({
     if (renaming) keepChain(parentPath(renaming));
     commitExpanded(keep);
   };
-  // Creating is unavailable while any file operation or inline name commit is in flight.
+  // Creating is unavailable without a usable root and while any file operation or inline name commit is in flight.
   const createBlockedReason =
-    operationPending || editPending ? t("Wait for the current file operation to finish") : undefined;
+    createUnavailableReason ??
+    (operationPending || editPending ? t("Wait for the current file operation to finish") : undefined);
   const createLabel = (label: string) =>
     createBlockedReason ? `${label} (${createBlockedReason})` : label;
   // Visible name of a folder in this tree: the root keeps its display identity (worktree/branch label).
@@ -706,7 +782,7 @@ function FileTreeInner({
     expanded,
     selectedPath,
     selectedPaths,
-    selectionAnchor,
+    selectionAnchorRef: selectionAnchor,
     operationRunning,
     toggle,
     onSelect,
@@ -1049,6 +1125,7 @@ function FileTreeInner({
                 parentLabel(menuCreateParent(menu.target)),
               ),
               operationPending || editPending,
+              createBlockedReason,
             )}
             onPick={(id) => {
               const target = menu.target;

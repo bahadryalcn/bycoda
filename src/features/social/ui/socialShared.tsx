@@ -8,6 +8,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -296,8 +297,7 @@ export function Composer({
   const [slot, setSlot] = useState<ComposerSlot>({ element: null, parent: null, layer: 0 });
   const trigger = useRef<HTMLButtonElement>(null);
   const stash = useRef<HTMLDivElement>(null);
-  const opened = useRef(onOpen);
-  opened.current = onOpen;
+  const notifyOpened = useEffectEvent(() => onOpen?.());
   const feedback = useContext(SocialFeedbackContext);
   const host = useMemo(() => {
     if (typeof document === "undefined") return null;
@@ -311,7 +311,7 @@ export function Composer({
     host?.setAttribute("aria-label", title);
   }, [host, title]);
   useEffect(() => {
-    if (tokenOpens > 0) opened.current?.();
+    if (tokenOpens > 0) notifyOpened();
   }, [tokenOpens]);
   const openComposer = () => {
     if (open) return;

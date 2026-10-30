@@ -26,16 +26,27 @@ export function BackgroundSessionDialog({
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const pending = useRef(false);
-  const previousTarget = useRef("");
+  // A new target or a retry starts over from the load; only another target
+  // clears the error, so a retry keeps it visible while it runs.
+  const [seen, setSeen] = useState({
+    machineId: target.machineId,
+    sessionId: target.sessionId,
+    revision,
+  });
+  if (
+    seen.machineId !== target.machineId ||
+    seen.sessionId !== target.sessionId ||
+    seen.revision !== revision
+  ) {
+    setSeen({ machineId: target.machineId, sessionId: target.sessionId, revision });
+    setSummary(undefined);
+    setLoading(true);
+    if (seen.machineId !== target.machineId || seen.sessionId !== target.sessionId) setError("");
+  }
 
   useEffect(() => {
     let alive = true;
-    const key = JSON.stringify([target.machineId, target.sessionId]);
-    setSummary(undefined);
-    if (previousTarget.current !== key) setError("");
-    previousTarget.current = key;
     pending.current = true;
-    setLoading(true);
     loadBackgroundSessionSummary(target).then(
       (loaded) => {
         if (alive) {

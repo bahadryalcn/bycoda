@@ -9,6 +9,11 @@ import {
 } from "./desktopSessions";
 import type { HostNotes, HostNoteDeleted } from "./host-notes";
 import type { LocalSessionLocator } from "../src/features/sessions/model/localSessionReference";
+import {
+  HostNotesAdmission,
+  type HostNotesAdmissionOptions,
+  type HostNotesAcceptedJob,
+} from "./host-notes-admission";
 
 type NoteMethod = "list" | "get" | "save" | "delete";
 type Results = { [M in NoteMethod]: ReturnType<HostNotes[M]> } & {
@@ -32,8 +37,9 @@ type StorageJob = {
   authorize?: Authorization;
   lifetime: Promise<void>;
   finish: () => void;
+  admission?: HostNotesAcceptedJob;
 };
-type DispatchedJob = StorageJob & { owner: StorageWorker };
+type DispatchedJob = StorageJob & { owner: StorageWorker; outcomeObserved: boolean };
 export interface HostNotesAccess {
   readonly revision: number;
   list(...args: Parameters<HostNotes["list"]>): Result<"list"> | Promise<Result<"list">>;
@@ -63,10 +69,17 @@ export class AsyncHostNotes implements HostNotesAccess {
   private closePromise?: Promise<void>;
   private tail: Promise<void> = Promise.resolve();
   private readonly pending = new Map<number, DispatchedJob>();
+  private readonly admission: HostNotesAdmission;
   constructor(
     private readonly paths: () => string[] = desktopDatabasePaths,
     private readonly workerUrl = new URL("./host-notes-worker.mjs", import.meta.url),
-  ) {}
+    options: HostNotesAdmissionOptions = {},
+  ) {
+    this.admission = new HostNotesAdmission(options);
+  }
+  get admissionStatus() {
+    return this.admission.status;
+  }
   get revision() {
     return this.version;
   }
@@ -80,6 +93,7 @@ export class AsyncHostNotes implements HostNotesAccess {
       // Source execution uses Node's own type transformer; the packaged worker
       // is bundled JavaScript and needs no loader, compiler or source fallback.
       execArgv: import.meta.url.endsWith(".ts") ? ["--experimental-transform-types"] : [],
+      workerData: this.admission.workerConfiguration,
     });
     let finishExit!: () => void;
     const owner: StorageWorker = {
@@ -101,8 +115,16 @@ export class AsyncHostNotes implements HostNotesAccess {
           );
       }
     };
-    worker.on("error", failed);
+    worker.on("error", () => {
+      if (this.admission.status.mode === "joined") this.admission.markFault();
+      failed();
+    });
     worker.on("exit", () => {
+      if (
+        this.admission.status.mode === "joined" &&
+        [...this.pending.values()].some((request) => request.owner === owner)
+      )
+        this.admission.markFault();
       failed();
       if (this.worker === owner) this.worker = undefined;
       for (const [id, request] of this.pending) {
@@ -122,13 +144,19 @@ export class AsyncHostNotes implements HostNotesAccess {
         error?: string;
         revision?: number;
         deletedNote?: HostNoteDeleted;
+        admissionFault?: boolean;
+        terminalClosed?: boolean;
+        attested?: boolean;
       }) => {
         const candidate = this.pending.get(reply.id);
         const request = candidate?.owner === owner ? candidate : undefined;
         if (reply.kind === "authorize" && reply.signal instanceof SharedArrayBuffer) {
           let allowed = false;
           try {
-            allowed = !!request && (request.authorize ? await request.authorize() : true);
+            allowed =
+              !!request &&
+              !request.outcomeObserved &&
+              (request.authorize ? await request.authorize() : true);
           } catch {
             /* fail closed */
           }
@@ -139,10 +167,22 @@ export class AsyncHostNotes implements HostNotesAccess {
           return;
         }
         if (!request) return;
-        this.pending.delete(reply.id);
-        if (typeof reply.revision === "number") this.version = reply.revision;
+        const bindingObserved = !request.admission || !!reply.error || reply.attested === true;
+        const terminalClosed =
+          reply.terminalClosed === true ||
+          (!request.admission && reply.terminalClosed === undefined);
+        if (reply.admissionFault || !terminalClosed || !bindingObserved) this.admission.markFault();
         try {
-          if (reply.error) request.reject(new Error(reply.error));
+          if (request.outcomeObserved) return;
+          request.outcomeObserved = true;
+          if (typeof reply.revision === "number") this.version = reply.revision;
+          if (!bindingObserved)
+            request.reject(
+              new Error(
+                "Notes physical connection verification is unavailable. Refresh before continuing.",
+              ),
+            );
+          else if (reply.error) request.reject(new Error(reply.error));
           else {
             // Worker success follows its own COMMIT. Fence retained copies before
             // resolving the owner wait; do not defer this behind a HostDB actor.
@@ -150,6 +190,7 @@ export class AsyncHostNotes implements HostNotesAccess {
             request.resolve(reply.value);
           }
         } catch (cause) {
+          if (this.admission.status.mode === "joined") this.admission.markFault();
           // The deletion has already committed. Settle this waiter honestly;
           // a notification failure must never strand it or replay the mutation.
           request.reject(
@@ -164,7 +205,10 @@ export class AsyncHostNotes implements HostNotesAccess {
         } finally {
           // The production terminal message follows connection close, even if
           // its public waiter was already rejected by an earlier observation.
-          request.finish();
+          if (terminalClosed && bindingObserved) {
+            this.pending.delete(reply.id);
+            request.finish();
+          }
           if (!owner.failed && !this.pending.size) worker.unref();
         }
       },
@@ -182,11 +226,23 @@ export class AsyncHostNotes implements HostNotesAccess {
     if (this.closing) return Promise.reject(new Error("Notes storage is closing."));
     // Capture immutable input now; queued edits must not read a later draft.
     const input = structuredClone(args);
-    const paths = this.paths();
+    const paths = structuredClone(this.paths());
+    let admission: HostNotesAcceptedJob | undefined;
+    try {
+      admission = this.admission.accept(paths, method === "save" || method === "delete");
+    } catch (error) {
+      return Promise.reject(error);
+    }
     const currentAuthorization = authorize && AsyncResource.bind(authorize);
     let finish!: () => void;
     const lifetime = new Promise<void>((resolve) => {
-      finish = resolve;
+      let finished = false;
+      finish = () => {
+        if (finished) return;
+        finished = true;
+        admission?.finishActual();
+        resolve();
+      };
     });
     let job!: StorageJob;
     const result = new Promise<Result<M>>((resolve, reject) => {
@@ -196,14 +252,16 @@ export class AsyncHostNotes implements HostNotesAccess {
         authorize: currentAuthorization,
         lifetime,
         finish,
+        admission,
       };
     });
     this.tail = this.tail.then(async () => {
       try {
+        this.admission.assertHealthy();
         if (this.worker?.failed) await this.worker.exited;
         if (currentAuthorization && !(await currentAuthorization()))
           throw new Error("Session authority revoked.");
-        await this.dispatch(method, input, paths, job);
+        await this.dispatch(method, input, admission?.paths ?? paths, job);
       } catch (error) {
         job.reject(error);
       } finally {
@@ -223,10 +281,18 @@ export class AsyncHostNotes implements HostNotesAccess {
     const owner = await this.start(),
       worker = owner.worker,
       id = ++this.sequence;
+    this.admission.assertHealthy();
     worker.ref();
-    this.pending.set(id, { ...job, owner });
+    this.pending.set(id, { ...job, owner, outcomeObserved: false });
     try {
-      worker.postMessage({ id, method, args, paths, checkAuthorization: !!job.authorize });
+      worker.postMessage({
+        id,
+        method,
+        args,
+        paths,
+        checkAuthorization: !!job.authorize,
+        comparison: job.admission?.comparison,
+      });
     } catch (error) {
       // Delivery may already have happened. Reject this public waiter, but only
       // a real terminal reply or worker EXIT can end the original SQL lifetime.

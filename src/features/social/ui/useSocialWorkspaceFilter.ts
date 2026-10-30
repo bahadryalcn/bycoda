@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef } from "react";
+import { useContext, useEffect, useEffectEvent } from "react";
 import type { SocialCollection, SocialCollectionFilter, SocialSnapshot } from "../model/social";
 import { hostSocialFilterMatches } from "../model/socialWorkspace";
 import { SocialPanelActiveContext } from "./socialContext";
@@ -12,15 +12,16 @@ export function useSocialWorkspaceFilter(
   onChange?: (collection: SocialCollection, filter: SocialCollectionFilter) => void,
 ): boolean {
   const active = useContext(SocialPanelActiveContext);
-  const callback = useRef(onChange);
-  callback.current = onChange;
+  const emitChange = useEffectEvent((next: SocialCollectionFilter) => {
+    onChange?.(collection, next);
+  });
   const key = JSON.stringify(filter);
   const matches = hostSocialFilterMatches(snapshot, collection, filter);
   const enabled = !!snapshot.pages && !!onChange && active;
   useEffect(() => {
     if (!enabled || matches) return;
     const next = JSON.parse(key) as SocialCollectionFilter;
-    const timer = setTimeout(() => callback.current?.(collection, next), 200);
+    const timer = setTimeout(() => emitChange(next), 200);
     return () => clearTimeout(timer);
   }, [enabled, matches, key, collection]);
   return matches;

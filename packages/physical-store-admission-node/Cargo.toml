@@ -20,6 +20,7 @@ napi-derive = { version = "=3.6.13", default-features = false, features = ["stri
 
 [build-dependencies]
 napi-build = "=2.6.0"
+cc = "=1.10.0"
 
 [[bin]]
 name = "physical-admission-probe"

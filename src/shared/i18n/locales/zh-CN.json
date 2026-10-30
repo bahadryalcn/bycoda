@@ -8205,5 +8205,6 @@
   "Item": "项目",
   "Move to another window": "移至其他窗口",
   "Release to move": "松开以移动",
-  "Could not verify the tag change. Your current tags are kept.": "无法验证标签更改。您当前的标签已保留。"
+  "Could not verify the tag change. Your current tags are kept.": "无法验证标签更改。您当前的标签已保留。",
+  "Used for the composer send button, selected text and accent actions.": "用于输入框的发送按钮、选中文本和强调色操作。"
 }

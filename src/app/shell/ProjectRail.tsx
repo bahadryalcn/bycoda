@@ -103,7 +103,6 @@ import {
 } from "../../features/workspace/model/tabGroups";
 import {
   changeProjectGroupMembers,
-  moveProjectGroup,
   projectGroupColor,
   projectGroupIdForPath,
   projectGroupParentId,
@@ -149,7 +148,7 @@ import {
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
 import { connectionIndicator } from "../../features/connections/model/remoteConnection";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
-import { useProjectMenu } from "./useProjectMenu";
+import { useProjectMenu, type ProjectMenuMove } from "./useProjectMenu";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { GroupGitPopover } from "../../features/projects/ui/GroupGitPopover";
 import {
@@ -163,8 +162,6 @@ import type { RailSectionId } from "../../features/projects/model/railSections";
 import { CrewRailSection } from "../../features/crews/ui/CrewRailSection";
 import type { BackgroundSessionTarget } from "../../features/tasks/model/backgroundSession";
 import {
-  keepFocus,
-  moveStepForKey,
   RAIL_DRAG_HANDLE,
   RAIL_SECTION_BLOCK,
   RailSectionHeader,
@@ -553,20 +550,6 @@ export function ProjectRail({
     return () => scrollParent.removeEventListener("scroll", onScroll, true);
   }, [projectMenu.isOpen, closeProjectMenu]);
 
-  const onProjectContextMenu = (
-    path: string,
-    event: MouseEvent<HTMLElement>,
-    onSelectForBulk?: () => void,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-    // Focus returns to the project button, not its row, when the menu closes.
-    const trigger =
-      event.currentTarget.querySelector<HTMLButtonElement>("button") ?? event.currentTarget;
-    trigger.focus();
-    projectMenu.open(path, event.clientX, event.clientY, trigger, onSelectForBulk);
-  };
-
   const reorderSubset = (fullOrder: string[], subsetOrder: string[], subsetPaths: Set<string>) => {
     const next: string[] = [];
     let subsetIndex = 0;
@@ -596,8 +579,42 @@ export function ProjectRail({
 
   const pinnedIds = pinnedProjects.map((item) => item.path);
   const projectIds = groupedProjectSections.ungrouped.map((item) => item.path);
-  const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y");
-  const projectSortable = useAnimatedReorder(projectIds, onReorderProjects, "y");
+  // Spoken name of a project row: its label, never the row's stats and badges.
+  const projectSpokenName = (path: string) =>
+    resolveTabGroupLabel(projectKey(path), groupLabels, basename(path));
+  const pinnedSortable = useAnimatedReorder(pinnedIds, onReorderPinned, "y", undefined, {
+    label: projectSpokenName,
+  });
+  const projectSortable = useAnimatedReorder(projectIds, onReorderProjects, "y", undefined, {
+    label: projectSpokenName,
+  });
+  // Menu "Move up/down" for the row's own list (pinned or ungrouped projects).
+  const rowMove = (path: string): ProjectMenuMove | undefined => {
+    const list = pinnedIds.includes(path)
+      ? { ids: pinnedIds, sortable: pinnedSortable }
+      : projectIds.includes(path)
+        ? { ids: projectIds, sortable: projectSortable }
+        : undefined;
+    if (!list || list.ids.length < 2) return undefined;
+    const index = list.ids.indexOf(path);
+    return {
+      up: index > 0 ? () => list.sortable.moveBy(path, -1) : undefined,
+      down: index < list.ids.length - 1 ? () => list.sortable.moveBy(path, 1) : undefined,
+    };
+  };
+  const onProjectContextMenu = (
+    path: string,
+    event: MouseEvent<HTMLElement>,
+    onSelectForBulk?: () => void,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Focus returns to the project button, not its row, when the menu closes.
+    const trigger =
+      event.currentTarget.querySelector<HTMLButtonElement>("button") ?? event.currentTarget;
+    trigger.focus();
+    projectMenu.open(path, event.clientX, event.clientY, trigger, onSelectForBulk, rowMove(path));
+  };
   // A group moves as a block: while one is dragged every group shows only its
   // header (the saved collapsed state is untouched), so the blocks stay one size.
   const groupSortable = useAnimatedReorder(
@@ -607,7 +624,10 @@ export function ProjectRail({
     reorderProjectGroups,
     "y",
     undefined,
-    { foldOnDrag: true },
+    {
+      foldOnDrag: true,
+      label: (id) => projectGroups.find((group) => group.id === id)?.name ?? t("Group"),
+    },
   );
   const shownSections = new Set<RailSectionId>(["projects"]);
   if (lastSessionsShown) shownSections.add("last-sessions");
@@ -698,7 +718,7 @@ export function ProjectRail({
       onTogglePin={toggleProjectPin}
       onContextMenu={onProjectContextMenu}
       onOpenMenu={(path, x, y, onSelectForBulk) =>
-        projectMenu.open(path, x, y, undefined, onSelectForBulk)
+        projectMenu.open(path, x, y, undefined, onSelectForBulk, rowMove(path))
       }
       onReorder={onReorderProjects}
       onToggleCollapsed={() =>
@@ -765,7 +785,7 @@ export function ProjectRail({
           onTogglePin={toggleProjectPin}
           onContextMenu={onProjectContextMenu}
           onOpenMenu={(path, x, y, onSelectForBulk) =>
-            projectMenu.open(path, x, y, undefined, onSelectForBulk)
+            projectMenu.open(path, x, y, undefined, onSelectForBulk, rowMove(path))
           }
           groupLabels={groupLabels}
           groupColors={groupColors}
@@ -841,7 +861,7 @@ export function ProjectRail({
         onTogglePin={toggleProjectPin}
         onContextMenu={onProjectContextMenu}
         onOpenMenu={(path, x, y, onSelectForBulk) =>
-          projectMenu.open(path, x, y, undefined, onSelectForBulk)
+          projectMenu.open(path, x, y, undefined, onSelectForBulk, rowMove(path))
         }
         groupLabels={groupLabels}
         groupColors={groupColors}
@@ -1626,6 +1646,7 @@ function ProjectGroupSection({
   groupMascots: Record<string, string>;
 }) {
   const t = useT();
+  // A nested group is spoken by its own region name (aria-label), which is its group name.
   const nestedSortable = useAnimatedReorder(workspaceIds, reorderProjectGroups, "y", undefined, {
     foldOnDrag: true,
   });
@@ -1633,6 +1654,10 @@ function ProjectGroupSection({
     items.map((item) => item.path),
     onReorder,
     "y",
+    undefined,
+    {
+      label: (path) => resolveTabGroupLabel(projectKey(path), groupLabels, basename(path)),
+    },
   );
   const memberCount = items.length + workspaceIds.length;
   const countLabel = `${memberCount} ${memberCount === 1 ? "project" : "projects"}`;
@@ -1705,13 +1730,9 @@ function ProjectGroupSection({
           if ((event.target as HTMLElement).closest("button, [data-no-drag]")) return;
           onToggleCollapsed();
         }}
+        // Alt+Up / Alt+Down moves the group among its siblings, announced like a drag.
         onKeyDown={(event) => {
-          const step = moveStepForKey(event);
-          if (!step) return;
-          event.preventDefault();
-          event.stopPropagation();
-          moveProjectGroup(group.id, step);
-          keepFocus(event.target as HTMLElement);
+          sortableGroups.onItemKeyDown(group.id, event);
         }}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -2094,6 +2115,13 @@ function ProjectCard({
           );
       }}
       onKeyDown={(event) => {
+        // Alt+Arrow moves the row without dragging; bulk selection has its own move actions.
+        if (
+          !multi?.active &&
+          !(event.target as HTMLElement | null)?.closest("[data-no-drag]") &&
+          sortable.onItemKeyDown(item.path, event)
+        )
+          return;
         if (multi?.active && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "a") {
           event.preventDefault();
           multi.selectAll();

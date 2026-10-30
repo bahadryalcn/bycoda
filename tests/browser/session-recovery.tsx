@@ -15,7 +15,17 @@ import { collectWorkspaceSnapshot } from "../../src/features/workspace/model/wor
 import {
   captureSessionRecovery,
   removeRecoverySessions,
+  RecoveryOpenError,
+  type SessionRecovery,
 } from "../../src/features/workspace/model/sessionRecovery";
+import { remotePath } from "../../src/features/connections/model/remoteProjects";
+import type { RemoteRailSession } from "../../src/features/connections/model/remoteRailSessions";
+import { hideGroup } from "../../src/features/group-lock/model/groupLock";
+import {
+  saveProjectGroupAssignments,
+  saveProjectGroups,
+} from "../../src/features/projects/model/projectGroups";
+import { pathKey } from "../../src/shared/lib/paths";
 import "./w7-shell.css";
 applyThemePreference(
   new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
@@ -187,10 +197,99 @@ function SidebarFixture() {
     </main>
   );
 }
+/**
+ * `?states`: one row per recovery state with fake data only. Local rows that are not in `sessions` are
+ * read from the (absent) session store, so they show the verification-failed state; a remote row with a
+ * fresh host summary shows its host status, one without shows "not verified"; a row in a hidden group
+ * never appears. `?openFail=partial|ack|total` and `?removeFail` make the actions fail.
+ */
+const STATES_ENV = "fixture-env";
+const statesParams = new URLSearchParams(location.search);
+const statesMode = statesParams.has("states");
+const remoteStub = (index: number, remoteSessionId: string, title: string) => ({
+  ...sessions[index],
+  id: `remote-${remoteSessionId}`,
+  cwd: remotePath(STATES_ENV, `/srv/app-${index}`),
+  title,
+  remoteSessionId,
+});
+function buildStatesFixture(): {
+  recovery: SessionRecovery;
+  shown: typeof sessions;
+  remote: RemoteRailSession[];
+} {
+  saveProjectGroups([{ id: "g-hidden", name: "Hidden group", collapsed: false, lockable: true }]);
+  saveProjectGroupAssignments({ [pathKey("/projects/hidden")]: "g-hidden" });
+  hideGroup("g-hidden");
+  const local = sessions.slice(0, 8);
+  const hidden = { ...sessions[8], id: "hidden-1", cwd: "/projects/hidden", title: "Hidden group chat" };
+  const unread = { ...sessions[9], id: "unread-1", title: "Conversation whose record cannot be read" };
+  const longName = {
+    ...sessions[10],
+    id: "long-1",
+    title:
+      "A very long recovered conversation title that keeps going to prove that the row wraps instead of pushing the Open action out of the dialog",
+    cwd: "/projects/a-very-long-project-folder-name/with/many/nested/segments/that/never/fit/on/one/line",
+  };
+  const all = [...local, hidden, unread, longName];
+  const tabsAll = all.map((session) => newTab(session.id));
+  const base = captureSessionRecovery(
+    null,
+    collectWorkspaceSnapshot(tabsAll, all, tabsAll[0].id, all[0].cwd, new Map()),
+  )!;
+  const remoteStubs = [
+    remoteStub(11, "host-working", "Remote build (fresh host status)"),
+    remoteStub(12, "host-stale", "Remote chat (cached status)"),
+    remoteStub(13, "host-input", "Remote chat waiting for input"),
+  ];
+  const remote: RemoteRailSession[] = [
+    {
+      project: remoteStubs[0].cwd,
+      fresh: true,
+      session: {
+        id: "host-working",
+        title: remoteStubs[0].title,
+        harness: "codex",
+        status: "running",
+        updatedAt: Date.now() - 30_000,
+        revision: 1,
+        projectId: "p",
+      } as never,
+    },
+    {
+      project: remoteStubs[2].cwd,
+      fresh: true,
+      session: {
+        id: "host-input",
+        title: remoteStubs[2].title,
+        harness: "codex",
+        status: "idle",
+        needsInput: true,
+        updatedAt: Date.now() - 90_000,
+        revision: 1,
+        projectId: "p",
+      } as never,
+    },
+  ];
+  return {
+    recovery: {
+      ...base,
+      workspace: { ...base.workspace, sessions: [...base.workspace.sessions, ...remoteStubs] },
+    },
+    // The unread record is deliberately missing from the open sessions.
+    shown: all.filter((session) => session.id !== "unread-1"),
+    remote,
+  };
+}
+const statesFixture = statesMode ? buildStatesFixture() : null;
+
 function Fixture() {
-  const [journal, setJournal] = useState(recovery);
+  const [journal, setJournal] = useState(statesFixture?.recovery ?? recovery);
   const [open, setOpen] = useState(true);
   const [result, setResult] = useState("");
+  const params = new URLSearchParams(location.search);
+  const openFail = params.get("openFail");
+  const removeFail = params.has("removeFail");
   return (
     <main className="h-dvh bg-background-base p-4 text-content">
       <button onClick={() => setOpen(true)}>Recovered sessions 24</button>
@@ -198,18 +297,25 @@ function Fixture() {
       {open ? (
         <SessionRecoveryPanel
           recovery={journal}
-          sessions={sessions}
-          remoteSessions={[]}
+          sessions={statesFixture?.shown ?? sessions}
+          remoteSessions={statesFixture?.remote ?? []}
           onClose={() => setOpen(false)}
           onOpen={async (ids, layout) => {
             setResult(JSON.stringify({ ids, layout }));
+            if (openFail === "partial")
+              throw new RecoveryOpenError(ids.slice(0, 1), ids.slice(1, 2), ids.slice(2));
+            if (openFail === "ack") throw new RecoveryOpenError(ids, [], [], true);
+            if (openFail === "total") throw new Error("Fixture failure");
             if (new URLSearchParams(location.search).has("hold")) {
               await new Promise<void>((resolve) => {
                 Object.assign(window, { finishRecovery: resolve });
               });
             }
           }}
-          onRemove={async (ids) => setJournal((current) => removeRecoverySessions(current, ids))}
+          onRemove={async (ids) => {
+            if (removeFail) throw new Error("Fixture failure");
+            setJournal((current) => removeRecoverySessions(current, ids));
+          }}
         />
       ) : null}
     </main>

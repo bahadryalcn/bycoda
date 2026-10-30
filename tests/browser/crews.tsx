@@ -62,6 +62,35 @@ const definition: CrewDefinition = {
     },
   ],
 };
+if (params.has("longRoster")) {
+  // A long, varied roster for scan/scroll evidence. Fixture data only.
+  const longNames = [
+    "Accessibility and keyboard navigation specialist for the settings surfaces",
+    "Database migration engineer",
+    "Mobile release lead",
+    "Localization reviewer (eleven languages)",
+    "Performance profiling engineer",
+    "Documentation writer",
+    "Security reviewer",
+    "Design systems engineer",
+    "API contract specialist",
+    "QA automation engineer",
+    "Release notes editor",
+    "Telemetry analyst",
+  ];
+  definition.agents.push(
+    ...longNames.map((name, index) => ({
+      id: `long-${index}`,
+      name,
+      role: (index === 3 ? "advisor" : "specialist") as "advisor" | "specialist",
+      selection: (index % 3 === 0 ? "automatic" : "fixed") as "automatic" | "fixed",
+      instructions:
+        "Own the assigned area end to end and report blockers early.\nKeep a written trail of decisions.",
+      candidates: [candidate],
+      groups: index % 2 ? ["Quality"] : undefined,
+    })),
+  );
+}
 let definitions = [definition];
 let agents: SavedCrewAgent[] =
   params.get("library") === "empty"
@@ -204,6 +233,28 @@ if (params.has("multiple")) {
     updatedAt: 3,
   });
 }
+if (params.has("manyRuns")) {
+  // Many runs with long titles and mixed states for the work list.
+  const states = ["active", "paused", "active", "finished", "finished", "paused", "active"];
+  for (let index = 0; index < states.length; index += 1) {
+    runs.push({
+      ...structuredClone(runs[0]),
+      id: `many-${index}`,
+      coordinatorSessionId: `many-lead-${index}`,
+      status: states[index]!,
+      launch: {
+        candidate,
+        runtimeMode: "supervised",
+        prompt: `Work item ${index + 1}: reconcile the mobile session list with the desktop sidebar ordering and keep every draft`,
+      },
+      assignments: [],
+      tasks: [],
+      messages: [],
+      createdAt: 10 + index,
+      updatedAt: 10 + index,
+    });
+  }
+}
 if (params.has("pausedPlanning")) {
   runs[0] = {
     ...runs[0],
@@ -247,6 +298,8 @@ mockIPC(async (command, args) => {
     const p = args?.params as Record<string, unknown>;
     operationCalls.push(String(args?.method));
     if (args?.method === params.get("slowOperation")) await operationGate;
+    if (args?.method === params.get("failOperation"))
+      throw new Error("The Host could not complete this action. Try again in a moment.");
     switch (args?.method) {
       case "environment.describe":
         return {
@@ -280,6 +333,8 @@ mockIPC(async (command, args) => {
         return { definitions, runs, agents };
       case "crews.save": {
         const input = p.definition as CrewDefinition;
+        if (params.has("saveError"))
+          throw new Error("The Host rejected this crew: storage is read-only right now.");
         const previous = definitions.find((d) => d.id === input.id);
         if (previous && p.expectedUpdatedAt !== previous.updatedAt)
           throw new Error("Crew changed. Reload before saving");

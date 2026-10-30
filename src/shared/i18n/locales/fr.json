@@ -8205,5 +8205,6 @@
   "Item": "Élément",
   "Move to another window": "Déplacer vers une autre fenêtre",
   "Release to move": "Relâcher pour déplacer",
-  "Could not verify the tag change. Your current tags are kept.": "Impossible de vérifier la modification des étiquettes. Vos étiquettes actuelles sont conservées."
+  "Could not verify the tag change. Your current tags are kept.": "Impossible de vérifier la modification des étiquettes. Vos étiquettes actuelles sont conservées.",
+  "Used for the composer send button, selected text and accent actions.": "Utilisée pour le bouton d’envoi du compositeur, le texte sélectionné et les actions d’accentuation."
 }

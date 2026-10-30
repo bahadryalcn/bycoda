@@ -238,7 +238,12 @@ function TasksContent({
   const [statusFilter, setStatusFilter] = useRetainedState(`${viewStateKey}:status`, "all");
   const [machineFilter, setMachineFilter] = useRetainedState(`${viewStateKey}:machine`, "all");
   const [projectFilter, setProjectFilter] = useState(() => initialTaskProjectScope(cwd));
-  useEffect(() => setProjectFilter(initialTaskProjectScope(cwd)), [cwd]);
+  // A new project folder resets the scope, adjusted during render from the previous one.
+  const [scopeCwd, setScopeCwd] = useState(cwd);
+  if (scopeCwd !== cwd) {
+    setScopeCwd(cwd);
+    setProjectFilter(initialTaskProjectScope(cwd));
+  }
   const [section, setSection] = useRetainedState<"backlog" | "sprints" | "reports">(
     `${viewStateKey}:section`,
     "backlog",
@@ -487,13 +492,15 @@ function TasksContent({
     Number(statusFilter !== "all") +
     Number(machineFilter !== "all");
   // Changing scope drops hidden selections; select-all never means hidden tasks.
-  useEffect(() => {
+  // Adjusted during render when the visible set changes (the list itself is rebuilt often).
+  const visibleSignature = JSON.stringify(tasks.map(bulkTaskKey));
+  const [bulkScope, setBulkScope] = useState(visibleSignature);
+  if (bulkScope !== visibleSignature) {
+    setBulkScope(visibleSignature);
     const visible = new Set(tasks.map(bulkTaskKey));
-    setBulkSelection((current) => {
-      const next = new Set([...current].filter((key) => visible.has(key)));
-      return next.size === current.size ? current : next;
-    });
-  }, [tasks]);
+    const next = new Set([...bulkSelection].filter((key) => visible.has(key)));
+    if (next.size !== bulkSelection.size) setBulkSelection(next);
+  }
   const newReviewNotes = tasks.reduce(
     (count, task) => count + unreadReviewNotes(task.reviewNotes),
     0,
@@ -841,9 +848,7 @@ function TasksContent({
     ? tasks.find((task) => `${task.machineId}:${task.id}` === selectedKey)
     : undefined;
   // A task that is gone from the board takes its panel with it.
-  useEffect(() => {
-    if (selectedKey && !loading && !selected) setSelectedKey(null);
-  }, [loading, selected, selectedKey]);
+  if (selectedKey && !loading && !selected) setSelectedKey(null);
 
   return (
     <div className="bycoda-tasks flex min-h-0 min-w-0 flex-1 flex-col text-(--ui-tone-neutral-fg)">

@@ -1,4 +1,4 @@
-import { useContext, useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { TextField } from "../../../shared/ui/TextField";
@@ -45,7 +45,9 @@ export function SocialRegistrationReview({
   const occupied = useRef(false);
   const scope = `${accountId}:${workflow.id}:${workflow.updatedAt}`;
   const currentScope = useRef(scope);
-  currentScope.current = scope;
+  useLayoutEffect(() => {
+    currentScope.current = scope;
+  }, [scope]);
   const submission = workflow.registrationSubmission;
   useEffect(() => {
     if (!review) return;
@@ -205,8 +207,7 @@ export function SocialRegistrationReview({
             disabled={
               busy ||
               !accepted ||
-              review.updatedAt !== workflow.updatedAt ||
-              Date.now() >= review.expiresAt
+              review.updatedAt !== workflow.updatedAt
             }
             loading={pending === "submit"}
             onClick={() =>

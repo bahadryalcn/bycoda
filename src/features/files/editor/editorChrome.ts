@@ -66,12 +66,16 @@ function editorThemeStyles(dark: boolean) {
         backgroundColor: "var(--ui-editor-active-line)",
         color: "var(--ui-editor-gutter-active-text)",
       },
+      // Native range, painted with the shared selection pair: the opaque fill and its ink are
+      // derived together (accentContrast.ts), so syntax colours yield to the guaranteed
+      // contrast instead of sitting on a tint that no pair can vouch for.
       ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
-        // Overlay fill preserves the syntax glyphs rather than replacing their ink.
-        backgroundColor: "var(--ui-overlay-selection-background) !important",
+        backgroundColor: "var(--ui-text-selection-background) !important",
       },
       "::selection": {
-        color: "inherit",
+        color: "var(--ui-text-selection-foreground)",
+        WebkitTextFillColor: "var(--ui-text-selection-foreground)",
+        textDecorationColor: "var(--ui-text-selection-foreground)",
       },
       ".cm-cursor, .cm-dropCursor": {
         borderLeftColor: "var(--color-content)",

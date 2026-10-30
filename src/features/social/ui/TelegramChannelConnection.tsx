@@ -128,7 +128,7 @@ export function TelegramChannelConnection({
           </p>
           <Button
             type="button"
-            disabled={busy || Date.now() >= review.expiresAt}
+            disabled={busy}
             loading={pending === "connect"}
             onClick={() =>
               void run("connect", async () => {

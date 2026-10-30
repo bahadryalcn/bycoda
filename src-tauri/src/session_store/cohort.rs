@@ -590,6 +590,30 @@ impl RegisteredConnection {
             .binding
             .verify_connection(connection)
     }
+    /// Called under the existing short connection borrow. Never open a path as
+    /// a substitute for the actual SQLite-owned handle. Unix remains explicit
+    /// cooperative/unqualified until a real connection-fd attester exists.
+    pub(super) fn pinned_host_notes_file(&self) -> Result<Option<(PathBuf, File)>, String> {
+        #[cfg(windows)]
+        {
+            let Some(registration) = &self.registration else {
+                return Ok(None);
+            };
+            let binding = &registration.record.binding;
+            binding.verify_connection(&self.connection)?;
+            let file = os::connection_file(&self.connection)?;
+            let (identity, links) = os::file_identity(&file)?;
+            if identity != binding.physical_file_id || links != 1 {
+                return Err("Native Host Notes physical file binding changed".into());
+            }
+            binding.verify_connection(&self.connection)?;
+            Ok(Some((binding.canonical_path.clone(), file)))
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(None)
+        }
+    }
     pub(super) fn initialization(&self) -> Result<Initialization, String> {
         let registration = self
             .registration

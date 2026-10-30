@@ -13,7 +13,9 @@ turn. Local desktop only; no OS protocol registration, mobile/remote expansion,
 new send permission or migration initiation. Read `feature-host-runtime`,
 `feature-sessions-sidebar`, `feature-notes` and the current `.artifact` before changes.
 
-Source inventory: 2026-10-29, shared `main @ 761196a6baec5d5abe32b65702ea90453cf434d6`.
+Source inventory refreshed 2026-10-30, shared `main @ 654256cb2`.
+The original implementation is included in that commit; the current corrections
+are uncommitted. Preserve unrelated staged and unstaged admission/UI work.
 Search roots: `src/app/`, `src/features/{sessions,agent-app,connections,notes}/`,
 `src/integrations/harness/`, `host/`, `src-tauri/src/`, `tests/browser/`,
 `src/shared/i18n/`. Existing dirty/staged work belongs to other workstreams.
@@ -30,6 +32,7 @@ were inspected before assigning disjoint writers. This card is not a live lock.
 | Agent guidance | `src/integrations/harness/core/conversationToolsBridge.ts`, `host/app-skills/bycoda/references/work.md` | Exact returned first-mention reference; found/read/requested/acknowledged distinguished |
 | Markdown | `AgentMarkdown.tsx`, `remarkLocalSessionLinks.ts`, `LocalSessionReferenceContext.tsx`, `LocalSessionReferenceLink.tsx` | Actual sanitize/streaming route, shared lazy Popover and actions, local pending/retry, invalid internal URIs never externally launched |
 | Navigation/state | `localSessionNavigation.ts`, `src/app/workspace/sessions/useLocalSessionReferences.ts`, `src/app/App.tsx`, `SessionPane.tsx`, `useCitedTurnHistory.ts` | Validated local origin, visibility rechecks, existing history/tab/worker navigation and side-by-side owner, stale click guards, stable user-turn requests and demand-loaded older pages |
+| Worker transcript | `AgentTabView.tsx`, `useReadOnlyHostSession.ts`, `src/app/workspace/bridges/useOrchestrationWorkerPanes.ts`, `useOpenSessionActions.ts` | Lead/worker editor reuse, guarded asynchronous pane publication, exact worker turn paging; Host reader mounts bounded read helpers only, with no queue/drain/recovery/send lifecycle |
 | Copy | `src/app/shell/Sidebar.tsx` | Local single-session context menu plain/Markdown actions; initiating menu progress/success/error; existing ID actions retained |
 | Documents | Existing `NoteEditablePreview`, `MarkdownPreview`, `MarkdownDocumentPreview` via shared AgentMarkdown | Shared provider covers workspace and retained transcript outlet; Notes anchor/button boundary retains editing state |
 | Locales | `src/shared/i18n/locales/{en,tr,de,fr,es,pt,zh-CN,ja}.json` | New link/details/copy/recovery labels in all eight desktop locales |
@@ -53,6 +56,19 @@ outside an authorized provider show an unavailable action and never invoke OS la
 Scope follows `temp/local/2026-10-29-session-references-plan/LOCAL-PLAN.md`;
 the broader `PLAN.md` is research, not authorization to implement mobile/OS links.
 
+2026-10-30, T3 conversation `7bd70718-c924-4e7a-a551-b64fa19cf422`, user request:
+
+> Aşağıda vereceğim plana bakarmısın link gibi paylaşılabilir olsun ilerde webten yönlendirebilelim filan istiyorum
+
+> Önce temel akışı uçtan uca tamamla, ardından plandaki yerel
+> önizleme ve konuşma turuna gitme adımlarını ele al.
+
+> Build/install/release yapma; commit/push yapma.
+
+Current scope implements the local plan and documents the versioned URI as the
+future web handoff target. OS registration and public web content sharing remain
+separate capabilities.
+
 ## Behavior to preserve
 
 Persistent store/profile/environment identity, project visibility and authentication;
@@ -73,12 +89,22 @@ themes at 1280/800, keyboard/details/retry and selection/edit boundaries.
 Evidence is recorded under `temp/verification/2026-10-29-session-references/`.
 Fixtures are not isolated Native/Host or installed acceptance. Final check results
 and concrete blockers are recorded in that packet's `DELIVERY.md` and
-`RENDERER-UI.md`. Normal desktop/Host types, 79 renderer tests, focused identity,
-navigation, Sidebar and isolated Host tests passed. Browser screenshots remain
-UNVERIFIED: Chromium loopback access was blocked, then Vite module transforms
-timed out after a test-only HTTP transport workaround. No captures/visual
-acceptance are claimed. All owned helpers were stopped; product source hashes
-are frozen in `SOURCE-FREEZE.json`.
+`RENDERER-UI.md`. That packet records the original implementation, including its
+then-blocked browser attempts. Current correction evidence belongs under
+`temp/verification/2026-10-30-session-references/`; see its `DELIVERY.md`,
+`BACKEND.md`, `NAVIGATION.md` and `RENDERER-UI.md` for final commands and limits.
+Normal desktop/Host types and focused reference, navigation, worker, renderer,
+Sidebar and isolated Host checks passed in the current run. Browser acceptance
+uses actual Markdown/Popover/Notes/Sidebar components with fixture metadata and
+navigation. Bounded Tailwind scanning/dependency discovery and a test-only local
+HTTP transport shim resolve the earlier loading blocker. Captures are inspected
+at 1280/800 in both themes. Fixture evidence does not establish Native GUI or
+installed acceptance.
+
+Current corrections also cover a Native authority phase check before advertising
+a link, synchronous duplicate-open prevention, action-specific pending feedback,
+revocation during delegated history loading, refreshed archived Host shell
+metadata and exact worker panes instead of lead-only focus.
 
 ## Known blockers and evidence limits
 
@@ -89,8 +115,9 @@ are separate evidence. Installed inclusion is unknown; release is not requested.
 
 ## Committed handoff references
 
-Uncommitted source delivery on the baseline above; no implementation commit is
-claimed. No build, install, release, commit or push is part of this work.
+Original source implementation is present in `main @ 654256cb2` (already in the
+checkout when this run began). Corrections from this run remain uncommitted;
+this run did not stage, commit, push, build, install or release.
 
 ## Proposals
 

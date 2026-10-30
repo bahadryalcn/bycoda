@@ -52,6 +52,8 @@ export function useAutomationFolderOptions(
   const subscribe = useCallback((onChange: () => void) => subscribeFolders(cwd, onChange), [cwd]);
   const getSnapshot = useCallback(() => folderSnapshot(cwd), [cwd]);
   const sessionFolders = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  // Labels are read lazily; a locale change still replaces the array.
+  const locale = getLocale();
   return useMemo(() => {
     const options: FolderOption[] = [
       {
@@ -76,5 +78,5 @@ export function useAutomationFolderOptions(
       });
     }
     return options;
-  }, [getLocale(), sessionFolderId, sessionFolders]);
+  }, [locale, sessionFolderId, sessionFolders]);
 }

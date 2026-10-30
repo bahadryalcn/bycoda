@@ -71,6 +71,26 @@ import {
   type SocialTextGenerator,
 } from "./social-generation";
 import {
+  askSuggestionModel,
+  factSuggestPrompt,
+  FACT_SOURCE_MAX,
+  planPoolEntry,
+  planSuggestionPrompt,
+  PLAN_POOL_MAX,
+  requireTextAgent,
+  RULE_REVIEW_MAX,
+  ruleSimplifyPrompt,
+  suggestionInstructions,
+  validateFactAnswer,
+  validatePlanAnswer,
+  validateRuleAnswer,
+} from "./social-suggestions";
+import type {
+  FactSuggestResult,
+  PlanSuggestion,
+  RuleSimplifySuggestion,
+} from "../src/features/social/model/socialSuggestions";
+import {
   inPublishingWindow,
   nextPublishingRun,
   nextPublishingWindow,
@@ -1432,6 +1452,15 @@ export class SocialService {
       case "replies.suggest":
         // Owner-only and read-only: stores nothing and cannot send. The answer is editor text.
         return await this.suggestReply(p, input);
+      case "plans.suggest":
+        // Owner-only and read-only: proposes a paused plan draft; nothing is saved or activated.
+        return await this.suggestPlan(p, input);
+      case "rules.simplify":
+        // Owner-only and read-only: narrowing proposals; the owner creates paused rules manually.
+        return await this.simplifyRules(p, input);
+      case "facts.suggest":
+        // Owner-only and read-only: unverified candidates; only the owner's profile save verifies.
+        return await this.suggestFacts(p, input);
       case "replies.draft":
       case "messages.draft":
       case "comments.draft":
@@ -2346,10 +2375,7 @@ export class SocialService {
       throw new Error("Select at least one campaign for the publishing pool.");
     const campaigns = await mapAsync(campaignIds, async (campaignId) => {
       const campaign = await this.campaign(p, campaignId);
-      if (
-        !campaign.projectIds.includes(projectId) ||
-        !campaign.variants.some((variant) => variant.accountId === accountId)
-      )
+      if (!this.fitsPublishingPool(campaign, projectId, accountId))
         throw new Error("Every pool campaign must include the selected project and account.");
       return { campaignId, revision: campaign.revision };
     });
@@ -2404,6 +2430,170 @@ export class SocialService {
       await this.put("publishing-plan", plan.id, plan);
     });
     return this.publicPublishingPlan(plan);
+  }
+  /** The rule a campaign must satisfy to be in an account's publishing pool. */
+  private fitsPublishingPool(campaign: SocialCampaign, projectId: string, accountId: string) {
+    return (
+      campaign.projectIds.includes(projectId) &&
+      campaign.variants.some((variant) => variant.accountId === accountId)
+    );
+  }
+  /** AI plan proposal for the plan dialog; same pool rule as savePublishingPlan, nothing stored. */
+  private async suggestPlan(
+    p: SocialPrincipal,
+    input: Record<string, unknown>,
+  ): Promise<PlanSuggestion> {
+    this.owner(p);
+    exact(input, ["accountId", "projectId", "campaignIds", "instructions"]);
+    const accountId = str(input.accountId, "account");
+    const account = await this.access(p, accountId, "read");
+    const projectId = str(input.projectId, "project");
+    await this.project(p, projectId);
+    const instructions = suggestionInstructions(input.instructions);
+    const narrowed = input.campaignIds === undefined ? [] : array(input.campaignIds, "campaigns");
+    const eligible = (await this.list<SocialCampaign>("campaign")).filter(
+      (campaign) => !campaign.paused && this.fitsPublishingPool(campaign, projectId, accountId),
+    );
+    if (narrowed.some((id) => !eligible.some((campaign) => campaign.id === id)))
+      throw new Error("Choose only active campaigns that include this project and account.");
+    const pool = narrowed.length
+      ? eligible.filter((campaign) => narrowed.includes(campaign.id))
+      : eligible;
+    if (!pool.length)
+      throw new Error(
+        "Create an active campaign for this project and account before asking for a plan.",
+      );
+    if (pool.length > PLAN_POOL_MAX)
+      throw new Error(`Choose at most ${PLAN_POOL_MAX} campaigns for the plan suggestion.`);
+    const policy = await this.policy(account);
+    const model = requireTextAgent(policy.agent, this.generateText);
+    const approved = new Set(await this.approvedCampaignIds(pool));
+    const prompt = planSuggestionPrompt({
+      platform: account.platform,
+      defaultTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      pool: pool.map((campaign) =>
+        planPoolEntry(
+          campaign,
+          campaign.variants.find((variant) => variant.accountId === accountId)?.text ?? "",
+          approved.has(campaign.id),
+        ),
+      ),
+      existingPlans: (await this.list<PublishingPlanRecord>("publishing-plan"))
+        .filter((plan) => plan.accountId === accountId && plan.projectId === projectId)
+        .slice(0, 20)
+        .map((plan) => ({
+          name: plan.name.slice(0, 200),
+          enabled: plan.enabled,
+          campaignCount: plan.campaigns.length,
+          schedule: plan.schedule,
+        })),
+      instructions,
+    });
+    const answer = await askSuggestionModel(model, prompt, "publishing plan");
+    return {
+      accountId,
+      projectId,
+      ...validatePlanAnswer(
+        answer,
+        pool.map((campaign) => campaign.id),
+        approved,
+      ),
+      agent: model.agent,
+      requiresOwnerActivation: true,
+    };
+  }
+  /** AI proposals that only narrow stored reply rules; nothing is stored, the owner creates paused rules. */
+  private async simplifyRules(
+    p: SocialPrincipal,
+    input: Record<string, unknown>,
+  ): Promise<RuleSimplifySuggestion> {
+    this.owner(p);
+    exact(input, ["accountId", "projectId", "ruleIds", "instructions"]);
+    const accountId = str(input.accountId, "account");
+    const account = await this.access(p, accountId, "draft");
+    const projectId = str(input.projectId, "project");
+    await this.project(p, projectId);
+    const instructions = suggestionInstructions(input.instructions);
+    const stored = (await this.list<SocialRule>("rule")).filter(
+      (rule) => rule.accountId === accountId && rule.projectId === projectId,
+    );
+    const ruleIds =
+      input.ruleIds === undefined ? [] : array(input.ruleIds, "rules", RULE_REVIEW_MAX);
+    if (ruleIds.some((id) => !stored.some((rule) => rule.id === id)))
+      throw new Error("Choose only reply rules that belong to this account and project.");
+    const selected = ruleIds.length ? stored.filter((rule) => ruleIds.includes(rule.id)) : stored;
+    if (!selected.length)
+      throw new Error("This account has no reply rules for the project to simplify.");
+    const rules = selected.slice(0, RULE_REVIEW_MAX);
+    const policy = await this.policy(account);
+    const model = requireTextAgent(policy.agent, this.generateText);
+    const factIds = new Set(rules.flatMap((rule) => rule.answers.map((answer) => answer.factId)));
+    const projectFacts = (await this.list<SocialProjectProfile>("profile"))
+      .filter((profile) => profile.projectId === projectId)
+      .flatMap((profile) => profile.facts);
+    const answer = await askSuggestionModel(
+      model,
+      ruleSimplifyPrompt({
+        rules,
+        facts: projectFacts.filter((fact) => factIds.has(fact.id)),
+        instructions,
+      }),
+      "rule review",
+    );
+    const result = validateRuleAnswer(answer, rules, projectFacts);
+    return {
+      accountId,
+      projectId,
+      proposals: result.proposals,
+      unchangedRuleIds: result.unchangedRuleIds,
+      notes:
+        selected.length > rules.length
+          ? [
+              `Only the first ${rules.length} of ${selected.length} rules were reviewed; choose rules to review the others.`,
+              ...result.notes,
+            ]
+          : result.notes,
+      agent: model.agent,
+      requiresOwnerActivation: true,
+    };
+  }
+  /** AI fact candidates quoted from owner text; unverified and never written to the profile. */
+  private async suggestFacts(
+    p: SocialPrincipal,
+    input: Record<string, unknown>,
+  ): Promise<FactSuggestResult> {
+    this.owner(p);
+    exact(input, ["accountId", "projectId", "sourceLabel", "sourceText"]);
+    const accountId = str(input.accountId, "account");
+    const account = await this.access(p, accountId, "draft");
+    const projectId = str(input.projectId, "project");
+    await this.project(p, projectId);
+    const sourceLabel = str(input.sourceLabel, "source label", 200);
+    if (typeof input.sourceText !== "string" || input.sourceText.trim().length > FACT_SOURCE_MAX)
+      throw new Error(`The source text can be at most ${FACT_SOURCE_MAX} characters.`);
+    const sourceText = str(input.sourceText, "source text", Number.MAX_SAFE_INTEGER);
+    const policy = await this.policy(account);
+    const model = requireTextAgent(policy.agent, this.generateText);
+    const existing = (await this.list<SocialProjectProfile>("profile"))
+      .filter((profile) => profile.projectId === projectId)
+      .flatMap((profile) => profile.facts);
+    const answer = await askSuggestionModel(
+      model,
+      factSuggestPrompt({
+        sourceLabel,
+        sourceText,
+        existingTopics: [...new Set(existing.map((fact) => fact.topic))].slice(0, 50),
+      }),
+      "fact extraction",
+    );
+    return {
+      accountId,
+      projectId,
+      sourceLabel,
+      ...validateFactAnswer(answer, sourceText, existing),
+      agent: model.agent,
+      verified: false,
+    };
   }
   private async checkPublishingPlan(plan: PublishingPlanRecord) {
     const account = await this.get<SocialAccount>("account", plan.accountId);

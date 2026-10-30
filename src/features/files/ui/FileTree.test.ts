@@ -1245,3 +1245,129 @@ describe("FileTree multiple selection", () => {
     expect(selected()).toEqual(["next.ts"]);
   });
 });
+
+describe("FileTree drag feedback", () => {
+  const hint = () => document.querySelector<HTMLElement>(".pointer-drop-hint");
+  const announcement = () =>
+    document.querySelector<HTMLElement>("[data-drag-announcer]")?.textContent ?? "";
+  const down = (name: string, pointerId: number) =>
+    act(async () => {
+      row(name).dispatchEvent(
+        new PointerEvent("pointerdown", {
+          button: 0,
+          pointerId,
+          clientX: 10,
+          clientY: 10,
+          bubbles: true,
+        }),
+      );
+    });
+  const move = (pointerId: number, init: PointerEventInit = {}) =>
+    act(async () => {
+      window.dispatchEvent(
+        new PointerEvent("pointermove", { pointerId, clientX: 40, clientY: 40, ...init }),
+      );
+    });
+  const over = (name: string) =>
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => row(name),
+    });
+  beforeEach(async () => {
+    directories.set(cwd, [folder("dest"), folder("other"), file("a.ts")]);
+    directories.set(`${cwd}/dest`, []);
+    directories.set(`${cwd}/other`, []);
+    await refreshDir(cwd);
+    props.onFileMoved = vi.fn();
+    await act(async () => render());
+  });
+  afterEach(() => {
+    Reflect.deleteProperty(document, "elementFromPoint");
+  });
+
+  it("marks the target folder inside and says move in the one badge, copy with a modifier", async () => {
+    over("dest");
+    await down("a.ts", 11);
+    await move(11);
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("inside");
+    expect(hint()?.textContent).toBe("Move to dest");
+    expect(document.querySelectorAll(".pointer-drop-hint")).toHaveLength(1);
+    expect(announcement()).toBe("Move to dest");
+    await move(11, { ctrlKey: true });
+    expect(hint()?.textContent).toBe("Copy to dest");
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("inside");
+    // Releasing the modifier switches back without moving the pointer.
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Control" }));
+    });
+    expect(hint()?.textContent).toBe("Move to dest");
+  });
+
+  it("shows a blocked mark and reason for a folder into itself and for a move that changes nothing", async () => {
+    over("dest");
+    await down("dest", 12);
+    await move(12);
+    expect(row("dest").getAttribute("data-drop-indicator")).toBe("blocked");
+    expect(hint()?.textContent).toBe("Cannot drop a folder into itself");
+    expect(hint()?.getAttribute("data-action")).toBe("blocked");
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent("pointercancel", { pointerId: 12 }));
+    });
+    expect(hint()).toBeNull();
+    expect(row("dest").getAttribute("data-drop-indicator")).toBeNull();
+
+    Reflect.deleteProperty(document, "elementFromPoint");
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => container.querySelector("[data-explorer-root]"),
+    });
+    await down("a.ts", 13);
+    await move(13);
+    expect(hint()?.textContent).toContain("Already in");
+    expect(container.querySelector("[data-explorer-root]")?.getAttribute("data-drop-indicator")).toBe(
+      "blocked",
+    );
+    await move(13, { ctrlKey: true });
+    expect(hint()?.textContent).toContain("Copy to");
+  });
+
+  it("clears the badge and the mark on Escape, blur and unmount, and announces the cancel", async () => {
+    over("dest");
+    for (const [pointerId, end] of [
+      [14, () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))],
+      [15, () => window.dispatchEvent(new Event("blur"))],
+    ] as const) {
+      await down("a.ts", pointerId);
+      await move(pointerId);
+      expect(hint()).not.toBeNull();
+      await act(async () => {
+        end();
+      });
+      expect(hint()).toBeNull();
+      expect(row("dest").getAttribute("data-drop-indicator")).toBeNull();
+      expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+      expect(announcement()).toContain("Drag cancelled");
+      expect(props.onFileMoved).not.toHaveBeenCalled();
+    }
+    await down("a.ts", 16);
+    await move(16);
+    expect(hint()).not.toBeNull();
+    act(() => root.unmount());
+    expect(hint()).toBeNull();
+    expect(document.documentElement.classList.contains("is-grabbing")).toBe(false);
+    root = createRoot(container);
+  });
+
+  it("announces the outcome once after a drop and removes the marks", async () => {
+    over("dest");
+    await down("a.ts", 17);
+    await move(17);
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 17, clientX: 40, clientY: 40 }));
+    });
+    expect(props.onFileMoved).toHaveBeenCalledWith(`${cwd}/a.ts`, `${cwd}/dest/a.ts`);
+    expect(hint()).toBeNull();
+    expect(announcement()).toContain("Moved to dest");
+    expect(container.querySelector("[data-drop-indicator]")).toBeNull();
+  });
+});

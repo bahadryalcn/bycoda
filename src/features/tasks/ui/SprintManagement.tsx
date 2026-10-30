@@ -43,11 +43,15 @@ export function SprintManagement({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stateFilter, setStateFilter] = useState("all");
-  const [summary, setSummary] = useState<{
-    tasks: number;
-    completedTasks: number;
-    points: number;
-    completedPoints: number;
+  // The summary belongs to the inputs it was read for; any other key shows none.
+  const [answer, setAnswer] = useState<{
+    key: string;
+    summary: {
+      tasks: number;
+      completedTasks: number;
+      points: number;
+      completedPoints: number;
+    } | null;
   } | null>(null);
   const pending = useRef(false);
   const accessible = new Set(projects.map(sprintProjectKey));
@@ -59,10 +63,18 @@ export function SprintManagement({
   const selected = rows.find((sprint) => sprint.id === selectedId);
   const selectedRevision = `${selected?.revision ?? 0}:${board.sources.map((source) => `${source.environmentId}:${source.cursor}`).join("|")}:${[...board.planning.values()].map((item) => item.revision).join(",")}`;
   const visibleProjectKeys = [...accessible].sort().join("|");
+  const summaryKey = JSON.stringify([
+    selected?.id,
+    selectedRevision,
+    board.supported,
+    board.coordinatorEnvironmentId,
+    projectKey,
+    visibleProjectKeys,
+  ]);
+  const summary = answer?.key === summaryKey ? answer.summary : null;
   useEffect(() => {
-    let cancelled = false;
-    setSummary(null);
     if (!selected || !board.supported) return;
+    let cancelled = false;
     void board.report(selected.id).then(
       (report) => {
         if (cancelled) return;
@@ -71,30 +83,27 @@ export function SprintManagement({
         const totals = Object.entries(report.projects)
           .filter(([key]) => visibleKey(key))
           .map(([, value]) => value);
-        setSummary({
-          tasks: totals.reduce((sum, row) => sum + row.tasks, 0),
-          completedTasks: report.tasks.filter(
-            (task) => !task.deleted && task.status === "done" && visibleKey(sprintProjectKey(task)),
-          ).length,
-          points: totals.reduce((sum, row) => sum + row.points, 0),
-          completedPoints: totals.reduce((sum, row) => sum + row.completedPoints, 0),
+        setAnswer({
+          key: summaryKey,
+          summary: {
+            tasks: totals.reduce((sum, row) => sum + row.tasks, 0),
+            completedTasks: report.tasks.filter(
+              (task) =>
+                !task.deleted && task.status === "done" && visibleKey(sprintProjectKey(task)),
+            ).length,
+            points: totals.reduce((sum, row) => sum + row.points, 0),
+            completedPoints: totals.reduce((sum, row) => sum + row.completedPoints, 0),
+          },
         });
       },
       () => {
-        if (!cancelled) setSummary(null);
+        if (!cancelled) setAnswer({ key: summaryKey, summary: null });
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [
-    selected?.id,
-    selectedRevision,
-    board.supported,
-    board.coordinatorEnvironmentId,
-    projectKey,
-    visibleProjectKeys,
-  ]);
+  }, [summaryKey]);
   const fullyAccessible = (sprint: HostSprint) =>
     sprint.projects.every((project) => accessible.has(sprintProjectKey(project)));
   const act = async (id: string, operation: () => Promise<unknown>) => {

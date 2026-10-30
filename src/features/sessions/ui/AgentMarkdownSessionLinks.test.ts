@@ -175,6 +175,56 @@ describe("local references in the actual Markdown pipeline", () => {
     expect(host.textContent).not.toContain("Wrong local profile");
   });
 
+  it("guards repeated activation synchronously and keeps preview reads from cancelling opening feedback", async () => {
+    let finish!: () => void;
+    vi.mocked(navigation.open).mockImplementationOnce(
+      () => new Promise<void>((resolve) => { finish = resolve; }),
+    );
+    await render(`[Target](${href})`);
+    const link = host.querySelector<HTMLAnchorElement>("a")!;
+    const details = host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!;
+    await act(async () => {
+      link.click();
+      link.click();
+      details.click();
+    });
+    expect(navigation.open).toHaveBeenCalledTimes(1);
+    expect(navigation.resolve).not.toHaveBeenCalled();
+    expect(link.getAttribute("aria-busy")).toBe("true");
+    expect(details.disabled).toBe(true);
+    await act(async () => finish());
+    expect(link.hasAttribute("aria-busy")).toBe(false);
+    expect(details.disabled).toBe(false);
+    await act(async () => details.click());
+    expect(document.body.textContent).toContain("Current title");
+  });
+
+  it("shows pending feedback on Open beside and preserves recovery after a failed open", async () => {
+    let fail!: (error: Error) => void;
+    vi.mocked(navigation.open).mockImplementationOnce(
+      () => new Promise<void>((_resolve, reject) => { fail = reject; }),
+    );
+    await render(`[Target](${href})`);
+    await act(async () =>
+      host.querySelector<HTMLButtonElement>('[aria-label="Session details"]')!.click(),
+    );
+    const dialog = document.querySelector('[role="dialog"][aria-label="Session details"]')!;
+    const button = (label: string) => [...dialog.querySelectorAll("button")].find((entry) => entry.textContent === label)!;
+    const beside = button("Open beside");
+    const openSession = button("Open session");
+    await act(async () => beside.click());
+    expect(beside.getAttribute("aria-busy")).toBe("true");
+    expect(openSession.hasAttribute("aria-busy")).toBe(false);
+    expect(openSession.disabled).toBe(true);
+    await act(async () => fail(new Error("Target unavailable")));
+    expect(dialog.textContent).toContain("Target unavailable");
+    expect(beside.hasAttribute("aria-busy")).toBe(false);
+    expect(beside.disabled).toBe(false);
+    await act(async () => beside.click());
+    expect(navigation.open).toHaveBeenCalledTimes(2);
+    expect(navigation.open).toHaveBeenLastCalledWith(reference, { beside: true });
+  });
+
   it("can recover from a missing cited turn by opening the authorized conversation", async () => {
     vi.mocked(navigation.open).mockRejectedValueOnce(new Error("The cited turn is unavailable"));
     await render(`[Target](${href})`);

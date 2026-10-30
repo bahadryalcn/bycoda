@@ -8205,5 +8205,6 @@
   "Item": "Elemento",
   "Move to another window": "Mover a otra ventana",
   "Release to move": "Suelta para mover",
-  "Could not verify the tag change. Your current tags are kept.": "No se pudo verificar el cambio de etiquetas. Se conservan tus etiquetas actuales."
+  "Could not verify the tag change. Your current tags are kept.": "No se pudo verificar el cambio de etiquetas. Se conservan tus etiquetas actuales.",
+  "Used for the composer send button, selected text and accent actions.": "Se usa para el botón de enviar del compositor, el texto seleccionado y las acciones de acento."
 }

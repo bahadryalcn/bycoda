@@ -9,14 +9,16 @@ import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Button } from "../../../shared/ui/Button";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { TikTokPublishingFields } from "./TikTokPublishingFields";
 import { XMediaFields } from "./XMediaFields";
 import { MetaPublishingFields } from "./MetaPublishingFields";
 import { FacebookReelFields, validFacebookReel } from "./FacebookReelFields";
 import { useQueryClient } from "@tanstack/react-query";
 import { type CampaignVariant, type SocialCampaign, type SocialPolicy } from "../model/social";
-import { DEFAULT_SOCIAL_POLICIES, effectiveSocialPolicy, socialCharacterCount, socialLimit } from "../model/socialPolicy";
+import { socialLimit } from "../model/socialPolicy";
+import { variantCharacterCount, variantCharacterLimit } from "./CampaignBrowser";
+import { Badge } from "../../../shared/ui/Badge";
 import { SocialMultiSelect } from "./SocialMultiSelect";
 import { socialQueryScope } from "../model/socialQuery";
 import { Composer, closeComposer, Projects, Notice, field, names, youtubeDefaults, type Props } from "./socialShared";
@@ -36,12 +38,16 @@ export function CampaignComposer({
   run,
   accountIntent,
   editRequest,
-  onView,
+  openRequest,
+  onEditingStop,
   onSaved,
 }: Pick<Props, "client" | "snapshot" | "projects" | "initialProject" | "run"> & {
   accountIntent?: { accountId: string; token: number };
   editRequest?: { campaign: SocialCampaign; version: number };
-  onView: (view: "manual") => void;
+  /** A local entry reopens the parked form (and any draft in it); it never submits it. */
+  openRequest?: number;
+  /** The parked edit was saved or stopped, so no edit draft remains. */
+  onEditingStop?: () => void;
   onSaved: (campaign: SocialCampaign) => void;
 }) {
   const pendingUi = useSocialPending();
@@ -82,23 +88,34 @@ export function CampaignComposer({
     selectedProjects.every((id) =>
       snapshot.accounts.find((account) => account.id === accountId)?.grants[id]?.includes("draft"),
     );
-  const seenAccountIntent = useRef<number | undefined>(undefined);
+  // Each account intent is applied once per token while rendering. An intent may arrive before
+  // this panel's snapshot has the account: it stays pending and resolves when the account exists,
+  // without replacing any in-progress variants.
+  const [seenAccountIntent, setSeenAccountIntent] = useState<number>();
   const [intendedAccount, setIntendedAccount] = useState("");
-  useEffect(() => {
-    if (!accountIntent || seenAccountIntent.current === accountIntent.token) return;
-    onView("manual");
-    setIntendedAccount(accountIntent.accountId);
+  if (accountIntent && seenAccountIntent !== accountIntent.token) {
+    if (intendedAccount !== accountIntent.accountId) setIntendedAccount(accountIntent.accountId);
     const account = snapshot.accounts.find((item) => item.id === accountIntent.accountId);
-    // A navigation intent may arrive before this panel's snapshot. Resolve it
-    // once the target exists, without replacing any in-progress variants.
-    if (!account) return;
-    seenAccountIntent.current = accountIntent.token;
-    if (!account || !selectedProjects.length || !selectedProjects.every((id) => account.grants[id]?.includes("draft"))) return;
-    setVariants((current) => current.some((item) => item.accountId === account.id) ? current : [...current, {
-      accountId: account.id, text: "", media: [], factIds: [], scheduledAt: Date.now(),
-      ...(account.platform === "youtube" ? { youtube: { ...youtubeDefaults } } : {}),
-    }]);
-  }, [accountIntent, snapshot.accounts, selectedProjects]);
+    if (account) {
+      setSeenAccountIntent(accountIntent.token);
+      if (selectedProjects.length && selectedProjects.every((id) => account.grants[id]?.includes("draft")))
+        setVariants((current) =>
+          current.some((item) => item.accountId === account.id)
+            ? current
+            : [
+                ...current,
+                {
+                  accountId: account.id,
+                  text: "",
+                  media: [],
+                  factIds: [],
+                  scheduledAt: Date.now(),
+                  ...(account.platform === "youtube" ? { youtube: { ...youtubeDefaults } } : {}),
+                },
+              ],
+        );
+    }
+  }
   const accountFor = (variant: CampaignVariant) =>
     snapshot.accounts.find((account) => account.id === variant.accountId);
   const apiLinkedInUpload = (variant: CampaignVariant) => {
@@ -147,41 +164,8 @@ export function CampaignComposer({
       capabilities.some((item) => item.operation === "publish" && item.status === "available")
     );
   };
-  const variantLimit = (variant: CampaignVariant) => {
-    const account = snapshot.accounts.find((item) => item.id === variant.accountId);
-    const configured = account
-      ? socialLimit(
-          effectiveSocialPolicy(snapshot.policies ?? DEFAULT_SOCIAL_POLICIES, account.platform),
-          "content",
-        )
-      : undefined;
-    if (
-      account?.platform === "facebook" &&
-      account.connection !== "browser" &&
-      variant.facebook?.target === "reel"
-    )
-      return Math.min(configured ?? Infinity, 2200);
-    return account?.platform === "telegram" &&
-      account.accountType === "channel" &&
-      account.connection === "token"
-      ? Math.min(configured ?? Infinity, variant.media.length ? 1024 : 4096)
-      : configured;
-  };
-  const variantCount = (variant: CampaignVariant) => {
-    const content = [variant.text, variant.link].filter(Boolean).join("\n");
-    const account = accountFor(variant);
-    if (
-      account?.platform === "facebook" &&
-      account.connection !== "browser" &&
-      variant.facebook?.target === "reel"
-    )
-      return content.length;
-    return account?.platform === "telegram" &&
-      account.accountType === "channel" &&
-      account.connection === "token"
-      ? content.length
-      : socialCharacterCount(content);
-  };
+  const variantLimit = (variant: CampaignVariant) => variantCharacterLimit(snapshot, variant);
+  const variantCount = (variant: CampaignVariant) => variantCharacterCount(snapshot, variant);
   const invalidVariants = variants.some((variant) => {
     const limit = variantLimit(variant);
     return (
@@ -219,6 +203,7 @@ export function CampaignComposer({
             });
           }}
           editing={editRequest?.version ?? 0}
+          openRequest={openRequest}
           description={t(
             "Save the content, check it and approve it for publishing. Saving does not start sending.",
           )}
@@ -295,10 +280,23 @@ export function CampaignComposer({
                 setName("");
                 setVariants([]);
                 setEditingId(undefined);
+                onEditingStop?.();
                 closeComposer(form);
               })();
             }}
           >
+            <div className="social-content-context" data-mode={editingId ? "edit" : "new"}>
+              <strong>
+                {editingId
+                  ? t("Editing {p0}", {
+                      p0: snapshot.campaigns.find((item) => item.id === editingId)?.name ?? name,
+                    })
+                  : t("New campaign")}
+              </strong>
+              <Badge appearance="subtle">
+                {editingId ? t("Revision {p0}", { p0: editingRevision ?? 1 }) : t("Not saved yet")}
+              </Badge>
+            </div>
             {intendedAccount ? <Notice kind="info">
               {t("Preparing for account: {p0}", { p0: snapshot.accounts.find((item) => item.id === intendedAccount)?.name ?? t("Removed account") })}
               {!variants.some((item) => item.accountId === intendedAccount) ? <p>{t("Select a project with draft access, then add this account to the targets.")}</p> : null}
@@ -360,6 +358,14 @@ export function CampaignComposer({
                   <Button variant="link" aria-expanded={variant.accountId === (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} onClick={() => setOpenVariant(variant.accountId)}>
                   {snapshot.accounts.find((account) => account.id === variant.accountId)?.name}
                   </Button>
+                  <span
+                    className="social-content-count"
+                    data-over={variantLimit(variant) !== undefined && variantCount(variant) > variantLimit(variant)!}
+                  >
+                    {variantLimit(variant) !== undefined
+                      ? `${variantCount(variant)} / ${variantLimit(variant)}`
+                      : variantCount(variant)}
+                  </span>
                 </legend>
                 <div hidden={variant.accountId !== (variants.some((item) => item.accountId === openVariant) ? openVariant : variants[0]?.accountId)} className="flex min-w-0 flex-col gap-3">
                 {snapshot.accounts.find((account) => account.id === variant.accountId)?.platform ===
@@ -877,6 +883,7 @@ export function CampaignComposer({
                     setEditingId(undefined);
                     setName("");
                     setVariants([]);
+                    onEditingStop?.();
                     closeComposer(event.currentTarget.closest("form")!);
                   }}
                 >

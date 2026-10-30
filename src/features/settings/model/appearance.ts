@@ -316,6 +316,9 @@ const ACCENT_PROPERTIES = [
   "--user-accent-foreground",
   "--user-accent-selection-dark",
   "--user-accent-selection-light",
+  "--user-accent-selection-dark-ink",
+  "--user-accent-selection-light-ink",
+  "--user-accent-selection-paper",
 ] as const;
 
 function hex(rgb: Rgb) {
@@ -365,6 +368,9 @@ export function applyAccentColor(value: string | null) {
   root.style.setProperty("--user-accent-foreground", roles.solid.foreground);
   root.style.setProperty("--user-accent-selection-dark", roles.selection.dark.background);
   root.style.setProperty("--user-accent-selection-light", roles.selection.light.background);
+  root.style.setProperty("--user-accent-selection-dark-ink", roles.selection.dark.foreground);
+  root.style.setProperty("--user-accent-selection-light-ink", roles.selection.light.foreground);
+  root.style.setProperty("--user-accent-selection-paper", roles.selection.paper.background);
   return next;
 }
 

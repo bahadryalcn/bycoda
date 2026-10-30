@@ -3,11 +3,13 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SocialBusyContext } from "./socialContext";
-import { PublishingPlans } from "./SocialPublishingPlans";
+import { withQueryClient } from "../../../../tests/browser/queryTest";
+import { PublishingPlans as Plans } from "./SocialPublishingPlans";
 import type { SocialPublishingPlan, SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { chooseSocialValue } from "./socialTestControls";
 
+const PublishingPlans = withQueryClient(Plans);
 let container: HTMLDivElement, root: Root;
 const request = vi.fn();
 const plan: SocialPublishingPlan = {
@@ -83,6 +85,8 @@ function snapshot(change: Partial<SocialSnapshot> = {}): SocialSnapshot {
     ...change,
   };
 }
+const onOpenContent = vi.fn();
+const onOpenAccounts = vi.fn();
 async function render(value: SocialSnapshot, extraProject = false, busy = false) {
   await act(async () =>
     root.render(
@@ -97,6 +101,8 @@ async function render(value: SocialSnapshot, extraProject = false, busy = false)
             ...(extraProject ? [{ id: "other", name: "Other project", cwd: "/other" }] : []),
           ],
           initialProject: "project",
+          onOpenContent,
+          onOpenAccounts,
           run: async (work) => {
             try {
               await work();
@@ -115,6 +121,32 @@ function buttonName(button: HTMLButtonElement) {
   copy.querySelectorAll('[aria-hidden="true"]').forEach((node) => node.remove());
   return copy.textContent?.trim();
 }
+/** Dialog controls live in the shared Modal (document.body), the plan list in the container. */
+function dialogButton(text: string) {
+  const target = Array.from(document.body.querySelectorAll("button")).find(
+    (item) => buttonName(item) === text || item.getAttribute("aria-label") === text,
+  );
+  expect(target, text).toBeTruthy();
+  return target!;
+}
+const hasDialogButton = (text: string) =>
+  Array.from(document.body.querySelectorAll("button")).some(
+    (item) => buttonName(item) === text || item.getAttribute("aria-label") === text,
+  );
+async function setInput(input: HTMLInputElement, value: string) {
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+const dialogForm = () => document.body.querySelector<HTMLFormElement>("form.social-plan-form")!;
+const stepButton = (label: string) =>
+  document.body.querySelector<HTMLButtonElement>(`nav[aria-label="Plan steps"] button[aria-label="${label}"]`)!;
+const currentStep = () =>
+  document.body.querySelector('nav[aria-label="Plan steps"] [aria-current="step"]')?.textContent ?? "";
+const nameInput = () => dialogForm().querySelector<HTMLInputElement>("input")!;
+const mutatingCalls = () =>
+  request.mock.calls.filter(([action]) => String(action).startsWith("publishing-plans."));
 function button(text: string) {
   const target = Array.from(container.querySelectorAll("button")).find(
     (item) => buttonName(item) === text,
@@ -122,8 +154,13 @@ function button(text: string) {
   expect(target, text).toBeTruthy();
   return target!;
 }
+let now = 1_000_000;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  now = 1_000_000;
+  vi.spyOn(Date, "now").mockImplementation(() => now);
+  onOpenContent.mockReset();
+  onOpenAccounts.mockReset();
   request.mockReset().mockResolvedValue({});
   container = document.createElement("div");
   document.body.append(container);
@@ -133,30 +170,28 @@ afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it("preserves an open plan draft and its original revision when another owner saves newer settings", async () => {
   await render(snapshot());
   await act(async () => button("Edit plan").click());
-  const form = document.body.querySelector<HTMLFormElement>("form")!;
-  const name = form.querySelector<HTMLInputElement>("input")!;
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
-      name,
-      "Unsaved plan",
-    );
-    name.dispatchEvent(new Event("input", { bubbles: true }));
-  });
+  await setInput(nameInput(), "Unsaved plan");
   await render(snapshot({ publishingPlans: [{ ...plan, revision: 2, name: "Newer plan" }] }));
+  // Saving happens on the last step only.
+  await act(async () => dialogButton("Next").click());
+  await act(async () => dialogButton("Review plan").click());
+  expect(mutatingCalls()).toEqual([]);
   request.mockRejectedValue(new Error("Publishing plan changed in another client"));
-  await act(async () =>
-    form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
-  );
+  now += 1000;
+  await act(async () => dialogButton("Save changes as paused").click());
   expect(request).toHaveBeenCalledWith(
     "publishing-plans.update",
     expect.objectContaining({ id: plan.id, expectedRevision: 1, name: "Unsaved plan" }),
   );
-  expect(name.value).toBe("Unsaved plan");
+  await act(async () => dialogButton("Back").click());
+  await act(async () => dialogButton("Back").click());
+  expect(nameInput().value).toBe("Unsaved plan");
 });
 
 it("requires owner review of the exact plan revision before activation", async () => {
@@ -311,5 +346,5 @@ it("locks searchable plan scope while preserving the open draft during another o
   await render(value, true, false);
   selected().forEach((item) => expect(item?.disabled).toBe(false));
   expect(document.body.querySelector("form")).toBeTruthy();
-  expect(request).not.toHaveBeenCalled();
+  expect(mutatingCalls()).toEqual([]);
 });

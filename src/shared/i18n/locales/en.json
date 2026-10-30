@@ -9359,5 +9359,6 @@
   "Item": "Item",
   "Move to another window": "Move to another window",
   "Release to move": "Release to move",
-  "Could not verify the tag change. Your current tags are kept.": "Could not verify the tag change. Your current tags are kept."
+  "Could not verify the tag change. Your current tags are kept.": "Could not verify the tag change. Your current tags are kept.",
+  "Used for the composer send button, selected text and accent actions.": "Used for the composer send button, selected text and accent actions."
 }

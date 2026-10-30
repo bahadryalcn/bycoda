@@ -65,9 +65,10 @@ export function useBoardDataState(board: TaskBoard) {
     now: Date.now(),
   }));
   if (seen !== board) {
-    const at = Date.now();
     setSeen(board);
     setState(({ data }) => {
+      // Read when the update applies, not while rendering.
+      const at = Date.now();
       const updatedAt = board.hasTaskAnswer && !board.error ? at : data.updatedAt;
       return {
         now: at,

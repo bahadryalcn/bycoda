@@ -147,10 +147,12 @@ for (const light of [true, false]) {
       await openHostReports(page);
       const reports = page.getByRole("list", { name: "Earlier file reports", exact: true });
       await expect(reports.locator("li")).toHaveCount(25);
+      // The pane keeps toolbar, counts and footer in place; the list's own scroller is `.recovery-body`.
       expect(
-        await reports.evaluate(
-          (element) => element.clientHeight > 0 && element.scrollHeight > element.clientHeight,
-        ),
+        await reports.evaluate((element) => {
+          const scroller = element.closest(".recovery-body") ?? element;
+          return scroller.clientHeight > 0 && scroller.scrollHeight > scroller.clientHeight;
+        }),
       ).toBe(true);
       await reports
         .getByRole("button", { name: "Inspect report", exact: true })

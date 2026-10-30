@@ -70,41 +70,20 @@ export function machineName(
   return isLocalSyncMachine(machine) ? t("this computer") : machine.name;
 }
 
+const NO_PROJECTS: RecentProject[] = [];
+
 /** Project discovery belongs to the selected host. Late responses cannot replace
  * the new host's choices, and errors have a local retry action. */
 export function useTaskMachineProjects(target: RemoteMachine | undefined, enabled = true) {
-  const [projects, setProjects] = useState<RecentProject[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
   const [revision, setRevision] = useState(0);
-  useEffect(() => {
-    let cancelled = false;
-    setProjects([]);
-    setError(null);
-    setLoading(Boolean(target && enabled));
-    if (!target || !enabled) return;
-    void machineProjects(target)
-      .then(
-        (entries) => {
-          if (!cancelled)
-            setProjects(
-              entries.map((project) => ({
-                path: hostProjectCwd(target, project),
-                openedAt: 0,
-              })),
-            );
-        },
-        (reason) => {
-          if (!cancelled) setError(String(reason));
-        },
-      )
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [
+  // The answer belongs to the host and revision it was read for; any other key
+  // starts empty and loading, with no reset pass after render.
+  const [answer, setAnswer] = useState<{
+    key: string;
+    projects: RecentProject[];
+    error: string | null;
+  } | null>(null);
+  const key = JSON.stringify([
     target?.id,
     target?.endpoint,
     target?.environmentId,
@@ -113,9 +92,36 @@ export function useTaskMachineProjects(target: RemoteMachine | undefined, enable
     enabled,
     revision,
   ]);
+  useEffect(() => {
+    if (!target || !enabled) return;
+    let cancelled = false;
+    void machineProjects(target).then(
+      (entries) => {
+        if (!cancelled)
+          setAnswer({
+            key,
+            projects: entries.map((project) => ({
+              path: hostProjectCwd(target, project),
+              openedAt: 0,
+            })),
+            error: null,
+          });
+      },
+      (reason) => {
+        if (!cancelled) setAnswer({ key, projects: [], error: String(reason) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [key]);
+  const current = answer?.key === key ? answer : null;
+  const projects = current?.projects ?? NO_PROJECTS;
+  const error = current?.error ?? null;
+  const loading = Boolean(target && enabled) && !current;
   const retry = () => {
     if (target) invalidateMachineSnapshot(target.id);
-    setRevision((current) => current + 1);
+    setRevision((value) => value + 1);
   };
   return { projects, error, loading, retry };
 }

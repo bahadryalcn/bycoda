@@ -257,9 +257,8 @@ function LibraryMemberDialog({
   };
   const valid = !!agent.name.trim() && !!agent.candidates.length;
   // An edit in progress is not dropped by a stray Escape or backdrop click (CWS-05).
-  const initial = useRef<string | null>(null);
-  initial.current ??= JSON.stringify([agent, scope]);
-  const dirty = JSON.stringify([agent, scope]) !== initial.current;
+  const [initial] = useState(() => JSON.stringify([agent, scope]));
+  const dirty = JSON.stringify([agent, scope]) !== initial;
   const { confirm, dialog: confirmDialog } = useConfirm();
   const requestClose = () => {
     if (pending) return;

@@ -232,14 +232,19 @@ export function ModelPicker({
   const triggerAccountLabel = useMemo(() => {
     void accountsSnapshot;
     if (!accountChoices || !currentAccountId || !supportsProviderAccounts(harness)) return undefined;
+    // A saved account that no longer exists is shown honestly instead of a blank label.
     if (source.accounts !== undefined) {
       const accounts = source.accounts[harness] ?? [];
-      return accounts.length > 1 ? accounts.find((account) => account.id === currentAccountId)?.label : undefined;
+      const saved = accounts.find((account) => account.id === currentAccountId);
+      if (!saved) return currentAccountId === "default" ? undefined : t("Unavailable Host account");
+      return accounts.length > 1 ? saved.label : undefined;
     }
-    return providerAccounts(harness).length > 1
-      ? providerAccountLabel(harness, currentAccountId)
-      : undefined;
-  }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts]);
+    const accounts = providerAccounts(harness);
+    const known = accounts.some((account) => account.id === currentAccountId);
+    if (!known && currentAccountId !== defaultProviderAccountId(harness) && currentAccountId !== "default")
+      return t("Removed account");
+    return accounts.length > 1 ? providerAccountLabel(harness, currentAccountId) : undefined;
+  }, [accountChoices, accountsSnapshot, currentAccountId, harness, source.accounts, t]);
   useLayoutEffect(() => {
     onCloseRef.current = onClose;
     currentRef.current = current;

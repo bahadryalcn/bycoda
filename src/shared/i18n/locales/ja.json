@@ -8205,5 +8205,6 @@
   "Item": "項目",
   "Move to another window": "別のウィンドウに移動",
   "Release to move": "離すと移動します",
-  "Could not verify the tag change. Your current tags are kept.": "タグの変更を確認できませんでした。現在のタグは保持されています。"
+  "Could not verify the tag change. Your current tags are kept.": "タグの変更を確認できませんでした。現在のタグは保持されています。",
+  "Used for the composer send button, selected text and accent actions.": "コンポーザーの送信ボタン、選択テキスト、アクセント操作に使用されます。"
 }

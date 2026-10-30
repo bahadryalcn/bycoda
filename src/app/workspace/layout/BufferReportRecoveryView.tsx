@@ -335,6 +335,13 @@ export function BufferReportRecoveryView<R extends BufferReportDisplay>({
               </Button>
             }
           />
+        ) : filter === "held" && (recovery.hasNext || recovery.hasPrevious) ? (
+          <EmptyState
+            context="panel"
+            kind="filtered"
+            title={t("No reports needing recovery on this page.")}
+            description={t("Use Next or Previous to check other pages.")}
+          />
         ) : (
           <EmptyState
             context="panel"

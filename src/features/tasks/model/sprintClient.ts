@@ -98,7 +98,6 @@ export function useSprintBoard(
 ) {
   const visible = useQueryVisible();
   const visibleRef = useRef(visible);
-  visibleRef.current = visible;
   const [environmentId, setEnvironmentId] = useState(() => {
     try {
       return localStorage.getItem(COORDINATOR_KEY) ?? "";
@@ -117,8 +116,9 @@ export function useSprintBoard(
   const requests = useRef(new Map<string, string>());
   const knownTasks = useRef(new Set<string>());
   const refs = useRef({ machines, tasks, allowedProjects });
-  refs.current = { machines, tasks, allowedProjects };
   const coordinator = planningCoordinator(machines, environmentId);
+  // The first planning Host becomes the stored choice; the state follows it during render.
+  if (!environmentId && coordinator) setEnvironmentId(coordinator.environmentId);
   const coordinatorId = coordinator?.id;
   const effectiveEnvironment = environmentId || coordinator?.environmentId || "";
   const boardKey = boardKeyOf(coordinatorId, effectiveEnvironment);
@@ -126,7 +126,13 @@ export function useSprintBoard(
   const { data, supported, error, syncErrors, syncFailures } =
     boardState.key === boardKey ? boardState : emptyBoardState(boardKey);
   const dataRef = useRef(data);
-  dataRef.current = data;
+  // Handlers and queued reads see the committed values. Declared before the other
+  // effects, so they run first in each commit.
+  useEffect(() => {
+    visibleRef.current = visible;
+    refs.current = { machines, tasks, allowedProjects };
+    dataRef.current = data;
+  });
   const projectScope = JSON.stringify(
     allowedProjects?.map(sprintProjectKey).sort() ??
       [
@@ -370,8 +376,13 @@ export function useSprintBoard(
     setEnvironmentId(value);
   }, []);
   useEffect(() => {
-    if (!environmentId && coordinator) setCoordinatorEnvironmentId(coordinator.environmentId);
-  }, [environmentId, coordinator?.environmentId, setCoordinatorEnvironmentId]);
+    if (!environmentId) return;
+    try {
+      localStorage.setItem(COORDINATOR_KEY, environmentId);
+    } catch {
+      /* Memory selection still works. */
+    }
+  }, [environmentId]);
   const planning = useMemo(
     () => new Map(data.planning.map((item) => [sprintTaskKey(item), item])),
     [data.planning],

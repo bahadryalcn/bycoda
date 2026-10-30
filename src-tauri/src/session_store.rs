@@ -13,6 +13,7 @@ pub(crate) mod authority;
 pub(crate) mod cohort;
 mod content_search;
 mod delete_with_images;
+pub(crate) mod host_notes_fence;
 pub(crate) mod incremental;
 pub(crate) mod native_delivery;
 #[cfg(all(test, windows))]

@@ -6,6 +6,23 @@ phone does not move its provider process, workspace or history authority.
 
 ## Source implementation
 
+Participating Host Notes writers now reserve their actual physical databases
+before entering the serial queue. Each original retains its reservation until
+its SQL connections have closed or its Worker has actually exited. A lost public
+reply does not release ownership or authorize a resend. Read-only jobs remain
+available during closure and attest the actual connection without a writer lease.
+On Windows, the trusted SQLite extension checks the main HANDLE before storage
+PRAGMAs or schema changes; existing post-lock authorization and CAS still apply.
+
+Native preparation closes and drains these participating Host writers before
+asking renderers to prepare. It then retains the existing Native barrier order.
+A process-owned bounded keeper preserves original fences through hard errors and
+coordinator replacement; observer cancellation and object destruction cannot
+release them. Actual SQL and matching round retirement still control release.
+Missing native admission is explicitly unjoined. A corrupt configured module or
+a fault after joining holds protected work. This does not establish complete
+writer coverage, Unix attestation or qualification; those migration gates remain.
+
 Checkpoint preparation closes known Parent input callbacks and the mounted
 source/merge editor roster before closing Composer and draining persistence.
 Private tickets let work accepted before closure finish through its actual

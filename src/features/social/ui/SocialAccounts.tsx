@@ -1,6 +1,6 @@
 import { useContext as useSocialContext } from "react";
 import { SocialBusyContext as SocialLockContext, SocialPanelActiveContext } from "./socialContext";
-import { useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { NativeSelect } from "../../../shared/ui/Select";
@@ -193,7 +193,9 @@ export function Accounts({
   const [selected, setSelected] = useState(() => snapshot.accounts[0]?.id ?? "");
   const [localOutcome, setLocalOutcome] = useState<LocalOutcome | null>(null);
   const localIdentity = useRef({ client, selected });
-  localIdentity.current = { client, selected };
+  useLayoutEffect(() => {
+    localIdentity.current = { client, selected };
+  }, [client, selected]);
   const run: Run = useCallback(async (work, message) => {
     const identity = localIdentity.current;
     let failure = "";
@@ -489,6 +491,8 @@ function AccountDetail({
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
+  // Expiry is compared with the time this detail opened (render stays pure).
+  const [openedAt] = useState(Date.now);
   const [oauthOperations, setOAuthOperations] = useState<SocialOperation[]>(["publish"]);
   const [resourceId, setResourceId] = useState("");
   const [grantPermissions, setGrantPermissions] = useState<string[]>(
@@ -517,7 +521,9 @@ function AccountDetail({
     if (!before && connectedSeen.current[source] && !account.connected) void run(async () => undefined);
   };
   const settleRef = useRef(settleStatus);
-  settleRef.current = settleStatus;
+  useLayoutEffect(() => {
+    settleRef.current = settleStatus;
+  });
   const oauthQuery = useQuery<OAuth | null>({
     queryKey: oauthKey,
     queryFn: async ({ signal }) => {
@@ -878,7 +884,7 @@ function AccountDetail({
                                   )
                                 : account.connected &&
                                     account.expiresAt &&
-                                    account.expiresAt < Date.now()
+                                    account.expiresAt < openedAt
                                   ? t(
                                       "The connection expired. Grant permission to your account again with Reconnect in browser.",
                                     )

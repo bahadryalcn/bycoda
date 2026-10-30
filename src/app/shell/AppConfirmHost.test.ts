@@ -125,4 +125,55 @@ describe("app confirmation host", () => {
     await act(async () => button("Cancel")!.click());
     expect(await pending).toBe(false);
   });
+  it("keeps the dialog open while the confirm work runs, shows its failure and retries", async () => {
+    let finish!: () => void;
+    let fail!: (error: Error) => void;
+    const attempts: Array<Promise<void>> = [];
+    const onConfirm = vi.fn(() => {
+      const next = new Promise<void>((resolve, reject) => {
+        finish = resolve;
+        fail = reject;
+      });
+      attempts.push(next);
+      return next;
+    });
+    let answer: boolean | undefined;
+    const pending = confirmInApp({
+      title: "Delete conversation?",
+      message: "“Fix login” will be deleted.",
+      confirmLabel: "Delete",
+      tone: "danger",
+      onConfirm,
+    }).then((value) => (answer = value));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    });
+    // The key that opened the menu item must not reach Delete; click is not a key.
+    await act(async () => {
+      button("Delete")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      button("Delete")!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(button("Delete")?.getAttribute("aria-busy")).toBe("true");
+    expect(button("Cancel")?.disabled).toBe(true);
+    expect(answer).toBeUndefined();
+    await act(async () => {
+      fail(new Error("Conversation is locked"));
+      await attempts[0]!.catch(() => undefined);
+    });
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "Conversation is locked",
+    );
+    expect(answer).toBeUndefined();
+    expect(button("Delete")?.getAttribute("aria-busy")).toBeNull();
+    await act(async () => button("Delete")!.click());
+    expect(onConfirm).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finish();
+      await attempts[1];
+    });
+    await pending;
+    expect(answer).toBe(true);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  });
 });
