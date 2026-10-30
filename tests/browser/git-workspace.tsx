@@ -4,6 +4,7 @@ import { GitGraphWorkspace } from "../../src/features/source-control/ui/GitGraph
 import { WorkspaceSourceControl } from "../../src/features/source-control/ui/WorkspaceSourceControl";
 import { SourceControl } from "../../src/features/source-control/ui/SourceControl";
 import { GitChangesPanel } from "../../src/features/source-control/ui/GitChangesPanel";
+import { AppConfirmHost } from "../../src/app/shell/AppConfirmHost";
 import type { Worktree } from "../../src/features/source-control/model/worktrees";
 import "../../src/styles/index.css";
 // Eagerly include the workspace in fixture discovery so Vite optimizes its
@@ -309,6 +310,9 @@ const checkoutTrees: Record<string, Worktree> = Object.fromEntries(
 const root = createRoot(document.getElementById("root")!);
 const renderFixture = () =>
   root.render(
+    <>
+      {/* Git confirmations render in the shared in-app dialog; the platform fallback is not available here. */}
+      <AppConfirmHost />
     <div
       // Browser fixtures are excluded from Tailwind scanning; constrain the viewport explicitly.
       style={{ height: "100vh" }}
@@ -371,7 +375,8 @@ const renderFixture = () =>
           }}
         />
       )}
-    </div>,
+    </div>
+    </>,
   );
 Object.assign(window, {
   // Model leaving and returning to the sidebar without navigating the document.

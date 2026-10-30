@@ -528,7 +528,22 @@ describe("actual desktop model-picker to submit routing", () => {
       history: expect.objectContaining({
         sessionId: original.id,
         messages: expect.arrayContaining([
-          { id: "original-user", role: "user", text: original.blocks[0].text },
+          {
+            id: "original-user",
+            role: "user",
+            text: original.blocks[0].text,
+            attachments: [
+              {
+                id: "original-file",
+                name: "design.txt",
+                path: "/repo/design.txt",
+                mimeType: "text/plain",
+                kind: "file",
+                size: 12,
+                availability: "reference",
+              },
+            ],
+          },
           { id: "original-answer", role: "assistant", text: original.blocks[2].text },
         ]),
       }),

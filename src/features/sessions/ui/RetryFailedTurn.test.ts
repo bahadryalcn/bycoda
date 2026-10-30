@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Block, type ComposerTurnOptions } from "../model/session";
 import { failedTurnRetry, RetryFailedTurn } from "./RetryFailedTurn";
+import { appendPreparingHandoff, failHandoff } from "../model/handoff";
 import { sessionIssue } from "../model/sessionIssue";
 import { isNoticeBlock, isActivityBlock } from "../model/transcriptActivity";
 
@@ -32,6 +33,33 @@ const blocks: Block[] = [
   },
 ];
 const chat = () => ({ ...newSession("codex", "/tmp"), blocks });
+
+it("offers the preserved prompt and attachments while failed outgoing cleanup must still be retried", () => {
+  const source = {
+    from: "claude" as const,
+    fromModel: "claude:sonnet",
+    fromSettings: {},
+    fromProviderSessionId: "claude-original",
+  };
+  const preparing = appendPreparingHandoff(
+    { ...chat(), blocks: [], pendingSwitch: source },
+    "claude",
+    "codex",
+    source,
+  );
+  const failed = failHandoff(
+    { ...preparing, blocks: [...preparing.blocks, ...blocks] },
+    source,
+    "cleanup unknown",
+  );
+  expect(failed.pendingSwitch).toEqual(source);
+  expect(failedTurnRetry(failed)).toMatchObject({
+    text: blocks[0].text,
+    attachments: blocks[0].attachments,
+    intent: blocks[0].intent,
+    errorId: blocks[1].id,
+  });
+});
 
 it("keeps omitted-handoff information visible without marking the turn failed or retryable", () => {
   const info: Block = {

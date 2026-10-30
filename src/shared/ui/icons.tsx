@@ -127,6 +127,7 @@ import {
   Ungroup as LucideUngroup,
   WandSparkles as LucideWandSparkles,
   WholeWord as LucideWholeWord,
+  WrapText as LucideWrapText,
   Wrench as LucideWrench,
   X as LucideX,
   Zap as LucideZap,
@@ -348,6 +349,7 @@ export const UnfoldVertical = wrap(LucideUnfoldVertical, "UnfoldVertical");
 export const Ungroup = wrap(LucideUngroup, "Ungroup");
 export const WandSparkles = wrap(LucideWandSparkles, "WandSparkles");
 export const WholeWord = wrap(LucideWholeWord, "WholeWord");
+export const WrapText = wrap(LucideWrapText, "WrapText");
 export const Wrench = wrap(LucideWrench, "Wrench");
 export const X = wrap(LucideX, "X");
 export const Zap = wrap(LucideZap, "Zap");

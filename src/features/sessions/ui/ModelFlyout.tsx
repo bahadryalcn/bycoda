@@ -12,6 +12,7 @@ import {
 } from "../../../shared/ui/icons";
 import {
   useEffect,
+  useId,
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -92,6 +93,7 @@ export function ModelFlyout({
   extras?: ModelFlyoutExtras;
 }) {
   const t = useT();
+  const listId = useId();
   const source = useModelSource();
   const [view, setView] = useState<"models" | "extras">("models");
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -235,6 +237,13 @@ export function ModelFlyout({
                 value={query}
                 placeholder={t("Search models")}
                 aria-label={t("Search models")}
+                role="combobox"
+                aria-expanded="true"
+                aria-haspopup="listbox"
+                aria-autocomplete="list"
+                aria-controls={listId}
+                aria-activedescendant={models[active] ? `${listId}-${active}` : undefined}
+                autoComplete="off"
                 className="min-w-0 flex-1 bg-transparent text-ui-secondary text-(--ui-tone-neutral-fg) outline-none placeholder:text-(--ui-text-secondary)"
                 onChange={(event) => onQuery(event.target.value)}
                 onKeyDown={onSearchKey}
@@ -243,6 +252,7 @@ export function ModelFlyout({
 
             <div
               ref={lockOverscroll}
+              id={listId}
               role="listbox"
               aria-label={t("Models")}
               className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1"
@@ -291,6 +301,7 @@ export function ModelFlyout({
                           <Button
                             variant="item"
                             ref={highlighted ? activeRef : undefined}
+                            id={`${listId}-${index}`}
                             type="button"
                             role="option"
                             aria-selected={selected}

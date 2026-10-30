@@ -1,7 +1,8 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader } from "../../../shared/ui/icons";
+import { AlertCircle } from "../../../shared/ui/icons";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import {
   sessionCheckpointFileDiff,
   sessionCheckpointStatus,
@@ -179,9 +180,7 @@ export function SessionChangesDiff({ cwd, sessionId, focusPath }: Props) {
   }
   if (files == null) {
     return (
-      <div className="grid h-full place-items-center text-[var(--ui-text-muted)]">
-        <Loader className="size-4 animate-spin" strokeWidth={1.75} />
-      </div>
+      <SurfaceLoading />
     );
   }
   if (files.length === 0) {

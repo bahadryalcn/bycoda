@@ -5,8 +5,12 @@ import { newSession, type Block } from "../../src/features/sessions/model/sessio
 import { saveCrewGrowthEnabled } from "../../src/features/settings/model/settings";
 import { languageReady } from "../../src/shared/i18n";
 import { CrewSettings } from "../../src/features/settings/ui/AppearanceBehaviorSettings";
-import { CODE_WIDTH, CREW_TOP } from "../../src/features/sessions/ui/crewCodeArt";
-import type { CrewPlace } from "../../src/features/sessions/ui/crewLayout";
+import {
+  CODE_WIDTH,
+  CREW_TOP,
+  createCodeArtPainter,
+} from "../../src/features/sessions/ui/crewCodeArt";
+import { crewLayout, type CrewPlace } from "../../src/features/sessions/ui/crewLayout";
 import { starWarsLayout } from "../../src/features/sessions/ui/starWarsLayout";
 import type { CrewActivity } from "../../src/features/sessions/ui/crewMotion";
 import { STAR_WARS_ARTWORK } from "../../src/features/sessions/ui/starWarsCrew";
@@ -40,10 +44,13 @@ declare global {
     renderStarWarsFrame?: (options: MotionFrameOptions) => Promise<MotionFrameMetadata>;
     renderStarWarsStage?: (options: StarWarsStageOptions) => Promise<void>;
     starWarsFixtureLayout: (count: number, viewportWidth?: number) => CrewPlace[];
+    /** The production painter and layout for the portrait matrix, which cannot import `/src` from a built fixture. */
+    crewPortraitFixture: { createCodeArtPainter: typeof createCodeArtPainter; crewLayout: typeof crewLayout };
   }
 }
 
 window.starWarsFixtureLayout = starWarsLayout;
+window.crewPortraitFixture = { createCodeArtPainter, crewLayout };
 
 /** Deterministic fixture only: the same production loader, rig and painter as CrewScene. */
 function mountMotionFixture() {

@@ -74,28 +74,33 @@ export type ComposerSwitchPlan =
   | { kind: "arm"; pending: PendingHarnessSwitch };
 
 export function planComposerSwitch(session: Session, next: HarnessId): ComposerSwitchPlan {
+  const source = pendingHarnessSwitch(session);
   if (session.harness === next) return { kind: "model" };
-  if (session.pendingSwitch && next === session.pendingSwitch.from) {
+  if (source && next === source.from) {
     return {
       kind: "revert",
-      ...(session.pendingSwitch.fromProviderSessionId
+      ...(source.fromProviderSessionId
         ? {
-            restoreProviderSessionId: session.pendingSwitch.fromProviderSessionId,
+            restoreProviderSessionId: source.fromProviderSessionId,
           }
         : {}),
-      ...(session.pendingSwitch.fromProviderAccountId
+      ...(source.fromProviderAccountId
         ? {
-            restoreProviderAccountId: session.pendingSwitch.fromProviderAccountId,
+            restoreProviderAccountId: source.fromProviderAccountId,
           }
         : {}),
     };
   }
-  if (!session.blocks.some((block) => block.role === "user") && !session.pendingSwitch) {
+  if (
+    !session.blocks.some((block) => block.role === "user") &&
+    !source &&
+    !pendingHandoff(session)
+  ) {
     return { kind: "empty", forget: session.harness };
   }
   return {
     kind: "arm",
-    pending: session.pendingSwitch ?? {
+    pending: source ?? {
       from: session.harness,
       fromModel: session.model,
       fromSettings: session.modelSettings,
@@ -136,7 +141,8 @@ export function withHarnessChoice(
 
 export function sessionChildHarnesses(session: Session): HarnessId[] {
   const ids = new Set<HarnessId>([session.harness]);
-  if (session.pendingSwitch) ids.add(session.pendingSwitch.from);
+  const source = pendingHarnessSwitch(session);
+  if (source) ids.add(source.from);
   const last = lastHandoffBlock(session.blocks)?.handoff;
   if (last?.status === "preparing") ids.add(last.from);
   return [...ids];
@@ -158,6 +164,19 @@ export function lastHandoffBlock(blocks: Block[]): Block | undefined {
   return undefined;
 }
 
+/** Recover context provenance, never a process handle or cleanup acknowledgement. */
+export function pendingHarnessSwitch(session: Session): PendingHarnessSwitch | undefined {
+  if (session.pendingSwitch) return copyHandoffSource(session.pendingSwitch);
+  const meta = lastHandoffBlock(session.blocks)?.handoff;
+  return (meta?.status === "failed" || meta?.status === "cancelled") && meta.source
+    ? copyHandoffSource(meta.source)
+    : undefined;
+}
+
+function copyHandoffSource(source: PendingHarnessSwitch): PendingHarnessSwitch {
+  return { ...source, fromSettings: { ...source.fromSettings } };
+}
+
 export function isPreparingHandoff(session: Session): boolean {
   return session.blocks.some(
     (block) => block.role === "handoff" && block.handoff?.status === "preparing",
@@ -170,20 +189,81 @@ export function pendingHandoff(session: Session): {
   text: string;
 } | null {
   const last = lastHandoffBlock(session.blocks);
-  if (!last?.handoff?.pending || last.handoff.status !== "ready") return null;
+  if (
+    !last?.handoff?.pending ||
+    last.handoff.status === "preparing" ||
+    ((last.handoff.status === "failed" || last.handoff.status === "cancelled") &&
+      last.handoff.source)
+  )
+    return null;
   const text = last.text.trim() || buildDeterministicHandoff(session);
   if (!text.trim()) return null;
   return { from: last.handoff.from, to: last.handoff.to, text };
 }
 
-export function appendPreparingHandoff(session: Session, from: HarnessId, to: HarnessId): Session {
+export function appendPreparingHandoff(
+  session: Session,
+  from: HarnessId,
+  to: HarnessId,
+  source?: PendingHarnessSwitch,
+): Session {
   return appendHandoffBlock(session, {
     from,
     to,
     status: "preparing",
     text: "",
     pending: false,
+    ...(source ? { source: copyHandoffSource(source) } : {}),
   });
+}
+
+/** Save the prepared context before awaiting original process cleanup. */
+export function setPreparingHandoffBrief(session: Session, text: string): Session {
+  const last = lastHandoffBlock(session.blocks);
+  if (last?.handoff?.status !== "preparing") return session;
+  return patchHandoff(session, last.id, last.handoff, text);
+}
+
+/** Called only after the captured outgoing adapter has confirmed cleanup. */
+export function releaseHandoffSource(session: Session): Session {
+  const last = lastHandoffBlock(session.blocks);
+  const released = { ...session, pendingSwitch: undefined };
+  if (last?.handoff?.status !== "preparing") return released;
+  return patchHandoff(released, last.id, { ...last.handoff, source: undefined, pending: true });
+}
+
+function interruptHandoff(
+  session: Session,
+  status: "failed" | "cancelled",
+  source?: PendingHarnessSwitch,
+  error?: string,
+  contextText?: string,
+): Session {
+  const last = lastHandoffBlock(session.blocks);
+  if (last?.handoff?.status !== "preparing") return session;
+  const captured = source ? copyHandoffSource(source) : undefined;
+  const context = captured
+    ? undefined
+    : (contextText ?? (last.handoff.pending && !last.handoff.source ? last.text : undefined));
+  return patchHandoff(
+    { ...session, ...(captured ? { pendingSwitch: captured } : {}) },
+    last.id,
+    { ...last.handoff, status, pending: !!context?.trim(), source: captured, error },
+    context,
+  );
+}
+
+export function failHandoff(
+  session: Session,
+  source: PendingHarnessSwitch | undefined,
+  error: string,
+  contextText?: string,
+): Session {
+  return interruptHandoff(session, "failed", source, error, contextText);
+}
+
+export function cancelHandoff(session: Session): Session {
+  return interruptHandoff(session, "cancelled", session.pendingSwitch);
 }
 
 export function appendReadyHandoff(
@@ -229,7 +309,12 @@ export function completeHandoff(session: Session, text: string): Session {
   const last = lastHandoffBlock(session.blocks);
   if (!last?.handoff) return session;
   const brief = stripGoalSections(text) || buildDeterministicHandoff(session);
-  return patchHandoff(session, last.id, { ...last.handoff, status: "ready", pending: true }, brief);
+  return patchHandoff(
+    session,
+    last.id,
+    { from: last.handoff.from, to: last.handoff.to, status: "ready", pending: true },
+    brief,
+  );
 }
 
 /** User messages already on the transcript after the last handoff divider. */
@@ -267,14 +352,14 @@ export function hasSessionEdits(session: Session): boolean {
 }
 
 export function shouldAskOutgoingAgent(session: Session): boolean {
-  const source = session.pendingSwitch;
+  const source = pendingHarnessSwitch(session);
   if (!modelBelongsToHarness(source?.from ?? session.harness, source?.fromModel ?? session.model))
     return false;
   // A rate-limited agent cannot write the brief; go straight to the packet.
-  if (session.usageLimit || session.pendingSwitch?.fromUsageLimited) {
+  if (session.usageLimit || source?.fromUsageLimited) {
     return false;
   }
-  const liveId = session.pendingSwitch?.fromProviderSessionId ?? session.providerSessionId;
+  const liveId = source?.fromProviderSessionId ?? session.providerSessionId;
   return !!liveId && hasSessionEdits(session);
 }
 
@@ -445,6 +530,8 @@ function appendHandoffBlock(session: Session, input: HandoffMeta & { text: strin
           to: input.to,
           status: input.status,
           ...(input.pending ? { pending: true } : {}),
+          ...(input.source ? { source: copyHandoffSource(input.source) } : {}),
+          ...(input.error ? { error: input.error } : {}),
         },
       },
     ],

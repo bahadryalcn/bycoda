@@ -7,13 +7,19 @@ import {
   buildOutgoingHandoffPrompt,
   chooseHandoffBrief,
   completeHandoff,
+  cancelHandoff,
   consumeHandoff,
+  failHandoff,
   handoffTurnCard,
   hasSessionEdits,
   pendingHandoff,
+  pendingHarnessSwitch,
   planComposerSwitch,
   sessionChildHarnesses,
   sessionThroughTurn,
+  releaseHandoffSource,
+  setPreparingHandoffBrief,
+  isPreparingHandoff,
   shouldAskOutgoingAgent,
   userMessagesAfterHandoff,
   withAccountHandoff,
@@ -207,6 +213,150 @@ describe("deterministic handoff", () => {
 });
 
 describe("handoff block lifecycle", () => {
+  const originalSource = () => ({
+    from: "claude" as const,
+    fromModel: "claude:sonnet",
+    fromSettings: { thinking: "high", custom: "" },
+    fromProviderSessionId: "claude-thread",
+    fromProviderAccountId: "claude-account",
+  });
+
+  it("terminalizes failed cleanup while retaining the original source and every chat block", () => {
+    const source = originalSource();
+    const user: Block = {
+      id: "original-user",
+      role: "user",
+      text: "Preserve this exact request",
+      attachments: [
+        {
+          id: "file",
+          kind: "file",
+          name: "draft.txt",
+          path: "/tmp/draft.txt",
+          size: 8,
+          mimeType: "text/plain",
+        },
+      ],
+    };
+    const error: Block = {
+      id: "error",
+      role: "system",
+      notice: "error",
+      text: "Original cleanup unknown",
+    };
+    const prepared = appendPreparingHandoff(
+      sessionWith([user], { harness: "codex", pendingSwitch: source }),
+      "claude",
+      "codex",
+      source,
+    );
+    const failed = failHandoff(
+      { ...prepared, blocks: [...prepared.blocks, error] },
+      source,
+      error.text,
+    );
+    expect(isPreparingHandoff(failed)).toBe(false);
+    expect(failed.blocks[0]).toBe(user);
+    expect(failed.blocks.at(-1)).toBe(error);
+    expect(failed.blocks[1].handoff).toMatchObject({
+      status: "failed",
+      pending: false,
+      source,
+      error: error.text,
+    });
+    expect(failed.pendingSwitch).toEqual(source);
+    expect(pendingHandoff(failed)).toBeNull();
+    expect(planComposerSwitch(failed, "grok")).toEqual({ kind: "arm", pending: source });
+    source.fromSettings.thinking = "changed later";
+    expect(failed.pendingSwitch?.fromSettings.thinking).toBe("high");
+    expect(failed.blocks[1].handoff?.source?.fromSettings.thinking).toBe("high");
+  });
+
+  it("recovers failed source provenance after the transient pending plan is gone", () => {
+    const source = originalSource();
+    const failed = failHandoff(
+      appendPreparingHandoff(sessionWith([], { harness: "codex" }), "claude", "codex", source),
+      source,
+      "cleanup unknown",
+    );
+    const reopened = { ...failed, pendingSwitch: undefined };
+    expect(pendingHarnessSwitch(reopened)).toEqual(source);
+    expect(planComposerSwitch(reopened, "grok")).toEqual({ kind: "arm", pending: source });
+    expect(sessionChildHarnesses(reopened).sort()).toEqual(["claude", "codex"]);
+  });
+
+  it("cancels only preparing work without claiming the incoming provider accepted it", () => {
+    const source = originalSource();
+    const prepared = appendPreparingHandoff(
+      sessionWith([], { harness: "codex", pendingSwitch: source }),
+      "claude",
+      "codex",
+      source,
+    );
+    const cancelled = cancelHandoff(prepared);
+    expect(cancelled.blocks.at(-1)?.handoff).toMatchObject({
+      status: "cancelled",
+      pending: false,
+      source,
+    });
+    expect(cancelled.pendingSwitch).toEqual(source);
+    expect(isPreparingHandoff(cancelled)).toBe(false);
+    expect(pendingHandoff(cancelled)).toBeNull();
+    expect(cancelHandoff(completeHandoff(prepared, "Existing context"))).toEqual(
+      completeHandoff(prepared, "Existing context"),
+    );
+  });
+
+  it("does not restore the outgoing source after its real cleanup succeeded", () => {
+    const source = originalSource();
+    const preparing = appendPreparingHandoff(
+      sessionWith([], { harness: "codex", pendingSwitch: source }),
+      "claude",
+      "codex",
+      source,
+    );
+    const released = releaseHandoffSource(preparing);
+    const cancelled = cancelHandoff(released);
+    expect(cancelled.pendingSwitch).toBeUndefined();
+    expect(cancelled.blocks.at(-1)?.handoff?.source).toBeUndefined();
+    expect(pendingHarnessSwitch(cancelled)).toBeUndefined();
+    expect(
+      failHandoff(released, undefined, "Incoming startup failed").pendingSwitch,
+    ).toBeUndefined();
+  });
+
+  it("keeps a context-only retry packet when outgoing cleanup succeeded before target preparation failed", () => {
+    const source = originalSource();
+    const preparing = setPreparingHandoffBrief(
+      appendPreparingHandoff(
+        sessionWith([], { harness: "codex", pendingSwitch: source }),
+        "claude",
+        "codex",
+        source,
+      ),
+      "The original Claude context and edited files remain available.",
+    );
+    const failed = failHandoff(
+      releaseHandoffSource(preparing),
+      undefined,
+      "History archive unavailable",
+    );
+    expect(failed.blocks.at(-1)?.handoff).toMatchObject({ status: "failed", pending: true });
+    expect(pendingHarnessSwitch(failed)).toBeUndefined();
+    expect(pendingHandoff(failed)).toEqual({
+      from: "claude",
+      to: "codex",
+      text: "The original Claude context and edited files remain available.",
+    });
+    expect(planComposerSwitch(failed, "grok")).toMatchObject({
+      kind: "arm",
+      pending: { from: "codex" },
+    });
+    expect(pendingHandoff(cancelHandoff(releaseHandoffSource(preparing)))?.text).toBe(
+      pendingHandoff(failed)?.text,
+    );
+  });
+
   it("keeps the inject pending until the incoming harness accepts a turn", () => {
     let session = appendPreparingHandoff(
       sessionWith([{ id: "u1", role: "user", text: "go" }]),
@@ -420,17 +570,27 @@ describe("handoff from a usage-limited harness", () => {
   });
 
   it("uses the deterministic packet when the saved outgoing provider/model pair is corrupt", () => {
-    const session = edited({ harness: "antigravity", model: "antigravity:gemini-3.8-flash-high",
+    const session = edited({
+      harness: "antigravity",
+      model: "antigravity:gemini-3.8-flash-high",
       pendingSwitch: {
-        from: "codex", fromModel: "antigravity:gemini-3.8-flash-high", fromSettings: {},
+        from: "codex",
+        fromModel: "antigravity:gemini-3.8-flash-high",
+        fromSettings: {},
         fromProviderSessionId: "codex-thread",
       },
     });
     expect(shouldAskOutgoingAgent(session)).toBe(false);
     expect(chooseHandoffBrief("", session)).toContain("User: edit it");
-    expect(shouldAskOutgoingAgent({ ...session, pendingSwitch: {
-      ...session.pendingSwitch!, fromModel: "codex:gpt-6.1-sol",
-    } })).toBe(true);
+    expect(
+      shouldAskOutgoingAgent({
+        ...session,
+        pendingSwitch: {
+          ...session.pendingSwitch!,
+          fromModel: "codex:gpt-6.1-sol",
+        },
+      }),
+    ).toBe(true);
   });
 
   it("never asks a limited agent, even after the limit was cleared by the switch", () => {

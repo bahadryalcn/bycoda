@@ -60,7 +60,7 @@ test("automatic diff follows available width and preserves edits, focus and undo
   const layout = page.getByRole("button", { name: /^Diff view:/ });
   const choose = async (label: string) => {
     await layout.click();
-    await page.getByRole("option", { name: label, exact: true }).click();
+    await page.getByRole("menuitemradio", { name: label, exact: true }).click();
   };
   await choose("Automatic");
   await expect(page.locator(".cm-mergeView")).toHaveCount(1);

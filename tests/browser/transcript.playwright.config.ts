@@ -31,8 +31,11 @@ export default defineConfig({
     { name: "webkit", use: { browserName: "webkit" } },
   ],
   webServer: {
-    command: "pnpm exec vite --config tests/browser/vite.config.ts",
+    command:
+      "pnpm exec vite build --config tests/browser/vite.transcript.config.ts && pnpm exec vite preview --config tests/browser/vite.transcript.config.ts",
     url: "http://127.0.0.1:1435/tests/browser/transcript.html",
     reuseExistingServer: false,
+    // The fixture pages are built before they are served; a cold build outlasts the 60 s default.
+    timeout: 300_000,
   },
 });

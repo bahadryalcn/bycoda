@@ -51,6 +51,7 @@ import {
 import { finalizeLocalTurn } from "../../../model/localTurnFinalization";
 import { prepareLocalTurn } from "../../../model/localTurnPreparation";
 import { prepareBudgetedHandoff } from "../../../model/prepareHandoff";
+import { handoffContextSession } from "../../../../features/sessions/model/handoffBudget";
 import { lastAssistantTextInTurn, withPlanStatus } from "../../helpers/sessionHelpers";
 import { notifyFinishedWorkspace } from "../../helpers/workspaceNotify";
 import { invoke } from "@tauri-apps/api/core";
@@ -236,9 +237,13 @@ export async function runSubmitDispatch(
         // orchestration leads retain their separate control access.
         controlsAgents: operatorAccess || orchestrator.run(sessionId)?.status === "active",
         appAccess: operatorAccess,
-        text: !turn.contextReplayAccepted
-          ? `${contextReplay}\n\nCurrent user request:\n${text}`
-          : text,
+        // The budgeted handoff already carries the saved conversation. Prefixing
+        // an unbounded replay here would duplicate failed requests and consume
+        // the target model's entire handoff budget before preparation runs.
+        text:
+          !turn.contextReplayAccepted && !(turn.wrap && !rawCommand)
+            ? `${contextReplay}\n\nCurrent user request:\n${text}`
+            : text,
         attachments: turnAttachments,
         prepareText,
         onAccepted: () => {
@@ -270,7 +275,7 @@ export async function runSubmitDispatch(
             // `current` predates setup's newly appended user block: the request
             // must not be replayed as both history and the current turn.
             const budgeted = await prepareBudgetedHandoff(
-              current,
+              handoffContextSession(current, input.text, input.attachments),
               wrap.text,
               [text, runtimeInstructions].filter(Boolean).join("\n\n"),
             );

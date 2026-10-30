@@ -1,12 +1,21 @@
-import { Button } from "../../../shared/ui/Button";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useT } from "../../../shared/i18n";
+import { storedFlag } from "../../../shared/lib/storedSetting";
+import { FloatingButtonGroup } from "../../../shared/ui/FloatingButtonGroup";
+import { Check, Copy, RotateCcw, WrapText } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import type { Block } from "../model/session";
 import { toolResultTexts } from "../model/commandInspection";
 import { boundedToolPreview } from "../model/toolInspection";
 import { JsonViewer } from "../../../shared/ui/JsonViewer";
+
+// Long commands and output wrap by default; aligned output (tables, diffs) can opt out, and the choice persists.
+const toolOutputWrap = storedFlag("bycoda.toolOutputWrap", true, "bycoda:tool-output-wrap", true);
+const loadToolOutputWrap = () => toolOutputWrap.load() ?? true;
+function useToolOutputWrap() {
+  return useSyncExternalStore(toolOutputWrap.subscribe, loadToolOutputWrap, () => true);
+}
 
 /** Only complete saved JSON objects/arrays qualify. Plain text and diffs stay intact. */
 export function inspectionJson(text: string): { data: unknown } | null {
@@ -102,26 +111,51 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
   const copyText = bodyText ? [bodyText, ...copyNotices].join("\n\n") : "";
   // Streaming output changes the copied text, so any outcome or copy in flight belongs to the old text.
   const feedback = useCopyFeedback({ resetKeys: [block.id, copyText], successMs: 2000 });
+  const wrap = useToolOutputWrap();
   const copy = () => {
     feedback.copy(() => copyMessage(copyText));
   };
+  const isJson = (section: (typeof sections)[number]) =>
+    !section.diff &&
+    !section.error &&
+    !section.truncated &&
+    section.title !== "Command" &&
+    section.title !== "Written content" &&
+    inspectionJson(section.text) !== null;
+  // JsonViewer owns its own layout, so the wrap choice only matters when some section is plain text.
+  const hasWrappable = sections.some((section) => !isJson(section));
+  const actions = [
+    {
+      id: "copy",
+      label: feedback.copied ? t("Copied") : feedback.failed ? t("Retry copy") : t("Copy"),
+      icon: feedback.copied ? <Check /> : feedback.failed ? <RotateCcw /> : <Copy />,
+      tone: feedback.copied ? ("success" as const) : feedback.failed ? ("danger" as const) : undefined,
+      disabled: !copyText,
+      loading: feedback.pending,
+      onSelect: copy,
+    },
+    ...(hasWrappable
+      ? [
+          {
+            id: "wrap",
+            label: t("Wrap lines"),
+            icon: <WrapText />,
+            pressed: wrap,
+            onSelect: () => toolOutputWrap.save(!wrap),
+          },
+        ]
+      : []),
+  ];
 
   // One quiet code-block surface: the sections are spaced, not ruled, and the
-  // single Copy lives on the first heading instead of a bar of its own.
+  // single icon group (Copy, Wrap) lives on the first heading instead of a bar of its own.
   return (
     <div
       data-tool-inspection
       className="flex min-w-0 flex-col gap-2 overflow-clip rounded-lg border border-(--color-stroke) bg-(--ui-surface-panel) pb-2"
     >
       {sections.map((section, index) => {
-        const json =
-          !section.diff &&
-          !section.error &&
-          !section.truncated &&
-          section.title !== "Command" &&
-          section.title !== "Written content"
-            ? inspectionJson(section.text)
-            : null;
+        const json = isJson(section) ? inspectionJson(section.text) : null;
         return (
           <section key={index} className="min-w-0">
             <div className="flex min-h-7 items-center justify-between gap-2 pr-1 pl-3">
@@ -135,15 +169,16 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
                       {t("Copy failed")}
                     </span>
                   ) : null}
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    disabled={!copyText}
-                    loading={feedback.pending}
-                    onClick={copy}
-                  >
-                    {t(feedback.copied ? "Copied" : "Copy")}
-                  </Button>
+                  <FloatingButtonGroup
+                    label={t("Output actions")}
+                    variant="muted"
+                    size="sm"
+                    iconOnly
+                    items={actions}
+                  />
+                  <span role="status" className="sr-only">
+                    {feedback.copied ? t("Copied") : ""}
+                  </span>
                 </div>
               ) : null}
             </div>
@@ -152,7 +187,7 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
             ) : (
               <pre
                 tabIndex={0}
-                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain px-3 py-1 font-mono text-ui-caption leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)`}
+                className={`max-h-80 min-w-0 select-text overflow-auto overscroll-contain ${wrap ? "whitespace-pre-wrap [overflow-wrap:anywhere]" : "whitespace-pre"} px-3 py-1 font-mono text-ui-caption leading-5 ${section.error ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"} focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-(--ui-focus-ring-color)`}
               >
                 {section.diff
                   ? section.text.split("\n").map((line, lineIndex) => (

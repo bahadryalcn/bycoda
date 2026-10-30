@@ -108,7 +108,7 @@ test("quick composer displays inherited worktree policy and an explicit current 
   await expect(
     page.getByRole("button", { name: "Workspace New worktree", exact: true }),
   ).toBeVisible();
-  await expect(page.locator("[data-workspace-creation-status]")).toContainText("Based on main");
+  await expect(page.locator("[data-workspace-creation-status]")).toContainText("New worktree from main");
   await page.getByRole("button", { name: "Workspace New worktree", exact: true }).click();
   await page.evaluate(() => (window as any).quickFixture.pickWorkspace("current"));
   await expect(

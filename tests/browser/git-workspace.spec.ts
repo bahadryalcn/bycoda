@@ -66,6 +66,8 @@ test("stash actions fit a narrow rail and commit files remain navigable", async 
 });
 
 test("graph scope, file filtering and keyboard resizing preserve Git context", async ({ page }) => {
+  // The branch rail grows only while the workspace has room (at most its width minus 720 px).
+  await page.setViewportSize({ width: 1280, height: 800 });
   await open(page);
   const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
   await dialog.getByRole("radio", { name: "Current branch", exact: true }).click();
@@ -168,6 +170,10 @@ test("yerel ve origin branch silme ayrı aksiyonlar kullanır", async ({ page })
   await open(page);
   await page.getByRole("button", { name: "Actions for develop", exact: true }).click();
   await page.getByText("Delete Branch…", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete branch?", exact: true })
+    .getByRole("button", { name: "Delete branch", exact: true })
+    .click();
   await expect(page.getByRole("button", { name: "Actions for develop", exact: true })).toHaveCount(
     0,
   );
@@ -178,6 +184,10 @@ test("yerel ve origin branch silme ayrı aksiyonlar kullanır", async ({ page })
     })
     .click();
   await page.getByText("Delete from remote…", { exact: true }).click();
+  await page
+    .getByRole("dialog", { name: "Delete origin/feature/team from the remote for everyone?", exact: true })
+    .getByRole("button", { name: "Delete", exact: true })
+    .click();
   await expect(
     page.getByRole("button", {
       name: "Actions for origin/feature/team",
@@ -337,6 +347,11 @@ test("commit sağ tık menüsünün Git aksiyonları seçilen SHA ile çalışı
   for (const name of ["Soft", "Mixed", "Hard"]) {
     await pick("Reset Current Branch to Here");
     await page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).click();
+    if (name === "Hard")
+      await page
+        .getByRole("dialog", { name: /^Hard reset to /u })
+        .getByRole("button", { name: "Hard reset", exact: true })
+        .click();
     await expect(dialog.getByRole("button", { name: "Fetch", exact: true })).toBeEnabled();
   }
   const calls = await page.evaluate(
@@ -371,7 +386,12 @@ async function open(page: import("@playwright/test").Page, conflict = false, lar
     },
   );
   await page.getByRole("button", { name: "Open full graph", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Commit Graph", exact: true })).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Commit Graph", exact: true });
+  await expect(dialog).toBeVisible();
+  // A workspace narrower than 960 px starts with the branch rail hidden; open it explicitly.
+  const toggle = dialog.getByRole("button", { name: "Toggle branches", exact: true });
+  await expect(toggle).toBeVisible();
+  if ((await toggle.getAttribute("aria-pressed")) === "false") await toggle.click();
   await expect(
     page.getByRole("button", { name: "Switch to feature/graph", exact: true }),
   ).toBeVisible({ timeout: 30000 });
@@ -422,10 +442,11 @@ test("branch, commit ve dosya karşılaştırması panel içinde kalır", async 
   await expect(dialog.getByRole("heading", { name: "Improve workspace navigation" })).toBeVisible();
   await dialog.getByRole("button").filter({ hasText: "src/theme.css" }).click();
   await expect(dialog.getByText("const after = true;", { exact: false })).toBeVisible();
-  await dialog.getByRole("button", { name: "Side-by-side view", exact: true }).click();
+  await dialog.getByRole("button", { name: /^Diff view:/ }).click();
+  await page.getByRole("menuitemradio", { name: "Side-by-side view", exact: true }).click();
   await expect(
-    dialog.getByRole("button", { name: "Side-by-side view", exact: true }),
-  ).toHaveAttribute("aria-pressed", "true");
+    dialog.getByRole("button", { name: "Diff view: Side-by-side view", exact: true }),
+  ).toBeVisible();
   await dialog.getByRole("button", { name: "Full screen", exact: true }).click();
   const bounds = await dialog.boundingBox();
   expect(bounds?.x).toBe(0);

@@ -2,7 +2,8 @@ import { Button } from "../../../shared/ui/Button";
 import { runDiffWorker } from "../model/diffWorker";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Loader } from "../../../shared/ui/icons";
+import { AlertCircle } from "../../../shared/ui/icons";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import {
   gitDiscardFile,
   gitFileDiff,
@@ -497,9 +498,7 @@ export function WorkingTreeDiff({ cwd, focusPath, focusKind, focusRequest }: Pro
   }
   if (files == null) {
     return (
-      <div className="grid h-full place-items-center text-[var(--ui-text-muted)]">
-        <Loader className="size-4 animate-spin" strokeWidth={1.75} />
-      </div>
+      <SurfaceLoading />
     );
   }
 

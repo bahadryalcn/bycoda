@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { newSession, type Session } from "../../../features/sessions/model/session";
 import { useSessionStop, type SessionStopDeps } from "./useSessionStop";
+import { appendPreparingHandoff } from "../../../features/sessions/model/handoff";
 import { isSessionErrorBlock, sessionIssue } from "../../../features/sessions/model/sessionIssue";
 import { registerRemoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 
@@ -104,6 +105,29 @@ it("pauses the queue immediately and keeps events and Stop actionable after deli
   expect(cancel).toHaveBeenCalledTimes(2);
 });
 
+it("cancels the original preparing handoff without clearing its unresolved cleanup source", async () => {
+  const source = {
+    from: "claude" as const,
+    fromModel: "claude:sonnet",
+    fromSettings: { thinking: "high" },
+    fromProviderSessionId: "claude-original",
+  };
+  const id = current().id;
+  deps.sessionsRef.current = [
+    appendPreparingHandoff({ ...current(), pendingSwitch: source }, "claude", "codex", source),
+  ];
+  stop(id);
+  await vi.waitFor(() => expect(current().busy).toBe(false));
+  expect(current().blocks.at(-1)?.handoff).toMatchObject({
+    status: "cancelled",
+    pending: false,
+    source,
+  });
+  expect(current().pendingSwitch).toEqual(source);
+  expect(deps.turnGen.current.get(id)).toBe(2);
+  expect(cancel).toHaveBeenCalledWith("claude", id);
+});
+
 it("stops only the mirrored host run and fences follow-ups preparing on the desktop", async () => {
   const id = current().id;
   deps.sessionsRef.current = [
@@ -169,7 +193,20 @@ it("tells the shared queue about Stop so an unsettled send pauses it when it set
 
 it("routes explicitly Host-owned local Stop to the owner and stays closed after detach", () => {
   const id = current().id;
-  deps.sessionsRef.current = [{ ...current(), hostBinding: { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: id, authorityGeneration: 1, created: true } }];
+  deps.sessionsRef.current = [
+    {
+      ...current(),
+      hostBinding: {
+        kind: "local-host",
+        machineId: "local",
+        environmentId: "home",
+        projectId: "project",
+        sessionId: id,
+        authorityGeneration: 1,
+        created: true,
+      },
+    },
+  ];
   const ownerStop = vi.fn();
   const detach = registerRemoteSessionActions(id, { stop: ownerStop } as never);
   stop(id);

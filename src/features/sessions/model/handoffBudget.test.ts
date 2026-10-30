@@ -1,9 +1,156 @@
 import { describe, expect, it } from "vitest";
 import { newSession } from "./session";
-import { buildBudgetedHandoff, handoffTokenEstimate } from "./handoffBudget";
+import {
+  buildBudgetedHandoff,
+  handoffContextSession,
+  handoffHistory,
+  handoffTokenEstimate,
+} from "./handoffBudget";
 import { modelContextWindow, resetHarnessModelOverlays, setHarnessModels } from "./models";
 
 describe("capacity-aware handoff", () => {
+  it("archives recovered context without adding its unbounded replay to the current prompt", () => {
+    const session = {
+      ...newSession("grok", "/project"),
+      pendingContextReplay: "Unique recovered state not already visible in the transcript.",
+      blocks: [{ id: "visible", role: "user" as const, text: "Visible intent" }],
+    };
+    const packet = buildBudgetedHandoff(session, {
+      contextWindow: 4096,
+      historyPath: "/owner/history.json",
+      request: "Continue",
+    });
+    expect(packet.history.retainedContext).toBe(session.pendingContextReplay);
+    expect(packet.text).toContain("retainedContext");
+    expect(packet.text).not.toContain(session.pendingContextReplay);
+    expect(packet.estimatedTokens).toBeLessThanOrEqual(packet.budgetTokens);
+    expect(session.pendingContextReplay).toContain("Unique recovered state");
+  });
+  it("archives file-only turns with owned references without copying image bytes or preview functions", () => {
+    const attachment = {
+      id: "original-file",
+      name: "contract.txt",
+      mimeType: "text/plain",
+      kind: "file" as const,
+      size: 12,
+      path: "/owner/contract.txt",
+      hostEnvironmentId: "original-host",
+      data: "private-inline-payload",
+      previewUrl: "blob:preview",
+      loadPreview: async () => "preview",
+    };
+    const session = {
+      ...newSession("claude", "/project"),
+      blocks: [{ id: "file-turn", role: "user" as const, text: "", attachments: [attachment] }],
+    };
+    const archive = handoffHistory(session);
+    expect(archive.messages).toHaveLength(1);
+    expect(archive.messages[0].attachments).toEqual([
+      {
+        id: "original-file",
+        name: "contract.txt",
+        mimeType: "text/plain",
+        kind: "file",
+        size: 12,
+        path: "/owner/contract.txt",
+        hostEnvironmentId: "original-host",
+        availability: "reference",
+      },
+    ]);
+    expect(JSON.stringify(archive)).not.toContain("private-inline-payload");
+    expect(JSON.stringify(archive)).not.toContain("blob:preview");
+    attachment.path = "/replacement.txt";
+    expect(archive.messages[0].attachments![0].path).toBe("/owner/contract.txt");
+  });
+
+  it("distinguishes unavailable and inline-only attachments and charges reference text to the model budget", () => {
+    const session = {
+      ...newSession("codex", "/project"),
+      blocks: [
+        {
+          id: "images",
+          role: "user" as const,
+          text: "Read the original image.",
+          attachments: [
+            {
+              id: "inline",
+              name: "image.png",
+              mimeType: "image/png",
+              kind: "image" as const,
+              size: 10,
+              data: "secret-bytes",
+            },
+            {
+              id: "missing",
+              name: "missing.txt",
+              mimeType: "text/plain",
+              kind: "file" as const,
+              size: 12,
+              path: "/missing.txt",
+              missing: true,
+            },
+          ],
+        },
+      ],
+    };
+    const packet = buildBudgetedHandoff(session, {
+      contextWindow: 4096,
+      historyPath: "/owner/history.json",
+    });
+    expect(packet.history.messages[0].attachments?.map((item) => item.availability)).toEqual([
+      "session-only",
+      "missing",
+    ]);
+    expect(packet.text).toContain("no archived file reference");
+    expect(packet.text).toContain("unavailable attachment");
+    expect(packet.text).not.toContain("secret-bytes");
+    expect(packet.estimatedTokens).toBeLessThanOrEqual(packet.budgetTokens);
+  });
+
+  it("omits only the exact unsubmitted failed-handoff retry from context while retaining the transcript and genuine repeats", () => {
+    const original = newSession("claude", "/project");
+    const source = { from: "claude" as const, fromModel: "claude:model", fromSettings: {} };
+    const session = {
+      ...original,
+      blocks: [
+        { id: "delivered", role: "user" as const, text: "continue" },
+        {
+          id: "divider",
+          role: "handoff" as const,
+          text: "",
+          handoff: {
+            from: "claude" as const,
+            to: "codex" as const,
+            status: "failed" as const,
+            source,
+          },
+        },
+        { id: "unsubmitted", role: "user" as const, text: "continue" },
+        {
+          id: "error",
+          role: "system" as const,
+          text: "Original cleanup unknown",
+          notice: "error" as const,
+        },
+      ],
+    };
+    const context = handoffContextSession(session, "continue", []);
+    expect(context.blocks.map((block) => block.id)).toEqual(["delivered", "divider", "error"]);
+    expect(session.blocks.map((block) => block.id)).toContain("unsubmitted");
+    expect(handoffContextSession(session, "changed request", [])).toBe(session);
+    expect(
+      handoffContextSession(session, "continue", [
+        { id: "new", name: "new.txt", kind: "file", mimeType: "text/plain", size: 1 },
+      ]),
+    ).toBe(session);
+    const entered = {
+      ...session,
+      blocks: session.blocks.map((block) =>
+        block.handoff ? { ...block, handoff: { ...block.handoff, source: undefined } } : block,
+      ),
+    };
+    expect(handoffContextSession(entered, "continue", [])).toBe(entered);
+  });
   it("keeps native provider prefixes and URL-like custom model identities distinct", () => {
     try {
       setHarnessModels("pi", [

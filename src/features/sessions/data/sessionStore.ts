@@ -5,7 +5,14 @@ import { serverTerminalRestoreState } from "../../connections/model/serverTermin
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
-import { hostSessionBinding, restoreHostSessionShell, hostSessionShellSummaries, patchHostSessionShellMetadata, forgetHostSessionShell, saveHostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import {
+  hostSessionBinding,
+  restoreHostSessionShell,
+  hostSessionShellSummaries,
+  patchHostSessionShellMetadata,
+  forgetHostSessionShell,
+  saveHostSessionBinding,
+} from "../../connections/model/sessionExecutionBinding";
 import {
   captureSessionOutputWrite,
   acknowledgeSessionOutputWrite,
@@ -635,7 +642,11 @@ async function persistSession(
   initialTimes?: { createdAt: number; updatedAt: number },
   parent?: PersistenceWork,
 ): Promise<SessionSummary | null> {
-  if (hostSessionBinding(session) || (!allowEmpty && !shouldPersistSession(session)) || deletedSessionIds.has(session.id)) {
+  if (
+    hostSessionBinding(session) ||
+    (!allowEmpty && !shouldPersistSession(session)) ||
+    deletedSessionIds.has(session.id)
+  ) {
     return null;
   }
   const payload = sanitizeSessionForPersist(session);
@@ -772,10 +783,14 @@ export async function listSessionsByProject(cwd: string): Promise<SessionSummary
   const rows = await invoke<SessionSummary[]>("session_list_by_project", {
     cwd: normalizeProjectPath(cwd),
   });
-  const owned = hostSessionShellSummaries().filter((entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd));
-  if (!owned.length) return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
+  const owned = hostSessionShellSummaries().filter(
+    (entry) => normalizeProjectPath(entry.cwd) === normalizeProjectPath(cwd),
+  );
+  if (!owned.length)
+    return rows.filter((row) => !hostSessionBinding({ id: row.id })).map(normalizeSummary);
   return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned]
-    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt).map(normalizeSummary);
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || b.updatedAt - a.updatedAt)
+    .map(normalizeSummary);
 }
 
 export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<void> {
@@ -790,7 +805,9 @@ export function rebaseProjectSessions(fromCwd: string, toCwd: string): Promise<v
 export async function listLinkedSessions(): Promise<SessionSummary[]> {
   const rows = await invoke<SessionSummary[]>("session_list_linked");
   const owned = hostSessionShellSummaries().filter((entry) => entry.linkedWorkItem);
-  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned].map(normalizeSummary);
+  return [...rows.filter((row) => !hostSessionBinding({ id: row.id })), ...owned].map(
+    normalizeSummary,
+  );
 }
 
 /** Newest sessions across every project, plus all pinned ones. No transcripts. */
@@ -800,7 +817,10 @@ export async function listRecentSessions(limit: number): Promise<SessionSummary[
   const native = rows.filter((row) => !hostSessionBinding({ id: row.id }));
   if (!owned.length) return native.map(normalizeSummary);
   const combined = [...native, ...owned].sort((a, b) => b.updatedAt - a.updatedAt);
-  return [...combined.filter((entry) => entry.pinned), ...combined.filter((entry) => !entry.pinned).slice(0, limit)].map(normalizeSummary);
+  return [
+    ...combined.filter((entry) => entry.pinned),
+    ...combined.filter((entry) => !entry.pinned).slice(0, limit),
+  ].map(normalizeSummary);
 }
 
 export type SessionSearchHit = {
@@ -1267,9 +1287,14 @@ export function backfillCodexShellCommands(blocks: Block[]): Block[] {
 export async function deleteSession(sessionId: string, imagePaths: string[] = []): Promise<void> {
   const owner = hostSessionBinding({ id: sessionId });
   if (owner) {
-    if (!owner.created) throw new Error("Verify this conversation's pending creation before deleting it.");
+    if (!owner.created)
+      throw new Error("Verify this conversation's pending creation before deleting it.");
     const { sessionAccessForMachine } = await import("../../connections/model/connections");
-    await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(owner.sessionId, owner.projectId, owner.authorityGeneration ?? undefined);
+    await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(
+      owner.sessionId,
+      owner.projectId,
+      owner.authorityGeneration ?? undefined,
+    );
     forgetHostSessionShell(sessionId);
     clearComposerDraft(sessionId);
     return;
@@ -1342,25 +1367,46 @@ export async function setSessionArchived(sessionId: string, archived: boolean): 
   );
 }
 
-export async function updateOwnedSessionMetadata(sessionId: string, patch: { title?: string; archived?: boolean; pinned?: boolean; linkedWorkItem?: LinkedWorkItem | null }): Promise<boolean> {
+export async function updateOwnedSessionMetadata(
+  sessionId: string,
+  patch: {
+    title?: string;
+    archived?: boolean;
+    pinned?: boolean;
+    linkedWorkItem?: LinkedWorkItem | null;
+  },
+): Promise<boolean> {
   const owner = hostSessionBinding({ id: sessionId });
   if (!owner) return false;
-  if (!owner.created) throw new Error("Verify this conversation's pending creation before changing it.");
+  if (!owner.created)
+    throw new Error("Verify this conversation's pending creation before changing it.");
   const { sessionAccessForMachine } = await import("../../connections/model/connections");
-  await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(owner.sessionId, {
-    ...patch, projectId: owner.projectId,
-    ...(owner.authorityGeneration === null ? {} : { authorityGeneration: owner.authorityGeneration }),
-  });
+  await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(
+    owner.sessionId,
+    {
+      ...patch,
+      projectId: owner.projectId,
+      ...(owner.authorityGeneration === null
+        ? {}
+        : { authorityGeneration: owner.authorityGeneration }),
+    },
+  );
   patchHostSessionShellMetadata(sessionId, {
     ...(patch.archived !== undefined ? { archived: patch.archived } : {}),
     ...(patch.pinned !== undefined ? { pinned: patch.pinned } : {}),
   });
   const cached = restoreHostSessionShell(sessionId);
   if (cached && (patch.title !== undefined || patch.linkedWorkItem !== undefined))
-    saveHostSessionBinding({ ...cached,
-      ...(patch.title === undefined ? {} : { title: patch.title }),
-      ...(patch.linkedWorkItem === undefined ? {} : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
-    }, owner);
+    saveHostSessionBinding(
+      {
+        ...cached,
+        ...(patch.title === undefined ? {} : { title: patch.title }),
+        ...(patch.linkedWorkItem === undefined
+          ? {}
+          : { linkedWorkItem: patch.linkedWorkItem ?? undefined }),
+      },
+      owner,
+    );
   return true;
 }
 
@@ -1377,7 +1423,8 @@ export async function setSessionLinkedWorkItem(
   value: LinkedWorkItem | undefined,
 ): Promise<void> {
   const linkedWorkItem = sanitizeLinkedWorkItem(value);
-  if (await updateOwnedSessionMetadata(sessionId, { linkedWorkItem: linkedWorkItem ?? null })) return;
+  if (await updateOwnedSessionMetadata(sessionId, { linkedWorkItem: linkedWorkItem ?? null }))
+    return;
   await enqueueSessionWrite(
     sessionId,
     async (work) => {
@@ -2082,7 +2129,7 @@ function asHarness(value: string): HarnessId {
   return (HARNESSES as string[]).includes(value) ? (value as HarnessId) : "cursor";
 }
 
-const HANDOFF_STATUSES: HandoffStatus[] = ["preparing", "ready"];
+const HANDOFF_STATUSES: HandoffStatus[] = ["preparing", "ready", "failed", "cancelled"];
 
 function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
   if (!value) return undefined;
@@ -2090,11 +2137,45 @@ function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
   if (!(HARNESSES as string[]).includes(value.to)) return undefined;
   if (!HANDOFF_STATUSES.includes(value.status)) return undefined;
   const interrupted = value.status === "preparing";
+  const source = value.source;
+  const settings =
+    source?.fromSettings &&
+    typeof source.fromSettings === "object" &&
+    !Array.isArray(source.fromSettings) &&
+    Object.values(source.fromSettings).every((setting) => typeof setting === "string")
+      ? { ...source.fromSettings }
+      : undefined;
+  const capturedSource =
+    (interrupted || value.status === "failed" || value.status === "cancelled") &&
+    source &&
+    source.from === value.from &&
+    settings &&
+    typeof source.fromModel === "string" &&
+    source.fromModel.trim()
+      ? {
+          from: source.from,
+          fromModel: source.fromModel,
+          fromSettings: settings,
+          ...(typeof source.fromProviderSessionId === "string" &&
+          isPersistableId(source.fromProviderSessionId)
+            ? { fromProviderSessionId: source.fromProviderSessionId }
+            : {}),
+          ...(typeof source.fromProviderAccountId === "string" &&
+          isPersistableId(source.fromProviderAccountId)
+            ? { fromProviderAccountId: source.fromProviderAccountId }
+            : {}),
+          ...(source.fromUsageLimited === true ? { fromUsageLimited: true } : {}),
+        }
+      : undefined;
+  const recoverable =
+    value.status === "failed" || value.status === "cancelled" || (interrupted && !!capturedSource);
   return {
     from: value.from,
     to: value.to,
-    status: "ready",
-    pending: interrupted || !!value.pending,
+    status: recoverable ? (interrupted ? "cancelled" : value.status) : "ready",
+    pending: recoverable ? !capturedSource && !!value.pending : interrupted || !!value.pending,
+    ...(capturedSource ? { source: capturedSource } : {}),
+    ...(recoverable && typeof value.error === "string" ? { error: value.error } : {}),
   };
 }
 

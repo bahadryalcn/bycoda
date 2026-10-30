@@ -60,6 +60,27 @@ describe("modal scrim layers", () => {
     expect(scrim.className).not.toMatch(/bg-|blur/);
   });
 
+  it("keeps the nested dialog on top when both mount in the same commit", async () => {
+    await act(async () =>
+      root.render(
+        createElement(Modal, {
+          title: "Outer",
+          onClose: vi.fn(),
+          children: createElement(Modal, {
+            title: "Inner",
+            size: "sm",
+            onClose: vi.fn(),
+            children: "Inner body",
+          }),
+        }),
+      ),
+    );
+    const layers = [...document.body.querySelectorAll(":scope > [data-modal-layer]")];
+    expect(layers).toHaveLength(2);
+    expect(layers[0]!.querySelector("[role='dialog']")!.textContent).toContain("Outer");
+    expect(layers[1]!.textContent).toContain("Inner body");
+  });
+
   it("keeps blur and dim in the shared theme layer, only on the scrim and only once when nested", () => {
     const css = fs.readFileSync("src/styles/index.css", "utf8");
     expect(css).toMatch(/--ui-overlay-backdrop-blur:/);

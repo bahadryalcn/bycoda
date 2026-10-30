@@ -5,11 +5,8 @@ test("young portraits render every identity and expression in seated and working
 }, testInfo) => {
   // The shared Vite fixture server can spend a minute compiling its cold graph on Windows.
   test.setTimeout(120_000);
-  // This matrix exercises the painter alone; skip the unrelated React/CSS fixture graph.
-  await page.route("**/tests/browser/crew-scene.tsx", (route) =>
-    route.fulfill({ contentType: "text/javascript", body: "export {};" }),
-  );
   await page.goto("/tests/browser/crew-scene.html");
+  await page.waitForFunction(() => "crewPortraitFixture" in window);
   await page.addStyleTag({
     content:
       "body { background: oklch(0.14 0 none); margin: 0; } canvas { display: block; inline-size: 100%; }",
@@ -18,8 +15,14 @@ test("young portraits render every identity and expression in seated and working
     for (const stand of [0, 1]) {
       const result = await page.evaluate(
         async ({ stage, stand }) => {
-          const modulePath = "/src/features/sessions/ui/crewCodeArt.ts";
-          const { createCodeArtPainter } = await import(/* @vite-ignore */ modulePath);
+          const { createCodeArtPainter, crewLayout } = (
+            window as unknown as {
+              crewPortraitFixture: {
+                createCodeArtPainter: (canvas: HTMLCanvasElement, options: object) => (...args: unknown[]) => void;
+                crewLayout: (count: number, width: number) => { x: number; y: number; scale: number }[];
+              };
+            }
+          ).crewPortraitFixture;
           const canvas = document.createElement("canvas");
           canvas.setAttribute("aria-label", "Portrait review");
           document.body.replaceChildren(canvas);
@@ -46,11 +49,8 @@ test("young portraits render every identity and expression in seated and working
           );
           const c = canvas.getContext("2d")!;
           const pixels = c.getImageData(0, 0, canvas.width, canvas.height).data;
-          const { crewLayout } = await import(
-            /* @vite-ignore */ "/src/features/sessions/ui/crewLayout.ts"
-          );
           const counts = crewLayout(12, 1280).map(
-            (seat: { x: number; y: number; scale: number }) => {
+            (seat) => {
               let count = 0;
               // Inspect each head/body column, excluding the sign and floor.
               for (

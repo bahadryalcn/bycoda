@@ -283,6 +283,13 @@ describe("model picker", () => {
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search models"]');
     expect(search).not.toBeNull();
     expect(document.activeElement).toBe(search);
+    // The input owns the listbox: it names it, and points at the highlighted option.
+    const listbox = container.querySelector<HTMLElement>('[role="listbox"]')!;
+    expect(search!.getAttribute("role")).toBe("combobox");
+    expect(search!.getAttribute("aria-controls")).toBe(listbox.id);
+    const option = listbox.querySelector<HTMLElement>('[role="option"]')!;
+    expect(search!.getAttribute("aria-activedescendant")).toBe(option.id);
+    expect(listbox.contains(document.getElementById(option.id))).toBe(true);
   });
   it("filters a host catalog and reacts when model settings change", async () => {
     const models = [

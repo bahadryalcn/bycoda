@@ -1,4 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+/** Save state of a Markdown file sits beside Save in the view shell, not in the footer (plain files use the footer). */
+const saveStatus = (page: Page) => page.locator('[role=status][aria-live="polite"]');
 
 test("native draft save reporting never marks edits made during an older disk write as saved", async ({
   page,
@@ -134,7 +137,7 @@ for (const width of [1280, 800]) {
       });
       await page.getByRole("button", { name: "Restore draft", exact: true }).click();
       await expect(page.locator(".cm-content:visible")).toContainText("Saved recovery text");
-      await expect(page.locator("footer [role=status]")).toContainText("Unsaved changes");
+      await expect(saveStatus(page)).toContainText("Unsaved changes");
       await expect(
         page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
       ).toHaveAttribute("title", /Unsaved changes/);
@@ -150,7 +153,7 @@ for (const width of [1280, 800]) {
       await expect(page.getByLabel("Disk writes")).toHaveText("0");
       await page.getByRole("button", { name: "Save", exact: true }).click();
       await expect(page.getByLabel("Disk writes")).toContainText("1: # Recovered notes");
-      await expect(page.locator("footer [role=status]")).toHaveText("Saved");
+      await expect(saveStatus(page)).toHaveText("Saved");
     });
   }
 }
@@ -216,7 +219,7 @@ for (const light of [false, true]) {
     await page.keyboard.type("Keep my failed draft");
     const save = page.getByRole("button", { name: "Save", exact: true });
     await save.click();
-    const failure = page.locator("footer [role=status]");
+    const failure = saveStatus(page);
     const message = await page.evaluate(
       () => (window as unknown as { fileSaveFixture: { error: string } }).fileSaveFixture.error,
     );
@@ -275,7 +278,7 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await expect(
     page.getByRole("tab", { name: /^notes\.md(?: Unsaved changes)?$/ }),
   ).toHaveAccessibleName("notes.md Unsaved changes");
-  await expect(page.locator("footer [role=status]")).toContainText("Unsaved changes");
+  await expect(saveStatus(page)).toContainText("Unsaved changes");
   await page.keyboard.press("Control+s");
   const writes = page.getByLabel("Disk writes");
   await expect(writes).toContainText("1: ");
@@ -299,7 +302,7 @@ test("save works from editor, Explorer and preview without taking over chat", as
   await expect(writes).toContainText("2: ");
   await save.click();
   await expect(writes).toContainText("3: ");
-  await expect(page.locator("footer [role=status]")).toContainText("Saved");
+  await expect(saveStatus(page)).toContainText("Saved");
   await preview.focus();
   await page.keyboard.press("Control+s");
   await expect(writes).toContainText("4: ");

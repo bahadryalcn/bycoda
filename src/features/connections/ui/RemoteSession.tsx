@@ -1,6 +1,7 @@
 import { Button } from "../../../shared/ui/Button";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import { isLocalSyncMachine } from "../model/localSync";
+import { machineLabel } from "../model/machineIdentity";
 import {
   DEFAULT_PROVIDER_ACCOUNT_ID,
   sessionProviderAccountId,
@@ -340,6 +341,7 @@ export function RemoteSession({
       onOpenDiff={onOpenDiff}
       onOpenPlan={onOpenPlan}
       machine={machine}
+      hostLabel={machineLabel(machines, machine)}
       project={project}
       render={render}
     />
@@ -354,6 +356,7 @@ function ConnectedRemoteSession({
   onOpenDiff,
   onOpenPlan,
   machine,
+  hostLabel,
   project,
   render,
 }: {
@@ -364,6 +367,8 @@ function ConnectedRemoteSession({
   onOpenDiff: SessionPaneProps["onOpenDiff"];
   onOpenPlan: SessionPaneProps["onOpenPlan"];
   machine: RemoteMachine;
+  /** The machine name, with its address when another machine shares the name. */
+  hostLabel: string;
   project: RemoteProject;
   render: (overrides: RemoteSessionOverrides) => ReactNode;
 }) {
@@ -2810,8 +2815,8 @@ function ConnectedRemoteSession({
       : starting?.failed
         ? {
             text: starting.draft
-              ? t("Couldn’t save the draft on {p0}.", { p0: machine.name })
-              : t("Couldn’t send the message on {p0}.", { p0: machine.name }),
+              ? t("Couldn’t save the draft on {p0}.", { p0: hostLabel })
+              : t("Couldn’t send the message on {p0}.", { p0: hostLabel }),
             detail: error,
             action: {
               get label() {
@@ -2866,7 +2871,7 @@ function ConnectedRemoteSession({
             }
           : catalogProblem
             ? {
-                text: t("Couldn’t load models from {p0}.", { p0: machine.name }),
+                text: t("Couldn’t load models from {p0}.", { p0: hostLabel }),
                 detail: catalogProblem,
                 action: {
                   get label() {
@@ -3512,7 +3517,7 @@ function ConnectedRemoteSession({
       />
     ),
     workingMachine:
-      online && hostSession && snapshot?.status === "running" ? machine.name : undefined,
+      online && hostSession && snapshot?.status === "running" ? hostLabel : undefined,
     session,
     remoteSession: true,
     remoteFeatures: {
@@ -3546,9 +3551,9 @@ function ConnectedRemoteSession({
               : blocksSending(connection.status)
                 ? needsSignIn(connection.status)
                   ? t("{p0} needs you to sign in first. Use “Sign in and reconnect” above.", {
-                      p0: machine.name,
+                      p0: hostLabel,
                     })
-                  : t("Can’t reach {p0}. Send reconnects first.", { p0: machine.name })
+                  : t("Can’t reach {p0}. Send reconnects first.", { p0: hostLabel })
                 : undefined,
     allowedModelHarnesses:
       hostSession && !descriptor?.capabilities.includes("sessions.harnessSwitch")

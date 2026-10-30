@@ -14,6 +14,7 @@ import {
   type TranslationHistory,
 } from "../model/translationHistory";
 import { TranslationResultDialog } from "./TranslationResultDialog";
+import { useTranscriptImageOpen } from "./TranscriptImagePreview";
 import type { TranscriptSelection } from "../model/transcriptSelection";
 import { useCopyFeedback } from "../../../shared/hooks/useCopyFeedback";
 import { INTERRUPT_MESSAGE, isTurnInterruptMessage } from "../model/inFlight";
@@ -429,7 +430,9 @@ function AgentTranscriptComponent({
   const stableSaveNote = useStableCallback(onSaveNote);
   const stableSendDraft = useStableCallback(onSendDraft);
   const stableRemoveDraft = useStableCallback(onRemoveDraft);
-  const stableOpenFile = useStableCallback(onOpenFile);
+  // Image files preview in a dialog first (Ctrl/Cmd+click skips it); every other file opens a tab.
+  const imageOpen = useTranscriptImageOpen(cwd, onOpenFile);
+  const stableOpenFile = imageOpen.open;
   const stableOpenDiff = useStableCallback(onOpenDiff);
   const stableOpenPlan = useStableCallback(onOpenPlan);
   const stableBuildPlan = useStableCallback(onBuildPlan);
@@ -472,6 +475,7 @@ function AgentTranscriptComponent({
         ref={setScroller}
         tabIndex={-1}
         onClickCapture={(event) => {
+          imageOpen.noteClick(event);
           const control = (event.target as HTMLElement).closest<HTMLButtonElement>(
             ".markdown-code-toggle, .markdown-code-summary",
           );
@@ -649,6 +653,7 @@ function AgentTranscriptComponent({
             }
           />
         ) : null}
+        {imageOpen.preview}
         {translationRequest && translationContext ? (
           <TranslationResultDialog
             text={translationRequest.selection.text}

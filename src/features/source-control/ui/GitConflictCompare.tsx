@@ -2,7 +2,8 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useEffect, useMemo, useState } from "react";
 import { gitConflictStages, type GitConflictStages } from "../../../platform/tauri/fs";
-import { AlertCircle, Loader } from "../../../shared/ui/icons";
+import { AlertCircle } from "../../../shared/ui/icons";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { GitFeedback } from "./GitFeedback";
 import { comparisonsFor, missingSideNotes, type CompareId } from "../model/conflictCompare";
 import { conflictKindInfo } from "../model/conflictSection";
@@ -120,12 +121,8 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
       }
     >
       {load.status === "loading" ? (
-        <div
-          role="status"
-          aria-label={t("Loading conflict versions")}
-          className="grid flex-1 place-items-center text-[var(--ui-text-muted)]"
-        >
-          <Loader className="size-4 animate-spin" strokeWidth={1.75} />
+        <div className="min-h-0 flex-1">
+          <SurfaceLoading label={t("Loading conflict versions")} />
         </div>
       ) : load.status === "error" ? (
         <div className="grid flex-1 place-items-center p-6 text-center">

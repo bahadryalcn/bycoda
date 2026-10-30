@@ -29,6 +29,7 @@ import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { SubagentReport, SubagentStateLine } from "./SubagentAnatomy";
 import { Button } from "../../../shared/ui/Button";
+import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
@@ -88,6 +89,12 @@ const STEP_ENTRANCE_MS = 480;
 const STEP_ENTRANCE_MIN_MS = 160;
 const STEP_QUEUE_CALM_MS = 960;
 const STEP_QUEUE_MS = 2000;
+/**
+ * Notes and thinking lines sit in the trail like tool rows: no extra inset, the
+ * normal weight a sentence reads at, and the same minimum row height.
+ */
+const ACTIVITY_LINE_BUTTON =
+  "min-h-7 w-full min-w-0 justify-start px-0 py-0.5 text-left font-normal whitespace-normal";
 
 /**
  * The turn's work as phases. Related reasoning and calls stay together while
@@ -981,11 +988,11 @@ export function ActivityThinkingRow({
         aria-expanded={open}
         aria-label={open ? t("Hide thinking") : t("Show thinking: {p0}", { p0: text })}
         onClick={() => setOpen((value) => !value)}
-        className="min-w-0 text-left"
+        className={ACTIVITY_LINE_BUTTON}
       >
         {icon}
         <span
-          className={`min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
+          className={`min-w-0 flex-1 truncate font-sans text-sm font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-text-secondary) ${
             bare ? pulse : ""
           }`}
         >
@@ -1037,7 +1044,7 @@ function ActivityNoteRow({
         className="flex min-w-0 items-center gap-1.5 py-1"
       >
         {icon}
-        <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary)">
+        <span className="line-clamp-2 min-w-0 flex-1 font-sans text-sm font-normal text-(--ui-text-secondary)">
           {text}
         </span>
       </div>
@@ -1054,10 +1061,10 @@ function ActivityNoteRow({
         aria-expanded={open}
         aria-label={open ? t("Hide the full note") : t("Agent said: {p0}", { p0: text })}
         onClick={() => setOpen((value) => !value)}
-        className="min-w-0 text-left"
+        className={ACTIVITY_LINE_BUTTON}
       >
         {icon}
-        <span className="min-w-0 flex-1 truncate font-sans text-sm text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
+        <span className="line-clamp-2 min-w-0 flex-1 text-left font-sans text-sm font-normal text-(--ui-text-secondary) transition-colors duration-200 group-hover:text-(--ui-tone-neutral-fg)">
           {text}
         </span>
       </Button>
@@ -1106,7 +1113,6 @@ function ActivityToolRow({
   const summary = (
     <ToolCallSummary
       label={label}
-      wrap={block.tool?.kind === "shell"}
       preview={block.tool?.preview}
       cwd={cwd}
       chip={bare}
@@ -1117,12 +1123,14 @@ function ActivityToolRow({
     />
   );
 
+  // Every row shares one height and inset, so the trail keeps a single rhythm
+  // whether or not a row can open.
   return (
     <div className="flex min-w-0 flex-col">
       {hasResult ? (
-        <div
+        <ActionHost
           aria-label={`${errorDetail ? "Failed tool call" : "Tool call"}: ${label}`}
-          className="group flex min-w-0 items-center gap-1.5 py-1"
+          className="-mx-1 min-h-7 min-w-0 gap-1.5 px-1 py-0.5"
         >
           {bare ? null : <ActivityToolIcon state={state} live={live} />}
           <div
@@ -1132,12 +1140,18 @@ function ActivityToolRow({
             {summary}
           </div>
           <ToolCallStatusIcon state={state} stopped={isStoppedBlock(block)} />
-          <Button
+          {block.tool?.preview?.kind === "write" && !errorDetail ? (
+            <span className="shrink-0 text-ui-micro text-(--ui-text-secondary)">
+              {t("Changes")}
+            </span>
+          ) : null}
+          {/* Quiet until the row is hovered or focused, open, or failed: the row
+              itself also toggles, and keyboard focus always reveals the action. */}
+          <InlineAction
             motion="none"
-            variant="ghost"
-            type="button"
+            reveal={errorDetail ? "always" : "interaction"}
             aria-expanded={errorOpen}
-            aria-label={t(
+            label={t(
               errorOpen
                 ? errorDetail
                   ? "Hide error details for {p2}"
@@ -1148,23 +1162,18 @@ function ActivityToolRow({
               { p2: label },
             )}
             onClick={() => setErrorOpen((value) => !value)}
-            className="-m-1 shrink-0"
           >
-            {block.tool?.preview?.kind === "write" && !errorDetail ? (
-              <span className="text-ui-micro text-(--ui-text-secondary)">{t("Changes")}</span>
-            ) : null}
             <ChevronRight
-              className={`size-3.5 transition-transform ${
-                errorDetail ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"
-              } ${errorOpen ? "rotate-90" : ""}`}
+              className={`icon-sm transition-transform ${errorOpen ? "rotate-90" : ""}`}
               strokeWidth={1.75}
+              aria-hidden
             />
-          </Button>
-        </div>
+          </InlineAction>
+        </ActionHost>
       ) : (
         <div
           aria-label={t("Tool call: {p0}", { p0: label })}
-          className="flex min-w-0 items-center gap-1.5 py-1"
+          className="-mx-1 flex min-h-7 min-w-0 items-center gap-1.5 px-1 py-0.5"
         >
           {bare ? null : <ActivityToolIcon state={state} live={live} />}
           {summary}
@@ -1679,25 +1688,40 @@ export function HandoffDivider({ block }: { block: Block }) {
   if (!meta) return null;
 
   const preparing = meta.status === "preparing";
-  const label = preparing ? "Preparing a handoff" : HARNESS_TITLE[meta.to];
+  const failed = meta.status === "failed";
+  const cancelled = meta.status === "cancelled";
+  const terminal = failed || cancelled;
+  const label = preparing
+    ? "Preparing a handoff"
+    : terminal
+      ? `${HARNESS_TITLE[meta.to]} · ${t(failed ? "Failed" : "Cancelled")}`
+      : HARNESS_TITLE[meta.to];
 
   return (
     <div className="px-4 py-5">
       <div className="flex items-center gap-3">
         <div className="h-px min-w-4 flex-1 bg-(--color-stroke)" />
         <div
-          role="separator"
+          role={terminal ? "status" : "separator"}
+          aria-live={terminal ? "polite" : undefined}
           aria-label={
             preparing
               ? t("Preparing a handoff to {p0}", { p0: HARNESS_TITLE[meta.to] })
-              : t("Continued with {p0}", { p0: label })
+              : terminal
+                ? `${t("Handoff")} · ${label}`
+                : t("Continued with {p0}", { p0: label })
           }
-          className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption text-(--ui-text-secondary)"
+          className={`flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-ui-caption ${failed ? "text-(--ui-tone-danger-fg)" : "text-(--ui-text-secondary)"}`}
         >
           {preparing ? (
             <>
               <Spinner size="xs" className="shrink-0" />
               <Shimmer duration={1.4}>{label}</Shimmer>
+            </>
+          ) : terminal ? (
+            <>
+              <X aria-hidden="true" className="size-3.5 shrink-0" />
+              <span>{label}</span>
             </>
           ) : (
             <>

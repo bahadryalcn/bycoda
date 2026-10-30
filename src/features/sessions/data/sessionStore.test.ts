@@ -6,6 +6,14 @@ import { conversationReplayPrompt } from "../model/conversationRewind";
 import { newSession, type Block, type BtwThread, type Session } from "../model/session";
 import { clearConversation } from "../model/clearConversation";
 import {
+  appendPreparingHandoff,
+  failHandoff,
+  pendingHarnessSwitch,
+  pendingHandoff,
+  releaseHandoffSource,
+  setPreparingHandoffBrief,
+} from "../model/handoff";
+import {
   backfillClaudeShellCommands,
   backfillCodexShellCommands,
   isPersistableId,
@@ -83,6 +91,88 @@ describe("Claude Shell row recovery", () => {
 });
 
 describe("conversation rewind persistence", () => {
+  it.each(["failed", "cancelled"] as const)(
+    "preserves %s handoff source without turning it into a successful switch",
+    (status) => {
+      const source = {
+        from: "claude" as const,
+        fromModel: "claude:sonnet",
+        fromSettings: { thinking: "high", custom: "" },
+        fromProviderSessionId: "claude-thread",
+        fromProviderAccountId: "claude-account",
+      };
+      const preparing = appendPreparingHandoff(
+        {
+          ...newSession("codex", "/repo"),
+          blocks: [{ id: "u1", role: "user" as const, text: "Keep this context" }],
+          pendingSwitch: source,
+        },
+        "claude",
+        "codex",
+        source,
+      );
+      const failed = failHandoff(preparing, source, "Original cleanup is unknown");
+      failed.blocks.at(-1)!.handoff!.status = status;
+      const stored = sanitizeSessionForPersist(failed);
+      const divider = stored.blocks.at(-1)!;
+      expect(divider.handoff).toEqual({
+        from: "claude",
+        to: "codex",
+        status,
+        pending: false,
+        source,
+        error: "Original cleanup is unknown",
+      });
+      expect(
+        pendingHarnessSwitch({ ...failed, pendingSwitch: undefined, blocks: stored.blocks }),
+      ).toEqual(source);
+      expect(stored.blocks[0].text).toBe("Keep this context");
+    },
+  );
+
+  it("persists interrupted new handoff preparation as cancelled with original source, rather than ready", () => {
+    const source = { from: "claude" as const, fromModel: "claude:sonnet", fromSettings: {} };
+    const preparing = appendPreparingHandoff(
+      {
+        ...newSession("codex", "/repo"),
+        blocks: [{ id: "u1", role: "user" as const, text: "Continue" }],
+        pendingSwitch: source,
+      },
+      "claude",
+      "codex",
+      source,
+    );
+    expect(sanitizeSessionForPersist(preparing).blocks.at(-1)?.handoff).toMatchObject({
+      status: "cancelled",
+      pending: false,
+      source,
+    });
+  });
+
+  it("persists context-only retry after verified outgoing cleanup without reviving its source", () => {
+    const source = { from: "claude" as const, fromModel: "claude:sonnet", fromSettings: {} };
+    const preparing = setPreparingHandoffBrief(
+      appendPreparingHandoff(
+        {
+          ...newSession("codex", "/repo"),
+          blocks: [{ id: "u1", role: "user" as const, text: "Original request" }],
+          pendingSwitch: source,
+        },
+        "claude",
+        "codex",
+        source,
+      ),
+      "Keep the original Claude thread context.",
+    );
+    const failed = failHandoff(releaseHandoffSource(preparing), undefined, "Archive failed");
+    const stored = sanitizeSessionForPersist(failed);
+    expect(stored.blocks.at(-1)?.handoff).toMatchObject({ status: "failed", pending: true });
+    expect(stored.blocks.at(-1)?.handoff?.source).toBeUndefined();
+    const restored = { ...failed, pendingSwitch: undefined, blocks: stored.blocks };
+    expect(pendingHarnessSwitch(restored)).toBeUndefined();
+    expect(pendingHandoff(restored)?.text).toBe("Keep the original Claude thread context.");
+  });
+
   it("stores recovery context for an unsent provider switch without duplicating the live handoff", () => {
     const session = newSession("claude", "/repo");
     session.blocks = [

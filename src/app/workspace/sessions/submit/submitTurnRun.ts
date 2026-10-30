@@ -11,9 +11,13 @@ import { invalidateProjectLocation } from "../../../../features/projects/model/p
 import { notifyReviewChanged } from "../../../../features/sessions/model/checkpoint";
 import {
   chooseHandoffBrief,
+  failHandoff,
+  releaseHandoffSource,
+  setPreparingHandoffBrief,
   shouldAskOutgoingAgent,
 } from "../../../../features/sessions/model/handoff";
 import { requestOutgoingHandoff } from "../../../../features/sessions/model/handoffTurn";
+import { handoffContextSession } from "../../../../features/sessions/model/handoffBudget";
 import { sessionsRef, setSessions } from "../../../../features/sessions/model/sessionsStore";
 import { prepareSessionWorkspace } from "../../../../features/workspaces/model/sessionWorkspace";
 import {
@@ -35,6 +39,7 @@ export function startSubmittedTurn(
   const { current, editedResend, handoffCard, initialWorkCwd, createDraftWorktree, pendingSwitch } =
     pre;
   const { gen, proposalId, queuedHandoff, launchTitleGeneration, turn } = setup;
+  let outgoingRetired = false;
   void (async () => {
     let workCwd = initialWorkCwd;
     if (createDraftWorktree) {
@@ -94,7 +99,7 @@ export function startSubmittedTurn(
       : queuedHandoff;
     if (pendingSwitch) {
       let agentText = "";
-      if (shouldAskOutgoingAgent(current) && isLiveHarness(pendingSwitch.from)) {
+      if (!queuedHandoff && shouldAskOutgoingAgent(current) && isLiveHarness(pendingSwitch.from)) {
         try {
           agentText = await requestOutgoingHandoff({
             harness: pendingSwitch.from,
@@ -111,10 +116,35 @@ export function startSubmittedTurn(
       }
       if (turnGen.current.get(sessionId) !== gen) return;
       const latest = sessionsRef.current.find((s) => s.id === sessionId);
-      const brief = chooseHandoffBrief(agentText, latest ?? current, text);
+      const brief =
+        queuedHandoff?.text ??
+        chooseHandoffBrief(
+          agentText,
+          handoffContextSession(latest ?? current, text, input.attachments),
+          text,
+        );
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && turnGen.current.get(sessionId) === gen
+            ? setPreparingHandoffBrief(session, brief)
+            : session,
+        ),
+      );
       await forgetHarnessSession(pendingSwitch.from, sessionId);
+      outgoingRetired = true;
       if (turnGen.current.get(sessionId) !== gen) return;
-      turn.wrap = { from: pendingSwitch.from, to: current.harness, text: brief };
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && turnGen.current.get(sessionId) === gen
+            ? releaseHandoffSource(session)
+            : session,
+        ),
+      );
+      turn.wrap = {
+        from: queuedHandoff?.from ?? pendingSwitch.from,
+        to: current.harness,
+        text: brief,
+      };
     }
     const events = createSubmitTurnEvents(ctx, input, pre, setup, workCwd);
 
@@ -140,10 +170,18 @@ export function startSubmittedTurn(
         setSessions((prev) =>
           prev.map((session) => {
             if (session.id !== sessionId || turnGen.current.get(sessionId) !== gen) return session;
-            const stopped = {
+            const stoppedTurn = {
               ...stopStreaming(session, Date.now(), true),
               worktreePreparing: undefined,
             };
+            const stopped = pendingSwitch
+              ? failHandoff(
+                  stoppedTurn,
+                  outgoingRetired ? undefined : pendingSwitch,
+                  turn.controlOutcome.error!,
+                  outgoingRetired ? turn.wrap?.text : undefined,
+                )
+              : stoppedTurn;
             return proposalId && turn.proposalDraft
               ? withOrchestrationProposal(
                   stopped,

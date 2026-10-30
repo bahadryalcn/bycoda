@@ -23,6 +23,7 @@ import { Switch } from "../../../shared/ui/Switch";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ToolHeader } from "../../../app/shell/ToolNavigation";
@@ -506,9 +507,7 @@ function AutomationsContent({
           <aside className="automation-list flex shrink-0 flex-col">
             <div ref={listLock} className="min-h-0 flex-1 overflow-y-auto overscroll-none p-1.5">
               {loading ? (
-                <div className="grid place-items-center py-12 text-(--ui-text-muted)">
-                  <LoaderCircle className="icon-md animate-spin" />
-                </div>
+                <SurfaceLoading />
               ) : visible.length > 0 ? (
                 <ul className="space-y-0.5">
                   {visible.map((automation) => (
@@ -568,8 +567,8 @@ function AutomationsContent({
             </Alert>
           ) : null}
           {loading && !editorDraft ? (
-            <div className="grid min-h-0 flex-1 place-items-center text-(--ui-text-muted)">
-              <LoaderCircle className="icon-md animate-spin" />
+            <div className="min-h-0 flex-1">
+              <SurfaceLoading />
             </div>
           ) : editorDraft ? (
             <HostModelSource

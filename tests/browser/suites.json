@@ -1149,8 +1149,8 @@
         "git-workspace.spec.ts"
       ],
       "fixture": {
-        "config": "tests/browser/vite.config.ts",
-        "mode": "dev",
+        "config": "tests/browser/vite.transcript.config.ts",
+        "mode": "preview",
         "path": "/tests/browser/transcript.html"
       },
       "projects": [

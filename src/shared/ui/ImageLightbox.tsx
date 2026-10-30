@@ -1,5 +1,5 @@
 import { useT } from "../i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { LAYER } from "../lib/layers";
 import { AlertCircle, ImagePlus, Maximize2, Minus, Plus, X } from "./icons";
@@ -7,12 +7,25 @@ import { useOverlay } from "./overlay";
 import { useImageZoom } from "../hooks/useImageZoom";
 import { ImageCompare } from "./ImageCompare";
 import { Button } from "./Button";
+import { Spinner } from "./Spinner";
 import { MediaToolbar, MediaToolbarButton } from "./MediaToolbar";
 
 type Props = {
   src: string;
   alt: string;
   onClose: () => void;
+  /** Icon actions for the header (`MediaToolbarButton`s), shown beside Close. */
+  actions?: ReactNode;
+  /** The image is still being read; `src` may be empty. The dialog opens at once and keeps its focus return. */
+  loading?: boolean;
+  /** The image cannot be shown: this message replaces the stage. `actions` stay available. */
+  error?: string;
+  /** A failed header action (for example Reveal): shown under the stage while the image stays open. */
+  notice?: string;
+  /** Offered with `error` as Retry. */
+  onRetry?: () => void;
+  /** Remount key when `src` is not the image's identity (it changes from empty to a loaded URL). */
+  resetKey?: string;
 };
 
 /**
@@ -22,10 +35,10 @@ type Props = {
  */
 export function ImageLightbox(props: Props) {
   // A different image starts clean (load failure, retry attempt, comparison): remount keyed by `src`.
-  return <ImageLightboxContent key={props.src} {...props} />;
+  return <ImageLightboxContent key={props.resetKey ?? props.src} {...props} />;
 }
 
-function ImageLightboxContent({ src, alt, onClose }: Props) {
+function ImageLightboxContent({ src, alt, onClose, actions, loading = false, error, notice, onRetry }: Props) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -36,13 +49,24 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
   const [comparison, setComparison] = useState<{ url: string; name: string } | null>(null);
   const [compareError, setCompareError] = useState(false);
   const viewportRef = useRef<HTMLDivElement>(null);
-  const viewing = !failed && !comparison;
+  const unavailable = !loading && !!error;
+  const viewing = !failed && !comparison && !loading && !unavailable;
   const imageZoom = useImageZoom(viewportRef, src, viewing);
   const zoomed = Math.abs(imageZoom.value.scale - 1) > 0.005;
   // The viewport that held focus unmounts on failure; hand focus to the recovery action.
   useEffect(() => {
     if (failed) retryRef.current?.focus();
   }, [failed]);
+  // A deferred load finished: hand focus from the header to the stage, unless the user moved it away.
+  const wasLoading = useRef(loading);
+  useEffect(() => {
+    const finished = wasLoading.current && !loading;
+    wasLoading.current = loading;
+    const focused = document.activeElement;
+    const inDialog = !!focused && (focused === document.body || !!dialogRef.current?.contains(focused));
+    if (!finished || !inDialog) return;
+    (viewportRef.current ?? retryRef.current)?.focus();
+  }, [loading]);
   useEffect(
     () => () => {
       if (comparison) URL.revokeObjectURL(comparison.url);
@@ -78,18 +102,39 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
         <p title={alt} className="text-ui-secondary text-on-solid min-w-0 flex-1 truncate">
           {alt}
         </p>
-        <MediaToolbarButton
-          ref={closeRef}
-          type="button"
-          label={t("Close image preview")}
-          tooltip={t("Close")}
-          onClick={onClose}
-        >
-          <X className="icon-sm" strokeWidth={1.75} />
-        </MediaToolbarButton>
+        <MediaToolbar label={t("Image actions")} className="shrink-0">
+          {actions}
+          <MediaToolbarButton
+            ref={closeRef}
+            type="button"
+            label={t("Close image preview")}
+            tooltip={t("Close")}
+            onClick={onClose}
+          >
+            <X className="icon-sm" strokeWidth={1.75} />
+          </MediaToolbarButton>
+        </MediaToolbar>
       </div>
       <div className="relative flex min-h-0 min-w-0 flex-1 items-center justify-center">
-        {failed ? (
+        {loading ? (
+          <div role="status" className="text-ui-secondary text-on-solid flex items-center gap-2">
+            <Spinner size="sm" />
+            <p>{t("Loading image preview…")}</p>
+          </div>
+        ) : unavailable ? (
+          <div
+            role="alert"
+            className="text-ui-secondary text-on-solid flex max-w-[40rem] flex-col items-center gap-3 text-center"
+          >
+            <AlertCircle className="icon-lg" aria-hidden />
+            <p className="break-words">{error}</p>
+            {onRetry ? (
+              <Button ref={retryRef} data-lightbox-focus="" variant="secondary" onClick={onRetry}>
+                {t("Retry")}
+              </Button>
+            ) : null}
+          </div>
+        ) : failed ? (
           <div
             role="alert"
             className="text-ui-secondary text-on-solid flex flex-col items-center gap-3 text-center"
@@ -150,9 +195,9 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
           </div>
         )}
       </div>
-      {compareError ? (
+      {compareError || notice ? (
         <p role="alert" className="text-ui-secondary text-on-solid shrink-0 text-center">
-          {t("Preview unavailable. Try again.")}
+          {compareError ? t("Preview unavailable. Try again.") : notice}
         </p>
       ) : null}
       <div className="flex shrink-0 flex-wrap items-center justify-center gap-2">
@@ -202,13 +247,15 @@ function ImageLightboxContent({ src, alt, onClose }: Props) {
             setComparison({ url: URL.createObjectURL(file), name: file.name });
           }}
         />
-        <Button
-          variant="secondary"
-          startIcon={<ImagePlus className="icon-sm" aria-hidden />}
-          onClick={() => pickerRef.current?.click()}
-        >
-          {t("Compare with image")}
-        </Button>
+        {loading || unavailable ? null : (
+          <Button
+            variant="secondary"
+            startIcon={<ImagePlus className="icon-sm" aria-hidden />}
+            onClick={() => pickerRef.current?.click()}
+          >
+            {t("Compare with image")}
+          </Button>
+        )}
         {comparison ? (
           <Button variant="secondary" onClick={stopComparison}>
             {t("Stop comparison")}

@@ -147,6 +147,7 @@ import {
   useRemoteMachines,
 } from "../../features/connections/model/connections";
 import { remoteProjectFor } from "../../features/connections/model/remoteProjects";
+import { machineLabel } from "../../features/connections/model/machineIdentity";
 import { connectionIndicator } from "../../features/connections/model/remoteConnection";
 import { useRemoteConnection } from "../../features/connections/model/useRemoteConnection";
 import { useProjectMenu, type ProjectMenuMove } from "./useProjectMenu";
@@ -2144,20 +2145,21 @@ function ProjectCard({
       : indicator.label;
   // The row's second label tells same-named projects apart: the machine for a remote project, the parent
   // folder for a local project whose name another rail project shares. The stored name never changes.
+  const hostLabel = machine ? machineLabel(machines, machine) : "";
   const context =
-    machine?.name ??
+    hostLabel ||
     (!remote && isDuplicateProjectName(nameCollisions, name) ? parentFolderLabel(item.path) : "");
   const changeSummary = change ? projectGitChangeSummary(change, t) : "";
   // The tooltip shows on hover and, through the shared Button hint, on keyboard focus, so it is one line.
   const cardTitle = identityLine([
     name,
-    remote ? `${remote.cwd} on ${machine?.name ?? "another machine"} (${connection})` : item.path,
+    remote ? `${remote.cwd} on ${hostLabel || "another machine"} (${connection})` : item.path,
     busy && t("Working"),
     change && t("{p0} uncommitted", { p0: changeSummary }),
     muteStatus,
   ]);
   const cardAriaLabel = [
-    machine ? `${name} on ${machine.name}` : context ? `${name} (${context})` : name,
+    machine ? `${name} on ${hostLabel}` : context ? `${name} (${context})` : name,
     busy ? "working" : "",
     change ? projectGitChangeSpoken(change, t) : "",
     muteStatus,

@@ -1,12 +1,12 @@
 import { translateAt, useLocale, type LanguageDomain } from "../i18n";
 import { NativePopupHost } from "./NativePopupHost";
 import { PanelHeader } from "./PanelHeader";
-import { useContext, useId, useRef, type ReactNode } from "react";
+import { useContext, useId, useLayoutEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLockOverscroll } from "../hooks/useLockOverscroll";
 import { LAYER } from "../lib/layers";
 import { GlassBackdrop } from "../../app/shell/GlassBackdrop";
-import { OverlayMenuLayer, OverlayParent, useOverlay } from "./overlay";
+import { OverlayMenuLayer, OverlayParent, overlayContainsTarget, useOverlay } from "./overlay";
 
 export type ModalSize = "sm" | "md" | "lg" | "full";
 
@@ -93,6 +93,20 @@ export function ModalPanel({
     true,
     '[data-button-hierarchy="primary"]:not([aria-disabled="true"]):not([aria-busy="true"])',
   );
+  // React appends portals bottom-up when a dialog and its nested dialog mount in one commit, which
+  // leaves the nested dialog's layer below its parent. Parent layout effects run after the
+  // overlay stack registered both entries, so the parent moves itself back under its descendants.
+  useLayoutEffect(() => {
+    const layer = dialogRef.current?.closest<HTMLElement>("[data-modal-layer]");
+    if (!layer || layer.parentElement !== document.body) return;
+    for (const other of document.body.querySelectorAll<HTMLElement>(":scope > [data-modal-layer]")) {
+      if (other === layer) break;
+      const dialog = other.querySelector("[role='dialog']");
+      if (!dialog || !overlayContainsTarget(overlayId, dialog)) continue;
+      other.before(layer);
+      break;
+    }
+  }, [overlayId]);
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
   const uid = useId();
   const titleId = `${uid}-title`;

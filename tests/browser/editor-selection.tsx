@@ -27,7 +27,7 @@ const readabilityDoc =
             ).join("\n")
           : 'function render() {\n  // ! Keep the error visible\n  // TODO: add a loading state\n  const text = "[not a bracket]";\n  return (\n    <section>\n      <span>{text}</span>\n    </section>\n  );\n}\n';
 if (searchMode)
-  localStorage.setItem("bycoda.diffLayout", searchMode === "split" ? "split" : "unified");
+  localStorage.setItem("bycoda.diffLayout", searchMode === "split" ? "split" : "inline");
 const searchDoc = Array.from({ length: 300 }, (_, index) => `const value${index} = ${index};`).join(
   "\n",
 );

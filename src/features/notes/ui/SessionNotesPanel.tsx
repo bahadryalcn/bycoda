@@ -1,6 +1,7 @@
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
@@ -498,11 +499,8 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           ) : null}
         </div>
       ) : (
-        <div className="grid min-h-0 flex-1 place-items-center">
-          <LoaderCircle
-            className="icon-md animate-spin text-(--ui-text-secondary)"
-            strokeWidth={1.75}
-          />
+        <div className="min-h-0 flex-1">
+          <SurfaceLoading label={t("Loading notes…")} />
         </div>
       )}
       <div className="session-notes-library-link">

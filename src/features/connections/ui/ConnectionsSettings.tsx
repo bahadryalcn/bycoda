@@ -51,6 +51,7 @@ import {
   subscribeChanges,
 } from "../model/remoteHealth";
 import { connectionIndicator } from "../model/remoteConnection";
+import { machineContext, machineLabel } from "../model/machineIdentity";
 import { REMOTE_PROVIDERS, type HostDescriptor, type RemoteMachine } from "../model/protocol";
 
 /** What this page's own check learned about a machine. */
@@ -141,17 +142,6 @@ function SyncLine({ machineId }: { machineId: string }) {
       </Button>
     </div>
   );
-}
-
-/** Short address that tells same-named machines apart; empty when the name is already unique. */
-function machineContext(machines: readonly RemoteMachine[], machine: RemoteMachine): string {
-  const shared = machines.some((other) => other.id !== machine.id && other.name === machine.name);
-  return shared ? (machine.ssh?.target ?? machine.endpoint) : "";
-}
-
-function machineLabel(machines: readonly RemoteMachine[], machine: RemoteMachine): string {
-  const context = machineContext(machines, machine);
-  return context ? `${machine.name} (${context})` : machine.name;
 }
 
 export function ConnectionsSettings() {

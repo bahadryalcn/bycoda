@@ -8,7 +8,10 @@ import {
   supportsProviderAccounts,
 } from "../../../../features/providers/model/providerAccounts";
 import { createEditedResendAttempt } from "../../../../features/sessions/model/editLastTurn";
-import { isPreparingHandoff } from "../../../../features/sessions/model/handoff";
+import {
+  isPreparingHandoff,
+  pendingHarnessSwitch,
+} from "../../../../features/sessions/model/handoff";
 import {
   queuedMessageForSubmit,
   queuedSteerRoute,
@@ -266,10 +269,8 @@ export function prepareSubmitPreflight(ctx: SubmitDeps, input: SubmitInput): Pre
           composeNoteMessage(noteCard, promptText),
         ));
 
-  const pendingSwitch =
-    current.pendingSwitch && current.pendingSwitch.from !== current.harness
-      ? current.pendingSwitch
-      : null;
+  const switchSource = pendingHarnessSwitch(current);
+  const pendingSwitch = switchSource && switchSource.from !== current.harness ? switchSource : null;
   return {
     settled: false,
     pre: {

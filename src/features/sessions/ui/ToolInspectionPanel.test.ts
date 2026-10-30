@@ -53,7 +53,7 @@ it("keeps copy feedback local, blocks duplicates and permits retry after a failu
   expect(button.hasAttribute("aria-busy")).toBe(false);
   await act(async () => button.click());
   expect(clipboard.copy).toHaveBeenCalledTimes(2);
-  expect(button.textContent).toContain("Copied");
+  expect(button.getAttribute("aria-label")).toBe("Copied");
 });
 
 it("does not show an old copy result on a different tool output", async () => {
@@ -79,10 +79,29 @@ it("does not show an old copy result on a different tool output", async () => {
     ),
   );
   await act(async () => resolve());
-  expect(container.querySelector("button")!.textContent).toBe("Copy");
+  expect(container.querySelector("button")!.getAttribute("aria-label")).toBe("Copy");
   await act(async () => container.querySelector("button")!.click());
   expect(clipboard.copy).toHaveBeenLastCalledWith("second output");
 });
+it("wraps plain output by default and keeps the choice after Wrap lines is toggled", async () => {
+  const block: Block = {
+    id: "wrap",
+    role: "tool",
+    text: "Result",
+    tool: { output: "a long line of output", status: "completed" },
+  };
+  await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
+  const pre = container.querySelector("pre")!;
+  expect(pre.className).toContain("whitespace-pre-wrap");
+  const wrapButton = container.querySelector<HTMLButtonElement>('button[aria-label="Wrap lines"]')!;
+  expect(wrapButton.getAttribute("aria-pressed")).toBe("true");
+  await act(async () => wrapButton.click());
+  expect(container.querySelector("pre")!.className).not.toContain("whitespace-pre-wrap");
+  expect(localStorage.getItem("bycoda.toolOutputWrap")).toBe("0");
+  await act(async () => wrapButton.click());
+  expect(container.querySelector("pre")!.className).toContain("whitespace-pre-wrap");
+});
+
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();

@@ -11,8 +11,7 @@ import { noteSharedLocalStop } from "../../../features/connections/model/useShar
 import { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { cancelHarnessTurn, stopStreaming } from "../../../integrations/harness";
 import {
-  buildDeterministicHandoff,
-  completeHandoff,
+  cancelHandoff,
   isPreparingHandoff,
   sessionChildHarnesses,
 } from "../../../features/sessions/model/handoff";
@@ -170,9 +169,7 @@ export function useSessionStop(deps: SessionStopDeps) {
             const stopped = s.busy
               ? markConversationTurnStopped(stopStreaming(s))
               : stopStreaming(s);
-            const completed = isPreparingHandoff(stopped)
-              ? completeHandoff(stopped, buildDeterministicHandoff(stopped))
-              : stopped;
+            const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
             const ready = {
               ...completed,
               worktreePreparing: undefined,

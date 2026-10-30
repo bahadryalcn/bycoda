@@ -67,3 +67,33 @@ it("names the image and keeps the compare picker out of the tab order", async ()
   expect(picker.tabIndex).toBe(-1);
   expect(picker.getAttribute("aria-hidden")).toBe("true");
 });
+
+it("shows header actions, a loading stage and an honest error with Retry while keeping the actions", async () => {
+  const onRetry = vi.fn();
+  const actions = createElement("button", { type: "button", "aria-label": "Open in new tab" });
+  await act(async () =>
+    root.render(
+      createElement(ImageLightbox, { src: "", alt: "Photo", onClose: vi.fn(), actions, loading: true }),
+    ),
+  );
+  expect(document.querySelector('[role="status"]')).not.toBeNull();
+  expect(document.querySelector("img")).toBeNull();
+  expect(button("Open in new tab")).toBeTruthy();
+  await act(async () =>
+    root.render(
+      createElement(ImageLightbox, {
+        src: "",
+        alt: "Photo",
+        onClose: vi.fn(),
+        actions,
+        error: "Could not read Photo: missing",
+        onRetry,
+      }),
+    ),
+  );
+  expect(document.querySelector('[role="alert"]')!.textContent).toContain("missing");
+  expect(button("Open in new tab")).toBeTruthy();
+  expect(document.querySelector('[aria-label="Zoom in"]')).toBeNull();
+  await act(async () => button("Retry").click());
+  expect(onRetry).toHaveBeenCalledOnce();
+});

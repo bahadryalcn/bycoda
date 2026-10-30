@@ -225,9 +225,9 @@ export function isFileTool(kind?: string, title?: string, preview?: ToolPreview)
 
 export function isExecuteTool(kind?: string, title?: string): boolean {
   const key = kind?.trim().toLowerCase() ?? "";
-  if (key === "execute" || key === "shell" || key === "bash") return true;
+  if (key === "execute" || key === "shell" || key === "bash" || key === "powershell") return true;
   if (key && key !== "other") return false;
-  return /^(bash|shell|run(?:ning)?(?:\s+command)?)\b/i.test(title?.trim() ?? "");
+  return /^(bash|shell|powershell|pwsh|run(?:ning)?(?:\s+command)?)\b/i.test(title?.trim() ?? "");
 }
 
 /** The argv / script a shell tool is about to run, if the harness sent it. */
@@ -442,7 +442,7 @@ export function stubFilePreview(kind?: string, title?: string): ToolPreview {
 }
 
 export function isWeakToolTitle(value: string): boolean {
-  return /^(tool|shell|bash|execute|command|skill|read|edit|search|find|grep|glob|fetch|other|write|delete|move|think|run|list|working|reading|editing|searching|writing|running|listing|fetching|thinking|deleting|moving|mcp:\s*tool|read file|edit file|write file|run command|ran command|unnamed)$/i.test(
+  return /^(tool|shell|bash|powershell|pwsh|execute|command|skill|read|edit|search|find|grep|glob|fetch|other|write|delete|move|think|run|list|working|reading|editing|searching|writing|running|listing|fetching|thinking|deleting|moving|mcp:\s*tool|read file|edit file|write file|run command|ran command|unnamed)$/i.test(
     value.trim(),
   );
 }
@@ -983,7 +983,7 @@ function firstLine(value: string | undefined): string {
 }
 
 function stripExecutePrefix(title: string): string {
-  return title.replace(/^(?:bash|shell|execute)\s*[:\-]\s+/i, "").trim();
+  return title.replace(/^(?:bash|powershell|pwsh|shell|execute)\s*[:\-]\s+/i, "").trim();
 }
 
 function skillNameField(value: unknown): string | undefined {

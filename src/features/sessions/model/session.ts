@@ -121,7 +121,7 @@ export type ModelTarget = {
 
 export type PlanBuildTarget = ModelTarget;
 
-export type HandoffStatus = "preparing" | "ready";
+export type HandoffStatus = "preparing" | "ready" | "failed" | "cancelled";
 
 export type HandoffMeta = {
   from: HarnessId;
@@ -129,6 +129,10 @@ export type HandoffMeta = {
   status: HandoffStatus;
   /** Inject this brief into prompts to `to` until that harness accepts a turn. */
   pending?: boolean;
+  /** Original context while outgoing cleanup is unresolved; never execution authority. */
+  source?: PendingHarnessSwitch;
+  /** Failure detail for an interrupted preparation, without claiming a successful switch. */
+  error?: string;
 };
 
 /** One persisted question/answer in a completed turn's side conversation. */

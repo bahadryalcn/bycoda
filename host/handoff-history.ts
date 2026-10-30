@@ -60,11 +60,21 @@ export class HandoffHistoryStore {
     sessionId: string,
     cursor = 0,
     limit = 20,
-  ): Promise<{ messages: HandoffHistory["messages"]; nextCursor?: number }> {
+  ): Promise<{
+    messages: HandoffHistory["messages"];
+    nextCursor?: number;
+    retainedContext?: string;
+  }> {
     const history = JSON.parse(await readFile(this.path(sessionId), "utf8")) as HandoffHistory;
     const start = Math.max(0, Math.floor(cursor));
     const end = start + Math.max(1, Math.min(100, Math.floor(limit)));
     const messages = history.messages.slice(start, end);
-    return { messages, ...(end < history.messages.length ? { nextCursor: end } : {}) };
+    return {
+      messages,
+      ...(start === 0 && history.retainedContext
+        ? { retainedContext: history.retainedContext }
+        : {}),
+      ...(end < history.messages.length ? { nextCursor: end } : {}),
+    };
   }
 }

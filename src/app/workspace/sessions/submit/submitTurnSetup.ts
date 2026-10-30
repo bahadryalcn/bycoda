@@ -162,7 +162,7 @@ export function prepareSubmittedTurn(
     ...(options?.managed ? { internal: true } : {}),
   };
   const live = isLiveHarness(current.harness);
-  const queuedHandoff = live && !pendingSwitch ? pendingHandoff(current) : null;
+  const queuedHandoff = live ? pendingHandoff(current) : null;
 
   if (pendingSwitch && current.busy) {
     void cancelHarnessTurn(pendingSwitch.from, sessionId);
@@ -251,11 +251,11 @@ export function prepareSubmittedTurn(
           const sealed = stopStreaming({
             ...next,
             title: titled,
-            pendingSwitch: undefined,
+            pendingSwitch,
           });
           return withWorkspacePreparation(
             appendUser(
-              appendPreparingHandoff(sealed, pendingSwitch.from, next.harness),
+              appendPreparingHandoff(sealed, pendingSwitch.from, next.harness, pendingSwitch),
               visibleText,
               visible,
               cards,

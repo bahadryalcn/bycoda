@@ -3,15 +3,18 @@ import { useT } from "../../../shared/i18n";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { lastTurnRecall, lastUserTurnStartIndex } from "../model/editLastTurn";
+import { lastHandoffBlock } from "../model/handoff";
 import { isSessionErrorBlock } from "../model/sessionIssue";
 import type { Attachment, ComposerTurnOptions, Session } from "../model/session";
 
 /** Retry only the latest submitted user turn with a provider error. */
 export function failedTurnRetry(session: Session) {
+  const handoff = lastHandoffBlock(session.blocks)?.handoff;
+  const retryingSwitch = handoff?.status === "failed" || handoff?.status === "cancelled";
   if (
     session.busy ||
     session.pendingQuestion ||
-    session.pendingSwitch ||
+    (session.pendingSwitch && !retryingSwitch) ||
     session.historyLoading ||
     session.historyLoadError ||
     session.adoptedSyncConflict ||

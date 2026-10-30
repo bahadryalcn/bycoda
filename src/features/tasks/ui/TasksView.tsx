@@ -3,6 +3,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { Popover } from "../../../shared/ui/Popover";
 import { Alert } from "../../../shared/ui/Alert";
 import { EmptyState } from "../../../shared/ui/EmptyState";
+import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { projectDisplayName } from "../../projects/model/projectNames";
@@ -1515,9 +1516,7 @@ function TasksContent({
           className="min-h-0 min-w-0 flex-1 overflow-x-scroll overflow-y-auto overscroll-none p-3 [scrollbar-gutter:stable] @max-[640px]/task-area:has-[+aside]:hidden"
         >
           {loading ? (
-            <div className="grid h-full place-items-center text-(--ui-text-secondary)">
-              <LoaderCircle className="icon-md animate-spin" />
-            </div>
+            <SurfaceLoading />
           ) : listView || selectMode || section === "backlog" ? (
             tasks.length ? (
               <TaskList
