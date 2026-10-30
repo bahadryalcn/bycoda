@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { HostChildBackend } from "./child-backend";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
+import { HostRunWriters } from "./run-writers";
 import { hostProviders } from "./providers";
 import { readAttachmentChunk } from "./attachments";
 import { discoverCodexModels } from "../src/integrations/harness/providers/codex/codexCatalog";
@@ -105,6 +106,7 @@ describe("existing providers over headless process I/O", () => {
     directory = realpathSync(mkdtempSync(join(tmpdir(), "bycoda-provider-test-")));
     const binary = join(directory, "provider.cjs");
     writeFileSync(binary, fixture, { mode: 0o700 });
+    const runWriters = new HostRunWriters();
     backend = new HostChildBackend(
       {
         codex: binary,
@@ -118,11 +120,13 @@ describe("existing providers over headless process I/O", () => {
         antigravity: binary,
       },
       join(directory, "attachments"),
+      undefined,
+      runWriters,
     );
     configureChildBackend(backend);
     release = await acquireHarnessBridge();
     store = new HostStore(join(directory, "host.db"));
-    engine = new HostEngine(store, hostProviders);
+    engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
     await engine.ready;
   });
   afterAll(async () => {

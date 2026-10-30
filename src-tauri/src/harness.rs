@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+#[cfg(all(test, unix))]
+use std::process::Child;
+use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex, OnceLock};
 use std::thread;
@@ -21,6 +23,11 @@ use crate::native_provider_output::{
     OutputSource, OutputState, UnavailableReason,
 };
 use crate::passwd_identity;
+
+pub(crate) mod process_lifecycle;
+mod process_receipts;
+pub(crate) mod turn_writes;
+use process_lifecycle::{OwnedChild, WriteGate};
 
 const STDOUT_EVENT: &str = "harness-stdout-lines";
 const STDERR_EVENT: &str = "harness-stderr-lines";
@@ -154,13 +161,70 @@ struct LiveChild {
     pid: u32,
     /// The actual process output stream's UUID, not the registry-wide process epoch.
     construction_id: String,
+    /// Captured from the actual spawning window, never reconstructed by label.
+    issuer: Option<Arc<crate::control::receipts::WindowIssuer>>,
+    /// Original Native turn/output association; warm per-turn control is separate.
+    _control_turn: Option<Arc<crate::control::ChildControlTurn>>,
     account: Option<HarnessAccount>,
     /// Windows that consume this child's output.
     owners: Arc<Owners>,
     output: Option<Arc<NativeOutputStream>>,
+    process: Option<Arc<crate::native_provider_output::NativeOutputChild>>,
+    exit: Option<Arc<ManagedProviderExit>>,
+    writers: Arc<WriteGate>,
 }
 
 impl LiveChild {
+    fn admit_write(&self) -> Result<LiveWrite, String> {
+        let permit = self.writers.admit()?;
+        let process = self
+            .process
+            .as_ref()
+            .ok_or("Original process owner unavailable")?
+            .pin()
+            .map_err(|e| e.to_string())?;
+        Ok(LiveWrite {
+            _permit: permit,
+            _process: process,
+            gate: self.writers.clone(),
+            started: false,
+            completed: false,
+        })
+    }
+    fn request_stop(&self) -> Result<(), String> {
+        self.writers.close();
+        self.process
+            .as_ref()
+            .ok_or("Original process owner unavailable")?
+            .request_stop()
+            .map_err(|e| e.to_string())
+    }
+    fn stop_and_drain(&self) -> Result<(), String> {
+        let stopped = self.request_stop();
+        let writers = self.writers.drain();
+        let process = self
+            .process
+            .as_ref()
+            .ok_or("Original process owner unavailable")?
+            .wait_actual()
+            .map_err(|e| e.to_string());
+        let settlement = self
+            .exit
+            .as_ref()
+            .ok_or("Original process settlement unavailable")?
+            .wait_actual();
+        let retirement = self
+            .process
+            .as_ref()
+            .unwrap()
+            .retirement()
+            .require_verified();
+        stopped
+            .and(writers)
+            .and(process)
+            .and(settlement)
+            .and(retirement)
+    }
     fn receipt(&self, session_id: &str) -> HarnessProcessReceipt {
         HarnessProcessReceipt {
             version: 1,
@@ -170,6 +234,89 @@ impl LiveChild {
             construction_id: self.construction_id.clone(),
         }
     }
+}
+
+struct LiveWrite {
+    _permit: process_lifecycle::WritePermit,
+    _process: process_lifecycle::ProcessPin,
+    gate: Arc<WriteGate>,
+    started: bool,
+    completed: bool,
+}
+impl LiveWrite {
+    fn finish(mut self, result: &Result<(), String>) {
+        if let Err(error) = result {
+            self.gate.record_failure(error.clone());
+        }
+        self.completed = true;
+    }
+}
+impl Drop for LiveWrite {
+    fn drop(&mut self) {
+        if self.started && !self.completed {
+            self.gate
+                .record_failure("Original writer settlement unknown".into());
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+struct TestOwnedChild {
+    process: Arc<crate::native_provider_output::NativeOutputChild>,
+}
+#[cfg(all(test, unix))]
+impl TestOwnedChild {
+    fn id(&self) -> u32 {
+        self.process.id()
+    }
+    fn kill(&mut self) -> std::io::Result<()> {
+        self.process.request_stop()
+    }
+    fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.process.wait_actual()
+    }
+    fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        self.process.try_wait()
+    }
+}
+#[cfg(all(test, unix))]
+fn owned_live_fixture<C: Into<OwnedChild>>(child: C) -> (Arc<LiveChild>, TestOwnedChild) {
+    let mut child = child.into();
+    let stdin = child.stdin.take().unwrap();
+    let registry = NativeProviderOutputRegistry::new();
+    let (output, process) = registry.begin_process(
+        OutputSource::fixture("owned-test"),
+        child,
+        Arc::new(|| true),
+        Arc::new(|_| true),
+    );
+    output.reader(0).finish(true, false);
+    output.reader(1).finish(true, false);
+    let exit = Arc::new(ManagedProviderExit::default());
+    let live = Arc::new(LiveChild {
+        cwd: std::env::temp_dir(),
+        stdin: Mutex::new(stdin),
+        pid: process.id(),
+        construction_id: output.epoch().into(),
+        issuer: None,
+        _control_turn: None,
+        account: None,
+        owners: Arc::new(Owners::default()),
+        output: Some(output.clone()),
+        process: Some(process.clone()),
+        exit: Some(exit.clone()),
+        writers: WriteGate::new(),
+    });
+    let waiting = process.clone();
+    thread::spawn(move || {
+        exit.finish(
+            waiting
+                .wait(&output, false)
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+        );
+    });
+    (live, TestOwnedChild { process })
 }
 
 fn require_process_construction(value: Option<&str>) -> Result<&str, String> {
@@ -439,6 +586,8 @@ struct HarnessInner {
     children: HashMap<String, Arc<LiveChild>>,
     epochs: HashMap<String, u64>,
     managed_exits: HashMap<String, Vec<Arc<ManagedProviderExit>>>,
+    receipts: process_receipts::ProcessReceipts,
+    turn_bindings: turn_writes::Bindings,
 }
 
 /// A removed child is not proof that its process and Host activity have exited.
@@ -450,7 +599,34 @@ struct ManagedProviderExit {
     changed: Condvar,
 }
 
+/// Source-private capacity claim. A never-attempted setup may release its slot;
+/// once OS creation is attempted a panic/unknown outcome retains the reservation.
+/// It does not supply retirement evidence and is never serialized.
+struct ProcessStart<'host> {
+    host: &'host HarnessHost,
+    exit: Arc<ManagedProviderExit>,
+    attempted: bool,
+}
+impl Drop for ProcessStart<'_> {
+    fn drop(&mut self) {
+        if !self.attempted {
+            self.host
+                .lock_inner()
+                .receipts
+                .release_unstarted(&self.exit);
+        }
+    }
+}
+
 impl ManagedProviderExit {
+    fn wait_actual(&self) -> Result<(), String> {
+        let result = self.result.lock().unwrap_or_else(|e| e.into_inner());
+        let result = self
+            .changed
+            .wait_while(result, |result| result.is_none())
+            .unwrap_or_else(|e| e.into_inner());
+        result.clone().unwrap()
+    }
     fn succeeded(&self) -> bool {
         matches!(
             self.result
@@ -481,6 +657,14 @@ impl ManagedProviderExit {
     }
 }
 
+fn finish_spawn_authority(
+    retirement: &process_lifecycle::Retirement,
+    authority: crate::session_store::authority::NativeLease,
+) -> Result<(), String> {
+    retirement.require_verified()?;
+    authority.finish()
+}
+
 pub struct HarnessHost {
     inner: Mutex<HarnessInner>,
     sse: Mutex<HashMap<String, Arc<LiveSse>>>,
@@ -491,6 +675,17 @@ pub struct HarnessHost {
 }
 
 impl HarnessHost {
+    fn reserve_process(&self, session_id: &str) -> Result<ProcessStart<'_>, String> {
+        let mut inner = self.lock_inner();
+        inner.receipts.capacity()?;
+        let exit = Arc::new(ManagedProviderExit::default());
+        inner.receipts.reserve(session_id, exit.clone());
+        Ok(ProcessStart {
+            host: self,
+            exit,
+            attempted: false,
+        })
+    }
     /// Only a retained native construction can translate a routing key. No
     /// suffix parsing or caller-supplied logical identity is involved.
     fn output_for_route(&self, route: &str) -> Result<Option<Arc<NativeOutputStream>>, String> {
@@ -574,6 +769,8 @@ impl HarnessHost {
                 children: HashMap::new(),
                 epochs: HashMap::new(),
                 managed_exits: HashMap::new(),
+                receipts: process_receipts::ProcessReceipts::default(),
+                turn_bindings: turn_writes::Bindings::default(),
             }),
             sse: Mutex::new(HashMap::new()),
             runtime_binary_paths: Mutex::new(None),
@@ -649,6 +846,9 @@ impl HarnessHost {
         *epoch += 1;
         let epoch = *epoch;
         let prev = inner.children.remove(session_id);
+        if let Some(previous) = &prev {
+            previous.writers.close();
+        }
         crate::session_tools_bridge::revoke_session(session_id);
         crate::session_tools_bridge::begin_session(session_id, (epoch, kill_all));
         (epoch, kill_all, prev)
@@ -670,17 +870,26 @@ impl HarnessHost {
         live: Arc<LiveChild>,
     ) -> Option<Arc<LiveChild>> {
         let mut inner = self.lock_inner();
+        // Retain even a rejected physical construction until its actual drain.
+        if inner.receipts.bind(&session_id, &live).is_err() {
+            return Some(live);
+        }
         if self.kill_all_gen.load(Ordering::SeqCst) != kill_all {
             return Some(live);
         }
         if inner.epochs.get(&session_id) != Some(&epoch) {
             return Some(live);
         }
-        if let Some(prev) = inner.children.insert(session_id, live) {
+        let previous = inner.children.insert(session_id, live);
+        if let Some(previous) = &previous {
+            previous.writers.close();
+        }
+        drop(inner);
+        if let Some(prev) = previous {
             if let Some(output) = &prev.output {
                 output.invalidate(UnavailableReason::TerminalCancelled);
             }
-            terminate(prev.pid);
+            let _ = prev.request_stop();
         }
         None
     }
@@ -695,7 +904,7 @@ impl HarnessHost {
         epoch: u64,
         kill_all: u64,
         command: &mut Command,
-    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+    ) -> Result<(OwnedChild, Arc<ManagedProviderExit>), String> {
         self.spawn_tracked_guarded(session_id, epoch, kill_all, command, None)
     }
 
@@ -707,11 +916,12 @@ impl HarnessHost {
         kill_all: u64,
         command: &mut Command,
         authority: Option<&mut crate::session_store::authority::NativeLease>,
-    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+    ) -> Result<(OwnedChild, Arc<ManagedProviderExit>), String> {
         self.spawn_tracked_for_target(session_id, session_id, epoch, kill_all, command, authority)
     }
 
     #[allow(clippy::too_many_arguments)] // Routing generation and private logical authority target stay distinct.
+    #[cfg(test)]
     fn spawn_tracked_for_target(
         &self,
         session_id: &str,
@@ -719,20 +929,51 @@ impl HarnessHost {
         epoch: u64,
         kill_all: u64,
         command: &mut Command,
+        authority: Option<&mut crate::session_store::authority::NativeLease>,
+    ) -> Result<(OwnedChild, Arc<ManagedProviderExit>), String> {
+        let mut reservation = self.reserve_process(session_id)?;
+        self.spawn_tracked_reserved(
+            session_id,
+            logical_session_id,
+            epoch,
+            kill_all,
+            command,
+            authority,
+            &mut reservation,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn spawn_tracked_reserved(
+        &self,
+        session_id: &str,
+        logical_session_id: &str,
+        epoch: u64,
+        kill_all: u64,
+        command: &mut Command,
         mut authority: Option<&mut crate::session_store::authority::NativeLease>,
-    ) -> Result<(Child, Arc<ManagedProviderExit>), String> {
+        reservation: &mut ProcessStart<'_>,
+    ) -> Result<(OwnedChild, Arc<ManagedProviderExit>), String> {
         let mut inner = self.lock_inner();
         if self.kill_all_gen.load(Ordering::SeqCst) != kill_all
             || inner.epochs.get(session_id) != Some(&epoch)
         {
             return Err(SPAWN_CANCELLED.into());
         }
+        if !std::ptr::eq(self, reservation.host)
+            || reservation.attempted
+            || !inner.receipts.reserved(session_id, &reservation.exit)
+        {
+            return Err("NATIVE_PROCESS_RECEIPT_RESERVATION_CHANGED".into());
+        }
         if let Some(lease) = authority.as_deref_mut() {
             lease.begin_external()?;
         }
-        let child = match spawn_managed(command) {
+        reservation.attempted = true;
+        let child = match OwnedChild::spawn(command) {
             Ok(child) => child,
             Err(error) => {
+                reservation.attempted = false;
                 if let Some(lease) = authority.as_deref_mut() {
                     lease.spawn_failed()?;
                 }
@@ -742,7 +983,7 @@ impl HarnessHost {
         if let Some(lease) = authority {
             let _ = lease.spawned(child.id());
         }
-        let exit = Arc::new(ManagedProviderExit::default());
+        let exit = reservation.exit.clone();
         let receipts = inner
             .managed_exits
             .entry(logical_session_id.into())
@@ -757,6 +998,9 @@ impl HarnessHost {
         *inner.epochs.entry(session_id.to_string()).or_insert(0) += 1;
         crate::session_tools_bridge::revoke_session(session_id);
         let removed = inner.children.remove(session_id);
+        if let Some(live) = &removed {
+            live.writers.close();
+        }
         drop(inner);
         if let Some(output) = removed.as_ref().and_then(|live| live.output.as_ref()) {
             output.cancelled();
@@ -764,24 +1008,59 @@ impl HarnessHost {
         removed
     }
 
-    /// Targeted IPC cannot invalidate a newer spawn or stop its event stream.
+    #[cfg(test)]
     fn kill_original_session(
         &self,
         session_id: &str,
         construction_id: Option<&str>,
     ) -> Result<Arc<LiveChild>, String> {
+        self.select_original_for_stop(session_id, construction_id, None)
+    }
+
+    /// Targeted IPC cannot invalidate a newer spawn or stop its event stream.
+    /// A known historical construction still owns its original physical drain.
+    fn select_original_for_stop(
+        &self,
+        session_id: &str,
+        construction_id: Option<&str>,
+        issuer: Option<&Arc<crate::control::receipts::WindowIssuer>>,
+    ) -> Result<Arc<LiveChild>, String> {
         let expected = require_process_construction(construction_id)?;
         let mut inner = self.lock_inner();
-        if !inner
+        let live = inner
+            .receipts
+            .original(session_id, expected)
+            .or_else(|| {
+                inner
+                    .children
+                    .get(session_id)
+                    .filter(|live| live.construction_id == expected)
+                    .cloned()
+            })
+            .ok_or("NATIVE_PROCESS_CONSTRUCTION_STALE")?;
+        if let Some(issuer) = issuer {
+            if !live
+                .issuer
+                .as_ref()
+                .is_some_and(|original| Arc::ptr_eq(original, issuer))
+            {
+                return Err("NATIVE_PROCESS_WINDOW_CHANGED".into());
+            }
+        }
+        let current = inner
             .children
             .get(session_id)
-            .is_some_and(|live| live.construction_id == expected)
-        {
-            return Err("NATIVE_PROCESS_CONSTRUCTION_STALE".into());
+            .is_some_and(|child| Arc::ptr_eq(child, &live));
+        if !current {
+            // Do not change current epochs, grants, SSE or B's output. Returning
+            // this exact retained owner is not itself a successful retirement.
+            live.writers.close();
+            return Ok(live);
         }
         *inner.epochs.entry(session_id.to_owned()).or_insert(0) += 1;
         crate::session_tools_bridge::revoke_session(session_id);
-        let live = inner.children.remove(session_id).unwrap();
+        inner.children.remove(session_id);
+        live.writers.close();
         // Detach while the matching child is still protected by `inner`.
         // Cancelling this retained Arc later cannot select a replacement SSE.
         let sse = self
@@ -832,7 +1111,7 @@ impl HarnessHost {
         for route in routes {
             self.stop_sse(&route);
             if let Some(live) = self.kill_session(&route) {
-                terminate(live.pid);
+                let _ = live.request_stop();
             }
         }
         let exits = self
@@ -926,9 +1205,12 @@ impl HarnessHost {
                 output.cancelled();
             }
         }
-        let pids: Vec<u32> = children.iter().map(|(_, child)| child.pid).collect();
-        drop(children);
-        terminate_all(&pids);
+        for (_, child) in &children {
+            let _ = child.request_stop();
+        }
+        for (_, child) in children {
+            let _ = child.stop_and_drain();
+        }
     }
 
     pub(crate) fn kill_all(&self) {
@@ -944,10 +1226,12 @@ impl HarnessHost {
                 output.cancelled();
             }
         }
-        let pids: Vec<u32> = kids.iter().map(|live| live.pid).collect();
-        // Drop stdin before signaling so ACP CLIs that watch the pipe can exit.
-        drop(kids);
-        terminate_all(&pids);
+        for live in &kids {
+            let _ = live.request_stop();
+        }
+        for live in kids {
+            let _ = live.stop_and_drain();
+        }
     }
 
     fn insert_sse(&self, session_id: String, live: Arc<LiveSse>) -> Option<Arc<LiveSse>> {
@@ -1108,7 +1392,13 @@ fn mcp_command(
     if !workdir.is_dir() {
         return Err("Project directory does not exist".into());
     }
-    let output = exec_output(&binary.to_string_lossy(), &args, Some(&cwd), timeout)?;
+    let read =
+        args == ["--version"] || args == ["mcp", "list"] || args == ["mcp", "list", "--json"];
+    let output = if read {
+        exec_output_read(&binary.to_string_lossy(), &args, Some(&cwd), timeout)?
+    } else {
+        exec_output(&binary.to_string_lossy(), &args, Some(&cwd), timeout)?
+    };
     let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if output.status.success() {
         return Ok(stdout);
@@ -1670,7 +1960,9 @@ pub fn harness_spawn(
     authority_environment_id: Option<String>,
     authority_generation: Option<u64>,
     logical_session_id: Option<String>,
+    control_turn: Option<crate::control::ControlTurnReceipt>,
 ) -> Result<HarnessProcessReceipt, String> {
+    let issuer = crate::control::receipts::capture(&window)?;
     let generic = generic_acp_id
         .as_deref()
         .map(|id| crate::generic_acp::launch_config(&app, id))
@@ -1695,6 +1987,17 @@ pub fn harness_spawn(
 
     let source = OutputSource::capture(&app, &window, &session_id, logical_session_id.as_deref())?;
     let authority_target = source.target().to_owned();
+    let control_turn = crate::control::capture_child_turn(
+        &app,
+        &issuer,
+        window.label(),
+        &authority_target,
+        &workdir,
+        control_turn,
+    )?;
+    // Claim bounded original ownership before begin_spawn can retire A. A
+    // capacity refusal therefore leaves the currently executing child intact.
+    let mut process_start = host.reserve_process(&session_id)?;
     let gate = source.control_gate(&app)?;
     let scope = match (authority_environment_id, authority_generation) {
         (Some(environment_id), Some(generation)) => {
@@ -1725,7 +2028,7 @@ pub fn harness_spawn(
         if let Some(output) = &prev.output {
             output.cancelled();
         }
-        terminate(prev.pid);
+        let _ = prev.request_stop();
     }
 
     let mut cmd = Command::new(&command);
@@ -1751,7 +2054,7 @@ pub fn harness_spawn(
             })
     });
 
-    crate::control::configure_child(&app, &session_id, &mut cmd);
+    crate::control::configure_child(&app, &session_id, &mut cmd, control_turn.as_ref());
     crate::social_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
     crate::runtime_logs_bridge::configure_child(&app, &session_id, &mut cmd, (epoch, kill_all));
     crate::conversation_tools_bridge::configure_child(
@@ -1766,15 +2069,18 @@ pub fn harness_spawn(
     let tool_credentials = crate::session_tools_bridge::redaction_tokens(&cmd);
 
     source.assert_explicit_target_current(logical_session_id.is_some())?;
-    let (mut child, managed_exit) = host
-        .spawn_tracked_for_target(
-            &session_id,
-            &authority_target,
-            epoch,
-            kill_all,
-            &mut cmd,
-            Some(&mut authority_lease),
-        )
+    let (mut child, managed_exit) =
+        crate::control::with_child_turn(&app, control_turn.as_ref(), || {
+            host.spawn_tracked_reserved(
+                &session_id,
+                &authority_target,
+                epoch,
+                kill_all,
+                &mut cmd,
+                Some(&mut authority_lease),
+                &mut process_start,
+            )
+        })
         .inspect_err(|_| {
             crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
         })?;
@@ -1805,26 +2111,44 @@ pub fn harness_spawn(
         stdin: Mutex::new(stdin),
         pid,
         construction_id: output.epoch().to_owned(),
+        issuer: Some(issuer),
+        _control_turn: control_turn.clone(),
         account,
         owners: Arc::clone(&owners),
         output: Some(output.clone()),
+        process: Some(child.clone()),
+        exit: Some(managed_exit.clone()),
+        writers: WriteGate::new(),
     });
     let receipt = live.receipt(&session_id);
-    if let Some(rejected) = host.install_spawn(session_id.clone(), epoch, kill_all, live.clone()) {
+    let binding_rejected = control_turn
+        .as_ref()
+        .is_some_and(|turn| turn.bind_output(output.clone()).is_err());
+    let rejected = if binding_rejected {
+        // Still retain/close this actual child; no caller receives its receipt.
+        let _ = host.lock_inner().receipts.bind(&session_id, &live);
+        Some(live.clone())
+    } else {
+        host.install_spawn(session_id.clone(), epoch, kill_all, live.clone())
+    };
+    if let Some(rejected) = rejected {
         crate::session_tools_bridge::revoke_spawn(&session_id, (epoch, kill_all));
         // A kill, or a newer spawn, won the race while this one was forking.
         // Returning `Ok` here would hand the caller a dead pid to store as the
         // session's live child, and this child's stdout would be parsed as the
         // stream that replaced it. Reap it without emitting anything.
-        terminate(rejected.pid);
+        let _ = rejected.request_stop();
         output.cancelled();
         let rejected_output = output.clone();
         thread::spawn(move || {
             let exited = child.wait(&rejected_output, true);
+            let retirement = child.retirement().require_verified();
             let result = exited
                 .map_err(|e| e.to_string())
+                .and(retirement)
                 .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
-            let result = result.and_then(|_| authority_lease.finish());
+            let result =
+                result.and_then(|_| finish_spawn_authority(&child.retirement(), authority_lease));
             managed_exit.finish(result);
         });
         return Err(SPAWN_CANCELLED.to_string());
@@ -1842,7 +2166,7 @@ pub fn harness_spawn(
     let stdout_credentials = tool_credentials.clone();
     let stdout_output = output.clone();
     let stdout_reader = output.reader(0);
-    thread::spawn(move || {
+    let stdout_thread = thread::spawn(move || {
         let _done = stdout_done;
         read_provider_lines(stdout, stdout_reader, move |lines| {
             let lines = crate::session_tools_bridge::redact_lines(&stdout_credentials, lines);
@@ -1869,7 +2193,7 @@ pub fn harness_spawn(
     let stderr_owners = Arc::clone(&owners);
     let stderr_output = output.clone();
     let stderr_reader = output.reader(1);
-    thread::spawn(move || {
+    let stderr_thread = thread::spawn(move || {
         let _done = done_tx;
         read_provider_lines(stderr, stderr_reader, move |lines| {
             let lines = crate::session_tools_bridge::redact_lines(&tool_credentials, lines);
@@ -1898,23 +2222,26 @@ pub fn harness_spawn(
     thread::spawn(move || {
         let exit = child.wait(&output, false);
         let code = exit.as_ref().ok().and_then(|status| status.code());
-        let settlement = exit
-            .map_err(|e| e.to_string())
-            .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
+        let retirement = child.retirement().require_verified();
+        let settlement = exit.map_err(|e| e.to_string()).and(retirement);
         if let Some(host) = wait_app.try_state::<HarnessHost>() {
             host.remove_if_child(&wait_id, &wait_live);
         }
-        // Output first, then exit. A grandchild that inherited the pipes can
-        // keep them open after the child is gone, so the wait is bounded.
-        let readers_closed = wait_for_readers(&done_rx, EXIT_DRAIN_GRACE);
+        // Join the actual readers. Original process control retains inherited
+        // pipe work and starts original cleanup after the drain grace.
+        let readers_closed = stdout_thread.join().is_ok() & stderr_thread.join().is_ok();
+        drop(done_rx);
+        let writers = wait_live.writers.drain();
+        let settlement = settlement
+            .and(writers)
+            .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
         let settlement = settlement.and_then(|_| {
             if readers_closed {
-                authority_lease.finish()
+                finish_spawn_authority(&child.retirement(), authority_lease)
             } else {
                 Err("NATIVE_AUTHORITY_UNKNOWN_PROVIDER_OUTPUT: retained process admission".into())
             }
         });
-        managed_exit.finish(settlement);
         let terminal_sent = route_output_state(
             &wait_app,
             &owners,
@@ -1929,6 +2256,8 @@ pub fn harness_spawn(
             },
         );
         output.terminal_delivery(terminal_sent);
+        // Final native callback belongs to this same original owner too.
+        managed_exit.finish(settlement);
     });
 
     Ok(receipt)
@@ -2145,7 +2474,7 @@ pub async fn harness_auth_status(
         if let Some(home) = dirs_home() {
             cmd.current_dir(home);
         }
-        let output = exec_command_output(cmd, &command, Duration::from_secs(10))?;
+        let output = exec_command_observed_output(cmd, &command, Duration::from_secs(10))?.output;
         Ok(parse_auth_status(
             &provider,
             output.status.success(),
@@ -2352,6 +2681,7 @@ pub async fn harness_write(
     authority_generation: Option<u64>,
 ) -> Result<(), String> {
     let live = host.get_original(&session_id, construction_id.as_deref())?;
+    let admission = live.admit_write()?;
     let gate = if let Some(output) = &live.output {
         output.control_gate(&app)?
     } else {
@@ -2375,11 +2705,17 @@ pub async fn harness_write(
     let line = crate::conversation_tools_bridge::authorize_acp_frame(&session_id, line);
     let original = Arc::clone(&live);
     let result = tauri::async_runtime::spawn_blocking(move || {
-        write_child_with_deadline_guarded(live, line, Duration::from_secs(12), Some(lease))
+        write_child_with_deadline_admitted(
+            live,
+            line,
+            Duration::from_secs(12),
+            Some(lease),
+            admission,
+        )
     })
     .await
     .map_err(|e| format!("Harness write task failed: {e}"))?;
-    if result.is_err() {
+    if result.is_err() && original.writers.is_closing() {
         // An old writer must not remove a replacement generation.
         host.remove_if_child(&session_id, &original);
     }
@@ -2395,45 +2731,111 @@ fn write_child_with_deadline(
     write_child_with_deadline_guarded(live, line, timeout, None)
 }
 
+#[cfg(test)]
 fn write_child_with_deadline_guarded(
     live: Arc<LiveChild>,
     line: String,
     timeout: Duration,
-    mut authority: Option<crate::session_store::authority::NativeLease>,
+    authority: Option<crate::session_store::authority::NativeLease>,
 ) -> Result<(), String> {
+    let admission = live.admit_write()?;
+    write_child_with_deadline_admitted(live, line, timeout, authority, admission)
+}
+
+fn write_child_with_deadline_admitted(
+    live: Arc<LiveChild>,
+    line: String,
+    timeout: Duration,
+    authority: Option<crate::session_store::authority::NativeLease>,
+    admission: LiveWrite,
+) -> Result<(), String> {
+    write_child_with_deadline_observed(live, line, timeout, authority, admission, || {})
+}
+
+fn write_child_with_deadline_observed(
+    live: Arc<LiveChild>,
+    line: String,
+    timeout: Duration,
+    authority: Option<crate::session_store::authority::NativeLease>,
+    admission: LiveWrite,
+    after_io: impl FnOnce() + Send + 'static,
+) -> Result<(), String> {
+    write_child_with_deadline_waiter(
+        live,
+        line,
+        timeout,
+        authority,
+        admission,
+        after_io,
+        |rx, timeout| rx.recv_timeout(timeout),
+    )
+}
+
+fn write_child_with_deadline_waiter(
+    live: Arc<LiveChild>,
+    line: String,
+    timeout: Duration,
+    mut authority: Option<crate::session_store::authority::NativeLease>,
+    mut admission: LiveWrite,
+    after_io: impl FnOnce() + Send + 'static,
+    wait_result: impl FnOnce(
+        &mpsc::Receiver<Result<(), String>>,
+        Duration,
+    ) -> Result<Result<(), String>, mpsc::RecvTimeoutError>,
+) -> Result<(), String> {
+    admission.started = true;
     if let Some(lease) = authority.as_mut() {
-        lease.begin_external()?;
+        if let Err(error) = lease.begin_external() {
+            // Authority refusal before external I/O authorizes no stop or
+            // routing removal. The original source remains explicitly owned.
+            admission.started = false;
+            admission.finish(&Ok(()));
+            return Err(error);
+        }
     }
     let pid = live.pid;
     let bytes = line.len();
     let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut stdin = live.stdin.lock().unwrap_or_else(|e| e.into_inner());
+    let writing = live.clone();
+    let writer = thread::spawn(move || {
+        let mut stdin = writing.stdin.lock().unwrap_or_else(|e| e.into_inner());
         let result = stdin
             .write_all(line.as_bytes())
             .and_then(|_| stdin.write_all(b"\n"))
             .and_then(|_| stdin.flush())
             .map_err(|e| format!("Failed to write to harness (pid {pid}, {bytes} bytes): {e}"));
+        after_io();
         let result = result.and_then(|_| authority.map_or(Ok(()), |lease| lease.finish()));
         let _ = tx.send(result);
     });
-    match rx.recv_timeout(timeout) {
-        Ok(result) => {
-            if result.is_err() {
-                terminate(pid);
-            }
-            result
-        }
+    let result = match wait_result(&rx, timeout) {
+        Ok(result) => result,
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            // Closing the JS promise does not cancel a blocked pipe write. Kill
-            // this exact process group to release its stdin mutex and writer.
-            terminate(pid);
-            Err(format!("Harness stdin write timed out after {} ms (pid {pid}, {bytes} bytes); process stopped", timeout.as_millis()))
+            // The deadline requests original termination. Its actual work stays
+            // owned until the physical writer and process have really drained.
+            let _ = live.request_stop();
+            let _ = rx.recv();
+            Err(format!(
+                "Harness stdin write timed out after {} ms (pid {pid}, {bytes} bytes)",
+                timeout.as_millis()
+            ))
         }
         Err(mpsc::RecvTimeoutError::Disconnected) => {
             Err(format!("Harness writer exited (pid {pid})"))
         }
+    };
+    let joined = writer
+        .join()
+        .map_err(|_| format!("Harness writer panicked (pid {pid})"));
+    let result = joined.and(result);
+    admission.finish(&result);
+    if result.is_err() {
+        let stopping = live.request_stop();
+        if stopping.is_ok() {
+            let _ = live.process.as_ref().unwrap().wait_actual();
+        }
     }
+    result
 }
 
 fn native_authority_scope(
@@ -2714,13 +3116,16 @@ mod authority_tests {
 /// blocked on a wedged child's stdin.
 #[tauri::command(async)]
 pub fn harness_kill(
+    window: tauri::WebviewWindow,
     host: State<'_, HarnessHost>,
     session_id: String,
     construction_id: Option<String>,
 ) -> Result<(), String> {
-    let live = host.kill_original_session(&session_id, construction_id.as_deref())?;
-    terminate(live.pid);
-    Ok(())
+    let issuer = crate::control::receipts::existing(&window)?;
+    let live = issuer.with_live(|| {
+        host.select_original_for_stop(&session_id, construction_id.as_deref(), Some(&issuer))
+    })?;
+    live.stop_and_drain()
 }
 
 /// Native administrative cleanup intentionally addresses the current session.
@@ -2728,7 +3133,7 @@ pub fn harness_kill(
 pub(crate) fn kill_current_harness(host: &HarnessHost, session_id: &str) -> Result<(), String> {
     host.stop_sse(session_id);
     if let Some(live) = host.kill_session(session_id) {
-        terminate(live.pid);
+        live.stop_and_drain()?;
     }
     Ok(())
 }
@@ -3123,6 +3528,7 @@ fn read_provider_lines<R: Read, F: FnMut(Vec<String>) + Send + 'static>(
 }
 
 /// Returns once every reader has dropped its sender, or after `grace`.
+#[cfg(test)]
 fn wait_for_readers(done: &mpsc::Receiver<()>, grace: Duration) -> bool {
     let deadline = Instant::now() + grace;
     loop {
@@ -3351,13 +3757,18 @@ pub async fn harness_exec(
         {
             return Err("harness_exec: not a resolved harness CLI".to_string());
         }
-        if exec_requires_session_provenance(binary_provider.as_deref(), &args) {
+        let mutating = exec_requires_session_provenance(binary_provider.as_deref(), &args);
+        if mutating {
             app.try_state::<crate::session_store::SessionStore>()
                 .ok_or("NATIVE_AUTHORITY_STORE_UNAVAILABLE")?
                 .authority_execution_gate()
                 .note_unknown_ingress("legacy-provider-cli-mutation")?;
         }
-        exec_capture(&command, &args, cwd.as_deref())
+        if mutating {
+            exec_capture(&command, &args, cwd.as_deref())
+        } else {
+            exec_capture_read(&command, &args, cwd.as_deref())
+        }
     })
     .await
     .map_err(|e| e.to_string())?
@@ -3365,6 +3776,16 @@ pub async fn harness_exec(
 
 fn exec_capture(command: &str, args: &[String], cwd: Option<&str>) -> Result<String, String> {
     let output = exec_output(command, args, cwd, EXEC_TIMEOUT)?;
+    let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
+    if output.status.success() || !stdout.trim().is_empty() {
+        return Ok(stdout);
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    Err(stderr.trim().to_string())
+}
+
+fn exec_capture_read(command: &str, args: &[String], cwd: Option<&str>) -> Result<String, String> {
+    let output = exec_output_read(command, args, cwd, EXEC_TIMEOUT)?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if output.status.success() || !stdout.trim().is_empty() {
         return Ok(stdout);
@@ -3391,6 +3812,33 @@ pub(crate) fn exec_output_with_env(
     timeout: Duration,
     env: &[(&str, &str)],
 ) -> Result<std::process::Output, String> {
+    exec_command_output(
+        configured_exec_command(command, args, cwd, env),
+        command,
+        timeout,
+    )
+}
+
+fn exec_output_read(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    exec_command_observed_output(
+        configured_exec_command(command, args, cwd, &[]),
+        command,
+        timeout,
+    )
+    .map(|capture| capture.output)
+}
+
+fn configured_exec_command(
+    command: &str,
+    args: &[String],
+    cwd: Option<&str>,
+    env: &[(&str, &str)],
+) -> Command {
     let mut cmd = Command::new(command);
     cmd.args(args)
         .stdin(Stdio::null())
@@ -3405,38 +3853,118 @@ pub(crate) fn exec_output_with_env(
         }
     }
 
-    exec_command_output(cmd, command, timeout)
+    cmd
 }
 
-type OutputWait = mpsc::Receiver<std::io::Result<std::process::Output>>;
-
-/// Shared spawn/read mechanics; timeout, termination and partial-output policy stay with callers.
-fn spawn_output_wait(cmd: &mut Command) -> Result<(u32, OutputWait), std::io::Error> {
-    spawn_managed(cmd).map(output_wait)
+struct OutputWait {
+    receiver: mpsc::Receiver<std::io::Result<std::process::Output>>,
+    owner: Arc<process_lifecycle::ProcessOwner>,
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
+}
+impl OutputWait {
+    fn recv_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<std::io::Result<std::process::Output>, mpsc::RecvTimeoutError> {
+        self.receiver.recv_timeout(timeout)
+    }
+    fn stop_and_drain(&self) {
+        let _ = self.owner.request_stop();
+        if let Some(worker) = self.worker.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = worker.join();
+        }
+    }
+}
+impl Drop for OutputWait {
+    fn drop(&mut self) {
+        self.stop_and_drain();
+    }
 }
 
-fn output_wait(child: std::process::Child) -> (u32, OutputWait) {
-    let pid = child.id();
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
+/// One-shot readers and waiters retain the same original OS owner as providers.
+fn spawn_output_wait(cmd: &mut Command) -> Result<OutputWait, std::io::Error> {
+    OwnedChild::spawn(cmd).map(output_wait)
+}
+
+fn output_wait<C: Into<OwnedChild>>(child: C) -> OutputWait {
+    let mut child = child.into();
+    drop(child.stdin.take());
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let owner = Arc::new(process_lifecycle::ProcessOwner::new(child));
+    let capture = |reader: Option<Box<dyn Read + Send>>,
+                   owner: &Arc<process_lifecycle::ProcessOwner>| {
+        let pin = owner.pin().expect("new original output owner");
+        thread::spawn(move || {
+            let _pin = pin;
+            let mut bytes = Vec::new();
+            if let Some(mut reader) = reader {
+                reader.read_to_end(&mut bytes)?;
+            }
+            Ok::<_, std::io::Error>(bytes)
+        })
+    };
+    let stdout = capture(stdout.map(|v| Box::new(v) as Box<dyn Read + Send>), &owner);
+    let stderr = capture(stderr.map(|v| Box::new(v) as Box<dyn Read + Send>), &owner);
+    let (tx, receiver) = mpsc::channel();
+    let waiting = owner.clone();
+    let worker = thread::spawn(move || {
+        waiting.activate();
+        let status = waiting.wait();
+        let stdout = stdout
+            .join()
+            .map_err(|_| std::io::Error::other("stdout reader panicked"))
+            .and_then(|r| r);
+        let stderr = stderr
+            .join()
+            .map_err(|_| std::io::Error::other("stderr reader panicked"))
+            .and_then(|r| r);
+        let result = status.and_then(|status| {
+            Ok(std::process::Output {
+                status,
+                stdout: stdout?,
+                stderr: stderr?,
+            })
+        });
+        let _ = tx.send(result);
     });
-    (pid, rx)
+    OutputWait {
+        receiver,
+        owner,
+        worker: Mutex::new(Some(worker)),
+    }
 }
 
 fn exec_command_output(
-    mut cmd: Command,
+    cmd: Command,
     command: &str,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
-    let (pid, rx) =
-        spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
+    let captured = exec_command_observed_output(cmd, command, timeout)?;
+    captured.retirement.require_verified()?;
+    Ok(captured.output)
+}
+
+struct CommandCapture {
+    output: std::process::Output,
+    retirement: process_lifecycle::Retirement,
+}
+/// Explicit data observation only. Semantic completion keeps the strict wrapper.
+fn exec_command_observed_output(
+    mut cmd: Command,
+    command: &str,
+    timeout: Duration,
+) -> Result<CommandCapture, String> {
+    let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run {command}: {e}"))?;
 
     match rx.recv_timeout(timeout) {
-        Ok(Ok(output)) => Ok(output),
+        Ok(Ok(output)) => Ok(CommandCapture {
+            output,
+            retirement: rx.owner.retirement(),
+        }),
         Ok(Err(e)) => Err(format!("Failed to run {command}: {e}")),
         Err(_) => {
-            terminate(pid);
+            rx.stop_and_drain();
             let mut error = format!("{command} timed out after {} seconds", timeout.as_secs());
             // Reap the terminated tree and retain diagnostics printed before it stalled.
             if let Ok(Ok(output)) = rx.recv_timeout(KILL_ESCALATE * 2) {
@@ -3464,6 +3992,16 @@ pub struct ShellCommandOutput {
     /// None when the process was killed.
     pub exit_code: Option<i32>,
     pub timed_out: bool,
+    #[serde(skip)]
+    retirement: process_lifecycle::Retirement,
+}
+impl ShellCommandOutput {
+    fn require_activity_retirement(&self) -> Result<(), String> {
+        if self.timed_out {
+            return Err("Shell command timed out; retirement remains uncertain".into());
+        }
+        self.retirement.require_verified()
+    }
 }
 
 const SHELL_COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
@@ -3495,7 +4033,10 @@ pub async fn run_shell_command(
             activity.started();
         }
         let output = run_shell_command_sync(&cwd, &command, profile.as_deref());
-        if output.as_ref().is_ok_and(|result| !result.timed_out) {
+        if output
+            .as_ref()
+            .is_ok_and(|result| result.require_activity_retirement().is_ok())
+        {
             if let Some(activity) = activity {
                 let _ = activity.settled();
             }
@@ -3524,12 +4065,11 @@ fn run_shell_command_sync(
     }
     cmd.current_dir(workdir);
 
-    let (pid, rx) =
-        spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run the command: {e}"))?;
+    let rx = spawn_output_wait(&mut cmd).map_err(|e| format!("Failed to run the command: {e}"))?;
     let (result, timed_out) = match rx.recv_timeout(SHELL_COMMAND_TIMEOUT) {
         Ok(result) => (Some(result), false),
         Err(_) => {
-            terminate(pid);
+            rx.stop_and_drain();
             // The killed process still hands back what it printed so far.
             (rx.recv_timeout(KILL_ESCALATE * 2).ok(), true)
         }
@@ -3542,6 +4082,7 @@ fn run_shell_command_sync(
                 output: String::new(),
                 exit_code: None,
                 timed_out,
+                retirement: rx.owner.retirement(),
             })
         }
     };
@@ -3569,6 +4110,7 @@ fn run_shell_command_sync(
             output.status.code()
         },
         timed_out,
+        retirement: rx.owner.retirement(),
     })
 }
 
@@ -3691,21 +4233,6 @@ fn isolate_child(cmd: &mut Command) {
     }
 }
 
-fn spawn_managed(cmd: &mut Command) -> std::io::Result<std::process::Child> {
-    #[cfg(windows)]
-    {
-        crate::windows::spawn_managed(cmd)
-    }
-    #[cfg(unix)]
-    {
-        spawn_retrying_text_file_busy(cmd)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        cmd.spawn()
-    }
-}
-
 /// Linux refuses to `execve` a file that any process holds open for writing,
 /// and whether one does is not ours to decide: a sibling thread's spawn
 /// inherits our write handles for the moment before it execs its own program.
@@ -3753,21 +4280,40 @@ mod managed_retirement_tests {
         let (mut child, exit) = host
             .spawn_tracked("lightweight", epoch, kill_all, &mut sleeping_command())
             .unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let (output, process) = host.output.begin_process(
+            OutputSource::fixture("lightweight"),
+            child,
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        );
+        output.reader(0).finish(true, false);
+        output.reader(1).finish(true, false);
         let live = Arc::new(LiveChild {
             cwd: std::env::temp_dir(),
-            stdin: Mutex::new(child.stdin.take().unwrap()),
-            pid: child.id(),
-            construction_id: uuid::Uuid::new_v4().to_string(),
+            stdin: Mutex::new(stdin),
+            pid: process.id(),
+            construction_id: output.epoch().into(),
+            issuer: None,
+            _control_turn: None,
             account: None,
             owners: Arc::new(Owners::default()),
-            output: None,
+            output: Some(output.clone()),
+            process: Some(process.clone()),
+            exit: Some(exit.clone()),
+            writers: WriteGate::new(),
         });
         assert!(host
             .install_spawn("lightweight".into(), epoch, kill_all, live)
             .is_none());
         assert!(exit.wait(Duration::from_millis(1)).is_err());
         let waiter = thread::spawn(move || {
-            exit.finish(child.wait().map(|_| ()).map_err(|e| e.to_string()));
+            exit.finish(
+                process
+                    .wait(&output, false)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string()),
+            );
         });
         host.retire_managed_session("lightweight").unwrap();
         waiter.join().unwrap();
@@ -3834,14 +4380,28 @@ mod managed_retirement_tests {
         host.lock_inner()
             .managed_exits
             .insert("managed".into(), vec![Arc::clone(&exit)]);
+        let stdin = child.stdin.take().unwrap();
+        let (output, process) = host.output.begin_process(
+            OutputSource::fixture("managed"),
+            child,
+            Arc::new(|| true),
+            Arc::new(|_| true),
+        );
+        output.reader(0).finish(true, false);
+        output.reader(1).finish(true, false);
         let live = Arc::new(LiveChild {
             cwd: std::env::temp_dir(),
-            stdin: Mutex::new(child.stdin.take().unwrap()),
-            pid: child.id(),
-            construction_id: uuid::Uuid::new_v4().to_string(),
+            stdin: Mutex::new(stdin),
+            pid: process.id(),
+            construction_id: output.epoch().into(),
+            issuer: None,
+            _control_turn: None,
             account: None,
             owners: Arc::new(Owners::default()),
-            output: None,
+            output: Some(output.clone()),
+            process: Some(process.clone()),
+            exit: Some(exit.clone()),
+            writers: WriteGate::new(),
         });
         assert!(host
             .install_spawn("managed".into(), epoch, kill_all, live)
@@ -3849,7 +4409,10 @@ mod managed_retirement_tests {
         let (exited, process_exit) = mpsc::channel();
         let (ack, host_ack) = mpsc::channel();
         let waiter = thread::spawn(move || {
-            let result = child.wait().map(|_| ()).map_err(|e| e.to_string());
+            let result = process
+                .wait(&output, false)
+                .map(|_| ())
+                .map_err(|e| e.to_string());
             exited.send(()).unwrap();
             // Model an activity-release RPC still waiting for its durable receipt.
             host_ack.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -3901,10 +4464,12 @@ fn is_text_file_busy(error: &std::io::Error) -> bool {
     error.raw_os_error() == Some(libc::ETXTBSY)
 }
 
+#[cfg(test)]
 fn terminate(pid: u32) {
     terminate_after(pid, KILL_ESCALATE);
 }
 
+#[cfg(test)]
 fn terminate_after(pid: u32, escalate: Duration) {
     if pid == 0 || pid == 1 {
         return;
@@ -4069,12 +4634,14 @@ fn wait_until_dead(pids: &[u32], until: Instant) {
     }
 }
 
+#[cfg(any(not(windows), test))]
 enum TreeSignal {
     #[cfg(not(windows))]
     Term,
     Kill,
 }
 
+#[cfg(any(not(windows), test))]
 fn signal_tree(pid: u32, signal: TreeSignal) {
     #[cfg(unix)]
     {
@@ -4571,7 +5138,7 @@ fn validate_harness_binary_version(provider: &str, path: &Path) -> Result<(), St
     if provider == "antigravity" {
         return Ok(());
     }
-    let version = exec_capture(&path.to_string_lossy(), &["--version".to_string()], None)?;
+    let version = exec_capture_read(&path.to_string_lossy(), &["--version".to_string()], None)?;
     let lower = version.to_ascii_lowercase();
     let has_version = is_supported_harness_version(&version);
     let provider_marker = match provider {
@@ -4966,7 +5533,7 @@ fn help_mentions_rpc_mode(path: &Path) -> bool {
     // npm-installed harnesses are `#!/usr/bin/env node` scripts, so this probe
     // fails outright without a PATH that has node on it.
     prepare_gui_child(&mut cmd);
-    let Ok((pid, rx)) = spawn_output_wait(&mut cmd) else {
+    let Ok(rx) = spawn_output_wait(&mut cmd) else {
         return false;
     };
     match rx.recv_timeout(Duration::from_secs(2)) {
@@ -4980,7 +5547,7 @@ fn help_mentions_rpc_mode(path: &Path) -> bool {
             text.contains("--mode") && text.contains("rpc")
         }
         _ => {
-            terminate(pid);
+            rx.stop_and_drain();
             false
         }
     }
@@ -5051,7 +5618,7 @@ fn fx_help_mentions_acp(path: &Path) -> bool {
     // npm-installed harnesses are `#!/usr/bin/env node` scripts, so this probe
     // fails outright without a PATH that has node on it.
     prepare_gui_child(&mut cmd);
-    let Ok((pid, rx)) = spawn_output_wait(&mut cmd) else {
+    let Ok(rx) = spawn_output_wait(&mut cmd) else {
         return false;
     };
     match rx.recv_timeout(Duration::from_secs(2)) {
@@ -5065,7 +5632,7 @@ fn fx_help_mentions_acp(path: &Path) -> bool {
             text.contains("acp") && (text.contains("ask") || text.contains("gateway"))
         }
         _ => {
-            terminate(pid);
+            rx.stop_and_drain();
             false
         }
     }
@@ -5106,7 +5673,7 @@ fn grok_help_mentions_agent(path: &Path) -> bool {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     prepare_gui_child(&mut cmd);
-    let Ok((pid, rx)) = spawn_output_wait(&mut cmd) else {
+    let Ok(rx) = spawn_output_wait(&mut cmd) else {
         return false;
     };
     match rx.recv_timeout(Duration::from_secs(2)) {
@@ -5120,7 +5687,7 @@ fn grok_help_mentions_agent(path: &Path) -> bool {
             text.contains("grok build") || (text.contains("agent") && text.contains("stdio"))
         }
         _ => {
-            terminate(pid);
+            rx.stop_and_drain();
             false
         }
     }
@@ -5485,14 +6052,14 @@ fn load_unix_login_shell_env() -> HashMap<String, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     isolate_child(&mut cmd);
-    let Ok(child) = cmd.spawn() else {
+    let Ok(child) = OwnedChild::spawn(&mut cmd) else {
         return HashMap::new();
     };
-    let (pid, rx) = output_wait(child);
+    let rx = output_wait(child);
     let output = match rx.recv_timeout(LOGIN_SHELL_TIMEOUT) {
         Ok(Ok(output)) => output,
         _ => {
-            terminate(pid);
+            rx.stop_and_drain();
             return HashMap::new();
         }
     };
@@ -5605,33 +6172,33 @@ mod tests {
 
     /// A real child so `install_spawn` can be exercised directly, rather than
     /// through a helper that re-states its condition.
-    fn live_child() -> (Arc<LiveChild>, std::process::Child) {
-        let mut child = Command::new("sleep")
+    fn live_child() -> (Arc<LiveChild>, TestOwnedChild) {
+        let mut command = Command::new("sleep");
+        command
             .arg("30")
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn test process");
-        let pid = child.id();
-        let stdin = child.stdin.take().expect("test child stdin");
-        (
-            Arc::new(LiveChild {
-                cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
-                pid,
-                construction_id: uuid::Uuid::new_v4().to_string(),
-                account: None,
-                owners: Arc::new(Owners::default()),
-                output: None,
-            }),
-            child,
-        )
+            .stderr(Stdio::null());
+        isolate_child(&mut command);
+        owned_live_fixture(OwnedChild::spawn(&mut command).expect("spawn test process"))
     }
-
-    fn reap(mut child: std::process::Child) {
-        let _ = child.kill();
-        let _ = child.wait();
+    trait ReapTestChild {
+        fn reap(&mut self);
+    }
+    impl ReapTestChild for Child {
+        fn reap(&mut self) {
+            let _ = self.kill();
+            let _ = self.wait();
+        }
+    }
+    impl ReapTestChild for TestOwnedChild {
+        fn reap(&mut self) {
+            let _ = self.kill();
+            let _ = self.wait();
+        }
+    }
+    fn reap(mut child: impl ReapTestChild) {
+        child.reap();
     }
 
     #[test]
@@ -5732,7 +6299,7 @@ mod tests {
         let live = host
             .kill_session("wedged")
             .expect("wedged child registered");
-        terminate(live.pid);
+        live.request_stop().unwrap();
         let deadline = Instant::now() + Duration::from_secs(15);
         while !writer.is_finished() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(50));
@@ -5795,29 +6362,15 @@ mod tests {
         }
     }
 
-    fn live_group(script: &str) -> (Arc<LiveChild>, std::process::Child) {
-        let mut child = Command::new("sh")
+    fn live_group(script: &str) -> (Arc<LiveChild>, TestOwnedChild) {
+        let mut command = Command::new("sh");
+        command
             .args(["-c", script])
-            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn grouped child");
-        let pid = child.id();
-        let stdin = child.stdin.take().expect("grouped child stdin");
-        (
-            Arc::new(LiveChild {
-                cwd: PathBuf::from("/test"),
-                stdin: Mutex::new(stdin),
-                pid,
-                construction_id: uuid::Uuid::new_v4().to_string(),
-                account: None,
-                owners: Arc::new(Owners::default()),
-                output: None,
-            }),
-            child,
-        )
+            .stderr(Stdio::null());
+        isolate_child(&mut command);
+        owned_live_fixture(OwnedChild::spawn(&mut command).expect("spawn grouped child"))
     }
 
     #[test]

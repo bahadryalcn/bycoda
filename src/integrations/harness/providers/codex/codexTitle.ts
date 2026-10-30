@@ -1,3 +1,4 @@
+import type { HarnessOperationContext } from "../../core/types";
 import type { GeneratedSessionTitle } from "../../../../features/sessions/model/sessionTitle";
 import { generateSessionTitle } from "../../core/titleGeneration";
 import { runCodexTextPrompt } from "./codexText";
@@ -7,6 +8,7 @@ export async function generateCodexSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
+  operationContext?: HarnessOperationContext;
   providerAccountId?: string;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(input, runCodexTextPrompt);

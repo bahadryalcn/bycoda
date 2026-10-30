@@ -18,8 +18,8 @@ vi.mock("../../../../features/sessions/model/models", () => ({
   setHarnessModels: mocks.setHarnessModels,
 }));
 beforeEach(() => processConstructions.reset());
-vi.mock("../../core/child", () =>
-  processConstructions.mock({
+vi.mock("../../core/child", () => {
+  const child = processConstructions.mock({
     killChild: mocks.killChild,
     resolveOmpBinary: mocks.resolveBinary,
     resolvePiBinary: mocks.resolveBinary,
@@ -27,8 +27,16 @@ vi.mock("../../core/child", () =>
     unwatchChild: mocks.unwatchChild,
     watchChild: mocks.watchChild,
     writeChild: mocks.writeChild,
-  }),
-);
+  });
+  return {
+    ...child,
+    killChild: (original: import("../../core/child").ChildProcessHandle) => {
+      // killChild owns unwatch after RPC close; keep the exact source object.
+      Reflect.apply(child.unwatchChild, undefined, [original]);
+      return Reflect.apply(child.killChild, undefined, [original]) as Promise<void>;
+    },
+  };
+});
 import { discoverOmpModels, discoverPiModels, refreshPiCatalog } from "./piCatalog";
 
 const builtin = { provider: "meta", id: "shared-id", name: "Built-in" };

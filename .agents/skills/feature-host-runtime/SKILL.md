@@ -5,6 +5,148 @@ description: Host authority and WebSocket migration inventory for neutral schema
 
 # Host runtime and WebSocket migration
 
+## Host run writers, 2026-10-31
+
+Engine and its actual backend now share a private HostRunWriters issuer. Main,
+compact, steer, rewind and existing naming jobs retain explicit original views.
+Normal admission closes separately from original cleanup; final finish joins real
+stdin/FS/HTTP body work. Strict HTTP binds retained observed origins and actual
+session-directory evidence. Private launcher/sandbox roles retain actual cwd.
+Known pre-effect refusals do not certify or invent unknown I/O.
+
+Current checks: `temp/verification/2026-10-31-host-run-writers/`. SSE/permission,
+probe/admin, stale internal cleanup, Native CLI/MCP and complete actor/recovery
+qualification remain separate. No default, package or installation promotion.
+
+## Warm original writers, 2026-10-30
+
+The strict Native input foundation uses `control_writes.rs` and
+`harness/turn_writes.rs`, registered as `harness_bind_turn` and
+`harness_write_controlled`. Native retains actual window issuer, original
+Live/output Arc, turn and construction behind a closed binding receipt. A new
+command prevents an old Native runtime silently ignoring turn metadata. B keeps
+the same physical child, closes predecessor strict admission only after binding
+capacity reservation, waits true accepted writes/tails and rechecks its captured
+window/source after waiting. Authorize and bind are separate accepted
+transactions; bind refusal does not roll back an earlier successful authorize.
+
+Finish revokes original app permission before awaiting strict work. Sticky
+uncertain bytes/held Native write leases are distinct from permission revocation,
+physical process retirement and SDK ACK. Known-effectless refusals never touch
+the pipe or stop a process. Pending/unknown records cannot be evicted for space.
+
+Core opaque ChildTurnWriter and immutable RPC/ACP/Pi views share the original
+multiplexer; they never use a mutable currentWriter. Registry source contexts
+retain every actual construction, including aliases and startup fallback, and
+capture steer submission/adapter before waits. Failed/unentered/retired/replaced
+sources and reentrant onReady Stop cannot dispatch into a later turn. Manual
+compact/edit get their own Native turn and preserve explicit app/lead/account
+context at UI adapters. Mutable caller identity is copied at entry.
+
+Source/check evidence is under `temp/verification/2026-10-30-warm-control/`.
+Provider operation references are local source matching, not Host run attestation.
+Native CLI/MCP invocation/final-effect scope, unattributed replies and raw writes,
+Host per-run writer proof, actual GUI/durable recovery and all Native Buffers
+MISSING5/full26 remain OPEN. This component does not qualify the complete warm
+control guarantee or install a new application.
+
+## Original control and activity ownership, 2026-10-30
+
+`control_receipts.rs` issues strict Native turn receipts and retains an issuer
+from the actual window resource table. Authorize, fresh process construction and
+finish use that original issuer; a reused window label or session ID is not a
+receipt. Window close and poisoned admission revoke application/read grants
+without claiming physical process retirement. Completed exact turn retries cannot
+finish a replacement turn. `core/controlTurn.ts` keeps opaque handles, the
+original invoke function and unresolved calls, including duplicate finish work.
+
+Native `harness/process_receipts.rs` and Host `provider-constructions.ts` retain
+original process records separately from current routes. Capacity is reserved
+before replacement effects. Targeted cleanup can join an already-closed original;
+it never falls through to a newer same-session child. Missing/unknown records
+remain errors. Native terminal completion follows its actual publication callback.
+
+`core/providerRetirement.ts` accounts for admitted provider handles independently
+of each provider's current Live map. Failed cleanup remains retained. Host
+`provider-activity-retirement.ts` owns actual activity release callbacks and the
+captured provider cohort; main turns and optional naming jobs remain represented
+through their original callback completion. Shutdown joins these originals and
+reports failures. Passive warm-cohort observation does not stop a newer child.
+Registry cancellation retains its original failed result rather than reissuing
+an ambiguous session-name Stop. Orchestrator cleanup captures process and Native
+control handles before asynchronous work; failed family cleanup prevents delivery.
+
+This is source implementation under local verification in
+`temp/verification/2026-10-30-control-retirement/`, not installation or release.
+Warm Native per-turn writes, all aliases/actors, HTTP/SSE physical closure,
+durable crash reconciliation and current Native GUI IPC remain separate checks.
+Provider protocol ACK, Native Buffers MISSING5 and the original full26 are OPEN.
+
+## Private provider guardian continuation, 2026-10-30
+
+`packages/provider-process-guardian` is the shared Rust owner and standalone
+headless executable. Native `owned_process_job.rs` and Windows helpers now reuse
+its one job implementation. `host/provider-guardian.ts` keeps private framed
+control separate from provider byte streams; `provider-guardian-deployment.ts`
+selects only a validated fixed local bundle. `provider-child.ts` is the narrow
+transport contract. Host startup rechecks its captured attempt synchronously at
+the actual start dispatch after async preparation. Existing permission/tool and
+construction checks remain.
+
+Windows guardian terminal proof requires original job retirement, actual leader
+wait and joined accepted writer/output work. Natural leader exit requests the
+retained job's retirement before joining descendants. A completed failed byte
+write is reported as failed; it does not prevent independently proving physical
+retirement. Capture/wait/termination uncertainty or lost work never becomes
+verified. Guardian close without its private receipt remains unknown, retained
+by `provider-process-lifecycle.ts`; same-session replacement refuses while
+unrelated sessions can run. This does not close all Host activity/provider alias
+or complete Native cohort/admission gaps: provider stop callers that suppress
+errors and warm provider ownership still need the original all-actor census.
+
+The explicit builder `scripts/build/provider-guardian.mjs` creates a fixed,
+hashed target bundle. Host packaging includes an existing valid bundle or
+requires one with `--provider-guardian`; ordinary JavaScript Host development
+does not run Cargo. Missing optional bundles keep the legacy guard; declared
+invalid bundles refuse before provider execution. Packaged guardian selection is
+currently Windows-only. Unix original-child runtime reports unsupported
+descendant retirement; it is not enabled as a stronger Host contract.
+
+Current evidence lives under `temp/verification/2026-10-30-provider-guardian/`.
+Real Windows tests cover private stale identities, blocked IO, EOF, natural
+descendant retirement, sibling isolation and loss without receipt. Package/source
+evidence is distinct from application installation, six-target release, actual
+SDK/SSH/mobile/Native GUI acceptance. Guardian crash recovery has no surviving
+kernel owner yet. Native Buffers MISSING5 and original all26 remain OPEN.
+
+## Actual callback and retirement evidence, 2026-10-30
+
+Source continuation after source808. Node Host process ownership is separated
+into `host/provider-process-lifecycle.ts`: actual close, accepted stdin callbacks,
+original retirement and removed-route drains are retained independently of the
+caller's deadline. Replacement and shutdown wait for that original work. No
+signal timer, exitCode or failed stop request manufactures completion.
+
+Native `harness/process_lifecycle.rs` retains the original OS owner, writer gate,
+reader pins and managed-exit receipt. Actual write threads are joined after a
+deadline-triggered original stop. Persistent and six one-shot/probe/login timeout
+paths use retained owners. Windows uses a dedicated job; Linux/macOS use
+serialized non-reaping observation and original signal/reap phases.
+
+Known leader/stdio data is distinct from full retirement evidence. Strict
+InvocationJob and mutation callers remain strict; Native output becomes
+unavailable before terminal publication on uncertain retirement, and original
+Host activity/spawn SQL reservations remain held. Real capture/termination API
+errors are retained separately from incomplete birth coverage. Read-only CLI
+and auth observers remain bounded while actual work/profile checks stay owned.
+
+Historical source821 checks and exact limits:
+`temp/verification/2026-10-30-process-lifetimes/`. Node's JS guard still lacks a
+private descendant-settlement receipt when that legacy guard is selected;
+whole-tree/Unix/platform, full Native
+cohort, HTTP/SSE, orphan/PTY and Native Buffers MISSING5/all26 remain OPEN.
+No provider ACK, default/history promotion or installed acceptance is implied.
+
 ## Source-owned approval occurrences, 2026-10-30
 
 Continuation of the original W00-W11/G01-G09/full26 goal. Actual TypeScript
@@ -52,8 +194,9 @@ late title cannot seed an old revision or inherit an already closed SQL owner.
 
 Evidence and accepted scoped checks are recorded in
 `temp/verification/2026-10-30-native-process-identity/`.
-These are correlation and caller-lifetime changes, not provider ACK, physical
-callback completion after backend timeout, OS process termination attestation,
+These source808 changes establish correlation and caller ownership. The newer
+lifetime section above adds actual callback/thread drains, without provider ACK,
+complete OS descendant termination attestation,
 HTTP/SSE endpoint binding, Native Buffers FULL closure or migration completion.
 Keep all26 and qualified:false/applicationThrough:null/default/history gates.
 

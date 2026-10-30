@@ -153,7 +153,19 @@ it("cancels account B while original account A teardown is still held", async ()
     await vi.waitFor(() => expect(entered).toBe(true));
     const cancelled = processConstructions.created[1];
     const stopping = stopCodexTextPrompt();
-    await stopping;
+    let stopFinished = false;
+    void stopping.then(
+      () => {
+        stopFinished = true;
+      },
+      () => {
+        stopFinished = true;
+      },
+    );
+    // Stop owns the whole original cohort: B is cancelled immediately, but A's
+    // actual held kill still prevents that Stop from acknowledging completion.
+    await Promise.resolve();
+    expect(stopFinished).toBe(false);
     expect(released).toBe(false);
     // B must already own a cancellable handle before A's asynchronous kill finishes.
     expect(cancelled).toBeDefined();
@@ -176,6 +188,7 @@ it("cancels account B while original account A teardown is still held", async ()
     expect(sent).toEqual([]);
     released = true;
     release();
+    await stopping;
     expect((await switching).error).toEqual(
       expect.objectContaining({ message: expect.stringContaining("startup cancelled") }),
     );

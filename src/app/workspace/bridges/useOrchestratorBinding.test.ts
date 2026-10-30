@@ -7,6 +7,11 @@ import { resetSessionsStore, setSessions } from "../../../features/sessions/mode
 import { useOrchestratorBinding, type OrchestratorBindingDeps } from "./useOrchestratorBinding";
 import type { OrchestrationHost } from "../../../features/orchestration/model/orchestration";
 import { createChildProcessHandle } from "../../../integrations/harness/core/child";
+import {
+  beginNativeControlTurn,
+  nativeControlTurnReceipt,
+  type NativeControlInvoke,
+} from "../../../integrations/harness/core/controlTurn";
 import { registerHarness, type HarnessAdapter } from "../../../integrations/harness/core/registry";
 import { readApprovalIntent } from "../../../features/sessions/model/approvalIntents";
 import {
@@ -22,6 +27,17 @@ const ports = vi.hoisted(() => ({
   captureProcess: vi.fn(),
   killProcess: vi.fn(),
 }));
+async function controlledProcess(sessionId: string) {
+  const receipt = { version: 1 as const, sessionId, turnId: crypto.randomUUID() };
+  const originalInvoke = ports.invoke;
+  const invoke: NativeControlInvoke = async <T>(command: string, args?: Record<string, unknown>) =>
+    (command === "control_authorize_turn" ? receipt : await originalInvoke(command, args)) as T;
+  const control = await beginNativeControlTurn(sessionId, "/fixture", false, invoke);
+  return {
+    handle: createChildProcessHandle(sessionId, control),
+    receipt: nativeControlTurnReceipt(control),
+  };
+}
 vi.mock("../../../features/orchestration/model/orchestration", () => ({
   orchestrator: { bind: ports.bind, sync },
 }));
@@ -158,7 +174,8 @@ it("retains a renderer-reload orphan as unknown instead of acknowledging a sessi
 });
 
 it("uses the original accepted handle after provider cleanup and never recaptures a kill target", async () => {
-  const original = createChildProcessHandle("original-worker");
+  const controlled = await controlledProcess("original-worker");
+  const original = controlled.handle;
   ports.captureProcess.mockReturnValue(original);
   ports.stop.mockImplementation(async () => {
     ports.captureProcess.mockReturnValue(undefined);
@@ -172,7 +189,7 @@ it("uses the original accepted handle after provider cleanup and never recapture
     );
     expect(ports.killProcess).toHaveBeenCalledExactlyOnceWith(original);
     expect(ports.invoke).toHaveBeenCalledWith("control_turn_finished", {
-      sessionId: "original-worker",
+      receipt: controlled.receipt,
     });
     expect(ports.invoke).not.toHaveBeenCalledWith("harness_kill", expect.anything());
   } finally {

@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-const nativeInvoke = vi.hoisted(() => vi.fn(async (_command: string, _args?: unknown) => {}));
+const nativeInvoke = vi.hoisted(() =>
+  vi.fn<(_command: string, _args?: unknown) => Promise<unknown>>(async () => undefined),
+);
+const nativeEnabled = vi.hoisted(() => vi.fn(() => false));
 vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tauri-apps/api/core")>()),
   invoke: nativeInvoke,
+  isTauri: nativeEnabled,
 }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
 
 const socialBridgeMock = vi.hoisted(() =>
   vi.fn<(_sessionId: string) => Promise<{ command: string; args: string[] } | null>>(
@@ -53,13 +58,16 @@ import {
   sendHarnessTurn,
   steerHarnessTurn,
   cancelHarnessTurn,
+  captureHarnessControlTurn,
   stopHarnessBackgroundWork,
   stopHarnessSession,
   retainedHarnessWriters,
   retireHarnessWriter,
   type HarnessAdapter,
 } from "./registry";
-import type { SendTurnInput, SteerTurnInput } from "./types";
+import type { HarnessOperationContext, SendTurnInput, SteerTurnInput } from "./types";
+import { createChildProcessHandle, spawnChild, killChild, type ChildProcessHandle } from "./child";
+import { nativeControlTurnReceipt } from "./controlTurn";
 import { claudeAdapter } from "../providers/claude/claudeAdapter";
 import { codexAdapter } from "../providers/codex/codexAdapter";
 import { genericAcpAdapter } from "../providers/generic-acp/genericAcpAdapter";
@@ -81,6 +89,487 @@ function stub(id: HarnessId, extra: Partial<HarnessAdapter> = {}): HarnessAdapte
 }
 
 describe("harness registry", () => {
+  function nativeReceipts() {
+    nativeEnabled.mockReturnValue(true);
+    let next = 0;
+    nativeInvoke.mockImplementation(async (command, raw) => {
+      if (command === "skill_policy_get") return { disabledNames: [], disabledPaths: [] };
+      if (command === "control_authorize_turn") {
+        const args = raw as { sessionId: string };
+        return {
+          version: 1,
+          sessionId: args.sessionId,
+          turnId: `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}`,
+        };
+      }
+      if (command === "harness_spawn") {
+        const args = raw as { sessionId: string };
+        return {
+          version: 1,
+          backend: "native",
+          sessionId: args.sessionId,
+          pid: 42,
+          constructionId: `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}`,
+        };
+      }
+      if (command === "harness_bind_turn") {
+        const args = raw as {
+          constructionId: string;
+          controlTurn: { sessionId: string; turnId: string };
+        };
+        return {
+          version: 1,
+          bindingId: `00000000-0000-4000-8000-${String(++next).padStart(12, "0")}`,
+          sessionId: args.controlTurn.sessionId,
+          constructionId: args.constructionId,
+          turnId: args.controlTurn.turnId,
+        };
+      }
+      return undefined;
+    });
+  }
+
+  it("refuses a queued follow-up after its original preparation fails without entering the provider", async () => {
+    let fail!: (error: Error) => void;
+    const prepareText = vi.fn(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
+    registerHarness(stub("claude", { sendTurn, steerTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "failed-source-followup",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const originalFailure = new Error("original preparation failed");
+    const first = sendHarnessTurn({ ...input, prepareText });
+    const failed = expect(first).rejects.toBe(originalFailure);
+    await vi.waitFor(() => expect(prepareText).toHaveBeenCalledOnce());
+    const followup = steerHarnessTurn({ ...input, text: "followup" });
+    const refused = expect(followup).rejects.toThrow("original turn is no longer ready");
+    fail(originalFailure);
+    await Promise.all([failed, refused]);
+    expect(sendTurn).not.toHaveBeenCalled();
+    expect(steerTurn).not.toHaveBeenCalled();
+  });
+
+  it("does not let a failed queued submission inherit a retained failed predecessor", async () => {
+    let finish!: () => void;
+    const failure = new Error("original cancellation is unresolved");
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const cancelTurn = vi.fn(async () => {
+      throw failure;
+    });
+    const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
+    registerHarness(stub("claude", { sendTurn, cancelTurn, steerTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "failed-predecessor-followup",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const first = sendHarnessTurn(input);
+    const firstFailed = expect(first).rejects.toBe(failure);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(failure);
+    const second = sendHarnessTurn({ ...input, text: "second" });
+    const secondFailed = expect(second).rejects.toThrow("unresolved cleanup");
+    const followup = steerHarnessTurn({ ...input, text: "follow-up for second" });
+    const refused = expect(followup).rejects.toThrow("original turn is no longer ready");
+    finish();
+    await Promise.all([firstFailed, secondFailed, refused]);
+    expect(sendTurn).toHaveBeenCalledOnce();
+    expect(steerTurn).not.toHaveBeenCalled();
+  });
+
+  it("refuses a retained follow-up when a same-id adapter replaces its actual source", async () => {
+    let begin!: () => void;
+    let finish!: () => void;
+    const sendTurn = vi.fn(async (input: SendTurnInput) => {
+      await new Promise<void>((resolve) => {
+        begin = resolve;
+      });
+      input.onAccepted?.();
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const originalSteer = vi.fn(async (_input: SteerTurnInput) => {});
+    const replacementSteer = vi.fn(async (_input: SteerTurnInput) => {});
+    registerHarness(stub("codex", { sendTurn, steerTurn: originalSteer }));
+    const input = {
+      harness: "codex" as const,
+      sessionId: "replaced-source-followup",
+      cwd: "/tmp",
+      model: "codex:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const first = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    const followup = steerHarnessTurn({ ...input, text: "followup" });
+    const refused = expect(followup).rejects.toThrow("original turn is no longer ready");
+    registerHarness(stub("codex", { steerTurn: replacementSteer }));
+    begin();
+    await refused;
+    expect(originalSteer).not.toHaveBeenCalled();
+    expect(replacementSteer).not.toHaveBeenCalled();
+    finish();
+    await first;
+  });
+
+  it.each(["stop", "replace"] as const)(
+    "refuses a follow-up after onReady synchronously requests %s",
+    async (change) => {
+      let finish!: () => void;
+      const sendTurn = vi.fn(async (input: SendTurnInput) => {
+        const completed = new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+        input.onAccepted?.();
+        await completed;
+      });
+      const cancelTurn = vi.fn(async () => {
+        finish();
+      });
+      const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
+      const replacementSteer = vi.fn(async (_input: SteerTurnInput) => {});
+      registerHarness(stub("claude", { sendTurn, cancelTurn, steerTurn }));
+      const input = {
+        harness: "claude" as const,
+        sessionId: `ready-reentrant-${change}`,
+        cwd: "/tmp",
+        model: "claude:test",
+        runtimeMode: "supervised" as const,
+        text: "first",
+        onEvent: vi.fn(),
+      };
+      const first = sendHarnessTurn(input);
+      await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+      let cancellation: Promise<void> | undefined;
+      const followup = steerHarnessTurn({
+        ...input,
+        text: "followup",
+        onReady: () => {
+          if (change === "stop") cancellation = cancelHarnessTurn("claude", input.sessionId);
+          else registerHarness(stub("claude", { steerTurn: replacementSteer }));
+        },
+      });
+      await expect(followup).rejects.toThrow(
+        change === "stop" ? "Follow-up cancelled" : "original turn is no longer ready",
+      );
+      expect(steerTurn).not.toHaveBeenCalled();
+      expect(replacementSteer).not.toHaveBeenCalled();
+      if (change === "replace") finish();
+      await Promise.all([first, cancellation]);
+    },
+  );
+
+  it.each(["compact", "edit"] as const)(
+    "captures %s identity before the caller mutates a queued input",
+    async (kind) => {
+      nativeReceipts();
+      let finish!: () => void;
+      const sendTurn = vi.fn(async (_input: SendTurnInput) => {
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      });
+      const compactContext = vi.fn(async (_input: import("./types").CompactContextInput) => {});
+      const rewindLastTurn = vi.fn(async (_input: import("./types").RewindLastTurnInput) => ({
+        submitted: false,
+      }));
+      registerHarness(stub("codex", { sendTurn, compactContext, rewindLastTurn }));
+      const input = {
+        harness: "codex" as const,
+        sessionId: `immutable-${kind}-a`,
+        cwd: "/a",
+        model: "codex:test",
+        runtimeMode: "supervised" as const,
+        text: "first",
+        onEvent: vi.fn(),
+      };
+      const first = sendHarnessTurn(input);
+      await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+      const request = { ...input, modelSettings: { effort: "low" } };
+      const queued =
+        kind === "compact" ? compactHarnessContext(request) : rewindHarnessLastTurn(request);
+      request.sessionId = `immutable-${kind}-b`;
+      request.cwd = "/b";
+      request.modelSettings.effort = "high";
+      finish();
+      await Promise.all([first, queued]);
+      const called =
+        kind === "compact" ? compactContext.mock.calls[0]?.[0] : rewindLastTurn.mock.calls[0]?.[0];
+      expect(called).toMatchObject({
+        sessionId: input.sessionId,
+        cwd: "/a",
+        modelSettings: { effort: "low" },
+      });
+      const authorizations = nativeInvoke.mock.calls.filter(
+        ([command]) => command === "control_authorize_turn",
+      );
+      expect(authorizations.map(([, args]) => (args as { sessionId: string }).sessionId)).toEqual([
+        input.sessionId,
+        input.sessionId,
+      ]);
+    },
+  );
+
+  it("keeps Stop before adapter entry inside the original preparation and admits a fresh turn", async () => {
+    let release!: (text: string) => void;
+    const prepareText = vi.fn(
+      () =>
+        new Promise<string>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    const cancelTurn = vi.fn(async (_sessionId: string, _context?: HarnessOperationContext) => {});
+    registerHarness(stub("claude", { sendTurn, cancelTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "source-prepare-stop",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const first = sendHarnessTurn({ ...input, prepareText });
+    const rejected = expect(first).rejects.toThrow("Turn cancelled before it started");
+    await vi.waitFor(() => expect(prepareText).toHaveBeenCalledOnce());
+    await cancelHarnessTurn("claude", input.sessionId);
+    expect(cancelTurn).not.toHaveBeenCalled();
+    release("prepared first");
+    await rejected;
+    expect(sendTurn).not.toHaveBeenCalled();
+    await sendHarnessTurn({ ...input, text: "fresh" });
+    expect(sendTurn).toHaveBeenCalledOnce();
+    expect(cancelTurn).not.toHaveBeenCalled();
+  });
+
+  it("retains every actual construction and logical alias in the captured original Stop context", async () => {
+    nativeReceipts();
+    let finish!: () => void;
+    let entered!: SendTurnInput;
+    const sendTurn = vi.fn(async (input: SendTurnInput) => {
+      entered = input;
+      const first = createChildProcessHandle(`${input.sessionId}#first`, input.nativeControlTurn);
+      const fallback = createChildProcessHandle(
+        `${input.sessionId}#fallback`,
+        input.nativeControlTurn,
+      );
+      input.onOriginalProcess?.(first);
+      input.onOriginalProcess?.(fallback);
+      expect(captureHarnessControlTurn(input.sessionId, fallback)).toBe(input.nativeControlTurn);
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    const cancelTurn = vi.fn(async (_sessionId: string, _context?: HarnessOperationContext) => {});
+    registerHarness(stub("claude", { sendTurn, cancelTurn }));
+    const turn = sendHarnessTurn({
+      harness: "claude",
+      sessionId: "actual-logical-aliases",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised",
+      text: "first",
+      onEvent: vi.fn(),
+    });
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    await cancelHarnessTurn("claude", "actual-logical-aliases");
+    const context = cancelTurn.mock.calls[0]?.[1];
+    expect(context?.operation).toBe(entered.operationContext?.operation);
+    expect(context?.nativeControlTurn).toBe(entered.nativeControlTurn);
+    expect(context?.originalProcess).toBeUndefined();
+    expect(context?.originalProcesses?.map((process) => process.sessionId)).toEqual([
+      "actual-logical-aliases#first",
+      "actual-logical-aliases#fallback",
+    ]);
+    expect(Object.isFrozen(context?.originalProcesses)).toBe(true);
+    finish();
+    await turn;
+  });
+
+  it("admits a real replacement writer after a seeded warm source while cleanup retains both originals", async () => {
+    nativeReceipts();
+    const { JsonRpcClient } = await import("./jsonRpc");
+    const source = await import("../providers/turnWriter");
+    const selected: ChildProcessHandle[] = [];
+    let secondReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      secondReady = resolve;
+    });
+    let finishSecond!: () => void;
+    const sendTurn = vi.fn(async (input: SendTurnInput) => {
+      const prior = selected.at(-1);
+      const current = createChildProcessHandle(input.sessionId, input.nativeControlTurn);
+      source.observeProviderProcess(input, current, "starting");
+      selected.push(current);
+      if (prior) await killChild(prior);
+      await spawnChild(current, "claude", [], input.cwd);
+      const rpc = new JsonRpcClient(current, {});
+      try {
+        const writer = await source.captureRpcTurnWriter(
+          current,
+          rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        await writer.notify(`startup-${selected.length}`);
+        if (selected.length === 2) {
+          const done = new Promise<void>((resolve) => {
+            finishSecond = resolve;
+          });
+          secondReady();
+          await done;
+        }
+      } finally {
+        source.finishProviderOperation(input.operationContext);
+        rpc.close();
+      }
+    });
+    const cancelTurn = vi.fn(async (_sessionId: string, _context?: HarnessOperationContext) => {});
+    registerHarness(stub("claude", { sendTurn, cancelTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "seeded-warm-replacement",
+      cwd: "/first",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    await sendHarnessTurn(input);
+    const second = sendHarnessTurn({ ...input, cwd: "/second", text: "restart" });
+    await Promise.race([
+      ready,
+      second.then(() => {
+        throw new Error("The replacement operation ended before its source was held.");
+      }),
+    ]);
+    await cancelHarnessTurn("claude", input.sessionId);
+    expect(cancelTurn.mock.calls[0]?.[1]?.originalProcesses).toEqual(selected);
+    expect(selected[0]).not.toBe(selected[1]);
+    const writes = nativeInvoke.mock.calls.filter(
+      ([command]) => command === "harness_write_controlled",
+    );
+    expect(writes.map(([, raw]) => JSON.parse((raw as { line: string }).line).method)).toEqual([
+      "startup-1",
+      "startup-2",
+    ]);
+    finishSecond();
+    await second;
+    await killChild(selected[1]!);
+  });
+
+  it("captures a follow-up's submitted Native turn before startup awaits and never borrows the next turn", async () => {
+    nativeReceipts();
+    let begin!: () => void;
+    let finish!: () => void;
+    const sends: SendTurnInput[] = [];
+    const sendTurn = vi.fn(async (input: SendTurnInput) => {
+      sends.push(input);
+      if (sends.length === 1) {
+        await new Promise<void>((resolve) => {
+          begin = resolve;
+        });
+        input.onAccepted?.();
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      }
+    });
+    const steerTurn = vi.fn(async (_input: SteerTurnInput) => {});
+    registerHarness(stub("codex", { sendTurn, steerTurn }));
+    const input = {
+      harness: "codex" as const,
+      sessionId: "original-submit-context",
+      cwd: "/tmp",
+      model: "codex:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const first = sendHarnessTurn(input);
+    const followup = { ...input, text: "follow-up", modelSettings: { effort: "low" } };
+    const steer = steerHarnessTurn(followup);
+    followup.sessionId = "another-followup-target";
+    followup.cwd = "/changed";
+    followup.text = "changed after queueing";
+    followup.modelSettings.effort = "high";
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    expect(steerTurn).not.toHaveBeenCalled();
+    begin();
+    await steer;
+    const original = steerTurn.mock.calls[0]?.[0];
+    expect(original).toMatchObject({
+      sessionId: input.sessionId,
+      cwd: "/tmp",
+      text: expect.stringMatching(/^follow-up(?:\n|$)/),
+      modelSettings: { effort: "low" },
+    });
+    expect(original?.text).not.toContain("changed after queueing");
+    expect(original?.text).toContain("bycoda skill restrictions");
+    expect(original?.nativeControlTurn).toBe(sends[0]?.nativeControlTurn);
+    expect(original?.operationContext?.operation).toBe(sends[0]?.operationContext?.operation);
+    finish();
+    await first;
+    await sendHarnessTurn({ ...input, text: "second" });
+    expect(sends[1]?.nativeControlTurn).not.toBe(original?.nativeControlTurn);
+    expect(nativeControlTurnReceipt(original!.nativeControlTurn!).turnId).not.toBe(
+      nativeControlTurnReceipt(sends[1]!.nativeControlTurn!).turnId,
+    );
+  });
+
+  it("authorizes and finishes standalone compaction and edit with their own Native control", async () => {
+    nativeReceipts();
+    const compactContext = vi.fn(async (_input: import("./types").CompactContextInput) => {});
+    const rewindLastTurn = vi.fn(async (_input: import("./types").RewindLastTurnInput) => ({
+      submitted: false,
+    }));
+    registerHarness(stub("codex", { compactContext, rewindLastTurn }));
+    const input = {
+      harness: "codex" as const,
+      sessionId: "standalone-native-operations",
+      cwd: "/tmp",
+      model: "codex:test",
+      runtimeMode: "supervised" as const,
+      onEvent: vi.fn(),
+    };
+    await compactHarnessContext(input);
+    await rewindHarnessLastTurn(input);
+    const compact = compactContext.mock.calls[0]![0];
+    const edit = rewindLastTurn.mock.calls[0]![0];
+    expect(compact.nativeControlTurn).toBeDefined();
+    expect(edit.nativeControlTurn).toBeDefined();
+    expect(compact.nativeControlTurn).not.toBe(edit.nativeControlTurn);
+    const finished = nativeInvoke.mock.calls.filter(
+      ([command]) => command === "control_turn_finished",
+    );
+    expect(finished.map(([, args]) => args)).toEqual([
+      { receipt: nativeControlTurnReceipt(compact.nativeControlTurn!) },
+      { receipt: nativeControlTurnReceipt(edit.nativeControlTurn!) },
+    ]);
+  });
   it.each(["codex", "claude"] as const)(
     "prepares %s text after adding runtime and skill guidance exactly once",
     async (harness) => {
@@ -194,7 +683,7 @@ describe("harness registry", () => {
       expect(sendTurn.mock.calls[0][0].model).toBe(model);
     },
   );
-  it("deduplicates in-flight Stop but retries a rejected cancellation", async () => {
+  it("retains the original failed Stop and refuses a replacement provider turn", async () => {
     let finish!: () => void;
     let fail!: (error: Error) => void;
     const sendTurn = vi.fn(
@@ -203,20 +692,12 @@ describe("harness registry", () => {
           finish = resolve;
         }),
     );
-    const cancelTurn = vi
-      .fn(
-        () =>
-          new Promise<void>((_resolve, reject) => {
-            fail = reject;
-          }),
-      )
-      .mockImplementationOnce(
-        () =>
-          new Promise<void>((_resolve, reject) => {
-            fail = reject;
-          }),
-      )
-      .mockResolvedValueOnce(undefined);
+    const cancelTurn = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          fail = reject;
+        }),
+    );
     registerHarness(stub("claude", { sendTurn, cancelTurn }));
     const input = {
       harness: "claude" as const,
@@ -228,17 +709,69 @@ describe("harness registry", () => {
       onEvent: vi.fn(),
     };
     const turn = sendHarnessTurn(input);
+    const originalFailure = new Error("pipe unavailable");
+    const rejectedTurn = expect(turn).rejects.toBe(originalFailure);
     await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
     const first = cancelHarnessTurn("claude", input.sessionId);
     const second = cancelHarnessTurn("claude", input.sessionId);
     const results = Promise.allSettled([first, second]);
     await vi.waitFor(() => expect(cancelTurn).toHaveBeenCalledOnce());
-    fail(new Error("pipe unavailable"));
-    expect((await results).map((result) => result.status)).toEqual(["rejected", "rejected"]);
-    await cancelHarnessTurn("claude", input.sessionId);
-    expect(cancelTurn).toHaveBeenCalledTimes(2);
+    fail(originalFailure);
+    expect(await results).toEqual([
+      { status: "rejected", reason: originalFailure },
+      { status: "rejected", reason: originalFailure },
+    ]);
+    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(originalFailure);
+    expect(cancelTurn).toHaveBeenCalledOnce();
     finish();
-    await turn;
+    await rejectedTurn;
+    await expect(sendHarnessTurn({ ...input, text: "replacement" })).rejects.toThrow(
+      "The original provider operation still has unresolved cleanup.",
+    );
+    expect(sendTurn).toHaveBeenCalledOnce();
+    await expect(cancelHarnessTurn("claude", input.sessionId)).rejects.toBe(originalFailure);
+    expect(cancelTurn).toHaveBeenCalledOnce();
+  });
+
+  it("does not admit a late Stop between original completion and route removal", async () => {
+    let finish!: () => void;
+    const sendTurn = vi.fn(async (_input: SendTurnInput) => {});
+    sendTurn.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const cancelTurn = vi.fn(() => new Promise<void>(() => {}));
+    registerHarness(stub("claude", { sendTurn, cancelTurn }));
+    const input = {
+      harness: "claude" as const,
+      sessionId: "late-stop-completion-boundary",
+      cwd: "/tmp",
+      model: "claude:test",
+      runtimeMode: "supervised" as const,
+      text: "first",
+      onEvent: vi.fn(),
+    };
+    const first = sendHarnessTurn(input);
+    await vi.waitFor(() => expect(sendTurn).toHaveBeenCalledOnce());
+    let cancellation: Promise<void> | undefined;
+    let observed!: () => void;
+    const attempted = new Promise<void>((resolve) => {
+      observed = resolve;
+    });
+    finish();
+    queueMicrotask(() => {
+      cancellation = cancelHarnessTurn("claude", input.sessionId);
+      observed();
+    });
+    await attempted;
+    await first;
+    expect(cancelTurn).not.toHaveBeenCalled();
+    await cancellation;
+    await sendHarnessTurn({ ...input, text: "second" });
+    expect(sendTurn).toHaveBeenCalledTimes(2);
+    expect(cancelTurn).not.toHaveBeenCalled();
   });
 
   it("does not start queued compaction after Stop invalidates it", async () => {
@@ -698,6 +1231,8 @@ describe("harness registry", () => {
     expect(cancelTurn).toHaveBeenCalledOnce();
   });
   afterEach(() => {
+    nativeEnabled.mockReset().mockReturnValue(false);
+    nativeInvoke.mockReset().mockResolvedValue(undefined);
     resetHarnessModelOverlays();
     resetHarnessIdlePark();
     socialBridgeMock.mockReset().mockResolvedValue(null);

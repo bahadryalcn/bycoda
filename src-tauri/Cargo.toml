@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 bycoda-physical-store-admission = { path = "../packages/physical-store-admission" }
+bycoda-provider-process-guardian = { path = "../packages/provider-process-guardian" }
 tauri = { version = "2", features = ["protocol-asset", "macos-private-api", "tray-icon"] }
 tauri-plugin-opener = "2"
 open = "5.4.1"

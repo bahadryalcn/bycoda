@@ -78,18 +78,31 @@ import { newSession } from "../../../features/sessions/model/session";
 import { workspaceIdentity } from "../../../features/orchestration/model/orchestration";
 import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
 import { createChildProcessHandle } from "../../../integrations/harness/core/child";
+import {
+  beginNativeControlTurn,
+  finishNativeControlTurn,
+  type ControlTurnHandle,
+  type NativeControlInvoke,
+} from "../../../integrations/harness/core/controlTurn";
 
-beforeEach(() => {
+let fixtureControl: ControlTurnHandle;
+beforeEach(async () => {
   // Native transport remains a fixture; actual Host/Git delivery below is unchanged.
-  const handles = new Map<string, ReturnType<typeof createChildProcessHandle>>();
-  m.captureProcess.mockImplementation((id: string) => {
-    let handle = handles.get(id);
-    if (!handle) {
-      handle = createChildProcessHandle(id);
-      handles.set(id, handle);
+  const receipt = { version: 1 as const, sessionId: "worker", turnId: crypto.randomUUID() };
+  const nativeInvoke: NativeControlInvoke = async <T>(
+    command: string,
+    args?: Record<string, unknown>,
+  ) => {
+    if (command === "control_authorize_turn") return receipt as T;
+    if (command === "control_turn_finished") {
+      expect(args?.receipt).toEqual(receipt);
+      return undefined as T;
     }
-    return handle;
-  });
+    throw new Error(`Unexpected fixture Native command: ${command}`);
+  };
+  fixtureControl = await beginNativeControlTurn("worker", "/fixture-native", false, nativeInvoke);
+  const handle = createChildProcessHandle("worker", fixtureControl);
+  m.captureProcess.mockImplementation((id: string) => (id === "worker" ? handle : undefined));
 });
 
 // Only the renderer/native transport is mocked. Preparation, persisted identity,
@@ -97,6 +110,7 @@ beforeEach(() => {
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 30_000 });
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+  await finishNativeControlTurn(fixtureControl);
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
   vi.clearAllMocks();
   m.sessions = [];

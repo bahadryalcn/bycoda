@@ -1,40 +1,45 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Attachment } from "../../../../features/sessions/model/session";
+
+beforeEach(() => processConstructions.reset());
 
 const sent: Array<{ method: string; params: { input?: unknown[] } }> = [];
 let onLine: ((line: string) => void) | undefined;
 let keepTurnOpen = false;
 
-vi.mock("../../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/fake/codex" }),
-  spawnChild: async () => undefined,
-  killChild: async () => undefined,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (l: string) => void) => {
-    onLine = line;
-  },
-  writeChild: async (_id: string, line: string) => {
-    const message = JSON.parse(line);
-    sent.push(message);
-    if (message.id == null) return;
-    const result =
-      message.method === "thread/start"
-        ? { thread: { id: "thr_repro" } }
-        : message.method === "turn/start"
-          ? { turn: { id: "turn_repro", status: "inProgress" } }
-          : {};
-    onLine!(JSON.stringify({ id: message.id, result }));
-    if (message.method === "turn/start") {
-      onLine!(
-        JSON.stringify({
-          method: "turn/started",
-          params: { turn: { id: "turn_repro" } },
-        }),
-      );
-      if (!keepTurnOpen) completeTurn();
-    }
-  },
-}));
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "/fake/codex" }),
+    spawnChild: async () => undefined,
+    killChild: async () => undefined,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (l: string) => void) => {
+      onLine = line;
+    },
+    writeChild: async (_id: string, line: string) => {
+      const message = JSON.parse(line);
+      sent.push(message);
+      if (message.id == null) return;
+      const result =
+        message.method === "thread/start"
+          ? { thread: { id: "thr_repro" } }
+          : message.method === "turn/start"
+            ? { turn: { id: "turn_repro", status: "inProgress" } }
+            : {};
+      onLine!(JSON.stringify({ id: message.id, result }));
+      if (message.method === "turn/start") {
+        onLine!(
+          JSON.stringify({
+            method: "turn/started",
+            params: { turn: { id: "turn_repro" } },
+          }),
+        );
+        if (!keepTurnOpen) completeTurn();
+      }
+    },
+  }),
+);
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: async (command: string, args: { paths?: string[] }) => {

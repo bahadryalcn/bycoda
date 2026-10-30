@@ -1,13 +1,21 @@
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { captureByteTurnWriter } from "../turnWriter";
+import { killChild } from "../../core/child";
+import {
+  settleProviderRetirements,
+  withProviderRetirement,
+  observeProviderProbeCleanup,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import {
   createChildProcessHandle,
-  killChild,
   resolveClaudeBinary,
   spawnChild,
   unwatchChild,
   watchChild,
-  writeChild,
   type ChildProcessHandle,
 } from "../../core/child";
 import { isAgentToolName } from "../../core/preview";
@@ -31,8 +39,10 @@ import {
   turnStatusFromResult,
 } from "./claudeProtocol";
 import type { TurnIntent } from "../../../../features/sessions/model/session";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
 import { mergeStream } from "../../core/streamText";
+
+const retirements = createProviderRetirementLedger("claude.text", killChild);
 
 const TEXT_CHILD_ID = "bycoda-claude-text";
 const INIT_TIMEOUT_MS = 8_000;
@@ -79,7 +89,6 @@ type LiveText = {
 
 let live: LiveText | null = null;
 let pendingSetup: LiveText | null = null;
-let stopGeneration = 0;
 let turns: Promise<void> = Promise.resolve();
 
 function textSettings(
@@ -132,7 +141,6 @@ function pickTextModel(requested?: string): string {
 }
 
 export async function stopClaudeTextPrompt(): Promise<void> {
-  stopGeneration += 1;
   await dropLive();
 }
 
@@ -142,7 +150,7 @@ export function warmupClaudeText(cwd: string): Promise<void> {
     await ensureLive(cwd);
   });
   turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
 export async function runClaudeTextPrompt(input: {
@@ -155,8 +163,12 @@ export async function runClaudeTextPrompt(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
-  const run = turns.catch(() => undefined).then(() => promptOnLive(input));
+  input = captureTextInput(input);
+  const run = turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
@@ -171,12 +183,30 @@ async function promptOnLive(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
   input.signal?.throwIfAborted();
   const model = pickTextModel(input.model);
   const settings = textSettings(model, input.modelSettings, input.intent);
-  const session = await ensureLive(input.cwd, input.providerAccountId, model, settings);
-  input.signal?.throwIfAborted();
+  const session = await ensureLive(
+    input.cwd,
+    input.providerAccountId,
+    model,
+    settings,
+    input.operationContext,
+  );
+  let write: Awaited<ReturnType<ReturnType<typeof captureByteTurnWriter>>>;
+  try {
+    prepareTextProcess(session.child, input.operationContext);
+    write = await captureByteTurnWriter(
+      session.child,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    )();
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    return preserveProviderFailure(error, dropLive(session));
+  }
   session.output = "";
   session.collecting = true;
   session.onEvent = input.onEvent;
@@ -197,49 +227,52 @@ async function promptOnLive(input: {
       })
     : null;
 
-  try {
-    const turnPromise = new Promise<void>((resolve, reject) => {
-      session.turnDone = resolve;
-      session.turnFailed = reject;
-    });
+  return withProviderRetirement(
+    async () => {
+      try {
+        const turnPromise = new Promise<void>((resolve, reject) => {
+          session.turnDone = resolve;
+          session.turnFailed = reject;
+        });
 
-    await writeChild(
-      session.child,
-      JSON.stringify(
-        buildClaudeUserMessage({
-          text: input.prompt,
-          effort: settings.promptEffort,
-        }),
-      ),
-    );
-
-    await Promise.race([
-      turnPromise,
-      new Promise<void>((_, reject) => {
-        timeout = setTimeout(
-          () => reject(new Error("Claude text generation timed out")),
-          timeoutMs,
+        await write(
+          JSON.stringify(
+            buildClaudeUserMessage({
+              text: input.prompt,
+              effort: settings.promptEffort,
+            }),
+          ),
         );
-      }),
-      ...(abortPromise ? [abortPromise] : []),
-    ]);
 
-    const output = session.output.trim();
-    if (!output) throw new Error("Claude returned empty output.");
-    return output;
-  } catch (error) {
-    if (session.closed) await dropLive(session);
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    if (abortHandler && input.signal) {
-      input.signal.removeEventListener("abort", abortHandler);
-    }
-    session.collecting = false;
-    session.turnDone = null;
-    session.turnFailed = null;
-    await dropLive(session);
-  }
+        await Promise.race([
+          turnPromise,
+          new Promise<void>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Claude text generation timed out")),
+              timeoutMs,
+            );
+          }),
+          ...(abortPromise ? [abortPromise] : []),
+        ]);
+
+        const output = session.output.trim();
+        if (!output) throw new Error("Claude returned empty output.");
+        return output;
+      } catch (error) {
+        throw error;
+      }
+    },
+    async () => {
+      clearTimeout(timeout);
+      if (abortHandler && input.signal) {
+        input.signal.removeEventListener("abort", abortHandler);
+      }
+      session.collecting = false;
+      session.turnDone = null;
+      session.turnFailed = null;
+      await dropLive(session);
+    },
+  );
 }
 
 async function ensureLive(
@@ -247,23 +280,32 @@ async function ensureLive(
   providerAccountId?: string,
   requestedModel?: string,
   requestedSettings?: TextSettings,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
   const model = pickTextModel(requestedModel);
   const settings = requestedSettings ?? textSettings(model);
-  if (
-    live &&
-    !live.closed &&
-    live.cwd === cwd &&
-    live.providerAccountId === providerAccountId &&
-    live.model === model &&
-    live.settingsKey === settings.key
-  ) {
-    return live;
+  const current = live;
+  if (current && !current.closed) {
+    prepareTextProcess(current.child, operationContext);
+    await captureByteTurnWriter(
+      current.child,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    )();
+    if (live !== current || current.closed) throw new Error("Claude text generator stopped");
   }
-  const generation = stopGeneration;
-  await dropLive();
-  if (stopGeneration !== generation) throw new Error("Claude text generator stopped");
-  return startLive(cwd, providerAccountId, model, settings);
+  if (
+    current &&
+    live === current &&
+    !current.closed &&
+    current.cwd === cwd &&
+    current.providerAccountId === providerAccountId &&
+    current.model === model &&
+    current.settingsKey === settings.key
+  ) {
+    return current;
+  }
+  return startLive(cwd, providerAccountId, model, settings, operationContext);
 }
 
 async function startLive(
@@ -271,9 +313,14 @@ async function startLive(
   providerAccountId?: string,
   model = pickTextModel(),
   settings = textSettings(model),
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
+  const previous = captureDrop();
+  const child = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  prepareTextProcess(child, operationContext, true);
+  retirements.admitPending(child);
   const session: LiveText = {
-    child: createChildProcessHandle(TEXT_CHILD_ID),
+    child,
     cwd,
     providerAccountId,
     model,
@@ -289,7 +336,11 @@ async function startLive(
     toolsById: new Map(),
   };
   pendingSetup = session;
+  const stopping = dropLive(undefined, previous);
   try {
+    await stopping;
+    if (session.closed || pendingSetup !== session)
+      throw new Error("Claude text generator stopped");
     const { path } = await resolveClaudeBinary();
     if (session.closed || pendingSetup !== session)
       throw new Error("Claude text generator stopped");
@@ -325,20 +376,30 @@ async function startLive(
     );
     if (session.closed || pendingSetup !== session)
       throw new Error("Claude text generator stopped");
+    await captureByteTurnWriter(child, operationContext?.nativeControlTurn, operationContext)();
     pendingSetup = null;
     live = session;
     await waitForReady(session, INIT_TIMEOUT_MS);
     return session;
   } catch (error) {
-    await dropLive(session);
-    throw error;
+    return preserveProviderFailure(error, settleProviderRetirements([stopping, dropLive(session)]));
   }
 }
 
-async function dropLive(expected?: LiveText): Promise<void> {
-  const targets = expected
-    ? [expected]
-    : [...new Set([live, pendingSetup].filter((entry): entry is LiveText => entry !== null))];
+function captureDrop() {
+  return {
+    targets: [
+      ...new Set([live, pendingSetup].filter((entry): entry is LiveText => entry !== null)),
+    ],
+    cohort: retirements.cohort(TEXT_CHILD_ID),
+  };
+}
+async function dropLive(
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+): Promise<void> {
+  const snapshot = captured ?? captureDrop();
+  const targets = expected ? [expected] : snapshot.targets;
   for (const current of targets) {
     if (live === current) live = null;
     if (pendingSetup === current) pendingSetup = null;
@@ -350,7 +411,12 @@ async function dropLive(expected?: LiveText): Promise<void> {
     current.readyDone = null;
     unwatchChild(current.child);
   }
-  await Promise.all(targets.map((current) => killChild(current.child).catch(() => undefined)));
+  await (expected
+    ? retirements.retire(targets.map((current) => current.child))
+    : settleProviderRetirements([
+        snapshot.cohort.retire(),
+        retirements.retire(targets.map((current) => current.child)),
+      ]));
 }
 
 function handleLine(session: LiveText, line: string): void {

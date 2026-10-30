@@ -1,3 +1,9 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
@@ -8,14 +14,14 @@ import {
 } from "../../../../features/sessions/model/models";
 import {
   createChildProcessHandle,
-  killChild,
   resolveCodexBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
 import { asRecord, stringField } from "./codexProtocol";
 import { JsonRpcClient } from "../../core/jsonRpc";
+
+const retirements = createProviderRetirementLedger("codex.catalog", killChild);
 
 const PROBE_ID = "bycoda-codex-probe";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -41,6 +47,7 @@ export function refreshCodexCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("codex", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] codex catalog", error);
     })
     .finally(() => {
@@ -53,7 +60,7 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
   const { path } = await resolveCodexBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = createChildProcessHandle(probeId);
+  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "codex.catalog");
   const rpc = new JsonRpcClient(
     probeProcess,
     {
@@ -64,10 +71,9 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
     { includeJsonrpc: false, label: "codex-probe" },
   );
 
-  const stop = async () => {
+  const stop = () => {
     rpc.close();
-    unwatchChild(probeProcess);
-    await killChild(probeProcess).catch(() => undefined);
+    return retirements.retire([probeProcess]);
   };
 
   watchChild(
@@ -76,45 +82,48 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
     () => rpc.close(new Error("Codex probe exited")),
   );
 
-  try {
-    await spawnChild(probeProcess, path, ["app-server"], cwd, undefined, "codex");
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      async () => {
-        await rpc.request(
-          "initialize",
-          {
-            clientInfo: {
-              name: "bycoda",
-              title: PRODUCT_IDENTITY.displayName,
-              version: "0.1.0",
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(probeProcess, path, ["app-server"], cwd, undefined, "codex");
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        async () => {
+          await rpc.request(
+            "initialize",
+            {
+              clientInfo: {
+                name: "bycoda",
+                title: PRODUCT_IDENTITY.displayName,
+                version: "0.1.0",
+              },
+              capabilities: { experimentalApi: true },
             },
-            capabilities: { experimentalApi: true },
-          },
-          REQUEST_TIMEOUT_MS,
-        );
-        await rpc.notify("initialized", undefined);
+            REQUEST_TIMEOUT_MS,
+          );
+          await rpc.notify("initialized", undefined);
 
-        const account = await rpc
-          .request<{
-            account?: unknown;
-            requiresOpenaiAuth?: boolean;
-          }>("account/read", {}, REQUEST_TIMEOUT_MS)
-          .catch(() => null);
+          const account = await rpc
+            .request<{
+              account?: unknown;
+              requiresOpenaiAuth?: boolean;
+            }>("account/read", {}, REQUEST_TIMEOUT_MS)
+            .catch(() => null);
 
-        if (account && !account.account && account.requiresOpenaiAuth) {
-          throw new Error("Codex CLI is not authenticated. Run `codex login` and try again.");
-        }
+          if (account && !account.account && account.requiresOpenaiAuth) {
+            throw new Error("Codex CLI is not authenticated. Run `codex login` and try again.");
+          }
 
-        return await listAllModels(rpc);
-      },
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+          return await listAllModels(rpc);
+        },
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 async function listAllModels(rpc: JsonRpcClient): Promise<AgentModel[]> {

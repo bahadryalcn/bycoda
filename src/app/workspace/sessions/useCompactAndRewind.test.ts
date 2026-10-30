@@ -17,6 +17,8 @@ const effects = vi.hoisted(() => ({
   retireFiles: vi.fn(),
   preview: vi.fn(),
   registerUndo: vi.fn(),
+  compact: vi.fn(),
+  canCompact: vi.fn(() => false),
 }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: effects.retireFiles }));
 
@@ -26,8 +28,8 @@ vi.mock("../../../integrations/harness", () => ({
   rewindHarnessLastTurn: effects.providerRewind,
   canRewindHarnessLastTurn: () => true,
   stopHarnessSession: effects.stop,
-  canCompactHarnessContext: () => false,
-  compactHarnessContext: vi.fn(),
+  canCompactHarnessContext: effects.canCompact,
+  compactHarnessContext: effects.compact,
   applyHarnessEvent: (session: Session) => session,
 }));
 vi.mock("../../../features/connections/model/remoteProjects", () => ({
@@ -100,6 +102,8 @@ beforeEach(async () => {
   effects.forget.mockReset().mockResolvedValue(undefined);
   effects.save.mockReset().mockResolvedValue(undefined);
   effects.retireFiles.mockReset().mockResolvedValue(undefined);
+  effects.compact.mockReset().mockResolvedValue(undefined);
+  effects.canCompact.mockReset().mockReturnValue(false);
   deps = {
     sessionsRef: { current: [chat()] },
     setSessions: (update) => {
@@ -115,6 +119,7 @@ beforeEach(async () => {
     movingSessionIds: { current: new Set() },
     orchestrator: {
       submissionError: () => undefined,
+      run: () => undefined,
     } as unknown as CompactAndRewindDeps["orchestrator"],
     lastBoundProvider: { current: new Map([["session", "provider-before-rewind"]]) },
     lastPersistedUserBlock: { current: new Map([["session", "selected-user"]]) },
@@ -133,9 +138,40 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+it.each([false, true])(
+  "carries persisted operator=%s into standalone Native compaction without changing the source thread",
+  async (enabled) => {
+    const original = chat();
+    if (enabled) original.blocks[0] = { ...original.blocks[0]!, bycoda: true };
+    deps.sessionsRef.current = [original];
+    effects.canCompact.mockReturnValue(true);
+    let outcome: unknown;
+    await act(async () => {
+      outcome = actions.onCompactContext("session");
+    });
+    expect(outcome).toBe(true);
+    await vi.waitFor(() => expect(effects.compact).toHaveBeenCalledOnce());
+    expect(effects.compact.mock.calls[0]?.[0]).toMatchObject({
+      sessionId: "session",
+      appAccess: enabled,
+      controlsAgents: enabled,
+      model: original.model,
+      runtimeMode: original.runtimeMode,
+    });
+  },
+);
+
 it("keeps local Host compact and rewind out of Native when its owner client is detached", async () => {
   const session = chat(true);
-  session.hostBinding = { kind: "local-host", machineId: "local", environmentId: "home", projectId: "project", sessionId: session.id, authorityGeneration: 1, created: true };
+  session.hostBinding = {
+    kind: "local-host",
+    machineId: "local",
+    environmentId: "home",
+    projectId: "project",
+    sessionId: session.id,
+    authorityGeneration: 1,
+    created: true,
+  };
   deps.sessionsRef.current = [session];
   expect(actions.onCompactContext(session.id)).toBe(false);
   expect(await actions.onRewindMessage(session.id, "selected-user")).toBe(false);

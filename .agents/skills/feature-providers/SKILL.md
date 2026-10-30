@@ -5,6 +5,74 @@ description: "Providers Settings inventory for model discovery and enable policy
 
 # Providers, models, accounts and CLI lifecycle
 
+## Explicit Host normal and cleanup views, 2026-10-31
+
+Host operations carry captured private normal/control handles through existing
+main and text transports; cleanup never falls back to a new current writer.
+OpenCode HTTP uses immutable observed-target views; RPC/ACP/Pi/byte views retain
+the original process. The earlier Native path is preserved. Existing naming
+changes are frozen; the owner stopped further scope on2026-10-31. Source and
+focused checks are under `temp/verification/2026-10-31-host-run-writers/`.
+Full actor/SSE/probe/internal cleanup and installed acceptance remain unqualified.
+
+## Operation writers on warm clients, 2026-10-30
+
+`core/child.ts` issues private ChildTurnWriter objects from the exact original
+handle/control pair and captured backend. Controlled Native bind/write never
+falls back to the raw physical-handle API after refusal. `jsonRpc.ts`, `acp.ts`
+and Pi's client expose immutable operation views sharing the same IDs/pending
+multiplexer. ACP bridge preparation retains its captured view across async work.
+Pi delayed write/deadline callbacks compare their original Pending record, so an
+old A failure cannot remove B that reused the caller's request ID.
+
+`providers/turnWriter.ts` coordinates explicit provider source references and
+guarded views. Queued cancellation applies only to its original operation;
+ownership high-water prevents closed A regaining rights after B uses the same
+warm P. This is not a mutable writer read by old callbacks, a Native/Host run
+attestation or permission to reset unknown records. Main/compact/steer/startup
+paths keep actual process and turn metadata off provider payloads.
+
+Unattributed server requests, extension UI messages, raw transport responses,
+HTTP Native invocation and physical/administrative cleanup keep distinct
+unqualified frontiers. They cannot borrow the latest turn. Source and scoped
+verification are recorded in `temp/verification/2026-10-30-warm-control/`; actual SDK,
+CLI/MCP/final-effect, GUI, Host run proof, full cohorts and migration acceptance
+remain OPEN.
+
+## Original process retirement, 2026-10-30
+
+Provider process handles are admitted into the bounded common retirement ledger
+before startup. Cleanup retains the actual handle and its original kill callback,
+not a later session-name lookup. Failed and unknown originals survive Live-map
+removal and block same-owner readiness. Batch cleanup joins every captured
+original and reports failures; optional catalog/text results cannot convert a
+retirement failure into success. Source exit observes that same handle's cleanup.
+
+Main fresh-process starts forward the internally captured Native control handle;
+it is not serialized into provider prompts/protocols. Host activity cleanup and
+orchestrator delivery depend on original cleanup, independently of permission
+revocation. HTTP/SSE cleanup and Native-owned one-shot CLI work have distinct
+ownership; their completion is not inferred from a process-handle subset.
+
+Local checks and fixture evidence are recorded under
+`temp/verification/2026-10-30-control-retirement/`. Actual provider ACK,
+live-HMR migration from older helper versions, complete warm Native control coverage and
+all-provider/alias/actor closure remain OPEN; no package/install claim follows.
+
+## Physical-work and visible-check deadlines, 2026-10-30
+
+Read-only CLI probes and sign-in checks now distinguish a visible response
+deadline from actual process completion. CLI probe work remains charged to its
+original Native output work after the observer expires at 20 seconds. Sign-in observers
+return `unknown` after 15 seconds, retain/coalesce the original provider/profile check
+until its actual backend result, and never turn uncertainty into signed-out or
+a new login request. Independent profiles stay usable. CLI updates retain their
+separate actual operation path; no credential/default/storage policy changed.
+
+Focused source checks and current runtime integration live in
+`temp/verification/2026-10-30-process-lifetimes/`. Native/OS/installed acceptance
+must be read separately; visible timeout is not a stop or provider ACK.
+
 ## H3 settings implementation, 2026-10-28 (uncommitted)
 
 Provider Settings now uses shared Settings topic/row presentation, without page-local

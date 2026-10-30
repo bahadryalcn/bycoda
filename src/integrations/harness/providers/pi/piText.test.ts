@@ -27,13 +27,22 @@ vi.mock("../../core/child", () =>
 vi.mock("./piClient", () => ({
   PiRpc: class {
     constructor(
-      handle: import("../../core/child").ChildProcessHandle,
+      private readonly handle: import("../../core/child").ChildProcessHandle,
       onFrame: (record: Record<string, unknown>) => void,
     ) {
       processConstructions.client(handle);
       mocks.frames.push(onFrame);
     }
 
+    assertProcess(handle: import("../../core/child").ChildProcessHandle) {
+      if (handle !== this.handle) throw new Error("Foreign text process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: mocks.request,
+        cancelRequest: vi.fn(),
+      });
+    }
     request = mocks.request;
     close = mocks.close;
     pushLine = vi.fn();

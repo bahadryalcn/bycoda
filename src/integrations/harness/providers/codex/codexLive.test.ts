@@ -5,6 +5,7 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ProviderRetirementError } from "../../core/providerRetirement";
 
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
@@ -44,6 +45,7 @@ vi.mock("../../../../platform/tauri/generatedImages", () => ({
 
 const {
   compactCodexContext,
+  steerCodexTurn,
   bindCodexSession,
   cancelCodexTurn,
   keepCodexQuestionOpen,
@@ -54,7 +56,9 @@ const {
   stopCodexSession,
   __codexTestReset,
 } = await import("./codex");
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
+import type { ControlTurnHandle } from "../../core/controlTurn";
+import type { ChildProcessHandle } from "../../core/child";
 import {
   newSession,
   type RuntimeMode,
@@ -104,6 +108,9 @@ async function startTurn(
   sessionId: string,
   options: {
     runtimeMode?: RuntimeMode;
+    nativeControlTurn?: ControlTurnHandle;
+    operationContext?: HarnessOperationContext;
+    onOriginalProcess?: (handle: ChildProcessHandle) => void;
     intent?: TurnIntent;
     resume?: boolean;
     providerAccountId?: string;
@@ -123,6 +130,9 @@ async function startTurn(
     bindCodexSession(sessionId, "thr_1", "/repo", options.resumeProviderAccountId);
   }
   const turn = sendCodexTurn({
+    nativeControlTurn: options.nativeControlTurn,
+    operationContext: options.operationContext,
+    onOriginalProcess: options.onOriginalProcess,
     sessionId,
     cwd: "/repo",
     model: options.model ?? "codex:gpt-5.4",
@@ -200,6 +210,194 @@ async function startTurn(
 }
 
 describe("codex live turn sequence", () => {
+  // Real provider + real RPC multiplexer, explicit protocol process/writer
+  // fixture. It does not claim Native/Host control receipt or provider ACK proof.
+  it("keeps one warm process with distinct A/B writer scopes and refuses stale A control after B closes", async () => {
+    const sessionId = "codex-warm-source-writers";
+    const aControl = Object.freeze({
+      privateFixture: "never-provider-wire-a",
+    }) as unknown as ControlTurnHandle;
+    const bControl = Object.freeze({
+      privateFixture: "never-provider-wire-b",
+    }) as unknown as ControlTurnHandle;
+    const aOperation = Object.freeze({}),
+      bOperation = Object.freeze({});
+    const originals = new Set<ChildProcessHandle>();
+    const a = await startTurn(sessionId, {
+      nativeControlTurn: aControl,
+      operationContext: Object.freeze({ operation: aOperation }),
+      onOriginalProcess: (process) => {
+        originals.add(process);
+      },
+    });
+    const physical = [...originals][0];
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await a.turn;
+    const b = sendCodexTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      runtimeMode: "supervised",
+      text: "warm second",
+      attachments: [],
+      nativeControlTurn: bControl,
+      operationContext: Object.freeze({ operation: bOperation }),
+      onOriginalProcess: (process) => {
+        originals.add(process);
+      },
+      onEvent: () => {},
+    });
+    await waitFor(
+      () => parse().filter((message) => message.method === "turn/start").length === 2,
+      "second controlled turn start",
+    );
+    const stale = Object.freeze({
+      operation: aOperation,
+      nativeControlTurn: aControl,
+      originalProcesses: Object.freeze([...originals]),
+    });
+    const writes = sent.length;
+    await cancelCodexTurn(sessionId, stale);
+    await stopCodexSession(sessionId, stale);
+    await expect(
+      steerCodexTurn({
+        sessionId,
+        cwd: "/repo",
+        model: "codex:gpt-5.4",
+        text: "stale steer",
+        nativeControlTurn: aControl,
+        operationContext: stale,
+      }),
+    ).rejects.toThrow(/replaced|cancelled/);
+    expect(sent).toHaveLength(writes);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(0);
+    const request = parse().filter((message) => message.method === "turn/start")[1];
+    reply(request.id as number, { turn: { id: "turn_2", status: "inProgress" } });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_2", status: "completed" } });
+    await b;
+    await stopCodexSession(sessionId, stale);
+    expect(
+      processConstructions.operations.filter((operation) => operation.kind === "kill"),
+    ).toHaveLength(0);
+    expect([...originals]).toEqual([physical]);
+    expect(
+      processConstructions.created.filter((process) => process.sessionId === sessionId),
+    ).toEqual([physical]);
+    const starts = processConstructions.operations.filter(
+      (operation) =>
+        operation.kind === "write" && JSON.parse(String(operation.args[0])).method === "turn/start",
+    );
+    const bindings = processConstructions.operations.filter(
+      (operation) => operation.kind === "bind",
+    );
+    expect(
+      starts.map((operation) => processConstructions.originalWriter(operation.writer!)),
+    ).toEqual([
+      bindings.find((operation) => operation.args[0] === aControl)!.writer,
+      bindings.find((operation) => operation.args[0] === bControl)!.writer,
+    ]);
+    expect(starts[0].writer).not.toBe(starts[1].writer);
+    expect(sent.join("\n")).not.toMatch(/never-provider-wire|nativeControlTurn|operationContext/);
+    await stopCodexSession(sessionId);
+  });
+
+  it("keeps A observable while changed-cwd/policy B is queued and cancelled, then admits fresh C", async () => {
+    const sessionId = "codex-queued-source-writer";
+    const aControl = Object.freeze({}) as ControlTurnHandle,
+      bControl = Object.freeze({}) as ControlTurnHandle;
+    const aOperation = Object.freeze({}),
+      bOperation = Object.freeze({});
+    const originals = new Set<ChildProcessHandle>();
+    const a = await startTurn(sessionId, {
+      nativeControlTurn: aControl,
+      operationContext: Object.freeze({ operation: aOperation }),
+      onOriginalProcess: (process) => {
+        originals.add(process);
+      },
+    });
+    const bEvents: HarnessEvent[] = [];
+    const b = sendCodexTurn({
+      sessionId,
+      cwd: "/other-repo",
+      model: "codex:gpt-5.4",
+      runtimeMode: "full-access",
+      intent: "plan",
+      text: "queued never sent",
+      attachments: [],
+      nativeControlTurn: bControl,
+      operationContext: Object.freeze({ operation: bOperation }),
+      onOriginalProcess: (process) => {
+        originals.add(process);
+      },
+      onEvent: (event) => bEvents.push(event),
+    });
+    const outcome = b.catch((error: unknown) => error);
+    expect(
+      processConstructions.created.filter((process) => process.sessionId === sessionId),
+    ).toHaveLength(1);
+    expect(killChild).not.toHaveBeenCalled();
+    notify("item/agentMessage/delta", { itemId: "active-a-during-b-queue", delta: "still A" });
+    await waitFor(
+      () =>
+        [...a.events, ...bEvents].some(
+          (event) => event.type === "message.delta" && event.text === "still A",
+        ),
+      "active A output while B queued",
+    );
+    expect(a.events).toContainEqual(
+      expect.objectContaining({ type: "message.delta", text: "still A" }),
+    );
+    expect(bEvents).toEqual([]);
+    await cancelCodexTurn(
+      sessionId,
+      Object.freeze({
+        operation: bOperation,
+        nativeControlTurn: bControl,
+        originalProcesses: Object.freeze([...originals]),
+      }),
+    );
+    expect(parse().filter((message) => message.method === "turn/start")).toHaveLength(1);
+    expect(parse().some((message) => message.method === "turn/interrupt")).toBe(false);
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await a.turn;
+    expect(String(await outcome)).toContain("cancelled");
+    expect(bEvents).toEqual([]);
+    expect(
+      processConstructions.operations.filter(
+        (operation) => operation.kind === "bind" && operation.args[0] === bControl,
+      ),
+    ).toHaveLength(0);
+    const c = sendCodexTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "codex:gpt-5.4",
+      runtimeMode: "supervised",
+      text: "fresh c",
+      attachments: [],
+      nativeControlTurn: Object.freeze({}) as ControlTurnHandle,
+      operationContext: Object.freeze({ operation: Object.freeze({}) }),
+      onOriginalProcess: (process) => {
+        originals.add(process);
+      },
+      onEvent: () => {},
+    });
+    await waitFor(
+      () => parse().filter((message) => message.method === "turn/start").length === 2,
+      "explicit fresh C start",
+    );
+    const request = parse().filter((message) => message.method === "turn/start")[1];
+    reply(request.id as number, { turn: { id: "turn_c", status: "inProgress" } });
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_c", status: "completed" } });
+    await c;
+    expect(
+      processConstructions.created.filter((process) => process.sessionId === sessionId),
+    ).toHaveLength(1);
+    expect(originals.size).toBe(1);
+    await stopCodexSession(sessionId);
+  });
+
   it.each([true, false])(
     "applies current bycoda skill restrictions (%s) on resume without removing native owner disables",
     async (disabled) => {
@@ -399,6 +597,94 @@ describe("codex live turn sequence", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("retains a failed pending-start original across held cleanup and second Stop while a fresh owner works", async () => {
+    const sessionId = "retirement-pending-start-original";
+    let rejectOriginal!: (error: Error) => void;
+    const physicalCleanup = new Promise<void>((_resolve, reject) => {
+      rejectOriginal = reject;
+    });
+    killChild.mockImplementationOnce(() => physicalCleanup);
+    vi.useFakeTimers();
+    const turn = sendCodexTurn({
+      sessionId,
+      cwd: "/repo",
+      model: "codex:test",
+      runtimeMode: "supervised",
+      text: "hello",
+      attachments: [],
+      onEvent: () => undefined,
+    });
+    const outcome = turn.catch((error: unknown) => error);
+    let settled = false;
+    void outcome.then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(60_001);
+    const original = processConstructions.created.find((handle) => handle.sessionId === sessionId)!;
+    expect(original).toBeDefined();
+    expect(
+      processConstructions.operations.filter((op) => op.kind === "spawn" && op.handle === original),
+    ).toHaveLength(1);
+    expect(parse().some((message) => message.method === "initialize")).toBe(true);
+    expect(
+      processConstructions.operations.filter((op) => op.kind === "kill" && op.handle === original),
+    ).toHaveLength(1);
+    expect(settled).toBe(false);
+    const repeatedStop = stopCodexSession(sessionId).catch((error: unknown) => error);
+    let stopped = false;
+    void repeatedStop.then(() => {
+      stopped = true;
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stopped).toBe(false);
+    rejectOriginal(new Error("Original construction retirement remains unknown"));
+    const failure = await outcome;
+    expect(failure).toBeInstanceOf(ProviderRetirementError);
+    expect(String((failure as ProviderRetirementError).errors[0])).toContain(
+      "initialize response timed out",
+    );
+    expect(await repeatedStop).toBeInstanceOf(ProviderRetirementError);
+    await expect(stopCodexSession(sessionId)).rejects.toBeInstanceOf(ProviderRetirementError);
+    expect(
+      processConstructions.operations.filter((op) => op.kind === "kill" && op.handle === original),
+    ).toHaveLength(1);
+    const spawnedBefore = processConstructions.operations.filter(
+      (op) => op.kind === "spawn",
+    ).length;
+    await expect(
+      sendCodexTurn({
+        sessionId,
+        cwd: "/repo",
+        model: "codex:test",
+        runtimeMode: "supervised",
+        text: "retry",
+        attachments: [],
+        onEvent: () => undefined,
+      }),
+    ).rejects.toBeInstanceOf(ProviderRetirementError);
+    expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(
+      spawnedBefore,
+    );
+    vi.useRealTimers();
+    sent.length = 0;
+    const fresh = await startTurn("retirement-pending-start-unrelated");
+    const replacement = processConstructions.created.find(
+      (handle) => handle.sessionId === "retirement-pending-start-unrelated",
+    )!;
+    expect(replacement).not.toBe(original);
+    expect(
+      processConstructions.operations.filter(
+        (op) => op.kind === "spawn" && op.handle === replacement,
+      ),
+    ).toHaveLength(1);
+    notify("turn/completed", { threadId: "thr_1", turn: { id: "turn_1", status: "completed" } });
+    await fresh.turn;
+    await stopCodexSession("retirement-pending-start-unrelated");
+    expect(
+      processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
+    ).toEqual([original, replacement]);
   });
 
   it("does not apply the startup deadline to an accepted long running turn", async () => {

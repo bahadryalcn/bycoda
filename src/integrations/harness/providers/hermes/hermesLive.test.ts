@@ -17,8 +17,12 @@ let onLine: ((line: string) => void) | undefined;
 let onStderr: ((line: string) => void) | undefined;
 const textFiles = new Map<string, string>();
 let heldFileRead: ((path: string) => Promise<string>) | null = null;
+let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
 
-beforeEach(() => processConstructions.reset());
+beforeEach(() => {
+  processConstructions.reset();
+  queueAgent = null;
+});
 vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
@@ -38,6 +42,7 @@ vi.mock("../../core/child", () =>
       sent.push(line);
       const message = JSON.parse(line);
       if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
+      queueAgent?.(message);
     },
     readHarnessTextFile: async (path: string) => {
       if (heldFileRead) return heldFileRead(path);
@@ -640,3 +645,206 @@ it("does not release original background dispatch work while a cancelled file re
   heldFileRead = null;
   await stopHermesSession(sessionId);
 });
+
+it.each([true, false])(
+  "preserves hermes A's callback and permission policy while B is queued (cancel B: %s)",
+  async (cancelB) => {
+    // Production provider/client/queue; only the child transport is the existing
+    // protocol fixture. No physical Native/provider retirement is asserted.
+    sent.length = 0;
+    const sessionId = `hermes-queue-${cancelB}`;
+    const eventsA: HarnessEvent[] = [];
+    const eventsB: HarnessEvent[] = [];
+    const eventsC: HarnessEvent[] = [];
+    const prompts: Record<string, unknown>[] = [];
+    const pending: Promise<unknown>[] = [];
+    const permissionResponse = (id: number) =>
+      parse().find((message) => message.id === id && message.result)?.result as
+        | { outcome: { optionId: string } }
+        | undefined;
+    queueAgent = (message) => {
+      if (typeof message.id !== "number" || typeof message.method !== "string") return;
+      if (message.method === "session/prompt") {
+        prompts.push(message);
+        return;
+      }
+      const result =
+        message.method === "initialize"
+          ? { protocolVersion: 1 }
+          : ["session/new", "session/load"].includes(message.method)
+            ? {
+                sessionId: "hermes-session-1",
+                models: { currentModelId: "nous:hermes-4" },
+                configOptions: [
+                  { id: "model", category: "model", currentValue: "nous:hermes-4" },
+                  { id: "mode", category: "mode", currentValue: "ask" },
+                ],
+              }
+            : {};
+      reply(message.id, result);
+    };
+    const base = {
+      sessionId,
+      cwd: "/repo",
+      model: "hermes:nous:hermes-4",
+      modelSettings: {},
+      runtimeMode: "supervised" as const,
+      attachments: [],
+    };
+    const emitText = (text: string) => {
+      const line = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "hermes-session-1",
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+        },
+      });
+      nativeOutputFrame(sessionId, line, () => onLine!(line));
+    };
+    const ask = (id: number) => {
+      const line = JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method: "session/request_permission",
+        params: {
+          sessionId: "hermes-session-1",
+          toolCall: { toolCallId: `queue-${id}`, title: "Run git status", kind: "execute" },
+          options: [
+            { optionId: "allow_once", kind: "allow_once" },
+            { optionId: "reject_once", kind: "reject_once" },
+          ],
+        },
+      });
+      nativeOutputFrame(sessionId, line, () => onLine!(line));
+    };
+    const first = sendHermesTurn({
+      ...base,
+      text: "original A input",
+      operationContext: { operation: {} },
+      onEvent: (event) => eventsA.push(event),
+    });
+    const firstOutcome = first.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    pending.push(firstOutcome);
+    try {
+      await waitFor(() => prompts.length === 1, "original A prompt held");
+      const queuedContext = { operation: {} };
+      const observedB = vi.fn();
+      const second = sendHermesTurn({
+        ...base,
+        cwd: "/queued",
+        text: "queued B input",
+        intent: "plan",
+        runtimeMode: "full-access",
+        operationContext: queuedContext,
+        onOriginalProcess: observedB,
+        onEvent: (event) => eventsB.push(event),
+      });
+      const secondOutcome = second.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      pending.push(secondOutcome);
+      const observedC = vi.fn();
+      const third = sendHermesTurn({
+        ...base,
+        text: "fresh C input",
+        operationContext: { operation: {} },
+        onOriginalProcess: observedC,
+        onEvent: (event) => eventsC.push(event),
+      });
+      const thirdOutcome = third.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      pending.push(thirdOutcome);
+      expect(observedB).toHaveBeenCalledTimes(1);
+      expect(observedC).toHaveBeenCalledTimes(1);
+      expect(prompts).toHaveLength(1);
+      expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(1);
+      expect(processConstructions.operations.filter((op) => op.kind === "kill")).toHaveLength(0);
+      // Queueing B alone must not redirect A, repolicy A, or restart A.
+      emitText("A remains the active callback");
+      expect(eventsA).toContainEqual({
+        type: "message.delta",
+        text: "A remains the active callback",
+      });
+      expect(eventsB).toHaveLength(0);
+      expect(eventsC).toHaveLength(0);
+      ask(771);
+      await waitFor(
+        () =>
+          eventsA.some((event) => event.type === "approval.requested" && event.requestId === 771),
+        "A supervised permission retained",
+      );
+      expect(parse().some((message) => message.id === 771 && message.result)).toBe(false);
+      const approval = eventsA.find(
+        (event) => event.type === "approval.requested" && event.requestId === 771,
+      );
+      if (!approval || approval.type !== "approval.requested")
+        throw new Error("Missing A original approval");
+      respondHermesApproval(sessionId, 771, "allow", approval.occurrenceId);
+      await waitFor(
+        () => parse().some((message) => message.id === 771 && message.result),
+        "A original approval response",
+      );
+      if (cancelB) await cancelHermesTurn(sessionId, queuedContext);
+      expect(processConstructions.operations.filter((op) => op.kind === "kill")).toHaveLength(0);
+      expect(parse().some((message) => message.method === "session/cancel")).toBe(false);
+      reply(prompts[0].id as number, { stopReason: "end_turn" });
+      expect(await firstOutcome).toBeUndefined();
+      if (cancelB) {
+        expect(await secondOutcome).toBeInstanceOf(Error);
+        expect(String(await secondOutcome)).toMatch(/cancelled|closed/);
+        expect(eventsB).toHaveLength(0);
+      } else {
+        await waitFor(() => prompts.length === 2, "B starts only after A and owns its restart");
+        emitText("B owns its actual entered callback");
+        expect(eventsB).toContainEqual({
+          type: "message.delta",
+          text: "B owns its actual entered callback",
+        });
+        expect(eventsC).toHaveLength(0);
+        ask(772);
+        await waitFor(
+          () => parse().some((message) => message.id === 772 && message.result),
+          "B planning denial",
+        );
+        expect(permissionResponse(772)?.outcome.optionId).toBe("reject_once");
+        expect(prompts).toHaveLength(2);
+        reply(prompts[1].id as number, { stopReason: "end_turn" });
+        expect(await secondOutcome).toBeUndefined();
+      }
+      const expectedPrompts = cancelB ? 2 : 3;
+      await waitFor(
+        () => prompts.length === expectedPrompts,
+        "C survives canceled/replaced prior Live",
+      );
+      emitText("C owns its fresh callback");
+      expect(eventsC).toContainEqual({ type: "message.delta", text: "C owns its fresh callback" });
+      expect(eventsA).not.toContainEqual({
+        type: "message.delta",
+        text: "C owns its fresh callback",
+      });
+      expect(eventsB).not.toContainEqual({
+        type: "message.delta",
+        text: "C owns its fresh callback",
+      });
+      expect(
+        prompts.map((message) => JSON.stringify(message.params).includes("queued B input")),
+      ).toEqual(cancelB ? [false, false] : [false, true, false]);
+      reply(prompts[expectedPrompts - 1].id as number, { stopReason: "end_turn" });
+      expect(await thirdOutcome).toBeUndefined();
+      expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(
+        cancelB ? 1 : 3,
+      );
+    } finally {
+      queueAgent = null;
+      await stopHermesSession(sessionId);
+      await Promise.allSettled(pending);
+    }
+  },
+);

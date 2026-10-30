@@ -210,7 +210,25 @@ export type ApprovalDecision = "allow" | "deny";
 /** The provider cannot accept a follow-up until the active turn is ready. */
 export class TurnNotReadyError extends Error {}
 
+/** Internal source observation; identity comes from the original registry call. */
+export type HarnessOperationContext = Readonly<{
+  operation?: object;
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  /** Original actual Host authority capability, never a run-id DTO. */
+  hostRun?: import("./hostRun").HostRunHandle;
+  /** Separately issued original cleanup view; never substitutes a normal run. */
+  hostControlRun?: import("./hostRun").HostRunHandle;
+  originalProcess?: import("./child").ChildProcessHandle;
+  originalProcesses?: readonly import("./child").ChildProcessHandle[];
+}>;
+
 export type HarnessSessionInput = {
+  /** Original local Native authority turn; never serialized into provider input. */
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  /** Private operation observation; never a provider protocol field. */
+  operationContext?: HarnessOperationContext;
+  /** Report every actual source selected before startup/binding effects. */
+  onOriginalProcess?: (process: import("./child").ChildProcessHandle) => void;
   /** Current machine restrictions; never grants provider enablement. */
   skillPolicy?: import("./skillPolicy").SkillPolicy;
   sessionId: string;
@@ -246,6 +264,9 @@ export type SendTurnInput = HarnessSessionInput & {
 export type CompactContextInput = HarnessSessionInput;
 
 export type SteerTurnInput = {
+  /** Captured from the original submitted operation, never the latest turn. */
+  nativeControlTurn?: import("./controlTurn").ControlTurnHandle;
+  operationContext?: HarnessOperationContext;
   /** Local progress only; never serialized into a provider request. */
   onReady?: () => void;
   skillPolicy?: import("./skillPolicy").SkillPolicy;

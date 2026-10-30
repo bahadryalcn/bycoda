@@ -317,9 +317,13 @@ Connect another computer using an SSH forward to the loopback port.`);
   } catch (error) {
     console.error("Could not install the bycoda app skills:", error);
   }
+  const { HostRunWriters } = await import("./run-writers");
+  const runWriters = new HostRunWriters();
   const backend = new HostChildBackend(
     await readProviderBinaryOverrides(directory),
     store.attachmentDir,
+    undefined,
+    runWriters,
   );
   let cleanup = async () => {
     rmSync(statePath, { force: true });
@@ -344,7 +348,7 @@ Connect another computer using an SSH forward to the loopback port.`);
         /* report via descriptor */
       }
     }
-    const engine = new HostEngine(store, hostProviders);
+    const engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
     await engine.ready;
     const secret = randomBytes(32).toString("base64url");
     const { NativeSourceRegistry } = await import("./native-authority/source-registry");

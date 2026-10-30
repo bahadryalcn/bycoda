@@ -1,25 +1,35 @@
-import { processConstructions } from "../processConstruction.testSupport";
+import {
+  processConstructions,
+  type FixtureProcessOperation,
+} from "../processConstruction.testSupport";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import type { HostRunHandle } from "../../core/hostRun";
 import type { HarnessEvent } from "../../core/types";
 
 const sent: string[] = [];
 let onLine: ((line: string) => void) | undefined;
+let closedNormal: HostRunHandle | undefined;
 
 beforeEach(() => {
   processConstructions.reset();
+  killChild.mockReset().mockResolvedValue(undefined);
   resolveCursorBinary.mockReset().mockResolvedValue({ path: "/fake/cursor-agent" });
 });
+const killChild = vi.fn(async () => undefined);
 const resolveCursorBinary = vi.fn(async () => ({ path: "/fake/cursor-agent" }));
 vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveCursorBinary,
     spawnChild: async () => undefined,
-    killChild: async () => undefined,
+    killChild,
     unwatchChild: () => undefined,
     watchChild: (_id: string, line: (value: string) => void) => {
       onLine = line;
     },
     writeChild: async (_id: string, line: string) => {
+      const source = originalWriteRun(processConstructions.operations.at(-1));
+      if (closedNormal && source === closedNormal)
+        throw new Error("Normal fixture run admission closed");
       sent.push(line);
     },
   }),
@@ -27,6 +37,17 @@ vi.mock("../../core/child", () =>
 
 const { runCursorTextPrompt, stopCursorTextPrompt, warmupCursorText } =
   await import("./cursorText");
+
+/** Write.hostRun is the fixture's process-birth annotation. Resolve the actual
+ * guarded writer to its exact original bind when testing writer admission. */
+function originalWriteRun(entry: FixtureProcessOperation | undefined): HostRunHandle | undefined {
+  if (!entry?.writer) return undefined;
+  const original = processConstructions.originalWriter(entry.writer);
+  return processConstructions.operations.find(
+    (binding) =>
+      binding.kind === "bind" && binding.handle === entry.handle && binding.writer === original,
+  )?.hostRun;
+}
 
 function messages() {
   return sent.map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -52,6 +73,7 @@ async function waitFor(predicate: () => boolean, label: string) {
 beforeEach(() => {
   sent.length = 0;
   onLine = undefined;
+  closedNormal = undefined;
 });
 
 afterEach(async () => {
@@ -298,4 +320,197 @@ it("forwards Cursor text deltas without duplicating snapshots", async () => {
     { type: "message.delta", text: "Hel" },
     { type: "message.delta", text: "lo" },
   ]);
+});
+
+async function openScopedText(sessionId: string) {
+  await waitFor(() => !!outbound("initialize"), "scoped initialize");
+  reply("initialize", {});
+  await waitFor(() => !!outbound("authenticate"), "scoped authenticate");
+  reply("authenticate", {});
+  await waitFor(() => !!outbound("session/new"), "scoped session/new");
+  reply("session/new", { sessionId, configOptions: [{ id: "model", category: "model" }] });
+  await waitFor(() => !!outbound("session/set_mode"), "scoped mode");
+  reply("session/set_mode", {});
+  await waitFor(() => !!outbound("session/set_config_option"), "scoped model");
+  reply("session/set_config_option", {});
+}
+function answerScopedText(text: string) {
+  onLine?.(
+    JSON.stringify({
+      method: "session/update",
+      params: {
+        update: { sessionUpdate: "agent_message_chunk", content: text },
+      },
+    }),
+  );
+  reply("session/prompt", {});
+}
+
+it("retains each original naming scope across queueing and the preceding actual cleanup", async () => {
+  // Actual text pool and ACP multiplexer; opaque scopes belong only to this
+  // controlled protocol fixture. This is not a Host authority or OS IO claim.
+  const sourceA = Object.freeze({}) as HostRunHandle;
+  const sourceB = Object.freeze({}) as HostRunHandle;
+  const controlA = Object.freeze({}) as HostRunHandle;
+  const controlB = Object.freeze({}) as HostRunHandle;
+  const contextA = { operation: {}, hostRun: sourceA, hostControlRun: controlA };
+  const contextB = { operation: {}, hostRun: sourceB, hostControlRun: controlB };
+  let release!: () => void;
+  let entered = false;
+  killChild.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        entered = true;
+        release = resolve;
+      }),
+  );
+  const a = runCursorTextPrompt({ cwd: "/repo", prompt: "A title", operationContext: contextA });
+  void a.catch(() => undefined);
+  contextA.hostRun = sourceB;
+  contextA.hostControlRun = controlB;
+  await openScopedText("A");
+  await waitFor(() => !!outbound("session/prompt"), "A prompt");
+  const original = processConstructions.created[0];
+  const oldLine = onLine!;
+  const b = runCursorTextPrompt({ cwd: "/repo", prompt: "B branch", operationContext: contextB });
+  void b.catch(() => undefined);
+  contextB.hostRun = sourceA;
+  contextB.hostControlRun = controlA;
+  try {
+    answerScopedText("A answer");
+    await waitFor(() => entered, "original A cleanup");
+    expect(processConstructions.created).toEqual([original]);
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "write")
+        .every((entry) => entry.hostRun === sourceA),
+    ).toBe(true);
+    sent.length = 0;
+    release();
+    await expect(a).resolves.toBe("A answer");
+    await openScopedText("B");
+    await waitFor(() => !!outbound("session/prompt"), "B prompt");
+    const replacement = processConstructions.created[1];
+    expect(replacement).not.toBe(original);
+    const bWrites = processConstructions.operations.filter(
+      (entry) => entry.kind === "write" && entry.handle === replacement,
+    );
+    expect(bWrites.length).toBeGreaterThan(0);
+    expect(bWrites.every((entry) => entry.hostRun === sourceB && entry.writer !== undefined)).toBe(
+      true,
+    );
+    const before = sent.length;
+    oldLine(JSON.stringify({ id: 700, method: "session/request_permission", params: {} }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sent.length).toBe(before);
+    answerScopedText("B answer");
+    await expect(b).resolves.toBe("B answer");
+    expect(
+      processConstructions.operations
+        .filter((entry) => entry.kind === "kill")
+        .map((entry) => entry.handle),
+    ).toEqual([original, replacement]);
+  } finally {
+    release?.();
+    await stopCursorTextPrompt();
+    await Promise.allSettled([a, b]);
+  }
+});
+
+it("refuses adoption of an uncontrolled warm pool before protocol mutation and permits a fresh scoped job after explicit retirement", async () => {
+  const warming = warmupCursorText("/repo");
+  await openScopedText("warm");
+  await warming;
+  const original = processConstructions.created[0];
+  sent.length = 0;
+  const context = {
+    operation: {},
+    hostRun: Object.freeze({}) as HostRunHandle,
+    hostControlRun: Object.freeze({}) as HostRunHandle,
+  };
+  await expect(
+    runCursorTextPrompt({ cwd: "/repo", prompt: "Cannot adopt", operationContext: context }),
+  ).rejects.toThrow("birth Host run");
+  expect(processConstructions.created).toEqual([original]);
+  expect(sent).toEqual([]);
+  expect(killChild).not.toHaveBeenCalled();
+  // Retirement is an explicit test owner action, never an automatic adoption workaround.
+  await stopCursorTextPrompt();
+  const fresh = runCursorTextPrompt({
+    cwd: "/repo",
+    prompt: "Fresh scoped",
+    operationContext: {
+      operation: {},
+      hostRun: context.hostRun,
+      hostControlRun: context.hostControlRun,
+    },
+  });
+  void fresh.catch(() => undefined);
+  await openScopedText("fresh");
+  await waitFor(() => !!outbound("session/prompt"), "fresh scoped prompt");
+  answerScopedText("fresh answer");
+  await expect(fresh).resolves.toBe("fresh answer");
+});
+
+it("uses only original cleanup admission for cancellation after normal naming writes close", async () => {
+  // Controlled process protocol fixture, not the real Host issuer or OS.
+  const normal = Object.freeze({}) as HostRunHandle;
+  const control = Object.freeze({}) as HostRunHandle;
+  const context = { operation: {}, hostRun: normal, hostControlRun: control };
+  const controller = new AbortController();
+  const work = runCursorTextPrompt({
+    cwd: "/repo",
+    prompt: "Cancel original",
+    signal: controller.signal,
+    operationContext: context,
+  });
+  const failure = work.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  await openScopedText("original_provider_session");
+  await waitFor(() => !!outbound("session/prompt"), "original scoped prompt");
+  const original = processConstructions.created[0];
+  closedNormal = normal;
+  // Mutation after capture must not retarget either role to an unrelated source.
+  context.hostControlRun = Object.freeze({}) as HostRunHandle;
+  controller.abort();
+  expect(await failure).toEqual(
+    expect.objectContaining({ message: "By-the-way request cancelled" }),
+  );
+  const cancels = processConstructions.operations.filter(
+    (entry) =>
+      entry.kind === "write" && JSON.parse(String(entry.args[0])).method === "session/cancel",
+  );
+  expect(cancels.length).toBeGreaterThan(0);
+  expect(messages().filter((message) => message.method === "session/cancel")).toHaveLength(
+    cancels.length,
+  );
+  expect(
+    cancels.every(
+      (entry) =>
+        entry.handle === original &&
+        originalWriteRun(entry) === control &&
+        entry.writer !== undefined,
+    ),
+  ).toBe(true);
+  expect(
+    cancels.every(
+      (entry) => JSON.parse(String(entry.args[0])).params.sessionId === "original_provider_session",
+    ),
+  ).toBe(true);
+  expect(processConstructions.created).toEqual([original]);
+});
+it("refuses a Host naming source without its original cleanup pair before process effects", async () => {
+  await expect(
+    runCursorTextPrompt({
+      cwd: "/repo",
+      prompt: "No cleanup grant",
+      operationContext: { operation: {}, hostRun: Object.freeze({}) as HostRunHandle },
+    }),
+  ).rejects.toThrow("cleanup run is required");
+  expect(processConstructions.created).toEqual([]);
+  expect(resolveCursorBinary).not.toHaveBeenCalled();
+  expect(sent).toEqual([]);
 });

@@ -1,10 +1,87 @@
 # Host runtime and WebSocket migration
 
+The current Host input path uses one shared in-process issuer across Engine and
+the actual backend. Private operation handles cannot be restored from JSON IDs.
+Normal writes and original cleanup have separate admission; both retain the true
+accepted I/O lifetime. OpenCode HTTP views bind observed origin/session targets,
+and auxiliary launch directories come from trusted backend creation/resolution.
+This source work does not promote a default or complete raw/SSE/admin, Native
+invocation, crash/recovery or installed acceptance.
+
 bycoda attaches execution to the selected project's machine. A conversation is
 identified by `(environmentId, sessionId)`. Opening it on another computer or a
 phone does not move its provider process, workspace or history authority.
 
+The Native warm-input layer gives each operation an immutable writer over the
+same physical child. Native-issued bindings retain the original Live/output Arc,
+window issuer, canonical target and turn behind a private bounded record. The
+new strict bind/write commands fail on older runtimes rather than silently
+ignoring extra metadata. Binding B waits accepted A writes and true callback
+tails, then rechecks B's original source; late A never selects a latest turn.
+Permission is revoked before finish waits. Uncertain byte work remains held,
+independently of actual physical retirement or provider protocol acknowledgement.
+
+RPC/ACP/Pi views share their original multiplexer and pending IDs. Registry
+captures operation identity before deferral, records each actual construction as
+it is selected and takes immutable source snapshots for cleanup. Queued steer
+cannot inherit a failed predecessor, reach a replacement adapter or dispatch
+after reentrant Stop. Manual compact/edit retain explicit account/app/lead
+context. Local provider high-water guards are source matching rather than Host
+run attestation. Native CLI/MCP invocation/final effect gates, unattributed/raw
+messages, Host per-run writers, crash recovery and complete cohorts remain OPEN;
+this layer is not full Native Buffers or migration qualification.
+
+Native application access belongs to the original source-issued control turn and
+the actual window issuer. Closing that window revokes its grants; revocation is
+independent of physical process cleanup. A completed old turn can be finished
+again without finishing the replacement. Fresh process construction accepts only
+its captured control receipt, matching logical session, canonical directory and
+original issuer. Later per-operation writes use the separate strict binding above;
+process-birth authority alone does not authorize a new warm operation.
+
+Original process cleanup records outlive current session routes. A targeted
+cleanup can join the retained old process after its route closes without touching
+a replacement. Missing records and uncertain cleanup remain errors. Admission
+reserves bounded record capacity before stopping an existing process.
+
+The provider retirement ledger retains captured handles and failed cleanup after
+provider Live-map removal. Host activity release callbacks belong to the original
+provider cohort, including optional title/branch work. Shutdown joins accepted
+callbacks and reports their failures. Passive observation of a warm original does
+not stop the next process. Repeated registry cancellation preserves its original
+failed result; a session-name retry cannot establish new cleanup authority.
+
 ## Source implementation
+
+The standalone provider guardian lives in `packages/provider-process-guardian`.
+It shares Native's Windows job owner and has no GUI, Store or Tauri startup.
+The Host's `provider-guardian.ts` adapter separates private control frames from
+the provider's stdin/stdout/stderr. The original control channel and guardian,
+parent and actual-provider construction identities bind each command. Provider
+output cannot issue a terminal receipt. Async startup preparation has a final
+synchronous check of its original Host attempt immediately before dispatch.
+
+A Windows private terminal receipt follows actual leader wait, job drain and
+joined accepted writer/output work. Natural leader exit also retires the retained
+job so a pipe-holding descendant cannot strand the join. The ordinary failed
+result of a completed stdin write remains a failed write; independent physical
+retirement can still succeed. Missing birth coverage, process/job API failures,
+lost IO work or a missing private receipt cannot prove retirement. Host lifecycle
+retains an unknown original after route removal and refuses its replacement.
+Other session owners are independent. This is not provider protocol ACK or a
+complete all-provider/alias/activity authority cut.
+
+The explicit `pnpm host:guardian:build --target win32-x64 --target-dir <cache>`
+creates a hashed fixed local bundle under `build/host-guardian/<target>/`.
+`host/package.mjs --provider-guardian` requires that matching bundle; an existing
+valid default bundle is also included. The executable and bounded manifest are
+checked before spawn without accepting a path from HTTP or looking in PATH.
+Ordinary JavaScript builds do not build Rust. Missing optional bundles retain
+the legacy JS guard and its limited evidence; invalid declared bundles refuse.
+The selected packaged guardian currently supports Windows. The Unix runtime
+reports unsupported descendant retirement and is not enabled as a stronger Host
+contract. Surviving recovery after guardian loss, six-target release packaging
+and installed application acceptance remain separate work.
 
 Provider process startup returns the original backend's strict construction
 receipt. Targeted stdin and kill compare that construction before selecting a
@@ -17,10 +94,24 @@ not substitutes. Old clients without a receipt must update before these actions.
 Process output invalidation uses the same original construction. A missing
 identity after an invoked start retains uncertainty even if output arrives later.
 Explicit administrative shutdown and HTTP/SSE routes have separate semantics.
-These checks do not prove provider consumption, backend callback completion after
-a write timeout, or OS process-group termination. Unknown Native orphans and
+These checks do not prove provider consumption or complete OS descendant
+termination. Unknown Native orphans and
 logical retirement without a complete owner-bound cohort remain held rather than
 being reported as successfully cleaned up.
+
+Low-level stdin work retains its actual Node callback or Native writer thread.
+A deadline requests a stop on the original owner; bounded callers can stop
+waiting independently. Host replacement and shutdown also drain originals that
+have already left the current route map. Exit codes and escalation timers do
+not complete a missing callback or child-close observation.
+
+Native command results and retirement evidence are separate. Valid stdout and
+the original exit status remain available when descendant coverage is unknown.
+Strict helper/mutation completion, Host activity and Native spawn reservation
+release still require the original retirement evidence. Individual successful
+stdin byte-I/O settlement is independent of process retirement. Actual Windows
+capture or termination API failures remain errors, even after later queries
+succeed; missing birth coverage cannot certify the whole tree.
 
 Committed send/compact dispatch reacquires the database and session operation
 owners, verifies the same accepted run and authority, and seeds provider state

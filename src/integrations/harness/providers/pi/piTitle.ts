@@ -1,3 +1,5 @@
+import type { HarnessOperationContext } from "../../core/types";
+import { captureTextInput } from "../../core/textSource";
 import {
   buildThreadTitlePrompt,
   parseGeneratedSessionTitle,
@@ -14,11 +16,14 @@ async function generateSessionTitle(
     sessionId: string;
     cwd: string;
     message: string;
+    operationContext?: HarnessOperationContext;
   },
 ): Promise<GeneratedSessionTitle | null> {
+  input = captureTextInput(input);
   try {
     const output = await runTextPrompt(flavor, {
       cwd: input.cwd,
+      operationContext: input.operationContext,
       prompt: buildThreadTitlePrompt(input.message),
       timeoutMs: TITLE_TIMEOUT_MS,
     });
@@ -33,6 +38,7 @@ export function generatePiSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
+  operationContext?: HarnessOperationContext;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(PI_FLAVOR, input);
 }
@@ -41,6 +47,7 @@ export function generateOmpSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
+  operationContext?: HarnessOperationContext;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(OMP_FLAVOR, input);
 }

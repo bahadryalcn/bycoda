@@ -1,3 +1,4 @@
+import { processConstructions } from "../processConstruction.testSupport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mock = vi.hoisted(() => ({
@@ -13,26 +14,28 @@ vi.mock("../../core/socialBridge", () => ({
   socialCliHint: () => "",
   socialAcpServers: () => [],
 }));
-vi.mock("../../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/fake/codex" }),
-  spawnChild: async () => undefined,
-  killChild: mock.kill,
-  unwatchChild: () => undefined,
-  watchChild: (_id: string, line: (value: string) => void) => {
-    mock.onLine = line;
-  },
-  writeChild: async (_id: string, line: string) => {
-    mock.lines.push(line);
-    const frame = JSON.parse(line);
-    const policyInventory = frame.method === "skills/list" && mock.policyRead;
-    if (frame.method === "config/read" || policyInventory) {
-      mock.policyRead = frame.method === "config/read";
-      const result =
-        frame.method === "config/read" ? { config: { skills: { config: [] } } } : { data: [] };
-      queueMicrotask(() => mock.onLine?.(JSON.stringify({ id: frame.id, result })));
-    }
-  },
-}));
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "/fake/codex" }),
+    spawnChild: async () => undefined,
+    killChild: mock.kill,
+    unwatchChild: () => undefined,
+    watchChild: (_id: string, line: (value: string) => void) => {
+      mock.onLine = line;
+    },
+    writeChild: async (_id: string, line: string) => {
+      mock.lines.push(line);
+      const frame = JSON.parse(line);
+      const policyInventory = frame.method === "skills/list" && mock.policyRead;
+      if (frame.method === "config/read" || policyInventory) {
+        mock.policyRead = frame.method === "config/read";
+        const result =
+          frame.method === "config/read" ? { config: { skills: { config: [] } } } : { data: [] };
+        queueMicrotask(() => mock.onLine?.(JSON.stringify({ id: frame.id, result })));
+      }
+    },
+  }),
+);
 vi.mock("../../../../platform/tauri/generatedImages", () => ({
   saveGeneratedImage: vi.fn(),
   deleteGeneratedImages: vi.fn(),
@@ -81,6 +84,7 @@ function complete(id: string) {
 
 describe("Codex native commands and cancellation ownership", () => {
   beforeEach(() => {
+    processConstructions.reset();
     mock.lines.length = 0;
     mock.onLine = undefined;
     mock.policyRead = false;
@@ -328,6 +332,9 @@ describe("Codex native commands and cancellation ownership", () => {
     reply("turn/start", { turn: { id: "turn_first" } });
     complete("turn_first");
     await first;
+    const original = processConstructions.created.find(
+      (handle) => handle.sessionId === "cancel-test",
+    )!;
     mock.lines.length = 0;
 
     const accepted = vi.fn();
@@ -336,11 +343,24 @@ describe("Codex native commands and cancellation ownership", () => {
     await cancelled;
     expect(frames().some((frame) => frame.method === "turn/start")).toBe(false);
     expect(accepted).not.toHaveBeenCalled();
+    expect(
+      processConstructions.created.filter((handle) => handle.sessionId === "cancel-test"),
+    ).toEqual([original]);
+    expect(mock.kill).not.toHaveBeenCalled();
     const next = codex.sendCodexTurn(input("cancel-test", accepted));
     await waitFor("turn/start");
     reply("turn/start", { turn: { id: "turn_next" } });
     complete("turn_next");
     await next;
     expect(accepted).toHaveBeenCalledOnce();
+    expect(
+      processConstructions.operations
+        .filter(
+          (operation) =>
+            operation.kind === "write" &&
+            JSON.parse(String(operation.args[0])).method === "turn/start",
+        )
+        .at(-1)?.handle,
+    ).toBe(original);
   });
 });

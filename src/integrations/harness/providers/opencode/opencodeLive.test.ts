@@ -1,4 +1,5 @@
 import { processConstructions } from "../processConstruction.testSupport";
+import { retireProviderProcess } from "../../core/providerRetirement";
 import {
   nativeOutputFrame,
   captureNativeOutputEvent,
@@ -7,6 +8,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type RuntimeMode } from "../../../../features/sessions/model/session";
 import { applyHarnessEvent } from "../../core/apply";
+import type { HostRunHandle } from "../../core/hostRun";
+import type { HostHarnessHttpSource, HarnessHttpInput } from "../../core/child";
 
 let onStdout: ((line: string) => void) | undefined;
 let onChildExit: ((code: number | null) => void) | undefined;
@@ -87,6 +90,46 @@ const harnessHttp = vi.fn(
     return { status: 204, body: "" };
   },
 );
+type FixtureHostRun = { normal: HostRunHandle; normalOpen: boolean; control: boolean };
+const hostRuns = new WeakMap<HostRunHandle, FixtureHostRun>();
+const strictHttp: Array<{
+  run: HostRunHandle;
+  source: HostHarnessHttpSource;
+  input: HarnessHttpInput;
+}> = [];
+let currentHttpOwner: HostRunHandle | undefined;
+const captureHostHarnessHttp = vi.fn((run: HostRunHandle, source: HostHarnessHttpSource) => {
+  const original = Object.freeze({ ...source });
+  return async (input: HarnessHttpInput) => {
+    const state = hostRuns.get(run);
+    if (!state || original.baseUrl !== "http://127.0.0.1:4096" || original.directory !== "/repo")
+      throw new Error("Unknown original fixture HTTP source");
+    if (state.control) {
+      if (!original.providerSessionId || currentHttpOwner !== state.normal)
+        throw new Error("Original fixture cleanup source replaced");
+      if (!/\/(?:abort|interrupt)$/.test(new URL(input.url).pathname) && input.method !== "DELETE")
+        throw new Error("Fixture control view is cleanup only");
+    } else {
+      if (!state.normalOpen) throw new Error("Original fixture normal run is closed");
+      currentHttpOwner = state.normal;
+    }
+    strictHttp.push({ run, source: original, input });
+    return harnessHttp(input);
+  };
+});
+function fixtureHostPair() {
+  const hostRun = Object.freeze({}) as HostRunHandle;
+  const hostControlRun = Object.freeze({}) as HostRunHandle;
+  const normal: FixtureHostRun = { normal: hostRun, normalOpen: true, control: false };
+  hostRuns.set(hostRun, normal);
+  hostRuns.set(hostControlRun, { normal: hostRun, normalOpen: true, control: true });
+  return {
+    context: { operation: {}, hostRun, hostControlRun },
+    closeNormal: () => {
+      normal.normalOpen = false;
+    },
+  };
+}
 
 beforeEach(() => processConstructions.reset());
 vi.mock("../../core/child", () =>
@@ -100,6 +143,7 @@ vi.mock("../../core/child", () =>
           : "http://127.0.0.1:4096",
     freeHarnessPort: async () => 4096,
     harnessHttp,
+    captureHostHarnessHttp,
     killChild,
     openHarnessSse: async () => undefined,
     resolveOpenCodeBinary: async () => ({ path: "/fake/opencode" }),
@@ -130,6 +174,7 @@ const {
   respondOpenCodeQuestion,
   rewindOpenCodeLastTurn,
   sendOpenCodeTurn,
+  steerOpenCodeTurn,
   stopOpenCodeSession,
 } = await import("./opencode");
 import type { HarnessEvent } from "../../core/types";
@@ -215,6 +260,9 @@ beforeEach(() => {
   killChild.mockClear();
   closeHarnessSse.mockClear();
   harnessHttp.mockClear();
+  captureHostHarnessHttp.mockClear();
+  strictHttp.length = 0;
+  currentHttpOwner = undefined;
   __openCodeTestReset();
 });
 
@@ -222,6 +270,140 @@ afterEach(async () => {
   await stopOpenCodeSession("opencode-live");
   __openCodeTestReset();
 });
+
+it.each(["v1", "v2"] as const)(
+  "keeps %s main HTTP views original and permits captured control after normal close",
+  async (generation) => {
+    // Actual provider/client and source guards; only process/HTTP endpoints are
+    // controlled fixtures. This is not Host authority or SSE attribution proof.
+    if (generation === "v2") openCodeVersion = "opencode v2.0.15";
+    const a = fixtureHostPair();
+    const b = fixtureHostPair();
+    const eventsA: HarnessEvent[] = [];
+    const eventsB: HarnessEvent[] = [];
+    const base = {
+      sessionId: "opencode-live",
+      cwd: "/repo",
+      model: "opencode:openai/gpt-5",
+      runtimeMode: "supervised" as const,
+      attachments: [],
+    };
+    let acceptedA = false;
+    const first = sendOpenCodeTurn({
+      ...base,
+      text: "original A",
+      operationContext: a.context,
+      onAccepted: () => {
+        acceptedA = true;
+      },
+      onEvent: (event) => eventsA.push(event),
+    });
+    await waitFor(() => acceptedA, "A admission response applied");
+    expect(
+      strictHttp.some(
+        (request) =>
+          request.run === a.context.hostRun &&
+          new URL(request.input.url).pathname ===
+            (generation === "v2" ? "/api/session" : "/session"),
+      ),
+    ).toBe(true);
+    if (generation === "v2")
+      onSseEvent?.({ type: "session.idle", data: { sessionID: "session_1" } });
+    else idle();
+    await first;
+    a.closeNormal();
+    let acceptedB = false;
+    const second = sendOpenCodeTurn({
+      ...base,
+      runtimeMode: "full-access",
+      text: "fresh B",
+      operationContext: b.context,
+      onAccepted: () => {
+        acceptedB = true;
+      },
+      onEvent: (event) => eventsB.push(event),
+    });
+    await waitFor(() => acceptedB, "B admission response applied");
+    expect(strictHttp.filter((request) => request.input.method === "PATCH").at(-1)?.run).toBe(
+      b.context.hostRun,
+    );
+    const beforeLate = harnessHttp.mock.calls.length;
+    await expect(
+      steerOpenCodeTurn({ ...base, text: "late A", operationContext: a.context }),
+    ).rejects.toThrow("admission is closed");
+    expect(harnessHttp.mock.calls).toHaveLength(beforeLate);
+    await steerOpenCodeTurn({ ...base, text: "B steer", operationContext: b.context });
+    expect(strictHttp.at(-1)?.run).toBe(b.context.hostRun);
+    b.closeNormal();
+    await stopOpenCodeSession("opencode-live", b.context);
+    await second;
+    expect(strictHttp.at(-1)?.run).toBe(b.context.hostControlRun);
+    expect(strictHttp.at(-1)?.source.providerSessionId).toBe("session_1");
+    expect(new URL(strictHttp.at(-1)!.input.url).pathname).toBe(
+      generation === "v2" ? "/api/session/session_1/interrupt" : "/session/session_1/abort",
+    );
+    expect(strictHttp).toHaveLength(harnessHttp.mock.calls.length);
+    expect(spawnChild).toHaveBeenCalledTimes(generation === "v2" ? 0 : 1);
+  },
+);
+
+it.each(["idle", "active-descendant", "late-unknown"] as const)(
+  "only omits Host SDK abort for proven idle original wire (%s)",
+  async (state) => {
+    const pair = fixtureHostPair();
+    const events: HarnessEvent[] = [];
+    let accepted = false;
+    const done = sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/repo",
+      model: "opencode:openai/gpt-5",
+      runtimeMode: "supervised",
+      text: "original",
+      attachments: [],
+      operationContext: pair.context,
+      onAccepted: () => {
+        accepted = true;
+      },
+      onEvent: (event) => events.push(event),
+    });
+    await waitFor(() => accepted, "original admission applied");
+    if (state === "active-descendant") {
+      sessionCreated("active-child", "session_1");
+      await waitFor(
+        () => (__openCodeTestCacheSizes("opencode-live")?.ancestry ?? 0) > 0,
+        "observed active descendant",
+      );
+    }
+    idle();
+    await done;
+    pair.closeNormal();
+    if (state === "late-unknown") {
+      onSseEvent?.({
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "late-message",
+            sessionID: "session_1",
+            role: "assistant",
+          },
+        },
+      });
+      await waitFor(
+        () => (__openCodeTestCacheSizes("opencode-live")?.roles ?? 0) > 0,
+        "new input invalidates root idle observation",
+      );
+    }
+    if (state === "idle") hostRuns.delete(pair.context.hostControlRun);
+    const aborts = () =>
+      strictHttp.filter((request) => new URL(request.input.url).pathname.endsWith("/abort"));
+    expect(aborts()).toHaveLength(0);
+    await stopOpenCodeSession("opencode-live");
+    expect(aborts()).toHaveLength(state === "idle" ? 0 : 1);
+    if (state !== "idle") expect(aborts()[0].run).toBe(pair.context.hostControlRun);
+    expect(closeHarnessSse).toHaveBeenCalledWith("opencode-live");
+    expect(killChild).toHaveBeenCalledTimes(1);
+  },
+);
 
 it("preserves provider approval occurrences across real Live replacements and reused UI IDs", async () => {
   let previous: Extract<HarnessEvent, { type: "approval.requested" }> | undefined;
@@ -1187,6 +1369,85 @@ describe("OpenCode edit recovery", () => {
   });
 });
 describe("OpenCode access modes", () => {
+  it("holds queued B policy updates and callbacks until entry, and cancelling B preserves A before fresh C", async () => {
+    const aEvents: HarnessEvent[] = [],
+      bEvents: HarnessEvent[] = [],
+      cEvents: HarnessEvent[] = [];
+    const { done: a } = await startTurn(aEvents);
+    const physical = processConstructions.created.at(-1)!;
+    const bOperation = Object.freeze({});
+    let selected!: () => void;
+    const selection = new Promise<void>((resolve) => {
+      selected = resolve;
+    });
+    const b = sendOpenCodeTurn({
+      sessionId: "opencode-live",
+      cwd: "/repo",
+      model: "opencode:openrouter/anthropic/claude-sonnet-4.6",
+      runtimeMode: "full-access",
+      text: "never B",
+      attachments: [],
+      operationContext: Object.freeze({ operation: bOperation }),
+      onOriginalProcess: () => selected(),
+      onEvent: (event) => bEvents.push(event),
+    });
+    const outcome = b.catch((error: unknown) => error);
+    await selection;
+    expect(harnessHttp.mock.calls.some(([input]) => input.method === "PATCH")).toBe(false);
+    askPermission("session_1", "queued-policy-permission");
+    await waitFor(
+      () =>
+        [...aEvents, ...bEvents].some((event) => event.type === "approval.requested") ||
+        harnessHttp.mock.calls.some(([input]) =>
+          input.url.includes("/permission/queued-policy-permission/reply"),
+        ),
+      "original A permission policy",
+    );
+    const asked = aEvents.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    );
+    expect(asked).toBeDefined();
+    expect(bEvents).toEqual([]);
+    expect(
+      harnessHttp.mock.calls.some(([input]) =>
+        input.url.includes("/permission/queued-policy-permission/reply"),
+      ),
+    ).toBe(false);
+    respondOpenCodeApproval("opencode-live", asked!.requestId, "deny", asked!.occurrenceId);
+    await waitFor(
+      () =>
+        harnessHttp.mock.calls.some(([input]) =>
+          input.url.includes("/permission/queued-policy-permission/reply"),
+        ),
+      "original A response",
+    );
+    await cancelOpenCodeTurn(
+      "opencode-live",
+      Object.freeze({ operation: bOperation, originalProcesses: Object.freeze([physical]) }),
+    );
+    idle();
+    await a;
+    expect(String(await outcome)).toContain("cancelled");
+    expect(bEvents).toEqual([]);
+    expect(harnessHttp.mock.calls.some(([input]) => input.method === "PATCH")).toBe(false);
+    expect(killChild).not.toHaveBeenCalled();
+    const c = turn(cEvents, { runtimeMode: "full-access" });
+    await waitFor(
+      () =>
+        harnessHttp.mock.calls.some(([input]) => input.method === "PATCH") &&
+        harnessHttp.mock.calls.filter(([input]) => input.url.includes("/prompt_async")).length ===
+          2,
+      "fresh C permission update and prompt",
+    );
+    idle();
+    await c;
+    expect(cEvents).toContainEqual(expect.objectContaining({ type: "message.completed" }));
+    expect(
+      processConstructions.created.filter((handle) => handle.sessionId === "opencode-live"),
+    ).toEqual([physical]);
+  });
+
   it("updates a live session when access changes and auto-allows residual full-access prompts", async () => {
     const events: HarnessEvent[] = [];
     const first = turn(events);
@@ -1670,13 +1931,26 @@ it("closes the event stream after the server exits on its own", async () => {
   await expect(done).rejects.toThrow("OpenCode server exited");
   expect(events).toContainEqual({ type: "session.ended", code: 1 });
 
+  const original = processConstructions.created.find(
+    (handle) => handle.sessionId === "opencode-live",
+  )!;
+  await vi.waitFor(() => expect(killChild).toHaveBeenCalledOnce());
+  const originalCleanup = processConstructions.operations.filter(
+    (operation) => operation.kind === "kill",
+  );
+  expect(originalCleanup.map((operation) => operation.handle)).toEqual([original]);
+
   await stopOpenCodeSession("opencode-live");
   expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
-  // Natural exit removed the owner; Stop cannot reconstruct a process from its locator.
-  expect(killChild).not.toHaveBeenCalled();
+  // Core's exact source-exit hook already joined A. Explicit Stop observes that
+  // known result rather than discovering or killing a newer current child.
+  expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
+  expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toEqual(
+    originalCleanup,
+  );
 });
 
-it("keeps delayed A shutdown on its captured child after B has started", async () => {
+it("waits A's actual shutdown before B starts and keeps late A cleanup off B", async () => {
   // HTTP/SSE protocol fake; actual Native receipt enforcement is tested elsewhere.
   const first = await startTurn([]);
   const original = processConstructions.created[0];
@@ -1703,25 +1977,40 @@ it("keeps delayed A shutdown on its captured child after B has started", async (
     await waitFor(() => entered, "original abort admitted");
     await first.done;
     harnessHttp.mockClear();
-    const second = await startTurn([]);
-    replacementTurn = second.done;
+    replacementTurn = turn([]);
+    void replacementTurn.catch(() => undefined);
+    // Flush this fake's immediate initialization promises through one event-loop
+    // turn while the explicit A abort latch is still held.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "spawn")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
+    expect(harnessHttp.mock.calls.some(([input]) => input.url.includes("/prompt_async"))).toBe(
+      false,
+    );
+    release();
+    await stopping;
+    await waitFor(
+      () => harnessHttp.mock.calls.some(([input]) => input.url.includes("/prompt_async")),
+      "replacement prompt after original drain",
+    );
     const replacement = processConstructions.created[1];
     expect(replacement).toBeDefined();
     expect(replacement).not.toBe(original);
     const cleanupAt = processConstructions.operations.length;
-    release();
-    await stopping;
+    await retireProviderProcess(original);
     const cleanup = processConstructions.operations
       .slice(cleanupAt)
       .filter((operation) => operation.kind === "kill");
-    expect(cleanup).toHaveLength(1);
-    expect(cleanup[0].handle).toBe(original);
+    expect(cleanup).toEqual([]);
     expect(
       processConstructions.operations.filter((operation) => operation.kind === "spawn").at(-1)
         ?.handle,
     ).toBe(replacement);
     idle();
-    await second.done;
+    await replacementTurn;
     expect(processConstructions.created).toHaveLength(2);
   } finally {
     release?.();
@@ -1746,7 +2035,10 @@ it("keeps the original child retirement when closing its ended stream fails", as
   closeHarnessSse.mockClear();
   closeHarnessSse.mockRejectedValueOnce(new Error("SSE close failed"));
 
-  await expect(stopOpenCodeSession("opencode-live")).resolves.toBeUndefined();
+  await expect(stopOpenCodeSession("opencode-live")).rejects.toMatchObject({
+    name: "ProviderRetirementError",
+    errors: expect.arrayContaining([expect.objectContaining({ message: "SSE close failed" })]),
+  });
   expect(closeHarnessSse).toHaveBeenCalledExactlyOnceWith("opencode-live");
   expect(killChild).toHaveBeenCalledExactlyOnceWith("opencode-live");
   expect(processConstructions.operations.filter((operation) => operation.kind === "kill")).toEqual(

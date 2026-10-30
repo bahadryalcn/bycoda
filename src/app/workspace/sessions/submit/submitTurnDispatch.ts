@@ -172,6 +172,9 @@ export async function runSubmitDispatch(
           model: current.model,
           modelSettings: current.modelSettings,
           runtimeMode: current.runtimeMode,
+          providerAccountId,
+          controlsAgents: operatorAccess || orchestrator.run(sessionId)?.status === "active",
+          appAccess: operatorAccess,
           ...(editedProviderTurnId ? { providerTurnId: editedProviderTurnId } : {}),
           onEvent: (event) => {
             if (turnGen.current.get(sessionId) !== gen) return;

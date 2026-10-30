@@ -31,9 +31,24 @@ const mock = vi.hoisted(() => ({
 }));
 vi.mock("../../core/acp", () => ({
   AcpClient: class {
-    constructor(handle: import("../../core/child").ChildProcessHandle, handlers: AcpHandlers) {
+    constructor(
+      private readonly handle: import("../../core/child").ChildProcessHandle,
+      handlers: AcpHandlers,
+    ) {
       processConstructions.client(handle);
       mock.handlers = handlers;
+    }
+    assertProcess(handle: import("../../core/child").ChildProcessHandle): void {
+      if (handle !== this.handle)
+        throw new Error("ACP fixture client requires its original process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: this.request.bind(this),
+        notify: this.notify.bind(this),
+        respond: this.respond.bind(this),
+        respondError: this.respondError.bind(this),
+      });
     }
     request = mock.request;
     respond = mock.respond;
@@ -144,8 +159,14 @@ it("keeps deferred cancel cleanup on A's original constructor handle after B sta
     const cleanup = processConstructions.operations
       .slice(cleanupAt)
       .filter((operation) => operation.kind === "kill");
-    expect(cleanup).toHaveLength(1);
-    expect(cleanup[0].handle).toBe(original);
+    // Forget already completed A's original ledger attempt. Late cancel shares
+    // that cached result; it must not perform another effect or discover B.
+    expect(cleanup).toEqual([]);
+    expect(
+      processConstructions.operations
+        .filter((operation) => operation.kind === "kill")
+        .map((operation) => operation.handle),
+    ).toEqual([original]);
     await sendGenericAcpTurn(input("build"));
     expect(processConstructions.created).toHaveLength(2);
     expect(

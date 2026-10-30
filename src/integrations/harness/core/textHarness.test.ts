@@ -1,3 +1,4 @@
+import type { HostRunHandle } from "./hostRun";
 import { beforeEach, expect, it, vi } from "vitest";
 vi.mock("./registry", () => ({
   runHarnessTextPrompt: vi.fn(),
@@ -184,4 +185,24 @@ it("automatically prefers Codex Luna and low reasoning over the main flagship", 
       modelSettings: { reasoningEffort: "low" },
     }),
   );
+});
+
+it("passes a captured original naming job through selected text generation", async () => {
+  const hostRun = Object.freeze({}) as HostRunHandle;
+  const operation = {};
+  const control = Object.freeze({}) as HostRunHandle;
+  const context = { operation, hostRun, hostControlRun: control };
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue('{"subject":"Scoped Git text","body":""}');
+  const work = generateCommitMessage(
+    "/repo",
+    "claude",
+    undefined,
+    { harness: "claude", model: "claude:sonnet-5" },
+    context,
+  );
+  context.hostRun = Object.freeze({}) as HostRunHandle;
+  await expect(work).resolves.toBe("Scoped Git text");
+  const input = vi.mocked(runHarnessTextPrompt).mock.calls[0][0];
+  expect(input.operationContext?.operation).toBe(operation);
+  expect(input.operationContext?.hostRun).toBe(hostRun);
 });

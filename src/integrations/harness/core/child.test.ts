@@ -533,6 +533,72 @@ it("retains an actual Native write IPC promise when its caller stops waiting", a
   expect(inspect().pendingCausalWork).toBe(0);
 });
 
+it.each([false, true])(
+  "keeps actual CLI probe work after its visible deadline (late failure: %s)",
+  async (lateFailure) => {
+    const child = await loadChild();
+    const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
+    const held = deferred<string>();
+    mocks.invoke.mockReturnValueOnce(held.promise);
+    vi.useFakeTimers();
+    let visible!: Promise<unknown>;
+    const args = ["--version"];
+    const inspect = nativeOutputFrame("cli-probe-causal", "input", () => {
+      visible = child
+        .execChild("/original-cli", args, "/original-cwd")
+        .catch((error: unknown) => error);
+    });
+    args[0] = "mutated-after-dispatch";
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "harness_exec",
+      expect.objectContaining({
+        command: "/original-cli",
+        args: ["--version"],
+        cwd: "/original-cwd",
+      }),
+    );
+    expect(inspect().pendingCausalWork).toBe(1);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(await visible).toEqual(
+      expect.objectContaining({
+        message: expect.stringContaining("process completion remains unconfirmed"),
+      }),
+    );
+    expect(inspect().pendingCausalWork).toBe(1);
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+    if (lateFailure) held.reject(new Error("original physical operation failed"));
+    else held.resolve("original version");
+    await held.promise.catch(() => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(inspect()).toMatchObject({ pendingCausalWork: 0, applicationThrough: null });
+    expect(mocks.invoke).toHaveBeenCalledOnce();
+  },
+);
+
+it("retires an actual probe capture when its backend throws before returning a promise", async () => {
+  const child = await loadChild();
+  const { nativeOutputFrame } = await import("./nativeOutputDelivery.testSupport");
+  const failure = new Error("backend refused invocation");
+  mocks.invoke.mockImplementationOnce(() => {
+    throw failure;
+  });
+  let caught: unknown;
+  const inspect = nativeOutputFrame("cli-probe-sync-rejection", "input", () => {
+    try {
+      child.execChild("/original-cli", ["--version"]);
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBe(failure);
+  expect(inspect()).toMatchObject({
+    pendingCausalWork: 0,
+    unavailableReason: "cli-probe-invoke-threw",
+    applicationThrough: null,
+  });
+  expect(mocks.invoke).toHaveBeenCalledOnce();
+});
+
 describe("original process construction handles", () => {
   it("refuses old writes and keeps replacement watchers intact across old unwatch and kill, even with PID reuse", async () => {
     installResolvedListeners();

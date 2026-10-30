@@ -1,6 +1,23 @@
+import {
+  assertProviderOperation,
+  observeProviderProcess,
+  beginProviderOperation,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  type HarnessOperationContext,
+  captureByteTurnWriter,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  preserveProviderFailure,
+  createProviderRetirementLedger,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { additionalDirsFor } from "../../core/additionalDirs";
-import { killChild, spawnChild, unwatchChild, watchChild, writeChild } from "../../core/child";
+import { spawnChild, unwatchChild, watchChild } from "../../core/child";
 import type { HarnessEvent, SendTurnInput } from "../../core/types";
 import {
   antigravityStreamArgs,
@@ -27,7 +44,11 @@ type Turn = {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const retirements = createProviderRetirementLedger("antigravity.stream", killChild);
+
 type Live = {
+  operation?: object;
+  predecessor?: Promise<void>;
   handle: ChildProcessHandle;
   sessionId: string;
   /** Logical child locator; physical ownership belongs to handle. */
@@ -66,25 +87,35 @@ export async function sendAntigravityStreamTurn(
   input: SendTurnInput,
   binary: { path: string },
 ): Promise<void> {
-  const refusal = streamModeRefusal(input.runtimeMode, input.intent);
-  if (refusal) throw new Error(refusal);
-  const line = antigravityStreamUserLine(input.text, input.attachments);
-  if (!line) return;
+  assertProviderOperation(input.operationContext);
 
-  const epoch = epochOf(input.sessionId);
-  const cancelled = () => epochOf(input.sessionId) !== epoch;
-  // Turns serialize per session: a queued send must not run against a process
-  // the previous turn is still using.
-  const run = (turnsBySession.get(input.sessionId) ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(() => runTurn(input, binary.path, line, cancelled));
-  turnsBySession.set(input.sessionId, run);
+  input = { ...input };
+
   try {
-    await run;
-  } finally {
-    if (turnsBySession.get(input.sessionId) === run) {
-      turnsBySession.delete(input.sessionId);
+    const refusal = streamModeRefusal(input.runtimeMode, input.intent);
+    if (refusal) throw new Error(refusal);
+    const line = antigravityStreamUserLine(input.text, input.attachments);
+    if (!line) return;
+
+    const epoch = epochOf(input.sessionId);
+    const cancelled = () => epochOf(input.sessionId) !== epoch;
+    const original = liveBySession.get(input.sessionId);
+    if (original) observeProviderProcess(input, original.handle);
+    // Turns serialize per session: a queued send must not run against a process
+    // the previous turn is still using.
+    const run = (turnsBySession.get(input.sessionId) ?? Promise.resolve())
+      .catch(() => undefined)
+      .then(() => runTurn(input, binary.path, line, cancelled));
+    turnsBySession.set(input.sessionId, run);
+    try {
+      await run;
+    } finally {
+      if (turnsBySession.get(input.sessionId) === run) {
+        turnsBySession.delete(input.sessionId);
+      }
     }
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
 }
 
@@ -97,11 +128,18 @@ async function runTurn(
   if (cancelled()) return;
   const live = await ensureLive(input, path, cancelled);
   if (!live || cancelled()) return;
+  observeProviderProcess(input, live.handle);
+  beginProviderOperation(input.operationContext, live.handle);
+  const writer = await captureByteTurnWriter(
+    live.handle,
+    input.nativeControlTurn,
+    input.operationContext,
+  )();
   live.onEvent = input.onEvent;
   beginStreamTurn(live.state);
   await new Promise<void>((resolve, reject) => {
     live.turn = { resolve, reject, onAccepted: input.onAccepted };
-    writeChild(live.handle, line).catch((error: unknown) =>
+    writer(line).catch((error: unknown) =>
       finishTurn(live, error instanceof Error ? error : new Error(String(error))),
     );
   });
@@ -121,26 +159,39 @@ async function ensureLive(
   path: string,
   cancelled: () => boolean,
 ): Promise<Live | undefined> {
+  assertProviderOperation(input.operationContext);
+
   const sessionId = input.sessionId;
   const launch = launchFor(input);
   // Keyed on the flags, not the mode: two modes that launch alike share one.
   const launchKey = JSON.stringify([input.cwd, antigravityStreamArgs(launch)]);
   const existing = liveBySession.get(sessionId);
-  if (existing?.launchKey === launchKey) return existing;
-  if (existing) await teardown(existing);
-  if (cancelled()) return undefined;
-
-  let resume = resumeBySession.get(sessionId);
-  if (resume && resume.cwd !== input.cwd) {
-    resumeBySession.delete(sessionId);
-    resume = undefined;
+  if (existing?.launchKey === launchKey) {
+    observeProviderProcess(input, existing.handle);
+    return existing;
   }
+  if (cancelled()) return undefined;
+  const originalCohort = retirements.cohort(sessionId);
+
+  const originalResume = resumeBySession.get(sessionId);
+  let resume = originalResume;
+  if (resume && resume.cwd !== input.cwd) resume = undefined;
   const args = antigravityStreamArgs({
     ...launch,
     conversationId: resume?.conversationId,
   });
   const childKey = `${sessionId}#${childSeq++}`;
-  const handle = createChildProcessHandle(childKey);
+  const handle = retirements.admitPending(
+    createChildProcessHandle(childKey, input.nativeControlTurn),
+    input.sessionId,
+  );
+  observeProviderProcess(input, handle, "starting");
+  if (
+    originalResume &&
+    originalResume.cwd !== input.cwd &&
+    resumeBySession.get(sessionId) === originalResume
+  )
+    resumeBySession.delete(sessionId);
   let ready!: Live["ready"];
   const readiness = new Promise<void>((resolve, reject) => {
     ready = { resolve, reject };
@@ -149,6 +200,7 @@ async function ensureLive(
   // surface as an unhandled one.
   readiness.catch(() => undefined);
   const live: Live = {
+    operation: input.operationContext?.operation,
     handle,
     sessionId,
     childKey,
@@ -163,6 +215,11 @@ async function ensureLive(
     stderr: [],
   };
   liveBySession.set(sessionId, live);
+  const stopping = settleProviderRetirements([
+    ...(existing ? [teardown(existing)] : []),
+    originalCohort.retire(),
+  ]);
+  live.predecessor = stopping;
   watchChild(
     handle,
     (text) => onLine(live, text),
@@ -175,6 +232,8 @@ async function ensureLive(
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
+    await stopping;
+    if (cancelled() || live.retired) throw new Error("Antigravity stream startup cancelled");
     await spawnChild(
       handle,
       path,
@@ -198,9 +257,12 @@ async function ensureLive(
     ]);
   } catch (error) {
     const wasRetired = live.retired;
-    await teardown(live);
-    if (wasRetired && cancelled()) return undefined;
-    throw error;
+    const cleanup = teardown(live);
+    if (wasRetired && cancelled()) {
+      await cleanup;
+      return undefined;
+    }
+    return preserveProviderFailure(error, cleanup);
   } finally {
     clearTimeout(timer);
   }
@@ -315,10 +377,20 @@ async function teardown(live: Live): Promise<void> {
   live.ready.reject(new Error("Antigravity session stopped."));
   // A cancelled turn settles quietly; the caller already knows.
   finishTurn(live);
-  await killChild(live.handle).catch(() => undefined);
+  await settleProviderRetirements([
+    retirements.retire([live.handle]),
+    ...(live.predecessor ? [live.predecessor] : []),
+  ]);
 }
 
-export async function cancelAntigravityStreamTurn(sessionId: string): Promise<void> {
+export async function cancelAntigravityStreamTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveBySession.get(sessionId);
+  if (!ownsOperation(context, original?.handle, original?.operation)) return;
   bumpEpoch(sessionId);
   const live = liveBySession.get(sessionId);
   // An idle process stays warm. One mid-turn (or mid-start) cannot be asked to
@@ -326,15 +398,32 @@ export async function cancelAntigravityStreamTurn(sessionId: string): Promise<vo
   if (live && (live.turn || !live.initialized)) await teardown(live);
 }
 
-export async function stopAntigravityStreamSession(sessionId: string): Promise<void> {
+export async function stopAntigravityStreamSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveBySession.get(sessionId);
+  if (!ownsOperation(context, original?.handle, original?.operation)) return;
   bumpEpoch(sessionId);
   const live = liveBySession.get(sessionId);
-  if (live) await teardown(live);
+  await settleProviderRetirements([
+    ...(live ? [teardown(live)] : []),
+    ...(context ? [] : [retirements.retireOwner(sessionId)]),
+  ]);
 }
 
-export async function forgetAntigravityStreamSession(sessionId: string): Promise<void> {
+export async function forgetAntigravityStreamSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveBySession.get(sessionId);
+  if (!ownsOperation(context, original?.handle, original?.operation)) return;
   resumeBySession.delete(sessionId);
-  await stopAntigravityStreamSession(sessionId);
+  await stopAntigravityStreamSession(sessionId, context);
 }
 
 export function bindAntigravityStreamSession(

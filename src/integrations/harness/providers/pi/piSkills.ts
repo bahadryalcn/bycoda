@@ -1,9 +1,12 @@
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import {
   acquireHarnessBridge,
   createChildProcessHandle,
-  killChild,
   spawnChild,
-  unwatchChild,
   watchChild,
   writeChild,
 } from "../../core/child";
@@ -18,6 +21,8 @@ import {
   needsExtensionUiReply,
   parseExtensionUiRequest,
 } from "./piProtocol";
+
+const retirements = createProviderRetirementLedger("pi.skills", killChild);
 
 const REQUEST_TIMEOUT_MS = 45_000;
 
@@ -61,17 +66,21 @@ async function discoverCommands(
   cwd: string,
   command: string,
   signal?: AbortSignal,
+  retirementOwnerKey?: string,
 ): Promise<unknown> {
   signal?.throwIfAborted();
   const { path } = await probeWait(signal, flavor.resolveBinary());
   signal?.throwIfAborted();
+  const childId = `bycoda-${flavor.id}-skills-${crypto.randomUUID()}`;
+  const skillProcess = retirements.admit(
+    createChildProcessHandle(childId),
+    retirementOwnerKey ?? `${flavor.id}.skills`,
+  );
   let releaseBridge: (() => void) | undefined;
   const acquired = acquireHarnessBridge().then((release) => {
     if (signal?.aborted) release();
     else releaseBridge = release;
   });
-  const childId = `bycoda-${flavor.id}-skills-${crypto.randomUUID()}`;
-  const skillProcess = createChildProcessHandle(childId);
   const replyToUi = (record: Record<string, unknown>) => {
     const request = parseExtensionUiRequest(record);
     if (!request || !needsExtensionUiReply(request)) return;
@@ -81,38 +90,38 @@ async function discoverCommands(
   };
   let rpc: PiRpc | undefined;
 
-  try {
-    await probeWait(signal, acquired);
-    signal?.throwIfAborted();
-    rpc = new PiRpc(skillProcess, replyToUi, flavor.label);
-    const client = rpc;
-    watchChild(
-      skillProcess,
-      (line) => client.pushLine(line),
-      () => client.close(new Error(`${flavor.label} skill probe exited`)),
-    );
-    await probeWait(
-      signal,
-      spawnChild(
+  return withProviderRetirement(
+    async () => {
+      await probeWait(signal, acquired);
+      signal?.throwIfAborted();
+      rpc = new PiRpc(skillProcess, replyToUi, flavor.label);
+      const client = rpc;
+      watchChild(
         skillProcess,
-        path,
-        buildPiSpawnArgs(flavor, { noSession: true }),
-        cwd,
-        undefined,
-        flavor.id,
-      ),
-    );
-    signal?.throwIfAborted();
-    const response = await probeWait(signal, rpc.request({ type: command }, REQUEST_TIMEOUT_MS));
-    return asRecord(response)?.data;
-  } finally {
-    if (rpc) {
-      rpc.close();
-      unwatchChild(skillProcess);
-      await killChild(skillProcess).catch(() => undefined);
-    }
-    releaseBridge?.();
-  }
+        (line) => client.pushLine(line),
+        () => client.close(new Error(`${flavor.label} skill probe exited`)),
+      );
+      await probeWait(
+        signal,
+        spawnChild(
+          skillProcess,
+          path,
+          buildPiSpawnArgs(flavor, { noSession: true }),
+          cwd,
+          undefined,
+          flavor.id,
+        ),
+      );
+      signal?.throwIfAborted();
+      const response = await probeWait(signal, rpc.request({ type: command }, REQUEST_TIMEOUT_MS));
+      return asRecord(response)?.data;
+    },
+    async () => {
+      rpc?.close();
+      await retirements.retire([skillProcess]);
+      releaseBridge?.();
+    },
+  );
 }
 
 /** Preserve the provider's configured/package skills; never reconstruct its catalog from our disk scan. */
@@ -121,12 +130,14 @@ export async function allowedPiSkillPaths(
   cwd: string,
   policy: SkillPolicy,
   signal?: AbortSignal,
+  retirementOwnerKey?: string,
 ): Promise<string[]> {
   const data = await discoverCommands(
     flavor,
     cwd,
     flavor.id === "omp" ? "get_available_commands" : "get_commands",
     signal,
+    retirementOwnerKey,
   );
   return allowedPiSkillPathsFromData(data, policy);
 }

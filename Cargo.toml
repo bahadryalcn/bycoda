@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["src-tauri", "packages/physical-store-admission", "packages/physical-store-admission-node"]
+members = ["src-tauri", "packages/physical-store-admission", "packages/physical-store-admission-node", "packages/provider-process-guardian"]
 exclude = ["vendor/portable-pty"]
 
 [workspace.package]

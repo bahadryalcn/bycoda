@@ -5,6 +5,28 @@ description: Platform foundation, repository/package boundaries, CI sharding, in
 
 # Platform foundation
 
+## Standalone provider guardian boundary, 2026-10-30
+
+The Cargo workspace includes `packages/provider-process-guardian`, a private
+Rust native package with no JavaScript exports or Tauri/GUI dependency. Native
+and the standalone executable share its original Windows job implementation;
+there is no copied process-owner alternative. Its package metadata declares
+`layer:native`, `runtime:rust` and its Cargo manifest. CI change classification
+routes this crate to real Host/Native/RPM/script consumers.
+
+`pnpm host:guardian:build` is explicit and selects one target. It freezes source
+inputs around Cargo, preserves an explicit Cargo target/cache, and emits an
+immutable fixed executable plus a closed bounded `provider-guardian.json`.
+Windows build flags apply only to the Cargo child. `host/package.mjs` validates
+target, bytes, source identity and all source/destination separation before
+replacing any package output. A requested or present invalid bundle cannot be
+silently omitted. Ordinary `host:build` remains JavaScript-only.
+
+Evidence: `temp/verification/2026-10-30-provider-guardian/`. Windows standalone
+debug bundle and real child tests are local development evidence. Six target
+release archives, installed Host/app inclusion and Unix descendant containment
+remain unverified. Do not infer them from packaging helper tests or metadata.
+
 ## Shared Rust and Node native package boundaries, 2026-10-30
 
 The Cargo workspace now contains the desktop, the private physical-file

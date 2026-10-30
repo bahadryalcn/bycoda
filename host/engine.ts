@@ -1,4 +1,6 @@
 import { EngineOperations } from "./engine-operations";
+import { HostRunWriters } from "./run-writers";
+import type { HostRunHandle } from "../src/integrations/harness/core/hostRun";
 import { HostAuthorityFenceError } from "./storage/authority-fence";
 import { createHash, randomUUID } from "node:crypto";
 import { isApprovalOccurrenceId } from "../src/shared/model/approvalOccurrence";
@@ -60,6 +62,7 @@ import {
 import type {
   HarnessEvent,
   HarnessSessionInput,
+  HarnessOperationContext,
   SendTurnInput,
 } from "../src/integrations/harness/core/types";
 import {
@@ -81,6 +84,11 @@ import {
   type ContextualSessionInput,
 } from "../src/features/connections/model/protocol";
 import type { HostProvider } from "./providers";
+import {
+  ProviderActivityRetirements,
+  stopCapturedProvider,
+  type ProviderActivityRetirement,
+} from "./provider-activity-retirement";
 import { HostStore } from "./store";
 import { parseRemoteAttachments, resolveAttachments } from "./attachments";
 import { runHostShell } from "./shell";
@@ -549,27 +557,39 @@ type ManagedTurnBoundary = {
   runId: string;
 };
 
+type ActiveHostTurn = {
+  runId: string;
+  priorBlockIds: Set<string>;
+  ready: Promise<void>;
+  steers: Promise<void>;
+  controls: Promise<void>;
+  done: Promise<void>;
+  cancelled: boolean;
+  ending: boolean;
+  persistenceFailed: boolean;
+  authorityGeneration?: number;
+  resumeAtReset?: boolean;
+  managedTurns: ManagedTurnBoundary[];
+  filesTurn: boolean;
+  managed: boolean;
+  provider: HostProvider;
+  providerEntered: boolean;
+  activity?: ProviderActivityRetirement;
+  cleanup?: Promise<void>;
+  failureStage: "provider" | "retirement" | "delivery" | "persistence" | "callback";
+  failure?: unknown;
+  hostRun?: HostRunHandle;
+  operationContext?: HarnessOperationContext;
+};
+
 export class HostEngine {
   private readonly operations = new EngineOperations();
   private switchingProjects = new Set<string>();
-  private running = new Map<
-    string,
-    {
-      runId: string;
-      priorBlockIds: Set<string>;
-      ready: Promise<void>;
-      steers: Promise<void>;
-      done: Promise<void>;
-      cancelled: boolean;
-      ending: boolean;
-      persistenceFailed: boolean;
-      authorityGeneration?: number;
-      resumeAtReset?: boolean;
-      managedTurns: ManagedTurnBoundary[];
-      filesTurn: boolean;
-      managed: boolean;
-      releaseActivity?: () => Promise<void>;
-    }
+  private running = new Map<string, ActiveHostTurn>();
+  private readonly providerActivities = new ProviderActivityRetirements();
+  private readonly activityProviders = new Map<
+    ProviderActivityRetirement,
+    { id: string; provider: HostProvider }
   >();
   /** Running sessions, including streamed events not yet written to disk. */
   private live = new Map<
@@ -618,6 +638,7 @@ export class HostEngine {
     private readonly providers: Partial<Record<RemoteProvider, HostProvider>>,
     private readonly shell: (cwd: string, command: string) => Promise<ShellResult> = runHostShell,
     private managedTurns?: ManagedTurnHistoryAdapter,
+    private readonly runWriters = new HostRunWriters(),
   ) {
     const checkpointRoot = join(dirname(store.attachmentDir), "checkpoints");
     this.checkpoints = new HostCheckpoints(
@@ -655,6 +676,68 @@ export class HostEngine {
     await this.managedWorkspace(value);
     if (!(await this.exactGitRewindEnabled())) return undefined;
     return this.managedTurns?.startActivity?.(value, kind);
+  }
+
+  private reserveProviderActivity(id: string, provider: HostProvider): ProviderActivityRetirement {
+    const original = this.providerActivities.reserve(id, () =>
+      this.activityProviders.delete(original),
+    );
+    this.activityProviders.set(original, { id, provider });
+    return original;
+  }
+
+  private retainProvider(id: string, provider: HostProvider): void {
+    const retained = this.retainedProviders.get(id) ?? new Set<HostProvider>();
+    retained.add(provider);
+    this.retainedProviders.set(id, retained);
+  }
+
+  private stopOriginalTurn(id: string, original: ActiveHostTurn): Promise<void> {
+    if (original.cleanup) return original.cleanup;
+    if (!original.activity) return Promise.resolve(); // No provider admission occurred for this turn.
+    const stop = original.provider.stop;
+    original.cleanup = this.store.db.outsideScope(() =>
+      original.activity!.retire(async () => {
+        if (!original.providerEntered) return;
+        await this.store.assertAuthority(id, original.authorityGeneration);
+        return original.operationContext
+          ? stop.call(original.provider, id, original.operationContext)
+          : stop.call(original.provider, id);
+      }),
+    );
+    void original.cleanup.catch(() => {});
+    return original.cleanup;
+  }
+
+  private async retainTurnFailure(
+    id: string,
+    original: ActiveHostTurn,
+    error: unknown,
+  ): Promise<unknown> {
+    original.failure = error;
+    original.activity?.recordFailure(error);
+    const retirements: Promise<void>[] = [];
+    if (original.hostRun) retirements.push(this.runWriters.finish(original.hostRun));
+    // An old callback may report its failure; it cannot newly stop replacement B.
+    if (
+      !(
+        (this.running.get(id) !== original || original.failureStage === "callback") &&
+        !original.cleanup
+      )
+    )
+      retirements.push(this.stopOriginalTurn(id, original));
+    const outcomes = await Promise.allSettled(retirements);
+    const failures = outcomes.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (failures.length) {
+      original.failure = new AggregateError(
+        [...new Set([error, ...failures])],
+        "Session work and original provider retirement failed",
+      );
+      original.activity?.recordFailure(original.failure);
+    }
+    return original.failure;
   }
 
   private async managedWorkspace(value: HostSession) {
@@ -1524,32 +1607,27 @@ export class HostEngine {
     );
   }
 
-  private async scheduledFlush(id: string, provider: HostProvider): Promise<void> {
+  private async scheduledFlush(id: string, original: ActiveHostTurn): Promise<void> {
+    if (this.running.get(id) !== original) return;
     try {
       await this.flush(id);
     } catch (error) {
-      if (error instanceof HostAuthorityFenceError) return;
-      const active = this.running.get(id);
-      if (active) active.persistenceFailed = true;
+      original.persistenceFailed = true;
       console.error(
         "Session persistence failed; stopping its provider:",
         error instanceof Error ? error.message : "unknown error",
       );
-      void provider.stop(id);
+      await this.retainTurnFailure(id, original, error);
     }
   }
 
-  private retrySettlement(
-    id: string,
-    runId: string,
-    provider: HostProvider,
-    authorityGeneration?: number,
-  ): void {
+  private retrySettlement(id: string, original: ActiveHostTurn): void {
     if (
       this.closing ||
       this.retryTimers.has(id) ||
       this.recoveryWork.has(id) ||
-      this.store.db.restartRequired
+      this.store.db.restartRequired ||
+      this.running.get(id) !== original
     )
       return;
     const timer = this.store.db.outsideScope(() =>
@@ -1559,22 +1637,24 @@ export class HostEngine {
         let retry = false;
         const work = (async () => {
           try {
-            await this.store.assertAuthority(id, authorityGeneration);
-            await provider.stop(id);
+            original.failureStage = "retirement";
+            await this.stopOriginalTurn(id, original);
+            original.failureStage = "persistence";
+            await this.store.assertAuthority(id, original.authorityGeneration);
             const before = await this.store.session(id);
-            if (this.running.get(id)?.runId !== runId || before.runId !== runId) return;
-            if (this.running.get(id)?.filesTurn || !this.running.get(id)?.managed)
+            if (this.running.get(id) !== original || before.runId !== original.runId) return;
+            if (original.filesTurn || !original.managed)
               await (
-                this.running.get(id)?.filesTurn
-                  ? this.checkpoints.finishFilesTurn(id, before.session.cwd, runId, true)
-                  : this.checkpoints.finish(id, before.session.cwd, runId)
+                original.filesTurn
+                  ? this.checkpoints.finishFilesTurn(id, before.session.cwd, original.runId, true)
+                  : this.checkpoints.finish(id, before.session.cwd, original.runId)
               ).catch((error) => console.warn("Workspace checkpoint failed", error));
             await this.store.db.scope(() =>
               this.operations.run(id, async () => {
-                if (this.running.get(id)?.runId !== runId) return;
+                if (this.running.get(id) !== original) return;
                 await this.flush(id);
                 const latest = await this.store.session(id);
-                if (latest.runId !== runId) return;
+                if (latest.runId !== original.runId) return;
                 if (latest.status === "running") {
                   await this.save(
                     this.settled(
@@ -1586,9 +1666,9 @@ export class HostEngine {
                     { type: "interrupted", reason: "persistence failure" },
                   );
                 }
-                const active = this.running.get(id);
-                await active?.releaseActivity?.();
-                if (active) active.releaseActivity = undefined;
+                original.failureStage = "retirement";
+                await original.activity?.release();
+                original.failureStage = "callback";
                 await this.onSettled?.(id, {
                   interrupted: true,
                   reason:
@@ -1596,29 +1676,40 @@ export class HostEngine {
                 });
                 const persisted = await this.store.session(id);
                 if (persisted.session.providerSessionId)
-                  provider.bind(
+                  original.provider.bind(
                     id,
                     persisted.session.providerSessionId,
                     persisted.session.cwd,
                     persisted.session.providerAccountId,
                   );
-                this.live.delete(id);
-                this.running.delete(id);
+                original.activity?.bookkeepingFinished();
+                if (this.running.get(id) === original) {
+                  this.live.delete(id);
+                  this.retainedProviders.get(id)?.delete(original.provider);
+                  this.running.delete(id);
+                }
               }),
             );
           } catch (error) {
             console.error(
-              "Retrying session persistence:",
+              `Session ${original.failureStage} recovery failed; retaining original cleanup:`,
               error instanceof Error ? error.message : "unknown error",
             );
-            retry = !this.store.db.restartRequired && !(error instanceof HostAuthorityFenceError);
+            original.failure = error;
+            original.activity?.recordFailure(error);
+            retry =
+              original.failureStage === "persistence" &&
+              !this.store.db.restartRequired &&
+              !(error instanceof HostAuthorityFenceError);
+            throw error;
           }
         })();
         this.recoveryWork.set(id, work);
-        void work.finally(() => {
+        const completed = () => {
           if (this.recoveryWork.get(id) === work) this.recoveryWork.delete(id);
-          if (retry) this.retrySettlement(id, runId, provider, authorityGeneration);
-        });
+          if (retry) this.retrySettlement(id, original);
+        };
+        void work.then(completed, completed);
       }, 1_000),
     );
     timer.unref?.();
@@ -2299,16 +2390,54 @@ export class HostEngine {
                 if (value.runId !== command.runId || value.status !== "running")
                   throw new Error("This request belongs to a finished or replaced turn");
                 if (command.type === "cancel") {
+                  const original = this.running.get(command.sessionId);
+                  const cancel = provider.cancel;
                   effect = () => {
-                    const active = this.running.get(command.sessionId);
-                    if (active) active.cancelled = true;
-                    void provider.cancel(command.sessionId).catch(async () => {
+                    if (original && original.runId === command.runId) original.cancelled = true;
+                    if (original?.runId === command.runId && original.hostRun)
+                      this.runWriters.closeAdmission(original.hostRun);
+                    let cancellation: Promise<void>;
+                    try {
+                      cancellation = Promise.resolve(
+                        original?.runId === command.runId && original.operationContext
+                          ? cancel.call(provider, command.sessionId, original.operationContext)
+                          : cancel.call(provider, command.sessionId),
+                      );
+                    } catch (error) {
+                      cancellation = Promise.reject(error);
+                    }
+                    const controlled = cancellation.catch(async (error) => {
+                      // No owned turn is not permission to discover/stop a replacement later.
+                      if (
+                        !original ||
+                        original.runId !== command.runId ||
+                        (this.running.get(command.sessionId) !== original && !original.cleanup)
+                      )
+                        throw error;
                       await this.store.assertAuthority(
                         command.sessionId,
                         command.authorityGeneration,
                       );
-                      await provider.stop(command.sessionId);
+                      await this.stopOriginalTurn(command.sessionId, original);
                     });
+                    if (original && original.runId === command.runId) {
+                      const prior = original.controls;
+                      original.controls = Promise.allSettled([prior, controlled]).then(
+                        (results) => {
+                          const errors = results.flatMap((result) =>
+                            result.status === "rejected" ? [result.reason] : [],
+                          );
+                          if (errors.length)
+                            throw new AggregateError(errors, "Original provider control failed");
+                        },
+                      );
+                      void original.controls.catch((error) =>
+                        original.activity?.recordFailure(error),
+                      );
+                    }
+                    void controlled.catch((error) =>
+                      console.error("Original provider cancel remains unconfirmed:", error),
+                    );
                   };
                 } else if (command.type === "stopItem") {
                   const active = this.running.get(command.sessionId);
@@ -2359,7 +2488,11 @@ export class HostEngine {
                           command.sessionId,
                           command.authorityGeneration,
                         );
-                        await provider.stopItem!(command.sessionId, command.callId);
+                        await provider.stopItem!(
+                          command.sessionId,
+                          command.callId,
+                          active.operationContext,
+                        );
                       })
                       .catch((reason) => {
                         if (this.running.get(command.sessionId) === active)
@@ -2448,6 +2581,7 @@ export class HostEngine {
                           modelSettings: value.session.modelSettings,
                           text: prompt,
                           attachments: files,
+                          operationContext: active.operationContext,
                         });
                         // Cancellation can resolve a provider's steer without submitting it.
                         // A retired owner therefore cannot establish successful delivery.
@@ -2731,22 +2865,25 @@ export class HostEngine {
       // The removed turns may have carried the runtime hint; resend it next turn.
       forgetRuntimeHint(command.sessionId);
       if (strategy.preserveProviderBinding && provider.rewind) {
-        await provider.rewind({
-          sessionId: command.sessionId,
-          cwd: initial.session.cwd ?? "",
-          model: initial.session.model,
-          modelSettings: initial.session.modelSettings,
-          providerAccountId: initial.session.providerAccountId,
-          runtimeMode: initial.session.runtimeMode,
-          providerTurnId: strategy.providerTurnId,
-          // Native providers can emit a new binding (Pi/OMP fork to a child).
-          // Capture that id while keeping all transcript events out of the host
-          // until the archive and block removal commit together.
-          onEvent: (event) => {
-            if (event.type === "session.providerBound")
-              nativeProviderSessionId = event.providerSessionId;
-          },
-        });
+        await this.withProviderRun(initial, async (operationContext) =>
+          provider.rewind!({
+            sessionId: command.sessionId,
+            cwd: initial.session.cwd ?? "",
+            model: initial.session.model,
+            modelSettings: initial.session.modelSettings,
+            providerAccountId: initial.session.providerAccountId,
+            runtimeMode: initial.session.runtimeMode,
+            providerTurnId: strategy.providerTurnId,
+            operationContext,
+            // Native providers can emit a new binding (Pi/OMP fork to a child).
+            // Capture that id while keeping all transcript events out of the host
+            // until the archive and block removal commit together.
+            onEvent: (event) => {
+              if (event.type === "session.providerBound")
+                nativeProviderSessionId = event.providerSessionId;
+            },
+          }),
+        );
         nativeRewindApplied = true;
       } else {
         // Fresh-session replay prevents all providers from reusing the old id.
@@ -2932,6 +3069,136 @@ export class HostEngine {
       .catch((error) => console.debug("[bycoda] remote shell command", error));
   }
 
+  private async withProviderRun<T>(
+    value: HostSession,
+    effect: (context: HarnessOperationContext) => Promise<T>,
+  ): Promise<T> {
+    const sessionId = value.session.id;
+    const generation = value.authorityGeneration;
+    const owner = Object.freeze({ effect });
+    let owned = true;
+    const hostRun = this.runWriters.reserve({
+      owner,
+      sessionId,
+      runId: randomUUID(),
+      authorityGeneration: generation,
+      isCurrent: () => owned,
+      validateAuthority: async () => {
+        await this.store.assertAuthority(sessionId, generation);
+      },
+    });
+    const context: HarnessOperationContext = Object.freeze({
+      operation: owner,
+      hostRun,
+      hostControlRun: this.runWriters.controlRun(hostRun),
+    });
+    let result!: T;
+    let failed = false;
+    let failure: unknown;
+    try {
+      await this.runWriters.setExecutionCwd(hostRun, value.session.cwd);
+      result = await effect(context);
+    } catch (error) {
+      failed = true;
+      failure = error;
+    }
+    try {
+      const finishing = this.runWriters.finish(hostRun);
+      owned = false;
+      await finishing;
+    } catch (error) {
+      if (failed)
+        throw new AggregateError(
+          [failure, error],
+          "Provider operation and writer retirement failed",
+        );
+      throw error;
+    }
+    if (failed) throw failure;
+    return result;
+  }
+
+  private backgroundProviderWork<T>(
+    value: HostSession,
+    provider: HostProvider,
+    effect: (context: HarnessOperationContext) => Promise<T>,
+    apply: (result: T) => Promise<void>,
+  ): void {
+    if (this.closing) return;
+    const parentId = value.session.id;
+    const generation = value.authorityGeneration;
+    const owner = Object.freeze({ effect, apply, parentId, runId: value.runId });
+    let owned = true;
+    let hostRun: HostRunHandle | undefined;
+    let activity: ProviderActivityRetirement;
+    try {
+      hostRun = this.runWriters.reserve({
+        owner,
+        sessionId: `host.text.${value.session.harness}`,
+        runId: randomUUID(),
+        auxiliary: true,
+        authorityGeneration: generation,
+        isCurrent: () => owned,
+        validateAuthority: async () => {
+          await this.store.assertAuthority(parentId, generation);
+        },
+      });
+      activity = this.reserveProviderActivity(value.session.id, provider);
+    } catch (error) {
+      if (hostRun) {
+        const finishing = this.runWriters.finish(hostRun);
+        owned = false;
+        void finishing.catch((reason) =>
+          console.debug("[bycoda] original hint writer admission cleanup", reason),
+        );
+      }
+      console.debug("[bycoda] provider hint admission refused", error);
+      return;
+    }
+    const context: HarnessOperationContext = Object.freeze({
+      operation: owner,
+      hostRun,
+      hostControlRun: this.runWriters.controlRun(hostRun),
+    });
+    const work = (async () => {
+      let failed = false;
+      let failure: unknown;
+      let executed = false;
+      let result: T | undefined;
+      try {
+        await activity.start(() => this.executionActivity(value, "provider"));
+        if (!this.closing) {
+          this.retainProvider(value.session.id, provider);
+          executed = true;
+          result = await effect(context);
+        }
+      } catch (error) {
+        failed = true;
+        failure = error;
+      }
+      try {
+        await this.runWriters.finish(hostRun!);
+      } catch (error) {
+        owned = false;
+        activity.recordFailure(error);
+        throw failed
+          ? new AggregateError([failure, error], "Original hint work and writer retirement failed")
+          : error;
+      }
+      owned = false;
+      void activity.retainWarm().catch((error) => activity.recordFailure(error));
+      if (failed) throw failure;
+      if (executed) await apply(result as T);
+    })()
+      .then(() => activity.bookkeepingFinished())
+      .catch((error) => {
+        activity.recordFailure(error);
+        throw error;
+      });
+    activity.trackBookkeeping(work);
+    void work.catch((error) => console.debug("[bycoda] retained provider hint", error));
+  }
+
   private generateFirstTurnNames(
     value: HostSession,
     message: string,
@@ -2940,21 +3207,24 @@ export class HostEngine {
     const provider = this.provider(value.session.harness);
     const { id, cwd, harness, title } = value.session;
     if (generateTitle && provider.generateTitle) {
-      void (async () => {
-        const release = await this.executionActivity(value, "provider");
-        try {
+      const generate = provider.generateTitle;
+      this.backgroundProviderWork(
+        value,
+        provider,
+        async (operationContext) => {
           const workspace = await this.managedWorkspace(value);
           await this.store.assertAuthority(id, value.authorityGeneration);
-          return await provider.generateTitle!({
+          await this.runWriters.setExecutionCwd(operationContext.hostRun!, workspace?.path ?? cwd);
+          if (this.closing) return null;
+          return await generate.call(provider, {
             sessionId: id,
             cwd: workspace?.path ?? cwd,
             message,
+            providerAccountId: value.session.providerAccountId,
+            operationContext,
           });
-        } finally {
-          await release?.();
-        }
-      })()
-        .then((generated) => {
+        },
+        async (generated) => {
           if (this.closing || !generated) return;
           return this.store.db.scope(() =>
             this.operations.run(id, async () => {
@@ -2979,17 +3249,22 @@ export class HostEngine {
               if (live) live.value = saved;
             }),
           );
-        })
-        .catch((error) => console.debug("[bycoda] remote session title", error));
+        },
+      );
     }
     const temporary = value.autoWorktreeBranch;
     if (temporary && !value.session.workspaceId && provider.generateBranchName) {
-      void Promise.resolve()
-        .then(async () => {
+      const generate = provider.generateBranchName;
+      this.backgroundProviderWork(
+        value,
+        provider,
+        async (operationContext) => {
           await this.store.assertAuthority(id, value.authorityGeneration);
-          return provider.generateBranchName!(cwd, message);
-        })
-        .then(async (fragment) => {
+          await this.runWriters.setExecutionCwd(operationContext.hostRun!, cwd);
+          if (this.closing) return null;
+          return generate.call(provider, cwd, message, operationContext);
+        },
+        async (fragment) => {
           const branch = fragment ? namedWorktreeBranch(fragment) : null;
           if (this.closing || !branch) return;
           await this.store.assertAuthority(id, value.authorityGeneration);
@@ -3028,8 +3303,8 @@ export class HostEngine {
               if (live) live.value = saved;
             }),
           );
-        })
-        .catch((error) => console.debug("[bycoda] remote worktree branch", error));
+        },
+      );
     }
   }
 
@@ -3083,11 +3358,12 @@ export class HostEngine {
     const readyPromise = new Promise<void>((resolve) => {
       ready = resolve;
     });
-    const active = {
+    const active: ActiveHostTurn = {
       runId: runId!,
       priorBlockIds: new Set(session.blocks.map((block) => block.id)),
       ready: readyPromise,
       steers: Promise.resolve(),
+      controls: Promise.resolve(),
       done: Promise.resolve(),
       cancelled: false,
       ending: false,
@@ -3096,23 +3372,57 @@ export class HostEngine {
       resumeAtReset,
       managedTurns: [] as ManagedTurnBoundary[],
       filesTurn: false,
-      releaseActivity: undefined as (() => Promise<void>) | undefined,
+      provider,
+      providerEntered: false,
+      failureStage: "provider",
       // Resolver failures are unknown ownership, never permission to use legacy restore.
       managed: !!this.managedTurns,
     };
-    this.running.set(session.id, active);
-    this.live.set(session.id, { value, events: [], blockChanges: new Map() });
+    let writerAdmitted = false;
+    let writerAdmissionFailure: unknown;
+    try {
+      active.hostRun = this.runWriters.reserve({
+        owner: active,
+        sessionId: session.id,
+        runId: runId!,
+        authorityGeneration: value.authorityGeneration,
+        // Cancellation/closing may still need the original protocol control.
+        // Explicit finish closes writes; replacement always fails this gate.
+        isCurrent: () => this.running.get(session.id) === active,
+        validateAuthority: async () => {
+          await this.store.assertAuthority(session.id, active.authorityGeneration);
+        },
+      });
+      active.operationContext = Object.freeze({
+        operation: Object.freeze({}),
+        hostRun: active.hostRun,
+        hostControlRun: this.runWriters.controlRun(active.hostRun),
+      });
+      writerAdmitted = true;
+    } catch (reason) {
+      writerAdmissionFailure = reason;
+    }
+    // A failed finite reservation must not replace a predecessor's routes.
+    if (writerAdmitted) {
+      this.running.set(session.id, active);
+      this.live.set(session.id, { value, events: [], blockChanges: new Map() });
+    }
     active.done = Promise.resolve()
       .then(async () => {
         let error: string | undefined;
         try {
+          if (!writerAdmitted)
+            throw writerAdmissionFailure ?? new Error("Host run writer admission failed.");
           await this.store.assertAuthority(session.id, active.authorityGeneration);
           if (!this.closing && !active.cancelled) {
-            active.releaseActivity = await this.executionActivity(value, "provider");
+            active.activity = this.reserveProviderActivity(session.id, provider);
+            await active.activity.start(() => this.executionActivity(value, "provider"));
             const workspace = await this.managedWorkspace(value);
             active.managed = !!workspace;
             if (workspace?.path)
               session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
+            await this.runWriters.setExecutionCwd(active.hostRun!, session.cwd);
+            if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             const managedBoundary = active.managed
               ? await this.beginManagedTurn(value, userBlockId!)
               : undefined;
@@ -3156,6 +3466,7 @@ export class HostEngine {
               providerAccountId: session.providerAccountId,
               runtimeMode: session.runtimeMode,
               intent,
+              operationContext: active.operationContext,
               onEvent: (event) => {
                 const accepted =
                   event.type === "turn.started" ||
@@ -3169,6 +3480,8 @@ export class HostEngine {
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
+              if (this.closing || active.cancelled) throw new Error("Turn cancelled");
+              active.providerEntered = true;
               await provider.compact!(input);
               forgetRuntimeHint(session.id);
             } else {
@@ -3211,7 +3524,7 @@ export class HostEngine {
                 ...input,
                 onAccepted: () => {
                   markHint();
-                  this.queueEvent(session.id, acceptReplay);
+                  this.queueEvent(session.id, acceptReplay, active);
                 },
                 text,
                 ...(codex && runtimeInstructions ? { runtimeInstructions } : {}),
@@ -3233,6 +3546,8 @@ export class HostEngine {
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
+              if (this.closing || active.cancelled) throw new Error("Turn cancelled");
+              active.providerEntered = true;
               await provider.send(prepareSendPolicy?.(providerInput) ?? providerInput);
               markHint();
               active.ending = true;
@@ -3242,28 +3557,40 @@ export class HostEngine {
         } catch (reason) {
           error = reason instanceof Error ? reason.message : String(reason);
         }
-        await this.store.assertAuthority(session.id, active.authorityGeneration);
         active.ending = true;
         ready();
         // Exact after-capture needs process retirement. Lightweight worktrees retain
         // the provider's warm binding after success. Failed/cancelled turns still
         // settle their writer before a follow-up can start.
-        if (
+        const cold =
           !active.filesTurn ||
           active.managedTurns.length ||
           this.closing ||
           active.cancelled ||
-          error
-        ) {
-          await provider.stop(session.id);
-          this.retainedProviders.get(session.id)?.delete(provider);
+          active.persistenceFailed ||
+          error;
+        active.failureStage = "retirement";
+        if (cold) {
+          if (active.hostRun) this.runWriters.closeAdmission(active.hostRun);
+          if (active.activity) this.retainProvider(session.id, provider);
+          await this.stopOriginalTurn(session.id, active);
         } else {
-          const retained = this.retainedProviders.get(session.id) ?? new Set<HostProvider>();
-          retained.add(provider);
-          this.retainedProviders.set(session.id, retained);
+          this.retainProvider(session.id, provider);
         }
+        active.failureStage = "persistence";
+        await this.store.assertAuthority(session.id, active.authorityGeneration);
         // Retire outstanding delivery work before exposing an idle session.
+        active.failureStage = "delivery";
         await active.steers;
+        await active.controls;
+        active.failureStage = "retirement";
+        if (active.hostRun) await this.runWriters.finish(active.hostRun);
+        if (!cold)
+          void active.activity?.retainWarm().catch((reason) => {
+            active.activity?.recordFailure(reason);
+            console.error("Original warm provider activity release failed:", reason);
+          });
+        active.failureStage = "persistence";
         if (active.managed) {
           // Keep each accepted boundary independently; compaction never prunes this map.
           for (const boundary of active.managedTurns) {
@@ -3293,7 +3620,7 @@ export class HostEngine {
         await this.store.db.scope(() =>
           this.operations.enqueue(session.id, async () => {
             await this.flush(session.id);
-            this.live.delete(session.id);
+            if (this.running.get(session.id) === active) this.live.delete(session.id);
             const latest = await this.store.session(session.id);
             if (latest.runId === runId) {
               const message = this.closing
@@ -3327,8 +3654,9 @@ export class HostEngine {
                 { type: "settled", error, cancelled: active.cancelled },
               );
             }
-            await active.releaseActivity?.();
-            active.releaseActivity = undefined;
+            active.failureStage = "retirement";
+            if (cold) await active.activity?.release();
+            active.failureStage = "callback";
             await this.onSettled?.(session.id, {
               ...(active.cancelled ? { cancelled: true } : {}),
               ...(this.closing || active.persistenceFailed
@@ -3351,32 +3679,60 @@ export class HostEngine {
                 persisted.cwd,
                 persisted.providerAccountId,
               );
-            this.running.delete(session.id);
+            active.activity?.bookkeepingFinished();
+            if (this.running.get(session.id) === active) {
+              if (cold && active.activity) this.retainedProviders.get(session.id)?.delete(provider);
+              this.running.delete(session.id);
+            }
           }),
         );
       })
-      .catch((error) => {
-        if (error instanceof HostAuthorityFenceError) return;
+      .catch(async (error) => {
         clearTimeout(this.live.get(session.id)?.timer);
+        if (error instanceof HostAuthorityFenceError && !active.providerEntered) {
+          // This source was refused before invoking a provider. Retire only its
+          // own admission; never write the new generation or discover its child.
+          await this.runWriters.finish(active.hostRun!);
+          await this.stopOriginalTurn(session.id, active);
+          active.activity?.bookkeepingFinished();
+          await active.activity?.release();
+          if (this.running.get(session.id) === active) {
+            this.running.delete(session.id);
+            if (this.live.get(session.id)?.value.runId === active.runId)
+              this.live.delete(session.id);
+          }
+          return;
+        }
+        if (active.failureStage === "persistence") active.persistenceFailed = true;
         console.error(
-          "Session persistence failed; stopping its provider:",
+          `Session ${active.failureStage} failed; retaining original cleanup:`,
           error instanceof Error ? error.message : "unknown error",
         );
-        void provider.stop(session.id);
-        this.retrySettlement(session.id, runId!, provider, active.authorityGeneration);
+        const failure = await this.retainTurnFailure(session.id, active, error);
+        if (
+          active.failureStage === "persistence" &&
+          !(error instanceof HostAuthorityFenceError) &&
+          failure === error &&
+          !this.closing &&
+          !this.store.db.restartRequired
+        ) {
+          this.retrySettlement(session.id, active);
+          // Keep the existing recovery waiter contract: the original run is still held.
+          return;
+        }
+        throw failure;
       });
+    // Fire-and-forget dispatch has an observer; waitForRun/close still receive the real rejection.
+    void active.done.catch(() => {});
   }
 
-  private queueEvent(id: string, work: () => Promise<void>): void {
+  private queueEvent(id: string, work: () => Promise<void>, original: ActiveHostTurn): void {
     void this.store.db
       .scope(() => this.operations.enqueue(id, work))
-      .catch((error) => {
-        if (error instanceof HostAuthorityFenceError) return;
-        const active = this.running.get(id);
-        if (active) active.persistenceFailed = true;
+      .catch(async (error) => {
+        original.persistenceFailed = true;
         console.error("Session event persistence failed:", error);
-        const harness = this.live.get(id)?.value.session.harness;
-        if (harness) void this.provider(harness).stop(id);
+        await this.retainTurnFailure(id, original, error);
       });
   }
 
@@ -3386,13 +3742,19 @@ export class HostEngine {
     event: HarnessEvent,
     before?: () => Promise<void>,
   ): void {
-    this.queueEvent(id, async () => {
-      const live = this.live.get(id);
-      if (!live || live.value.runId !== runId) return;
-      await this.store.assertAuthority(id, live.value.authorityGeneration);
-      if (before) await before();
-      await this.applyEvent(id, runId, event);
-    });
+    const original = this.running.get(id);
+    if (!original || original.runId !== runId) return;
+    this.queueEvent(
+      id,
+      async () => {
+        const live = this.live.get(id);
+        if (!live || live.value.runId !== runId) return;
+        await this.store.assertAuthority(id, live.value.authorityGeneration);
+        if (before) await before();
+        await this.applyEvent(id, runId, event);
+      },
+      original,
+    );
   }
 
   private async applyEvent(id: string, runId: string, event: HarnessEvent): Promise<void> {
@@ -3443,13 +3805,15 @@ export class HostEngine {
     live.value = { ...live.value, session };
     live.events.push(event);
     if (!BATCHED.has(event.type)) await this.flush(id);
-    else
-      live.timer ??= this.store.db.outsideScope(() =>
-        setTimeout(
-          async () => await this.scheduledFlush(id, this.provider(session.harness)),
-          FLUSH_MS,
-        ),
-      );
+    else {
+      const original = this.running.get(id);
+      if (original?.runId === runId)
+        live.timer ??= this.store.db.outsideScope(() =>
+          setTimeout(() => {
+            void this.scheduledFlush(id, original);
+          }, FLUSH_MS),
+        );
+    }
   }
 
   private settled(
@@ -3503,6 +3867,8 @@ export class HostEngine {
 
   private async closeOwned(): Promise<void> {
     this.closing = true;
+    // Revoke every original scope immediately; process shutdown can stay held.
+    this.runWriters.seal();
     await this.ready;
     for (const timer of this.retryTimers.values()) clearTimeout(timer);
     this.retryTimers.clear();
@@ -3512,20 +3878,49 @@ export class HostEngine {
         if (result.status === "rejected") failures.push(result.reason);
       }
     };
+    const originals = [...this.running];
+    const stops = new Map<HostProvider, Map<string, Promise<void>>>();
+    const retainStop = (id: string, provider: HostProvider, start: () => Promise<void>) => {
+      const owned = stops.get(provider) ?? new Map<string, Promise<void>>();
+      if (owned.has(id)) return;
+      stops.set(provider, owned);
+      let work: Promise<void>;
+      try {
+        work = start();
+      } catch (error) {
+        work = Promise.reject(error);
+      }
+      owned.set(id, work);
+      void work.catch(() => {});
+    };
+    // Capture every original cohort and method before awaiting any stop/store call.
+    for (const [id, active] of originals)
+      if (active.activity) retainStop(id, active.provider, () => this.stopOriginalTurn(id, active));
+    const remaining = [
+      ...[...this.retainedProviders].flatMap(([id, providers]) =>
+        [...providers].map((provider) => ({ id, provider })),
+      ),
+      ...this.activityProviders.values(),
+    ];
+    for (const { id, provider } of remaining) {
+      const stop = provider.stop;
+      retainStop(id, provider, () =>
+        this.store.db.outsideScope(() => stopCapturedProvider(id, () => stop.call(provider, id))),
+      );
+    }
     await join(
-      [...this.running.keys()].map(async (id) =>
-        this.provider((await this.store.session(id)).session.harness).stop(id),
+      [...stops].flatMap(([provider, owned]) =>
+        [...owned].map(async ([id, work]) => {
+          await work;
+          this.retainedProviders.get(id)?.delete(provider);
+        }),
       ),
     );
-    await join(
-      [...this.retainedProviders].flatMap(([id, providers]) =>
-        [...providers].map((provider) => provider.stop(id)),
-      ),
-    );
-    this.retainedProviders.clear();
-    await join([...this.running.values()].map((active) => active.done));
+    await join(originals.map(([, active]) => active.done));
     await join(this.recoveryWork.values());
     await join([this.operations.drain()]);
+    await join([this.providerActivities.drain()]);
+    await join([this.runWriters.drain()]);
     await join([this.store.flushAll()]);
     if (failures.length) throw new AggregateError(failures, "Host session shutdown failed.");
   }

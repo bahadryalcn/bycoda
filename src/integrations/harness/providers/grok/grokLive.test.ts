@@ -15,8 +15,12 @@ const sent: string[] = [];
 let heldApprovalWrite: (() => Promise<void>) | null = null;
 let onLine: ((line: string) => void) | undefined;
 let onExit: ((code: number | null) => void) | undefined;
+let queueAgent: ((message: Record<string, unknown>) => void) | null = null;
 
-beforeEach(() => processConstructions.reset());
+beforeEach(() => {
+  processConstructions.reset();
+  queueAgent = null;
+});
 vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveGrokBinary: async () => ({ path: "/fake/grok" }),
@@ -31,6 +35,7 @@ vi.mock("../../core/child", () =>
       sent.push(line);
       const message = JSON.parse(line);
       if (message.id === 993 && message.result && heldApprovalWrite) await heldApprovalWrite();
+      queueAgent?.(message);
     },
   }),
 );
@@ -436,3 +441,312 @@ it("retains grok completion lineage from the real RPC response across its await"
   expect(inspect()).toMatchObject({ pendingCausalWork: 0, applicationThrough: null });
   await stopGrokSession(sessionId);
 });
+
+it("keeps Grok compact callbacks queued behind A and admits a fresh compact after queued cancellation", async () => {
+  sent.length = 0;
+  const sessionId = "grok-compact-queue";
+  const held: Record<string, unknown>[] = [];
+  const aEvents: HarnessEvent[] = [];
+  const bEvents: HarnessEvent[] = [];
+  const cEvents: HarnessEvent[] = [];
+  const base = {
+    sessionId,
+    cwd: "/repo",
+    model: "grok:grok-4.6",
+    runtimeMode: "supervised" as const,
+  };
+  queueAgent = (message) => {
+    if (typeof message.id !== "number" || typeof message.method !== "string") return;
+    if (["session/prompt", "_x.ai/compact_conversation"].includes(message.method)) {
+      held.push(message);
+      return;
+    }
+    reply(
+      message.id,
+      message.method === "initialize"
+        ? initResult
+        : message.method === "session/new"
+          ? { sessionId: "S1", models: { currentModelId: "grok-4.6" } }
+          : {},
+    );
+  };
+  const a = sendGrokTurn({
+    ...base,
+    text: "A",
+    attachments: [],
+    onEvent: (event) => aEvents.push(event),
+  });
+  const aOutcome = a.then(
+    () => undefined,
+    (error: unknown) => error,
+  );
+  const pending: Promise<unknown>[] = [aOutcome];
+  const emit = (text: string) => {
+    const line = JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "S1",
+        update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+      },
+    });
+    nativeOutputFrame(sessionId, line, () => onLine!(line));
+  };
+  try {
+    await waitFor(() => held.length === 1, "A prompt held");
+    const context = { operation: {} };
+    const observed = vi.fn();
+    const b = compactGrokContext({
+      ...base,
+      operationContext: context,
+      onOriginalProcess: observed,
+      onEvent: (event) => bEvents.push(event),
+    });
+    const bOutcome = b.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    pending.push(bOutcome);
+    expect(observed).toHaveBeenCalledTimes(1);
+    emit("A during queued compact");
+    expect(aEvents).toContainEqual({ type: "message.delta", text: "A during queued compact" });
+    expect(bEvents).toHaveLength(0);
+    expect(held).toHaveLength(1);
+    await cancelGrokTurn(sessionId, context);
+    reply(held[0].id as number, { stopReason: "end_turn" });
+    expect(await aOutcome).toBeUndefined();
+    expect(await bOutcome).toBeInstanceOf(Error);
+    expect(parse().some((message) => message.method === "_x.ai/compact_conversation")).toBe(false);
+    const c = compactGrokContext({
+      ...base,
+      operationContext: { operation: {} },
+      onEvent: (event) => cEvents.push(event),
+    });
+    const cOutcome = c.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    pending.push(cOutcome);
+    await waitFor(() => held.length === 2, "fresh compact entered");
+    expect(held[1].method).toBe("_x.ai/compact_conversation");
+    emit("C owns the actual compact callback");
+    expect(cEvents).toContainEqual({
+      type: "message.delta",
+      text: "C owns the actual compact callback",
+    });
+    expect(aEvents).not.toContainEqual({
+      type: "message.delta",
+      text: "C owns the actual compact callback",
+    });
+    reply(held[1].id as number, {});
+    expect(await cOutcome).toBeUndefined();
+    expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(1);
+  } finally {
+    queueAgent = null;
+    await stopGrokSession(sessionId);
+    await Promise.allSettled(pending);
+  }
+});
+
+it.each([true, false])(
+  "preserves grok A's callback and permission policy while B is queued (cancel B: %s)",
+  async (cancelB) => {
+    // Production provider/client/queue; only the child transport is the existing
+    // protocol fixture. No physical Native/provider retirement is asserted.
+    sent.length = 0;
+    const sessionId = `grok-queue-${cancelB}`;
+    const eventsA: HarnessEvent[] = [];
+    const eventsB: HarnessEvent[] = [];
+    const eventsC: HarnessEvent[] = [];
+    const prompts: Record<string, unknown>[] = [];
+    const pending: Promise<unknown>[] = [];
+    const permissionResponse = (id: number) =>
+      parse().find((message) => message.id === id && message.result)?.result as
+        | { outcome: { optionId: string } }
+        | undefined;
+    queueAgent = (message) => {
+      if (typeof message.id !== "number" || typeof message.method !== "string") return;
+      if (message.method === "session/prompt") {
+        prompts.push(message);
+        return;
+      }
+      const result =
+        message.method === "initialize"
+          ? initResult
+          : ["session/new", "session/load"].includes(message.method)
+            ? {
+                sessionId: "S1",
+                models: { currentModelId: "grok-4.6" },
+                configOptions: [
+                  { id: "model", category: "model", currentValue: "grok-4.6" },
+                  { id: "mode", category: "mode", currentValue: "ask" },
+                ],
+              }
+            : {};
+      reply(message.id, result);
+    };
+    const base = {
+      sessionId,
+      cwd: "/repo",
+      model: "grok:grok-4.6",
+      modelSettings: {},
+      runtimeMode: "supervised" as const,
+      attachments: [],
+    };
+    const emitText = (text: string) => {
+      const line = JSON.stringify({
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "S1",
+          update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
+        },
+      });
+      nativeOutputFrame(sessionId, line, () => onLine!(line));
+    };
+    const ask = (id: number) => {
+      const line = JSON.stringify({
+        jsonrpc: "2.0",
+        id,
+        method: "session/request_permission",
+        params: {
+          sessionId: "S1",
+          toolCall: { toolCallId: `queue-${id}`, title: "Run git status", kind: "execute" },
+          options: [
+            { optionId: "allow_once", kind: "allow_once" },
+            { optionId: "reject_once", kind: "reject_once" },
+          ],
+        },
+      });
+      nativeOutputFrame(sessionId, line, () => onLine!(line));
+    };
+    const first = sendGrokTurn({
+      ...base,
+      text: "original A input",
+      operationContext: { operation: {} },
+      onEvent: (event) => eventsA.push(event),
+    });
+    const firstOutcome = first.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    pending.push(firstOutcome);
+    try {
+      await waitFor(() => prompts.length === 1, "original A prompt held");
+      const queuedContext = { operation: {} };
+      const observedB = vi.fn();
+      const second = sendGrokTurn({
+        ...base,
+        cwd: "/queued",
+        text: "queued B input",
+        intent: "plan",
+        runtimeMode: "full-access",
+        operationContext: queuedContext,
+        onOriginalProcess: observedB,
+        onEvent: (event) => eventsB.push(event),
+      });
+      const secondOutcome = second.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      pending.push(secondOutcome);
+      const observedC = vi.fn();
+      const third = sendGrokTurn({
+        ...base,
+        text: "fresh C input",
+        operationContext: { operation: {} },
+        onOriginalProcess: observedC,
+        onEvent: (event) => eventsC.push(event),
+      });
+      const thirdOutcome = third.then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      pending.push(thirdOutcome);
+      expect(observedB).toHaveBeenCalledTimes(1);
+      expect(observedC).toHaveBeenCalledTimes(1);
+      expect(prompts).toHaveLength(1);
+      expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(1);
+      expect(processConstructions.operations.filter((op) => op.kind === "kill")).toHaveLength(0);
+      // Queueing B alone must not redirect A, repolicy A, or restart A.
+      emitText("A remains the active callback");
+      expect(eventsA).toContainEqual({
+        type: "message.delta",
+        text: "A remains the active callback",
+      });
+      expect(eventsB).toHaveLength(0);
+      expect(eventsC).toHaveLength(0);
+      ask(771);
+      await waitFor(
+        () =>
+          eventsA.some((event) => event.type === "approval.requested" && event.requestId === 771),
+        "A supervised permission retained",
+      );
+      expect(parse().some((message) => message.id === 771 && message.result)).toBe(false);
+      const approval = eventsA.find(
+        (event) => event.type === "approval.requested" && event.requestId === 771,
+      );
+      if (!approval || approval.type !== "approval.requested")
+        throw new Error("Missing A original approval");
+      respondGrokApproval(sessionId, 771, "allow", approval.occurrenceId);
+      await waitFor(
+        () => parse().some((message) => message.id === 771 && message.result),
+        "A original approval response",
+      );
+      if (cancelB) await cancelGrokTurn(sessionId, queuedContext);
+      expect(processConstructions.operations.filter((op) => op.kind === "kill")).toHaveLength(0);
+      expect(parse().some((message) => message.method === "session/cancel")).toBe(false);
+      reply(prompts[0].id as number, { stopReason: "end_turn" });
+      expect(await firstOutcome).toBeUndefined();
+      if (cancelB) {
+        expect(await secondOutcome).toBeInstanceOf(Error);
+        expect(String(await secondOutcome)).toMatch(/cancelled|closed/);
+        expect(eventsB).toHaveLength(0);
+      } else {
+        await waitFor(() => prompts.length === 2, "B starts only after A and owns its restart");
+        emitText("B owns its actual entered callback");
+        expect(eventsB).toContainEqual({
+          type: "message.delta",
+          text: "B owns its actual entered callback",
+        });
+        expect(eventsC).toHaveLength(0);
+        ask(772);
+        await waitFor(
+          () => parse().some((message) => message.id === 772 && message.result),
+          "B planning denial",
+        );
+        expect(permissionResponse(772)?.outcome.optionId).toBe("reject_once");
+        expect(prompts).toHaveLength(2);
+        reply(prompts[1].id as number, { stopReason: "end_turn" });
+        expect(await secondOutcome).toBeUndefined();
+      }
+      const expectedPrompts = cancelB ? 2 : 3;
+      await waitFor(
+        () => prompts.length === expectedPrompts,
+        "C survives canceled/replaced prior Live",
+      );
+      emitText("C owns its fresh callback");
+      expect(eventsC).toContainEqual({ type: "message.delta", text: "C owns its fresh callback" });
+      expect(eventsA).not.toContainEqual({
+        type: "message.delta",
+        text: "C owns its fresh callback",
+      });
+      expect(eventsB).not.toContainEqual({
+        type: "message.delta",
+        text: "C owns its fresh callback",
+      });
+      expect(
+        prompts.map((message) => JSON.stringify(message.params).includes("queued B input")),
+      ).toEqual(cancelB ? [false, false] : [false, true, false]);
+      reply(prompts[expectedPrompts - 1].id as number, { stopReason: "end_turn" });
+      expect(await thirdOutcome).toBeUndefined();
+      expect(processConstructions.operations.filter((op) => op.kind === "spawn")).toHaveLength(
+        cancelB ? 1 : 3,
+      );
+    } finally {
+      queueAgent = null;
+      await stopGrokSession(sessionId);
+      await Promise.allSettled(pending);
+    }
+  },
+);

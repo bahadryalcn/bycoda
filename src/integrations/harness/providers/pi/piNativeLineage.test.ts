@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Isolated fixture: actual Pi JSONL/parser, reducer and persistence admission;
 // synthetic Native metadata and SQL ACKs never establish Native/FULL authority.
+import { processConstructions } from "../processConstruction.testSupport";
 import { webcrypto } from "node:crypto";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HarnessEvent } from "../../core/types";
@@ -12,20 +13,24 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   spawn: vi.fn(),
 }));
+const originalCleanups: Array<() => Promise<void>> = [];
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
-vi.mock("../../core/child", () => ({
-  resolvePiBinary: async () => ({ path: "/fixture/pi" }),
-  resolveOmpBinary: async () => ({ path: "/fixture/omp" }),
-  spawnChild: mocks.spawn,
-  killChild: async () => undefined,
-  acquireHarnessBridge: async () => () => undefined,
-  watchChild: (_id: string, line: (value: string) => void) => {
-    mocks.line = line;
-  },
-  unwatchChild: () => undefined,
-  writeChild: (id: string, line: string) => mocks.write(id, line),
-}));
+vi.mock("../../core/child", () =>
+  processConstructions.mock({
+    resolvePiBinary: async () => ({ path: "/fixture/pi" }),
+    resolveOmpBinary: async () => ({ path: "/fixture/omp" }),
+    spawnChild: mocks.spawn,
+    killChild: async () => undefined,
+    acquireHarnessBridge: async () => () => undefined,
+    watchChild: (_id: string, line: (value: string) => void) => {
+      mocks.line = line;
+    },
+    unwatchChild: () => undefined,
+    writeChild: (id: string, line: string) => mocks.write(id, line),
+  }),
+);
 beforeEach(() => {
+  processConstructions.reset();
   vi.resetModules();
   vi.stubGlobal("crypto", webcrypto);
   mocks.invoke.mockReset();
@@ -33,7 +38,14 @@ beforeEach(() => {
   mocks.spawn.mockReset().mockResolvedValue(undefined);
   mocks.line = null;
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(async () => {
+  const outcomes = await Promise.allSettled(originalCleanups.splice(0).map((close) => close()));
+  vi.unstubAllGlobals();
+  const failures = outcomes.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (failures.length) throw new AggregateError(failures, "Original Pi fixture cleanup failed");
+});
 
 async function fixture(
   options: {
@@ -59,6 +71,9 @@ async function fixture(
   const persistence = await import("../../../../features/sessions/data/sessionStore");
   const { applyHarnessEvents } = await import("../../core/apply");
   const sessionId = "pi-native-lineage";
+  // Retain the actual module/flavor that issued this fixture's handles. Module
+  // reset happens only after all those source-owned stop obligations settle.
+  originalCleanups.push(() => pi.stopSession(flavor, sessionId));
   const initial: Session = {
     id: sessionId,
     cwd: "/fixture",

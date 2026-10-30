@@ -21,6 +21,7 @@ import { type orchestrator } from "../../../features/orchestration/model/orchest
 import { remoteProjectFor } from "../../../features/connections/model/remoteProjects";
 import { remoteSessionActions } from "../../../features/connections/model/remoteSessionActions";
 import { syncDockBadge } from "../../../features/notifications/model/dockBadge";
+import { operatorEnabledInThread } from "../../../features/sessions/model/operatorCommand";
 import {
   sessionProviderAccountId,
   supportsProviderAccounts,
@@ -124,6 +125,8 @@ export function useCompactAndRewind({
       sessionsRef.current = started;
       syncDockBadge(started);
       setSessions(started);
+      const operatorAccess = operatorEnabledInThread(current.blocks);
+      const controlsAgents = operatorAccess || orchestrator.run(sessionId)?.status === "active";
 
       void (async () => {
         try {
@@ -137,6 +140,8 @@ export function useCompactAndRewind({
               ? sessionProviderAccountId(current.harness, current)
               : undefined,
             runtimeMode: current.runtimeMode,
+            controlsAgents,
+            appAccess: operatorAccess,
             onEvent: (event) => {
               if (turnGen.current.get(sessionId) !== gen) return;
               enqueueHarnessEvent(sessionId, event);
@@ -191,7 +196,8 @@ export function useCompactAndRewind({
       if (
         !current ||
         current.workspaceId !== workspaceId ||
-        (hostSessionBinding(current) || remoteProjectFor(current.cwd)) ||
+        hostSessionBinding(current) ||
+        remoteProjectFor(current.cwd) ||
         current.busy ||
         windowTransferPendingRef.current ||
         movingSessionIds.current.has(sessionId) ||
@@ -254,7 +260,7 @@ export function useCompactAndRewind({
         orchestrator.submissionError(sessionId)
       )
         return false;
-      if ((hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd))) {
+      if (hostSessionBinding(snapshot) || remoteProjectFor(snapshot.cwd)) {
         return (await remoteSessionActions(sessionId)?.rewind(blockId)) ?? false;
       }
       if (!editedResends.start(sessionId)) return false;

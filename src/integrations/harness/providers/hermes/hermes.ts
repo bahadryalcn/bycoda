@@ -1,4 +1,24 @@
 import {
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureAcpTurnWriter,
+  queueProviderOperation,
+  acpTurnWriter,
+  type AcpWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
+import {
   createPendingApproval,
   cancelPendingApprovals,
   observePendingApprovalWrite,
@@ -16,20 +36,12 @@ import {
   captureNativeOutputWork,
   type NativeOutputWork,
 } from "../../core/nativeOutputDelivery";
-import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { AcpSubagents } from "../../core/acpSubagents";
-import {
-  killChild,
-  resolveHermesBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-  readHarnessTextFile,
-} from "../../core/child";
+import { resolveHermesBinary, spawnChild, watchChild, readHarnessTextFile } from "../../core/child";
 import {
   HERMES_AUTH_HELP,
   hermesBackgroundDispatch,
@@ -81,7 +93,10 @@ async function readBackgroundInput<T>(
 }
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const retirements = createProviderRetirementLedger("hermes.main", killChild);
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   subagents: AcpSubagents;
   background: Map<string, RetainedBackgroundDispatch>;
@@ -96,7 +111,6 @@ type Live = {
   planning: boolean;
   onEvent: (event: HarnessEvent) => void;
   approvals: Map<number, PendingApproval>;
-  turns: Promise<void>;
 };
 
 type Resume = { acpSessionId: string; cwd: string };
@@ -114,56 +128,92 @@ const CLIENT_CAPABILITIES = {
 };
 
 const liveByThread = new Map<string, Live>();
-const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; acp?: AcpClient }
+>();
 const resumeByThread = new Map<string, Resume>();
-const cancelledThreads = new Set<string>();
+const turnsByThread = new Map<string, Promise<unknown>>();
+const sourceEpochByThread = new Map<string, object>();
 
 /** Live Hermes Agent adapter. Spawns `hermes acp` over standard ACP. */
 export async function sendHermesTurn(input: SendTurnInput): Promise<void> {
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.planning = input.intent === "plan";
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await applyModelSelection(live, input);
-      if (live.cancelled) return;
-      await applyRuntimeMode(live, input.runtimeMode, live.planning);
-      if (live.cancelled) return;
-      await prompt(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
+  input = { ...input };
 
   try {
-    await live.turns;
-  } catch (error) {
-    if (liveByThread.get(input.sessionId) === live) {
-      await stopHermesSession(input.sessionId, live.handle);
-    }
-    throw error;
+    const epoch = sourceEpochByThread.get(input.sessionId);
+    const cancelled = () => sourceEpochByThread.get(input.sessionId) !== epoch;
+    let live: Live;
+    const observed = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (observed) observeProviderProcess(input, observed.handle);
+    const run = queueProviderOperation(
+      turnsByThread,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        live = await ensureLive(input);
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        const acp = await captureAcpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        if (liveByThread.get(input.sessionId) !== live)
+          throw new Error("Provider operation replaced before turn entry");
+        live.onEvent = input.onEvent;
+        live.runtimeMode = input.runtimeMode;
+        live.planning = input.intent === "plan";
+        live.cancelled = false;
+        live.muteUpdates = false;
+        try {
+          await applyModelSelection(live, input, acp);
+          if (live.cancelled) return;
+          await applyRuntimeMode(live, input.runtimeMode, live.planning, acp);
+          if (live.cancelled) return;
+          await prompt(live, input, acp);
+        } catch (error) {
+          if (live.cancelled) return;
+          if (liveByThread.get(input.sessionId) === live)
+            await stopHermesSession(input.sessionId, live.handle);
+          throw error;
+        }
+      },
+    );
+
+    await run;
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
 }
 
 /** Hermes redirects a concurrent text prompt, or queues it when redirect is unavailable. */
 export async function steerHermesTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = liveByThread.get(input.sessionId);
   if (!live) throw new Error("No active Hermes Agent session");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
+  const acp = await acpTurnWriter(
+    live.handle,
+    live.acp,
+    input.nativeControlTurn,
+    input.operationContext,
+  );
+
   const blocks = hermesPromptBlocks(input.text, input.attachments);
   if (blocks.length === 0) return;
-  await live.acp.request(
+  await acp.request(
     "session/prompt",
     { sessionId: live.acpSessionId, prompt: blocks },
     CONTROL_TIMEOUT_MS,
@@ -191,29 +241,58 @@ export function respondHermesApproval(
   pending(decision);
 }
 
-export async function cancelHermesTurn(sessionId: string): Promise<void> {
+export async function cancelHermesTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
-  if (!live) {
-    cancelledThreads.add(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
     return;
-  }
+  sourceEpochByThread.set(sessionId, {});
+  if (!live) return;
+  const acp = context
+    ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
+    : live.acp;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   clearBackgroundInputs(live);
   resolveApprovals(live);
-  await live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.acp.rejectPending(new Error("cancelled"));
 }
 
 export async function stopHermesSession(
   sessionId: string,
-  expectedHandle?: ChildProcessHandle,
+  target?: ChildProcessHandle | HarnessOperationContext,
 ): Promise<void> {
-  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
   const candidate = liveByThread.get(sessionId);
-  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined;
   const preparing = startingByThread.get(sessionId);
-  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
+  if (context ? live || startup : !expectedHandle) sourceEpochByThread.set(sessionId, {});
   if (live) liveByThread.delete(sessionId);
   if (startup) startingByThread.delete(sessionId);
   if (live) {
@@ -224,19 +303,22 @@ export async function stopHermesSession(
   }
   live?.acp.close();
   startup?.acp?.close();
-  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
-  await Promise.all(
-    [...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-  );
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
-export async function forgetHermesSession(sessionId: string): Promise<void> {
+export async function forgetHermesSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
-  await stopHermesSession(sessionId);
+  await stopHermesSession(sessionId, context);
 }
 
 export function bindHermesSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -246,17 +328,24 @@ export function bindHermesSession(threadId: string, acpSessionId: string, cwd: s
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const existing = liveByThread.get(input.sessionId);
   if (existing && existing.cwd === input.cwd) {
-    existing.onEvent = input.onEvent;
-    existing.runtimeMode = input.runtimeMode;
-    existing.planning = input.intent === "plan";
+    observeProviderProcess(input, existing.handle);
+
     return existing;
   }
-  const handle = createChildProcessHandle(input.sessionId);
-  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  const startup: { handle: ChildProcessHandle; operation?: object; acp?: AcpClient } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
   startingByThread.set(input.sessionId, startup);
   try {
+    observeProviderProcess(input, handle, "starting");
     if (existing) {
       resumeByThread.delete(input.sessionId);
       await stopHermesSession(input.sessionId, existing.handle);
@@ -329,9 +418,15 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     );
 
     await spawnChild(handle, path, ["acp"], input.cwd, undefined, "hermes");
+    const startupAcp = await acpTurnWriter(
+      handle,
+      acp,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
 
     try {
-      await acp.request(
+      await startupAcp.request(
         "initialize",
         {
           protocolVersion: 1,
@@ -350,7 +445,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (canLoad && resume) {
       muteGate.current = true;
       try {
-        setup = await acp.request(
+        setup = await startupAcp.request(
           "session/load",
           { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers: [] },
           SESSION_TIMEOUT_MS,
@@ -364,7 +459,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     if (!acpSessionId) {
       try {
-        setup = await acp.request(
+        setup = await startupAcp.request(
           "session/new",
           { cwd: input.cwd, mcpServers: [] },
           SESSION_TIMEOUT_MS,
@@ -379,6 +474,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
     const live: Live = {
+      operation: input.operationContext?.operation,
       handle,
       subagents: new AcpSubagents(),
       background: new Map(),
@@ -393,7 +489,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       planning: input.intent === "plan",
       onEvent: input.onEvent,
       approvals: new Map(),
-      turns: Promise.resolve(),
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -406,17 +501,20 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     return live;
   } catch (error) {
     startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
-    await stopHermesSession(input.sessionId, handle);
-    throw error;
+    return preserveProviderFailure(error, stopHermesSession(input.sessionId, handle));
   } finally {
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
-async function applyModelSelection(live: Live, input: HarnessSessionInput): Promise<void> {
+async function applyModelSelection(
+  live: Live,
+  input: HarnessSessionInput,
+  acp: AcpWriterView,
+): Promise<void> {
   const modelId = nativeModelId(input.model).trim();
   if (!modelId || modelId === "default" || modelId === live.modelId) return;
-  await live.acp.request(
+  await acp.request(
     "session/set_model",
     { sessionId: live.acpSessionId, modelId },
     CONTROL_TIMEOUT_MS,
@@ -428,10 +526,11 @@ async function applyRuntimeMode(
   live: Live,
   runtimeMode: RuntimeMode,
   planning: boolean,
+  acp: AcpWriterView,
 ): Promise<void> {
   const modeId = hermesModeId(runtimeMode, planning);
   if (modeId === live.modeId) return;
-  await live.acp.request(
+  await acp.request(
     "session/set_mode",
     { sessionId: live.acpSessionId, modeId },
     CONTROL_TIMEOUT_MS,
@@ -439,7 +538,7 @@ async function applyRuntimeMode(
   live.modeId = modeId;
 }
 
-async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
   const responseScope: { work: NativeOutputWork | null } = { work: null };
   const emitNative = (event: HarnessEvent) =>
     nativeOutputSink(responseScope.work, () => live.onEvent(event))();
@@ -449,7 +548,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
       if (blocks.length === 0) return;
       let accepted = false;
       for (;;) {
-        const response = live.acp.request(
+        const response = acp.request(
           "session/prompt",
           { sessionId: live.acpSessionId, prompt: blocks },
           PROMPT_TIMEOUT_MS,

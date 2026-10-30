@@ -1,3 +1,4 @@
+import type { HarnessOperationContext } from "../turnWriter";
 import {
   bindSession,
   cancelTurn,
@@ -51,16 +52,22 @@ export function respondOmpApproval(
   respondApproval(OMP_FLAVOR, sessionId, requestId, decision, approvalOccurrenceId);
 }
 
-export function cancelOmpTurn(sessionId: string): Promise<void> {
-  return cancelTurn(OMP_FLAVOR, sessionId);
+export function cancelOmpTurn(sessionId: string, context?: HarnessOperationContext): Promise<void> {
+  return cancelTurn(OMP_FLAVOR, sessionId, context);
 }
 
-export function stopOmpSession(sessionId: string): Promise<void> {
-  return stopSession(OMP_FLAVOR, sessionId);
+export function stopOmpSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  return stopSession(OMP_FLAVOR, sessionId, context);
 }
 
-export function forgetOmpSession(sessionId: string): Promise<void> {
-  return forgetSession(OMP_FLAVOR, sessionId);
+export function forgetOmpSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  return forgetSession(OMP_FLAVOR, sessionId, context);
 }
 
 export function bindOmpSession(threadId: string, providerSessionId: string, cwd: string): void {

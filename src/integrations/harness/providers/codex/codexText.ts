@@ -1,12 +1,20 @@
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { rpcTurnWriter, type JsonRpcWriterView } from "../turnWriter";
+import { killChild } from "../../core/child";
+import {
+  settleProviderRetirements,
+  withProviderRetirement,
+  observeProviderProbeCleanup,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { modelsFor } from "../../../../features/sessions/model/models";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
   createChildProcessHandle,
-  killChild,
   resolveCodexBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
   type ChildProcessHandle,
 } from "../../core/child";
@@ -18,11 +26,13 @@ import {
   mapCodexNotification,
   stringField,
 } from "./codexProtocol";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
 import { JsonRpcClient, type JsonRpcId } from "../../core/jsonRpc";
 import type { TextPromptInput } from "../../core/registry";
 
 import { mergeStream } from "../../core/streamText";
+
+const retirements = createProviderRetirementLedger("codex.text", killChild);
 
 const TEXT_CHILD_ID = "bycoda-codex-text";
 const INIT_TIMEOUT_MS = 60_000;
@@ -95,15 +105,18 @@ export function warmupCodexText(cwd: string): Promise<void> {
     await ensureLive({ cwd });
   });
   turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
 /** Codex app-server turn that reuses a warm process, like Cursor text generation. */
 export async function runCodexTextPrompt(input: TextPromptInput): Promise<string> {
+  input = captureTextInput(input);
   if (input.model !== undefined && !input.model.trim()) {
     throw new Error("The selected Codex model is unavailable.");
   }
-  const run = turns.catch(() => undefined).then(() => promptOnLive(input));
+  const run = turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
@@ -111,7 +124,30 @@ export async function runCodexTextPrompt(input: TextPromptInput): Promise<string
 async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
   const session = await ensureLive(input);
-  input.signal?.throwIfAborted();
+  let writer: Awaited<ReturnType<typeof rpcTurnWriter>>;
+  try {
+    prepareTextProcess(session.process, input.operationContext);
+    writer = await rpcTurnWriter(
+      session.process,
+      session.rpc,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    );
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    return preserveProviderFailure(error, dropLive(session));
+  }
+  const threadId = session.threadId;
+  const interrupt = async () => {
+    const original = await rpcTurnWriter(
+      session.process,
+      session.rpc,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+      "control",
+    );
+    return original.request("turn/interrupt", { threadId }, INTERRUPT_TIMEOUT_MS);
+  };
   session.output = "";
   session.collecting = true;
   session.onEvent = input.onEvent;
@@ -121,9 +157,7 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
   const abortPromise = input.signal
     ? new Promise<void>((_, reject) => {
         abortHandler = () => {
-          void session.rpc
-            .request("turn/interrupt", { threadId: session.threadId }, INTERRUPT_TIMEOUT_MS)
-            .catch(() => undefined);
+          void interrupt().catch(() => undefined);
           reject(new Error("By-the-way request cancelled"));
         };
         input.signal!.addEventListener("abort", abortHandler, { once: true });
@@ -131,52 +165,57 @@ async function promptOnLive(input: TextPromptInput): Promise<string> {
       })
     : null;
 
-  try {
-    const turnPromise = new Promise<void>((resolve, reject) => {
-      session.turnDone = resolve;
-      session.turnFailed = reject;
-    });
+  return withProviderRetirement(
+    async () => {
+      try {
+        const turnPromise = new Promise<void>((resolve, reject) => {
+          session.turnDone = resolve;
+          session.turnFailed = reject;
+        });
 
-    const turnStart = session.rpc.request(
-      "turn/start",
-      buildTurnStartParams({
-        threadId: session.threadId,
-        runtimeMode: TEXT_RUNTIME_MODE,
-        prompt: input.prompt,
-        model: session.model || undefined,
-        effort: session.effort,
-        serviceTier: session.serviceTier,
-        intent: input.intent,
-      }),
-      timeoutMs,
-    );
-    await Promise.race([turnStart, ...(abortPromise ? [abortPromise] : [])]);
+        const turnStart = writer.request(
+          "turn/start",
+          buildTurnStartParams({
+            threadId,
+            runtimeMode: TEXT_RUNTIME_MODE,
+            prompt: input.prompt,
+            model: session.model || undefined,
+            effort: session.effort,
+            serviceTier: session.serviceTier,
+            intent: input.intent,
+          }),
+          timeoutMs,
+        );
+        await Promise.race([turnStart, ...(abortPromise ? [abortPromise] : [])]);
 
-    await Promise.race([
-      turnPromise,
-      new Promise<void>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("Codex text generation timed out")), timeoutMs);
-      }),
-      ...(abortPromise ? [abortPromise] : []),
-    ]);
+        await Promise.race([
+          turnPromise,
+          new Promise<void>((_, reject) => {
+            timeout = setTimeout(
+              () => reject(new Error("Codex text generation timed out")),
+              timeoutMs,
+            );
+          }),
+          ...(abortPromise ? [abortPromise] : []),
+        ]);
 
-    return session.output;
-  } catch (error) {
-    await session.rpc
-      .request("turn/interrupt", { threadId: session.threadId }, INTERRUPT_TIMEOUT_MS)
-      .catch(() => undefined);
-    if (session.closed) await dropLive(session);
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    if (abortHandler && input.signal) {
-      input.signal.removeEventListener("abort", abortHandler);
-    }
-    session.collecting = false;
-    session.turnDone = null;
-    session.turnFailed = null;
-    await dropLive(session);
-  }
+        return session.output;
+      } catch (error) {
+        await interrupt().catch(() => undefined);
+        throw error;
+      }
+    },
+    async () => {
+      clearTimeout(timeout);
+      if (abortHandler && input.signal) {
+        input.signal.removeEventListener("abort", abortHandler);
+      }
+      session.collecting = false;
+      session.turnDone = null;
+      session.turnFailed = null;
+      await dropLive(session);
+    },
+  );
 }
 async function ensureLive(input: {
   cwd: string;
@@ -186,6 +225,7 @@ async function ensureLive(input: {
   ephemeral?: boolean;
   threadId?: string;
   onThreadId?: (threadId: string) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<LiveText> {
   const model = pickTextModel(input.model);
   const effort = pickTextEffort(model, input.modelSettings);
@@ -195,6 +235,15 @@ async function ensureLive(input: {
   const ephemeral = input.ephemeral ?? true;
   const requestedThreadId = ephemeral ? undefined : input.threadId?.trim() || undefined;
   if (live && !live.closed) {
+    const original = live;
+    prepareTextProcess(original.process, input.operationContext);
+    const writer = await rpcTurnWriter(
+      original.process,
+      original.rpc,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    );
+    if (live !== original || original.closed) throw new Error("Codex text generator stopped");
     if (
       live.cwd === input.cwd &&
       live.model === model &&
@@ -216,6 +265,7 @@ async function ensureLive(input: {
         serviceTier,
         requestedThreadId,
         ephemeral,
+        input.operationContext,
       );
       input.onThreadId?.(started.threadId);
       return started;
@@ -225,13 +275,12 @@ async function ensureLive(input: {
       current.model = model;
       current.effort = effort;
       current.serviceTier = serviceTier;
-      await openThread(current, input.cwd, requestedThreadId, ephemeral);
+      await openThread(current, writer, input.cwd, requestedThreadId, ephemeral);
       if (live !== current || current.closed) throw new Error("Codex text generator stopped");
       input.onThreadId?.(current.threadId);
       return current;
     } catch (error) {
-      await dropLive(current);
-      throw error;
+      return preserveProviderFailure(error, dropLive(current));
     }
   }
   const started = await startLive(
@@ -242,6 +291,7 @@ async function ensureLive(input: {
     serviceTier,
     requestedThreadId,
     ephemeral,
+    input.operationContext,
   );
   input.onThreadId?.(started.threadId);
   return started;
@@ -255,57 +305,71 @@ async function startLive(
   serviceTier?: string,
   requestedThreadId?: string,
   ephemeral = true,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
-  const stopping = dropLive();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID);
-  starting = textProcess;
+  const previous = captureDrop();
+  let stopping = Promise.resolve();
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  prepareTextProcess(textProcess, operationContext, true);
   const sessionRef: { session: LiveText | null } = { session: null };
-  const rpc = new JsonRpcClient(
-    textProcess,
-    {
-      onNotification: (method, params) => {
-        handleNotification(sessionRef.session, method, params);
-      },
-      onRequest: (id, method, params) => {
-        void handleServerRequest(rpc, id, method, params);
-      },
-    },
-    { includeJsonrpc: false, label: "codex-text" },
-  );
-
-  const session: LiveText = {
-    process: textProcess,
-    rpc,
-    cwd,
-    providerAccountId,
-    threadId: "",
-    ephemeral,
-    model,
-    effort,
-    serviceTier,
-    collecting: false,
-    output: "",
-    closed: false,
-    turnDone: null,
-    turnFailed: null,
-  };
-
-  sessionRef.session = session;
-
-  watchChild(
-    textProcess,
-    (line) => rpc.pushLine(line),
-    () => {
-      session.closed = true;
-      if (live === session) live = null;
-      session.turnFailed?.(new Error("Codex text generator exited"));
-      session.turnDone = null;
-      session.turnFailed = null;
-      rpc.close(new Error("Codex text generator exited"));
-    },
-  );
-
+  let admitted = false;
   try {
+    retirements.admitPending(textProcess);
+    admitted = true;
+    starting = textProcess;
+    stopping = dropLive(undefined, previous);
+    const rpc = new JsonRpcClient(
+      textProcess,
+      {
+        onNotification: (method, params) => {
+          handleNotification(sessionRef.session, method, params);
+        },
+        onRequest: (id, method, params) => {
+          void rpcTurnWriter(
+            textProcess,
+            rpc,
+            operationContext?.nativeControlTurn,
+            operationContext,
+          )
+            .then((original) => handleServerRequest(original, id, method, params))
+            .catch(() => undefined);
+        },
+      },
+      { includeJsonrpc: false, label: "codex-text" },
+    );
+
+    const session: LiveText = {
+      process: textProcess,
+      rpc,
+      cwd,
+      providerAccountId,
+      threadId: "",
+      ephemeral,
+      model,
+      effort,
+      serviceTier,
+      collecting: false,
+      output: "",
+      closed: false,
+      turnDone: null,
+      turnFailed: null,
+    };
+
+    sessionRef.session = session;
+
+    watchChild(
+      textProcess,
+      (line) => rpc.pushLine(line),
+      () => {
+        session.closed = true;
+        if (live === session) live = null;
+        session.turnFailed?.(new Error("Codex text generator exited"));
+        session.turnDone = null;
+        session.turnFailed = null;
+        rpc.close(new Error("Codex text generator exited"));
+      },
+    );
+
     await stopping;
     const { path } = await resolveCodexBinary();
     if (starting !== textProcess) throw new Error("Codex text startup cancelled");
@@ -320,7 +384,13 @@ async function startLive(
       },
       "codex",
     );
-    await rpc.request(
+    const writer = await rpcTurnWriter(
+      textProcess,
+      rpc,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    );
+    await writer.request(
       "initialize",
       {
         clientInfo: {
@@ -332,17 +402,24 @@ async function startLive(
       },
       INIT_TIMEOUT_MS,
     );
-    await rpc.notify("initialized", undefined);
-    await openThread(session, cwd, requestedThreadId, ephemeral);
+    await writer.notify("initialized", undefined);
+    await openThread(session, writer, cwd, requestedThreadId, ephemeral);
     if (starting !== textProcess || session.closed) throw new Error("Codex text startup cancelled");
     live = session;
     return session;
   } catch (error) {
-    session.closed = true;
-    rpc.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(textProcess);
-    await killChild(textProcess).catch(() => undefined);
-    throw error;
+    const session = sessionRef.session;
+    if (session) {
+      session.closed = true;
+      session.rpc.close(error instanceof Error ? error : new Error(String(error)));
+    }
+    return preserveProviderFailure(
+      error,
+      settleProviderRetirements([
+        stopping,
+        ...(admitted ? [retirements.retire([textProcess])] : []),
+      ]),
+    );
   } finally {
     if (starting === textProcess) starting = null;
   }
@@ -350,6 +427,7 @@ async function startLive(
 
 async function openThread(
   session: LiveText,
+  writer: JsonRpcWriterView,
   cwd: string,
   requestedThreadId: string | undefined,
   ephemeral: boolean,
@@ -357,7 +435,7 @@ async function openThread(
   let opened: { thread?: { id?: string } } | undefined;
   if (requestedThreadId) {
     try {
-      opened = await session.rpc.request<{ thread?: { id?: string } }>(
+      opened = await writer.request<{ thread?: { id?: string } }>(
         "thread/resume",
         {
           threadId: requestedThreadId,
@@ -379,7 +457,7 @@ async function openThread(
     if (!opened?.thread?.id?.trim()) opened = undefined;
   }
   if (!opened) {
-    opened = await session.rpc.request<{ thread?: { id?: string } }>(
+    opened = await writer.request<{ thread?: { id?: string } }>(
       "thread/start",
       {
         ...buildThreadStartParams({
@@ -399,20 +477,26 @@ async function openThread(
   session.threadId = threadId;
   session.ephemeral = ephemeral;
 }
-async function dropLive(expected?: LiveText): Promise<void> {
-  const current = expected ?? live;
-  const pending = expected ? null : starting;
-  if (!expected || live === expected) live = null;
-  if (!expected) starting = null;
+function captureDrop() {
+  return { current: live, pending: starting, cohort: retirements.cohort(TEXT_CHILD_ID) };
+}
+async function dropLive(
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+): Promise<void> {
+  const snapshot = captured ?? captureDrop();
+  const current = expected ?? snapshot.current;
+  const pending = expected ? null : snapshot.pending;
+  if (live === current) live = null;
+  if (starting === pending) starting = null;
   if (current) {
     current.closed = true;
     current.rpc.close();
   }
-  for (const process of new Set([current?.process, pending])) {
-    if (!process) continue;
-    unwatchChild(process);
-    await killChild(process).catch(() => undefined);
-  }
+  const originals = new Set([current?.process, pending]);
+  await (expected
+    ? retirements.retire(originals)
+    : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
 }
 
 function handleNotification(session: LiveText | null, method: string, params: unknown): void {
@@ -450,7 +534,7 @@ function handleNotification(session: LiveText | null, method: string, params: un
 }
 
 async function handleServerRequest(
-  rpc: JsonRpcClient,
+  rpc: JsonRpcWriterView,
   id: JsonRpcId,
   method: string,
   _params: unknown,

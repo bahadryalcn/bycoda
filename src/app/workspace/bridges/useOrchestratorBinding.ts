@@ -6,6 +6,7 @@ import {
   assertOriginalWorkerProcess,
   createOrchestratorWorkerBindings,
   finishOriginalWorkerProcess,
+  stopOriginalWorkerHarnesses,
 } from "./orchestratorWorkerBindings";
 import { type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
@@ -35,10 +36,9 @@ import {
   appendSteerUser,
   steerHarnessTurn,
   respondHarnessQuestion,
-  stopHarnessSession,
 } from "../../../integrations/harness";
-import { sessionChildHarnesses } from "../../../features/sessions/model/handoff";
 import { captureChildProcess } from "../../../integrations/harness/core/child";
+import { captureHarnessControlTurn } from "../../../integrations/harness/core/registry";
 import { pendingApprovalForSession } from "../../../features/notifications/model/approvalToast";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
 import {
@@ -188,20 +188,14 @@ export function useOrchestratorBinding({
       },
       stop: async (id) => {
         const originalProcess = captureChildProcess(id);
+        const originalControl = captureHarnessControlTurn(id, originalProcess);
         const session = sessionsRef.current.find((entry) => entry.id === id);
         assertOriginalWorkerProcess(id, originalProcess);
         onStop(id, true);
         assertOriginalWorkerProcess(id, originalProcess);
-        try {
-          if (session)
-            await Promise.all(
-              sessionChildHarnesses(session).map((harness) => stopHarnessSession(harness, id)),
-            );
-        } finally {
-          // A reload without its original process observation remains unknown.
-          // Never acknowledge completion by killing whichever process is current.
-          await finishOriginalWorkerProcess(id, originalProcess);
-        }
+        if (session) await stopOriginalWorkerHarnesses(session);
+        // Source snapshots above survive every awaited family cleanup.
+        await finishOriginalWorkerProcess(id, originalProcess, originalControl);
       },
     });
   }, [checkOpenWorktreeFiles, submitSession, onStop]);

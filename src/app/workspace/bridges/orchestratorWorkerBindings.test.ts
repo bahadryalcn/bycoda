@@ -59,6 +59,22 @@ vi.mock("../../../features/sessions/model/checkpoint", () => ({
 import { newSession } from "../../../features/sessions/model/session";
 import { createOrchestratorWorkerBindings } from "./orchestratorWorkerBindings";
 import { createChildProcessHandle } from "../../../integrations/harness/core/child";
+import {
+  beginNativeControlTurn,
+  type NativeControlInvoke,
+  nativeControlTurnReceipt,
+} from "../../../integrations/harness/core/controlTurn";
+async function controlledProcess(sessionId: string) {
+  const receipt = { version: 1 as const, sessionId, turnId: crypto.randomUUID() };
+  const originalInvoke = m.invoke;
+  const invoke: NativeControlInvoke = async <T>(command: string, args?: Record<string, unknown>) =>
+    (command === "control_authorize_turn" ? receipt : await originalInvoke(command, args)) as T;
+  const control = await beginNativeControlTurn(sessionId, "/repo", false, invoke);
+  return {
+    handle: createChildProcessHandle(sessionId, control),
+    receipt: nativeControlTurnReceipt(control),
+  };
+}
 const run = { leadId: "lead", cwd: "/repo" } as any;
 const source = { baseCommit: "a".repeat(40), branchRef: "refs/heads/main", directory: "/repo" };
 const task = {
@@ -76,10 +92,10 @@ const task = {
   },
 } as any;
 let managed: any;
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
   m.sessions = [];
-  m.captureProcess.mockReturnValue(createChildProcessHandle("worker"));
+  m.captureProcess.mockReturnValue((await controlledProcess("worker")).handle);
   m.killProcess.mockReset().mockResolvedValue(undefined);
   m.stop.mockReset().mockResolvedValue(undefined);
   managed = {
@@ -362,7 +378,8 @@ it("retires an untouched cancelled managed worker while retaining any committed 
 
 it("captures the original process before provider cleanup and never uses a session-only kill", async () => {
   managed.state = "merged";
-  const original = createChildProcessHandle("worker");
+  const controlled = await controlledProcess("worker");
+  const original = controlled.handle;
   m.captureProcess.mockReturnValue(original);
   m.sessions = [{ ...newSession("codex", "/repo"), id: "worker" }];
   m.stop.mockImplementationOnce(async () => {
@@ -373,7 +390,7 @@ it("captures the original process before provider cleanup and never uses a sessi
     m.stop.mock.invocationCallOrder[0],
   );
   expect(m.killProcess).toHaveBeenCalledExactlyOnceWith(original);
-  expect(m.invoke).toHaveBeenCalledWith("control_turn_finished", { sessionId: "worker" });
+  expect(m.invoke).toHaveBeenCalledWith("control_turn_finished", { receipt: controlled.receipt });
   expect(m.invoke).not.toHaveBeenCalledWith("harness_kill", expect.anything());
 });
 

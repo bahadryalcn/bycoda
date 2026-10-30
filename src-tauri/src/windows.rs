@@ -1,12 +1,10 @@
 use std::io;
-use std::os::windows::io::{AsHandle, AsRawHandle, FromRawHandle, OwnedHandle, RawHandle};
+#[cfg(test)]
+use std::os::windows::io::FromRawHandle;
+use std::os::windows::io::{AsHandle, AsRawHandle, OwnedHandle, RawHandle};
 use std::sync::OnceLock;
 use windows_sys::Win32::System::{
-    JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-    },
+    JobObjects::AssignProcessToJobObject,
     LibraryLoader::{
         SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_APPLICATION_DIR, LOAD_LIBRARY_SEARCH_SYSTEM32,
     },
@@ -35,27 +33,8 @@ fn managed_job() -> io::Result<&'static OwnedHandle> {
         .map_err(|code| io::Error::from_raw_os_error(*code))
 }
 
-pub(crate) fn create_job() -> io::Result<OwnedHandle> {
-    unsafe {
-        let raw = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        if raw.is_null() {
-            return Err(io::Error::last_os_error());
-        }
-        let job = OwnedHandle::from_raw_handle(raw);
-        let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if SetInformationJobObject(
-            job.as_raw_handle(),
-            JobObjectExtendedLimitInformation,
-            &limits as *const _ as *const _,
-            std::mem::size_of_val(&limits) as u32,
-        ) == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(job)
-    }
-}
+// Shared implementation; the app's global job remains separately owned here.
+pub(crate) use bycoda_provider_process_guardian::windows_job::{create_job, resume_child};
 
 /// The app owns the only job handle. OS handle cleanup kills registered trees
 /// after a crash; unrelated children are never enrolled in this job.
@@ -94,43 +73,6 @@ pub(crate) fn spawn_managed(
         return Err(err);
     }
     Ok(child)
-}
-
-pub(crate) fn resume_child(pid: u32) -> io::Result<()> {
-    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
-    use windows_sys::Win32::System::{
-        Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-        },
-        Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME},
-    };
-    // Stable Rust does not expose Child's primary-thread handle. The suspended
-    // process has not run user code, so find that thread in the OS snapshot.
-    unsafe {
-        let raw = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
-        if raw == INVALID_HANDLE_VALUE {
-            return Err(io::Error::last_os_error());
-        }
-        let snapshot = OwnedHandle::from_raw_handle(raw);
-        let mut entry: THREADENTRY32 = std::mem::zeroed();
-        entry.dwSize = std::mem::size_of_val(&entry) as u32;
-        let mut found = Thread32First(snapshot.as_raw_handle(), &mut entry);
-        while found != 0 {
-            if entry.th32OwnerProcessID == pid {
-                let raw = OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID);
-                if raw.is_null() {
-                    return Err(io::Error::last_os_error());
-                }
-                let thread = OwnedHandle::from_raw_handle(raw);
-                if ResumeThread(thread.as_raw_handle()) == u32::MAX {
-                    return Err(io::Error::last_os_error());
-                }
-                return Ok(());
-            }
-            found = Thread32Next(snapshot.as_raw_handle(), &mut entry);
-        }
-        Err(io::Error::other("Managed child has no primary thread"))
-    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ import {
   getNativeOutputEventOrigin,
 } from "../../core/nativeOutputDelivery.testSupport";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ProviderRetirementError } from "../../core/providerRetirement";
 
 const mocks = vi.hoisted(() => ({
   close: vi.fn(),
@@ -33,7 +34,7 @@ vi.mock("../../core/child", () =>
 vi.mock("./piClient", () => ({
   PiRpc: class {
     constructor(
-      handle: import("../../core/child").ChildProcessHandle,
+      private readonly handle: import("../../core/child").ChildProcessHandle,
       onFrame: (record: Record<string, unknown>) => void,
     ) {
       processConstructions.client(handle);
@@ -53,6 +54,16 @@ vi.mock("./piClient", () => ({
         : mocks.request(command, timeout));
       return consume ? consume(value, null) : value;
     };
+    assertProcess(handle: import("../../core/child").ChildProcessHandle): void {
+      if (handle !== this.handle)
+        throw new Error("Pi fixture client requires its original process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: this.request.bind(this),
+        cancelRequest: this.cancelRequest.bind(this),
+      });
+    }
     close = mocks.close;
     pushLine = vi.fn();
     cancelRequest = vi.fn();
@@ -109,6 +120,142 @@ describe("Pi live session", () => {
       return { data: {} };
     });
   });
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "%s keeps active A's callback and process while changed-cwd/planning B is queued and cancelled",
+    async (flavor) => {
+      const sessionId = `${flavor.id}-queued-source-policy`;
+      const aEvents: HarnessEvent[] = [],
+        bEvents: HarnessEvent[] = [],
+        cEvents: HarnessEvent[] = [];
+      const base = {
+        sessionId,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        text: "A",
+        attachments: [],
+      };
+      const a = sendTurn(flavor, { ...base, onEvent: (event) => aEvents.push(event) });
+      await vi.waitFor(() =>
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "prompt"),
+        ).toHaveLength(1),
+      );
+      const physical = processConstructions.created.find(
+        (handle) => handle.sessionId === sessionId,
+      )!;
+      const frame = mocks.frames.at(-1)!;
+      const bOperation = Object.freeze({});
+      const selected = deferred<void>();
+      const b = sendTurn(flavor, {
+        ...base,
+        cwd: "/other-repo",
+        intent: "plan",
+        runtimeMode: "full-access",
+        text: "never B",
+        operationContext: Object.freeze({ operation: bOperation }),
+        onOriginalProcess: () => selected.resolve(undefined),
+        onEvent: (event) => bEvents.push(event),
+      });
+      const outcome = b.catch((error: unknown) => error);
+      await selected.promise;
+      expect(mocks.killChild).not.toHaveBeenCalled();
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(1);
+      frame({ type: "message_update", usage: { totalTokens: 12345 } });
+      expect(aEvents).toContainEqual(expect.objectContaining({ type: "context", used: 12345 }));
+      expect(bEvents).toEqual([]);
+      await cancelTurn(
+        flavor,
+        sessionId,
+        Object.freeze({ operation: bOperation, originalProcesses: Object.freeze([physical]) }),
+      );
+      frame({ type: "agent_end" });
+      await a;
+      expect(String(await outcome)).toContain("cancelled");
+      expect(bEvents).toEqual([]);
+      expect(mocks.killChild).not.toHaveBeenCalled();
+      const c = sendTurn(flavor, {
+        ...base,
+        cwd: "/other-repo",
+        intent: "plan",
+        runtimeMode: "full-access",
+        text: "fresh C",
+        onEvent: (event) => cEvents.push(event),
+      });
+      await vi.waitFor(() =>
+        expect(
+          mocks.request.mock.calls.filter(([command]) => command.type === "prompt"),
+        ).toHaveLength(2),
+      );
+      const cFrame = mocks.frames.at(-1)!;
+      cFrame({ type: "message_update", usage: { totalTokens: 23456 } });
+      expect(cEvents).toContainEqual(expect.objectContaining({ type: "context", used: 23456 }));
+      cFrame({ type: "agent_end" });
+      await c;
+      expect(mocks.spawnChild).toHaveBeenCalledTimes(2);
+      const constructions = processConstructions.created.filter(
+        (handle) => handle.sessionId === sessionId,
+      );
+      expect(constructions).toHaveLength(2);
+      expect(constructions[0]).toBe(physical);
+      expect(constructions[1]).not.toBe(physical);
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "kill")
+          .map((operation) => operation.handle),
+      ).toContain(physical);
+      await stopSession(flavor, sessionId);
+    },
+  );
+
+  it.each([PI_FLAVOR, OMP_FLAVOR])(
+    "%s retains original cleanup when binary resolution fails before Live publication",
+    async (flavor) => {
+      const primary = new Error("Original binary resolution failed");
+      const cleanup = new Error("Original physical construction retirement unknown");
+      mocks.resolveBinary.mockRejectedValueOnce(primary);
+      mocks.killChild.mockRejectedValueOnce(cleanup);
+      const input = {
+        sessionId: `${flavor.id}-retirement-binary-original`,
+        cwd: "/repo",
+        model: `${flavor.id}:default`,
+        runtimeMode: "supervised" as const,
+        onEvent: () => undefined,
+      };
+      const failed = await compactContext(flavor, input).catch((error: unknown) => error);
+      expect(failed).toBeInstanceOf(ProviderRetirementError);
+      expect((failed as ProviderRetirementError).errors[0]).toBe(primary);
+      const original = processConstructions.created.find(
+        (handle) => handle.sessionId === input.sessionId,
+      )!;
+      expect(original).toBeDefined();
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "spawn" || op.kind === "client"),
+      ).toHaveLength(0);
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
+      ).toEqual([original]);
+      await expect(stopSession(flavor, input.sessionId)).rejects.toBeInstanceOf(
+        ProviderRetirementError,
+      );
+      await expect(compactContext(flavor, input)).rejects.toBeInstanceOf(ProviderRetirementError);
+      expect(mocks.resolveBinary).toHaveBeenCalledTimes(1);
+      expect(mocks.killChild).toHaveBeenCalledTimes(1);
+      const other = { ...input, sessionId: `${input.sessionId}-unrelated` };
+      await compactContext(flavor, other);
+      const fresh = processConstructions.created.find(
+        (handle) => handle.sessionId === other.sessionId,
+      )!;
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "spawn").map((op) => op.handle),
+      ).toEqual([fresh]);
+      await stopSession(flavor, other.sessionId);
+      expect(
+        processConstructions.operations.filter((op) => op.kind === "kill").map((op) => op.handle),
+      ).toEqual([original, fresh]);
+    },
+  );
 
   it.each([PI_FLAVOR, OMP_FLAVOR])(
     "keeps %s approval decisions bound through a replacement Live and reused UI ID",
@@ -315,6 +462,7 @@ describe("Pi live session", () => {
     "cancels %s requests queued behind an earlier stop before preparation begins",
     async (flavor) => {
       const kill = deferred<void>();
+      const killEntered = deferred<void>();
       const sessionId = `${flavor.id}-held-stop`;
       await compactContext(flavor, {
         sessionId,
@@ -333,12 +481,16 @@ describe("Pi live session", () => {
       ).toContain(original);
       mocks.resolveBinary.mockClear();
       mocks.spawnChild.mockClear();
-      mocks.killChild.mockReturnValueOnce(kill.promise);
+      mocks.killChild.mockImplementationOnce(() => {
+        killEntered.resolve();
+        return kill.promise;
+      });
       const firstStop = stopSession(flavor, sessionId);
-      expect(
-        processConstructions.operations.filter((operation) => operation.kind === "kill").at(-1)
-          ?.handle,
-      ).toBe(original);
+      let firstStopped = false;
+      void firstStop.then(() => {
+        firstStopped = true;
+      });
+      const queuedOperation = Object.freeze({});
       const work = sendTurn(flavor, {
         sessionId,
         cwd: "/repo",
@@ -347,14 +499,74 @@ describe("Pi live session", () => {
         onEvent: () => undefined,
         text: "never sent",
         attachments: [],
+        operationContext: Object.freeze({ operation: queuedOperation }),
       });
-      const rejected = expect(work).rejects.toThrow("startup cancelled");
+      const rejected = expect(work).rejects.toThrow(/cancelled/);
+      // This source operation is queued before construction. Its own Stop closes
+      // admission without creating a guessed B handle or retargeting A.
+      await stopSession(flavor, sessionId, Object.freeze({ operation: queuedOperation }));
       const secondStop = stopSession(flavor, sessionId);
-      await rejected;
-      expect(mocks.resolveBinary).not.toHaveBeenCalled();
-      kill.resolve();
-      await Promise.all([firstStop, secondStop]);
+      let secondStopped = false;
+      void secondStop.then(() => {
+        secondStopped = true;
+      });
+      try {
+        // Both broad Stops still join A's exact physical retirement. B's scoped
+        // cancellation creates no process and cannot certify that A has closed.
+        await killEntered.promise;
+        await rejected;
+        expect(
+          processConstructions.created.filter((handle) => handle.sessionId === sessionId),
+        ).toEqual([original]);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "kill")
+            .map((operation) => operation.handle),
+        ).toEqual([original]);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "client")
+            .map((operation) => operation.handle),
+        ).toEqual([original]);
+        expect(firstStopped).toBe(false);
+        expect(secondStopped).toBe(false);
+        expect(mocks.resolveBinary).not.toHaveBeenCalled();
+        expect(mocks.spawnChild).not.toHaveBeenCalled();
+      } finally {
+        kill.resolve();
+        await Promise.all([firstStop, secondStop]);
+      }
+      expect(firstStopped).toBe(true);
+      expect(secondStopped).toBe(true);
       expect(mocks.spawnChild).not.toHaveBeenCalled();
+      expect(
+        processConstructions.operations
+          .filter((operation) => operation.kind === "kill")
+          .map((operation) => operation.handle),
+      ).toEqual([original]);
+      // Only a later explicit owner intent may start after A has settled;
+      // the cancelled queued B above must never become this fresh process.
+      try {
+        await compactContext(flavor, {
+          sessionId,
+          cwd: "/repo",
+          model: `${flavor.id}:default`,
+          runtimeMode: "supervised",
+          onEvent: () => undefined,
+        });
+        const fresh = processConstructions.created
+          .filter((handle) => handle.sessionId === sessionId)
+          .at(-1)!;
+        expect(fresh).not.toBe(original);
+        expect(mocks.resolveBinary).toHaveBeenCalledTimes(1);
+        expect(
+          processConstructions.operations
+            .filter((operation) => operation.kind === "spawn")
+            .map((operation) => operation.handle),
+        ).toEqual([original, fresh]);
+      } finally {
+        await stopSession(flavor, sessionId);
+      }
     },
   );
 

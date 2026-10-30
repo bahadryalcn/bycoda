@@ -1,4 +1,23 @@
 import {
+  assertProviderOperation,
+  observeProviderProcess,
+  beginProviderOperation,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  type HarnessOperationContext,
+  acpTurnWriter,
+  type AcpWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  settleProviderRetirements,
+  preserveProviderFailure,
+  assertOptionalProviderProbeError,
+} from "../../core/providerRetirement";
+import {
   createPendingApproval,
   cancelPendingApprovals,
   observePendingApprovalWrite,
@@ -23,13 +42,7 @@ import { nativeModelId } from "../../../../features/sessions/model/models";
 import { AcpSubagents } from "../../core/acpSubagents";
 import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
-import {
-  killChild,
-  resolveAntigravityBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { resolveAntigravityBinary, spawnChild, unwatchChild, watchChild } from "../../core/child";
 import {
   autoPermissionOption,
   asRecord,
@@ -60,7 +73,10 @@ type SessionSetupResult = {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const retirements = createProviderRetirementLedger("antigravity.main", killChild);
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   threadId: string;
   /** Logical child locator; physical ownership belongs to handle. */
@@ -152,6 +168,13 @@ const { ensure: ensureLive } = createRecyclingLifecycle<SendTurnInput, Live>({
   resume: resumeByThread,
   teardown: teardownLive,
   start: startLive,
+  prepare: (input, life) => {
+    const setup = prepareSetup(input);
+    return {
+      start: () => startLive(input, life, setup),
+      retire: (error) => preserveProviderFailure(error, retireSetup(input.sessionId, setup)),
+    };
+  },
   supersededMessage: "Antigravity session superseded",
 });
 
@@ -162,7 +185,7 @@ const { ensure: ensureLive } = createRecyclingLifecycle<SendTurnInput, Live>({
 // child immediately.
 const pendingSetupByThread = new Map<
   string,
-  { handle: ChildProcessHandle; acp?: AcpClient; childKey: string }
+  { handle: ChildProcessHandle; acp?: AcpClient; childKey: string; operation?: object }
 >();
 // Turns serialize per thread, not per Live: a recycled transport must not let
 // a queued send run concurrently on the replacement.
@@ -171,72 +194,95 @@ let childSeq = 0;
 
 /** Live Antigravity adapter. Spawns `agy_acp_server.par`, not `agy acp`. */
 export async function sendAntigravityTurn(input: SendTurnInput): Promise<void> {
-  const epoch = cancelEpoch.get(input.sessionId) ?? 0;
-  const cancelled = () => (cancelEpoch.get(input.sessionId) ?? 0) !== epoch;
-  try {
-    // Eager prewarm only starts a child when none exists — it never tears down
-    // a parked transport, so a queued send can never interrupt a running turn.
-    await ensureLive(input, false);
-  } catch (error) {
-    if (cancelled()) return;
-    throw error;
-  }
-  if (cancelled()) return;
+  assertProviderOperation(input.operationContext);
 
-  const run = continueAfterFailure(
-    turnsByThread.get(input.sessionId) ?? Promise.resolve(),
-    async () => {
-      if (cancelled()) return;
-      let live: Live;
-      try {
-        // This send owns the turn: it may recycle a stale or wrong-cwd
-        // transport. A superseded step (cancel/stop/forget while queued) is a
-        // quiet no-op, not an error.
-        live = await ensureLive(input, true);
-      } catch (error) {
-        if (cancelled()) return;
-        throw error;
-      }
-      if (cancelled()) return;
-      // Bind the listener and policy only when this turn actually starts, so a
-      // queued send cannot redirect or repolicy the turn still running.
-      live.onEvent = input.onEvent;
-      live.runtimeMode = input.runtimeMode;
-      live.planning = input.intent === "plan";
-      live.cancelled = false;
-      live.muteUpdates = false;
-      // From here until the prompt settles, a cancel can interrupt an
-      // in-flight state-changing request whose server-side effect is
-      // unknowable — mark the transport stale so the next send recycles.
-      live.turnActive = true;
-      try {
-        await applyModelSelection(live, input);
-        if (live.cancelled || cancelled()) return;
-        await applyRuntimeMode(live, input.runtimeMode, input.intent === "plan");
-        if (live.cancelled || cancelled()) return;
-        await prompt(live, input);
-      } catch (error) {
-        if (live.cancelled) return;
-        // A timed-out or failed turn leaves the process state unknowable. Keep
-        // its provider session id, but recycle this generation's child so the
-        // next turn resumes on a fresh transport. Skip if a newer live already
-        // replaced it — the teardown below is generation-checked.
-        if (liveByThread.get(input.sessionId) === live) {
-          await teardownLive(live);
-        }
-        throw error;
-      } finally {
-        live.turnActive = false;
-      }
-    },
-  );
-  turnsByThread.set(input.sessionId, run);
+  input = { ...input };
+
   try {
-    await run;
-  } finally {
-    if (turnsByThread.get(input.sessionId) === run) {
-      turnsByThread.delete(input.sessionId);
+    const epoch = cancelEpoch.get(input.sessionId) ?? 0;
+    const cancelled = () => (cancelEpoch.get(input.sessionId) ?? 0) !== epoch;
+    try {
+      // Eager prewarm only starts a child when none exists — it never tears down
+      // a parked transport, so a queued send can never interrupt a running turn.
+      const prewarmed = await ensureLive(input, false);
+      observeProviderProcess(input, prewarmed.handle);
+    } catch (error) {
+      if (cancelled()) {
+        assertOptionalProviderProbeError(error);
+        return;
+      }
+      throw error;
     }
+    if (cancelled()) return;
+
+    const run = continueAfterFailure(
+      turnsByThread.get(input.sessionId) ?? Promise.resolve(),
+      async () => {
+        if (cancelled()) return;
+        let live: Live;
+        try {
+          // This send owns the turn: it may recycle a stale or wrong-cwd
+          // transport. A superseded step (cancel/stop/forget while queued) is a
+          // quiet no-op, not an error.
+          live = await ensureLive(input, true);
+        } catch (error) {
+          if (cancelled()) {
+            assertOptionalProviderProbeError(error);
+            return;
+          }
+          throw error;
+        }
+        if (cancelled()) return;
+        // Bind the listener and policy only when this turn actually starts, so a
+        // queued send cannot redirect or repolicy the turn still running.
+        observeProviderProcess(input, live.handle);
+        beginProviderOperation(input.operationContext, live.handle);
+        const acp = await acpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.onEvent = input.onEvent;
+        live.runtimeMode = input.runtimeMode;
+        live.planning = input.intent === "plan";
+        live.cancelled = false;
+        live.muteUpdates = false;
+        // From here until the prompt settles, a cancel can interrupt an
+        // in-flight state-changing request whose server-side effect is
+        // unknowable — mark the transport stale so the next send recycles.
+        live.turnActive = true;
+        try {
+          await applyModelSelection(live, input, acp);
+          if (live.cancelled || cancelled()) return;
+          await applyRuntimeMode(live, input.runtimeMode, input.intent === "plan", acp);
+          if (live.cancelled || cancelled()) return;
+          await prompt(live, input, acp);
+        } catch (error) {
+          if (live.cancelled) return;
+          // A timed-out or failed turn leaves the process state unknowable. Keep
+          // its provider session id, but recycle this generation's child so the
+          // next turn resumes on a fresh transport. Skip if a newer live already
+          // replaced it — the teardown below is generation-checked.
+          if (liveByThread.get(input.sessionId) === live) {
+            return preserveProviderFailure(error, teardownLive(live));
+          }
+          throw error;
+        } finally {
+          live.turnActive = false;
+        }
+      },
+    );
+    turnsByThread.set(input.sessionId, run);
+    try {
+      await run;
+    } finally {
+      if (turnsByThread.get(input.sessionId) === run) {
+        turnsByThread.delete(input.sessionId);
+      }
+    }
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
 }
 
@@ -265,14 +311,28 @@ export function respondAntigravityApproval(
   pending(decision);
 }
 
-export async function cancelAntigravityTurn(sessionId: string): Promise<void> {
+export async function cancelAntigravityTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
+  if (!ownsOperation(context, original?.handle, original?.operation)) return;
   cancelEpoch.set(sessionId, (cancelEpoch.get(sessionId) ?? 0) + 1);
   // Also retire queued/in-flight lifecycle work: a cancel before the child
   // exists must not leave a process spawning in the background.
   sessionEpoch.set(sessionId, (sessionEpoch.get(sessionId) ?? 0) + 1);
-  abortPendingSetup(sessionId);
+  const pending = abortPendingSetup(sessionId, context);
   const live = liveByThread.get(sessionId);
-  if (!live) return;
+  if (!live) {
+    await pending;
+    return;
+  }
+  const acp = context
+    ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
+    : live.acp;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   // A prompt cancelled on the wire may still be running server-side, and any
@@ -283,7 +343,8 @@ export async function cancelAntigravityTurn(sessionId: string): Promise<void> {
   // Unwind the local turn first: a blocked stdin must not keep the UI's send
   // promise (or this cancel) wedged. The wire notify is best-effort.
   live.acp.rejectPending(new Error("cancelled"));
-  void live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  void acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  await pending;
 }
 
 /**
@@ -298,17 +359,28 @@ async function teardownLive(live: Live): Promise<void> {
   settleLive(live);
   live.acp.close();
   unwatchChild(live.handle);
-  await killChild(live.handle).catch(() => undefined);
+  await retirements.retire([live.handle]);
 }
 
-export async function stopAntigravitySession(sessionId: string): Promise<void> {
+export async function stopAntigravitySession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
+  if (!ownsOperation(context, original?.handle, original?.operation)) return;
   // Stopping the session invalidates work already queued for it, not just the
   // registered live — a send waiting its turn must not resurrect it.
   cancelEpoch.set(sessionId, (cancelEpoch.get(sessionId) ?? 0) + 1);
   sessionEpoch.set(sessionId, (sessionEpoch.get(sessionId) ?? 0) + 1);
-  abortPendingSetup(sessionId);
+  const pending = abortPendingSetup(sessionId, context);
   const live = liveByThread.get(sessionId);
-  if (live) await teardownLive(live);
+  await settleProviderRetirements([
+    pending,
+    ...(live ? [teardownLive(live)] : []),
+    ...(context ? [] : [retirements.retireOwner(sessionId)]),
+  ]);
 }
 
 /**
@@ -316,19 +388,27 @@ export async function stopAntigravitySession(sessionId: string): Promise<void> {
  * its pending wire calls and kill its child so a cancel or stop lands
  * immediately instead of surfacing after the session-request timeout.
  */
-function abortPendingSetup(sessionId: string): void {
+function abortPendingSetup(sessionId: string, context?: HarnessOperationContext): Promise<void> {
   const pending = pendingSetupByThread.get(sessionId);
-  if (!pending) return;
+  if (!pending || !ownsOperation(context, pending.handle, pending.operation))
+    return Promise.resolve();
   // close() both rejects in-flight requests and makes any further request on
   // this client fail immediately — a cancelled setup cannot fall through the
   // resume/load/new ladder into another 45s wait.
   pending.acp?.close(new Error("cancelled"));
-  void killChild(pending.handle).catch(() => undefined);
+  return retirements.retire([pending.handle]);
 }
 
-export async function forgetAntigravitySession(sessionId: string): Promise<void> {
+export async function forgetAntigravitySession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? pendingSetupByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
-  await stopAntigravitySession(sessionId);
+  await stopAntigravitySession(sessionId, context);
 }
 
 export function bindAntigravitySession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -381,7 +461,37 @@ function noteActivity(live: Live): void {
  * the user already abandoned.
  */
 
-async function startLive(input: SendTurnInput, life: number): Promise<Live> {
+type PreparedSetup = {
+  handle: ChildProcessHandle;
+  acp?: AcpClient;
+  childKey: string;
+  operation?: object;
+};
+function prepareSetup(input: SendTurnInput): PreparedSetup {
+  assertProviderOperation(input.operationContext);
+
+  const childKey = `${input.sessionId}#${childSeq++}`;
+  const handle = retirements.admitPending(
+    createChildProcessHandle(childKey, input.nativeControlTurn),
+    input.sessionId,
+  );
+  observeProviderProcess(input, handle, "starting");
+  const setup = { handle, childKey, operation: input.operationContext?.operation };
+  pendingSetupByThread.set(input.sessionId, setup);
+  return setup;
+}
+function retireSetup(sessionId: string, setup: PreparedSetup): Promise<void> {
+  if (pendingSetupByThread.get(sessionId) === setup) pendingSetupByThread.delete(sessionId);
+  setup.acp?.close();
+  return retirements.retire([setup.handle]);
+}
+async function startLive(
+  input: SendTurnInput,
+  life: number,
+  prepared?: PreparedSetup,
+): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const resume = resumeByThread.get(input.sessionId);
   const canLoad = resume != null && resume.cwd === input.cwd;
   if (resume && resume.cwd !== input.cwd) {
@@ -390,14 +500,8 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
 
   const retired = () => (sessionEpoch.get(input.sessionId) ?? 0) !== life;
   if (retired()) throw new Error("Antigravity session stopped during startup");
-  const childKey = `${input.sessionId}#${childSeq++}`;
-
-  const handle = createChildProcessHandle(childKey);
-  const pendingSetup: { handle: ChildProcessHandle; acp?: AcpClient; childKey: string } = {
-    handle,
-    childKey,
-  };
-  pendingSetupByThread.set(input.sessionId, pendingSetup);
+  const pendingSetup = prepared ?? prepareSetup(input);
+  const { handle, childKey } = pendingSetup;
   const clearPending = () => {
     if (pendingSetupByThread.get(input.sessionId) === pendingSetup) {
       pendingSetupByThread.delete(input.sessionId);
@@ -487,8 +591,14 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
       input.nativeOutputSessionId,
     );
     if (retired()) throw new Error("Antigravity session stopped during startup");
+    const startupAcp = await acpTurnWriter(
+      handle,
+      acp,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
     try {
-      await acp.request(
+      await startupAcp.request(
         "initialize",
         {
           protocolVersion: 1,
@@ -507,7 +617,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
 
     if (canLoad && resume) {
       try {
-        setup = await acp.request<SessionSetupResult>(
+        setup = await startupAcp.request<SessionSetupResult>(
           "session/resume",
           { sessionId: resume.acpSessionId, cwd: input.cwd, mcpServers: [] },
           SESSION_TIMEOUT_MS,
@@ -523,7 +633,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
         // and let the next turn retry on a recycled transport.
         if (isTimeout(error)) throw error;
         try {
-          setup = await acp.request<SessionSetupResult>(
+          setup = await startupAcp.request<SessionSetupResult>(
             "session/load",
             {
               sessionId: resume.acpSessionId,
@@ -547,7 +657,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
     if (!acpSessionId) {
       if (retired()) throw new Error("Antigravity session stopped during startup");
       const droppedBinding = canLoad && resume != null;
-      setup = await acp.request<SessionSetupResult>(
+      setup = await startupAcp.request<SessionSetupResult>(
         "session/new",
         { cwd: input.cwd, mcpServers: [] },
         SESSION_TIMEOUT_MS,
@@ -565,6 +675,7 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
 
     const configOptions = readConfigOptions(setup?.configOptions);
     const live: Live = {
+      operation: input.operationContext?.operation,
       handle,
       threadId: input.sessionId,
       childKey,
@@ -607,28 +718,30 @@ async function startLive(input: SendTurnInput, life: number): Promise<Live> {
     // that threw post-publish is the exception: drop the dead transport this
     // generation registered so the next send cannot reuse it.
     pendingSetup.acp?.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(handle);
-    await killChild(handle).catch(() => undefined);
     if (liveRef.current != null && liveByThread.get(input.sessionId) === liveRef.current) {
       liveByThread.delete(input.sessionId);
     }
-    throw antigravityError(error);
+    return preserveProviderFailure(antigravityError(error), retirements.retire([handle]));
   } finally {
     clearPending();
   }
 }
 
-async function applyModelSelection(live: Live, input: SendTurnInput): Promise<void> {
+async function applyModelSelection(
+  live: Live,
+  input: SendTurnInput,
+  acp: AcpWriterView,
+): Promise<void> {
   const base = nativeModelId(input.model);
   const settings = input.modelSettings ?? {};
   const modelConfigId = live.modelConfigId === "provider" ? "model" : live.modelConfigId;
 
-  await setConfigOption(live, modelConfigId, base);
+  await setConfigOption(live, modelConfigId, base, acp);
 
   for (const [settingId, value] of Object.entries(settings)) {
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId || configId === "provider") continue;
-    await setConfigOption(live, configId, value);
+    await setConfigOption(live, configId, value, acp);
   }
 }
 
@@ -636,9 +749,10 @@ async function applyRuntimeMode(
   live: Live,
   runtimeMode: RuntimeMode,
   planning = false,
+  acp: AcpWriterView,
 ): Promise<void> {
   // Fail closed: a rejected downgrade must not leave a prior yolo mode active.
-  await live.acp.request(
+  await acp.request(
     "session/set_mode",
     {
       sessionId: live.acpSessionId,
@@ -652,6 +766,7 @@ async function setConfigOption(
   live: Live,
   configId: string,
   value: string | boolean,
+  acp: AcpWriterView,
 ): Promise<void> {
   const current = live.configOptions.find((option) => option.id === configId);
   // session/set_config_option is only valid for options the session itself
@@ -678,7 +793,7 @@ async function setConfigOption(
     value: isBool ? boolValue : String(value),
   };
   if (isBool) params.type = "boolean";
-  const result = await live.acp.request<SessionSetupResult>(
+  const result = await acp.request<SessionSetupResult>(
     "session/set_config_option",
     params,
     CONTROL_TIMEOUT_MS,
@@ -689,7 +804,7 @@ async function setConfigOption(
   }
 }
 
-async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
   const responseScope: { work: NativeOutputWork | null } = { work: null };
   const emitNative = (event: HarnessEvent) =>
     nativeOutputSink(responseScope.work, () => live.onEvent(event))();
@@ -699,7 +814,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
       if (blocks.length === 0) return;
       live.promptInFlight = true;
       nativeOutputSink(responseScope.work, noteActivity)(live);
-      const result = await live.acp.request(
+      const result = await acp.request(
         "session/prompt",
         {
           sessionId: live.acpSessionId,

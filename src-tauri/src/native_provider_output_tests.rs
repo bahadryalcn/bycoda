@@ -3,6 +3,58 @@
 use super::*;
 use std::sync::mpsc;
 
+#[test]
+fn actual_process_wait_retains_original_reader_work_until_that_reader_closes() {
+    use std::process::{Command, Stdio};
+    use std::time::{Duration, Instant};
+    let registry = NativeProviderOutputRegistry::new();
+    let mut command = Command::new(std::env::current_exe().unwrap());
+    command
+        .arg("--list")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    crate::harness::prepare_gui_child(&mut command);
+    let child = crate::harness::process_lifecycle::OwnedChild::spawn(&mut command).unwrap();
+    let (output, process) = registry.begin_process(
+        OutputSource::fixture("held-reader"),
+        child,
+        Arc::new(|| true),
+        Arc::new(|_| true),
+    );
+    let reader = output.reader(0);
+    output.reader(1).finish(true, false);
+    let waiting_output = output.clone();
+    let waiting = process.clone();
+    let (returned, completion) = mpsc::channel();
+    let waiter = std::thread::spawn(move || {
+        returned.send(waiting.wait(&waiting_output, false)).unwrap();
+    });
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !process.exit_observed() || !process.signals_closed() {
+        assert!(
+            Instant::now() < deadline,
+            "held-reader process did not reach its owned stop phase"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert!(matches!(
+        completion.try_recv(),
+        Err(mpsc::TryRecvError::Empty)
+    ));
+    reader.finish(true, false);
+    assert!(completion
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .is_ok());
+    waiter.join().unwrap();
+    // An already closed actual owner can be joined repeatedly; it emits no
+    // further numeric process/group signal after the final reap.
+    process.request_stop().unwrap();
+    process.wait_actual().unwrap();
+    assert!(process.pin().is_err());
+}
+
 struct InputFixture {
     store: Arc<SessionStore>,
     registry: NativeProviderOutputRegistry,

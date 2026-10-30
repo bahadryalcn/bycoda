@@ -1,4 +1,25 @@
 import {
+  queueProviderOperation,
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  type HarnessOperationContext,
+  capturePiTurnWriter,
+  piTurnWriter,
+  type PiRpcWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+  settleProviderRetirements,
+  observeProviderProbeCleanup,
+} from "../../core/providerRetirement";
+import {
   createApprovalOccurrenceId,
   isApprovalOccurrenceId,
 } from "../../../../shared/model/approvalOccurrence";
@@ -30,7 +51,7 @@ import type {
 } from "../../core/nativeCommands";
 import { allowedPiSkillPaths, discoverOmpCommands, ompCommandsFromRpcData } from "./piSkills";
 import { OMP_FLAVOR } from "./piFlavor";
-import { killChild, spawnChild, unwatchChild, watchChild, writeChild } from "../../core/child";
+import { spawnChild, watchChild, writeChild } from "../../core/child";
 import type { PiFlavor } from "./piFlavor";
 import { PiRpc } from "./piClient";
 import { piSubagentEvents } from "./piSubagents";
@@ -102,7 +123,14 @@ type InFlightTool = {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const operationTailsBySession = new Map<string, Promise<unknown>>();
+
+function retirementsFor(flavor: PiFlavor) {
+  return createProviderRetirementLedger(`${flavor.id}.main`, killChild);
+}
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   bindingWork?: NativeOutputWork | null;
   bindingTracked?: boolean;
@@ -157,7 +185,9 @@ type Resume = {
 };
 
 type Startup = {
+  operation?: object;
   handle?: ChildProcessHandle;
+  cleanupOwnedBySetup?: ChildProcessHandle;
   key: string;
   controller: AbortController;
   promise: Promise<Live>;
@@ -270,119 +300,216 @@ export function setPiBinaryResolver(flavor: PiFlavor, fn: () => Promise<{ path: 
  * keep working; TUI-only widgets do not appear in Bycoda.
  */
 export async function sendTurn(flavor: PiFlavor, input: SendTurnInput): Promise<void> {
-  const { cancelledThreads } = stateFor(flavor);
-  let live: Live;
-  try {
-    live = await ensureLive(flavor, input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await runTurn(flavor, live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const state = stateFor(flavor);
+    const original =
+      state.liveByThread.get(input.sessionId) ?? state.startingByThread.get(input.sessionId);
+    const originalHandle = original?.handle;
+    if (originalHandle) observeProviderProcess(input, originalHandle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      `${flavor.id}\0${input.sessionId}`,
+      input.operationContext,
+      async () => {
+        const { cancelledThreads } = stateFor(flavor);
+        let live: Live;
+        try {
+          live = await ensureLive(flavor, input);
+        } catch (error) {
+          cancelledThreads.delete(input.sessionId);
+          throw error;
+        }
+        if (cancelledThreads.delete(input.sessionId)) return;
+
+        observeProviderProcess(input, live.handle);
+        const bindWriter = capturePiTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          const rpc = await bindWriter();
+          live.onEvent = input.onEvent;
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            await runTurn(flavor, live, input, rpc);
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function compactContext(flavor: PiFlavor, input: CompactContextInput): Promise<void> {
-  const state = stateFor(flavor);
-  let live = state.liveByThread.get(input.sessionId);
-  const cancelledAtStart = live?.cancelled ?? false;
-  const cancellationToken = live?.cancelGeneration;
-  if (!live || live.cwd !== input.cwd) {
-    live = await ensureLive(flavor, input);
-  } else {
-    live.onEvent = input.onEvent;
-    await applyModel(flavor, live, input);
-  }
-  if (state.cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    if (
-      state.cancelledThreads.delete(input.sessionId) ||
-      (cancellationToken !== undefined && live.cancelGeneration !== cancellationToken)
-    )
-      return;
-    if (cancelledAtStart) live.cancelled = false;
-    live.muteUpdates = false;
-    const response = await live.rpc.request({ type: "compact" }, COMPACT_TIMEOUT_MS);
-    const data = asRecord(response.data);
-    const used = data?.estimatedTokensAfter;
-    if (typeof used === "number" && Number.isFinite(used) && used > 0) {
-      live.onEvent({
-        type: "context",
-        used,
-        ...(live.contextWindow ? { window: live.contextWindow } : {}),
-      });
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const state = stateFor(flavor);
+    const original =
+      state.liveByThread.get(input.sessionId) ?? state.startingByThread.get(input.sessionId);
+    const queuedLive = state.liveByThread.get(input.sessionId);
+    const cancellationToken = queuedLive?.cancelGeneration;
+    const cancelledAtStart = queuedLive?.cancelled ?? false;
+    const originalHandle = original?.handle;
+    if (originalHandle) observeProviderProcess(input, originalHandle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      `${flavor.id}\0${input.sessionId}`,
+      input.operationContext,
+      async () => {
+        const state = stateFor(flavor);
+        let live = state.liveByThread.get(input.sessionId);
+        if (queuedLive && live === queuedLive && live.cancelGeneration !== cancellationToken)
+          return;
+        if (!live || live.cwd !== input.cwd) {
+          live = await ensureLive(flavor, input);
+        }
+        if (state.cancelledThreads.delete(input.sessionId)) return;
+
+        observeProviderProcess(input, live.handle);
+        const bindWriter = capturePiTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          if (
+            state.cancelledThreads.delete(input.sessionId) ||
+            (queuedLive === live &&
+              cancellationToken !== undefined &&
+              live.cancelGeneration !== cancellationToken)
+          )
+            return;
+          const rpc = await bindWriter();
+          live.onEvent = input.onEvent;
+          await applyModel(flavor, live, input, rpc);
+          if (cancelledAtStart) live.cancelled = false;
+          live.muteUpdates = false;
+          const response = await rpc.request({ type: "compact" }, COMPACT_TIMEOUT_MS);
+          const data = asRecord(response.data);
+          const used = data?.estimatedTokensAfter;
+          if (typeof used === "number" && Number.isFinite(used) && used > 0) {
+            live.onEvent({
+              type: "context",
+              used,
+              ...(live.contextWindow ? { window: live.contextWindow } : {}),
+            });
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function rewindLastTurn(
   flavor: PiFlavor,
   input: RewindLastTurnInput,
 ): Promise<{ submitted: boolean }> {
-  const state = stateFor(flavor);
-  let live = state.liveByThread.get(input.sessionId);
-  const cancelledAtStart = live?.cancelled ?? false;
-  const cancellationToken = live?.cancelGeneration;
-  if (!live || live.cwd !== input.cwd) {
-    live = await ensureLive(flavor, input);
-  } else {
-    live.onEvent = input.onEvent;
-    await applyModel(flavor, live, input);
-  }
-  if (live.activeTurn) {
-    throw new Error("Stop the current turn before editing the last message");
-  }
+  assertProviderOperation(input.operationContext);
 
-  if (
-    state.cancelledThreads.delete(input.sessionId) ||
-    (cancellationToken !== undefined && live.cancelGeneration !== cancellationToken)
-  ) {
-    throw new Error("Edit cancelled");
-  }
-  if (cancelledAtStart) live.cancelled = false;
-  const forkMessages = await live.rpc.request({ type: "get_fork_messages" });
-  const messages = forkMessagesFromRpcData(forkMessages.data);
-  const last = messages[messages.length - 1];
-  if (!last) throw new Error("No user message to edit");
+  input = { ...input };
 
-  if (
-    state.cancelledThreads.delete(input.sessionId) ||
-    (cancellationToken !== undefined && live.cancelGeneration !== cancellationToken)
-  ) {
-    throw new Error("Edit cancelled");
+  try {
+    const state = stateFor(flavor);
+    const original =
+      state.liveByThread.get(input.sessionId) ?? state.startingByThread.get(input.sessionId);
+    const originalHandle = original?.handle;
+    if (originalHandle) observeProviderProcess(input, originalHandle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      `${flavor.id}\0${input.sessionId}`,
+      input.operationContext,
+      async () => {
+        const state = stateFor(flavor);
+        let live = state.liveByThread.get(input.sessionId);
+        const cancelledAtStart = live?.cancelled ?? false;
+        const cancellationToken = live?.cancelGeneration;
+        if (!live || live.cwd !== input.cwd) {
+          live = await ensureLive(flavor, input);
+        }
+        if (live.activeTurn) {
+          throw new Error("Stop the current turn before editing the last message");
+        }
+
+        if (
+          state.cancelledThreads.delete(input.sessionId) ||
+          (cancellationToken !== undefined && live.cancelGeneration !== cancellationToken)
+        ) {
+          throw new Error("Edit cancelled");
+        }
+        if (cancelledAtStart) live.cancelled = false;
+        observeProviderProcess(input, live.handle);
+        const rpc = await capturePiTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        live.onEvent = input.onEvent;
+        await applyModel(flavor, live, input, rpc);
+        const forkMessages = await rpc.request({ type: "get_fork_messages" });
+        const messages = forkMessagesFromRpcData(forkMessages.data);
+        const last = messages[messages.length - 1];
+        if (!last) throw new Error("No user message to edit");
+
+        if (
+          state.cancelledThreads.delete(input.sessionId) ||
+          (cancellationToken !== undefined && live.cancelGeneration !== cancellationToken)
+        ) {
+          throw new Error("Edit cancelled");
+        }
+        const fork = await rpc.request({ type: "fork", entryId: last.entryId });
+        if (asRecord(fork.data)?.cancelled === true) {
+          throw new Error("Edit cancelled");
+        }
+        const forkState = await rpc.request({ type: "get_state" });
+        const providerSessionId = providerSessionIdFromState(forkState.data);
+        if (!providerSessionId) {
+          throw new Error("Pi did not expose the forked session");
+        }
+        bindState(flavor, input.sessionId, live, forkState.data);
+        live.onEvent({ type: "session.providerBound", providerSessionId });
+        return { submitted: false };
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
-  const fork = await live.rpc.request({ type: "fork", entryId: last.entryId });
-  if (asRecord(fork.data)?.cancelled === true) {
-    throw new Error("Edit cancelled");
-  }
-  const forkState = await live.rpc.request({ type: "get_state" });
-  const providerSessionId = providerSessionIdFromState(forkState.data);
-  if (!providerSessionId) {
-    throw new Error("Pi did not expose the forked session");
-  }
-  bindState(flavor, input.sessionId, live, forkState.data);
-  live.onEvent({ type: "session.providerBound", providerSessionId });
-  return { submitted: false };
 }
 
 export async function steerTurn(flavor: PiFlavor, input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = stateFor(flavor).liveByThread.get(input.sessionId);
   if (!live?.activeTurn) throw new Error("No active turn to steer");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
+  const rpc = await piTurnWriter(
+    live.handle,
+    live.rpc,
+    input.nativeControlTurn,
+    input.operationContext,
+  );
   const message = input.text.trim();
   const buildCommand =
     flavor.id === "omp" && message.startsWith("/")
@@ -393,7 +520,7 @@ export async function steerTurn(flavor: PiFlavor, input: SteerTurnInput): Promis
     attachments: input.attachments,
   });
   if (!command.message && !Array.isArray(command.images)) return;
-  await live.rpc.request(command);
+  await rpc.request(command);
 }
 
 export function respondApproval(
@@ -436,17 +563,28 @@ export function respondQuestion(
   );
 }
 
-export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<void> {
+export async function cancelTurn(
+  flavor: PiFlavor,
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const { liveByThread, startingByThread, cancelledThreads } = stateFor(flavor);
   if (startingByThread.has(sessionId)) {
-    await stopSession(flavor, sessionId);
+    await stopSession(flavor, sessionId, context);
     return;
   }
   const live = liveByThread.get(sessionId);
+  if (!ownsOperation(context, live?.handle, live?.operation)) return;
   if (!live) {
     cancelledThreads.add(sessionId);
     return;
   }
+  const rpc = context
+    ? await piTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
+    : live.rpc;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   retireToolFragments(live, "pi-fragment-cancelled");
   live.cancelGeneration += 1;
@@ -458,39 +596,70 @@ export async function cancelTurn(flavor: PiFlavor, sessionId: string): Promise<v
     // Release extension dialogs before aborting their workflow. Never overwrite an
     // answer whose delivery is already in flight or uncertain.
     if (!question.sending) await question.deliver?.({ kind: "skipped" }).catch(() => undefined);
+    if (!ownsOperation(context, live.handle, live.operation)) return;
     question.resolve({ kind: "skipped" });
   }
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.questions.clear();
-  await live.rpc.request({ type: "abort" }, 5_000).catch(() => undefined);
+  await rpc.request({ type: "abort" }, 5_000).catch(() => undefined);
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
-export function stopSession(flavor: PiFlavor, sessionId: string): Promise<void> {
+function captureStop(flavor: PiFlavor, sessionId: string) {
+  const state = stateFor(flavor);
+  return {
+    starting: state.startingByThread.get(sessionId),
+    live: state.liveByThread.get(sessionId),
+    pending: state.stoppingByThread.get(sessionId),
+    cohort: retirementsFor(flavor).cohort(sessionId),
+  };
+}
+export function stopSession(
+  flavor: PiFlavor,
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return Promise.resolve();
+
+  return stopCaptured(flavor, sessionId, captureStop(flavor, sessionId), context);
+}
+function stopCaptured(
+  flavor: PiFlavor,
+  sessionId: string,
+  captured: ReturnType<typeof captureStop>,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return Promise.resolve();
+
   const { liveByThread, startingByThread, stoppingByThread, cancelledThreads } = stateFor(flavor);
+  const starting = ownsOperation(context, captured.starting?.handle, captured.starting?.operation)
+    ? captured.starting
+    : undefined;
+  const live = ownsOperation(context, captured.live?.handle, captured.live?.operation)
+    ? captured.live
+    : undefined;
+  if (context && !starting && !live) return Promise.resolve();
+  const pending = captured.pending;
   cancelledThreads.delete(sessionId);
-  const starting = startingByThread.get(sessionId);
-  startingByThread.delete(sessionId);
+  if (startingByThread.get(sessionId) === starting) startingByThread.delete(sessionId);
   starting?.controller.abort(new Error(`${flavor.label} startup cancelled`));
-  const live = liveByThread.get(sessionId);
-  liveByThread.delete(sessionId);
+  if (liveByThread.get(sessionId) === live) liveByThread.delete(sessionId);
   if (live) closeLive(live);
   if (starting?.live && starting.live !== live) closeLive(starting.live);
-  const pending = stoppingByThread.get(sessionId);
   const handles = new Set([live?.handle, starting?.handle, starting?.live?.handle]);
-  const stopping = Promise.all([
-    pending?.catch(() => undefined),
-    ...[...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-    starting?.skillProbe?.catch(() => undefined),
-  ])
-    .then(() => undefined)
-    .finally(() => {
-      if (stoppingByThread.get(sessionId) === stopping) stoppingByThread.delete(sessionId);
-    });
+  const stopping = settleProviderRetirements([
+    ...(pending ? [pending] : []),
+    ...(context ? [] : [captured.cohort.retire()]),
+    retirementsFor(flavor).retire(handles),
+    ...(starting?.skillProbe ? [observeProviderProbeCleanup(starting.skillProbe)] : []),
+  ]).finally(() => {
+    if (stoppingByThread.get(sessionId) === stopping) stoppingByThread.delete(sessionId);
+  });
   stoppingByThread.set(sessionId, stopping);
+  // A superseding start may abort before reaching its captured wait; the exact
+  // failure remains in the retirement ledger and this is only an observer.
+  void stopping.catch(() => {});
   return stopping;
 }
 
@@ -514,9 +683,18 @@ function closeLive(live: Live): void {
   }
 }
 
-export async function forgetSession(flavor: PiFlavor, sessionId: string): Promise<void> {
-  stateFor(flavor).resumeByThread.delete(sessionId);
-  await stopSession(flavor, sessionId);
+export async function forgetSession(
+  flavor: PiFlavor,
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const state = stateFor(flavor);
+  const original = state.liveByThread.get(sessionId) ?? state.startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
+  state.resumeByThread.delete(sessionId);
+  await stopSession(flavor, sessionId, context);
 }
 
 export function bindSession(
@@ -531,8 +709,10 @@ export function bindSession(
 }
 
 async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const state = stateFor(flavor);
-  const { liveByThread, resumeByThread, startingByThread, stoppingByThread } = state;
+  const { resumeByThread, startingByThread } = state;
   const key = JSON.stringify([
     input.cwd,
     input.intent,
@@ -540,48 +720,45 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
     input.modelSettings,
     input.skillPolicy,
   ]);
-  const starting = startingByThread.get(input.sessionId);
-  if (starting) {
-    if (starting.key !== key) {
-      // Stop establishes its cleanup barrier synchronously. Register the new
-      // attempt before awaiting that barrier so a later stop can cancel it too.
-      void stopSession(flavor, input.sessionId);
-    } else {
-      const live = await starting.promise;
-      live.onEvent = input.onEvent;
-      return live;
-    }
+  const captured = captureStop(flavor, input.sessionId);
+  const { starting, live: existing } = captured;
+  if (starting?.key === key) {
+    const live = await starting.promise;
+    observeProviderProcess(input, live.handle);
+    return live;
   }
-  const stopping = stoppingByThread.get(input.sessionId);
-  const existing = liveByThread.get(input.sessionId);
   const wantPlanning = input.intent === "plan";
   if (
+    !starting &&
     existing &&
     existing.cwd === input.cwd &&
     existing.planning === wantPlanning &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
-    existing.onEvent = input.onEvent;
-    await applyModel(flavor, existing, input);
+    observeProviderProcess(input, existing.handle);
     return existing;
   }
-  const attempt: Startup = { key, controller: new AbortController(), promise: undefined! };
+  const handle = retirementsFor(flavor).admitPending(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  observeProviderProcess(input, handle, "starting");
+  const attempt: Startup = {
+    key,
+    handle,
+    operation: input.operationContext?.operation,
+    controller: new AbortController(),
+    promise: undefined!,
+  };
   startingByThread.set(input.sessionId, attempt);
+  if (existing && existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
+  const stopping =
+    captured.cohort.size || captured.starting || captured.live || captured.pending
+      ? stopCaptured(flavor, input.sessionId, captured)
+      : undefined;
   attempt.promise = Promise.resolve()
     .then(async () => {
       attempt.controller.signal.throwIfAborted();
       if (stopping) await startupWait(attempt, stopping);
-      attempt.controller.signal.throwIfAborted();
-      if (existing) {
-        if (existing.cwd !== input.cwd) resumeByThread.delete(input.sessionId);
-        if (liveByThread.get(input.sessionId) === existing) liveByThread.delete(input.sessionId);
-        closeLive(existing);
-        unwatchChild(existing.handle);
-        await startupWait(
-          attempt,
-          killChild(existing.handle).catch(() => undefined),
-        );
-      }
       attempt.controller.signal.throwIfAborted();
       const resume = resumeByThread.get(input.sessionId);
       const canResume = resume != null && resume.cwd === input.cwd;
@@ -590,10 +767,19 @@ async function ensureLive(flavor: PiFlavor, input: HarnessSessionInput): Promise
         return await startLive(flavor, input, canResume ? resume?.sessionId : undefined, attempt);
       } catch (error) {
         attempt.controller.signal.throwIfAborted();
+        assertOptionalProviderProbeError(error);
         if (!canResume) throw error;
         resumeByThread.delete(input.sessionId);
+        attempt.handle = retirementsFor(flavor).admit(
+          createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+        );
+        observeProviderProcess(input, attempt.handle, "starting");
         return startLive(flavor, input, undefined, attempt);
       }
+    })
+    .catch((error) => {
+      if (attempt.cleanupOwnedBySetup === attempt.handle) throw error;
+      return preserveProviderFailure(error, retirementsFor(flavor).retire([attempt.handle]));
     })
     .finally(() => {
       if (startingByThread.get(input.sessionId) === attempt)
@@ -608,64 +794,69 @@ async function startLive(
   resume: string | undefined,
   attempt: Startup,
 ): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const state = stateFor(flavor);
   const { liveByThread } = state;
   attempt.controller.signal.throwIfAborted();
-  const handle = createChildProcessHandle(input.sessionId);
-  attempt.handle = handle;
-  const { path } = await startupWait(attempt, state.resolveBinary());
-  attempt.controller.signal.throwIfAborted();
-  const native = nativeModelId(input.model);
-  const modelRef = parsePiModelRef(native);
+  const handle = attempt.handle;
+  if (!handle) throw new Error("Provider startup has no original reserved construction");
   const liveRef: { current: Live | null } = { current: null };
-
-  const rpc = new PiRpc(
-    handle,
-    (rec) => {
-      const current = liveRef.current;
-      if (!current) return;
-      handleFrame(flavor, input.sessionId, current, rec);
-    },
-    flavor.label,
-  );
-
-  const live: Live = {
-    handle,
-    skillPolicyKey: JSON.stringify(input.skillPolicy),
-    rpc,
-    cwd: input.cwd,
-    providerSessionId: resume ?? "",
-    nativeModel: native,
-    thinking: input.modelSettings?.thinking ?? "",
-    fastModeEnabled: undefined,
-    fastModeRequested: undefined,
-    planning: input.intent === "plan",
-    onEvent: input.onEvent,
-    approvals: new Map(),
-    questions: new Map(),
-    promptId: null,
-    nextApprovalUiId: 1,
-    toolsByIndex: new Map(),
-    toolsById: new Map(),
-    cancelled: false,
-    muteUpdates: false,
-    compacting: false,
-    retrying: false,
-    settling: false,
-    settleToken: 0,
-    cancelGeneration: 0,
-    turns: Promise.resolve(),
-    turnDone: null,
-    turnFailed: null,
-    turnEndPending: false,
-    activeTurn: false,
-    emittedAssistant: "",
-    emittedReasoning: "",
-    turnError: null,
-  };
-  attempt.live = live;
-  liveRef.current = live;
+  attempt.cleanupOwnedBySetup = handle;
   try {
+    attempt.handle = handle;
+    const { path } = await startupWait(attempt, state.resolveBinary());
+    attempt.controller.signal.throwIfAborted();
+    const native = nativeModelId(input.model);
+    const modelRef = parsePiModelRef(native);
+
+    const rpc = new PiRpc(
+      handle,
+      (rec) => {
+        const current = liveRef.current;
+        if (!current) return;
+        handleFrame(flavor, input.sessionId, current, rec);
+      },
+      flavor.label,
+    );
+
+    const live: Live = {
+      operation: input.operationContext?.operation,
+      handle,
+      skillPolicyKey: JSON.stringify(input.skillPolicy),
+      rpc,
+      cwd: input.cwd,
+      providerSessionId: resume ?? "",
+      nativeModel: native,
+      thinking: input.modelSettings?.thinking ?? "",
+      fastModeEnabled: undefined,
+      fastModeRequested: undefined,
+      planning: input.intent === "plan",
+      onEvent: input.onEvent,
+      approvals: new Map(),
+      questions: new Map(),
+      promptId: null,
+      nextApprovalUiId: 1,
+      toolsByIndex: new Map(),
+      toolsById: new Map(),
+      cancelled: false,
+      muteUpdates: false,
+      compacting: false,
+      retrying: false,
+      settling: false,
+      settleToken: 0,
+      cancelGeneration: 0,
+      turns: Promise.resolve(),
+      turnDone: null,
+      turnFailed: null,
+      turnEndPending: false,
+      activeTurn: false,
+      emittedAssistant: "",
+      emittedReasoning: "",
+      turnError: null,
+    };
+    attempt.live = live;
+    liveRef.current = live;
     let skillPaths: string[] | undefined;
     if (
       input.skillPolicy &&
@@ -676,6 +867,7 @@ async function startLive(
         input.cwd,
         input.skillPolicy,
         attempt.controller.signal,
+        input.sessionId,
       );
       skillPaths = await startupWait(attempt, attempt.skillProbe);
     }
@@ -728,9 +920,13 @@ async function startLive(
 
     liveByThread.set(input.sessionId, live);
 
+    const startupRpc = await startupWait(
+      attempt,
+      piTurnWriter(handle, rpc, input.nativeControlTurn, input.operationContext),
+    );
     await startupWait(
       attempt,
-      rpc.request({ type: "get_state" }, INIT_TIMEOUT_MS, (stateFrame, work) => {
+      startupRpc.request({ type: "get_state" }, INIT_TIMEOUT_MS, (stateFrame, work) => {
         attempt.controller.signal.throwIfAborted();
         return consumePiBindingResponse(live, stateFrame, work, () =>
           bindState(flavor, input.sessionId, live, stateFrame.data),
@@ -738,7 +934,7 @@ async function startLive(
       }),
     );
     attempt.controller.signal.throwIfAborted();
-    await startupWait(attempt, applyModel(flavor, live, input));
+    await startupWait(attempt, applyModel(flavor, live, input, startupRpc));
     attempt.controller.signal.throwIfAborted();
     if (live.providerSessionId) {
       emitPiBindingEvent(live, {
@@ -749,17 +945,21 @@ async function startLive(
     emitPiBindingEvent(live, { type: "session.started" });
     return live;
   } catch (error) {
-    closeLive(live);
+    const live = liveRef.current;
+    if (live) closeLive(live);
     // Physical cleanup stays on this attempt even after a successor owns the slot.
-    if (liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
-    unwatchChild(handle);
-    await killChild(handle).catch(() => undefined);
-    throw error;
+    if (live && liveByThread.get(input.sessionId) === live) liveByThread.delete(input.sessionId);
+    return preserveProviderFailure(error, retirementsFor(flavor).retire([handle]));
   }
 }
 
-async function runTurn(flavor: PiFlavor, live: Live, input: SendTurnInput): Promise<void> {
-  await applyModel(flavor, live, input);
+async function runTurn(
+  flavor: PiFlavor,
+  live: Live,
+  input: SendTurnInput,
+  rpc: PiRpcWriterView,
+): Promise<void> {
+  await applyModel(flavor, live, input, rpc);
   live.emittedAssistant = "";
   live.emittedReasoning = "";
   live.turnError = null;
@@ -782,7 +982,7 @@ async function runTurn(flavor: PiFlavor, live: Live, input: SendTurnInput): Prom
 
   try {
     const response = await Promise.race([
-      live.rpc.request(
+      rpc.request(
         {
           ...buildPiPrompt({
             text: input.text,
@@ -811,7 +1011,7 @@ async function runTurn(flavor: PiFlavor, live: Live, input: SendTurnInput): Prom
     retireToolFragments(live, "pi-fragment-turn-retired");
     live.activeTurn = false;
     live.promptId = null;
-    live.rpc.cancelRequest(promptId);
+    rpc.cancelRequest(promptId);
     live.turnDone = null;
     live.turnFailed = null;
   }
@@ -1344,11 +1544,16 @@ async function handleExtensionUi(
   );
 }
 
-async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInput): Promise<void> {
+async function applyModel(
+  flavor: PiFlavor,
+  live: Live,
+  input: HarnessSessionInput,
+  rpc: PiRpcWriterView,
+): Promise<void> {
   const native = nativeModelId(input.model);
   const ref = parsePiModelRef(native);
   if (ref && native !== live.nativeModel) {
-    await live.rpc.request(
+    await rpc.request(
       {
         type: "set_model",
         provider: ref.provider,
@@ -1370,7 +1575,7 @@ async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInp
 
   const thinking = input.modelSettings?.thinking;
   if (isPiThinkingLevel(thinking) && thinking !== live.thinking) {
-    await live.rpc
+    await rpc
       .request({ type: "set_thinking_level", level: thinking }, undefined, (result, work) =>
         consumePiBindingResponse(live, result, work, () => {
           live.thinking = thinking;
@@ -1391,7 +1596,7 @@ async function applyModel(flavor: PiFlavor, live: Live, input: HarnessSessionInp
     const enabled = fast === "true";
     live.fastModeRequested = enabled;
     try {
-      await live.rpc.request(
+      await rpc.request(
         {
           type: "set_fast_mode",
           enabled,

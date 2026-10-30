@@ -20,6 +20,10 @@ import {
   type NativeOutputItem,
 } from "./nativeOutputDelivery";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
+import { observeProviderOperation } from "./providerObservation";
+import { nativeControlTurnReceipt, type ControlTurnHandle } from "./controlTurn";
+import type { HostRunHandle, HostRunBinding } from "./hostRun";
+import { retireProviderProcess } from "./providerRetirement";
 import { runtimeLogsBridge, runtimeLogsSpawnArgs } from "./runtimeLogsBridge";
 import { conversationToolsBridge, conversationToolsSpawnArgs } from "./conversationToolsBridge";
 import {
@@ -67,8 +71,17 @@ export function readHarnessTaskOutput(
 /** Private, provider-owned workspace; no project files or global agent settings. */
 export function prepareHarnessTextWorkspace(
   content: string,
+  hostRun?: HostRunHandle,
 ): Promise<{ cwd: string; logPath: string }> {
-  return invoke("harness_prepare_text_workspace", { content });
+  const originalBackend = backend;
+  if (hostRun !== undefined) {
+    if (!originalBackend || !isOpaqueHostCapability(hostRun))
+      return Promise.reject(new Error("An original Host backend and opaque run are required"));
+    return originalBackend.invoke("harness_prepare_text_workspace", { content, hostRun });
+  }
+  return originalBackend
+    ? originalBackend.invoke("harness_prepare_text_workspace", { content })
+    : tauriInvoke("harness_prepare_text_workspace", { content });
 }
 
 function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
@@ -150,6 +163,27 @@ const ownedSse = new Set<string>();
 declare const childProcessBrand: unique symbol;
 /** A private construction, not a session-to-current-process selector or operation grant. */
 export type ChildProcessHandle = Readonly<{ sessionId: string; [childProcessBrand]: true }>;
+declare const childTurnWriterBrand: unique symbol;
+/** An immutable operation source, distinct from a process's birth turn. */
+export type ChildTurnWriter = Readonly<{ sessionId: string; [childTurnWriterBrand]: true }>;
+type ChildTurnBinding = Readonly<{
+  version: 1;
+  bindingId: string;
+  sessionId: string;
+  constructionId: string;
+  turnId: string;
+}>;
+type ChildTurnWriterState = Readonly<{
+  process: ChildProcessState;
+  controlTurn?: ControlTurnHandle;
+  hostRun?: HostRunHandle;
+  invoke: ChildBackend["invoke"];
+  backend: HarnessProcessReceipt["backend"];
+  receipt: HarnessProcessReceipt;
+  binding?: ChildTurnBinding;
+  hostBinding?: HostRunBinding;
+  beforeWrites: readonly (() => void)[];
+}>;
 type ProcessFrame = {
   constructionId: string;
   body:
@@ -160,6 +194,8 @@ type ProcessFrame = {
 };
 type ChildProcessState = {
   handle: ChildProcessHandle;
+  nativeControlTurn?: ControlTurnHandle;
+  hostRun?: HostRunHandle;
   invoke: ChildBackend["invoke"];
   backend: HarnessProcessReceipt["backend"];
   ready: Promise<HarnessProcessReceipt>;
@@ -177,6 +213,15 @@ type ChildProcessState = {
   earlyBytes: number;
 };
 const processStates = new WeakMap<ChildProcessHandle, ChildProcessState>();
+const childTurnWriters = new WeakMap<ChildTurnWriter, ChildTurnWriterState>();
+const processTurnBindings = new WeakMap<
+  ChildProcessState,
+  {
+    controlled: WeakMap<ControlTurnHandle, Promise<ChildTurnWriter>>;
+    hostRuns: WeakMap<HostRunHandle, Promise<ChildTurnWriter>>;
+    uncontrolled?: Promise<ChildTurnWriter>;
+  }
+>();
 const processRoutes = new Map<string, Set<ChildProcessState>>();
 const currentChildren = new Map<string, ChildProcessHandle>();
 const lineBuffer = new Map<ChildProcessState, Buffered>();
@@ -191,9 +236,13 @@ type GuardedSpawnGroup = {
 // fences work still awaiting its grant/bridges, without restoring a killed PID.
 const guardedSpawns = new Map<string, GuardedSpawnGroup>();
 
-export function createChildProcessHandle(sessionId: string): ChildProcessHandle {
+export function createChildProcessHandle(
+  sessionId: string,
+  nativeControlTurn?: ControlTurnHandle,
+): ChildProcessHandle {
   if (typeof sessionId !== "string" || !sessionId || sessionId.length > 512)
     throw new Error("Invalid harness process locator");
+  if (nativeControlTurn) nativeControlTurnReceipt(nativeControlTurn);
   const handle = Object.freeze({ sessionId }) as ChildProcessHandle;
   let resolve!: ChildProcessState["resolve"];
   let reject!: ChildProcessState["reject"];
@@ -205,6 +254,7 @@ export function createChildProcessHandle(sessionId: string): ChildProcessHandle 
   void ready.catch(() => undefined);
   processStates.set(handle, {
     handle,
+    nativeControlTurn,
     invoke: backend ? backend.invoke.bind(backend) : tauriInvoke,
     backend: backend ? "host" : "native",
     ready,
@@ -219,6 +269,170 @@ export function createChildProcessHandle(sessionId: string): ChildProcessHandle 
     earlyBytes: 0,
   });
   return handle;
+}
+
+/** The original construction's authority observation, never a current session lookup. */
+export function captureChildControlTurn(handle: ChildProcessHandle): ControlTurnHandle | undefined {
+  return childState(handle).nativeControlTurn;
+}
+
+function isOpaqueHostCapability(value: unknown): value is object {
+  if (!value || typeof value !== "object" || !Object.isFrozen(value)) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return (
+    (prototype === null || prototype === Object.prototype) && Reflect.ownKeys(value).length === 0
+  );
+}
+
+/** Only an actual fresh construction may capture its source-issued birth run.
+ * Warm operation bindings never replace that original association. */
+export function associateChildHostRun(handle: ChildProcessHandle, hostRun: HostRunHandle): void {
+  const state = childState(handle);
+  if (state.backend !== "host" || state.nativeControlTurn)
+    throw new Error("A Host run cannot target a Native control process");
+  if (!isOpaqueHostCapability(hostRun)) throw new Error("An opaque Host run is required");
+  if (state.hostRun === hostRun) return;
+  if (state.phase !== "new" || state.hostRun)
+    throw new Error("A process birth Host run cannot be replaced");
+  state.hostRun = hostRun;
+}
+
+export function assertChildTurnWriter(handle: ChildProcessHandle, writer: ChildTurnWriter): void {
+  const original = childTurnWriters.get(writer);
+  if (!original || original.process !== childState(handle) || original.process.handle !== handle)
+    throw new Error("Child turn writer belongs to a different process construction");
+}
+
+/** Add refusal checks while retaining the exact original construction and binding. */
+export function guardChildTurnWriter(
+  writer: ChildTurnWriter,
+  beforeWrite: () => void,
+): ChildTurnWriter {
+  const original = childTurnWriters.get(writer);
+  if (!original || typeof beforeWrite !== "function")
+    throw new Error("An original child turn writer and synchronous guard are required");
+  const guarded = Object.freeze({ sessionId: writer.sessionId }) as ChildTurnWriter;
+  childTurnWriters.set(
+    guarded,
+    Object.freeze({
+      ...original,
+      beforeWrites: Object.freeze([...original.beforeWrites, beforeWrite]),
+    }),
+  );
+  return guarded;
+}
+
+/** The pair is captured before waits; an unknown bind is never retried or retargeted. */
+export function bindChildTurnWriter(
+  handle: ChildProcessHandle,
+  controlTurn?: ControlTurnHandle,
+  hostRun?: HostRunHandle,
+): Promise<ChildTurnWriter> {
+  try {
+    const process = childState(handle);
+    if (hostRun !== undefined && !isOpaqueHostCapability(hostRun))
+      throw new Error("An opaque Host run is required");
+    if (controlTurn && hostRun) throw new Error("Native and Host turn sources cannot be combined");
+    let pairs = processTurnBindings.get(process);
+    if (!pairs) {
+      pairs = { controlled: new WeakMap(), hostRuns: new WeakMap() };
+      processTurnBindings.set(process, pairs);
+    }
+    const previous = hostRun
+      ? pairs.hostRuns.get(hostRun)
+      : controlTurn
+        ? pairs.controlled.get(controlTurn)
+        : pairs.uncontrolled;
+    if (previous) return previous;
+    const invoke = process.invoke;
+    const backend = process.backend;
+    const control = controlTurn ? nativeControlTurnReceipt(controlTurn) : undefined;
+    const work = Promise.resolve().then(async () => {
+      if (backend === "host" && control)
+        throw new Error("A Native control turn cannot target a Host process");
+      if (hostRun && backend !== "host")
+        throw new Error("A Host run cannot target a Native process");
+      if (hostRun && !isOpaqueHostCapability(hostRun))
+        throw new Error("An opaque Host run is required");
+      if (hostRun && !process.hostRun)
+        throw new Error("Original process birth Host run is required before binding");
+      if (backend === "host" && process.hostRun && !hostRun)
+        throw new Error("Original Host run is required for this process writer");
+      if (backend === "native" && process.nativeControlTurn && !control)
+        throw new Error("Original Native control turn is required for this process writer");
+      const receipt = process.receipt ?? (await process.ready);
+      if (process.cancelled || process.retired || process.exited)
+        throw new Error("Harness process construction retired");
+      let binding: ChildTurnBinding | undefined;
+      let hostBinding: HostRunBinding | undefined;
+      if (backend === "host" && hostRun) {
+        const raw = await invoke<unknown>("harness_bind_host_run", {
+          sessionId: handle.sessionId,
+          constructionId: receipt.constructionId,
+          hostRun,
+        });
+        // This is only a closed opaque representation check. The original
+        // backend's private authority recognizes the returned object on write.
+        if (!isOpaqueHostCapability(raw)) throw new Error("Host run binding is unconfirmed");
+        hostBinding = raw as HostRunBinding;
+      }
+      if (backend === "native" && control) {
+        const raw = await invoke<unknown>("harness_bind_turn", {
+          sessionId: handle.sessionId,
+          constructionId: receipt.constructionId,
+          controlTurn: control,
+        });
+        if (!raw || typeof raw !== "object" || Array.isArray(raw))
+          throw new Error("Native child turn binding is unconfirmed");
+        const fields = Object.getOwnPropertyDescriptors(raw);
+        const names = ["version", "bindingId", "sessionId", "constructionId", "turnId"];
+        if (
+          Reflect.ownKeys(fields).length !== names.length ||
+          !names.every(
+            (name) =>
+              Object.prototype.hasOwnProperty.call(fields, name) &&
+              Object.prototype.hasOwnProperty.call(fields[name], "value"),
+          ) ||
+          fields.version.value !== 1 ||
+          !isHarnessConstructionId(fields.bindingId.value) ||
+          fields.sessionId.value !== control.sessionId ||
+          fields.constructionId.value !== receipt.constructionId ||
+          fields.turnId.value !== control.turnId
+        )
+          throw new Error("Native child turn binding is unconfirmed");
+        binding = Object.freeze({
+          version: 1,
+          bindingId: fields.bindingId.value as string,
+          sessionId: control.sessionId,
+          constructionId: receipt.constructionId,
+          turnId: control.turnId,
+        });
+      }
+      const writer = Object.freeze({ sessionId: handle.sessionId }) as ChildTurnWriter;
+      childTurnWriters.set(
+        writer,
+        Object.freeze({
+          process,
+          controlTurn,
+          hostRun,
+          invoke,
+          backend,
+          receipt,
+          binding,
+          hostBinding,
+          beforeWrites: Object.freeze([]),
+        }),
+      );
+      return writer;
+    });
+    if (hostRun) pairs.hostRuns.set(hostRun, work);
+    else if (controlTurn) pairs.controlled.set(controlTurn, work);
+    else pairs.uncontrolled = work;
+    void work.catch(() => {});
+    return work;
+  } catch (error) {
+    return Promise.reject(error);
+  }
 }
 
 /** Fresh owner intent only. Deferred writers and finalizers retain their original handle. */
@@ -301,8 +515,15 @@ function deliverProcessFrame(state: ChildProcessState, frame: ProcessFrame): voi
     state.exited = true;
     if (currentChildren.get(state.handle.sessionId) === state.handle)
       currentChildren.delete(state.handle.sessionId);
-    if (body.reason) state.handlers?.exit(body.code, body.reason);
-    else state.handlers?.exit(body.code);
+    try {
+      if (body.reason) state.handlers?.exit(body.code, body.reason);
+      else state.handlers?.exit(body.code);
+    } finally {
+      // This observes the retained source-owned retirement obligation. A catch
+      // here prevents an unhandled rejection; the ledger keeps the original
+      // failed record and all explicit teardown/cut callers still reject.
+      void retireProviderProcess(state.handle).catch(() => {});
+    }
     return;
   }
   frame.consumed = true;
@@ -674,6 +895,7 @@ export async function spawnChild(
   const state = childState(handle);
   const { sessionId } = handle;
   const authorityArgs = nativeAuthorityArgs(authority);
+  const hostRun = state.hostRun;
   if (state.phase !== "new" || state.cancelled)
     throw new Error("Harness process construction is single-use or cancelled");
   state.phase = "preparing";
@@ -742,6 +964,10 @@ export async function spawnChild(
       binaryPath,
       genericAcpId,
       ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
+      ...(state.backend === "native" && state.nativeControlTurn
+        ? { controlTurn: nativeControlTurnReceipt(state.nativeControlTurn) }
+        : {}),
+      ...(state.backend === "host" && hostRun ? { hostRun } : {}),
       ...authorityArgs,
       // Functions are in-process restrictions, never desktop IPC/wire arguments.
       ...(state.backend === "host" && beforeSpawn ? { beforeSpawn } : {}),
@@ -798,14 +1024,59 @@ export async function spawnChild(
 }
 
 export function writeChild(
-  handle: ChildProcessHandle,
+  handle: ChildProcessHandle | ChildTurnWriter,
   line: string,
   authority?: NativeAuthorityScope,
 ): Promise<void> {
   const work = captureNativeOutputWork();
   const authorityArgs = nativeAuthorityArgs(authority);
   try {
-    const state = childState(handle);
+    const writer = childTurnWriters.get(handle as ChildTurnWriter);
+    if (writer) {
+      const original = writer.process;
+      if (original.cancelled || original.retired || original.exited)
+        throw new Error("Harness process construction retired");
+      // Protocol preparation (including ACP bridges) may have awaited before
+      // reaching this receipt-ready closure. No check at view creation replaces
+      // the original operation's final refusal check here.
+      for (const beforeWrite of writer.beforeWrites) {
+        const result: unknown = beforeWrite();
+        if (
+          result !== null &&
+          (typeof result === "object" || typeof result === "function") &&
+          typeof (result as { then?: unknown }).then === "function"
+        ) {
+          void Promise.resolve(result).catch(() => {});
+          throw new Error("Child turn writer guards must be synchronous");
+        }
+      }
+      // A synchronous guard may reenter teardown. It cannot restore a retired
+      // construction merely by returning normally.
+      if (original.cancelled || original.retired || original.exited)
+        throw new Error("Harness process construction retired");
+      return trackNativeOutputWork(
+        writer.invoke<void>(
+          writer.hostBinding
+            ? "harness_write_host_run"
+            : writer.binding
+              ? "harness_write_controlled"
+              : "harness_write",
+          {
+            sessionId: original.handle.sessionId,
+            constructionId: writer.receipt.constructionId,
+            line,
+            ...(writer.hostBinding
+              ? { binding: writer.hostBinding }
+              : writer.binding
+                ? { binding: writer.binding }
+                : {}),
+            ...authorityArgs,
+          },
+        ),
+        work,
+      );
+    }
+    const state = childState(handle as ChildProcessHandle);
     const write = (receipt: HarnessProcessReceipt) => {
       if (state.cancelled || state.retired || state.exited)
         throw new Error("Harness process construction retired");
@@ -951,7 +1222,7 @@ export function freeHarnessPort(): Promise<number> {
   return invoke("harness_free_port");
 }
 
-export function harnessHttp(input: {
+export type HarnessHttpInput = {
   url: string;
   method: string;
   headers?: Record<string, string>;
@@ -961,7 +1232,64 @@ export function harnessHttp(input: {
   sessionId?: string;
   authorityEnvironmentId?: string;
   authorityGeneration?: number;
-}): Promise<{ status: number; body: string }> {
+};
+export type HostHarnessHttpSource = Readonly<{
+  baseUrl: string;
+  directory: string;
+  providerSessionId?: string;
+}>;
+
+/** Capture one in-process Host dispatcher and target demand. Actual origin and
+ * session provenance are checked by the backend's private authority on effect. */
+export function captureHostHarnessHttp(
+  hostRun: HostRunHandle,
+  httpSource: HostHarnessHttpSource,
+): (input: HarnessHttpInput) => Promise<{ status: number; body: string }> {
+  const originalBackend = backend;
+  if (!originalBackend || !isOpaqueHostCapability(hostRun))
+    throw new Error("An original Host backend and opaque run are required");
+  const originalInvoke = originalBackend.invoke.bind(originalBackend);
+  const source = Object.freeze({ ...httpSource });
+  let binding: Promise<HostRunBinding>;
+  try {
+    // The Host captures its actual original origin synchronously on entry,
+    // before authority checks may await. Requests never select a latest URL.
+    binding = Promise.resolve(
+      originalInvoke<unknown>("harness_bind_http_host_run", {
+        hostRun,
+        httpSource: source,
+      }),
+    ).then((value) => {
+      if (!isOpaqueHostCapability(value)) throw new Error("Host HTTP binding is unconfirmed");
+      return value as HostRunBinding;
+    });
+  } catch (error) {
+    binding = Promise.reject(error);
+  }
+  void binding.catch(() => {});
+  return (input) => {
+    const originalInput = { ...input, ...(input.headers ? { headers: { ...input.headers } } : {}) };
+    const work = captureNativeOutputWork({ additionalInput: true });
+    try {
+      return trackNativeOutputWork(
+        binding.then((originalBinding) =>
+          originalInvoke<{ status: number; body: string }>("harness_http_host_run", {
+            ...originalInput,
+            hostRun,
+            binding: originalBinding,
+            httpSource: source,
+          }),
+        ),
+        work,
+      );
+    } catch (error) {
+      work?.fail("child-http-rejected");
+      throw error;
+    }
+  };
+}
+
+export function harnessHttp(input: HarnessHttpInput): Promise<{ status: number; body: string }> {
   const work = captureNativeOutputWork({ additionalInput: true });
   try {
     return trackNativeOutputWork(
@@ -1054,11 +1382,24 @@ export function execChild(
     binaryPathOverride === undefined && binaryProvider
       ? runtimeProviderBinaryPath(binaryProvider)
       : binaryPathOverride;
-  return invoke("harness_exec", {
-    command,
-    args,
-    cwd,
-    binaryProvider,
-    binaryPath,
-  });
+  const work = captureNativeOutputWork();
+  let actual: Promise<string>;
+  try {
+    actual = trackNativeOutputWork(
+      invoke<string>("harness_exec", {
+        command,
+        args: [...args],
+        cwd,
+        binaryProvider,
+        binaryPath,
+      }),
+      work,
+    );
+  } catch (error) {
+    work?.fail("cli-probe-invoke-threw");
+    throw error;
+  }
+  // Read-only probe deadline only. Native/Host keeps the original physical job
+  // until its output and process settle; updates use their separate actual path.
+  return observeProviderOperation(actual, 20_000, "CLI probe");
 }

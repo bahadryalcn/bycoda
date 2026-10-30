@@ -6,6 +6,10 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { HostChildBackend } from "./child-backend";
+import { ProviderConstructions } from "./provider-constructions";
+import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
+import { HostRunWriters } from "./run-writers";
+import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 import { REMOTE_PROVIDERS } from "../src/features/connections/model/protocol";
 import type { SocialService } from "./social";
 import { PROVIDER_STDERR_LINE_BYTES } from "./provider-lines";
@@ -22,7 +26,7 @@ function startupGate<T>() {
   return { promise, resolve };
 }
 
-async function constructionFixture() {
+async function constructionFixture(runWriters?: HostRunWriters) {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-child-construction-"));
   const file = join(directory, "provider.cjs");
   writeFileSync(
@@ -33,7 +37,7 @@ console.error(JSON.stringify({ready:label}));
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>console.log(JSON.stringify({label,line})));
 setInterval(()=>{},1000);`,
   );
-  const backend = new HostChildBackend();
+  const backend = new HostChildBackend({}, undefined, undefined, runWriters);
   const sessionId = "same-physical-slot";
   const output: Array<{
     stream: "stdout" | "stderr";
@@ -77,15 +81,16 @@ setInterval(()=>{},1000);`,
   const internal = backend as unknown as {
     children: Map<string, ChildProcessWithoutNullStreams>;
   };
-  const launch = async (label: string) => {
+  const launch = async (label: string, hostRun?: HostRunHandle, physicalId = sessionId) => {
     const receipt = requireHarnessProcessReceipt(
       await backend.invoke<unknown>("harness_spawn", {
-        sessionId,
+        sessionId: physicalId,
         command: file,
         args: [label],
         cwd: directory,
+        ...(hostRun ? { hostRun } : {}),
       }),
-      sessionId,
+      physicalId,
       "host",
     );
     await waitForState(() =>
@@ -93,7 +98,7 @@ setInterval(()=>{},1000);`,
         output.some(
           (event) =>
             event.stream === stream &&
-            event.sessionId === sessionId &&
+            event.sessionId === physicalId &&
             event.constructionId === receipt.constructionId &&
             event.line === JSON.stringify({ ready: label }),
         ),
@@ -120,6 +125,8 @@ setInterval(()=>{},1000);`,
   };
   return {
     backend,
+    directory,
+    file,
     sessionId,
     internal,
     output,
@@ -135,7 +142,471 @@ setInterval(()=>{},1000);`,
   };
 }
 
-it("requires the original construction before writing or killing a replaced real child", async () => {
+async function hostRunScope(
+  writers: HostRunWriters,
+  cwd: string,
+  logicalSessionId = "logical-main",
+  validateAuthority?: () => Promise<void>,
+) {
+  const run = writers.reserve({
+    owner: {},
+    sessionId: logicalSessionId,
+    runId: `actual-${logicalSessionId}`,
+    isCurrent: () => true,
+    validateAuthority,
+  });
+  await writers.setExecutionCwd(run, cwd);
+  return run;
+}
+
+it("binds actual Host runs to one warm physical child and refuses old, copied and wrong construction scopes", async () => {
+  const writers = new HostRunWriters(),
+    f = await constructionFixture(writers);
+  try {
+    const a = await hostRunScope(writers, f.directory),
+      process = await f.launch("P", a);
+    const original = f.internal.children.get(f.sessionId)!;
+    const args = { sessionId: f.sessionId, constructionId: process.constructionId };
+    const aBinding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+      ...args,
+      hostRun: a,
+    });
+    await f.backend.invoke("harness_write_host_run", {
+      ...args,
+      binding: aBinding,
+      line: "actual-A",
+    });
+    await writers.finish(a);
+    const b = await hostRunScope(writers, f.directory);
+    const bBinding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+      ...args,
+      hostRun: b,
+    });
+    await expect(
+      f.backend.invoke("harness_write_host_run", { ...args, binding: aBinding, line: "late-A" }),
+    ).rejects.toThrow(/closed/);
+    await expect(
+      f.backend.invoke("harness_write_host_run", {
+        ...args,
+        binding: Object.freeze({}),
+        line: "copied",
+      }),
+    ).rejects.toThrow(/original Host run binding/);
+    await expect(
+      f.backend.invoke("harness_write_host_run", {
+        ...args,
+        constructionId: "00000000-0000-4000-8000-000000000000",
+        binding: bBinding,
+        line: "wrong-construction",
+      }),
+    ).rejects.toThrow(/receipt|identity/);
+    await f.backend.invoke("harness_write_host_run", {
+      ...args,
+      binding: bBinding,
+      line: "actual-B",
+    });
+    await f.waitForState(() =>
+      f.output.some((event) => event.line === JSON.stringify({ label: "P", line: "actual-B" })),
+    );
+    expect(f.internal.children.get(f.sessionId)).toBe(original);
+    expect(f.output.some((event) => /late-A|copied|wrong-construction/.test(event.line))).toBe(
+      false,
+    );
+    await writers.finish(b);
+  } finally {
+    await f.close();
+  }
+});
+
+it.each([false, true])(
+  "retains actual Host stdin callback across warm B binding and finish; failure=%s",
+  async (fail) => {
+    const writers = new HostRunWriters(),
+      f = await constructionFixture(writers);
+    const entered = startupGate<void>(),
+      bValidated = startupGate<void>();
+    let finishWrite: ((error?: Error | null) => void) | undefined;
+    let writing: Promise<unknown> | undefined,
+      endingA: Promise<unknown> | undefined,
+      bindingB: Promise<unknown> | undefined;
+    const failure = new Error("original real child callback failed");
+    try {
+      const a = await hostRunScope(writers, f.directory),
+        process = await f.launch("P", a);
+      const original = f.internal.children.get(f.sessionId)!;
+      const args = { sessionId: f.sessionId, constructionId: process.constructionId };
+      const aBinding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+        ...args,
+        hostRun: a,
+      });
+      const hold = vi.spyOn(original.stdin, "write").mockImplementation(((
+        _line: unknown,
+        callback: (error?: Error | null) => void,
+      ) => {
+        finishWrite = callback;
+        entered.resolve();
+        return true;
+      }) as typeof original.stdin.write);
+      try {
+        writing = f.backend
+          .invoke("harness_write_host_run", { ...args, binding: aBinding, line: "held-A" })
+          .catch((error: unknown) => error);
+        await entered.promise;
+      } finally {
+        hold.mockRestore();
+      }
+      let aEnded = false,
+        bBound = false;
+      endingA = writers.finish(a).then(
+        () => {
+          aEnded = true;
+        },
+        (error: unknown) => {
+          aEnded = true;
+          return error;
+        },
+      );
+      const b = await hostRunScope(writers, f.directory, "logical-main", async () => {
+        bValidated.resolve();
+      });
+      bindingB = f.backend
+        .invoke<HostRunBinding>("harness_bind_host_run", { ...args, hostRun: b })
+        .then(
+          (binding) => {
+            bBound = true;
+            return binding;
+          },
+          (error: unknown) => error,
+        );
+      await bValidated.promise;
+      // A genuinely unrelated strict child can write and produce output while the
+      // actual original callback keeps both A finish and warm B admission held.
+      const sibling = await hostRunScope(writers, f.directory, "logical-sibling");
+      const q = await f.launch("S", sibling, "independent-physical-slot");
+      const qArgs = { sessionId: q.sessionId, constructionId: q.constructionId };
+      const qBinding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+        ...qArgs,
+        hostRun: sibling,
+      });
+      await f.backend.invoke("harness_write_host_run", {
+        ...qArgs,
+        binding: qBinding,
+        line: "sibling-positive",
+      });
+      await f.waitForState(() =>
+        f.output.some(
+          (event) =>
+            event.sessionId === q.sessionId &&
+            event.line === JSON.stringify({ label: "S", line: "sibling-positive" }),
+        ),
+      );
+      expect(aEnded).toBe(false);
+      expect(bBound).toBe(false);
+      finishWrite!(fail ? failure : undefined);
+      if (fail) {
+        expect(await writing).toBe(failure);
+        expect(await endingA).toBeInstanceOf(AggregateError);
+        expect(await bindingB).toBeInstanceOf(AggregateError);
+        await expect(writers.finish(b)).resolves.toBeUndefined();
+      } else {
+        await writing;
+        await endingA;
+        const binding = await bindingB;
+        await f.backend.invoke("harness_write_host_run", {
+          ...args,
+          binding,
+          line: "B-after-real-callback",
+        });
+        await f.waitForState(() =>
+          f.output.some(
+            (event) => event.line === JSON.stringify({ label: "P", line: "B-after-real-callback" }),
+          ),
+        );
+        await writers.finish(b);
+      }
+      await writers.finish(sibling);
+      expect(f.internal.children.get(f.sessionId)).toBe(original);
+    } finally {
+      finishWrite?.();
+      await Promise.allSettled([writing, endingA, bindingB]);
+      await f.close();
+    }
+  },
+);
+
+it("refuses a foreign or mismatched-cwd Host spawn before retiring the real running original", async () => {
+  const writers = new HostRunWriters(),
+    f = await constructionFixture(writers);
+  try {
+    const a = await hostRunScope(writers, f.directory),
+      process = await f.launch("A", a);
+    const original = f.internal.children.get(f.sessionId)!;
+    await expect(f.launch("forged", Object.freeze({}) as HostRunHandle)).rejects.toThrow(
+      /original Host run handle/,
+    );
+    const other = join(f.directory, "different-cwd");
+    mkdirSync(other);
+    const b = await hostRunScope(writers, other);
+    await expect(f.launch("wrong-cwd", b)).rejects.toThrow(/execution directory/);
+    expect(f.internal.children.get(f.sessionId)).toBe(original);
+    expect(f.exits).toHaveLength(0);
+    const binding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      hostRun: a,
+    });
+    await f.backend.invoke("harness_write_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      binding,
+      line: "A-preserved",
+    });
+    await f.waitForState(() =>
+      f.output.some((event) => event.line === JSON.stringify({ label: "A", line: "A-preserved" })),
+    );
+    await writers.finish(a);
+    await expect(writers.finish(b)).resolves.toBeUndefined();
+  } finally {
+    await f.close();
+  }
+});
+
+it("reserves Host process capacity before touching A and never upgrades an uncontrolled birth", async () => {
+  const writers = new HostRunWriters({ maxBindingsPerRun: 1 }),
+    f = await constructionFixture(writers);
+  try {
+    const a = await hostRunScope(writers, f.directory),
+      process = await f.launch("A", a);
+    const original = f.internal.children.get(f.sessionId)!;
+    await expect(f.launch("over-capacity", a)).rejects.toThrow(/reservation capacity/);
+    expect(f.internal.children.get(f.sessionId)).toBe(original);
+    expect(f.exits).toEqual([]);
+    const binding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      hostRun: a,
+    });
+    await f.backend.invoke("harness_write_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      binding,
+      line: "A-after-capacity-refusal",
+    });
+    await f.waitForState(() =>
+      f.output.some(
+        (event) => event.line === JSON.stringify({ label: "A", line: "A-after-capacity-refusal" }),
+      ),
+    );
+    await writers.finish(a);
+    const raw = await f.launch("raw", undefined, "helper-physical-slot");
+    const b = await hostRunScope(writers, f.directory);
+    await expect(
+      f.backend.invoke("harness_bind_host_run", {
+        sessionId: raw.sessionId,
+        constructionId: raw.constructionId,
+        hostRun: b,
+      }),
+    ).rejects.toThrow(/does not match/);
+    await f.backend.invoke("harness_write", {
+      sessionId: raw.sessionId,
+      constructionId: raw.constructionId,
+      line: "explicit-unqualified-helper",
+    });
+    await f.waitForState(() =>
+      f.output.some(
+        (event) =>
+          event.sessionId === raw.sessionId &&
+          event.line === JSON.stringify({ label: "raw", line: "explicit-unqualified-helper" }),
+      ),
+    );
+    await writers.finish(b);
+  } finally {
+    await f.close();
+  }
+});
+
+it("invalidates an original Host launch while its authority preflight is held and admits a later fresh source", async () => {
+  const writers = new HostRunWriters(),
+    f = await constructionFixture(writers);
+  const entered = startupGate<void>(),
+    release = startupGate<void>();
+  const a = await hostRunScope(writers, f.directory, "logical-main", async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  const launch = f.launch("cancelled-before-start", a);
+  const outcome = launch.catch((error: unknown) => error);
+  try {
+    await entered.promise;
+    await f.backend.kill(f.sessionId);
+    release.resolve();
+    expect(String(await outcome)).toContain("startup cancelled");
+    expect(f.output).toEqual([]);
+    expect(f.internal.children.has(f.sessionId)).toBe(false);
+    await expect(writers.finish(a)).resolves.toBeUndefined();
+    const b = await hostRunScope(writers, f.directory),
+      process = await f.launch("fresh", b);
+    const binding = await f.backend.invoke<HostRunBinding>("harness_bind_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      hostRun: b,
+    });
+    await f.backend.invoke("harness_write_host_run", {
+      sessionId: f.sessionId,
+      constructionId: process.constructionId,
+      binding,
+      line: "fresh-positive",
+    });
+    await f.waitForState(() =>
+      f.output.some(
+        (event) => event.line === JSON.stringify({ label: "fresh", line: "fresh-positive" }),
+      ),
+    );
+    await writers.finish(b);
+  } finally {
+    release.resolve();
+    await outcome;
+    await f.close();
+  }
+});
+
+it("charges actual scoped HTTP body completion and keeps original abort/delete available after normal close", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "bycoda-scoped-http-")),
+    file = join(directory, "opencode.cjs");
+  writeFileSync(
+    file,
+    `const http=require('node:http');let held;const server=http.createServer((req,res)=>{
+const path=new URL(req.url,'http://localhost').pathname;console.log(JSON.stringify({method:req.method,path}));
+if(req.method==='POST'&&path==='/session'){res.setHeader('content-type','application/json');res.end(JSON.stringify({id:'actual_session',directory:process.cwd()}));return;}
+if(path==='/session/actual_session/prompt_async'){res.writeHead(200,{'content-type':'application/json'});res.write('{"accepted":');held=res;console.log('actual-body-held');return;}
+if(path==='/session/actual_session/abort'){if(held){held.end('true}');held=undefined;}res.writeHead(204);res.end();return;}
+if(req.method==='DELETE'){res.writeHead(204);res.end();return;}
+res.setHeader('content-type','application/json');res.end(JSON.stringify({id:'actual_session',directory:process.cwd()}));
+});server.listen(0,'127.0.0.1',()=>console.log('opencode server listening on http://127.0.0.1:'+server.address().port));`,
+  );
+  const writers = new HostRunWriters(),
+    backend = new HostChildBackend({}, undefined, undefined, writers);
+  const ready = startupGate<string>(),
+    bodyHeld = startupGate<void>();
+  const lines: string[] = [];
+  const unlisten = await backend.listen<{ line: string }>("harness-stdout", ({ payload }) => {
+    lines.push(payload.line);
+    const match = /listening on (http:\/\/[^\s]+)/.exec(payload.line);
+    if (match) ready.resolve(match[1]);
+    if (payload.line === "actual-body-held") bodyHeld.resolve();
+  });
+  let pending: Promise<unknown> | undefined;
+  try {
+    const run = await hostRunScope(writers, directory),
+      control = writers.controlRun(run);
+    await backend.invoke("harness_spawn", {
+      sessionId: "actual-http-process",
+      command: file,
+      args: [],
+      cwd: directory,
+      binaryProvider: "opencode",
+      hostRun: run,
+    });
+    const baseUrl = await ready.promise,
+      hint = { baseUrl, directory };
+    const bootstrap = await backend.invoke<HostRunBinding>("harness_bind_http_host_run", {
+      hostRun: run,
+      httpSource: hint,
+    });
+    const url = (path: string) => `${baseUrl}${path}?directory=${encodeURIComponent(directory)}`;
+    await backend.invoke("harness_http_host_run", {
+      hostRun: run,
+      binding: bootstrap,
+      httpSource: hint,
+      url: url("/session"),
+      method: "POST",
+      body: "{}",
+    });
+    const pinned = { ...hint, providerSessionId: "actual_session" };
+    const normal = await backend.invoke<HostRunBinding>("harness_bind_http_host_run", {
+      hostRun: run,
+      httpSource: pinned,
+    });
+    let settled = false;
+    pending = backend
+      .invoke("harness_http_host_run", {
+        hostRun: run,
+        binding: normal,
+        httpSource: pinned,
+        url: url("/session/actual_session/prompt_async"),
+        method: "POST",
+        body: "{}",
+      })
+      .then((response) => {
+        settled = true;
+        return response;
+      });
+    await bodyHeld.promise;
+    expect(settled).toBe(false);
+    writers.closeAdmission(run);
+    await expect(
+      backend.invoke("harness_http_host_run", {
+        hostRun: run,
+        binding: normal,
+        httpSource: pinned,
+        url: url("/session/actual_session/prompt_async"),
+        method: "POST",
+        body: "{}",
+      }),
+    ).rejects.toThrow(/closed/);
+    const cleanup = await backend.invoke<HostRunBinding>("harness_bind_http_host_run", {
+      hostRun: control,
+      httpSource: pinned,
+    });
+    await backend.invoke("harness_http_host_run", {
+      hostRun: control,
+      binding: cleanup,
+      httpSource: pinned,
+      url: url("/session/actual_session/abort"),
+      method: "POST",
+    });
+    expect(await pending).toEqual({ status: 200, body: '{"accepted":true}' });
+    await backend.invoke("harness_http_host_run", {
+      hostRun: control,
+      binding: cleanup,
+      httpSource: pinned,
+      url: url("/session/actual_session"),
+      method: "DELETE",
+    });
+    expect(
+      lines.filter(
+        (line) =>
+          line === JSON.stringify({ method: "POST", path: "/session/actual_session/prompt_async" }),
+      ),
+    ).toHaveLength(1);
+    await writers.finish(run);
+  } finally {
+    unlisten();
+    await backend.close();
+    await Promise.allSettled([pending]);
+    rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
+it("refuses process receipt exhaustion before retiring the still-running original", async () => {
+  const f = await constructionFixture();
+  const lifecycle = (f.backend as unknown as { processLifecycles: ProviderProcessLifecycle })
+    .processLifecycles;
+  Object.defineProperty(f.backend, "constructions", {
+    value: new ProviderConstructions((child) => lifecycle.completion(child), 1),
+  });
+  try {
+    const a = await f.launch("A");
+    await expect(f.launch("B")).rejects.toThrow("receipts are full");
+    expect(f.internal.children.get(f.sessionId)?.pid).toBe(a.pid);
+    await f.echo(a, "A");
+    expect(f.exits).toHaveLength(0);
+  } finally {
+    await f.close();
+  }
+});
+
+it("requires original write identity and drains a historical real child without signaling its replacement", async () => {
   const f = await constructionFixture();
   try {
     const original = await f.launch("A");
@@ -154,7 +625,6 @@ it("requires the original construction before writing or killing a replaced real
     const line = { toString: vi.fn(() => "must-not-be-rewritten-or-written") };
     const stale = [
       { sessionId: f.sessionId },
-      { sessionId: f.sessionId, constructionId: original.constructionId },
       { sessionId: f.sessionId, constructionId: replacement.pid },
       { sessionId: f.sessionId, constructionId: `${replacement.constructionId}\n` },
       { sessionId: "another-session", constructionId: replacement.constructionId },
@@ -166,6 +636,19 @@ it("requires the original construction before writing or killing a replaced real
       );
       await expect(f.backend.invoke("harness_kill", args)).rejects.toThrow(/identity/);
     }
+    await expect(
+      f.backend.invoke("harness_write", {
+        sessionId: f.sessionId,
+        constructionId: original.constructionId,
+        line,
+      }),
+    ).rejects.toThrow(/identity/);
+    await expect(
+      f.backend.invoke("harness_kill", {
+        sessionId: f.sessionId,
+        constructionId: original.constructionId,
+      }),
+    ).resolves.toBeUndefined();
     expect(line.toString).not.toHaveBeenCalled();
     expect(writes).not.toHaveBeenCalled();
     expect(f.internal.children.get(f.sessionId)).toBe(current);
@@ -211,71 +694,242 @@ it("does not let an old child's delayed overflow retire the replacement", async 
   }
 });
 
-it("retains an original stdin callback lifetime and its timeout cannot retire a replacement", async () => {
+it.each(["callback", "close"] as const)(
+  "keeps a timed-out original write and replacement pending until its %s and other physical obligation drain",
+  async (first) => {
+    const f = await constructionFixture();
+    let finishWrite: ((error?: Error | null) => void) | undefined;
+    let writeResult: Promise<{ error?: unknown }> | undefined;
+    let replacementWork: Promise<HarnessProcessReceipt> | undefined;
+    let releaseClose: (() => void) | undefined;
+    let restoreClose = () => {};
+    const lateFailure = new Error("fixture callback failed after close");
+    try {
+      const original = await f.launch("A");
+      const oldChild = f.internal.children.get(f.sessionId)!;
+      const emitted = oldChild.emit.bind(oldChild);
+      const closeReady = startupGate<void>();
+      let closeReleased = false;
+      const close = vi.spyOn(oldChild, "emit").mockImplementation(((
+        event: string | symbol,
+        ...args: unknown[]
+      ) => {
+        if (event !== "close") return emitted(event, ...args);
+        // Hold only the actual Node close emission, after the real fixture child
+        // has finished. Exit/error flags alone must not discharge this obligation.
+        releaseClose = () => {
+          if (closeReleased) return;
+          closeReleased = true;
+          emitted(event, ...args);
+        };
+        closeReady.resolve();
+        return true;
+      }) as typeof oldChild.emit);
+      restoreClose = () => close.mockRestore();
+      let fireTimeout: (() => void) | undefined;
+      const originalSetTimeout = globalThis.setTimeout;
+      const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
+        callback: (...args: unknown[]) => void,
+        delay?: number,
+        ...args: unknown[]
+      ) => {
+        if (delay === 12_000) fireTimeout = () => callback(...args);
+        return originalSetTimeout(callback, delay, ...args);
+      }) as typeof setTimeout);
+      const write = vi.spyOn(oldChild.stdin, "write").mockImplementation(((
+        _line: unknown,
+        callback: (error?: Error | null) => void,
+      ) => {
+        finishWrite = callback;
+        return true;
+      }) as typeof oldChild.stdin.write);
+      let settled = false;
+      try {
+        writeResult = f.backend
+          .invoke("harness_write", {
+            sessionId: f.sessionId,
+            constructionId: original.constructionId,
+            line: "held-original-write",
+          })
+          .then(
+            () => {
+              settled = true;
+              return {};
+            },
+            (error: unknown) => {
+              settled = true;
+              return { error };
+            },
+          );
+      } finally {
+        timer.mockRestore();
+        write.mockRestore();
+      }
+      expect(finishWrite).toBeTypeOf("function");
+      expect(fireTimeout).toBeTypeOf("function");
+      expect(settled).toBe(false);
+      fireTimeout!();
+      await closeReady.promise;
+      expect(oldChild.exitCode !== null || oldChild.signalCode !== null).toBe(true);
+      expect(f.internal.children.has(f.sessionId)).toBe(false);
+      let replacementStarted = false;
+      replacementWork = f.launch("B").then((receipt) => {
+        replacementStarted = true;
+        return receipt;
+      });
+      void replacementWork.catch(() => {});
+      if (first === "callback") finishWrite!();
+      else releaseClose!();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(replacementStarted).toBe(false);
+      expect(f.internal.children.has(f.sessionId)).toBe(false);
+      if (first === "callback") releaseClose!();
+      else finishWrite!(lateFailure);
+      restoreClose();
+      const result = await writeResult;
+      expect(result.error).toEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("stdin write timed out"),
+        }),
+      );
+      if (first === "close") {
+        expect(result.error).toBeInstanceOf(AggregateError);
+        expect((result.error as AggregateError).errors).toContain(lateFailure);
+      }
+      const replacement = await replacementWork;
+      expect(replacement.constructionId).not.toBe(original.constructionId);
+      const current = f.internal.children.get(f.sessionId)!;
+      expect(current.pid).toBe(replacement.pid);
+      await f.echo(replacement, "B");
+    } finally {
+      finishWrite?.();
+      releaseClose?.();
+      restoreClose();
+      await writeResult;
+      await replacementWork?.catch(() => {});
+      await f.close();
+    }
+  },
+);
+
+it("drains a removed original child's accepted callback during shared backend close", async () => {
   const f = await constructionFixture();
   let finishWrite: ((error?: Error | null) => void) | undefined;
-  let writeResult: Promise<{ error?: unknown }> | undefined;
+  let writing: Promise<unknown> | undefined;
+  let killing: Promise<unknown> | undefined;
+  let closing: Promise<void> | undefined;
   try {
     const original = await f.launch("A");
-    const oldChild = f.internal.children.get(f.sessionId)!;
-    let fireTimeout: (() => void) | undefined;
-    const originalSetTimeout = globalThis.setTimeout;
-    const timer = vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-      callback: (...args: unknown[]) => void,
-      delay?: number,
-      ...args: unknown[]
-    ) => {
-      if (delay === 12_000) fireTimeout = () => callback(...args);
-      return originalSetTimeout(callback, delay, ...args);
-    }) as typeof setTimeout);
-    const write = vi.spyOn(oldChild.stdin, "write").mockImplementation(((
+    const child = f.internal.children.get(f.sessionId)!;
+    const write = vi.spyOn(child.stdin, "write").mockImplementation(((
       _line: unknown,
       callback: (error?: Error | null) => void,
     ) => {
       finishWrite = callback;
       return true;
-    }) as typeof oldChild.stdin.write);
-    let settled = false;
+    }) as typeof child.stdin.write);
+    let written = false;
     try {
-      writeResult = f.backend
+      writing = f.backend
         .invoke("harness_write", {
           sessionId: f.sessionId,
           constructionId: original.constructionId,
-          line: "held-original-write",
+          line: "accepted-before-retirement",
         })
-        .then(
-          () => {
-            settled = true;
-            return {};
-          },
-          (error: unknown) => {
-            settled = true;
-            return { error };
-          },
-        );
+        .then(() => {
+          written = true;
+        });
     } finally {
-      timer.mockRestore();
       write.mockRestore();
     }
-    expect(finishWrite).toBeTypeOf("function");
-    expect(fireTimeout).toBeTypeOf("function");
-    const replacement = await f.launch("B");
-    const current = f.internal.children.get(f.sessionId)!;
-    expect(settled).toBe(false);
-    fireTimeout!();
-    expect((await writeResult).error).toEqual(
-      expect.objectContaining({
-        message: expect.stringContaining("stdin write timed out"),
-      }),
+    killing = f.backend.invoke("harness_kill", {
+      sessionId: f.sessionId,
+      constructionId: original.constructionId,
+    });
+    void killing.catch(() => {});
+    await f.waitForState(() =>
+      f.exits.some((event) => event.constructionId === original.constructionId),
     );
-    expect(f.internal.children.get(f.sessionId)).toBe(current);
-    await f.echo(replacement, "B");
+    expect(f.internal.children.has(f.sessionId)).toBe(false);
+    expect(written).toBe(false);
+    let closed = false;
+    closing = f.backend.close();
+    expect(f.backend.close()).toBe(closing);
+    void closing.then(() => {
+      closed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).toBe(false);
+    expect(written).toBe(false);
+    finishWrite!();
+    await writing;
+    await killing;
+    await closing;
+    expect(written).toBe(true);
+    expect(closed).toBe(true);
   } finally {
     finishWrite?.();
-    await writeResult;
+    await writing?.catch(() => {});
+    await killing?.catch(() => {});
+    await closing?.catch(() => {});
     await f.close();
   }
 });
+
+it.each(["callback error", "synchronous throw"] as const)(
+  "reports an actual stdin %s and leaves a later explicit receipt write usable",
+  async (kind) => {
+    const f = await constructionFixture();
+    const failure = new Error(`fixture ${kind}`);
+    let finishWrite: ((error?: Error | null) => void) | undefined;
+    let writing: Promise<unknown> | undefined;
+    try {
+      const original = await f.launch("A");
+      const child = f.internal.children.get(f.sessionId)!;
+      const write = vi.spyOn(child.stdin, "write").mockImplementation(((
+        _line: unknown,
+        callback: (error?: Error | null) => void,
+      ) => {
+        if (kind === "synchronous throw") throw failure;
+        finishWrite = callback;
+        return true;
+      }) as typeof child.stdin.write);
+      try {
+        writing = f.backend.invoke("harness_write", {
+          sessionId: f.sessionId,
+          constructionId: original.constructionId,
+          line: "failing-write",
+        });
+        const rejected = expect(writing).rejects.toBe(failure);
+        if (kind === "callback error") {
+          let settled = false;
+          void writing.then(
+            () => {
+              settled = true;
+            },
+            () => {
+              settled = true;
+            },
+          );
+          child.stdin.emit("error", failure);
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(settled).toBe(false);
+          finishWrite!(failure);
+        }
+        await rejected;
+      } finally {
+        write.mockRestore();
+      }
+      expect(f.internal.children.get(f.sessionId)).toBe(child);
+      await f.echo(original, "A");
+    } finally {
+      finishWrite?.(failure);
+      await writing?.catch(() => {});
+      await f.close();
+    }
+  },
+);
 
 it("invalidates a pending launch on per-ID kill and drains accepted preparation during close", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-cancel-start-"));
@@ -377,7 +1031,7 @@ it("lets a replacement start while old grant preparation is held without stale l
       args: [],
       cwd: directory,
     });
-    await vi.waitFor(() => expect(existsSync(marker)).toBe(true));
+    await vi.waitFor(() => expect(existsSync(marker)).toBe(true), { timeout: 5000 });
     release.resolve({ ...current, token: "fixture-old-token" });
     await rejected;
     expect(readFileSync(marker, "utf8")).toBe("started\n");
@@ -448,14 +1102,20 @@ it("shares close and joins accepted preparation before reporting a child-kill fa
     expect(finished).toBe(false);
     release.resolve(undefined);
     await rejected;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(finished).toBe(false);
+    // A rejected stop request does not prove the still-live child was drained.
+    // Explicitly finish the real original before close may report that failure.
+    kill.mockRestore();
+    await backend.kill("running");
     await failed;
     expect(finished).toBe(true);
   } finally {
     release.resolve(undefined);
     await rejected;
-    await close.catch(() => undefined);
     kill.mockRestore();
     await backend.kill("running");
+    await close.catch(() => undefined);
     rmSync(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }
 });

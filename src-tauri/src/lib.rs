@@ -59,6 +59,8 @@ mod native_window_lifecycle;
 mod native_workspace;
 mod notes;
 mod notifications;
+#[cfg(windows)]
+mod owned_process_job;
 mod package_smoke;
 mod pasteboard;
 mod pi_usage;
@@ -837,6 +839,8 @@ pub fn run() {
             harness::harness_free_port,
             harness::harness_spawn,
             harness::harness_write,
+            harness::turn_writes::harness_bind_turn,
+            harness::turn_writes::harness_write_controlled,
             harness::harness_kill,
             harness::harness_retire,
             harness::harness_kill_all,

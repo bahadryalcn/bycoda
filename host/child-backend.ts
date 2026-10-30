@@ -1,5 +1,5 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { randomUUID } from "node:crypto";
 import {
@@ -33,6 +33,25 @@ import {
   PROVIDER_STDOUT_LINE_BYTES,
   PROVIDER_STDERR_LINE_BYTES,
 } from "./provider-lines";
+import { ProviderProcessLifecycle } from "./provider-process-lifecycle";
+import type { ProviderChild } from "./provider-child";
+import { NativeGuardianChild } from "./provider-guardian";
+import { prepareProviderGuardian } from "./provider-guardian-deployment";
+import { ProviderConstructions } from "./provider-constructions";
+import {
+  HostRunWriters,
+  type HostRunProcessReservation,
+  type HostRunProcessSource,
+  type HostRunCwdGrant,
+} from "./run-writers";
+import { canonicalWorkspacePath, workspacePathKey } from "./workspace-paths";
+import {
+  HostRunHttpTargets,
+  type HostHttpOrigin,
+  type HostHttpSourceHint,
+} from "./run-http-targets";
+import { parseServerUrlFromOutput } from "../src/integrations/harness/providers/opencode/opencodeProtocol";
+import type { HostRunHandle, HostRunBinding } from "../src/integrations/harness/core/hostRun";
 
 const ALLOWED_EXEC_ARGS: readonly (readonly string[])[] = [
   ["--version"],
@@ -174,13 +193,17 @@ export class HostChildBackend implements ChildBackend {
     this.genericAcp = service;
   }
   private events = new EventEmitter();
-  private children = new Map<string, ChildProcessWithoutNullStreams>();
-  private readonly constructions = new Map<
-    string,
-    { sessionId: string; child: ChildProcessWithoutNullStreams }
-  >();
-  private readonly retirements = new WeakMap<ChildProcessWithoutNullStreams, Promise<void>>();
+  private children = new Map<string, ProviderChild>();
+  private readonly constructions = new ProviderConstructions((child) =>
+    this.processLifecycles.completion(child),
+  );
+  private readonly processLifecycles = new ProviderProcessLifecycle();
+  private readonly processCwds = new WeakMap<ProviderChild, string>();
+  private readonly textWorkspaces = new Map<string, HostRunCwdGrant>();
+  private readonly textWorkspaceSlots = new Set<object>();
+  private readonly httpTargets = new HostRunHttpTargets();
   private starts = new Map<string, object>();
+  private readonly pendingStarts = new Map<string, Set<object>>();
   private startWork = new Set<Promise<HarnessProcessReceipt>>();
   private streams = new Map<string, AbortController>();
   private closing = false;
@@ -189,6 +212,8 @@ export class HostChildBackend implements ChildBackend {
   constructor(
     private readonly binaries: Partial<Record<RemoteProvider, string>> = {},
     private readonly artifactDirectory = join(homedir(), ".bycoda-host", "attachments"),
+    private readonly guardianDirectory = fileURLToPath(new URL("./", import.meta.url)),
+    private readonly runWriters?: HostRunWriters,
   ) {
     this.events.setMaxListeners(0);
   }
@@ -290,11 +315,43 @@ export class HostChildBackend implements ChildBackend {
       case "harness_prepare_text_workspace": {
         if (typeof args.content !== "string" || args.content.length > 20_000)
           throw new Error("Invalid text agent profile");
-        const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
-        const profile = join(cwd, ".agents", "agents");
-        await mkdir(profile, { recursive: true });
-        await writeFile(join(profile, "bycoda-text.md"), args.content, "utf8");
-        return { cwd, logPath: join(cwd, "agent.log") } as T;
+        const content = args.content;
+        const hostRun = args.hostRun as HostRunHandle | undefined;
+        const create = async (created?: (cwd: string) => void) => {
+          const cwd = await mkdtemp(join(tmpdir(), "bycoda-antigravity-text-"));
+          created?.(cwd);
+          const profile = join(cwd, ".agents", "agents");
+          await mkdir(profile, { recursive: true });
+          await writeFile(join(profile, "bycoda-text.md"), content, "utf8");
+          return { cwd, logPath: join(cwd, "agent.log") };
+        };
+        if (hostRun === undefined) return (await create()) as T;
+        const writers = this.requireRunWriters();
+        if (!writers.executionSource(hostRun).auxiliary)
+          throw new Error("An original auxiliary Host scope is required for a text sandbox.");
+        if (this.textWorkspaceSlots.size >= 512)
+          throw new Error("Host text sandbox ownership capacity is full.");
+        const slot: { cwd?: string; error?: unknown } = {};
+        this.textWorkspaceSlots.add(slot);
+        let started = false;
+        try {
+          return (await writers.runWork(hostRun, async () => {
+            started = true;
+            const workspace = await create((cwd) => {
+              slot.cwd = cwd;
+            });
+            const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
+            const canonical = await canonicalWorkspacePath(workspace.cwd);
+            writers.assertOpen(hostRun);
+            this.textWorkspaces.set(workspacePathKey(canonical), grant);
+            return workspace;
+          })) as T;
+        } catch (error) {
+          slot.error = error;
+          throw error;
+        } finally {
+          if (!started) this.textWorkspaceSlots.delete(slot);
+        }
       }
       case "harness_save_generated_image":
         return (await saveHostGeneratedImage(this.artifactDirectory, {
@@ -316,13 +373,46 @@ export class HostChildBackend implements ChildBackend {
         )
           throw new Error("Unsupported headless catalog command");
         const launch = await providerLaunch(commandPath, args.args as string[]);
-        const { stdout } = await exec(launch.command, launch.args, {
-          cwd: typeof args.cwd === "string" ? args.cwd : undefined,
-          timeout: 10_000,
-          maxBuffer: 8 * 1024 * 1024,
-          windowsHide: true,
-        });
-        return stdout as T;
+        const cwd = typeof args.cwd === "string" ? args.cwd : undefined;
+        const service =
+          provider === "opencode" &&
+          (args.args as string[])[0] === "service" &&
+          ["status", "start"].includes((args.args as string[])[1]);
+        const originSlot = service ? this.httpTargets.reserveOrigin() : undefined;
+        try {
+          const { stdout } = await exec(launch.command, launch.args, {
+            cwd,
+            timeout: 10_000,
+            maxBuffer: 8 * 1024 * 1024,
+            windowsHide: true,
+          });
+          if (originSlot) {
+            const origin = this.serviceOrigin(stdout);
+            if (origin) {
+              const status = await providerLaunch(commandPath, ["service", "status"]);
+              this.httpTargets.publishService(originSlot, origin, {
+                key: await realpath(commandPath),
+                owner: {},
+                validate: async () => {
+                  const actual = await exec(status.command, status.args, {
+                    cwd,
+                    timeout: 10_000,
+                    maxBuffer: 8 * 1024 * 1024,
+                    windowsHide: true,
+                  });
+                  if (this.serviceOrigin(actual.stdout) !== origin)
+                    throw new Error("Original external OpenCode service source changed.");
+                },
+              });
+            } else if ((args.args as string[])[1] === "status")
+              this.httpTargets.releaseUnused(originSlot);
+            else this.httpTargets.retainUnknown(originSlot);
+          }
+          return stdout as T;
+        } catch (error) {
+          if (originSlot) this.httpTargets.retainUnknown(originSlot);
+          throw error;
+        }
       }
       case "harness_free_port": {
         const server = createServer();
@@ -352,6 +442,94 @@ export class HostChildBackend implements ChildBackend {
           ),
         });
         return { status: response.status, body: await response.text() } as T;
+      }
+      case "harness_bind_http_host_run": {
+        const run = args.hostRun as HostRunHandle,
+          writers = this.requireRunWriters();
+        const hint = this.httpSourceHint(args.httpSource);
+        const original = this.httpTargets.capture(hint.baseUrl);
+        return (await writers.runWork(
+          run,
+          () => this.httpTargets.bind(original, run, writers.executionSource(run), hint),
+          { cwd: hint.directory, effectful: false },
+        )) as T;
+      }
+      case "harness_http_host_run": {
+        const run = args.hostRun as HostRunHandle,
+          binding = args.binding as HostRunBinding;
+        const writers = this.requireRunWriters(),
+          hint = this.httpSourceHint(args.httpSource);
+        const request = Object.freeze({
+          url: loopbackUrl(args.url),
+          method: String(args.method).toUpperCase(),
+          body: typeof args.body === "string" ? args.body : undefined,
+        });
+        const headers =
+          args.headers && typeof args.headers === "object"
+            ? Object.freeze(
+                Object.fromEntries(
+                  Object.entries(args.headers).map(([key, value]) => {
+                    if (typeof value !== "string") throw new Error("Invalid scoped HTTP header.");
+                    return [key, value];
+                  }),
+                ),
+              )
+            : undefined;
+        const timeoutMs = typeof args.timeoutMs === "number" ? Math.max(1, args.timeoutMs) : 30_000;
+        const fetchOriginal = (
+          url: string,
+          method: string,
+          body?: string,
+          assertTarget?: () => void,
+        ) =>
+          writers.runWork(
+            run,
+            async () => {
+              this.httpTargets.assertBound(binding, run, writers.executionSource(run));
+              assertTarget?.();
+              const response = await fetch(url, {
+                method,
+                headers,
+                body,
+                redirect: "error",
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+              return { status: response.status, body: await response.text() };
+            },
+            { cwd: hint.directory },
+          );
+        return (await writers.runWork(
+          run,
+          async () => {
+            const reservation = await this.httpTargets.prepare(
+              binding,
+              run,
+              writers.executionSource(run),
+              hint,
+              request,
+              (url) => fetchOriginal(url, "GET"),
+              () => {
+                writers.executionSource(run);
+              },
+              (error) => writers.retainFailure(run, error),
+            );
+            try {
+              reservation.assertCurrent();
+              const response = await fetchOriginal(
+                request.url,
+                request.method,
+                request.body,
+                reservation.assertCurrent,
+              );
+              await reservation.complete(response);
+              return response;
+            } catch (error) {
+              reservation.fail(error);
+              throw error;
+            }
+          },
+          { cwd: hint.directory, effectful: false },
+        )) as T;
       }
       case "harness_sse_open": {
         const url = loopbackUrl(args.url);
@@ -409,38 +587,32 @@ export class HostChildBackend implements ChildBackend {
       }
       case "harness_spawn":
         return (await this.start(id, args)) as T;
-      case "harness_write": {
+      case "harness_bind_host_run": {
         const child = this.requireChild(id, args.constructionId);
-        if (child.stdin.destroyed) throw new Error("Provider process is not running");
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => {
-            reject(
-              new Error(
-                `Provider stdin write timed out (session ${id}, pid ${child.pid}, ${Buffer.byteLength(String(args.line))} bytes)`,
-              ),
-            );
-            // Retire only this generation; a replacement must never be killed.
-            void this.retireChild(id, child);
-          }, 12_000);
-          child.stdin.write(
-            `${authorizeConversationAcpFrame(
-              authorizeRuntimeLogsAcpFrame(
-                authorizeSocialAcpFrame(String(args.line), this.socialEnvironments.get(id) ?? {}),
-                this.runtimeLogEnvironments.get(id) ?? {},
-              ),
-              this.conversationEnvironments.get(id) ?? {},
-            )}\n`,
-            (error) => {
-              clearTimeout(timer);
-              if (error) reject(error);
-              else resolve();
-            },
-          );
+        return (await this.requireRunWriters().bind(
+          args.hostRun as HostRunHandle,
+          child,
+          this.runProcessSource(id, args.constructionId as string, child),
+        )) as T;
+      }
+      case "harness_write_host_run": {
+        const child = this.requireChild(id, args.constructionId);
+        const source = this.runProcessSource(id, args.constructionId as string, child);
+        const line = String(args.line);
+        await this.requireRunWriters().write(args.binding as HostRunBinding, child, source, () => {
+          source.assertCurrent?.();
+          this.requireRunWriters().assertControlWrite(args.binding as HostRunBinding, line);
+          return this.writeFrame(id, child, line);
         });
         return undefined as T;
       }
+      case "harness_write": {
+        const child = this.requireChild(id, args.constructionId);
+        await this.writeFrame(id, child, String(args.line));
+        return undefined as T;
+      }
       case "harness_kill":
-        await this.retireChild(id, this.requireChild(id, args.constructionId));
+        await this.retireChild(id, this.constructions.require(id, args.constructionId).child);
         return undefined as T;
       case "harness_kill_all":
         await this.close();
@@ -529,20 +701,76 @@ export class HostChildBackend implements ChildBackend {
     const attempt = {};
     let tools: ToolPreparation | undefined;
     let published = false;
-    let ownedChild: ChildProcessWithoutNullStreams | undefined;
-    this.starts.set(id, attempt);
+    let ownedChild: ProviderChild | undefined;
+    const hostRun = args.hostRun as HostRunHandle | undefined;
+    const runWriters = hostRun === undefined ? undefined : this.requireRunWriters();
+    let runPreparation: HostRunProcessReservation | undefined;
+    let cwd: string | undefined;
+    let admitted = false;
+    let failed = false;
+    let failure: unknown;
+    let httpOrigin: HostHttpOrigin | undefined;
+    let httpChildObserved = false;
+    const constructionSlot = this.constructions.reserve(id);
+    const pending = this.pendingStarts.get(id) ?? new Set<object>();
+    pending.add(attempt);
+    this.pendingStarts.set(id, pending);
+    if (hostRun === undefined) {
+      this.starts.set(id, attempt);
+      admitted = true;
+    }
     const check = () => {
       if (this.closing) throw new ProviderStartupCancelled("Host is stopping");
-      if (this.starts.get(id) !== attempt)
+      if (this.pendingStarts.get(id) !== pending || !pending.has(attempt))
         throw new ProviderStartupCancelled("Provider startup cancelled");
+      if (admitted && this.starts.get(id) !== attempt)
+        throw new ProviderStartupCancelled("Provider startup cancelled");
+      if (runPreparation) runWriters!.assertPreparedProcess(runPreparation);
     };
     const restrict = async () => {
       check();
+      if (runPreparation) await runWriters!.validatePreparedProcess(runPreparation);
       if (beforeSpawn) await beforeSpawn();
       check();
     };
     try {
-      if (beforeSpawn) await restrict();
+      if (runWriters && hostRun) {
+        const requestedCwd = await canonicalWorkspacePath(await workingDirectory(String(args.cwd)));
+        let cwdGrant: HostRunCwdGrant | undefined;
+        if (
+          args.binaryProvider === "antigravity" &&
+          workspacePathKey(requestedCwd) !==
+            workspacePathKey(runWriters.executionSource(hostRun).cwd)
+        ) {
+          const binary =
+            typeof args.binaryPath === "string" && args.binaryPath.trim()
+              ? await configuredBinary("antigravity", args.binaryPath, true)
+              : await this.resolve("antigravity");
+          const resolvedBinary = await realpath(binary);
+          if (
+            workspacePathKey(await realpath(String(args.command))) !==
+            workspacePathKey(resolvedBinary)
+          )
+            throw new Error("Antigravity launcher does not match its actual Host resolution.");
+          const launcherCwd = await canonicalWorkspacePath(dirname(resolvedBinary));
+          cwdGrant =
+            workspacePathKey(requestedCwd) === workspacePathKey(launcherCwd)
+              ? await runWriters.grantCwd(hostRun, launcherCwd, "antigravity-launcher")
+              : this.textWorkspaces.get(workspacePathKey(requestedCwd));
+        }
+        runPreparation = await runWriters.prepareProcess(hostRun, {
+          sessionId: id,
+          cwd: requestedCwd,
+          provider: typeof args.binaryProvider === "string" ? args.binaryProvider : undefined,
+          cwdGrant,
+        });
+        cwd = runPreparation.cwd;
+        check();
+        if (args.binaryProvider === "opencode") httpOrigin = this.httpTargets.reserveOrigin();
+        this.starts.set(id, attempt);
+        admitted = true;
+      }
+      if (beforeSpawn || runPreparation) await restrict();
       let genericEnv: Record<string, string> = {};
       if (args.genericAcpId) {
         if (!this.genericAcp) throw new Error("Generic ACP management is unavailable");
@@ -551,22 +779,22 @@ export class HostChildBackend implements ChildBackend {
         args = { ...args, command: config.command, args: config.args };
         genericEnv = config.env ?? {};
       }
-      if (beforeSpawn) await restrict();
+      if (beforeSpawn || runPreparation) await restrict();
       await this.killCurrent(id);
       check();
-      if (beforeSpawn) await restrict();
+      if (beforeSpawn || runPreparation) await restrict();
       tools = this.preparation(id, attempt);
       const account = await providerAccountEnvironment(
         args.account as { provider?: string; id?: string } | undefined,
       );
       check();
-      if (beforeSpawn) await restrict();
-      const cwd = await workingDirectory(String(args.cwd));
+      if (beforeSpawn || runPreparation) await restrict();
+      cwd ??= await workingDirectory(String(args.cwd));
       check();
-      if (beforeSpawn) await restrict();
+      if (beforeSpawn || runPreparation) await restrict();
       const launch = await providerLaunch(String(args.command), args.args as string[]);
       check();
-      if (beforeSpawn) await restrict();
+      if (beforeSpawn || runPreparation) await restrict();
       const env: NodeJS.ProcessEnv = { ...process.env, ...genericEnv, ...account?.set };
       for (const key of Object.keys(env))
         if (
@@ -578,12 +806,12 @@ export class HostChildBackend implements ChildBackend {
       for (const group of ["social", "conversation", "runtime-logs"] as const) {
         const tool = await this.prepareTool(id, tools, group, check);
         check();
-        if (beforeSpawn) await restrict();
+        if (beforeSpawn || runPreparation) await restrict();
         Object.assign(env, tool?.env);
       }
       for (const key of account?.remove ?? []) delete env[key];
       check();
-      if (beforeSpawn) await restrict();
+      if (beforeSpawn || runPreparation) await restrict();
       // Preparation is local to this attempt. A cancelled older grant must not
       // replace the authority used by a newer child under the same session ID.
       for (const [prefix, target] of [
@@ -597,23 +825,59 @@ export class HostChildBackend implements ChildBackend {
         target.delete(id);
         if (Object.keys(scoped).length) target.set(id, scoped);
       }
-      const child = spawn(
-        process.execPath,
-        [
-          fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
-          launch.command,
-          ...launch.args,
-        ],
-        {
-          cwd,
-          stdio: ["pipe", "pipe", "pipe", "pipe"],
-          detached: process.platform !== "win32",
-          windowsHide: true,
-          env: { ...env, BYCODA_HOST: "1" },
-        },
+      const guardian = await prepareProviderGuardian(this.guardianDirectory);
+      let child: ProviderChild;
+      try {
+        check();
+        if (beforeSpawn || runPreparation) await restrict();
+        check();
+        child = guardian
+          ? guardian.spawn(
+              {
+                command: launch.command,
+                args: launch.args,
+                cwd,
+                env: { ...env, BYCODA_HOST: "1" },
+              },
+              restrict,
+              check,
+            )
+          : spawn(
+              process.execPath,
+              [
+                fileURLToPath(new URL("./provider-guard.mjs", import.meta.url)),
+                launch.command,
+                ...launch.args,
+              ],
+              {
+                cwd,
+                stdio: ["pipe", "pipe", "pipe", "pipe"],
+                detached: process.platform !== "win32",
+                windowsHide: true,
+                env: { ...env, BYCODA_HOST: "1" },
+              },
+            );
+      } catch (error) {
+        await guardian?.dispose();
+        throw error;
+      }
+      this.processLifecycles.register(
+        id,
+        child,
+        child instanceof NativeGuardianChild ? child.retirement : undefined,
       );
+      ownedChild = child;
+      const guardianCleanup = guardian?.dispose();
       const constructionId = randomUUID();
-      this.constructions.set(constructionId, { sessionId: id, child });
+      this.processCwds.set(child, cwd);
+      if (runWriters && hostRun && runPreparation)
+        runWriters.attachProcess(
+          hostRun,
+          child,
+          { sessionId: id, constructionId, cwd },
+          runPreparation,
+        );
+      this.constructions.publish(constructionSlot, constructionId, child);
       ownedChild = child;
       this.children.set(id, child);
       this.activeTools.set(id, tools);
@@ -625,12 +889,52 @@ export class HostChildBackend implements ChildBackend {
       const overflow = (reason: string) => {
         if (exitReason) return;
         exitReason = reason;
-        void this.retireChild(id, child);
+        void this.retireChild(id, child).catch((error) =>
+          console.error("Provider overflow retirement failed:", error),
+        );
       };
-      this.lines(child, id, constructionId, "stdout", overflow);
+      if (httpOrigin) {
+        this.httpTargets.observeChildCompletion(
+          httpOrigin,
+          this.processLifecycles.completion(child),
+        );
+        httpChildObserved = true;
+      }
+      const httpScope =
+        httpOrigin && hostRun && runWriters ? runWriters.executionSource(hostRun) : undefined;
+      this.lines(
+        child,
+        id,
+        constructionId,
+        "stdout",
+        overflow,
+        httpOrigin && httpScope
+          ? (line) => {
+              const origin = parseServerUrlFromOutput(line);
+              if (!origin) return;
+              try {
+                this.httpTargets.publishChild(httpOrigin!, origin, {
+                  owner: child,
+                  constructionId,
+                  scope: httpScope,
+                  assertCurrent: () => {
+                    this.runProcessSource(id, constructionId, child).assertCurrent?.();
+                    if (child.exitCode !== null || child.signalCode !== null)
+                      throw new Error("Original OpenCode child exited.");
+                  },
+                });
+              } catch (error) {
+                this.httpTargets.retainUnknown(httpOrigin!);
+                overflow(String(error));
+              }
+            }
+          : undefined,
+      );
       this.lines(child, id, constructionId, "stderr", overflow);
       child.on("close", (code) => {
-        this.constructions.delete(constructionId);
+        if (child instanceof NativeGuardianChild && !child.retirementVerified)
+          exitReason ??=
+            "Provider cleanup could not be verified. This session cannot start a replacement.";
         if (this.children.get(id) === child) {
           this.children.delete(id);
           this.releaseActiveTools(id);
@@ -643,10 +947,15 @@ export class HostChildBackend implements ChildBackend {
           ...(exitReason ? { reason: exitReason } : {}),
         });
       });
-      await new Promise<void>((resolve, reject) => {
-        child.once("spawn", resolve);
-        child.once("error", reject);
-      });
+      const started =
+        child instanceof NativeGuardianChild
+          ? child.started
+          : new Promise<void>((resolve, reject) => {
+              child.once("spawn", resolve);
+              child.once("error", reject);
+            });
+      await guardianCleanup;
+      await started;
       check();
       const receipt = requireHarnessProcessReceipt(
         { version: 1, backend: "host", sessionId: id, pid: child.pid, constructionId },
@@ -655,13 +964,37 @@ export class HostChildBackend implements ChildBackend {
       );
       published = true;
       return receipt;
+    } catch (error) {
+      failed = true;
+      failure = error;
+      throw error;
     } finally {
-      if (!published && tools) {
-        if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
-        this.retireTools(tools);
-        if (ownedChild && this.children.get(id) === ownedChild) await this.killCurrent(id);
+      try {
+        this.constructions.release(constructionSlot);
+        if (!published && tools) {
+          if (this.preparedTools.get(id) === tools) this.preparedTools.delete(id);
+          this.retireTools(tools);
+          if (ownedChild) await this.retireChild(id, ownedChild);
+        }
+      } catch (error) {
+        failure = failed
+          ? new AggregateError([failure, error], "Original provider startup and cleanup failed.")
+          : error;
+        failed = true;
+        throw failure;
+      } finally {
+        if (runPreparation) {
+          if (failed) runWriters!.completeProcess(runPreparation, failure);
+          else runWriters!.completeProcess(runPreparation);
+        }
+        if (httpOrigin && !httpChildObserved) {
+          if (ownedChild) this.httpTargets.retainUnknown(httpOrigin);
+          else this.httpTargets.releaseUnused(httpOrigin);
+        }
+        if (this.starts.get(id) === attempt) this.starts.delete(id);
+        pending.delete(attempt);
+        if (!pending.size && this.pendingStarts.get(id) === pending) this.pendingStarts.delete(id);
       }
-      if (this.starts.get(id) === attempt) this.starts.delete(id);
     }
   }
 
@@ -808,11 +1141,12 @@ export class HostChildBackend implements ChildBackend {
   }
 
   private lines(
-    child: ChildProcessWithoutNullStreams,
+    child: ProviderChild,
     id: string,
     constructionId: string,
     stream: "stdout" | "stderr",
     onOverflow: (reason: string) => void,
+    onLine?: (line: string) => void,
   ): void {
     const maxBytes = stream === "stdout" ? PROVIDER_STDOUT_LINE_BYTES : PROVIDER_STDERR_LINE_BYTES;
     const tokens = [
@@ -824,6 +1158,7 @@ export class HostChildBackend implements ChildBackend {
       maxBytes,
       (line) => {
         for (const token of tokens) line = line.replaceAll(token, "[session credential redacted]");
+        onLine?.(line);
         this.emit(`harness-${stream}`, {
           sessionId: id,
           constructionId,
@@ -840,7 +1175,7 @@ export class HostChildBackend implements ChildBackend {
     child[stream].on("end", () => lines.end());
   }
 
-  private signal(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
+  private signal(child: ProviderChild, signal: NodeJS.Signals): void {
     try {
       if (process.platform === "win32") child.kill(signal);
       else if (child.pid) process.kill(-child.pid, signal);
@@ -850,6 +1185,7 @@ export class HostChildBackend implements ChildBackend {
   }
 
   async kill(id: string): Promise<void> {
+    this.pendingStarts.delete(id);
     this.starts.delete(id);
     const prepared = this.preparedTools.get(id);
     if (prepared) this.retireTools(prepared);
@@ -857,44 +1193,106 @@ export class HostChildBackend implements ChildBackend {
     await this.killCurrent(id);
   }
 
-  private requireChild(id: string, constructionId: unknown): ChildProcessWithoutNullStreams {
+  private requireChild(id: string, constructionId: unknown): ProviderChild {
     if (!isHarnessConstructionId(constructionId))
       throw new Error("Provider process identity is required.");
-    const construction = this.constructions.get(constructionId);
-    if (
-      !construction ||
-      construction.sessionId !== id ||
-      this.children.get(id) !== construction.child
-    )
+    const construction = this.constructions.require(id, constructionId);
+    if (this.children.get(id) !== construction.child)
       throw new Error("Provider process identity changed or is no longer running.");
     return construction.child;
+  }
+
+  private requireRunWriters(): HostRunWriters {
+    if (!this.runWriters) throw new Error("Host run writer authority is unavailable.");
+    return this.runWriters;
+  }
+
+  private httpSourceHint(value: unknown): HostHttpSourceHint {
+    if (!value || typeof value !== "object")
+      throw new Error("Original HTTP source metadata is required.");
+    const source = value as Record<string, unknown>;
+    if (
+      typeof source.baseUrl !== "string" ||
+      typeof source.directory !== "string" ||
+      (source.providerSessionId !== undefined && typeof source.providerSessionId !== "string")
+    )
+      throw new Error("Invalid original HTTP source metadata.");
+    return Object.freeze({
+      baseUrl: source.baseUrl,
+      directory: source.directory,
+      providerSessionId: source.providerSessionId,
+    });
+  }
+
+  private serviceOrigin(output: string): string | undefined {
+    const value = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => /^http:\/\/(?:127\.0\.0\.1|localhost):\d+\/?$/i.test(line));
+    return value ? new URL(value).origin : undefined;
+  }
+
+  private runProcessSource(
+    id: string,
+    constructionId: string,
+    child: ProviderChild,
+  ): HostRunProcessSource {
+    const cwd = this.processCwds.get(child);
+    if (!cwd) throw new Error("Original provider execution directory is unavailable.");
+    return Object.freeze({
+      sessionId: id,
+      constructionId,
+      cwd,
+      assertCurrent: () => {
+        if (this.requireChild(id, constructionId) !== child)
+          throw new Error("Original provider construction changed.");
+      },
+    });
+  }
+
+  private writeFrame(id: string, child: ProviderChild, line: string): Promise<void> {
+    if (child.stdin.destroyed) throw new Error("Provider process is not running");
+    return this.processLifecycles.write(
+      child,
+      `${authorizeConversationAcpFrame(
+        authorizeRuntimeLogsAcpFrame(
+          authorizeSocialAcpFrame(line, this.socialEnvironments.get(id) ?? {}),
+          this.runtimeLogEnvironments.get(id) ?? {},
+        ),
+        this.conversationEnvironments.get(id) ?? {},
+      )}\n`,
+      new Error(
+        `Provider stdin write timed out (session ${id}, pid ${child.pid}, ${Buffer.byteLength(line)} bytes)`,
+      ),
+      () => this.retireChild(id, child),
+    );
   }
 
   private async killCurrent(id: string): Promise<void> {
     const child = this.children.get(id);
     if (!child) {
       this.releaseActiveTools(id);
-      return;
-    }
-    await this.retireChild(id, child);
+    } else await this.retireChild(id, child);
+    // Timeout/overflow callbacks remove a retired child from the current roster
+    // immediately. A replacement still owes that original's callbacks and close.
+    await this.processLifecycles.drainSession(id);
   }
 
-  private retireChild(id: string, child: ChildProcessWithoutNullStreams): Promise<void> {
+  private retireChild(id: string, child: ProviderChild): Promise<void> {
     // Original callbacks may arrive after replacement. They can retire only
     // their captured process, never a newer child or pending startup by ID.
     if (this.children.get(id) === child) {
       this.children.delete(id);
       this.releaseActiveTools(id);
     }
-    const existing = this.retirements.get(child);
-    if (existing) return existing;
-    const work = this.stopChild(child);
-    this.retirements.set(child, work);
-    return work;
+    return this.processLifecycles.retire(child, () => this.stopChild(child));
   }
 
-  private async stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
-    if (child.exitCode !== null || child.signalCode !== null) return;
+  private async stopChild(child: ProviderChild): Promise<void> {
+    if (child instanceof NativeGuardianChild) {
+      await child.stop();
+      return;
+    }
     if (process.platform === "win32") {
       // Kill descendants while the leader still exists. Closing stdin first
       // can let the leader exit, making its remaining children untraceable.
@@ -910,36 +1308,28 @@ export class HostChildBackend implements ChildBackend {
         }
       }
       child.stdin.destroy();
-      if (child.exitCode !== null || child.signalCode !== null) return;
-      await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 1_000);
-        child.once("close", () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
       return;
     }
     child.stdin.destroy();
-    this.signal(child, "SIGTERM");
-    await new Promise<void>((resolve) => {
+    if (child.exitCode === null && child.signalCode === null) {
+      this.signal(child, "SIGTERM");
       const timer = setTimeout(() => {
+        if (child.exitCode !== null || child.signalCode !== null) return;
         this.signal(child, "SIGKILL");
-        resolve();
         // The guard needs a full second to escalate against the provider's
         // separate process group before we may kill the guard itself.
       }, 3_000);
-      child.once("close", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+      child.once("close", () => clearTimeout(timer));
+    }
+    // The lifecycle owner joins the actual close observed since construction.
+    // OS request completion, exitCode and escalation timers do not certify it.
   }
 
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closing = true;
     this.starts.clear();
+    this.pendingStarts.clear();
     for (const tools of this.preparedTools.values()) this.retireTools(tools);
     this.preparedTools.clear();
     for (const id of this.activeTools.keys()) this.releaseActiveTools(id);
@@ -949,12 +1339,18 @@ export class HostChildBackend implements ChildBackend {
       ...this.startWork,
       this.toolRelay.close(),
     ];
-    this.closePromise = Promise.allSettled(work).then((results) => {
+    this.closePromise = Promise.allSettled(work).then(async (results) => {
       const errors = results.flatMap((result) =>
         result.status === "rejected" && !(result.reason instanceof ProviderStartupCancelled)
           ? [result.reason]
           : [],
       );
+      try {
+        await this.processLifecycles.drainAll();
+      } catch (error) {
+        if (error instanceof AggregateError) errors.push(...error.errors);
+        else errors.push(error);
+      }
       if (errors.length)
         throw new AggregateError(errors, "Provider shutdown could not drain every operation.");
     });

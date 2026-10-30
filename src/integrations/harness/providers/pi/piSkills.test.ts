@@ -19,8 +19,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 beforeEach(() => processConstructions.reset());
-vi.mock("../../core/child", () =>
-  processConstructions.mock({
+vi.mock("../../core/child", () => {
+  const child = processConstructions.mock({
     acquireHarnessBridge: mocks.acquireHarnessBridge,
     killChild: mocks.killChild,
     resolveOmpBinary: mocks.resolveOmpBinary,
@@ -29,8 +29,15 @@ vi.mock("../../core/child", () =>
     unwatchChild: mocks.unwatchChild,
     watchChild: mocks.watchChild,
     writeChild: mocks.writeChild,
-  }),
-);
+  });
+  return {
+    ...child,
+    killChild: (original: import("../../core/child").ChildProcessHandle) => {
+      Reflect.apply(child.unwatchChild, undefined, [original]);
+      return Reflect.apply(child.killChild, undefined, [original]) as Promise<void>;
+    },
+  };
+});
 
 vi.mock("./piClient", () => ({
   PiRpc: class {

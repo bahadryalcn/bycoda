@@ -1,4 +1,23 @@
 import {
+  queueProviderOperation,
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureByteTurnWriter,
+  type ByteTurnWriter,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
+import {
   createApprovalOccurrenceId,
   isApprovalOccurrenceId,
 } from "../../../../shared/model/approvalOccurrence";
@@ -23,10 +42,8 @@ import type {
 } from "../../../../features/sessions/model/session";
 import { loadClaudeHooks } from "../../../../features/settings/model/settings";
 import {
-  killChild,
   resolveClaudeBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
   writeChild,
   readHarnessTaskOutput,
@@ -157,7 +174,12 @@ type BackgroundTask = {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const operationTailsBySession = new Map<string, Promise<unknown>>();
+
+const retirements = createProviderRetirementLedger("claude.main", killChild);
+
 type Live = {
+  operation?: object;
   /** Transcript replay has no process; it must never acquire a current child. */
   handle?: ChildProcessHandle;
   cwd: string;
@@ -230,7 +252,10 @@ const RESUME_GRACE_MS = 15_000;
 const STOPPED_DETAIL = "Stopped by you.";
 
 const liveByThread = new Map<string, Live>();
-const startingByThread = new Map<string, { handle: ChildProcessHandle; live?: Live }>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; live?: Live }
+>();
 const resumeByThread = new Map<string, Resume>();
 /**
  * Claude task lists outlive a Live: a restart that resumes the conversation
@@ -253,69 +278,132 @@ export function setClaudeBinaryResolver(fn: () => Promise<{ path: string }>): vo
 }
 
 export async function sendClaudeTurn(input: SendTurnInput): Promise<void> {
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await runTurn(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original?.handle) observeProviderProcess(input, original.handle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        let live: Live;
+        try {
+          live = await ensureLive(input);
+        } catch (error) {
+          cancelledThreads.delete(input.sessionId);
+          throw error;
+        }
+        if (cancelledThreads.delete(input.sessionId)) return;
+
+        if (live.handle) observeProviderProcess(input, live.handle);
+        const bindWriter = captureByteTurnWriter(
+          live.handle,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          const writer = await bindWriter();
+          live.onEvent = input.onEvent;
+          live.runtimeMode = input.runtimeMode;
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            await runTurn(live, input, writer);
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function compactClaudeContext(input: CompactContextInput): Promise<void> {
-  const settingsKey = settingsKeyFor(input);
-  let live = liveByThread.get(input.sessionId);
-  if (!live || live.cwd !== input.cwd || live.settingsKey !== settingsKey) {
-    live = await ensureLive(input);
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    live.manualCompaction = true;
-    live.compactionConfirmed = false;
-    try {
-      await runTurn(live, {
-        ...input,
-        modelSettings: undefined,
-        text: "/compact",
-        attachments: [],
-      });
-      if (!live.compactionConfirmed) {
-        throw new Error("Claude Code did not confirm context compaction");
-      }
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    } finally {
-      live.manualCompaction = false;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original?.handle) observeProviderProcess(input, original.handle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        const settingsKey = settingsKeyFor(input);
+        let live = liveByThread.get(input.sessionId);
+        if (!live || live.cwd !== input.cwd || live.settingsKey !== settingsKey) {
+          live = await ensureLive(input);
+        }
+        if (cancelledThreads.delete(input.sessionId)) return;
+
+        if (live.handle) observeProviderProcess(input, live.handle);
+        const bindWriter = captureByteTurnWriter(
+          live.handle,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          const writer = await bindWriter();
+          live.onEvent = input.onEvent;
+          live.runtimeMode = input.runtimeMode;
+          live.cancelled = false;
+          live.muteUpdates = false;
+          live.manualCompaction = true;
+          live.compactionConfirmed = false;
+          try {
+            await runTurn(
+              live,
+              {
+                ...input,
+                modelSettings: undefined,
+                text: "/compact",
+                attachments: [],
+              },
+              writer,
+            );
+            if (!live.compactionConfirmed) {
+              throw new Error("Claude Code did not confirm context compaction");
+            }
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          } finally {
+            live.manualCompaction = false;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = liveByThread.get(input.sessionId);
   if (!live?.activeTurn) throw new Error("No active turn to steer");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
 
+  const writer = await captureByteTurnWriter(
+    live.handle,
+    input.nativeControlTurn,
+    input.operationContext,
+  )();
   const message = buildClaudeUserMessage({
     text: input.text,
     attachments: input.attachments,
@@ -324,7 +412,7 @@ export async function steerClaudeTurn(input: SteerTurnInput): Promise<void> {
   const content = (message.message as { content: unknown[] }).content;
   if (content.length === 0) return;
 
-  await writeJson(live, message);
+  await writeJson(live, message, writer);
 }
 
 export function respondClaudeApproval(
@@ -365,29 +453,50 @@ export function respondClaudeQuestion(
   );
 }
 
-export async function cancelClaudeTurn(sessionId: string): Promise<void> {
+export async function cancelClaudeTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
+    return;
   if (!live) {
     cancelledThreads.add(sessionId);
     return;
   }
+  const backgroundTaskIds = [...live.backgroundTasks.keys()];
+  const writer = context
+    ? await captureByteTurnWriter(live.handle, context.nativeControlTurn, context, "control")()
+    : undefined;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   for (const [, pending] of live.approvals) pending.resolve("deny");
   live.approvals.clear();
   for (const [, pending] of live.questions) pending.resolve({ kind: "skipped" });
   live.questions.clear();
   // Stop means the whole run, including what Claude left going in the
   // background. Otherwise it finishes later and wakes Claude up again.
-  for (const taskId of live.backgroundTasks.keys()) {
+  for (const taskId of backgroundTaskIds) {
     await writeJson(
       live,
       buildControlRequest(nextControlId(live), {
         subtype: "stop_task",
         task_id: taskId,
       }),
+      writer,
     );
   }
-  await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "interrupt" }));
+  await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "interrupt" }), writer);
   // A failed write leaves the turn active and observable so Stop can retry.
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   stopOutputWatches(live);
   live.muteUpdates = true;
@@ -400,10 +509,25 @@ export async function cancelClaudeTurn(sessionId: string): Promise<void> {
  * turn goes on, and Claude reports the end like any other. Nothing here
  * touches a process.
  */
-export async function stopClaudeBackgroundWork(sessionId: string, callId?: string): Promise<void> {
+export async function stopClaudeBackgroundWork(
+  sessionId: string,
+  callId?: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
-  if (!live) return;
-  for (const { taskId, callIds } of resolveStopTargets(live, callId)) {
+  if (!live || !ownsOperation(context, live.handle, live.operation)) return;
+  const targets = resolveStopTargets(live, callId).map((target) => ({
+    ...target,
+    callIds: [...target.callIds],
+  }));
+  const writer = context
+    ? await captureByteTurnWriter(live.handle, context.nativeControlTurn, context, "control")()
+    : undefined;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
+  for (const { taskId, callIds } of targets) {
+    if (!ownsOperation(context, live.handle, live.operation)) return;
     live.stoppedTasks.add(taskId);
     for (const id of callIds) live.stoppedCalls.add(id);
     await writeJson(
@@ -412,6 +536,7 @@ export async function stopClaudeBackgroundWork(sessionId: string, callId?: strin
         subtype: "stop_task",
         task_id: taskId,
       }),
+      writer,
     ).catch((error: unknown) => {
       // Never sent, so the end that follows is not the user's.
       live.stoppedTasks.delete(taskId);
@@ -423,15 +548,25 @@ export async function stopClaudeBackgroundWork(sessionId: string, callId?: strin
 
 export async function stopClaudeSession(
   sessionId: string,
-  expectedHandle?: ChildProcessHandle,
+  target?: ChildProcessHandle | HarnessOperationContext,
 ): Promise<void> {
-  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
+  if (!expectedHandle && !context) cancelledThreads.delete(sessionId);
   const preparing = startingByThread.get(sessionId);
-  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
   const candidate = liveByThread.get(sessionId);
   const live =
-    (!expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined) ??
-    startup?.live;
+    ((!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined) ?? startup?.live;
   if (candidate === live) liveByThread.delete(sessionId);
   if (startup) startingByThread.delete(sessionId);
   if (live) stopOutputWatches(live);
@@ -448,20 +583,23 @@ export async function stopClaudeSession(
     live.initDone?.();
     live.initDone = null;
   }
-  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
-  await Promise.all(
-    [...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-  );
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
-export async function forgetClaudeSession(sessionId: string): Promise<void> {
+export async function forgetClaudeSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
   tasksByThread.delete(sessionId);
-  await stopClaudeSession(sessionId);
+  await stopClaudeSession(sessionId, context);
 }
 
 export function bindClaudeSession(
@@ -665,6 +803,7 @@ function timestampOf(rec: Record<string, unknown>): number | undefined {
  * second copy that drifts as the streaming path grows.
  */
 function newLiveState(input: {
+  operation?: object;
   handle?: ChildProcessHandle;
   cwd: string;
   claudeSessionId: string;
@@ -676,6 +815,7 @@ function newLiveState(input: {
   claudeTasks?: Map<string, TaskListItem>;
 }): Live {
   return {
+    operation: input.operation,
     handle: input.handle,
     cwd: input.cwd,
     claudeSessionId: input.claudeSessionId,
@@ -722,6 +862,8 @@ function newLiveState(input: {
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const settingsKey = settingsKeyFor(input);
   const planning = input.intent === "plan";
   const existing = liveByThread.get(input.sessionId);
@@ -731,14 +873,24 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.settingsKey === settingsKey &&
     existing.planning === planning
   ) {
-    existing.onEvent = input.onEvent;
-    existing.runtimeMode = input.runtimeMode;
+    if (existing.handle) observeProviderProcess(input, existing.handle);
     return existing;
   }
-  const handle = createChildProcessHandle(input.sessionId);
-  const startup: { handle: ChildProcessHandle; live?: Live } = { handle };
+  // Natural exit marks the exact original for retirement after its delivery
+  // handler. Join that actual work before a new admission; active owners are
+  // untouched and failed retirement remains a failed admission.
+  await retirements.drain(input.sessionId);
+  assertProviderOperation(input.operationContext);
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  const startup: { handle: ChildProcessHandle; operation?: object; live?: Live } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
   startingByThread.set(input.sessionId, startup);
   try {
+    observeProviderProcess(input, handle, "starting");
     if (existing) {
       // Model and launch-setting changes require a fresh Claude process, but
       // they must resume the same provider conversation. Only a cwd change
@@ -778,6 +930,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     const launch = launchOptions(input, canResume ? resume?.sessionId : undefined, claudeSessionId);
 
     const live: Live = newLiveState({
+      operation: input.operationContext?.operation,
       handle,
       cwd: input.cwd,
       claudeSessionId,
@@ -846,7 +999,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       "claude",
     );
     if (live.exitError) throw live.exitError;
-    await writeJson(live, buildControlRequest(nextControlId(live), { subtype: "initialize" }));
+    const writer = await captureByteTurnWriter(
+      handle,
+      input.nativeControlTurn,
+      input.operationContext,
+    )();
+    await writeJson(
+      live,
+      buildControlRequest(nextControlId(live), { subtype: "initialize" }),
+      writer,
+    );
     await waitForInit(live, INIT_TIMEOUT_MS);
     if (live.exitError) throw live.exitError;
     if (startingByThread.get(input.sessionId) !== startup)
@@ -854,14 +1016,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     live.onEvent({ type: "session.started" });
     return live;
   } catch (error) {
-    await stopClaudeSession(input.sessionId, handle);
-    throw startup.live?.exitError ?? error;
+    return preserveProviderFailure(
+      startup.live?.exitError ?? error,
+      stopClaudeSession(input.sessionId, handle),
+    );
   } finally {
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
-async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
+async function runTurn(live: Live, input: SendTurnInput, writer: ByteTurnWriter): Promise<void> {
   const effort = input.modelSettings?.effort;
   const message = buildClaudeUserMessage({
     text: input.text,
@@ -897,7 +1061,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   settlePendingTurn(live);
 
   try {
-    await writeJson(live, message);
+    await writeJson(live, message, writer);
     input.onAccepted?.();
     settlePendingTurn(live);
     await turnPromise;
@@ -2222,9 +2386,15 @@ function nextControlId(live: Live): string {
   return `bycoda_${live.nextControlId}`;
 }
 
-function writeJson(live: Live, payload: Record<string, unknown>): Promise<void> {
+function writeJson(
+  live: Live,
+  payload: Record<string, unknown>,
+  writer?: ByteTurnWriter,
+): Promise<void> {
   if (!live.handle) return Promise.reject(new Error("An original Claude process is required"));
-  return writeChild(live.handle, JSON.stringify(payload));
+  return writer
+    ? writer(JSON.stringify(payload))
+    : writeChild(live.handle, JSON.stringify(payload));
 }
 
 function settingsKeyFor(input: HarnessSessionInput): string {

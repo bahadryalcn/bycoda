@@ -1,4 +1,24 @@
 import {
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureAcpTurnWriter,
+  queueProviderOperation,
+  acpTurnWriter,
+  type AcpWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
+import {
   createPendingApproval,
   cancelPendingApprovals,
   observePendingApprovalWrite,
@@ -16,7 +36,6 @@ import {
   retainNativeOutputEventOrigin,
   type NativeOutputWork,
 } from "../../core/nativeOutputDelivery";
-import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   deliverQuestionReply,
   showNextQueuedQuestion,
@@ -28,13 +47,7 @@ import type { RuntimeMode } from "../../../../features/sessions/model/session";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
 import { reportAcpStopReason } from "../../core/acpStopReason";
 import { JsonRpcResponseError } from "../../core/jsonRpc";
-import {
-  killChild,
-  resolveGrokBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { resolveGrokBinary, spawnChild, watchChild } from "../../core/child";
 import {
   AUTH_HELP,
   askQuestionResponse,
@@ -70,7 +83,10 @@ import {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const retirements = createProviderRetirementLedger("grok.main", killChild);
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
@@ -87,7 +103,6 @@ type Live = {
   approvals: Map<number, PendingApproval>;
   questions: Map<number, ((reply: UserQuestionReply) => void) & QuestionDelivery>;
   visibleQuestionId?: number;
-  turns: Promise<void>;
 };
 
 type Resume = {
@@ -107,71 +122,125 @@ const CLIENT_CAPABILITIES = {
 };
 
 const liveByThread = new Map<string, Live>();
-const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; acp?: AcpClient }
+>();
 const resumeByThread = new Map<string, Resume>();
-const cancelledThreads = new Set<string>();
+const turnsByThread = new Map<string, Promise<unknown>>();
+const sourceEpochByThread = new Map<string, object>();
 
 /**
  * Live Grok Build adapter. Spawns `grok agent stdio` and talks ACP.
  * Grok accepts ACP image blocks despite advertising image: false.
  */
 export async function sendGrokTurn(input: SendTurnInput): Promise<void> {
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await applyModelSelection(live, input);
-      if (live.cancelled) return;
-      await prompt(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
+  input = { ...input };
+
   try {
-    await live.turns;
-  } catch (error) {
-    if (liveByThread.get(input.sessionId) === live) {
-      await stopGrokSession(input.sessionId, live.handle);
-    }
-    throw error;
+    const epoch = sourceEpochByThread.get(input.sessionId);
+    const cancelled = () => sourceEpochByThread.get(input.sessionId) !== epoch;
+    let live: Live;
+    const observed = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (observed) observeProviderProcess(input, observed.handle);
+    const run = queueProviderOperation(
+      turnsByThread,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        live = await ensureLive(input);
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        const acp = await captureAcpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        if (liveByThread.get(input.sessionId) !== live)
+          throw new Error("Provider operation replaced before turn entry");
+        live.onEvent = input.onEvent;
+        live.runtimeMode = input.runtimeMode;
+        live.planning = input.intent === "plan";
+        live.cancelled = false;
+        live.muteUpdates = false;
+        try {
+          await applyModelSelection(live, input, acp);
+          if (live.cancelled) return;
+          await prompt(live, input, acp);
+        } catch (error) {
+          if (live.cancelled) return;
+          if (liveByThread.get(input.sessionId) === live)
+            await stopGrokSession(input.sessionId, live.handle);
+          throw error;
+        }
+      },
+    );
+    await run;
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
 }
 
 export async function compactGrokContext(input: CompactContextInput): Promise<void> {
-  let live = liveByThread.get(input.sessionId);
-  if (!live || live.cwd !== input.cwd) {
-    live = await ensureLive(input);
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await live.acp.request(
-        "_x.ai/compact_conversation",
-        { sessionId: live.acpSessionId },
-        PROMPT_TIMEOUT_MS,
-      );
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const epoch = sourceEpochByThread.get(input.sessionId);
+    const cancelled = () => sourceEpochByThread.get(input.sessionId) !== epoch;
+    let live: Live;
+    const observed = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (observed) observeProviderProcess(input, observed.handle);
+    const run = queueProviderOperation(
+      turnsByThread,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        // Compaction reuses a same-cwd provider regardless of the UI's mode,
+        // preserving the original compact behavior without an early teardown.
+        const existing = liveByThread.get(input.sessionId);
+        live = existing?.cwd === input.cwd ? existing : await ensureLive(input);
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        const acp = await captureAcpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        if (liveByThread.get(input.sessionId) !== live)
+          throw new Error("Provider operation replaced before compact entry");
+        live.onEvent = input.onEvent;
+        live.cancelled = false;
+        live.muteUpdates = false;
+        try {
+          await acp.request(
+            "_x.ai/compact_conversation",
+            { sessionId: live.acpSessionId },
+            PROMPT_TIMEOUT_MS,
+          );
+        } catch (error) {
+          if (live.cancelled) return;
+          throw error;
+        }
+      },
+    );
+    await run;
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function steerGrokTurn(_input: SteerTurnInput): Promise<void> {
@@ -217,30 +286,59 @@ export function respondGrokQuestion(
   );
 }
 
-export async function cancelGrokTurn(sessionId: string): Promise<void> {
+export async function cancelGrokTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
-  if (!live) {
-    cancelledThreads.add(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
     return;
-  }
+  sourceEpochByThread.set(sessionId, {});
+  if (!live) return;
+  const acp = context
+    ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
+    : live.acp;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   cancelPendingApprovals(live.approvals);
   for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
   live.questions.clear();
-  await live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.acp.rejectPending(new Error("cancelled"));
 }
 
 export async function stopGrokSession(
   sessionId: string,
-  expectedHandle?: ChildProcessHandle,
+  target?: ChildProcessHandle | HarnessOperationContext,
 ): Promise<void> {
-  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
   const candidate = liveByThread.get(sessionId);
-  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined;
   const preparing = startingByThread.get(sessionId);
-  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
+  if (context ? live || startup : !expectedHandle) sourceEpochByThread.set(sessionId, {});
   if (live) liveByThread.delete(sessionId);
   if (startup) startingByThread.delete(sessionId);
   if (live) {
@@ -251,19 +349,22 @@ export async function stopGrokSession(
   }
   live?.acp.close();
   startup?.acp?.close();
-  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
-  await Promise.all(
-    [...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-  );
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
-export async function forgetGrokSession(sessionId: string): Promise<void> {
+export async function forgetGrokSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
-  await stopGrokSession(sessionId);
+  await stopGrokSession(sessionId, context);
 }
 
 export function bindGrokSession(threadId: string, acpSessionId: string, cwd: string): void {
@@ -273,6 +374,8 @@ export function bindGrokSession(threadId: string, acpSessionId: string, cwd: str
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const wantPlanning = input.intent === "plan";
   const wantFullAccess = input.runtimeMode === "full-access" && !wantPlanning;
   const existing = liveByThread.get(input.sessionId);
@@ -282,14 +385,20 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.fullAccess === wantFullAccess &&
     existing.planning === wantPlanning
   ) {
-    existing.onEvent = input.onEvent;
-    existing.runtimeMode = input.runtimeMode;
+    observeProviderProcess(input, existing.handle);
+
     return existing;
   }
-  const handle = createChildProcessHandle(input.sessionId);
-  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  const startup: { handle: ChildProcessHandle; operation?: object; acp?: AcpClient } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
   startingByThread.set(input.sessionId, startup);
   try {
+    observeProviderProcess(input, handle, "starting");
     if (existing) {
       await stopGrokSession(input.sessionId, existing.handle);
       if (startingByThread.get(input.sessionId) !== startup)
@@ -370,10 +479,16 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       undefined,
       "grok",
     );
+    const startupAcp = await acpTurnWriter(
+      handle,
+      acp,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
 
     let init: unknown;
     try {
-      init = await acp.request(
+      init = await startupAcp.request(
         "initialize",
         {
           protocolVersion: 1,
@@ -388,7 +503,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     const methodId = grokAuthMethodId(init);
     if (methodId) {
-      await acp
+      await startupAcp
         .request("authenticate", { methodId, _meta: { headless: true } }, AUTH_TIMEOUT_MS)
         .catch((error: unknown) => {
           console.debug("[bycoda] grok authenticate", error);
@@ -401,7 +516,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     if (canLoad && resume) {
       try {
-        setup = await acp.request(
+        setup = await startupAcp.request(
           "session/resume",
           { sessionId: resume.acpSessionId },
           SESSION_TIMEOUT_MS,
@@ -414,7 +529,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         if (!(error instanceof JsonRpcResponseError)) throw error;
         muteGate.current = true;
         try {
-          setup = await acp.request(
+          setup = await startupAcp.request(
             "session/load",
             {
               sessionId: resume.acpSessionId,
@@ -433,7 +548,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     if (!acpSessionId) {
       try {
-        setup = await acp.request(
+        setup = await startupAcp.request(
           "session/new",
           grokSessionNewParams(input.cwd, input.runtimeMode),
           SESSION_TIMEOUT_MS,
@@ -448,6 +563,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
     const live: Live = {
+      operation: input.operationContext?.operation,
       handle,
       subagents: new AcpSubagents(),
       acp,
@@ -463,7 +579,6 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       onEvent: input.onEvent,
       approvals: new Map(),
       questions: new Map(),
-      turns: Promise.resolve(),
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -479,17 +594,20 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     return live;
   } catch (error) {
     startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
-    await stopGrokSession(input.sessionId, handle);
-    throw error;
+    return preserveProviderFailure(error, stopGrokSession(input.sessionId, handle));
   } finally {
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
-async function applyModelSelection(live: Live, input: HarnessSessionInput): Promise<void> {
+async function applyModelSelection(
+  live: Live,
+  input: HarnessSessionInput,
+  acp: AcpWriterView,
+): Promise<void> {
   const base = nativeModelId(input.model);
   if (base && base !== live.modelId) {
-    await live.acp
+    await acp
       .request(
         "session/set_model",
         { sessionId: live.acpSessionId, modelId: base },
@@ -505,7 +623,7 @@ async function applyModelSelection(live: Live, input: HarnessSessionInput): Prom
 
   const effort = grokEffort(input.modelSettings);
   if (!effort) return;
-  await live.acp
+  await acp
     .request(
       "session/set_mode",
       { sessionId: live.acpSessionId, modeId: effort },
@@ -516,7 +634,7 @@ async function applyModelSelection(live: Live, input: HarnessSessionInput): Prom
     });
 }
 
-async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
   const responseScope: { work: NativeOutputWork | null } = { work: null };
   const emitNative = (event: HarnessEvent) =>
     nativeOutputSink(responseScope.work, () => live.onEvent(event))();
@@ -524,7 +642,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
     try {
       const blocks = grokPromptBlocks(input.text, input.attachments);
       if (blocks.length === 0) return;
-      const result = await live.acp.request(
+      const result = await acp.request(
         "session/prompt",
         {
           sessionId: live.acpSessionId,

@@ -1,0 +1,536 @@
+//! Original OS resource ownership. A deadline is a stop request, never a join.
+use std::io;
+use std::ops::{Deref, DerefMut};
+use std::process::{Child, Command, ExitStatus};
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
+
+pub(crate) struct OwnedChild {
+    child: Child,
+    #[cfg(windows)]
+    job: Option<Arc<crate::owned_process_job::OwnedProcessJob>>,
+}
+impl From<Child> for OwnedChild {
+    fn from(child: Child) -> Self {
+        Self {
+            child,
+            #[cfg(windows)]
+            job: None,
+        }
+    }
+}
+impl Deref for OwnedChild {
+    type Target = Child;
+    fn deref(&self) -> &Child {
+        &self.child
+    }
+}
+impl DerefMut for OwnedChild {
+    fn deref_mut(&mut self) -> &mut Child {
+        &mut self.child
+    }
+}
+impl OwnedChild {
+    pub(crate) fn spawn(command: &mut Command) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            let job = Arc::new(
+                crate::owned_process_job::OwnedProcessJob::new()
+                    .map_err(|_| io::Error::other("Owned process job unavailable"))?,
+            );
+            let child = job
+                .spawn(command)
+                .map_err(|_| io::Error::other("Owned process job spawn failed"))?;
+            Ok(Self {
+                child,
+                job: Some(job),
+            })
+        }
+        #[cfg(unix)]
+        {
+            super::spawn_retrying_text_file_busy(command).map(Into::into)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            command.spawn().map(Into::into)
+        }
+    }
+}
+
+#[derive(Clone)]
+struct Failure {
+    kind: io::ErrorKind,
+    message: String,
+}
+impl Failure {
+    fn from(error: io::Error) -> Self {
+        Self {
+            kind: error.kind(),
+            message: error.to_string(),
+        }
+    }
+    fn error(&self) -> io::Error {
+        io::Error::new(self.kind, self.message.clone())
+    }
+}
+struct Stop {
+    #[cfg(unix)]
+    deadline: Instant,
+    killed: bool,
+}
+struct State {
+    child: OwnedChild,
+    activated: bool,
+    pins: usize,
+    exit_seen: Option<Instant>,
+    stop: Option<Stop>,
+    finalizing: bool,
+    reaped: bool,
+    result: Option<Result<ExitStatus, Failure>>,
+    signal_error: Option<Failure>,
+    retirement: Option<Result<(), Failure>>,
+}
+/// Source-retained evidence; callers cannot reconstruct it from a DTO/bool/PID.
+#[derive(Clone)]
+pub(crate) struct Retirement {
+    owner: Arc<ProcessOwner>,
+}
+impl Retirement {
+    pub(crate) fn require_verified(&self) -> Result<(), String> {
+        let state = self
+            .owner
+            .state
+            .lock()
+            .map_err(|_| "Original retirement owner unavailable")?;
+        if !matches!(&state.result, Some(Ok(_))) {
+            return Err("Original process completion unavailable".into());
+        }
+        match &state.retirement {
+            Some(Ok(())) => Ok(()),
+            Some(Err(error)) => Err(error.message.clone()),
+            None => Err("Original process retirement pending".into()),
+        }
+    }
+}
+pub(crate) struct ProcessOwner {
+    state: Mutex<State>,
+    changed: Condvar,
+}
+pub(crate) struct ProcessPin {
+    owner: Arc<ProcessOwner>,
+}
+impl Drop for ProcessPin {
+    fn drop(&mut self) {
+        let mut state = self.owner.state.lock().unwrap_or_else(|e| e.into_inner());
+        state.pins -= 1;
+        self.owner.changed.notify_all();
+    }
+}
+impl ProcessOwner {
+    pub(crate) fn retirement(self: &Arc<Self>) -> Retirement {
+        Retirement {
+            owner: self.clone(),
+        }
+    }
+    #[cfg(test)]
+    pub(crate) fn signals_closed(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .stop
+            .as_ref()
+            .is_some_and(|s| s.killed)
+    }
+    #[cfg(test)]
+    pub(crate) fn exit_observed(&self) -> bool {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .exit_seen
+            .is_some()
+    }
+    #[cfg(test)]
+    pub(crate) fn try_result(&self) -> io::Result<Option<ExitStatus>> {
+        let state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("Process owner unavailable"))?;
+        match &state.result {
+            Some(Ok(status)) => Ok(Some(*status)),
+            Some(Err(error)) => Err(error.error()),
+            None => Ok(None),
+        }
+    }
+    pub(crate) fn new(child: OwnedChild) -> Self {
+        Self {
+            state: Mutex::new(State {
+                child,
+                activated: false,
+                pins: 0,
+                exit_seen: None,
+                stop: None,
+                finalizing: false,
+                reaped: false,
+                result: None,
+                signal_error: None,
+                retirement: None,
+            }),
+            changed: Condvar::new(),
+        }
+    }
+    pub(crate) fn pin(self: &Arc<Self>) -> io::Result<ProcessPin> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("Process owner unavailable"))?;
+        if state.reaped || state.result.is_some() || state.finalizing {
+            return Err(io::Error::other("Original process lifetime is closed"));
+        }
+        state.pins = state
+            .pins
+            .checked_add(1)
+            .ok_or_else(|| io::Error::other("Process pin capacity"))?;
+        Ok(ProcessPin {
+            owner: self.clone(),
+        })
+    }
+    /// Only the source's waiter closes setup, after it has enrolled its readers.
+    pub(crate) fn activate(&self) {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .activated = true;
+        self.changed.notify_all();
+    }
+    pub(crate) fn request_stop(&self) -> io::Result<()> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| io::Error::other("Process owner unavailable"))?;
+        if let Some(result) = &state.result {
+            return result.as_ref().map(|_| ()).map_err(Failure::error);
+        }
+        if state.reaped || state.finalizing {
+            return Ok(());
+        }
+        Self::stop_locked(&mut state);
+        self.changed.notify_all();
+        Ok(())
+    }
+    fn stop_locked(state: &mut State) {
+        if state.stop.is_some() || state.reaped || state.result.is_some() {
+            return;
+        }
+        #[cfg(windows)]
+        {
+            if let Some(job) = &state.child.job {
+                job.terminate();
+            } else if let Err(error) = state.child.child.kill() {
+                state.signal_error = Some(Failure::from(error));
+            }
+            state.stop = Some(Stop { killed: true });
+        }
+        #[cfg(unix)]
+        {
+            if let Err(error) = signal_original(state, libc::SIGTERM) {
+                state.signal_error = Some(Failure::from(error));
+            }
+            state.stop = Some(Stop {
+                deadline: Instant::now() + super::KILL_ESCALATE,
+                killed: false,
+            });
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            if let Err(error) = state.child.child.kill() {
+                state.signal_error = Some(Failure::from(error));
+            }
+            state.stop = Some(Stop { killed: true });
+        }
+    }
+    pub(crate) fn wait(&self) -> io::Result<ExitStatus> {
+        loop {
+            let mut state = self
+                .state
+                .lock()
+                .map_err(|_| io::Error::other("Process owner unavailable"))?;
+            if let Some(result) = &state.result {
+                return result.clone().map_err(|e| e.error());
+            }
+            if state.activated && !state.finalizing {
+                #[cfg(windows)]
+                if let Some(job) = &state.child.job {
+                    job.observe();
+                }
+                let ready = match observe_exit(&mut state) {
+                    Ok(ready) => ready,
+                    Err(error) => {
+                        // ECHILD/unknown observation ends numeric control. Never reap or
+                        // signal a PID after losing our original wait ownership.
+                        state.result = Some(Err(Failure::from(error)));
+                        self.changed.notify_all();
+                        continue;
+                    }
+                };
+                if ready {
+                    let seen = *state.exit_seen.get_or_insert_with(Instant::now);
+                    // Real inherited-pipe/writer work can outlive the leader. Keep it
+                    // pinned, but initiate original group cleanup after the old grace.
+                    if state.pins > 0 && seen.elapsed() >= super::EXIT_DRAIN_GRACE {
+                        Self::stop_locked(&mut state);
+                    }
+                }
+                #[cfg(unix)]
+                if state
+                    .stop
+                    .as_ref()
+                    .is_some_and(|s| !s.killed && Instant::now() >= s.deadline)
+                {
+                    if let Err(error) = signal_original(&state, libc::SIGKILL) {
+                        state.signal_error = Some(Failure::from(error));
+                    }
+                    state.stop.as_mut().unwrap().killed = true;
+                }
+                let signals_closed = state.stop.as_ref().is_none_or(|s| s.killed);
+                if ready && state.pins == 0 && signals_closed {
+                    // WNOWAIT observed this exact unreaped child. No signal worker
+                    // exists outside this mutex and none may start after this reap.
+                    let result = state.child.child.wait();
+                    state.reaped = true;
+                    state.finalizing = true;
+                    #[cfg(windows)]
+                    let job = state.child.job.clone();
+                    let signal_error = state.signal_error.clone();
+                    drop(state);
+                    let mut retirement = Ok(());
+                    #[cfg(windows)]
+                    let result = result.and_then(|status| {
+                        if let Some(job) = job {
+                            // An API/drain failure remains an actual error. Missing
+                            // birth proof is retained separately from known status.
+                            let drained = job.drain().map_err(|_| {
+                                io::Error::other("Owned process job drain unavailable")
+                            })?;
+                            retirement = drained.require_verified().map_err(|_| {
+                                Failure::from(io::Error::other(
+                                    "Owned process job retirement unknown",
+                                ))
+                            });
+                        }
+                        Ok(status)
+                    });
+                    let result = result
+                        .and_then(|status| signal_error.map_or(Ok(status), |e| Err(e.error())));
+                    let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+                    state.result = Some(result.map_err(Failure::from));
+                    state.retirement = Some(retirement);
+                    state.finalizing = false;
+                    self.changed.notify_all();
+                    continue;
+                }
+            }
+            drop(
+                self.changed
+                    .wait_timeout(state, Duration::from_millis(5))
+                    .unwrap_or_else(|e| e.into_inner()),
+            );
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn observe_exit(state: &mut State) -> io::Result<bool> {
+    loop {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                state.child.id() as libc::id_t,
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result == 0 {
+            let pid = unsafe { info.si_pid() };
+            if pid == 0 {
+                return Ok(false);
+            }
+            if pid as u32 == state.child.id()
+                && matches!(
+                    info.si_code,
+                    libc::CLD_EXITED | libc::CLD_KILLED | libc::CLD_DUMPED
+                )
+            {
+                return Ok(true);
+            }
+            return Err(io::Error::other("Original child exit observation changed"));
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+#[cfg(windows)]
+fn observe_exit(state: &mut State) -> io::Result<bool> {
+    state.child.child.try_wait().map(|status| status.is_some())
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn observe_exit(_state: &mut State) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "Original non-reaping process observation unavailable",
+    ))
+}
+#[cfg(unix)]
+fn signal_original(state: &State, signal: i32) -> io::Result<()> {
+    if state.reaped || state.result.is_some() {
+        return Err(io::Error::other("Original process already reaped"));
+    }
+    let pid = state.child.id() as i32;
+    if pid <= 1 {
+        return Err(io::Error::other("Invalid original process"));
+    }
+    // This exact child remains unreaped until all signal phases are sealed.
+    let group = unsafe { libc::kill(-pid, signal) };
+    let group_error = if group != 0 {
+        Some(io::Error::last_os_error())
+    } else {
+        None
+    };
+    let leader = unsafe { libc::kill(pid, signal) };
+    if leader != 0 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error);
+        }
+    }
+    if let Some(error) = group_error {
+        if error.raw_os_error() != Some(libc::ESRCH) {
+            return Err(error);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct Writes {
+    closing: bool,
+    active: usize,
+    failure: Option<String>,
+}
+#[derive(Default)]
+pub(crate) struct WriteGate {
+    state: Mutex<Writes>,
+    changed: Condvar,
+}
+pub(crate) struct WritePermit {
+    gate: Arc<WriteGate>,
+}
+impl WriteGate {
+    pub(crate) fn is_closing(&self) -> bool {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closing
+    }
+    pub(crate) fn new() -> Arc<Self> {
+        Arc::new(Self::default())
+    }
+    pub(crate) fn admit(self: &Arc<Self>) -> Result<WritePermit, String> {
+        let mut state = self
+            .state
+            .lock()
+            .map_err(|_| "Original writer owner unavailable")?;
+        if state.closing {
+            return Err("Original process is closing".into());
+        }
+        state.active = state
+            .active
+            .checked_add(1)
+            .ok_or("Original writer capacity")?;
+        Ok(WritePermit { gate: self.clone() })
+    }
+    pub(crate) fn close(&self) {
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).closing = true;
+        self.changed.notify_all();
+    }
+    pub(crate) fn record_failure(&self, reason: String) {
+        self.state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .failure
+            .get_or_insert(reason);
+    }
+    pub(crate) fn drain(&self) -> Result<(), String> {
+        let state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        let state = self
+            .changed
+            .wait_while(state, |s| s.active != 0)
+            .unwrap_or_else(|e| e.into_inner());
+        state.failure.clone().map_or(Ok(()), Err)
+    }
+}
+impl Drop for WritePermit {
+    fn drop(&mut self) {
+        self.gate
+            .state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .active -= 1;
+        self.gate.changed.notify_all();
+    }
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod tests {
+    use super::*;
+    use std::io::{BufRead, BufReader, Read};
+    use std::process::Stdio;
+    use std::sync::mpsc;
+
+    #[test]
+    fn owned_group_escalation_keeps_unreaped_leader_until_inherited_pipe_is_released() {
+        let mut command = Command::new("sh");
+        command.args(["-c", "trap 'exit 0' TERM; sh -c 'trap \"\" TERM; echo $$; while true; do sleep 1; done' & wait"])
+            .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
+        super::super::isolate_child(&mut command);
+        let mut child = OwnedChild::spawn(&mut command).unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let owner = Arc::new(ProcessOwner::new(child));
+        let pin = owner.pin().unwrap();
+        let (ready, observed) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            let _pin = pin;
+            let mut reader = BufReader::new(stdout);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            ready.send(line.trim().parse::<u32>().unwrap()).unwrap();
+            let mut rest = Vec::new();
+            reader.read_to_end(&mut rest).unwrap();
+        });
+        let _actual_descendant = observed.recv_timeout(Duration::from_secs(5)).unwrap();
+        owner.activate();
+        owner.request_stop().unwrap();
+        let waiting = owner.clone();
+        let (returned, completion) = mpsc::channel();
+        let waiter = std::thread::spawn(move || {
+            returned.send(waiting.wait()).unwrap();
+        });
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !owner.exit_observed() {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(
+            owner.try_result().unwrap().is_none(),
+            "the leader must remain unreaped during escalation"
+        );
+        assert!(completion.recv_timeout(Duration::from_millis(20)).is_err());
+        assert!(completion
+            .recv_timeout(Duration::from_secs(5))
+            .unwrap()
+            .is_ok());
+        reader.join().unwrap();
+        waiter.join().unwrap();
+        owner.request_stop().unwrap();
+        assert!(owner.pin().is_err());
+    }
+}

@@ -1,19 +1,29 @@
+import { captureTextInput, prepareTextProcess, runTextOperation } from "../../core/textSource";
+import { acpTurnWriter, type AcpWriterView } from "../turnWriter";
+import { killChild } from "../../core/child";
+import {
+  withProviderRetirement,
+  observeProviderProbeCleanup,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
 import { continueAfterFailure, settledTail } from "../../../../shared/lib/promiseQueue";
 import { asRecord } from "../../../../shared/lib/records";
 import { AcpClient } from "../../core/acp";
 import {
   captureChildProcess,
   createChildProcessHandle,
-  killChild,
   resolveCursorBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
   type ChildProcessHandle,
 } from "../../core/child";
 import { abortTextPromptRace } from "../../core/abortTextPrompt";
 import { mergeStream } from "../../core/streamText";
-import type { HarnessEvent } from "../../core/types";
+import type { HarnessEvent, HarnessOperationContext } from "../../core/types";
+
+const retirements = createProviderRetirementLedger("cursor.text", killChild);
 
 const TEXT_CHILD_ID = "bycoda-text";
 const INIT_TIMEOUT_MS = 60_000;
@@ -47,11 +57,7 @@ let turns: Promise<void> = Promise.resolve();
 export async function stopCursorTextPrompt(childId?: string): Promise<void> {
   stopGeneration += 1;
   const extra = childId && childId !== TEXT_CHILD_ID ? captureChildProcess(childId) : undefined;
-  await dropLive();
-  if (extra) {
-    unwatchChild(extra);
-    await killChild(extra).catch(() => undefined);
-  }
+  await settleProviderRetirements([dropLive(), ...(extra ? [retirements.retire([extra])] : [])]);
 }
 
 /** Start the shared text ACP process in the background so the first prompt is fast. */
@@ -61,7 +67,7 @@ export function warmupCursorText(cwd: string): Promise<void> {
     await ensureLive(cwd);
   });
   turns = settledTail(run);
-  return run.catch(() => undefined);
+  return observeProviderProbeCleanup(run);
 }
 
 /** Cursor ACP turn in ask mode. Reuses a warm `cursor-agent acp` process. */
@@ -73,8 +79,12 @@ export async function runCursorTextPrompt(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
-  const run = turns.catch(() => undefined).then(() => promptOnLive(input));
+  input = captureTextInput(input);
+  const run = turns
+    .catch(() => undefined)
+    .then(() => runTextOperation(input.operationContext, () => promptOnLive(input)));
   turns = settledTail(run);
   return run;
 }
@@ -87,124 +97,176 @@ async function promptOnLive(input: {
   timeoutMs?: number;
   signal?: AbortSignal;
   onEvent?: (event: HarnessEvent) => void;
+  operationContext?: HarnessOperationContext;
 }): Promise<string> {
   input.signal?.throwIfAborted();
-  const session = await ensureLive(input.cwd, input.model, input.modelSettings);
-  input.signal?.throwIfAborted();
+  const session = await ensureLive(
+    input.cwd,
+    input.model,
+    input.modelSettings,
+    input.operationContext,
+  );
+  let writer: Awaited<ReturnType<typeof acpTurnWriter>>;
+  try {
+    prepareTextProcess(session.process, input.operationContext);
+    writer = await acpTurnWriter(
+      session.process,
+      session.acp,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+    );
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    return preserveProviderFailure(error, dropLive(session));
+  }
+  const acpSessionId = session.acpSessionId;
+  const cancel = async () => {
+    const original = await acpTurnWriter(
+      session.process,
+      session.acp,
+      input.operationContext?.nativeControlTurn,
+      input.operationContext,
+      "control",
+    );
+    return original.notify("session/cancel", { sessionId: acpSessionId });
+  };
   session.output = "";
   session.collecting = true;
   session.onEvent = input.onEvent;
-  const abort = abortTextPromptRace(input.signal, () =>
-    session.acp.notify("session/cancel", {
-      sessionId: session.acpSessionId,
-    }),
+  const abort = abortTextPromptRace(input.signal, cancel);
+  return withProviderRetirement(
+    async () => {
+      try {
+        await Promise.race([
+          writer.request(
+            "session/prompt",
+            {
+              sessionId: acpSessionId,
+              prompt: [{ type: "text", text: input.prompt }],
+            },
+            input.timeoutMs ?? REQUEST_TIMEOUT_MS,
+          ),
+          ...(abort.promise ? [abort.promise] : []),
+        ]);
+        return session.output;
+      } catch (error) {
+        await cancel().catch(() => undefined);
+        throw error;
+      }
+    },
+    async () => {
+      abort.detach();
+      session.collecting = false;
+      session.onEvent = undefined;
+      await dropLive(session);
+    },
   );
-  try {
-    await Promise.race([
-      session.acp.request(
-        "session/prompt",
-        {
-          sessionId: session.acpSessionId,
-          prompt: [{ type: "text", text: input.prompt }],
-        },
-        input.timeoutMs ?? REQUEST_TIMEOUT_MS,
-      ),
-      ...(abort.promise ? [abort.promise] : []),
-    ]);
-    return session.output;
-  } catch (error) {
-    await session.acp
-      .notify("session/cancel", { sessionId: session.acpSessionId })
-      .catch(() => undefined);
-    if (session.closed) await dropLive(session);
-    throw error;
-  } finally {
-    abort.detach();
-    session.collecting = false;
-    session.onEvent = undefined;
-    await dropLive(session);
-  }
 }
 
 async function ensureLive(
   cwd: string,
   requestedModel?: string,
   modelSettings?: Record<string, string>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
   const model = requestedModel?.trim() || TEXT_MODEL;
   const settingsKey = modelSettingsKey(modelSettings);
   const generation = stopGeneration;
   const current = live;
   if (current && !current.closed) {
+    prepareTextProcess(current.process, operationContext);
+    const writer = await acpTurnWriter(
+      current.process,
+      current.acp,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    );
+    if (live !== current || current.closed || stopGeneration !== generation)
+      throw new Error("Cursor text generator stopped");
     if (current.cwd === cwd && current.model === model && current.settingsKey === settingsKey)
       return current;
     try {
-      await openSession(current, cwd, model, modelSettings);
+      await openSession(current, writer, cwd, model, modelSettings);
       if (stopGeneration !== generation || live !== current || current.closed)
         throw new Error("Cursor text generator stopped");
       return current;
     } catch (error) {
       if (stopGeneration !== generation || (live !== null && live !== current) || starting !== null)
         throw error;
-      await dropLive(current);
+      // startLive reserves/publishes the replacement before retiring this A.
     }
   }
   if (stopGeneration !== generation) throw new Error("Cursor text generator stopped");
-  return startLive(cwd, model, modelSettings);
+  return startLive(cwd, model, modelSettings, operationContext);
 }
 
 async function startLive(
   cwd: string,
   model = TEXT_MODEL,
   modelSettings?: Record<string, string>,
+  operationContext?: HarnessOperationContext,
 ): Promise<LiveText> {
-  const stopping = dropLive();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID);
-  starting = textProcess;
+  const previous = captureDrop();
+  let stopping = Promise.resolve();
+  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn);
+  prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
-  const acp = new AcpClient(textProcess, {
-    onNotification: (method, params) => {
-      const session = acpRef.session;
-      if (!session || method !== "session/update" || !session.collecting) return;
-      const previous = session.output;
-      session.output = mergeStream(previous, textFromUpdate(params));
-      const delta = session.output.slice(previous.length);
-      if (delta) session.onEvent?.({ type: "message.delta", text: delta });
-    },
-    onRequest: (id, method, params) => {
-      void handleTextRequest(acp, id, method, params);
-    },
-  });
-  const session: LiveText = {
-    process: textProcess,
-    acp,
-    cwd,
-    model,
-    settingsKey: modelSettingsKey(modelSettings),
-    acpSessionId: "",
-    collecting: false,
-    output: "",
-    closed: false,
-    onEvent: undefined,
-  };
-  acpRef.session = session;
-
-  watchChild(
-    textProcess,
-    (line) => acp.pushLine(line),
-    () => {
-      session.closed = true;
-      if (live === session) live = null;
-      acp.close(new Error("Cursor text generator exited"));
-    },
-  );
-
+  let admitted = false;
   try {
+    retirements.admitPending(textProcess);
+    admitted = true;
+    starting = textProcess;
+    stopping = dropLive(undefined, previous);
+    const acp = new AcpClient(textProcess, {
+      onNotification: (method, params) => {
+        const session = acpRef.session;
+        if (!session || method !== "session/update" || !session.collecting) return;
+        const previous = session.output;
+        session.output = mergeStream(previous, textFromUpdate(params));
+        const delta = session.output.slice(previous.length);
+        if (delta) session.onEvent?.({ type: "message.delta", text: delta });
+      },
+      onRequest: (id, method, params) => {
+        void acpTurnWriter(textProcess, acp, operationContext?.nativeControlTurn, operationContext)
+          .then((original) => handleTextRequest(original, id, method, params))
+          .catch(() => undefined);
+      },
+    });
+    const session: LiveText = {
+      process: textProcess,
+      acp,
+      cwd,
+      model,
+      settingsKey: modelSettingsKey(modelSettings),
+      acpSessionId: "",
+      collecting: false,
+      output: "",
+      closed: false,
+      onEvent: undefined,
+    };
+    acpRef.session = session;
+
+    watchChild(
+      textProcess,
+      (line) => acp.pushLine(line),
+      () => {
+        session.closed = true;
+        if (live === session) live = null;
+        acp.close(new Error("Cursor text generator exited"));
+      },
+    );
+
     await stopping;
     const { path } = await resolveCursorBinary();
     if (starting !== textProcess) throw new Error("Cursor text startup cancelled");
     await spawnChild(textProcess, path, ["acp"], cwd, undefined, "cursor");
-    await acp.request(
+    const writer = await acpTurnWriter(
+      textProcess,
+      acp,
+      operationContext?.nativeControlTurn,
+      operationContext,
+    );
+    await writer.request(
       "initialize",
       {
         protocolVersion: 1,
@@ -213,20 +275,27 @@ async function startLive(
       },
       INIT_TIMEOUT_MS,
     );
-    await acp
+    await writer
       .request("authenticate", { methodId: "cursor_login" }, REQUEST_TIMEOUT_MS)
       .catch(() => undefined);
-    await openSession(session, cwd, model, modelSettings);
+    await openSession(session, writer, cwd, model, modelSettings);
     if (starting !== textProcess || session.closed)
       throw new Error("Cursor text startup cancelled");
     live = session;
     return session;
   } catch (error) {
-    session.closed = true;
-    acp.close(error instanceof Error ? error : new Error(String(error)));
-    unwatchChild(textProcess);
-    await killChild(textProcess).catch(() => undefined);
-    throw error;
+    const session = acpRef.session;
+    if (session) {
+      session.closed = true;
+      session.acp.close(error instanceof Error ? error : new Error(String(error)));
+    }
+    return preserveProviderFailure(
+      error,
+      settleProviderRetirements([
+        stopping,
+        ...(admitted ? [retirements.retire([textProcess])] : []),
+      ]),
+    );
   } finally {
     if (starting === textProcess) starting = null;
   }
@@ -234,23 +303,24 @@ async function startLive(
 
 async function openSession(
   session: LiveText,
+  writer: AcpWriterView,
   cwd: string,
   model: string,
   modelSettings?: Record<string, string>,
 ): Promise<void> {
-  const setup = await session.acp.request<{
+  const setup = await writer.request<{
     sessionId?: string;
     configOptions?: unknown;
   }>("session/new", { cwd, mcpServers: [] }, REQUEST_TIMEOUT_MS);
   const acpSessionId = setup.sessionId?.trim();
   if (!acpSessionId) throw new Error("Cursor did not return a session id");
 
-  await session.acp
+  await writer
     .request("session/set_mode", { sessionId: acpSessionId, modeId: "ask" }, REQUEST_TIMEOUT_MS)
     .catch(() => undefined);
 
   const modelConfigId = extractModelConfigId(setup.configOptions);
-  await session.acp
+  await writer
     .request(
       "session/set_config_option",
       {
@@ -261,7 +331,7 @@ async function openSession(
       REQUEST_TIMEOUT_MS,
     )
     .catch(() =>
-      session.acp
+      writer
         .request(
           "session/set_model",
           { sessionId: acpSessionId, modelId: model },
@@ -273,7 +343,7 @@ async function openSession(
   for (const [settingId, value] of Object.entries(modelSettings ?? {})) {
     const configId = resolveSettingConfigId(setup.configOptions, settingId);
     if (!configId) continue;
-    await session.acp
+    await writer
       .request(
         "session/set_config_option",
         {
@@ -292,23 +362,29 @@ async function openSession(
   session.acpSessionId = acpSessionId;
 }
 
-async function dropLive(expected?: LiveText): Promise<void> {
-  const current = expected ?? live;
-  const pending = expected ? null : starting;
-  if (!expected || live === expected) live = null;
-  if (!expected) starting = null;
+function captureDrop() {
+  return { current: live, pending: starting, cohort: retirements.cohort(TEXT_CHILD_ID) };
+}
+async function dropLive(
+  expected?: LiveText,
+  captured?: ReturnType<typeof captureDrop>,
+): Promise<void> {
+  const snapshot = captured ?? captureDrop();
+  const current = expected ?? snapshot.current;
+  const pending = expected ? null : snapshot.pending;
+  if (live === current) live = null;
+  if (starting === pending) starting = null;
   if (current) {
     current.closed = true;
     current.acp.close();
   }
-  for (const process of new Set([current?.process, pending])) {
-    if (!process) continue;
-    unwatchChild(process);
-    await killChild(process).catch(() => undefined);
-  }
+  const originals = new Set([current?.process, pending]);
+  await (expected
+    ? retirements.retire(originals)
+    : settleProviderRetirements([snapshot.cohort.retire(), retirements.retire(originals)]));
 }
 
-async function handleTextRequest(acp: AcpClient, id: number, method: string, params: unknown) {
+async function handleTextRequest(acp: AcpWriterView, id: number, method: string, params: unknown) {
   if (method === "session/request_permission") {
     const optionIds = permissionOptionIds(params);
     const optionId = optionIds.find((value) => /reject|deny|cancel/i.test(value)) ?? "reject-once";

@@ -69,7 +69,7 @@ export function classifyChanges(paths, { full = false, reason } = {}) {
       continue;
     }
     if (
-      /^(src-tauri\/|packages\/physical-store-admission(?:-node)?\/|Cargo\.(toml|lock)$|rust-toolchain|\.?(rustfmt|clippy)\.toml$)/.test(
+      /^(src-tauri\/|packages\/(?:physical-store-admission(?:-node)?|provider-process-guardian)\/|Cargo\.(toml|lock)$|rust-toolchain|\.?(rustfmt|clippy)\.toml$)/.test(
         file,
       )
     ) {

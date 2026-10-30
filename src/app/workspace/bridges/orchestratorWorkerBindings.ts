@@ -29,7 +29,13 @@ import {
 import { pathKey } from "../../../shared/lib/paths";
 import { invoke } from "@tauri-apps/api/core";
 import { sameProjectPath } from "../../../features/projects/model/recents";
-import { newSession, sessionWorkCwd } from "../../../features/sessions/model/session";
+import { newSession, sessionWorkCwd, type Session } from "../../../features/sessions/model/session";
+import { captureHarnessControlTurn } from "../../../integrations/harness/core/registry";
+import { ProviderRetirementError } from "../../../integrations/harness/core/providerRetirement";
+import {
+  finishNativeControlTurn,
+  type ControlTurnHandle,
+} from "../../../integrations/harness/core/controlTurn";
 import { mergeModelSettings, resolveModel } from "../../../features/sessions/model/models";
 import {
   bindHarnessSession,
@@ -75,11 +81,31 @@ export function assertOriginalWorkerProcess(
 export async function finishOriginalWorkerProcess(
   sessionId: string,
   original: ChildProcessHandle | undefined,
+  originalControl: ControlTurnHandle | undefined,
 ): Promise<void> {
   assertOriginalWorkerProcess(sessionId, original);
+  if (!originalControl || originalControl.sessionId !== sessionId)
+    throw new Error(
+      "This worker's original control turn cannot be verified. Its workspace was retained.",
+    );
   await killChild(original);
   assertOriginalWorkerProcess(sessionId, original);
-  await invoke("control_turn_finished", { sessionId });
+  await finishNativeControlTurn(originalControl);
+}
+
+export async function stopOriginalWorkerHarnesses(session: Session): Promise<void> {
+  const results = await Promise.allSettled(
+    sessionChildHarnesses(session).map((harness) => stopHarnessSession(harness, session.id)),
+  );
+  const failures = results.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (failures.length)
+    throw new ProviderRetirementError(
+      "worker",
+      failures,
+      "Original worker provider cleanup did not complete",
+    );
 }
 
 async function selectedLeadSource(run: OrchestrationRun, saved?: OrchestrationWorkspace) {
@@ -315,16 +341,12 @@ export function createOrchestratorWorkerBindings({
     },
     integrateWorker: async (run, task) => {
       const originalProcess = captureChildProcess(task.sessionId);
+      const originalControl = captureHarnessControlTurn(task.sessionId, originalProcess);
       const fromCwd = task.workspace?.checkoutCwd;
       if (!fromCwd) throw new Error("This worker's isolated checkout is unavailable");
       const session = sessionsRef.current.find((entry) => entry.id === task.sessionId);
-      if (session)
-        await Promise.all(
-          sessionChildHarnesses(session).map((harness) =>
-            stopHarnessSession(harness, task.sessionId),
-          ),
-        );
-      await finishOriginalWorkerProcess(task.sessionId, originalProcess);
+      if (session) await stopOriginalWorkerHarnesses(session);
+      await finishOriginalWorkerProcess(task.sessionId, originalProcess, originalControl);
       await flushSessionCheckpoint(task.sessionId);
       const workspaceId = task.workspace?.managedWorkspaceId;
       if (!workspaceId)
@@ -383,6 +405,7 @@ export function createOrchestratorWorkerBindings({
     },
     cleanupWorker: async (run, task, onlyIfUnchanged) => {
       const originalProcess = captureChildProcess(task.sessionId);
+      const originalControl = captureHarnessControlTurn(task.sessionId, originalProcess);
       const workspace = task.workspace;
       if (!workspace || workspace.kind !== "worktree") return true;
       const path = workspace.checkoutCwd;
@@ -471,14 +494,8 @@ export function createOrchestratorWorkerBindings({
         onStop(task.sessionId, true);
         assertOriginalWorkerProcess(task.sessionId, originalProcess);
         const session = sessionsRef.current.find((entry) => entry.id === task.sessionId);
-        if (session) {
-          await Promise.all(
-            sessionChildHarnesses(session).map((harness) =>
-              stopHarnessSession(harness, task.sessionId),
-            ),
-          );
-        }
-        await finishOriginalWorkerProcess(task.sessionId, originalProcess);
+        if (session) await stopOriginalWorkerHarnesses(session);
+        await finishOriginalWorkerProcess(task.sessionId, originalProcess, originalControl);
         await flushSessionWrites();
         checkOpenWorktreeFiles(path);
         const removed = await removeOrchestrationWorktree(orchestrationCheckoutCwd(run), path);

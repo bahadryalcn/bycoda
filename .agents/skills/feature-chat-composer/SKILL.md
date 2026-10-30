@@ -5,6 +5,24 @@ description: Chat composer inventory for send, queue, steer, stop, drafts, attac
 
 # Chat composer
 
+## Original follow-up and manual-operation context, 2026-10-30
+
+Registry captures a steer submission, actual adapter and original operation
+before queue waits. A failed/unentered source cannot forward the follow-up to
+its predecessor or replacement. Epoch/source checks run again after async
+preparation and the synchronous onReady callback, so reentrant Stop/replacement
+cannot dispatch a stale steer. Compact/edit/steer copy caller identity before
+deferral. Preparation-only Stop invalidates that submission without creating a
+provider startup tombstone for the next fresh message.
+
+Standalone compact/edit now receive their own Native control turn; the compact
+hook and edited-send dispatcher forward persisted Operator/orchestration/account
+context consistently with normal send. Existing drafts, storage keys, layouts,
+keyboard/queue behavior and controls are preserved. This is functional adapter
+work with no new visual surface. Local checks live under
+`temp/verification/2026-10-30-warm-control/`; Native CLI/MCP/raw actor closure and
+current GUI/device/installed acceptance remain separate OPEN work.
+
 ## Bounded question conservation, 2026-10-30
 
 QuestionForm reserves a bounded questionDrafts lineage in layout before accepting

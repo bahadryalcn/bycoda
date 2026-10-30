@@ -1,3 +1,9 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { asRecord } from "../../../../shared/lib/records";
 import { homeDir } from "../../../../platform/tauri/fs";
 import {
@@ -10,12 +16,12 @@ import { AcpClient } from "../../core/acp";
 import {
   createChildProcessHandle,
   execChild,
-  killChild,
   resolveCursorBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
+
+const retirements = createProviderRetirementLedger("cursor.catalog", killChild);
 
 const PROBE_ID = "bycoda-cursor-probe";
 const DISCOVERY_TIMEOUT_MS = 15_000;
@@ -36,6 +42,7 @@ export function refreshCursorCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("cursor", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] cursor catalog", error);
     })
     .finally(() => {
@@ -46,11 +53,13 @@ export function refreshCursorCatalog(): Promise<void> {
 
 export async function discoverCursorModels(workingDirectory?: string): Promise<AgentModel[]> {
   const fromAcp = await discoverViaAcp(workingDirectory).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] cursor ACP catalog failed", error);
     return [];
   });
   if (fromAcp.length > 0) return fromAcp;
   return discoverViaCli(workingDirectory).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] cursor CLI catalog failed", error);
     return [];
   });
@@ -60,17 +69,16 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
   const { path } = await resolveCursorBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = createChildProcessHandle(probeId);
+  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "cursor.catalog");
   const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);
     },
   });
 
-  const stop = async () => {
+  const stop = () => {
     acp.close();
-    unwatchChild(probeProcess);
-    await killChild(probeProcess).catch(() => undefined);
+    return retirements.retire([probeProcess]);
   };
 
   watchChild(
@@ -79,45 +87,48 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
     () => acp.close(new Error("Cursor probe exited")),
   );
 
-  try {
-    await spawnChild(probeProcess, path, ["acp"], cwd, undefined, "cursor");
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      async () => {
-        await acp.request(
-          "initialize",
-          {
-            protocolVersion: 1,
-            clientCapabilities: CURSOR_CLIENT_CAPABILITIES,
-            clientInfo: { name: "bycoda", version: "0.1.0" },
-          },
-          REQUEST_TIMEOUT_MS,
-        );
-        // ACP reads existing CLI credentials at startup. `cursor_login` can
-        // launch a browser, so a catalog refresh must never request it. Missing
-        // credentials fall back to CLI discovery and the bundled model list.
-        const listed = await acp.request<unknown>(
-          "cursor/list_available_models",
-          {},
-          REQUEST_TIMEOUT_MS,
-        );
-        const models = modelsFromListAvailable(listed);
-        if (models.length > 0) return models;
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(probeProcess, path, ["acp"], cwd, undefined, "cursor");
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        async () => {
+          await acp.request(
+            "initialize",
+            {
+              protocolVersion: 1,
+              clientCapabilities: CURSOR_CLIENT_CAPABILITIES,
+              clientInfo: { name: "bycoda", version: "0.1.0" },
+            },
+            REQUEST_TIMEOUT_MS,
+          );
+          // ACP reads existing CLI credentials at startup. `cursor_login` can
+          // launch a browser, so a catalog refresh must never request it. Missing
+          // credentials fall back to CLI discovery and the bundled model list.
+          const listed = await acp.request<unknown>(
+            "cursor/list_available_models",
+            {},
+            REQUEST_TIMEOUT_MS,
+          );
+          const models = modelsFromListAvailable(listed);
+          if (models.length > 0) return models;
 
-        const created = await acp.request<unknown>(
-          "session/new",
-          { cwd, mcpServers: [] },
-          REQUEST_TIMEOUT_MS,
-        );
-        return modelsFromSessionNew(created);
-      },
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+          const created = await acp.request<unknown>(
+            "session/new",
+            { cwd, mcpServers: [] },
+            REQUEST_TIMEOUT_MS,
+          );
+          return modelsFromSessionNew(created);
+        },
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 async function discoverViaCli(workingDirectory?: string): Promise<AgentModel[]> {

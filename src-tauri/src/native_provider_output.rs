@@ -8,7 +8,7 @@ use crate::session_store::{authority::StoreIdentity, SessionStore};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
-use std::process::{Child, ExitStatus};
+use std::process::ExitStatus;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tauri::Manager;
@@ -818,10 +818,38 @@ impl OutputSource {
 /// The real Child object/OS handle is retained, including after wait. Neither a
 /// PID nor a serialized epoch can construct this lifetime or settle another one.
 pub(crate) struct NativeOutputChild {
-    child: Mutex<Child>,
+    owner: Arc<crate::harness::process_lifecycle::ProcessOwner>,
     pid: u32,
 }
 impl NativeOutputChild {
+    pub(crate) fn retirement(&self) -> crate::harness::process_lifecycle::Retirement {
+        self.owner.retirement()
+    }
+    #[cfg(test)]
+    pub(crate) fn signals_closed(&self) -> bool {
+        self.owner.signals_closed()
+    }
+    #[cfg(test)]
+    pub(crate) fn exit_observed(&self) -> bool {
+        self.owner.exit_observed()
+    }
+    #[cfg(test)]
+    pub(crate) fn id(&self) -> u32 {
+        self.pid
+    }
+    #[cfg(test)]
+    pub(crate) fn try_wait(&self) -> std::io::Result<Option<ExitStatus>> {
+        self.owner.try_result()
+    }
+    pub(crate) fn pin(&self) -> std::io::Result<crate::harness::process_lifecycle::ProcessPin> {
+        self.owner.pin()
+    }
+    pub(crate) fn request_stop(&self) -> std::io::Result<()> {
+        self.owner.request_stop()
+    }
+    pub(crate) fn wait_actual(&self) -> std::io::Result<ExitStatus> {
+        self.owner.wait()
+    }
     pub(crate) fn wait(
         self: &Arc<Self>,
         output: &Arc<NativeOutputStream>,
@@ -836,11 +864,13 @@ impl NativeOutputChild {
                 "Native output process construction changed",
             ));
         }
-        let result = self
-            .child
-            .lock()
-            .map_err(|_| std::io::Error::other("Native output process unavailable"))?
-            .wait();
+        self.owner.activate();
+        let result = self.owner.wait();
+        if self.retirement().require_verified().is_err() {
+            // Retain unknown before terminal publication; a real leader status
+            // must never briefly mint an eligible emit/retirement seal.
+            output.invalidate(UnavailableReason::TerminalError);
+        }
         output.terminal_complete(result.is_ok(), cancelled);
         result
     }
@@ -1023,16 +1053,17 @@ impl NativeProviderOutputRegistry {
             composition_gate: Arc::new(RwLock::new(())),
         }
     }
-    pub(crate) fn begin_process(
+    pub(crate) fn begin_process<C: Into<crate::harness::process_lifecycle::OwnedChild>>(
         &self,
         source: OutputSource,
-        child: Child,
+        child: C,
         owners_current: Arc<dyn Fn() -> bool + Send + Sync>,
         notice: Arc<dyn Fn(OutputState) -> bool + Send + Sync>,
     ) -> (Arc<NativeOutputStream>, Arc<NativeOutputChild>) {
+        let child = child.into();
         let process = Arc::new(NativeOutputChild {
             pid: child.id(),
-            child: Mutex::new(child),
+            owner: Arc::new(crate::harness::process_lifecycle::ProcessOwner::new(child)),
         });
         let output = self.begin_inner(
             source,
@@ -1722,10 +1753,12 @@ impl NativeOutputStream {
         actual.finish(success);
     }
     pub(crate) fn reader(self: &Arc<Self>, slot: u8) -> Reader {
+        let process_pin = self.process.as_ref().map(|process| process.pin());
+        let process_valid = !matches!(&process_pin, Some(Err(_)));
         let valid = {
             let mut state = self.lock_state();
             let valid = (slot as usize) < state.expected_readers && state.reader_slots.insert(slot);
-            if !valid {
+            if !valid || !process_valid {
                 state.reason.get_or_insert(UnavailableReason::ReaderError);
             }
             valid
@@ -1734,6 +1767,7 @@ impl NativeOutputStream {
             stream: self.clone(),
             valid,
             finished: false,
+            process_pin: process_pin.and_then(Result::ok),
         }
     }
     pub(crate) fn terminal_complete(&self, success: bool, cancelled: bool) {
@@ -1880,6 +1914,7 @@ pub(crate) struct Reader {
     stream: Arc<NativeOutputStream>,
     valid: bool,
     finished: bool,
+    process_pin: Option<crate::harness::process_lifecycle::ProcessPin>,
 }
 impl Reader {
     pub(crate) fn finish(mut self, eof_and_flushed: bool, cancelled: bool) {

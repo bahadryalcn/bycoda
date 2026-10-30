@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { HostChildBackend } from "./child-backend";
 import { HostStore } from "./store";
 import { HostEngine } from "./engine";
+import { HostRunWriters } from "./run-writers";
 import { hostProviders } from "./providers";
 import {
   acquireHarnessBridge,
@@ -64,11 +65,12 @@ beforeAll(async () => {
   directory = mkdtempSync(join(tmpdir(), "bycoda-opencode-transport-"));
   const binary = join(directory, "opencode.cjs");
   writeFileSync(binary, fixture);
-  backend = new HostChildBackend({ opencode: binary });
+  const runWriters = new HostRunWriters();
+  backend = new HostChildBackend({ opencode: binary }, undefined, undefined, runWriters);
   configureChildBackend(backend);
   release = await acquireHarnessBridge();
   store = new HostStore(join(directory, "host.db"));
-  engine = new HostEngine(store, hostProviders);
+  engine = new HostEngine(store, hostProviders, undefined, undefined, runWriters);
 });
 
 afterAll(async () => {

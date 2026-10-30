@@ -1,5 +1,10 @@
 # Remote access (experimental)
 
+Development Host input changes keep a stopped operation's cleanup separate from
+permission to send another prompt. If its original target or cleanup cannot be
+verified, the operation remains unresolved. This work has not enabled automatic
+migration of existing conversations or installed a new Windows application.
+
 bycoda can run Claude Code, Codex, Cursor, Grok Build, OpenCode, Pi, OMP, fx, Hermes Agent, and Antigravity sessions on a separate Windows, Linux, or macOS host. The host owns the provider processes and session database. Closing the desktop, closing a session tab, or losing the SSH tunnel does not stop a host session.
 
 A folder on a connected machine is a project in the rail, marked with a globe. Every session in it runs on that machine, in the same session view and composer as a local session. The Sessions sidebar lists that machine's sessions for the project.
@@ -11,6 +16,32 @@ older provider process cannot target its replacement. A client without the
 original process receipt must update before targeted write/stop actions. If
 Native cleanup cannot identify the original running processes, it remains
 unconfirmed and keeps the workspace reserved for recovery.
+
+On Windows, a Host package containing the native provider guardian waits for
+the original process and its owned input/output work to finish. If that
+guardian is lost before cleanup can be confirmed, the same session cannot start
+a replacement process. Other sessions remain available. Reconnecting from
+another device does not clear the original uncertainty. Packages using the
+legacy guard retain its existing, more limited cleanup evidence.
+
+A timed-out CLI check does not prove that its process stopped. Sign-in state
+stays unknown while an original check is unresolved; repeating the check joins
+that same work. Other account profiles remain available. Cleanup can remain
+pending until the original process and its accepted input actually finish.
+Command output can be available while cleanup remains unconfirmed. That output
+does not release a workspace reservation whose original cleanup is still unknown.
+
+Stopping an older process cannot stop its replacement, even when both belong to
+the same conversation. If Stop fails and the original outcome remains unknown,
+another click retains that failure instead of silently starting a second stop
+against whichever process is now current. The conversation can remain blocked
+until its original cleanup is confirmed; unrelated conversations remain usable.
+
+Matching development desktop and Native builds can keep a provider process warm
+between messages while retaining each message's original input writer. A new
+message can wait for accepted earlier writes to finish. Uncertain original input
+can keep that conversation held for recovery; retry does not transfer it to a
+newer message. This input layer does not complete app-tool or device migration.
 
 Existing Native conversations are not automatically moved to the Host. Draft
 checkpoint retention and a successful remote action are separate outcomes: a

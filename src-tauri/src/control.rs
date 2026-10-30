@@ -12,6 +12,42 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 
+#[path = "control_receipts.rs"]
+pub(crate) mod receipts;
+#[path = "control_writes.rs"]
+pub(crate) mod writes;
+pub use receipts::ControlTurnReceipt;
+use receipts::WindowIssuer;
+
+/// Private source capture. This is not a public completion/retirement proof.
+pub(crate) struct ChildControlTurn {
+    receipt: ControlTurnReceipt,
+    issuer: Arc<WindowIssuer>,
+    window: String,
+    cwd: String,
+    output: Mutex<Option<Arc<crate::native_provider_output::NativeOutputStream>>>,
+}
+
+impl ChildControlTurn {
+    pub(crate) fn bind_output(
+        &self,
+        output: Arc<crate::native_provider_output::NativeOutputStream>,
+    ) -> Result<(), String> {
+        if output.target() != self.receipt.session_id {
+            return Err("NATIVE_CONTROL_SOURCE_TARGET_CHANGED".into());
+        }
+        let mut original = self
+            .output
+            .lock()
+            .map_err(|_| "NATIVE_CONTROL_SOURCE_UNAVAILABLE")?;
+        if original.is_some() {
+            return Err("NATIVE_CONTROL_SOURCE_ALREADY_BOUND".into());
+        }
+        *original = Some(output);
+        Ok(())
+    }
+}
+
 const APP_TURN_INACTIVE: &str = "bycoda app access is inactive. Use /operator once in this thread to enable it, then call the CLI during an active agent turn. Retrying this request now will not enable access.";
 
 #[derive(Clone)]
@@ -75,6 +111,9 @@ struct ActiveTurn {
     window: String,
     cwd: String,
     app_allowed: bool,
+    receipt: ControlTurnReceipt,
+    issuer: Arc<WindowIssuer>,
+    processes: Vec<Arc<ChildControlTurn>>,
 }
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -95,9 +134,166 @@ struct Inner {
     workers: HashMap<String, String>,
     scratch: HashMap<String, PathBuf>,
     active: HashMap<String, ActiveTurn>,
+    /// Original turn work, including superseded/pending/unknown originals.
+    turn_writes: writes::TurnLedger,
     history_sources: HashMap<String, HistoryWindow>,
 }
 impl Inner {
+    fn install_authorized_turn(
+        &mut self,
+        window: &str,
+        issuer: &Arc<WindowIssuer>,
+        session_id: String,
+        cwd: String,
+        app_access: bool,
+    ) -> Result<ControlTurnReceipt, String> {
+        // Reserve before replacing A or changing any grant. Unknown originals
+        // cannot make room; only verified byte/authority-end records can.
+        self.turn_writes.capacity()?;
+        let receipt = ControlTurnReceipt::issue(session_id.clone());
+        let work =
+            writes::TurnWork::new(receipt.clone(), issuer.clone(), window.into(), cwd.clone());
+        if let Some(previous) = self
+            .active
+            .get(&session_id)
+            .and_then(|turn| self.turn_writes.find(&turn.receipt))
+        {
+            previous.writes.close();
+        }
+        self.turn_writes.insert(work);
+        let eligible = self.prepare_app_grant(&session_id, window, &cwd);
+        self.active.insert(
+            session_id,
+            ActiveTurn {
+                window: window.into(),
+                cwd,
+                app_allowed: app_access && eligible,
+                receipt: receipt.clone(),
+                issuer: issuer.clone(),
+                processes: Vec::new(),
+            },
+        );
+        Ok(receipt)
+    }
+    fn capture_child_source(
+        &mut self,
+        issuer: &Arc<WindowIssuer>,
+        label: &str,
+        target: &str,
+        cwd: String,
+        receipt: ControlTurnReceipt,
+    ) -> Result<Arc<ChildControlTurn>, String> {
+        if receipt.session_id != target {
+            return Err("NATIVE_CONTROL_TURN_TARGET_CHANGED".into());
+        }
+        self.check_turn(label, issuer, &receipt)?;
+        let active = self.active.get_mut(&receipt.session_id).unwrap();
+        if active.cwd != cwd {
+            return Err("NATIVE_CONTROL_TURN_CWD_CHANGED".into());
+        }
+        if active.processes.len() >= 512 {
+            return Err("NATIVE_CONTROL_SOURCE_CAPACITY".into());
+        }
+        let captured = Arc::new(ChildControlTurn {
+            receipt,
+            issuer: issuer.clone(),
+            window: label.into(),
+            cwd,
+            output: Mutex::new(None),
+        });
+        active.processes.push(captured.clone());
+        Ok(captured)
+    }
+
+    fn with_child_source<T>(
+        &self,
+        turn: &ChildControlTurn,
+        spawn: impl FnOnce() -> Result<T, String>,
+    ) -> Result<T, String> {
+        self.check_turn(&turn.window, &turn.issuer, &turn.receipt)?;
+        if self.active[&turn.receipt.session_id].cwd != turn.cwd {
+            return Err("NATIVE_CONTROL_TURN_CWD_CHANGED".into());
+        }
+        spawn()
+    }
+    fn check_turn(
+        &self,
+        window: &str,
+        issuer: &Arc<WindowIssuer>,
+        receipt: &ControlTurnReceipt,
+    ) -> Result<(), String> {
+        receipt.validate()?;
+        let active = self
+            .active
+            .get(&receipt.session_id)
+            .ok_or("NATIVE_CONTROL_TURN_STALE")?;
+        if active.receipt != *receipt
+            || active.window != window
+            || !Arc::ptr_eq(&active.issuer, issuer)
+        {
+            return Err("NATIVE_CONTROL_TURN_STALE".into());
+        }
+        Ok(())
+    }
+    fn capture_write_turn(
+        &mut self,
+        window: &str,
+        issuer: &Arc<WindowIssuer>,
+        target: &str,
+        cwd: &str,
+        receipt: &ControlTurnReceipt,
+    ) -> Result<Arc<writes::TurnWork>, String> {
+        self.check_turn(window, issuer, receipt)?;
+        if receipt.session_id != target || self.active[target].cwd != cwd {
+            return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
+        }
+        let work = self
+            .turn_writes
+            .find(receipt)
+            .ok_or("NATIVE_CONTROL_TURN_SOURCE_MISSING")?;
+        if !work.matches(window, issuer, receipt) || work.cwd != cwd {
+            return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
+        }
+        Ok(work)
+    }
+
+    fn begin_finish_turn(
+        &mut self,
+        window: &str,
+        issuer: &Arc<WindowIssuer>,
+        receipt: &ControlTurnReceipt,
+    ) -> Result<Arc<writes::TurnWork>, String> {
+        receipt.validate()?;
+        let work = self
+            .turn_writes
+            .find(receipt)
+            .ok_or("NATIVE_CONTROL_TURN_STALE")?;
+        if !work.matches(window, issuer, receipt) {
+            return Err("NATIVE_CONTROL_TURN_STALE".into());
+        }
+        // Permission ends before waiting. A late exact A finish never removes B.
+        work.writes.close();
+        if self
+            .active
+            .get(&receipt.session_id)
+            .is_some_and(|turn| turn.receipt == *receipt)
+        {
+            self.active.remove(&receipt.session_id);
+        }
+        Ok(work)
+    }
+
+    #[cfg(test)]
+    fn finish_turn(
+        &mut self,
+        window: &str,
+        issuer: &Arc<WindowIssuer>,
+        receipt: &ControlTurnReceipt,
+    ) -> Result<(), String> {
+        let work = self.begin_finish_turn(window, issuer, receipt)?;
+        work.writes.drain()?;
+        work.complete()
+    }
     // Provider processes can stay alive between turns, so install the token
     // before their first spawn. Writes still require an opted-in active turn;
     // project session reads are available during ordinary active turns.
@@ -159,6 +355,8 @@ impl Inner {
         ids
     }
     fn close_window(&mut self, label: &str) -> Vec<String> {
+        // Original strict work remains retained even after window closure. A
+        // label cleanup supplies neither byte completion nor physical proof.
         self.history_sources.remove(label);
         let ids = self.window_sessions(label);
         self.grants.retain(|id, _| !ids.contains(id));
@@ -229,10 +427,9 @@ fn request_grant(host: &Inner, namespace: &str, token: &str) -> Result<Grant, St
     if namespace == "app"
         && (host.grants.contains_key(&grant.session)
             || host.workers.contains_key(&grant.session)
-            || !host
-                .active
-                .get(&grant.session)
-                .is_some_and(|turn| turn.window == grant.window && turn.app_allowed))
+            || !host.active.get(&grant.session).is_some_and(|turn| {
+                turn.window == grant.window && turn.app_allowed && turn.issuer.is_live()
+            }))
     {
         return Err(APP_TURN_INACTIVE.into());
     }
@@ -252,11 +449,9 @@ fn request_grant_for_action(
             .find(|grant| grant.token == token)
             .cloned()
             .ok_or("Connection revoked or unauthorized")?;
-        if !host
-            .active
-            .get(&grant.session)
-            .is_some_and(|turn| turn.window == grant.window && turn.cwd == grant.cwd)
-            || host.grants.contains_key(&grant.session)
+        if !host.active.get(&grant.session).is_some_and(|turn| {
+            turn.window == grant.window && turn.cwd == grant.cwd && turn.issuer.is_live()
+        }) || host.grants.contains_key(&grant.session)
             || host.workers.contains_key(&grant.session)
         {
             return Err("Session read access requires an active conversation turn".into());
@@ -384,6 +579,9 @@ fn conversation_ui_window(
         .active
         .get(session)
         .ok_or("The conversation is not active in a desktop window")?;
+    if !active.issuer.is_live() {
+        return Err("The conversation's original desktop window is closed".into());
+    }
     let normalize = |path: &str| {
         let path = path
             .replace('\\', "/")
@@ -1046,9 +1244,14 @@ pub fn control_authorize_turn(
     session_id: String,
     cwd: String,
     app_access: bool,
-) -> Result<(), String> {
+) -> Result<ControlTurnReceipt, String> {
+    if session_id.is_empty() {
+        return Err("NATIVE_CONTROL_TURN_INVALID".into());
+    }
     let cwd = std::fs::canonicalize(crate::fs::expand_home(&cwd)).map_err(|e| e.to_string())?;
     let cwd = comparison_path(&cwd);
+    let issuer = receipts::capture(&window)?;
+    issuer.with_live(|| {
     let mut inner = host
         .inner
         .lock()
@@ -1064,24 +1267,63 @@ pub fn control_authorize_turn(
             return Err("This checkout is controlled by an orchestrator. Stop that run before starting independent work.".into());
         }
     }
-    let eligible = inner.prepare_app_grant(&session_id, window.label(), &cwd);
-    let app_allowed = app_access && eligible;
-    inner.active.insert(
-        session_id,
-        ActiveTurn {
-            window: window.label().to_string(),
-            cwd,
-            app_allowed,
-        },
-    );
-    Ok(())
+    inner.install_authorized_turn(window.label(), &issuer, session_id, cwd, app_access)
+    })
 }
 
-#[tauri::command]
-pub fn control_turn_finished(host: State<'_, ControlHost>, session_id: String) {
-    if let Ok(mut inner) = host.inner.lock() {
-        inner.active.remove(&session_id);
-    }
+#[tauri::command(async)]
+pub fn control_turn_finished(
+    window: WebviewWindow,
+    host: State<'_, ControlHost>,
+    receipt: ControlTurnReceipt,
+) -> Result<(), String> {
+    let issuer = receipts::existing(&window)?;
+    finish_original_turn(&host, &issuer, window.label(), &receipt)
+}
+
+pub(crate) fn finish_original_turn(
+    host: &ControlHost,
+    issuer: &Arc<WindowIssuer>,
+    window: &str,
+    receipt: &ControlTurnReceipt,
+) -> Result<(), String> {
+    let work = issuer.with_live(|| {
+        host.inner
+            .lock()
+            .map_err(|_| "Control service unavailable".to_string())?
+            .begin_finish_turn(window, issuer, receipt)
+    })?;
+    // No issuer/ControlHost/registry lock is held over actual writer closure.
+    // This waits byte IO and its admitted callback tail, never kills a warm P.
+    work.writes.drain()?;
+    issuer.with_live(|| work.complete())
+}
+
+/// Original active authorization captured under the actual issuer and retained
+/// through an operation. The callback must not wait or acquire an issuer lock.
+pub(crate) fn with_write_turn<T>(
+    host: &ControlHost,
+    issuer: &Arc<WindowIssuer>,
+    window: &str,
+    target: &str,
+    cwd: &str,
+    receipt: &ControlTurnReceipt,
+    action: impl FnOnce(Arc<writes::TurnWork>) -> Result<T, String>,
+) -> Result<T, String> {
+    issuer.with_live(|| {
+        let mut inner = host
+            .inner
+            .lock()
+            .map_err(|_| "NATIVE_CONTROL_SERVICE_UNAVAILABLE")?;
+        let work = inner.capture_write_turn(window, issuer, target, cwd, receipt)?;
+        action(work)
+    })
+}
+
+pub(crate) fn canonical_child_cwd(cwd: &Path) -> Result<String, String> {
+    Ok(comparison_path(
+        &std::fs::canonicalize(cwd).map_err(|e| e.to_string())?,
+    ))
 }
 
 pub fn window_closed(app: &AppHandle, label: &str) {
@@ -1107,7 +1349,63 @@ pub fn window_closed(app: &AppHandle, label: &str) {
     };
 }
 
-pub fn configure_child(app: &AppHandle, session_id: &str, cmd: &mut Command) {
+pub(crate) fn capture_child_turn(
+    app: &AppHandle,
+    issuer: &Arc<WindowIssuer>,
+    label: &str,
+    target: &str,
+    cwd: &Path,
+    receipt: Option<ControlTurnReceipt>,
+) -> Result<Option<Arc<ChildControlTurn>>, String> {
+    let Some(receipt) = receipt else {
+        return Ok(None);
+    };
+    if receipt.session_id != target {
+        return Err("NATIVE_CONTROL_TURN_TARGET_CHANGED".into());
+    }
+    let cwd = comparison_path(&std::fs::canonicalize(cwd).map_err(|e| e.to_string())?);
+    let host = app
+        .try_state::<ControlHost>()
+        .ok_or("NATIVE_CONTROL_SERVICE_UNAVAILABLE")?;
+    issuer.with_live(|| {
+        let mut inner = host
+            .inner
+            .lock()
+            .map_err(|_| "NATIVE_CONTROL_SERVICE_UNAVAILABLE")?;
+        inner
+            .capture_child_source(issuer, label, target, cwd, receipt)
+            .map(Some)
+    })
+}
+
+/// Hold the exact turn check through actual process creation. No later current
+/// lookup may replace this captured source after command/environment setup.
+pub(crate) fn with_child_turn<T>(
+    app: &AppHandle,
+    turn: Option<&Arc<ChildControlTurn>>,
+    spawn: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let Some(turn) = turn else {
+        return spawn();
+    };
+    let host = app
+        .try_state::<ControlHost>()
+        .ok_or("NATIVE_CONTROL_SERVICE_UNAVAILABLE")?;
+    turn.issuer.with_live(|| {
+        let inner = host
+            .inner
+            .lock()
+            .map_err(|_| "NATIVE_CONTROL_SERVICE_UNAVAILABLE")?;
+        inner.with_child_source(turn, spawn)
+    })
+}
+
+pub(crate) fn configure_child(
+    app: &AppHandle,
+    session_id: &str,
+    cmd: &mut Command,
+    turn: Option<&Arc<ChildControlTurn>>,
+) {
     cmd.env_remove("BYCODA_CONTROL_ENDPOINT")
         .env_remove("BYCODA_CONTROL_TOKEN")
         .env_remove("BYCODA_APP_ENDPOINT")
@@ -1116,18 +1414,31 @@ pub fn configure_child(app: &AppHandle, session_id: &str, cmd: &mut Command) {
         return;
     };
     if let Ok(inner) = host.inner.lock() {
-        if let Some(grant) = inner.grants.get(session_id) {
-            cmd.env("BYCODA_CONTROL_ENDPOINT", &host.endpoint)
-                .env("BYCODA_CONTROL_TOKEN", &grant.token);
-        }
-        if let Some(grant) = inner.app_grants.get(session_id) {
-            cmd.env("BYCODA_APP_ENDPOINT", &host.endpoint)
-                .env("BYCODA_APP_TOKEN", &grant.token);
-        }
-        if let Some(scratch) = inner.scratch.get(session_id) {
-            configure_worker_scratch(cmd, scratch);
-        }
+        configure_child_grants(&inner, &host.endpoint, session_id, cmd, turn);
     };
+}
+
+fn configure_child_grants(
+    inner: &Inner,
+    endpoint: &str,
+    session_id: &str,
+    cmd: &mut Command,
+    turn: Option<&Arc<ChildControlTurn>>,
+) {
+    if let Some(grant) = inner.grants.get(session_id) {
+        cmd.env("BYCODA_CONTROL_ENDPOINT", endpoint)
+            .env("BYCODA_CONTROL_TOKEN", &grant.token);
+    }
+    // Orchestrator grants above are separately authorized. Ordinary app
+    // access is attached only to the caller's exact captured Native turn.
+    let app_session = turn.map(|turn| turn.receipt.session_id.as_str());
+    if let Some(grant) = app_session.and_then(|id| inner.app_grants.get(id)) {
+        cmd.env("BYCODA_APP_ENDPOINT", endpoint)
+            .env("BYCODA_APP_TOKEN", &grant.token);
+    }
+    if let Some(scratch) = inner.scratch.get(session_id) {
+        configure_worker_scratch(cmd, scratch);
+    }
 }
 
 #[tauri::command]
@@ -1779,6 +2090,81 @@ mod tests {
     }
     use super::*;
     #[test]
+    fn closed_actual_window_revokes_app_and_conversation_reads_without_retirement_ack() {
+        let mut inner = Inner::default();
+        let issuer = Arc::new(WindowIssuer::default());
+        inner.app_grants.insert(
+            "session".into(),
+            Grant {
+                window: "main".into(),
+                session: "session".into(),
+                cwd: "/repo".into(),
+                token: "token".into(),
+            },
+        );
+        inner.active.insert(
+            "session".into(),
+            ActiveTurn {
+                window: "main".into(),
+                cwd: "/repo".into(),
+                app_allowed: true,
+                receipt: ControlTurnReceipt::issue("session".into()),
+                issuer: issuer.clone(),
+                processes: Vec::new(),
+            },
+        );
+        // The query may run within original admission without re-locking that
+        // same issuer; lock order stays issuer -> ControlHost.
+        issuer
+            .with_live(|| {
+                assert!(request_grant(&inner, "app", "token").is_ok());
+                Ok(())
+            })
+            .unwrap();
+        tauri::Resource::close(issuer);
+        assert!(request_grant(&inner, "app", "token").is_err());
+        assert!(request_grant_for_action(&inner, "app", "token", "sessions.read").is_err());
+        assert!(conversation_ui_window(&inner, "session", "/repo", "host").is_err());
+        assert!(
+            inner.active.contains_key("session"),
+            "revocation is not physical/cohort completion"
+        );
+    }
+    #[test]
+    fn poisoned_actual_window_admission_cannot_keep_an_application_grant_live() {
+        let mut inner = Inner::default();
+        let issuer = Arc::new(WindowIssuer::default());
+        inner.app_grants.insert(
+            "session".into(),
+            Grant {
+                window: "main".into(),
+                session: "session".into(),
+                cwd: "/repo".into(),
+                token: "token".into(),
+            },
+        );
+        inner.active.insert(
+            "session".into(),
+            ActiveTurn {
+                window: "main".into(),
+                cwd: "/repo".into(),
+                app_allowed: true,
+                receipt: ControlTurnReceipt::issue("session".into()),
+                issuer: issuer.clone(),
+                processes: Vec::new(),
+            },
+        );
+        let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _ = issuer
+                .with_live(|| -> Result<(), String> { panic!("controlled admission failure") });
+        }));
+        assert!(failed.is_err());
+        assert!(request_grant(&inner, "app", "token").is_err());
+        assert!(request_grant_for_action(&inner, "app", "token", "sessions.list").is_err());
+        assert!(conversation_ui_window(&inner, "session", "/repo", "host").is_err());
+        assert!(inner.active.contains_key("session"));
+    }
+    #[test]
     fn conversation_ui_routes_only_the_active_owning_window_without_operator_access() {
         let mut host = Inner::default();
         host.active.insert(
@@ -1787,6 +2173,9 @@ mod tests {
                 window: "own-window".into(),
                 cwd: "G:/demo/project".into(),
                 app_allowed: false,
+                receipt: ControlTurnReceipt::issue("session".into()),
+                issuer: Arc::new(WindowIssuer::default()),
+                processes: Vec::new(),
             },
         );
         assert_eq!(
@@ -1828,6 +2217,9 @@ mod tests {
                 window: "main".into(),
                 cwd: "/repo".into(),
                 app_allowed: true,
+                receipt: ControlTurnReceipt::issue("ordinary".into()),
+                issuer: Arc::new(WindowIssuer::default()),
+                processes: Vec::new(),
             },
         );
         assert!(request_grant(&inner, "app", "app-token").is_ok());
@@ -1863,6 +2255,9 @@ mod tests {
                 window: "main".into(),
                 cwd: "/repo".into(),
                 app_allowed: false,
+                receipt: ControlTurnReceipt::issue("ordinary".into()),
+                issuer: Arc::new(WindowIssuer::default()),
+                processes: Vec::new(),
             },
         );
         assert!(request_grant(&inner, "app", &token).is_err());
@@ -1963,6 +2358,9 @@ mod tests {
                     window: window.into(),
                     cwd: format!("/{id}"),
                     app_allowed: false,
+                    receipt: ControlTurnReceipt::issue(id.into()),
+                    issuer: Arc::new(WindowIssuer::default()),
+                    processes: Vec::new(),
                 },
             );
         }

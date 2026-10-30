@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile, chmod, copyFile, readdir, rm, utimes } from "node:fs/promises";
+import {
+  mkdir,
+  readFile,
+  writeFile,
+  chmod,
+  copyFile,
+  readdir,
+  rm,
+  utimes,
+  lstat,
+} from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { resolve, join } from "node:path";
 import { createTarArchive, extractTarMembers } from "./package-archive.mjs";
@@ -12,6 +22,13 @@ import {
   smokeAdmissionBundle,
   validateAdmissionPackageDestination,
 } from "../scripts/build/physical-store-admission.mjs";
+import {
+  assertGuardianPackagingSeparation,
+  copyGuardianBundle,
+  guardianManifestName,
+  guardianSourceFingerprint,
+  readGuardianBundle,
+} from "../scripts/build/provider-guardian.mjs";
 
 // Official Node release checksums, pinned so release builds are reproducible.
 // https://nodejs.org/dist/v24.21.0/SHASUMS256.txt
@@ -62,6 +79,18 @@ if (
 const admissionDirectory = resolve(
   admissionDirectoryIndex >= 0 ? args[admissionDirectoryIndex + 1] : "build/host-native",
 );
+const providerGuardian = args.includes("--provider-guardian");
+const guardianDirectoryIndex = args.indexOf("--provider-guardian-dir");
+if (
+  guardianDirectoryIndex >= 0 &&
+  (!providerGuardian ||
+    !args[guardianDirectoryIndex + 1] ||
+    args[guardianDirectoryIndex + 1].startsWith("--"))
+)
+  throw new Error("--provider-guardian-dir requires --provider-guardian and a directory");
+const guardianDirectory = resolve(
+  guardianDirectoryIndex >= 0 ? args[guardianDirectoryIndex + 1] : "build/host-guardian",
+);
 const output = resolve("build/host-packages");
 const cache = resolve(process.env.BYCODA_HOST_RUNTIME_CACHE ?? "build/host-runtime-cache");
 await mkdir(output, { recursive: true });
@@ -73,6 +102,45 @@ if (process.env.BYCODA_BUILD_MANIFEST && !buildIdentity)
   throw new Error("Build identity manifest is missing or invalid");
 if (buildIdentity && buildIdentity.version !== version)
   throw new Error("Build identity version does not match the host package");
+// A present default bundle is included; an explicitly requested missing one is fatal.
+// lstat observes dangling links too, so invalid declared metadata cannot disappear.
+const guardianBundles = new Map();
+for (const target of targets) {
+  const directory = join(guardianDirectory, target);
+  let present = false;
+  try {
+    await lstat(join(directory, guardianManifestName));
+    present = true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (providerGuardian || present) {
+    const bundle = await readGuardianBundle(directory, target);
+    guardianBundles.set(target, { directory, manifest: bundle.manifest });
+  }
+}
+const guardianFingerprint = guardianBundles.size
+  ? await guardianSourceFingerprint(resolve("."))
+  : null;
+async function validateGuardianInputs() {
+  if (!guardianBundles.size) return;
+  await assertGuardianPackagingSeparation(
+    [...guardianBundles.values()].map((bundle) => bundle.directory),
+    output,
+    targets,
+  );
+  if ((await guardianSourceFingerprint(resolve("."))) !== guardianFingerprint)
+    throw new Error("Guardian source inputs changed before packaging");
+  for (const [target, expected] of guardianBundles) {
+    const actual = await readGuardianBundle(expected.directory, target);
+    if (
+      actual.manifest.sourceFingerprint !== guardianFingerprint ||
+      JSON.stringify(actual.manifest) !== JSON.stringify(expected.manifest)
+    )
+      throw new Error(`Guardian source/artifact mismatch for ${target}`);
+  }
+}
+await validateGuardianInputs();
 // Validate every requested native input before downloading or replacing a package.
 const admissionFingerprint = nativeAdmission
   ? await admissionSourceFingerprint(resolve("."))
@@ -109,6 +177,7 @@ for (const target of targets) {
     await writeFile(archive, bytes);
   }
   const folder = join(output, target);
+  await validateGuardianInputs();
   if (nativeAdmission) {
     await assertAdmissionPackagingSeparation(admissionDirectory, output, targets);
     const bundle = await readAdmissionBundle(join(admissionDirectory, target), target);
@@ -151,6 +220,17 @@ for (const target of targets) {
       target,
       admissionFingerprint,
     );
+  if (guardianBundles.has(target)) {
+    const expected = guardianBundles.get(target);
+    const copied = await copyGuardianBundle(
+      expected.directory,
+      folder,
+      target,
+      guardianFingerprint,
+    );
+    if (JSON.stringify(copied) !== JSON.stringify(expected.manifest))
+      throw new Error(`Guardian artifact changed while packaging ${target}`);
+  }
   await copyFile("LICENSE", join(folder, "BYCODA-LICENSE"));
   await writeFile(
     join(folder, "version.json"),

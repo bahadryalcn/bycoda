@@ -430,6 +430,7 @@ dependencies = [
  "blob-decoder",
  "block2",
  "bycoda-physical-store-admission",
+ "bycoda-provider-process-guardian",
  "chromium-storage-indexeddb-core",
  "crypto_secretbox",
  "futures-util",
@@ -496,6 +497,18 @@ dependencies = [
  "napi",
  "napi-build",
  "napi-derive",
+]
+
+[[package]]
+name = "bycoda-provider-process-guardian"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "serde",
+ "serde_json",
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -51,6 +51,10 @@ test("the shared physical store crate selects its Host and Native dependents", (
     "packages/physical-store-admission-node/src/lib.rs",
     "packages/physical-store-admission-node/index.mjs",
     "packages/physical-store-admission-node/package.json",
+    "packages/provider-process-guardian/Cargo.toml",
+    "packages/provider-process-guardian/src/runtime.rs",
+    "packages/provider-process-guardian/src/windows_job.rs",
+    "packages/provider-process-guardian/package.json",
   ]) {
     const result = classifyChanges([file]);
     assert.equal(result.full, false, file);

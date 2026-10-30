@@ -481,8 +481,13 @@ it("stops only the exact delegated task of the active host run and deduplicates 
   const receipt = await engine.command(command);
   expect(await engine.command(command)).toEqual(receipt);
   await vi.waitFor(() =>
-    expect(provider.stopItem).toHaveBeenCalledExactlyOnceWith(id, "agent-call"),
+    expect(provider.stopItem).toHaveBeenCalledExactlyOnceWith(
+      id,
+      "agent-call",
+      turns[0].input.operationContext,
+    ),
   );
+  expect(vi.mocked(provider.stopItem!).mock.calls[0]?.[2]).toBe(turns[0].input.operationContext);
   expect(provider.cancel).not.toHaveBeenCalled();
   expect(provider.stop).not.toHaveBeenCalled();
   expect((await store.session(id)).status).toBe("running");
@@ -1091,7 +1096,23 @@ it("restores pending and uncertain follow-up drafts after restart without replay
 });
 
 it("atomically creates a first turn and deduplicates a lost reply", async () => {
-  const { engine, store, project, provider } = await setup();
+  const { engine, store, project, provider, waitForTurnStart } = await setup();
+  const beginFilesTurn = engine.checkpoints.beginFilesTurn.bind(engine.checkpoints);
+  let preparing!: () => void;
+  let releasePreparation!: () => void;
+  const preparationStarted = new Promise<void>((resolve) => {
+    preparing = resolve;
+  });
+  const preparationHold = new Promise<void>((resolve) => {
+    releasePreparation = resolve;
+  });
+  const prepare = vi
+    .spyOn(engine.checkpoints, "beginFilesTurn")
+    .mockImplementation(async (...args) => {
+      preparing();
+      await preparationHold;
+      return beginFilesTurn(...args);
+    });
   const command = {
     type: "create",
     commandId: "atomic",
@@ -1101,19 +1122,28 @@ it("atomically creates a first turn and deduplicates a lost reply", async () => 
     runtimeMode: "supervised",
     firstTurn: { type: "send", commandId: "first", sessionId: "", text: "hello" },
   };
-  const receipt = await engine.command(command);
-  expect(receipt.runId).toBe((await store.session(receipt.sessionId)).runId);
-  expect(await engine.command(command)).toEqual(receipt);
-  expect(
-    (await store.session(receipt.sessionId)).session.blocks.filter(
-      (block) => block.role === "user",
-    ),
-  ).toHaveLength(1);
-  await vi.waitFor(() => expect(provider.send).toHaveBeenCalledTimes(1));
-  expect(await store.sessions(project.id)).toHaveLength(2);
-  await expect(
-    engine.command({ ...command, firstTurn: { ...command.firstTurn, text: "changed" } }),
-  ).rejects.toThrow();
+  try {
+    const receipt = await engine.command(command);
+    await preparationStarted;
+    expect(receipt.runId).toBe((await store.session(receipt.sessionId)).runId);
+    expect(await engine.command(command)).toEqual(receipt);
+    expect(
+      (await store.session(receipt.sessionId)).session.blocks.filter(
+        (block) => block.role === "user",
+      ),
+    ).toHaveLength(1);
+    expect(provider.send).not.toHaveBeenCalled();
+    releasePreparation();
+    await waitForTurnStart();
+    expect(provider.send).toHaveBeenCalledTimes(1);
+    expect(await store.sessions(project.id)).toHaveLength(2);
+    await expect(
+      engine.command({ ...command, firstTurn: { ...command.firstTurn, text: "changed" } }),
+    ).rejects.toThrow();
+  } finally {
+    releasePreparation();
+    prepare.mockRestore();
+  }
 });
 
 it("rolls back creation and avoids provider dispatch when the first turn fails", async () => {
@@ -1146,8 +1176,8 @@ it("rolls back creation and avoids provider dispatch when the first turn fails",
   expect(provider.send).not.toHaveBeenCalled();
 });
 
-it("recovers the same atomic receipt after reopening the durable store", async () => {
-  const { engine, directory, project } = await setup();
+it("recovers the same atomic receipt after orderly Host shutdown and durable store reopen", async () => {
+  const { engine, store, directory, project, waitForTurnStart } = await setup();
   const command = {
     type: "create",
     commandId: "durable-atomic",
@@ -1158,6 +1188,10 @@ it("recovers the same atomic receipt after reopening the durable store", async (
     firstTurn: { type: "send", commandId: "durable-first", sessionId: "", text: "once" },
   };
   const receipt = await engine.command(command);
+  await waitForTurnStart();
+  // Two concurrently live engine owners are not an abrupt process-crash fixture.
+  await engine.close();
+  await store.close();
   const reopened = new HostStore(join(directory, "host.db"));
   const send = vi.fn(async () => {});
   const restarted = new HostEngine(reopened, {
@@ -1237,6 +1271,7 @@ async function setup(
     shell,
     managedTurns,
   );
+  let expectedShutdownFailure: unknown;
   await engine.ready;
   const created = await engine.command({
     type: "create",
@@ -1248,9 +1283,15 @@ async function setup(
     runtimeMode: "supervised",
   });
   cleanups.push(async () => {
-    await engine.close();
+    let failure: unknown;
+    try {
+      await engine.close();
+    } catch (error) {
+      if (error !== expectedShutdownFailure) failure = error;
+    }
     await store.close();
     rmSync(directory, { recursive: true, force: true });
+    if (failure) throw failure;
   });
   return {
     directory,
@@ -1260,6 +1301,15 @@ async function setup(
     engine,
     turns,
     waitForTurnStart,
+    observeExpectedShutdownFailure: async () => {
+      const result = await engine.close().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(result).toBeInstanceOf(AggregateError);
+      expectedShutdownFailure = result;
+      return result;
+    },
     id: created.sessionId,
   };
 }
@@ -1652,6 +1702,7 @@ describe("managed turn boundaries", () => {
     const { engine, store, id, directory, turns, provider, waitForTurnStart } = await setup();
     const { adapter } = managedHistory();
     const owned = join(directory, "owned-execution");
+    mkdirSync(owned);
     adapter.workspaceForSession = async (value) =>
       value.session.workspaceId ? { workspaceId: value.session.workspaceId, path: owned } : null;
     engine.setManagedTurnHistoryAdapter(adapter);
@@ -1692,6 +1743,11 @@ describe("managed turn boundaries", () => {
         sessionId: adopted.session.id,
         cwd: owned,
         message: "Implement here",
+        providerAccountId: undefined,
+        operationContext: expect.objectContaining({
+          hostRun: expect.any(Object),
+          hostControlRun: expect.any(Object),
+        }),
       }),
     );
     turns[0].finish();
@@ -1839,6 +1895,7 @@ describe("managed turn boundaries", () => {
     const { engine, store, project, directory, turns, waitForTurnStart } = await setup();
     const { adapter } = managedHistory();
     const release = vi.fn(async () => {});
+    mkdirSync(join(directory, "owned"));
     adapter.workspaceForSession = async (value) =>
       value.session.workspaceId ? { workspaceId: value.session.workspaceId } : null;
     adapter.workspaceForCreate = vi.fn(async () => ({
@@ -1938,18 +1995,36 @@ describe("managed turn boundaries", () => {
   it("blocks provider and shell starts at the shared gate without leaving a running shell", async () => {
     const shell = vi.fn(async () => ({ output: "unexpected", exitCode: 0, timedOut: false }));
     const { adapter } = managedHistory();
-    adapter.startActivity = vi.fn(async () => {
-      throw new Error("Workspace reservation is active");
+    const gateFailure = new Error("Workspace reservation is active");
+    let attempts = 0;
+    let bothAttempted!: () => void;
+    const bothOriginalAttempts = new Promise<void>((resolve) => {
+      bothAttempted = resolve;
     });
-    const { engine, store, id, provider } = await setup("codex", {}, adapter, shell);
+    adapter.startActivity = vi.fn(async () => {
+      // Do not let the background title's earlier failure preclude the main
+      // turn's actual acquisition attempt. Both original attempts must be known.
+      if (++attempts === 2) bothAttempted();
+      await bothOriginalAttempts;
+      throw gateFailure;
+    });
+    const { engine, store, id, provider, observeExpectedShutdownFailure } = await setup(
+      "codex",
+      {},
+      adapter,
+      shell,
+    );
     provider.generateTitle = vi.fn(async () => null);
-    await engine.command({
+    const receipt = await engine.command({
       type: "send",
       commandId: "blocked-provider",
       sessionId: id,
       text: "go",
     });
-    await vi.waitFor(async () => expect((await store.session(id)).status).toBe("idle"));
+    await bothOriginalAttempts;
+    expect(adapter.startActivity).toHaveBeenCalledTimes(2);
+    await expect(engine.waitForRun(id, receipt.runId)).rejects.toThrow();
+    expect((await store.session(id)).status).toBe("running");
     expect(provider.send).not.toHaveBeenCalled();
     expect(provider.generateTitle).not.toHaveBeenCalled();
     expect(adapter.history.begin).not.toHaveBeenCalled();
@@ -1967,6 +2042,10 @@ describe("managed turn boundaries", () => {
       expect(block?.shell?.output).toBe("Workspace reservation is active");
     });
     expect(shell).not.toHaveBeenCalled();
+    const failure = await observeExpectedShutdownFailure();
+    const leaves = (error: unknown): unknown[] =>
+      error instanceof AggregateError ? error.errors.flatMap(leaves) : [error];
+    expect(leaves(failure)).toContain(gateFailure);
   });
 
   it("binds immutable transcript rescue to the checked conversation revision", async () => {
@@ -3628,7 +3707,7 @@ describe("headless session ownership", () => {
 
   it("contains a persistence failure while requesting approval", async () => {
     const { engine, store, turns, provider, id, waitForTurnStart } = await setup();
-    await engine.command({
+    const receipt = await engine.command({
       type: "send",
       commandId: "approval-failure",
       sessionId: id,
@@ -3637,6 +3716,11 @@ describe("headless session ownership", () => {
     await waitForTurnStart();
     expect(turns).toHaveLength(1);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    let settled!: () => void;
+    const settledTurn = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
+    engine.onSettled = () => settled();
     vi.spyOn(store, "save").mockImplementationOnce(() => {
       throw new Error("disk full");
     });
@@ -3649,7 +3733,9 @@ describe("headless session ownership", () => {
         }),
       ).not.toThrow();
       await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled());
-      await vi.waitFor(async () => expect((await store.session(id)).status).toBe("interrupted"));
+      await settledTurn;
+      await engine.waitForRun(id, receipt.runId);
+      expect((await store.session(id)).status).toBe("interrupted");
     } finally {
       log.mockRestore();
     }

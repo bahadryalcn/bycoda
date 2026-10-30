@@ -1,3 +1,9 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { withClaudeAdvisor } from "../../../../features/sessions/model/claudeAdvisor";
 import {
@@ -8,10 +14,8 @@ import {
 import {
   createChildProcessHandle,
   execChild,
-  killChild,
   resolveClaudeBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
   writeChild,
 } from "../../core/child";
@@ -33,6 +37,8 @@ import {
   parseJsonLine,
   stringField,
 } from "./claudeProtocol";
+
+const retirements = createProviderRetirementLedger("claude.catalog", killChild);
 
 const EFFORT_LOW_TO_ULTRATHINK: ModelSetting = {
   id: "effort",
@@ -228,6 +234,7 @@ export function refreshClaudeCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("claude", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug("[bycoda] claude catalog", error);
     })
     .finally(() => {
@@ -240,6 +247,7 @@ export async function discoverClaudeModels(workingDirectory?: string): Promise<A
   const { path } = await resolveClaudeBinary();
   if ((probeRetryAt.get(path) ?? 0) > Date.now()) return discoverViaVersion(workingDirectory);
   const listed = await discoverViaListModels(workingDirectory, path).catch((error: unknown) => {
+    assertOptionalProviderProbeError(error);
     console.debug("[bycoda] claude list_models catalog failed", error);
     // A hung CLI probe should not cost another 15 seconds for every project.
     // Authentication errors remain immediately retryable after signing in.
@@ -261,7 +269,7 @@ async function discoverViaListModels(
   const cwd = workingDirectory ?? (await homeDir());
   const sessionId = crypto.randomUUID();
   const probeId = `${PROBE_ID}-${sessionId}`;
-  const child = createChildProcessHandle(probeId);
+  const child = retirements.admit(createChildProcessHandle(probeId), "claude.catalog");
 
   let listed: ((models: AgentModel[]) => void) | null = null;
   let failed: ((error: Error) => void) | null = null;
@@ -278,13 +286,13 @@ async function discoverViaListModels(
       child,
       JSON.stringify(buildControlRequest(LIST_MODELS_REQUEST_ID, { subtype: "list_models" })),
     ).catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       failed?.(error instanceof Error ? error : new Error(String(error)));
     });
   };
 
-  const stop = async () => {
-    unwatchChild(child);
-    await killChild(child).catch(() => undefined);
+  const stop = () => {
+    return retirements.retire([child]);
   };
 
   watchChild(
@@ -301,32 +309,35 @@ async function discoverViaListModels(
     () => failed?.(new Error("Claude Code catalog probe exited")),
   );
 
-  try {
-    await spawnChild(
-      child,
-      path,
-      buildClaudeSpawnArgs({ isolated: true, sessionId }),
-      cwd,
-      undefined,
-      "claude",
-    );
-    pending.catch(() => undefined);
-    return await withTimeout(
-      DISCOVERY_TIMEOUT_MS,
-      (async () => {
-        await writeChild(
-          child,
-          JSON.stringify(buildControlRequest(INIT_REQUEST_ID, { subtype: "initialize" })),
-        );
-        return pending;
-      })(),
-      () => {
-        void stop();
-      },
-    );
-  } finally {
-    await stop();
-  }
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(
+        child,
+        path,
+        buildClaudeSpawnArgs({ isolated: true, sessionId }),
+        cwd,
+        undefined,
+        "claude",
+      );
+      pending.catch(() => undefined);
+      return await withTimeout(
+        DISCOVERY_TIMEOUT_MS,
+        (async () => {
+          await writeChild(
+            child,
+            JSON.stringify(buildControlRequest(INIT_REQUEST_ID, { subtype: "initialize" })),
+          );
+          return pending;
+        })(),
+        () => {
+          void stop();
+        },
+      );
+    },
+    async () => {
+      await stop();
+    },
+  );
 }
 
 async function discoverViaVersion(workingDirectory?: string): Promise<AgentModel[]> {

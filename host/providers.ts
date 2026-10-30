@@ -17,6 +17,7 @@ import type {
   RewindLastTurnInput,
   RewindLastTurnResult,
   ApprovalDecision,
+  HarnessOperationContext,
 } from "../src/integrations/harness/core/types";
 import type { UserQuestionReply } from "../src/features/sessions/model/userQuestion";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
@@ -44,10 +45,10 @@ export interface HostProvider {
   steer?(input: SteerTurnInput): Promise<void>;
   compact?(input: CompactContextInput): Promise<void>;
   rewind?(input: RewindLastTurnInput): Promise<RewindLastTurnResult>;
-  cancel(id: string): Promise<void>;
-  stop(id: string): Promise<void>;
+  cancel(id: string, context?: HarnessOperationContext): Promise<void>;
+  stop(id: string, context?: HarnessOperationContext): Promise<void>;
   /** Exact provider task only; omission must never mean cancel the whole turn. */
-  stopItem?(id: string, callId: string): Promise<void>;
+  stopItem?(id: string, callId: string, context?: HarnessOperationContext): Promise<void>;
   bind(id: string, providerId: string, cwd: string, providerAccountId?: string): void;
   approve(
     id: string,
@@ -60,8 +61,14 @@ export interface HostProvider {
     sessionId: string;
     cwd: string;
     message: string;
+    providerAccountId?: string;
+    operationContext?: HarnessOperationContext;
   }): Promise<GeneratedSessionTitle | null>;
-  generateBranchName?(cwd: string, message: string): Promise<string | null>;
+  generateBranchName?(
+    cwd: string,
+    message: string,
+    context?: HarnessOperationContext,
+  ): Promise<string | null>;
 }
 
 const providers: Record<RemoteProvider, HostProvider> = {

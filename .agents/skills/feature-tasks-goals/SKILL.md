@@ -5,6 +5,27 @@ description: "bycoda tasks, goals, sprints, stewards and background-work feature
 
 # Tasks and goals
 
+## Warm operation ownership dependency, 2026-10-30
+
+The strict input component binds each original operation to the same retained
+physical process through Native-issued receipts and opaque client views. It
+does not make a physical process handle into a logical-turn cleanup grant.
+Provider operation/high-water guards prevent old A cleanup regaining ownership
+after B claims the same warm P; missing scoped records refuse. Native raw/admin,
+CLI/MCP/final-effect and full Host/cohort attestation remain separate work.
+Task/workspace delivery cannot infer those missing proofs from a successful
+strict write. Local source evidence: `temp/verification/2026-10-30-warm-control/`.
+
+## Original worker cleanup dependency, 2026-10-30
+
+The desktop orchestrator bridges capture the actual child and Native control
+turn before asynchronous worker cleanup. Family stops are joined, their failures
+remain failures, and delivery/workspace removal cannot proceed on a failed
+original cleanup. A late cleanup cannot resolve a replacement by session name.
+This is a scoped backend/client dependency, with local evidence under
+`temp/verification/2026-10-30-control-retirement/`; complete task/goal delivery,
+Native GUI IPC and all-provider/alias/actor acceptance remain separate.
+
 Purpose: turn authorized work into tracked execution with dependencies, budgets, acceptance evidence, review and deliberate delivery. Keywords: tasks, goals, sprints, stewards, background sessions, kanban, backlog, queue, planner, reviewer, worktree, delivery, merge, acceptance.
 
 ## Inventory and concurrency

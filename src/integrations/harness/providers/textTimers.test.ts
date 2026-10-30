@@ -1,33 +1,39 @@
-import { afterEach, expect, it, vi } from "vitest";
+import { processConstructions } from "./processConstruction.testSupport";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const child = vi.hoisted(() => ({
   lines: new Map<string, (line: string) => void>(),
   started: false,
 }));
-vi.mock("../core/child", () => ({
-  resolveCodexBinary: async () => ({ path: "/fake/codex" }),
-  resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
-  watchChild: (id: string, line: (line: string) => void) => child.lines.set(id, line),
-  unwatchChild: (id: string) => child.lines.delete(id),
-  killChild: async () => undefined,
-  spawnChild: async (id: string) =>
-    child.lines.get(id)?.(JSON.stringify({ type: "system", subtype: "init" })),
-  writeChild: async (id: string, line: string) => {
-    const request = JSON.parse(line);
-    if (request.type === "user") {
-      child.started = true;
-      return;
-    }
-    if (request.id === undefined) return;
-    child.lines.get(id)?.(
-      JSON.stringify({
-        id: request.id,
-        result: request.method === "thread/start" ? { thread: { id: "test" } } : {},
-      }),
-    );
-    if (request.method === "turn/start") child.started = true;
-  },
-}));
+beforeEach(() => processConstructions.reset());
+vi.mock("../core/child", () =>
+  processConstructions.mock({
+    resolveCodexBinary: async () => ({ path: "/fake/codex" }),
+    resolveClaudeBinary: async () => ({ path: "/fake/claude" }),
+    watchChild: (id: string, line: (line: string) => void) => child.lines.set(id, line),
+    unwatchChild: (id: string) => child.lines.delete(id),
+    killChild: async (id: string) => {
+      child.lines.delete(id);
+    },
+    spawnChild: async (id: string) =>
+      child.lines.get(id)?.(JSON.stringify({ type: "system", subtype: "init" })),
+    writeChild: async (id: string, line: string) => {
+      const request = JSON.parse(line);
+      if (request.type === "user") {
+        child.started = true;
+        return;
+      }
+      if (request.id === undefined) return;
+      child.lines.get(id)?.(
+        JSON.stringify({
+          id: request.id,
+          result: request.method === "thread/start" ? { thread: { id: "test" } } : {},
+        }),
+      );
+      if (request.method === "turn/start") child.started = true;
+    },
+  }),
+);
 
 afterEach(() => {
   child.lines.clear();

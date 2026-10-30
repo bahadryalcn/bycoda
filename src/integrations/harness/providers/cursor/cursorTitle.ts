@@ -1,3 +1,4 @@
+import type { HarnessOperationContext } from "../../core/types";
 import type { GeneratedSessionTitle } from "../../../../features/sessions/model/sessionTitle";
 import { generateSessionTitle } from "../../core/titleGeneration";
 import { runCursorTextPrompt } from "./cursorText";
@@ -11,6 +12,7 @@ export async function generateCursorSessionTitle(input: {
   sessionId: string;
   cwd: string;
   message: string;
+  operationContext?: HarnessOperationContext;
 }): Promise<GeneratedSessionTitle | null> {
   return generateSessionTitle(input, runCursorTextPrompt);
 }

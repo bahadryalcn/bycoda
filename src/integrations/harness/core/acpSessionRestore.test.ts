@@ -1,44 +1,71 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { HarnessEvent, SendTurnInput } from "./types";
+import { processConstructions } from "../providers/processConstruction.testSupport";
 import { JsonRpcResponseError } from "./jsonRpc";
 
 const wire = vi.hoisted(() => ({
   requests: [] as { method: string; params: Record<string, unknown> }[],
   failures: new Map<string, Error>(),
+  listeners: new Map<string, (line: string) => void>(),
 }));
 
-vi.mock("./acp", () => ({
-  AcpClient: class {
-    async request(method: string, params: Record<string, unknown>) {
+// Actual AcpClient/JsonRpcClient and opaque fixture constructions. Only the
+// provider process transport is synthetic; restore decisions use real frames.
+vi.mock("./child", () =>
+  processConstructions.mock({
+    resolveGrokBinary: async () => ({ path: "/fake/grok" }),
+    resolveFxBinary: async () => ({ path: "/fake/fx" }),
+    resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
+    spawnChild: async () => {},
+    killChild: async (sessionId: string) => {
+      wire.listeners.delete(sessionId);
+    },
+    watchChild: (sessionId: string, onLine: (line: string) => void) => {
+      wire.listeners.set(sessionId, onLine);
+    },
+    unwatchChild: (sessionId: string) => {
+      wire.listeners.delete(sessionId);
+    },
+    writeChild: async (sessionId: string, line: string) => {
+      const request = JSON.parse(line) as {
+        id?: number;
+        method?: string;
+        params?: Record<string, unknown>;
+      };
+      if (request.id === undefined || !request.method) return;
+      const { method } = request;
+      const params = request.params ?? {};
       wire.requests.push({ method, params });
+      const receive = wire.listeners.get(sessionId);
+      if (!receive) throw new Error("Missing original fixture transport listener");
       const failure = wire.failures.get(method);
+      if (failure instanceof JsonRpcResponseError) {
+        receive(
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: request.id,
+            error: { code: failure.code, message: failure.message },
+          }),
+        );
+        return;
+      }
+      // Retain the original fixture's unconfirmed transport failure; it is not
+      // transformed into an answered protocol rejection or a resend grant.
       if (failure) throw failure;
-      if (method === "initialize")
-        return { protocolVersion: 1, agentCapabilities: { loadSession: true } };
-      if (method === "session/new") return { sessionId: "NEW" };
-      if (method === "session/prompt") return { stopReason: "end_turn" };
-      return {};
-    }
-    async notify() {}
-    async respond() {}
-    async respondError() {}
-    close() {}
-    pushLine() {}
-    rejectPending() {}
-  },
-}));
-vi.mock("./child", () => ({
-  resolveGrokBinary: async () => ({ path: "/fake/grok" }),
-  resolveFxBinary: async () => ({ path: "/fake/fx" }),
-  resolveHermesBinary: async () => ({ path: "/fake/hermes" }),
-  spawnChild: async () => {},
-  killChild: async () => {},
-  watchChild: () => {},
-  unwatchChild: () => {},
-  writeChild: async () => {},
-  readHarnessTextFile: async () => "",
-  invokeProviderCommand: async () => [],
-}));
+      const result =
+        method === "initialize"
+          ? { protocolVersion: 1, agentCapabilities: { loadSession: true } }
+          : method === "session/new"
+            ? { sessionId: "NEW" }
+            : method === "session/prompt"
+              ? { stopReason: "end_turn" }
+              : {};
+      receive(JSON.stringify({ jsonrpc: "2.0", id: request.id, result }));
+    },
+    readHarnessTextFile: async () => "",
+    invokeProviderCommand: async () => [],
+  }),
+);
 
 const grok = await import("../providers/grok/grok");
 const fx = await import("../providers/fx/fx");
@@ -55,8 +82,10 @@ const providers = [
 ];
 
 beforeEach(() => {
+  processConstructions.reset();
   wire.requests.length = 0;
   wire.failures.clear();
+  wire.listeners.clear();
 });
 
 it.each(providers)(
@@ -86,6 +115,11 @@ it.each(providers)(
       wire.requests.length = 0;
       wire.failures.clear();
       await provider.send(input);
+      expect(
+        processConstructions.operations.some(
+          (op) => op.kind === "write" && op.writer && op.handle.sessionId === sessionId,
+        ),
+      ).toBe(true);
       expect(wire.requests.some(({ method }) => method === "session/new")).toBe(false);
       expect(
         wire.requests.find(({ method }) => method === "session/prompt")?.params.sessionId,
@@ -120,6 +154,11 @@ it.each(providers.filter(({ name }) => name !== "hermes"))(
       wire.requests.length = 0;
       wire.failures.delete("session/load");
       await provider.send(input);
+      expect(
+        processConstructions.operations.some(
+          (op) => op.kind === "write" && op.writer && op.handle.sessionId === sessionId,
+        ),
+      ).toBe(true);
       expect(
         wire.requests.find(({ method }) => method === "session/prompt")?.params.sessionId,
       ).toBe("OLD");

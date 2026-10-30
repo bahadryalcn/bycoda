@@ -19,10 +19,22 @@ vi.mock("../../core/child", () =>
 vi.mock("../../core/jsonRpc", () => ({
   JsonRpcClient: class {
     constructor(
-      handle: import("../../core/child").ChildProcessHandle,
+      private readonly handle: import("../../core/child").ChildProcessHandle,
       private handlers: { onNotification: (method: string, params: unknown) => void },
     ) {
       processConstructions.client(handle);
+    }
+    assertProcess(handle: import("../../core/child").ChildProcessHandle) {
+      if (handle !== this.handle) throw new Error("Foreign text process");
+    }
+    withWriter(writer: import("../../core/child").ChildTurnWriter) {
+      return processConstructions.view(this.handle, writer, {
+        request: this.request.bind(this),
+        notify: this.notify.bind(this),
+        respond: async () => undefined,
+        respondError: async () => undefined,
+        isClosed: false,
+      });
     }
     close() {}
     async notify() {}

@@ -1,4 +1,24 @@
 import {
+  queueProviderOperation,
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureRpcTurnWriter,
+  rpcTurnWriter,
+  type JsonRpcWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
+import {
   createApprovalOccurrenceId,
   isApprovalOccurrenceId,
 } from "../../../../shared/model/approvalOccurrence";
@@ -31,13 +51,7 @@ import {
   questionPromptTitle,
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
-import {
-  killChild,
-  resolveCodexBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { resolveCodexBinary, spawnChild, watchChild } from "../../core/child";
 import { additionalDirsFor } from "../../core/additionalDirs";
 import { reportSessionCommands } from "../../core/reportedCommands";
 import { skillDisabled, skillPathKey } from "../../core/skillPolicy";
@@ -114,7 +128,12 @@ type PendingQuestion = QuestionDelivery & {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const operationTailsBySession = new Map<string, Promise<unknown>>();
+
+const retirements = createProviderRetirementLedger("codex.main", killChild);
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   sessionId: string;
   rpc: JsonRpcClient;
@@ -190,7 +209,10 @@ type Resume = {
 };
 
 const liveByThread = new Map<string, Live>();
-const startingByThread = new Map<string, { handle: ChildProcessHandle; rpc?: JsonRpcClient }>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; rpc?: JsonRpcClient }
+>();
 const resumeByThread = new Map<string, Resume>();
 const cancellationEpoch = new Map<string, number>();
 
@@ -202,101 +224,188 @@ export function setCodexBinaryResolver(fn: () => Promise<{ path: string }>): voi
 }
 
 export async function sendCodexTurn(input: SendTurnInput): Promise<void> {
-  const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
-  const live = await ensureLive(input);
-  if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
-    live.runtimeMode = input.runtimeMode;
-    live.planning = input.intent === "plan";
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      const goal = parseCodexGoalCommand(input.text);
-      if (goal) {
-        const request = codexGoalRequest(goal, live.threadId);
-        const response = await live.rpc.request(request.method, request.params);
-        if (live.cancelled || live.muteUpdates) return;
-        if (goal.action === "set") {
-          await runTurn(live, { ...input, text: goal.objective });
-        } else if (goal.action === "resume") {
-          await runTurn(live, {
-            ...input,
-            text: "Continue working toward the active goal.",
-          });
-        } else {
-          input.onAccepted?.();
-          live.onEvent({
-            type: "message.delta",
-            text: goal.action === "clear" ? "Codex goal cleared." : codexGoalSummary(response),
-          });
-          live.onEvent({ type: "message.completed" });
-        }
-        return;
-      }
-      await runTurn(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      // Rejected/completed turns leave a reusable app-server. A transport
-      // timeout has unknown acceptance state, so recycle it to isolate late events.
-      if (error instanceof Error && /timed out/i.test(error.message)) {
-        await stopCodexSession(input.sessionId, live.handle);
-      }
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+  const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) observeProviderProcess(input, original.handle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+        const live = await ensureLive(input);
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+
+        observeProviderProcess(input, live.handle);
+        const bindWriter = captureRpcTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+          const rpc = await bindWriter();
+          live.onEvent = input.onEvent;
+          live.runtimeMode = input.runtimeMode;
+          live.planning = input.intent === "plan";
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            const goal = parseCodexGoalCommand(input.text);
+            if (goal) {
+              const request = codexGoalRequest(goal, live.threadId);
+              const response = await rpc.request(request.method, request.params);
+              if (live.cancelled || live.muteUpdates) return;
+              if (goal.action === "set") {
+                await runTurn(live, { ...input, text: goal.objective }, rpc);
+              } else if (goal.action === "resume") {
+                await runTurn(
+                  live,
+                  {
+                    ...input,
+                    text: "Continue working toward the active goal.",
+                  },
+                  rpc,
+                );
+              } else {
+                input.onAccepted?.();
+                live.onEvent({
+                  type: "message.delta",
+                  text:
+                    goal.action === "clear" ? "Codex goal cleared." : codexGoalSummary(response),
+                });
+                live.onEvent({ type: "message.completed" });
+              }
+              return;
+            }
+            await runTurn(live, input, rpc);
+          } catch (error) {
+            if (live.cancelled) return;
+            // Rejected/completed turns leave a reusable app-server. A transport
+            // timeout has unknown acceptance state, so recycle it to isolate late events.
+            if (error instanceof Error && /timed out/i.test(error.message)) {
+              return preserveProviderFailure(error, stopCodexSession(input.sessionId, live.handle));
+            }
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function compactCodexContext(input: CompactContextInput): Promise<void> {
-  const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
-  const live = await ensureLive(input);
-  if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.turns = continueAfterFailure(live.turns, async () => {
-    if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
-    live.cancelled = false;
-    live.muteUpdates = false;
-    try {
-      await runCompaction(live);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+  const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
+
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) observeProviderProcess(input, original.handle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+        const live = await ensureLive(input);
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+
+        observeProviderProcess(input, live.handle);
+        const bindWriter = captureRpcTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        live.turns = continueAfterFailure(live.turns, async () => {
+          if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return;
+          const rpc = await bindWriter();
+          live.onEvent = input.onEvent;
+          live.cancelled = false;
+          live.muteUpdates = false;
+          try {
+            await runCompaction(live, rpc);
+          } catch (error) {
+            if (live.cancelled) return;
+            throw error;
+          }
+        });
+        await live.turns;
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function rewindCodexLastTurn(
   input: RewindLastTurnInput,
 ): Promise<RewindLastTurnResult> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
-  const live = await ensureLive(input);
-  if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return { submitted: false };
 
-  live.onEvent = input.onEvent;
-  await live.turns;
-  if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return { submitted: false };
-  if (live.activeTurnId) {
-    throw new Error("Stop the current turn before editing the last message");
+  try {
+    const original = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (original) observeProviderProcess(input, original.handle);
+    return await queueProviderOperation(
+      operationTailsBySession,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return { submitted: false };
+        const live = await ensureLive(input);
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return { submitted: false };
+
+        observeProviderProcess(input, live.handle);
+        const bindWriter = captureRpcTurnWriter(
+          live.handle,
+          live.rpc,
+          input.nativeControlTurn,
+          input.operationContext,
+        );
+        await live.turns;
+        if ((cancellationEpoch.get(input.sessionId) ?? 0) !== epoch) return { submitted: false };
+        if (live.activeTurnId) {
+          throw new Error("Stop the current turn before editing the last message");
+        }
+
+        const rpc = await bindWriter();
+        live.onEvent = input.onEvent;
+        const beforeTurnId = await lastUserTurnId(live, input.providerTurnId, rpc);
+        await rpc.request("thread/revert", {
+          threadId: live.threadId,
+          beforeTurnId,
+        });
+        return { submitted: false };
+      },
+    );
+  } finally {
+    finishProviderOperation(input.operationContext);
   }
-
-  const beforeTurnId = await lastUserTurnId(live, input.providerTurnId);
-  await live.rpc.request("thread/revert", {
-    threadId: live.threadId,
-    beforeTurnId,
-  });
-  return { submitted: false };
 }
 
-async function lastUserTurnId(live: Live, providerTurnId?: string): Promise<string> {
+async function lastUserTurnId(
+  live: Live,
+  providerTurnId: string | undefined,
+  rpc: JsonRpcWriterView,
+): Promise<string> {
   const exact = providerTurnId?.trim();
   if (exact) return exact;
 
-  const page = await live.rpc.request<{ data?: unknown[] }>("thread/turns/list", {
+  const page = await rpc.request<{ data?: unknown[] }>("thread/turns/list", {
     threadId: live.threadId,
     limit: 100,
     sortDirection: "desc",
@@ -317,12 +426,24 @@ async function lastUserTurnId(live: Live, providerTurnId?: string): Promise<stri
 }
 
 export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = liveByThread.get(input.sessionId);
   if (!live) throw new Error("No active Codex session");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
   const turnId = live.activeTurnId;
   if (!turnId) throw new Error("No active turn to steer");
 
-  if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId);
+  const rpc = await rpcTurnWriter(
+    live.handle,
+    live.rpc,
+    input.nativeControlTurn,
+    input.operationContext,
+  );
+  if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId, rpc);
   if (live.cancelled) throw new Error("Follow-up cancelled because the turn was stopped");
 
   const params = buildTurnSteerParams({
@@ -336,7 +457,7 @@ export async function steerCodexTurn(input: SteerTurnInput): Promise<void> {
     return;
   }
 
-  await live.rpc.requestWithNativeOutput("turn/steer", params, (result, work) => {
+  await rpc.requestWithNativeOutput("turn/steer", params, (result, work) => {
     nativeOutputSink(work, () => live.onEvent({ type: "turn.started", providerTurnId: turnId }))();
     return result;
   });
@@ -493,37 +614,69 @@ function showNextQuestion(live: Live): void {
   }
 }
 
-export async function cancelCodexTurn(sessionId: string): Promise<void> {
-  cancellationEpoch.set(sessionId, (cancellationEpoch.get(sessionId) ?? 0) + 1);
+export async function cancelCodexTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
+    return;
+  cancellationEpoch.set(sessionId, (cancellationEpoch.get(sessionId) ?? 0) + 1);
   if (!live) return;
+  const turnId = live.activeTurnId;
+  const rpc =
+    context && turnId
+      ? await rpcTurnWriter(live.handle, live.rpc, context.nativeControlTurn, context, "control")
+      : live.rpc;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   clearServerRequests(live);
-  const turnId = live.activeTurnId;
   if (live.pendingTurnStart && !turnId) {
     // No interrupt target exists yet. Retire this transport so the pending
     // request cannot start work or accept the prompt after Stop returns.
     await stopCodexSession(sessionId, live.handle);
   } else if (turnId) {
-    await live.rpc
+    await rpc
       .request("turn/interrupt", {
         threadId: live.threadId,
         turnId,
       })
       .catch(() => undefined);
   }
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   finishActiveTurn(live, [{ type: "message.completed" }, { type: "reasoning.completed" }]);
 }
 
 export async function stopCodexSession(
   sessionId: string,
-  expectedHandle?: ChildProcessHandle,
+  target?: ChildProcessHandle | HarnessOperationContext,
 ): Promise<void> {
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
   const candidate = liveByThread.get(sessionId);
-  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined;
   const preparing = startingByThread.get(sessionId);
-  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
   if (live) liveByThread.delete(sessionId);
   if (startup) startingByThread.delete(sessionId);
   if (live) {
@@ -539,19 +692,22 @@ export async function stopCodexSession(
     live.rpc.close();
   }
   startup?.rpc?.close();
-  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
-  await Promise.all(
-    [...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-  );
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
-export async function forgetCodexSession(sessionId: string): Promise<void> {
+export async function forgetCodexSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
-  await stopCodexSession(sessionId);
+  await stopCodexSession(sessionId, context);
 }
 
 export function bindCodexSession(
@@ -570,6 +726,8 @@ export function bindCodexSession(
 }
 
 async function ensureLive(input: HarnessSessionInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const existing = liveByThread.get(input.sessionId);
   const controlsAgents = input.controlsAgents === true;
   if (
@@ -579,13 +737,19 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     existing.controlsAgents === controlsAgents &&
     existing.skillPolicyKey === JSON.stringify(input.skillPolicy)
   ) {
-    existing.onEvent = input.onEvent;
+    observeProviderProcess(input, existing.handle);
     return existing;
   }
-  const handle = createChildProcessHandle(input.sessionId);
-  const startup: { handle: ChildProcessHandle; rpc?: JsonRpcClient } = { handle };
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  const startup: { handle: ChildProcessHandle; operation?: object; rpc?: JsonRpcClient } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
   startingByThread.set(input.sessionId, startup);
   try {
+    observeProviderProcess(input, handle, "starting");
     if (existing) {
       // Codex may retain the thread's sandbox network policy across turns.
       // Switch it when this session gains /operator access or loses agent
@@ -726,7 +890,13 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       "codex",
     );
 
-    await rpc.request("initialize", {
+    const startupRpc = await rpcTurnWriter(
+      handle,
+      rpc,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
+    await startupRpc.request("initialize", {
       clientInfo: {
         name: "bycoda",
         title: PRODUCT_IDENTITY.displayName,
@@ -738,14 +908,17 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
         experimentalApi: true,
       },
     });
-    await rpc.notify("initialized", undefined);
+    await startupRpc.notify("initialized", undefined);
 
     let skillConfig: Record<string, unknown> | undefined;
     if (input.skillPolicy) {
-      const effective = asRecord(await rpc.request("config/read", { includeLayers: false }));
+      const effective = asRecord(await startupRpc.request("config/read", { includeLayers: false }));
       const configured = asRecord(asRecord(effective?.config)?.skills)?.config;
       const entries = Array.isArray(configured) ? [...configured] : [];
-      const inventory = await rpc.request("skills/list", { cwds: [input.cwd], forceReload: true });
+      const inventory = await startupRpc.request("skills/list", {
+        cwds: [input.cwd],
+        forceReload: true,
+      });
       for (const path of input.skillPolicy.disabledPaths) {
         if (!entries.some((entry) => asRecord(entry)?.path === path))
           entries.push({ path, enabled: false });
@@ -772,7 +945,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
 
     if (canResume && resume) {
       try {
-        const opened = await rpc.request<{ thread?: { id?: string }; model?: string }>(
+        const opened = await startupRpc.request<{ thread?: { id?: string }; model?: string }>(
           "thread/resume",
           {
             threadId: resume.threadId,
@@ -801,7 +974,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     }
 
     if (!threadId) {
-      const opened = await rpc.request<{ thread?: { id?: string }; model?: string }>(
+      const opened = await startupRpc.request<{ thread?: { id?: string }; model?: string }>(
         "thread/start",
         {
           ...(skillConfig ? { config: skillConfig } : {}),
@@ -824,6 +997,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
     const live: Live = {
+      operation: input.operationContext?.operation,
       handle,
       sessionId: input.sessionId,
       rpc,
@@ -879,30 +1053,37 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
       providerSessionId: threadId,
     });
     live.onEvent({ type: "session.started" });
-    void loadCodexSkills(live, input.sessionId);
+    void loadCodexSkills(live, input.sessionId, startupRpc);
     return live;
   } catch (error) {
     startup.rpc?.close(error instanceof Error ? error : new Error(String(error)));
-    await stopCodexSession(input.sessionId, handle);
-    throw error;
+    return preserveProviderFailure(error, stopCodexSession(input.sessionId, handle));
   } finally {
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
 /** Ask Codex which skills it sees for this thread; the `$` menu lists them. */
-function loadCodexSkills(live: Live, sessionId: string): Promise<void> {
+function loadCodexSkills(
+  live: Live,
+  sessionId: string,
+  rpc: JsonRpcWriterView = live.rpc,
+): Promise<void> {
   if (live.skillsLoading) return live.skillsLoading;
-  const loading = refreshCodexSkills(live, sessionId).finally(() => {
+  const loading = refreshCodexSkills(live, sessionId, rpc).finally(() => {
     if (live.skillsLoading === loading) live.skillsLoading = undefined;
   });
   live.skillsLoading = loading;
   return loading;
 }
 
-async function refreshCodexSkills(live: Live, sessionId: string): Promise<void> {
+async function refreshCodexSkills(
+  live: Live,
+  sessionId: string,
+  rpc: JsonRpcWriterView = live.rpc,
+): Promise<void> {
   try {
-    const response = await live.rpc.request("skills/list", {
+    const response = await rpc.request("skills/list", {
       cwds: [live.cwd],
       forceReload: true,
     });
@@ -929,10 +1110,10 @@ async function refreshCodexSkills(live: Live, sessionId: string): Promise<void> 
   }
 }
 
-async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
+async function runTurn(live: Live, input: SendTurnInput, rpc: JsonRpcWriterView): Promise<void> {
   // The first skill-bearing turn must wait for discovery; later turns refresh
   // so skills created or edited in this session are available immediately.
-  if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId);
+  if (/(?:^|\s)\$[A-Za-z0-9]/.test(input.text)) await loadCodexSkills(live, input.sessionId, rpc);
   if (live.cancelled) return;
   const model = nativeModelId(input.model) || live.model;
   const effort = input.modelSettings?.reasoningEffort;
@@ -975,7 +1156,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
 
   try {
     live.pendingTurnStart = true;
-    await live.rpc.requestWithNativeOutput<{ turn?: { id?: string } }>(
+    await rpc.requestWithNativeOutput<{ turn?: { id?: string } }>(
       "turn/start",
       params,
       (response, work) =>
@@ -1023,22 +1204,26 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   if (!live.cancelled && !live.muteUpdates && live.asyncAnswerTexts.length) {
     const text = live.asyncAnswerTexts.join("\n\n");
     const queued = new Map(live.queuedAsyncAnswers);
-    await runTurn(live, {
-      ...input,
-      text,
-      attachments: [],
-      runtimeInstructions: undefined,
-      onAccepted: () => {
-        for (const [id, { pending, reply }] of queued) {
-          if (live.questions.get(id) === pending) pending.resolve(reply);
-          live.queuedAsyncAnswers.delete(id);
-        }
+    await runTurn(
+      live,
+      {
+        ...input,
+        text,
+        attachments: [],
+        runtimeInstructions: undefined,
+        onAccepted: () => {
+          for (const [id, { pending, reply }] of queued) {
+            if (live.questions.get(id) === pending) pending.resolve(reply);
+            live.queuedAsyncAnswers.delete(id);
+          }
+        },
       },
-    });
+      rpc,
+    );
   }
 }
 
-async function runCompaction(live: Live): Promise<void> {
+async function runCompaction(live: Live, rpc: JsonRpcWriterView): Promise<void> {
   live.emittedAssistantByItem.clear();
   live.emittedReasoningByItem.clear();
   live.emittedGeneratedImages.clear();
@@ -1050,7 +1235,7 @@ async function runCompaction(live: Live): Promise<void> {
   settlePendingTurn(live);
 
   try {
-    await live.rpc.request("thread/compact/start", {
+    await rpc.request("thread/compact/start", {
       threadId: live.threadId,
     });
     settlePendingTurn(live);

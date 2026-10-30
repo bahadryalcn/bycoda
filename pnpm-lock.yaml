@@ -474,6 +474,8 @@ importers:
 
   packages/physical-store-admission-node: {}
 
+  packages/provider-process-guardian: {}
+
 packages:
 
   '@antfu/install-pkg@2.1.0':

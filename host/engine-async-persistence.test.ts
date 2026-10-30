@@ -35,6 +35,10 @@ async function captureCommittedDispatch<T>(store: HostStore, accept: () => Promi
   return { receipt, dispatch: dispatch! };
 }
 
+function errorLeaves(error: unknown): unknown[] {
+  return error instanceof AggregateError ? error.errors.flatMap(errorLeaves) : [error];
+}
+
 it("seeds a committed follow-up from the revision advanced by a late first-turn title", async () => {
   const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
   const store = new HostStore(join(folder, "host.db"));
@@ -275,8 +279,13 @@ it("joins the other accepted turns before reporting a provider shutdown failure"
   const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
   const store = new HostStore(join(folder, "host.db"));
   const turns = new Map<string, () => void>();
+  let bothAdmitted!: () => void;
+  const admitted = new Promise<void>((resolve) => {
+    bothAdmitted = resolve;
+  });
   let first = "";
   let failed = false;
+  const stopFailure = new Error("Fixture provider stop failed");
   let release!: () => void;
   let entered!: () => void;
   const held = new Promise<void>((resolve) => {
@@ -290,13 +299,14 @@ it("joins the other accepted turns before reporting a provider shutdown failure"
       async ({ sessionId }: { sessionId: string }) =>
         new Promise<void>((resolve) => {
           turns.set(sessionId, resolve);
+          if (turns.size === 2) bothAdmitted();
         }),
     ),
     stop: async (id: string) => {
       if (id === first && !failed) {
         failed = true;
         turns.get(id)?.();
-        throw new Error("Fixture provider stop failed");
+        throw stopFailure;
       }
       if (id !== first) {
         entered();
@@ -331,7 +341,8 @@ it("joins the other accepted turns before reporting a provider shutdown failure"
         text: "hello",
       });
     }
-    await vi.waitFor(() => expect(turns.size).toBe(2));
+    await admitted;
+    expect(turns.size).toBe(2);
     let ended = false;
     const closing = engine.close();
     expect(engine.close()).toBe(closing);
@@ -352,10 +363,10 @@ it("joins the other accepted turns before reporting a provider shutdown failure"
     release();
     const error = await outcome;
     expect(error).toBeInstanceOf(AggregateError);
-    expect((error as AggregateError).errors).toContainEqual(
-      new Error("Fixture provider stop failed"),
-    );
-    for (const id of ids) expect((await store.session(id)).status).toBe("interrupted");
+    expect(errorLeaves(error)).toContain(stopFailure);
+    // The failed original is conserved; the other original still actually drains.
+    expect((await store.session(ids[0])).status).toBe("running");
+    expect((await store.session(ids[1])).status).toBe("interrupted");
   } finally {
     release();
     for (const finish of turns.values()) finish();
@@ -372,9 +383,12 @@ it("discards optional naming results after shutdown without admitting another SQ
   const title = new Promise<{ title: string; workItem: null }>((resolve) => {
     release = resolve;
   });
+  let releaseShutdownFlush = () => {};
+  let restoreFlush = () => {};
+  let restoreSql = () => {};
   const provider = {
     send: async () => {},
-    stop: async () => {},
+    stop: vi.fn(async () => {}),
     cancel: async () => {},
     bind() {},
     approve() {},
@@ -392,23 +406,51 @@ it("discards optional naming results after shutdown without admitting another SQ
       model: "codex:test",
       runtimeMode: "supervised",
     });
-    await engine.command({
+    const receipt = await engine.command({
       type: "send",
       commandId: "send",
       sessionId: created.sessionId,
       text: "hello",
     });
     await vi.waitFor(() => expect(provider.generateTitle).toHaveBeenCalledOnce());
-    await engine.close();
+    await engine.waitForRun(created.sessionId, receipt.runId);
     const before = await store.session(created.sessionId);
+    const flushAll = store.flushAll.bind(store);
+    let flushStarted!: () => void;
+    const shutdownFlush = new Promise<void>((resolve) => {
+      flushStarted = resolve;
+    });
+    const flushHold = new Promise<void>((resolve) => {
+      releaseShutdownFlush = resolve;
+    });
+    const flush = vi.spyOn(store, "flushAll").mockImplementation(async () => {
+      flushStarted();
+      await flushHold;
+      await flushAll();
+    });
+    restoreFlush = () => flush.mockRestore();
+    let closed = false;
+    const closing = engine.close().then(() => {
+      closed = true;
+    });
+    await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled());
+    expect(closed).toBe(false);
     const sql = vi.spyOn(store.db, "scope");
+    restoreSql = () => sql.mockRestore();
     release({ title: "Late title", workItem: null });
-    await title;
-    await Promise.resolve();
+    // Observe the post-job boundary before the legitimate shutdown flush uses SQL.
+    await shutdownFlush;
     expect(sql).not.toHaveBeenCalled();
     sql.mockRestore();
+    releaseShutdownFlush();
+    await closing;
+    expect(closed).toBe(true);
+    flush.mockRestore();
     expect(await store.session(created.sessionId)).toEqual(before);
   } finally {
+    restoreSql();
+    restoreFlush();
+    releaseShutdownFlush();
     release({ title: "cleanup", workItem: null });
     await engine.close();
     await store.close();
@@ -629,13 +671,17 @@ it("drains asynchronous settlement bookkeeping before releasing readers and run 
   const store = new HostStore(join(folder, "host.db"));
   let finish = () => {};
   let release = () => {};
+  let providerAdmitted!: () => void;
+  const admitted = new Promise<void>((resolve) => {
+    providerAdmitted = resolve;
+  });
   const provider = {
-    send: vi.fn(
-      async () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    ),
+    send: vi.fn(async () => {
+      providerAdmitted();
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    }),
     stop: async () => {
       finish();
     },
@@ -676,7 +722,8 @@ it("drains asynchronous settlement bookkeeping before releasing readers and run 
       sessionId: created.sessionId,
       text: "hello",
     });
-    await vi.waitFor(() => expect(provider.send).toHaveBeenCalledOnce());
+    await admitted;
+    expect(provider.send).toHaveBeenCalledOnce();
     finish();
     await callbackStarted;
     let observed = false;

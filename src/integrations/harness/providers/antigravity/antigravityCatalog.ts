@@ -1,17 +1,23 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  withProviderRetirement,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels } from "../../../../features/sessions/model/models";
 import { AcpClient } from "../../core/acp";
 import {
   createChildProcessHandle,
   execChild,
-  killChild,
   resolveAntigravityBinary,
   spawnChild,
-  unwatchChild,
   watchChild,
 } from "../../core/child";
 import { antigravitySpawnCwd, modelsFromSessionNew } from "./antigravityProtocol";
 import { parseAntigravityModels } from "./antigravityStreamProtocol";
+
+const retirements = createProviderRetirementLedger("antigravity.catalog", killChild);
 
 const PROBE_ID = "bycoda-antigravity-probe";
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -24,6 +30,7 @@ export function refreshAntigravityCatalog(): Promise<void> {
       if (models.length > 0) setHarnessModels("antigravity", models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       // Preserve the last live catalog (or startup seeds) when offline/logged out.
       console.debug("[bycoda] antigravity catalog", error);
     })
@@ -41,7 +48,7 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
   }
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = createChildProcessHandle(probeId);
+  const probeProcess = retirements.admit(createChildProcessHandle(probeId), "antigravity.catalog");
   const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       const response =
@@ -59,36 +66,38 @@ export async function discoverAntigravityModels(workingDirectory?: string) {
     (line) => acp.pushLine(line),
     () => acp.close(new Error("Antigravity probe exited")),
   );
-  try {
-    await spawnChild(
-      probeProcess,
-      path,
-      args,
-      antigravitySpawnCwd(path, cwd),
-      undefined,
-      "antigravity",
-    );
-    await acp.request(
-      "initialize",
-      {
-        protocolVersion: 1,
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-          // Without this claim a compliant agent may omit configOptions from
-          // session/new, leaving the catalog with nothing to enumerate.
-          session: { configOptions: { boolean: {} } },
+  return withProviderRetirement(
+    async () => {
+      await spawnChild(
+        probeProcess,
+        path,
+        args,
+        antigravitySpawnCwd(path, cwd),
+        undefined,
+        "antigravity",
+      );
+      await acp.request(
+        "initialize",
+        {
+          protocolVersion: 1,
+          clientCapabilities: {
+            fs: { readTextFile: false, writeTextFile: false },
+            terminal: false,
+            // Without this claim a compliant agent may omit configOptions from
+            // session/new, leaving the catalog with nothing to enumerate.
+            session: { configOptions: { boolean: {} } },
+          },
+          clientInfo: { name: "bycoda", version: "0.1.0" },
         },
-        clientInfo: { name: "bycoda", version: "0.1.0" },
-      },
-      REQUEST_TIMEOUT_MS,
-    );
-    // Authentication stays in the provider's Terminal UI; never start OAuth here.
-    const created = await acp.request("session/new", { cwd, mcpServers: [] }, REQUEST_TIMEOUT_MS);
-    return modelsFromSessionNew(created);
-  } finally {
-    acp.close();
-    unwatchChild(probeProcess);
-    await killChild(probeProcess).catch(() => undefined);
-  }
+        REQUEST_TIMEOUT_MS,
+      );
+      // Authentication stays in the provider's Terminal UI; never start OAuth here.
+      const created = await acp.request("session/new", { cwd, mcpServers: [] }, REQUEST_TIMEOUT_MS);
+      return modelsFromSessionNew(created);
+    },
+    async () => {
+      acp.close();
+      await retirements.retire([probeProcess]);
+    },
+  );
 }

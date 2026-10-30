@@ -94,6 +94,8 @@ async function startTurn(
   } = {},
 ) {
   const events: HarnessEvent[] = [];
+  const sentAtStart = sent.length;
+  const usersAtStart = parse().filter((message) => message.type === "user").length;
   const turn = sendClaudeTurn({
     sessionId,
     cwd: "/repo",
@@ -112,18 +114,29 @@ async function startTurn(
 
   await waitFor(
     () =>
-      parse().some((m) => {
-        const request = m.request as Record<string, unknown> | undefined;
-        return request?.subtype === "initialize";
-      }),
+      parse()
+        .slice(sentAtStart)
+        .some((m) => {
+          const request = m.request as Record<string, unknown> | undefined;
+          return request?.subtype === "initialize";
+        }),
     "initialize",
   );
+  const initialize = parse()
+    .slice(sentAtStart)
+    .find(
+      (message) =>
+        (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+    )!;
   emit({ type: "system", subtype: "init", session_id: "sess_1" });
   emit({
     type: "control_response",
-    response: { subtype: "success", request_id: "bycoda_1" },
+    response: { subtype: "success", request_id: initialize.request_id },
   });
-  await waitFor(() => parse().some((m) => m.type === "user"), "user prompt");
+  await waitFor(
+    () => parse().filter((message) => message.type === "user").length > usersAtStart,
+    "user prompt",
+  );
   return { events, turn };
 }
 
@@ -292,6 +305,107 @@ afterEach(async () => {
 });
 
 describe("claude streamed tool inputs", () => {
+  it("keeps A's callback and supervised approval policy while full-access B is queued and cancelled", async () => {
+    const a = await startTurn("s1");
+    const physical = processConstructions.created.at(-1)!;
+    const bEvents: HarnessEvent[] = [];
+    const bOperation = Object.freeze({});
+    let selected!: () => void;
+    const selection = new Promise<void>((resolve) => {
+      selected = resolve;
+    });
+    const b = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "full-access",
+      text: "never B",
+      attachments: [],
+      operationContext: Object.freeze({ operation: bOperation }),
+      onOriginalProcess: () => selected(),
+      onEvent: (event) => bEvents.push(event),
+    });
+    const outcome = b.catch((error: unknown) => error);
+    await selection;
+    emit({
+      type: "control_request",
+      request_id: "queued-policy-permission",
+      request: {
+        subtype: "can_use_tool",
+        tool_name: "Bash",
+        tool_use_id: "queued-policy-tool",
+        input: { command: "git status" },
+      },
+    });
+    await waitFor(
+      () =>
+        [...a.events, ...bEvents].some((event) => event.type === "approval.requested") ||
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id ===
+            "queued-policy-permission",
+        ),
+      "active A permission policy",
+    );
+    const asked = a.events.find(
+      (event): event is Extract<HarnessEvent, { type: "approval.requested" }> =>
+        event.type === "approval.requested",
+    );
+    expect(asked).toBeDefined();
+    expect(bEvents).toEqual([]);
+    expect(
+      parse().some(
+        (message) =>
+          (message.response as Record<string, unknown>)?.request_id === "queued-policy-permission",
+      ),
+    ).toBe(false);
+    respondClaudeApproval("s1", asked!.requestId, "deny", asked!.occurrenceId);
+    await waitFor(
+      () =>
+        parse().some(
+          (message) =>
+            (message.response as Record<string, unknown>)?.request_id ===
+            "queued-policy-permission",
+        ),
+      "original A permission reply",
+    );
+    await cancelClaudeTurn(
+      "s1",
+      Object.freeze({ operation: bOperation, originalProcesses: Object.freeze([physical]) }),
+    );
+    emitFollowUpTurn("still original A");
+    await a.turn;
+    expect(String(await outcome)).toContain("cancelled");
+    expect(a.events).toContainEqual(
+      expect.objectContaining({ type: "message.delta", text: "still original A" }),
+    );
+    expect(bEvents).toEqual([]);
+    const cEvents: HarnessEvent[] = [];
+    const c = sendClaudeTurn({
+      sessionId: "s1",
+      cwd: "/repo",
+      model: "claude:claude-sonnet-5",
+      modelSettings: {},
+      runtimeMode: "supervised",
+      text: "fresh C",
+      attachments: [],
+      onEvent: (event) => cEvents.push(event),
+    });
+    await waitFor(
+      () => parse().filter((message) => message.type === "user").length === 2,
+      "fresh C prompt",
+    );
+    emitFollowUpTurn("fresh C output");
+    await c;
+    expect(cEvents).toContainEqual(
+      expect.objectContaining({ type: "message.delta", text: "fresh C output" }),
+    );
+    expect(processConstructions.created.filter((handle) => handle.sessionId === "s1")).toEqual([
+      physical,
+    ]);
+  });
+
   it.each(["interrupt", "stop_task"])(
     "keeps a turn observable and retryable when Stop cannot deliver %s",
     async (request) => {
@@ -568,6 +682,10 @@ describe("claude task tools", () => {
     } = {},
   ) {
     const spawnCount = spawned.length;
+    const initializeCount = parse().filter(
+      (message) =>
+        (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+    ).length;
     const userCount = parse().filter((message) => message.type === "user").length;
     const turn = sendClaudeTurn({
       sessionId: "s1",
@@ -581,7 +699,15 @@ describe("claude task tools", () => {
       attachments: [],
       onEvent: (event) => events.push(event),
     });
-    await waitFor(() => spawned.length === spawnCount + 1, "replacement Claude process");
+    await waitFor(
+      () =>
+        spawned.length === spawnCount + 1 &&
+        parse().filter(
+          (message) =>
+            (message.request as Record<string, unknown> | undefined)?.subtype === "initialize",
+        ).length > initializeCount,
+      "replacement Claude process initialization",
+    );
     emit({
       type: "system",
       subtype: "init",

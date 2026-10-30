@@ -3,12 +3,13 @@ import {
   type JsonRpcHandlers,
   type JsonRpcId,
   type JsonRpcMessage,
+  type JsonRpcWriterView,
 } from "./jsonRpc";
 import { socialAcpServers, socialBridge } from "./socialBridge";
 import { runtimeLogsAcpServers, runtimeLogsBridge } from "./runtimeLogsBridge";
 import { conversationToolsAcpServers, conversationToolsBridge } from "./conversationToolsBridge";
 import type { NativeOutputWork } from "./nativeOutputDelivery";
-import type { ChildProcessHandle } from "./child";
+import type { ChildProcessHandle, ChildTurnWriter } from "./child";
 
 export type { JsonRpcMessage };
 
@@ -25,6 +26,11 @@ export type AcpHandlers = {
     work?: NativeOutputWork,
   ) => void | Promise<void>;
 };
+
+export type AcpWriterView = Pick<
+  AcpClient,
+  "request" | "requestWithNativeOutput" | "notify" | "respond" | "respondError" | "isClosed"
+>;
 
 /** ACP JSON-RPC client — thin wrapper preserving the Cursor numeric-id API. */
 export class AcpClient {
@@ -62,7 +68,52 @@ export class AcpClient {
     this.rpc.rejectPending(error);
   }
 
+  get isClosed(): boolean {
+    return this.rpc.isClosed;
+  }
+
+  assertProcess(handle: ChildProcessHandle): void {
+    this.rpc.assertProcess(handle);
+  }
+
+  withWriter(writer: ChildTurnWriter): AcpWriterView {
+    // This exact view is captured before any bridge Promise is scheduled.
+    const rpc = this.rpc.withWriter(writer);
+    return Object.freeze({
+      get isClosed() {
+        return rpc.isClosed;
+      },
+      request: <T>(
+        method: string,
+        params?: unknown,
+        timeoutMs = 0,
+        consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+      ) => this.requestOwned(rpc, method, params, timeoutMs, consume),
+      requestWithNativeOutput: <T>(
+        method: string,
+        params: unknown,
+        consume: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+        timeoutMs = 0,
+      ) => this.requestOwned(rpc, method, params, timeoutMs, consume),
+      notify: (method: string, params?: unknown) => rpc.notify(method, params),
+      respond: (id: number, result: unknown, onActualWrite?: (write: Promise<void>) => void) =>
+        rpc.respond(id, result, onActualWrite),
+      respondError: (id: number, error: { code: number; message: string; data?: unknown }) =>
+        rpc.respondError(id, error),
+    });
+  }
+
   request<T>(
+    method: string,
+    params?: unknown,
+    timeoutMs = 0,
+    consume?: (value: T, work: NativeOutputWork | null) => T | Promise<T>,
+  ): Promise<T> {
+    return this.requestOwned(this.rpc, method, params, timeoutMs, consume);
+  }
+
+  private requestOwned<T>(
+    rpc: JsonRpcClient | JsonRpcWriterView,
     method: string,
     params?: unknown,
     timeoutMs = 0,
@@ -82,7 +133,7 @@ export class AcpClient {
       ]).then(([bridge, logs, conversation]) => {
         const value = params as Record<string, unknown>;
         const servers = Array.isArray(value.mcpServers) ? value.mcpServers : [];
-        return this.rpc.request<T>(
+        return rpc.request<T>(
           method,
           {
             ...value,
@@ -103,7 +154,7 @@ export class AcpClient {
         );
       });
     }
-    return this.rpc.request<T>(method, params, timeoutMs, ...(consume ? ([consume] as const) : []));
+    return rpc.request<T>(method, params, timeoutMs, ...(consume ? ([consume] as const) : []));
   }
 
   requestWithNativeOutput<T>(

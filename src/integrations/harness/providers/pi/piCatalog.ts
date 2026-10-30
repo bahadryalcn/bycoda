@@ -1,15 +1,17 @@
+import { killChild } from "../../core/child";
+import {
+  assertOptionalProviderProbeError,
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+} from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
 import { setHarnessModels, type AgentModel } from "../../../../features/sessions/model/models";
-import {
-  createChildProcessHandle,
-  killChild,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { createChildProcessHandle, spawnChild, watchChild } from "../../core/child";
 import { PiRpc } from "./piClient";
 import { OMP_FLAVOR, PI_FLAVOR, type PiFlavor } from "./piFlavor";
 import { buildPiSpawnArgs, modelsFromRpcData } from "./piProtocol";
+
+const retirements = createProviderRetirementLedger("pi.catalog", killChild);
 
 const DISCOVERY_TIMEOUT_MS = 45_000;
 // Pi can answer RPC before asynchronous extension providers register models.
@@ -29,6 +31,7 @@ function refreshCatalog(flavor: PiFlavor): Promise<void> {
       if (models.length > 0) setHarnessModels(flavor.id, models);
     })
     .catch((error: unknown) => {
+      assertOptionalProviderProbeError(error);
       console.debug(`[bycoda] ${flavor.id} catalog`, error);
     })
     .finally(() => {
@@ -52,7 +55,7 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   const { path } = await flavor.resolveBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${flavor.probeChildId}-${crypto.randomUUID()}`;
-  const probeProcess = createChildProcessHandle(probeId);
+  const probeProcess = retirements.admit(createChildProcessHandle(probeId), flavor.probeChildId);
   const rpc = new PiRpc(probeProcess, () => undefined, flavor.label);
   const models = new Map<string, AgentModel>();
   const collectedModels = () =>
@@ -62,14 +65,14 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
   let wakePoll: (() => void) | undefined;
   let exitError: Error | undefined;
   let rejectExit: ((error: Error) => void) | undefined;
+  let cleanupOwnedByFailure = false;
 
-  const stop = async () => {
+  const stop = () => {
     stopped = true;
     if (pollTimer !== undefined) clearTimeout(pollTimer);
     wakePoll?.();
     rpc.close();
-    unwatchChild(probeProcess);
-    await killChild(probeProcess).catch(() => undefined);
+    return retirements.retire([probeProcess]);
   };
 
   watchChild(
@@ -138,10 +141,11 @@ async function discoverModels(flavor: PiFlavor, workingDirectory?: string) {
     // A slow or continually changing extension must not discard useful models
     // already received, or keep the probe alive beyond the discovery deadline.
     if (error === timeoutError && models.size > 0) return collectedModels();
-    throw error;
+    cleanupOwnedByFailure = true;
+    return preserveProviderFailure(error, stop());
   } finally {
     if (timeout !== undefined) clearTimeout(timeout);
-    await stop();
+    if (!cleanupOwnedByFailure) await stop();
   }
 }
 

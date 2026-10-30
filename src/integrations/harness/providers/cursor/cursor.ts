@@ -1,4 +1,25 @@
 import {
+  assertProviderOperation,
+  observeProviderProcess,
+  finishProviderOperation,
+  cancelQueuedOperation,
+  ownsOperation,
+  processTarget,
+  operationContext,
+  type HarnessOperationContext,
+  captureAcpTurnWriter,
+  queueProviderOperation,
+  acpTurnWriter,
+  type AcpWriterView,
+} from "../turnWriter";
+
+import { killChild } from "../../core/child";
+import {
+  createProviderRetirementLedger,
+  preserveProviderFailure,
+  settleProviderRetirements,
+} from "../../core/providerRetirement";
+import {
   createPendingApproval,
   cancelPendingApprovals,
   observePendingApprovalWrite,
@@ -33,7 +54,6 @@ import {
   pickOption,
   stringField,
 } from "../../../../shared/lib/records";
-import { continueAfterFailure } from "../../../../shared/lib/promiseQueue";
 import {
   humanField,
   textFromContent as sharedTextFromContent,
@@ -50,13 +70,7 @@ import {
   taskListFromToolInput,
 } from "../../../../features/sessions/model/taskList";
 import { AcpClient, type AcpHandlers } from "../../core/acp";
-import {
-  killChild,
-  resolveCursorBinary,
-  spawnChild,
-  unwatchChild,
-  watchChild,
-} from "../../core/child";
+import { resolveCursorBinary, spawnChild, watchChild } from "../../core/child";
 import {
   readStoredCursorToolCalls,
   readStoredCursorSubagentRuns,
@@ -113,7 +127,10 @@ type PendingToolEnrichment = {
 
 import { createChildProcessHandle, type ChildProcessHandle } from "../../core/child";
 
+const retirements = createProviderRetirementLedger("cursor.main", killChild);
+
 type Live = {
+  operation?: object;
   handle: ChildProcessHandle;
   subagents: AcpSubagents;
   acp: AcpClient;
@@ -144,7 +161,6 @@ type Live = {
   subagentTimer?: ReturnType<typeof setTimeout>;
   subagentRefresh?: Promise<void>;
   promptActive: boolean;
-  turns: Promise<void>;
 };
 
 type Resume = {
@@ -153,9 +169,13 @@ type Resume = {
 };
 
 const liveByThread = new Map<string, Live>();
-const startingByThread = new Map<string, { handle: ChildProcessHandle; acp?: AcpClient }>();
+const startingByThread = new Map<
+  string,
+  { handle: ChildProcessHandle; operation?: object; acp?: AcpClient }
+>();
 const resumeByThread = new Map<string, Resume>();
-const cancelledThreads = new Set<string>();
+const turnsByThread = new Map<string, Promise<unknown>>();
+const sourceEpochByThread = new Map<string, object>();
 
 const CLIENT_CAPABILITIES = {
   fs: { readTextFile: false, writeTextFile: false },
@@ -164,37 +184,74 @@ const CLIENT_CAPABILITIES = {
 };
 
 export async function sendCursorTurn(input: SendTurnInput): Promise<void> {
-  let live: Live;
-  try {
-    live = await ensureLive(input);
-  } catch (error) {
-    cancelledThreads.delete(input.sessionId);
-    throw error;
-  }
-  if (cancelledThreads.delete(input.sessionId)) return;
+  assertProviderOperation(input.operationContext);
 
-  live.onEvent = input.onEvent;
-  live.runtimeMode = input.runtimeMode;
-  live.planning = input.intent === "plan";
-  live.turns = continueAfterFailure(live.turns, async () => {
-    live.cancelled = false;
-    live.muteUpdates = false;
-    scheduleCursorToolEnrichment(live, 0);
-    try {
-      await applyModelSelection(live, input);
-      if (live.cancelled) return;
-      await prompt(live, input);
-    } catch (error) {
-      if (live.cancelled) return;
-      throw error;
-    }
-  });
-  await live.turns;
+  input = { ...input };
+
+  try {
+    const epoch = sourceEpochByThread.get(input.sessionId);
+    const cancelled = () => sourceEpochByThread.get(input.sessionId) !== epoch;
+    let live: Live;
+    const observed = liveByThread.get(input.sessionId) ?? startingByThread.get(input.sessionId);
+    if (observed) observeProviderProcess(input, observed.handle);
+    const run = queueProviderOperation(
+      turnsByThread,
+      input.sessionId,
+      input.operationContext,
+      async () => {
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        live = await ensureLive(input);
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        const acp = await captureAcpTurnWriter(
+          live.handle,
+          live.acp,
+          input.nativeControlTurn,
+          input.operationContext,
+        )();
+        if (cancelled()) return;
+        assertProviderOperation(input.operationContext);
+        if (liveByThread.get(input.sessionId) !== live)
+          throw new Error("Provider operation replaced before turn entry");
+        live.onEvent = input.onEvent;
+        live.runtimeMode = input.runtimeMode;
+        live.planning = input.intent === "plan";
+        live.cancelled = false;
+        live.muteUpdates = false;
+        scheduleCursorToolEnrichment(live, 0);
+        try {
+          await applyModelSelection(live, input, acp);
+          if (live.cancelled) return;
+          await prompt(live, input, acp);
+        } catch (error) {
+          if (live.cancelled) return;
+          throw error;
+        }
+      },
+    );
+    await run;
+  } finally {
+    finishProviderOperation(input.operationContext);
+  }
 }
 
 export async function steerCursorTurn(input: SteerTurnInput): Promise<void> {
+  assertProviderOperation(input.operationContext);
+
+  input = { ...input };
+
   const live = liveByThread.get(input.sessionId);
   if (!live) throw new Error("No active Cursor session");
+  if (!ownsOperation(input.operationContext, live.handle, live.operation))
+    throw new Error("Provider operation replaced before steer");
+
+  const acp = await acpTurnWriter(
+    live.handle,
+    live.acp,
+    input.nativeControlTurn,
+    input.operationContext,
+  );
 
   const blocks = promptBlocks(input.text, input.attachments);
   if (blocks.length === 0) return;
@@ -204,7 +261,7 @@ export async function steerCursorTurn(input: SteerTurnInput): Promise<void> {
     prompt: blocks,
   };
   // Notifications have no error response; a second spelling would duplicate input.
-  await live.acp.notify("session/steer", params);
+  await acp.notify("session/steer", params);
 }
 
 export function respondCursorApproval(
@@ -247,12 +304,28 @@ export function respondCursorQuestion(
 }
 
 /** Abort the in-flight prompt without tearing down the ACP session. */
-export async function cancelCursorTurn(sessionId: string): Promise<void> {
+export async function cancelCursorTurn(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
   const live = liveByThread.get(sessionId);
-  if (!live) {
-    cancelledThreads.add(sessionId);
+  const preparing = startingByThread.get(sessionId);
+  if (
+    !ownsOperation(
+      context,
+      live?.handle ?? preparing?.handle,
+      live?.operation ?? preparing?.operation,
+    )
+  )
     return;
-  }
+  sourceEpochByThread.set(sessionId, {});
+  if (!live) return;
+  const acp = context
+    ? await acpTurnWriter(live.handle, live.acp, context.nativeControlTurn, context, "control")
+    : live.acp;
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.cancelled = true;
   live.muteUpdates = true;
   live.promptActive = false;
@@ -265,20 +338,33 @@ export async function cancelCursorTurn(sessionId: string): Promise<void> {
   cancelPendingApprovals(live.approvals);
   for (const [, resolve] of live.questions) resolve({ kind: "skipped" });
   live.questions.clear();
-  await live.acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  await acp.notify("session/cancel", { sessionId: live.acpSessionId }).catch(() => undefined);
+  if (!ownsOperation(context, live.handle, live.operation)) return;
   live.acp.rejectPending(new Error("cancelled"));
 }
 
 /** Kill the Cursor process but keep the ACP session id so we can session/load. */
 export async function stopCursorSession(
   sessionId: string,
-  expectedHandle?: ChildProcessHandle,
+  target?: ChildProcessHandle | HarnessOperationContext,
 ): Promise<void> {
-  if (!expectedHandle) cancelledThreads.delete(sessionId);
+  const context = operationContext(target);
+  if (cancelQueuedOperation(context)) return;
+  const expectedHandle = processTarget(target);
+
   const candidate = liveByThread.get(sessionId);
-  const live = !expectedHandle || candidate?.handle === expectedHandle ? candidate : undefined;
+  const live =
+    (!expectedHandle || candidate?.handle === expectedHandle) &&
+    ownsOperation(context, candidate?.handle, candidate?.operation)
+      ? candidate
+      : undefined;
   const preparing = startingByThread.get(sessionId);
-  const startup = !expectedHandle || preparing?.handle === expectedHandle ? preparing : undefined;
+  const startup =
+    (!expectedHandle || preparing?.handle === expectedHandle) &&
+    ownsOperation(context, preparing?.handle, preparing?.operation)
+      ? preparing
+      : undefined;
+  if (context ? live || startup : !expectedHandle) sourceEpochByThread.set(sessionId, {});
   if (live) liveByThread.delete(sessionId);
   if (startup) startingByThread.delete(sessionId);
   if (live) {
@@ -295,21 +381,26 @@ export async function stopCursorSession(
   }
   live?.acp.close();
   startup?.acp?.close();
-  const handles = new Set([live?.handle, startup?.handle, expectedHandle]);
-  await Promise.all(
-    [...handles].map(async (handle) => {
-      if (!handle) return;
-      unwatchChild(handle);
-      await killChild(handle).catch(() => undefined);
-    }),
-  );
+  const handles = new Set([live?.handle, startup?.handle, ...(!context ? [expectedHandle] : [])]);
+  await (context || expectedHandle
+    ? retirements.retire(handles)
+    : retirements.retireOwner(sessionId, handles));
 }
 
 /** Delete or idle detach — drop the Cursor conversation too. */
-export async function forgetCursorSession(sessionId: string): Promise<void> {
+export async function forgetCursorSession(
+  sessionId: string,
+  context?: HarnessOperationContext,
+): Promise<void> {
+  if (cancelQueuedOperation(context)) return;
+
+  const original = liveByThread.get(sessionId) ?? startingByThread.get(sessionId);
+  if (original && !ownsOperation(context, original.handle, original.operation)) return;
   resumeByThread.delete(sessionId);
-  await stopCursorSession(sessionId);
-  await stopCursorTitleGeneration(sessionId);
+  await settleProviderRetirements([
+    stopCursorSession(sessionId),
+    stopCursorTitleGeneration(sessionId),
+  ]);
 }
 
 /** Seed ACP resume state for a restored Bycoda session. */
@@ -320,17 +411,24 @@ export function bindCursorSession(threadId: string, acpSessionId: string, cwd: s
 }
 
 async function ensureLive(input: SendTurnInput): Promise<Live> {
+  assertProviderOperation(input.operationContext);
+
   const existing = liveByThread.get(input.sessionId);
   if (existing && existing.cwd === input.cwd) {
-    existing.onEvent = input.onEvent;
-    existing.runtimeMode = input.runtimeMode;
-    existing.planning = input.intent === "plan";
+    observeProviderProcess(input, existing.handle);
+
     return existing;
   }
-  const handle = createChildProcessHandle(input.sessionId);
-  const startup: { handle: ChildProcessHandle; acp?: AcpClient } = { handle };
+  const handle = retirements.admit(
+    createChildProcessHandle(input.sessionId, input.nativeControlTurn),
+  );
+  const startup: { handle: ChildProcessHandle; operation?: object; acp?: AcpClient } = {
+    handle,
+    operation: input.operationContext?.operation,
+  };
   startingByThread.set(input.sessionId, startup);
   try {
+    observeProviderProcess(input, handle, "starting");
     if (existing) {
       resumeByThread.delete(input.sessionId);
       await stopCursorSession(input.sessionId, existing.handle);
@@ -389,8 +487,14 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     );
 
     await spawnChild(handle, path, ["acp"], input.cwd, undefined, "cursor");
+    const startupAcp = await acpTurnWriter(
+      handle,
+      acp,
+      input.nativeControlTurn,
+      input.operationContext,
+    );
 
-    await acp.request(
+    await startupAcp.request(
       "initialize",
       {
         protocolVersion: 1,
@@ -399,7 +503,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       },
       INIT_TIMEOUT_MS,
     );
-    await acp
+    await startupAcp
       .request("authenticate", { methodId: "cursor_login" }, AUTH_TIMEOUT_MS)
       .catch((error: unknown) => {
         // Older agents omit authenticate; transport/authentication failures are fatal.
@@ -414,7 +518,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     if (canLoad && resume) {
       muteGate.current = true;
       try {
-        setup = await acp.request<SessionSetupResult>(
+        setup = await startupAcp.request<SessionSetupResult>(
           "session/load",
           {
             sessionId: resume.acpSessionId,
@@ -437,7 +541,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     }
 
     if (!acpSessionId) {
-      setup = await acp.request<SessionSetupResult>(
+      setup = await startupAcp.request<SessionSetupResult>(
         "session/new",
         {
           cwd: input.cwd,
@@ -452,6 +556,7 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     if (startingByThread.get(input.sessionId) !== startup)
       throw new Error("Provider startup cancelled");
     const live: Live = {
+      operation: input.operationContext?.operation,
       handle,
       subagents: new AcpSubagents(),
       acp,
@@ -478,7 +583,6 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
       subagentGeneration: 0,
       subagentFinalPolls: 0,
       promptActive: false,
-      turns: Promise.resolve(),
     };
     liveRef.current = live;
     liveByThread.set(input.sessionId, live);
@@ -494,21 +598,24 @@ async function ensureLive(input: SendTurnInput): Promise<Live> {
     return live;
   } catch (error) {
     startup.acp?.close(error instanceof Error ? error : new Error(String(error)));
-    await stopCursorSession(input.sessionId, handle);
-    throw error;
+    return preserveProviderFailure(error, stopCursorSession(input.sessionId, handle));
   } finally {
     if (startingByThread.get(input.sessionId) === startup) startingByThread.delete(input.sessionId);
   }
 }
 
-async function applyModelSelection(live: Live, input: SendTurnInput): Promise<void> {
+async function applyModelSelection(
+  live: Live,
+  input: SendTurnInput,
+  acp: AcpWriterView,
+): Promise<void> {
   const base = nativeModelId(input.model);
   const settings = input.modelSettings ?? {};
 
   try {
-    await setConfigOption(live, live.modelConfigId, base);
+    await setConfigOption(live, live.modelConfigId, base, acp);
   } catch {
-    await live.acp
+    await acp
       .request("session/set_model", {
         sessionId: live.acpSessionId,
         modelId: base,
@@ -519,7 +626,7 @@ async function applyModelSelection(live: Live, input: SendTurnInput): Promise<vo
   for (const [settingId, value] of Object.entries(settings)) {
     const configId = resolveSettingConfigId(live.configOptions, settingId);
     if (!configId) continue;
-    await setConfigOption(live, configId, value).catch(() => undefined);
+    await setConfigOption(live, configId, value, acp).catch(() => undefined);
   }
 }
 
@@ -527,11 +634,12 @@ async function setConfigOption(
   live: Live,
   configId: string,
   value: string | boolean,
+  acp: AcpWriterView,
 ): Promise<void> {
   const current = live.configOptions.find((option) => option.id === configId);
   if (current && String(current.currentValue ?? "") === String(value)) return;
 
-  const result = await live.acp.request<SessionSetupResult>("session/set_config_option", {
+  const result = await acp.request<SessionSetupResult>("session/set_config_option", {
     sessionId: live.acpSessionId,
     configId,
     value,
@@ -542,7 +650,7 @@ async function setConfigOption(
   }
 }
 
-async function prompt(live: Live, input: SendTurnInput): Promise<void> {
+async function prompt(live: Live, input: SendTurnInput, acp: AcpWriterView): Promise<void> {
   const responseScope: { work: NativeOutputWork | null } = { work: null };
   const emitNative = (event: HarnessEvent) =>
     nativeOutputSink(responseScope.work, () => live.onEvent(event))();
@@ -557,7 +665,7 @@ async function prompt(live: Live, input: SendTurnInput): Promise<void> {
       live.backgroundAgentTools.clear();
       live.taskListTools.clear();
       live.promptActive = true;
-      const response = live.acp.request(
+      const response = acp.request(
         "session/prompt",
         {
           sessionId: live.acpSessionId,
@@ -1607,7 +1715,8 @@ export function __cursorTestReset(): void {
   }
   liveByThread.clear();
   resumeByThread.clear();
-  cancelledThreads.clear();
+  turnsByThread.clear();
+  sourceEpochByThread.clear();
 }
 
 function textFromContent(content: unknown, separator = ""): string {
